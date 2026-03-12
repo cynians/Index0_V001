@@ -213,10 +213,11 @@ for Sol.
 Early expansion focuses on symbolic achievements
 such as permanent lunar settlements, Mars
 expeditions and large orbital infrastructure.
-Human presence gradually spreads throughout the
-Solar System, beginning with the Moon and Mars
-and later extending to the asteroid belt and
-outer planetary bodies.
+
+Human presence gradually spreads beyond Earth,
+with early settlements established on the Moon
+and Mars and exploratory missions reaching
+throughout the Solar System.
 
 Although open warfare between major powers
 remains politically constrained under the New
@@ -226,76 +227,214 @@ conflicts later known as the Silent Wars.
 
 Over the course of the era, orbital industry,
 planetary settlements and interplanetary
-transport networks slowly transform the Solar
-System into a permanently inhabited human
-environment.
+transport networks begin to transform the
+Solar System into a permanently inhabited
+human environment.
 
 Near the end of the Race for Sol, the first
 experimental interstellar missions are attempted,
 including early expeditions toward the Alpha
 Centauri system.
-GGO HEGEMONY PERIOD
 
-During this era the Global Government Organization (GGO)
-consolidates political control over most of Earth and
-extends its influence across the Solar System and the
-first interstellar colonies.
 
-Early interstellar settlements founded during the Race
-for Inter Sol remain isolated due to the vast distances
-between star systems. Colonies often reproduce the
-institutional structure of the GGO but operate largely
+
+GGO HEGEMONY PERIOD (2440–6013)
+
+During this era the Global Government Organization
+(GGO) consolidates political control over most of
+Earth and gradually emerges as the dominant
+planetary authority.
+
+The organization develops out of the political
+framework established after the Superpower Wars
+and the New Order Treaty and evolves into a large
+bureaucratic administration responsible for
+coordinating planetary governance and major
+infrastructure systems.
+
+In its early centuries the GGO remains primarily
+an Earth-centered institution. While the
+organization exerts influence beyond the planet,
+much of the Solar System remains politically
+fragmented. Several off-world settlements and
+industrial regions maintain their own political
+identities or develop into independent power
+centers.
+
+The Solar System therefore enters a prolonged
+period of uneasy strategic balance between
+GGO-dominated Earth and a number of autonomous
+Sol-based factions.
+
+Human civilization continues the expansion
+initiated during the Race for Sol. Settlements
+across the Solar System grow into permanent
+population centers, with Mars, the asteroid
+belt and several outer system installations
+developing into important economic and
+political actors.
+
+Early interstellar settlements founded during
+the late Race for Sol remain widely separated
+due to the vast distances between star systems.
+Colonies often reproduce elements of GGO
+institutional structures but operate largely
 autonomously.
 
-Terraforming projects initiated during the late Race for
-Sol continue to develop, and a small number of nearby
-systems become permanently inhabited.
+Population management becomes an increasingly
+important political concern. Large migration
+programs send millions of people to off-world
+settlements while Earth itself remains a
+densely urbanized world dominated by enormous
+metropolitan regions.
 
-Shortly before the First Contraction Event in the year
-3000, construction begins on the COG, a massive terrestrial
-population megastructure that gradually concentrates the
-majority of Earth's inhabitants.
+Shortly before the First Contraction Event in
+the year 3000, construction begins on the COG,
+a massive terrestrial population megastructure
+designed to concentrate a large share of
+Earth's inhabitants.
 
-The unexplained contraction of interstellar distances
-triggers a large expansion wave of colonial missions.
-Offworld settlement becomes an important tool of population
-management, sending large numbers of people to distant
+The unexplained contraction of interstellar
+distances triggers a major wave of colonial
+expansion. Offworld settlement becomes an
+important tool of population management,
+sending large numbers of people to distant
 systems with varying success.
 
-During the later centuries of the era the GGO reaches the
-height of its power, controlling much of the Solar System,
-before eventually losing its dominance on Earth to
+During the later centuries of the era the
+GGO reaches the height of its influence,
+exercising considerable political and economic
+power across much of the Solar System before
+eventually losing its dominance on Earth to
 Retronationalist forces.
 
-PLANETARY PERIOD
+
+PLANETARY PERIOD (6013–???)
+
+The Planetary Period begins in the Solar System with
+the defeat of the Global Government Organization (GGO)
+by Retronationalist forces. The collapse of the last
+Earth-centered planetary authority marks the end of
+the GGO Hegemony and the transition to a civilization
+defined primarily by independent planetary societies.
+
+In many interstellar systems this transition had
+already occurred much earlier. Due to the vast
+distances between star systems and the limited
+ability of the GGO to exert direct authority far
+from Earth, numerous colonies had long developed
+their own autonomous political structures.
+
+The beginning of the Planetary Period therefore
+represents the formal end of GGO dominance in
+the Solar System rather than the universal
+beginning of planetary independence across
+human space.
+
+During this era the primary political units of
+human civilization become individual planets
+and planetary systems. Most inhabited worlds
+develop their own governments and cultural
+identities, while remnants of GGO institutions
+continue to operate in some regions. Corporate
+colonies and chartered planetary enterprises
+also exist alongside more conventional states.
+
+The era is characterized by extensive
+terraforming efforts and the rapid expansion
+of human settlement across many star systems.
+Organizations such as the Terran Biome
+Diversity Project oversee large-scale
+biosphere construction programs, while
+specialized expeditionary crews conduct
+long-duration ecological seeding missions
+on newly settled worlds.
+
+Advances in communication infrastructure,
+including the development of the QuantCom
+network, gradually allow distant star
+systems to coordinate political and economic
+activities across interstellar distances.
+
+Large interstellar trade organizations
+emerge during the early centuries of the
+period, most notably the Transfer Hansa,
+which develops extensive commercial routes
+between planetary civilizations.
+
+Over time the number of inhabited worlds
+grows dramatically and a complex network
+of planetary states, alliances and trade
+systems develops across human space.
+
+The era ultimately ends with the Alliance
+Cascade, a large-scale realignment of
+interstellar alliances that results in
+the formation of the three major sectors
+that dominate the following age.
 
 
-TRIFECTA DOMINION PERIOD
+TRIFECTA DOMINION PERIOD (???–???)
 
+The Trifecta Dominion Period begins with the
+Alliance Cascade, a large-scale realignment of
+interstellar alliances that reshapes the political
+structure of human civilization.
 
-INTERSECTOR ASSEMBLY
-
-
-GGO HEGEMONY PERIOD
-
-The Global Government Organization consolidates large parts of
-Earth and attempts to extend influence across Sol and early
-interstellar colonies.
-
-
-PLANETARY PERIOD
-
-Large numbers of planets are terraformed and settled.
-Independent planetary societies emerge across interstellar space.
-
-
-TRIFECTA DOMINION PERIOD
-
-Three geopolitical blocs dominate interstellar politics:
+In the aftermath of this upheaval three major
+geopolitical blocs emerge as the dominant powers
+across inhabited space. These blocs become known
+collectively as the Trifecta:
 
 Gold Sector
 Blue Sector
 Rust Sector
+
+Each sector develops its own political structures,
+economic systems and cultural traditions, and
+interstellar politics becomes defined primarily
+by the interaction and rivalry between these
+three large regional powers.
+
+During this era many of the independent planetary
+states that had characterized the earlier
+Planetary Period gradually align themselves with
+one of the three sectors. While individual
+planets retain significant autonomy, large-scale
+political, military and economic coordination
+is increasingly organized at the sector level.
+
+The sectors differ greatly in their internal
+organization and ideological character, producing
+distinct regional civilizations across human
+space.
+
+Large interstellar institutions from the
+Planetary Period continue to operate during
+this era, though often in diminished roles.
+The Transfer Hansa, once a near-monopolistic
+interstellar logistics network, survives into
+the Trifecta Dominion Period but no longer
+dominates interstellar trade as it once did.
+
+Advanced communication infrastructure such as
+the QuantCom network enables coordination across
+vast interstellar distances and allows the
+sector powers to maintain stable political
+structures spanning hundreds or thousands of
+star systems.
+
+Terraforming efforts and planetary settlement
+continue throughout the era, and many new worlds
+are incorporated into the expanding sector
+civilizations.
+
+The Trifecta Dominion Period ultimately gives
+way to a new diplomatic order with the creation
+of the Intersector Assembly, an institution
+designed to coordinate relations between the
+three sectors and manage conflicts between
+their expanding spheres of influence.
 
 
 INTERSECTOR ASSEMBLY
