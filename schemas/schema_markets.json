@@ -1,0 +1,83 @@
+{
+  "metadata": {
+    "name": "Index0 Market Schema",
+    "version": 1
+  },
+
+  "markets": {
+
+    "market_base": {
+
+      "required": [
+        "id",
+        "name",
+        "type"
+      ],
+
+      "base_fields": {
+
+        "id": "string",
+
+        "name": "string",
+
+        "type": "string",
+
+        "market_class": "string",
+
+        "location": ["object", "null"],
+
+        "operators": "array",
+
+        "tags": "array",
+
+        "start_year": ["number", "null"],
+
+        "end_year": ["number", "null"]
+
+      },
+
+      "structural_fields": {
+
+        "traded_items": "array",
+
+        "produced_items": "array",
+
+        "imported_items": "array",
+
+        "exported_items": "array",
+
+        "major_producers": "array",
+
+        "major_consumers": "array",
+
+        "related_markets": "array"
+
+      },
+
+      "economic_fields": {
+
+        "market_scale": ["string", "null"],
+
+        "trade_volume": ["string", "null"],
+
+        "market_access": ["string", "null"]
+
+      },
+
+      "knowledge_fields": [
+
+        "description",
+
+        "economic_role",
+
+        "trade_structure",
+
+        "history"
+
+      ]
+
+    }
+
+  }
+
+}

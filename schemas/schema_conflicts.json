@@ -1,0 +1,31 @@
+{
+  "metadata": {
+    "name": "Index0 Conflict Schema",
+    "version": 1
+  },
+
+  "extends": "entity_base",
+
+  "fields": {
+
+    "participants": {
+
+      "factions": "array",
+
+      "formations": "array",
+
+      "persons": "array",
+
+      "institutions": "array"
+
+    },
+
+    "operations": "array",
+
+    "engagements": "array",
+
+    "theatres": "array",
+
+    "related_events": "array"
+  }
+}

@@ -1,0 +1,4168 @@
+================================================
+INDEX_0 IDEA REPOSITORY
+================================================
+
+
+================================================
+REFERENCE: MACRO ERAS
+================================================
+
+POSTMODERNIST PERIOD
+
+Late industrial and early space age civilization on Earth.
+Geopolitical tensions culminate in the Superpower Wars.
+
+
+RACE FOR SOL
+
+Human expansion into the Solar System.
+Major colonization of Mars, the Moon, and other Sol bodies.
+
+
+GGO HEGEMONY PERIOD
+
+The Global Government Organization consolidates large parts of
+Earth and attempts to extend influence across Sol and early
+interstellar colonies.
+
+
+PLANETARY PERIOD
+
+Large numbers of planets are terraformed and settled.
+Independent planetary societies emerge across interstellar space.
+
+
+TRIFECTA DOMINION PERIOD
+
+Three geopolitical blocs dominate interstellar politics:
+
+Gold Sector
+Blue Sector
+Rust Sector
+
+
+INTERSECTOR ASSEMBLY
+
+Later diplomatic order coordinating relations between sectors.
+
+
+
+================================================
+IDEA REPOSITORY
+================================================
+
+
+------------------------------------------------
+SYSTEMS
+------------------------------------------------
+
+
+------------------------------------------------
+IDEA-001
+------------------------------------------------
+
+Name: Map System
+Domain: Systems
+
+Parent Idea: None
+
+Era:
+All Eras
+
+Tags:
+maps
+navigation
+ui
+exploration
+simulation
+
+Description:
+Core mapping system used for exploration and simulation mode.
+Maps exist as entities and can represent scales from planetary
+surfaces to individual buildings. Regions can be defined using
+editable heatmaps and painted layers. Derived maps can be
+generated from existing maps.
+
+
+------------------------------------------------
+IDEA-002
+------------------------------------------------
+
+Name: QuantCom Communication Network
+Domain: Systems
+
+Parent Idea: None
+
+Era:
+Planetary Period
+Trifecta Dominion Period
+
+Tags:
+communication
+quantum
+infrastructure
+interstellar
+
+Description:
+A quantum communication infrastructure enabling extremely
+low latency communication across interstellar space.
+Forms the backbone of high-level coordination between
+factions and large logistical systems.
+
+
+------------------------------------------------
+IDEA-003
+------------------------------------------------
+
+Name: QuantCom Bonding Maturation
+Domain: Systems
+
+Parent Idea:
+IDEA-002 QuantCom Communication Network
+
+Era:
+Planetary Period
+
+Tags:
+communication
+technology
+quantum
+
+Description:
+Technological maturation stage of QuantCom systems where
+bonding nodes allow stable long-distance communication
+across star systems.
+
+
+
+------------------------------------------------
+IDEA-004
+------------------------------------------------
+
+Name: Planetary Population Control System
+Domain: Systems
+
+Parent Idea: None
+
+Era:
+GGO Hegemony Period
+
+Tags:
+governance
+demographics
+control
+infrastructure
+
+Description:
+Administrative and technological system used by planetary
+governments to regulate population distribution and growth.
+
+
+
+------------------------------------------------
+VEHICLES
+------------------------------------------------
+
+
+------------------------------------------------
+IDEA-010
+------------------------------------------------
+
+Name: Mitchell Class Seaplane Tender
+Domain: Vehicles
+
+Parent Idea: None
+
+Era:
+Postmodernist Period
+
+Tags:
+naval
+aviation
+logistics
+
+Description:
+Naval vessel designed to support and operate seaplanes
+in remote maritime environments.
+
+
+------------------------------------------------
+IDEA-011
+------------------------------------------------
+
+Name: Hunter Class Frigate
+Domain: Vehicles
+
+Parent Idea: None
+
+Era:
+Postmodernist Period
+
+Tags:
+naval
+military
+
+Description:
+Multi-purpose frigate used for escort and patrol missions.
+
+
+------------------------------------------------
+IDEA-012
+------------------------------------------------
+
+Name: Cyberpunk Car
+Domain: Vehicles
+
+Parent Idea: None
+
+Era:
+Postmodernist Period
+
+Tags:
+civilian
+vehicle
+urban
+
+Description:
+Highly stylized futuristic ground vehicle used in dense
+urban environments.
+
+
+------------------------------------------------
+IDEA-013
+------------------------------------------------
+
+Name: UH-63 Whitehawk Utility Helicopter
+Domain: Vehicles
+
+Parent Idea: None
+
+Era:
+Postmodernist Period
+
+Tags:
+aviation
+military
+utility
+
+Description:
+General purpose helicopter designed for troop transport
+and logistical operations.
+
+
+------------------------------------------------
+IDEA-014
+------------------------------------------------
+
+Name: Barbento BR120 Aircraft
+Domain: Vehicles
+
+Parent Idea: None
+
+Era:
+Postmodernist Period
+
+Tags:
+aviation
+transport
+
+Description:
+Fixed wing aircraft used for medium-range transportation.
+
+
+------------------------------------------------
+IDEA-015
+------------------------------------------------
+
+Name: 7P2 Coil Class Energy Generation Ship
+Domain: Vehicles
+
+Parent Idea: None
+
+Era:
+Planetary Period
+
+Tags:
+energy
+industrial
+spacecraft
+
+Description:
+Large orbital vessel designed to generate power using
+coil-based energy systems to support frontier colonies.
+
+
+------------------------------------------------
+IDEA-016
+------------------------------------------------
+
+Name: Race for Sol Bulldozer
+Domain: Vehicles
+
+Parent Idea: None
+
+Era:
+Race for Sol
+
+Tags:
+construction
+industrial
+planetary
+
+Description:
+Heavy industrial construction vehicle used for early
+planetary surface development.
+
+
+
+------------------------------------------------
+TECHNOLOGY / LOGISTICS
+------------------------------------------------
+
+
+------------------------------------------------
+IDEA-020
+------------------------------------------------
+
+Name: Foldable Cargo Container
+Domain: Technology / Logistics
+
+Parent Idea: None
+
+Era:
+Race for Sol
+
+Tags:
+cargo
+logistics
+containerization
+
+Description:
+Standardized cargo container capable of collapsing for
+return transport to maximize shipping efficiency.
+
+
+------------------------------------------------
+IDEA-171
+------------------------------------------------
+
+Name: Container Retrieval Craft
+Domain: Technology / Logistics
+
+Parent Idea:
+IDEA-020 Foldable Cargo Container
+
+Era:
+Race for Inter Sol
+
+Tags:
+cargo
+spacecraft
+logistics
+
+Description:
+Spacecraft designed to retrieve cargo containers drifting
+in orbital logistics networks.
+
+
+------------------------------------------------
+IDEA-174
+------------------------------------------------
+
+Name: GGO Container Latch Standard
+Domain: Technology / Logistics
+
+Parent Idea:
+IDEA-171 Container Retrieval Craft
+
+Era:
+GGO Hegemony Period
+
+Tags:
+standard
+logistics
+cargo
+ggo
+
+Description:
+Standardized cargo latching mechanism mandated across
+GGO logistics networks.
+
+
+
+------------------------------------------------
+PRODUCTION METHODS
+------------------------------------------------
+
+
+------------------------------------------------
+IDEA-030
+------------------------------------------------
+
+Name: Distributed Microfactory Production
+Domain: Production
+
+Parent Idea: None
+
+Era:
+Planetary Period
+
+Tags:
+manufacturing
+distributed
+industry
+
+Description:
+Industrial production model where small modular factories
+are distributed across settlements and connected via
+logistics networks.
+
+
+------------------------------------------------
+IDEA-031
+------------------------------------------------
+
+Name: Orbital Shipyard Assembly
+Domain: Production
+
+Parent Idea: None
+
+Era:
+Planetary Period
+
+Tags:
+space
+manufacturing
+shipbuilding
+
+Description:
+Large scale orbital shipyard systems used for spacecraft
+construction.
+
+
+------------------------------------------------
+IDEA-032
+------------------------------------------------
+
+Name: Vertical Arcology Manufacturing
+Domain: Production
+
+Parent Idea: None
+
+Era:
+Planetary Period
+
+Tags:
+arcology
+manufacturing
+
+Description:
+Industrial production integrated into vertical megastructures.
+
+
+------------------------------------------------
+ORGANIZATIONS
+------------------------------------------------
+
+
+------------------------------------------------
+IDEA-050
+------------------------------------------------
+
+Name: Sikorski Aircraft Corporation
+Domain: Organization
+
+Parent Idea: None
+
+Era:
+Postmodernist Period
+
+Tags:
+corporation
+aviation
+
+Description:
+Historical aerospace corporation known for helicopter
+development.
+
+
+------------------------------------------------
+IDEA-051
+------------------------------------------------
+
+Name: US Army
+Domain: Organization
+
+Parent Idea: None
+
+Era:
+Postmodernist Period
+
+Tags:
+military
+organization
+
+Description:
+Major military organization of the United States.
+
+
+------------------------------------------------
+IDEA-165
+------------------------------------------------
+
+Name: Terran Biome Diversity Project
+Domain: Organization
+
+Parent Idea: None
+
+Era:
+Planetary Period
+
+Tags:
+terraforming
+ecology
+science
+religious
+
+Description:
+A quasi-religious and scientific organization responsible
+for large scale terraforming missions across newly settled
+worlds.
+
+
+
+
+------------------------------------------------
+IDEA-220
+------------------------------------------------
+
+CSG Experimental Civilizations
+
+spawned-from: IDEA-165 Terran Biome Diversity Project
+
+CSG seeded worlds where human societies derived from
+different historical cultures or constructed cultural
+templates are introduced as civilizational experiments.
+
+
+------------------------------------------------
+IDEA-221
+------------------------------------------------
+
+Seeding Approach Papers (SAP)
+
+spawned-from: IDEA-220
+
+Internal CSG research documents describing a specific
+civilization seeding experiment.
+
+A SAP defines:
+
+- hypothesis
+- cultures used as seeds
+- technological starting conditions
+- ecological parameters
+- intervention rules
+- completion conditions
+
+
+------------------------------------------------
+IDEA-222
+------------------------------------------------
+
+Pre-Contact Culturals
+
+spawned-from: IDEA-221
+
+Civilizations developing under an active SAP that have
+no knowledge of the Cultural Seeding Group.
+
+Intervention policy depends on the SAP and may range
+from strict non-intervention to covert manipulation.
+
+
+------------------------------------------------
+IDEA-223
+------------------------------------------------
+
+Post-Contact Culturals
+
+spawned-from: IDEA-222
+
+Civilizations whose SAP completion conditions have been
+fulfilled and which have been contacted by the CSG.
+
+
+------------------------------------------------
+IDEA-224
+------------------------------------------------
+
+SAP Completion Conditions
+
+spawned-from: IDEA-221
+
+Conditions defined in a Seeding Approach Paper that
+determine when the experiment has fulfilled its
+hypothesis and therefore terminates.
+
+Examples:
+
+- reach a defined population
+- develop agriculture
+- destroy neighboring civilization
+- become pacifist society
+- achieve planetary unification
+
+
+------------------------------------------------
+IDEA-225
+------------------------------------------------
+
+Corporate Interaction on Iranian-Romanian Planet Persanul
+
+spawned-from: IDEA-220
+
+CSG experimental planet Persanul hosts Iranian and
+Romanian cultural seeds on separate continents.
+
+A corporation operates from a southern peninsula and
+orbital station producing nursery goods (pacifiers,
+diapers, infant supplies) in large quantities for the
+Transfer Hansa market, violating the CSG no-contact
+mandate.
+
+
+------------------------------------------------
+IDEA-220
+------------------------------------------------
+
+CSG Experimental Civilizations
+
+spawned-from: IDEA-165 Terran Biome Diversity Project
+
+CSG seeded worlds where human societies derived from
+different historical cultures or constructed cultural
+templates are introduced as civilizational experiments.
+
+
+------------------------------------------------
+IDEA-221
+------------------------------------------------
+
+Seeding Approach Papers (SAP)
+
+spawned-from: IDEA-220
+
+Internal CSG research documents describing a specific
+civilization seeding experiment.
+
+A SAP defines:
+
+- hypothesis
+- cultures used as seeds
+- technological starting conditions
+- ecological parameters
+- intervention rules
+- completion conditions
+
+
+------------------------------------------------
+IDEA-222
+------------------------------------------------
+
+Pre-Contact Culturals
+
+spawned-from: IDEA-221
+
+Civilizations developing under an active SAP that have
+no knowledge of the Cultural Seeding Group.
+
+Intervention policy depends on the SAP and may range
+from strict non-intervention to covert manipulation.
+
+
+------------------------------------------------
+IDEA-223
+------------------------------------------------
+
+Post-Contact Culturals
+
+spawned-from: IDEA-222
+
+Civilizations whose SAP completion conditions have been
+fulfilled and which have been contacted by the CSG.
+
+
+------------------------------------------------
+IDEA-224
+------------------------------------------------
+
+SAP Completion Conditions
+
+spawned-from: IDEA-221
+
+Conditions defined in a Seeding Approach Paper that
+determine when the experiment has fulfilled its
+hypothesis and therefore terminates.
+
+Examples:
+
+- reach a defined population
+- develop agriculture
+- destroy neighboring civilization
+- become pacifist society
+- achieve planetary unification
+
+
+------------------------------------------------
+IDEA-225
+------------------------------------------------
+
+Corporate Interaction on Iranian-Romanian Planet Persanul
+
+spawned-from: IDEA-220
+
+CSG experimental planet Persanul hosts Iranian and
+Romanian cultural seeds on separate continents.
+
+A corporation operates from a southern peninsula and
+orbital station producing nursery goods (pacifiers,
+diapers, infant supplies) in large quantities for the
+Transfer Hansa market, violating the CSG no-contact
+mandate.
+
+
+------------------------------------------------
+IDEA-226
+------------------------------------------------
+
+Rust Sector Culture: Oxidation Bands
+
+spawned-from: Rust Sector Industrial Architecture
+
+Rust Sector industrial buildings often feature a distinctive
+oxidized metal band running around the outer wall of the
+structure.
+
+Characteristics:
+
+- angular concrete buildings
+- minimal windows
+- stealth-like industrial geometry
+- oxidized metal band encircling the structure
+
+The oxidation band serves both cultural and practical purposes.
+
+Functions:
+
+- indicates facility function
+- indicates plant age and expansion phase
+- acts as a visual industrial classification system
+- becomes a recognizable cultural marker of Rust Sector industry
+
+
+------------------------------------------------
+IDEA-227
+------------------------------------------------
+
+Rust Sector Industrial Architecture
+
+spawned-from: Rust Sector Manufacturing Culture
+
+Manufacturing plants constructed across the Rust Sector
+develop a distinctive architectural style.
+
+Core characteristics:
+
+- angular reinforced concrete structures
+- low-profile, stealth-like geometries
+- minimal windows
+- heavy cargo gates and exterior pipe corridors
+- modular expansion joints
+- oxidized metal function bands around outer walls
+
+Plant complexes usually follow a radial hub layout.
+
+A central industrial core contains the primary production
+process, while long linear production arms extend outward
+from the hub.
+
+Facilities often grow organically as new arms are added
+over time, producing star-shaped industrial complexes
+visible from orbit.
+
+
+------------------------------------------------
+IDEA-228
+------------------------------------------------
+
+Orbital Graveyards
+
+spawned-from: Interstellar Infrastructure and Space Traffic
+
+Large accumulations of derelict spacecraft, station modules,
+industrial equipment, and debris that collect in stable
+orbital regions of older star systems.
+
+The composition varies depending on the system’s industrial,
+military, and trade history.
+
+These graveyards often become secondary economies centered
+around salvage operations and scrap processing.
+
+
+------------------------------------------------
+IDEA-229
+------------------------------------------------
+
+Keggel Class – Hansa Bulk Carrier
+
+spawned-from: Transfer Hansa Logistics Fleet
+
+The Keggel Class Hansa Bulk Carrier is a purpose-built
+system-level bulk container transport vessel used
+throughout the Transfer Hansa trade network.
+
+The design philosophy follows a common Hansa logistics
+principle:
+
+large interstellar carrier ships move fleets of smaller
+system-autonomous delivery vessels.
+
+The Keggel Class operates only within star systems.
+
+Characteristics:
+
+- optimized for high-volume container transport
+- minimal crew requirements
+- long endurance system-level propulsion
+- modular container docking structures
+- simple, robust construction
+
+For interstellar travel, Keggel Class carriers dock to
+much larger Transfer Hansa interstellar freight ships
+which transport entire groups of system carriers between stars.
+
+The class was produced in immense numbers and became one
+of the most common cargo vessels in the Hansa network.
+
+
+------------------------------------------------
+IDEA-230
+------------------------------------------------
+
+Name: Oxyde System
+Domain: Systems
+
+Parent Idea: None
+
+Era:
+Planetary Period
+Trifecta Dominion Period
+Rust Sector Revolution
+
+Tags:
+system
+industry
+metal-rich
+rust-sector
+
+Description:
+Metal-rich stellar system orbiting a bright red dwarf star.
+
+The system formed from unusually metal-dense nebular material,
+making its planets and asteroid bodies rich in industrial metals.
+
+Because the habitable zone lies close to the star, industrial
+activity concentrated in the inner system.
+
+During the Planetary Period multiple corporations established
+large-scale industrial infrastructure in the system, including
+orbital shipyards, metallurgical processing stations, and asteroid
+extraction networks.
+
+The primary industrial world became Patina.
+
+During the late Planetary Period, corporate tensions escalated
+into a corporate and mercenary war in the system.
+
+Much of Patina's orbital infrastructure was destroyed during
+the conflict.
+
+After the collapse of corporate authority, Rust Sector forces
+stabilized the system and Patina declared independence from
+the Gold Sector.
+
+The system subsequently joined the Rust Sector faction.
+
+
+
+------------------------------------------------
+IDEA-231
+------------------------------------------------
+
+Name: Planet Patina
+Domain: Locations
+
+Parent Idea:
+IDEA-230 Oxyde System
+
+Era:
+Planetary Period
+Trifecta Dominion Period
+Rust Sector Revolution
+
+Tags:
+planet
+industrial-world
+bdp
+terraforming
+
+Description:
+Industrial production world in the Oxyde System.
+
+Patina was originally selected as a Terran Biome Diversity
+Project (BDP) terraforming world and seeded using an early
+ark-seed colonization method.
+
+These slow interstellar missions assumed long isolation
+periods during which terraforming would gradually stabilize
+the planetary environment.
+
+However, rapid advances in interstellar propulsion during the
+Planetary Period allowed corporate expansion fleets to reach
+the Oxyde System before the terraforming process was complete.
+
+Corporate prospectors discovered a partially terraformed world
+in a metal-rich system and converted the planet into a heavy
+industrial production center.
+
+Terraforming efforts were gradually abandoned while the
+planet developed large metallurgical complexes, factory
+arcologies, and orbital ship construction infrastructure.
+
+The planet's name reflects the oxidized industrial landscapes
+that dominate its surface.
+
+
+
+------------------------------------------------
+IDEA-232
+------------------------------------------------
+
+Name: Patina Orbital Graveyard
+Domain: Locations
+
+Parent Idea:
+IDEA-231 Planet Patina
+
+Era:
+Late Planetary Period
+Trifecta Dominion Period
+
+Tags:
+orbital
+salvage
+wreck-field
+shipyard
+
+Description:
+Large orbital debris region surrounding Patina.
+
+The graveyard formed during the corporate and mercenary war
+of the late Planetary Period when large portions of Patina's
+orbital infrastructure were destroyed.
+
+The debris field consists of several distinct orbital bands.
+
+Shipyard Ruin Belts:
+Destroyed orbital shipyards, fabrication frames, and partially
+completed spacecraft hulls drifting in large skeletal structures.
+
+Battlefield Debris Fields:
+Clusters of wrecked corporate fleet vessels and mercenary
+combat ships remaining from the orbital battles.
+
+Residual Logistics Orbits:
+Smaller regions containing abandoned cargo infrastructure
+from the earlier corporate dominance period, including
+cargo containers, docking frameworks, and transfer stations.
+
+The graveyard later became the center of the system's
+salvage economy.
+
+
+
+------------------------------------------------
+IDEA-233
+------------------------------------------------
+
+Name: Capital Pursuits
+Domain: Organization
+
+Parent Idea: None
+
+Era:
+Planetary Period
+
+Tags:
+corporation
+frontier
+speculative
+industry
+
+Description:
+Frontier speculative industrial corporation active during
+the Planetary Period.
+
+The company specialized in identifying resource-rich frontier
+systems and rapidly deploying large-scale industrial
+infrastructure projects designed to generate speculative
+investment value.
+
+Capital Pursuits commissioned the Patina Omni-Production
+Shipyard using an early generative industrial design AI
+that autonomously expanded the facility over time.
+
+The project created a large speculative valuation boom,
+after which the company sold the infrastructure to the
+Million Labels Group.
+
+
+
+------------------------------------------------
+IDEA-234
+------------------------------------------------
+
+Name: Million Labels Group
+Domain: Organization
+
+Parent Idea: None
+
+Era:
+Planetary Period
+Trifecta Dominion Period
+
+Tags:
+megacorporation
+conglomerate
+brands
+gold-sector
+
+Description:
+Massive corporate conglomerate known for operating an
+enormous network of industrial and commercial brands.
+
+The conglomerate functions as a form of corporate
+feudalism centered around powerful production houses
+in the Gold Sector core.
+
+Thousands of peripheral labels operate across frontier
+systems and appear outwardly independent but rely on
+centralized industrial infrastructure controlled by
+the conglomerate.
+
+Publicly the system is presented as a cooperative
+network of companies, encouraging smaller firms to
+join the structure.
+
+Over time most labels become economically absorbed
+into the conglomerate's production ecosystem.
+
+Million Labels Group acquired the Patina Omni-Production
+Shipyard from Capital Pursuits during the Planetary Period.
+
+
+------------------------------------------------
+IDEA-236
+------------------------------------------------
+
+Name: Patina Omni-Production Shipyard
+Domain: Production
+
+Parent Idea:
+IDEA-231 Planet Patina
+IDEA-233 Capital Pursuits
+
+Era:
+Planetary Period
+Late Planetary Period
+
+Tags:
+shipyard
+ai-designed
+industrial
+production
+
+Description:
+Large orbital ship construction complex originally built in
+orbit around Patina during the corporate expansion of the
+Planetary Period.
+
+The facility was commissioned by the frontier speculative
+corporation Capital Pursuits and designed using an early
+generative industrial design AI.
+
+Instead of a traditional shipyard layout, the facility grew
+along a central structural spine called the main bus.
+
+This bus carried power conduits, logistics rails, structural
+trusses, and data networks.
+
+Whenever production capacity increased, the AI attached
+additional fabrication modules to the spine.
+
+Over time the complex expanded into a massive irregular
+network of assembly frames, welding arms, fabrication pods,
+cargo manipulators, and docking structures.
+
+Repeated modifications by engineers and management created
+large amounts of industrial control "spaghetti code".
+
+Although inefficient and difficult to maintain, the shipyard
+remained extremely productive due to the Oxyde system's
+abundant metal resources and permissive industrial environment.
+
+The facility became one of the largest spacecraft construction
+sites in the system.
+
+Large portions of the structure were destroyed during the
+corporate and mercenary war of the late Planetary Period and
+now drift in the Patina Orbital Graveyard.
+
+
+
+------------------------------------------------
+IDEA-237
+------------------------------------------------
+
+Name: Oxyde Container Spine Freighter
+Domain: Vehicles
+
+Parent Idea:
+IDEA-236 Patina Omni-Production Shipyard
+
+Era:
+Planetary Period
+Late Planetary Period
+
+Tags:
+freighter
+cargo
+industrial
+logistics
+
+Description:
+Mass-produced intra-system cargo freighter built at the
+Patina Omni-Production Shipyard.
+
+The vessel consists primarily of a long structural truss
+spine equipped with standardized container clamps.
+
+Cargo containers are mounted externally along the spine
+rather than enclosed within a hull.
+
+This configuration made the ships inexpensive to manufacture,
+easy to repair, and highly adaptable to industrial logistics.
+
+The ships transported cargo between asteroid mines, orbital
+factories, surface industrial arcologies, and shipyard
+facilities throughout the Oxyde system.
+
+Thousands were produced during the system's corporate
+industrial boom.
+
+The freighters were also designed to dock onto large
+interstellar carrier structures known as Patina Porcupines.
+
+
+
+------------------------------------------------
+IDEA-238
+------------------------------------------------
+
+Name: Patina Porcupine Carrier Architecture
+Domain: Vehicles
+
+Parent Idea:
+IDEA-236 Patina Omni-Production Shipyard
+
+Era:
+Planetary Period
+Late Planetary Period
+
+Tags:
+interstellar
+carrier
+cargo
+modular
+
+Description:
+Large modular interstellar cargo carrier architecture
+developed at the Patina Omni-Production Shipyard.
+
+The Porcupine consists of a long central truss structure
+equipped with docking rails along its entire length.
+
+System-scale container spine freighters can attach directly
+to the structure.
+
+When assembled for interstellar travel dozens of freighters
+dock radially along the spine, producing a dense star-like
+shape resembling a porcupine or sea urchin.
+
+During transit the attached freighters function as cargo
+modules while the carrier provides propulsion and navigation.
+
+Upon arrival in another system the freighters detach and
+resume local cargo distribution.
+
+The Porcupine architecture allowed industrial systems like
+Oxyde to move enormous volumes of manufactured goods between
+star systems.
+
+
+
+------------------------------------------------
+IDEA-239
+------------------------------------------------
+
+Name: Porcupine Engine Module System
+Domain: Technology / Logistics
+
+Parent Idea:
+IDEA-238 Patina Porcupine Carrier Architecture
+
+Era:
+Planetary Period
+Late Planetary Period
+
+Tags:
+propulsion
+interstellar
+modular
+transport
+
+Description:
+Propulsion architecture used by Patina Porcupine carriers.
+
+The Porcupine itself is only the structural truss carrier.
+
+Interstellar propulsion is provided by a detachable engine
+module mounted at one end of the structure.
+
+The engine module contains the interstellar drive system,
+navigation core, communication arrays, and primary power
+generation systems.
+
+Because the propulsion unit is detachable, Porcupine carriers
+are identified by the name of their engine module.
+
+Standard designation format:
+
+PP - Engine Name
+
+Examples:
+
+PP - Iron Wake
+PP - Solar Hinge
+PP - Red Transit
+PP - Foundry Flame
+
+Engine modules can be replaced or refitted while the truss
+carrier continues operating.
+
+------------------------------------------------
+IDEA-240
+------------------------------------------------
+
+Name: Patina Omni-Production Shipyard
+Domain: Production
+
+Parent Idea:
+IDEA-231 Planet Patina
+IDEA-233 Capital Pursuits
+
+Era:
+Planetary Period
+Late Planetary Period
+
+Tags:
+shipyard
+ai-designed
+industrial
+production
+
+Description:
+Large orbital ship construction complex built in orbit around
+Patina during the corporate industrial expansion of the
+Planetary Period.
+
+The facility was commissioned by the frontier speculative
+corporation Capital Pursuits and designed using an early
+generative industrial design AI.
+
+The structure grew along a central structural spine known as
+the main bus which carried power conduits, logistics rails,
+structural trusses, and data networks.
+
+Whenever production capacity increased, new fabrication modules
+were attached to the spine by the design system.
+
+Repeated modification of the control systems by engineers and
+corporate management produced large amounts of industrial
+control "spaghetti code".
+
+Despite its inefficiencies, the shipyard became extremely
+productive due to the abundant metal resources of the Oxyde
+system and permissive industrial conditions.
+
+The shipyard produced large numbers of industrial spacecraft
+including cargo freighters and interstellar carrier structures.
+
+Large parts of the complex were destroyed during the corporate
+and mercenary war of the late Planetary Period and now form
+major wreck clusters in the Patina Orbital Graveyard.
+
+
+
+------------------------------------------------
+IDEA-241
+------------------------------------------------
+
+Name: Oxyde Container Spine Freighter
+Domain: Vehicles
+
+Parent Idea:
+IDEA-240 Patina Omni-Production Shipyard
+
+Era:
+Planetary Period
+Late Planetary Period
+
+Tags:
+freighter
+cargo
+industrial
+logistics
+
+Description:
+Mass-produced intra-system cargo vessel produced at the
+Patina Omni-Production Shipyard.
+
+The ship consists primarily of a long structural truss spine
+equipped with standardized cargo container clamps.
+
+Cargo containers are mounted externally along the spine rather
+than enclosed inside a hull.
+
+This configuration made the ships inexpensive to manufacture,
+easy to repair, and adaptable to industrial logistics networks.
+
+These freighters transported cargo between asteroid mines,
+orbital factories, surface industrial arcologies, and shipyard
+facilities throughout the Oxyde system.
+
+Thousands were produced during the system's industrial boom.
+
+The vessels were also designed to attach directly to the
+interstellar carrier architecture known as the Patina Porcupine.
+
+
+
+------------------------------------------------
+IDEA-242
+------------------------------------------------
+
+Name: Patina Porcupine Carrier Architecture
+Domain: Vehicles
+
+Parent Idea:
+IDEA-240 Patina Omni-Production Shipyard
+
+Era:
+Planetary Period
+Late Planetary Period
+
+Tags:
+carrier
+interstellar
+cargo
+modular
+
+Description:
+Large modular interstellar cargo carrier architecture developed
+at the Patina Omni-Production Shipyard.
+
+The Porcupine consists of a long structural truss carrier
+equipped with docking rails along its length.
+
+Oxyde Container Spine Freighters can attach radially along
+the truss during interstellar transport.
+
+When assembled for transit the carrier forms a dense star-like
+structure resembling a sea urchin or porcupine.
+
+The Porcupine itself contains no propulsion system.
+
+Instead the carrier is powered by a detachable engine module
+mounted at one end of the structure.
+
+Individual carriers are identified by the engine module name
+using the designation format:
+
+PP - Engine Name.
+
+
+
+------------------------------------------------
+IDEA-243
+------------------------------------------------
+
+Name: Porcupine Engine Module System
+Domain: Technology / Logistics
+
+Parent Idea:
+IDEA-242 Patina Porcupine Carrier Architecture
+
+Era:
+Planetary Period
+Late Planetary Period
+
+Tags:
+propulsion
+interstellar
+transport
+modular
+
+Description:
+Propulsion architecture used by Patina Porcupine carrier
+structures.
+
+The engine module contains the interstellar drive system,
+navigation systems, communications equipment, and main power
+generation systems.
+
+Because the propulsion unit is detachable, Porcupine carriers
+are identified by the name of the engine module attached to
+the truss carrier.
+
+Engine modules can be replaced while the carrier structure
+continues operating.
+
+
+
+------------------------------------------------
+IDEA-244
+------------------------------------------------
+
+Name: Patina Wreckage Rings
+Domain: Locations
+
+Parent Idea:
+IDEA-232 Patina Orbital Graveyard
+
+Era:
+Late Planetary Period
+Trifecta Dominion Period
+
+Tags:
+orbit
+debris
+graveyard
+navigation
+
+Description:
+Narrow orbital debris bands surrounding Patina.
+
+The rings originated from automated orbital debris management
+systems used during the industrial operation of the Patina
+shipyards.
+
+Debris, scrap material, and damaged spacecraft were gradually
+pushed into designated orbital lanes to keep shipping routes
+clear.
+
+After the destruction of the shipyard these systems continued
+operating for decades, collecting war debris and depositing
+it into the rings.
+
+The result is a set of relatively stable orbital wreckage belts
+containing large numbers of destroyed ships, industrial
+structures, and cargo infrastructure.
+
+
+
+------------------------------------------------
+IDEA-245
+------------------------------------------------
+
+Name: Orbital Pusher Craft
+Domain: Technology / Logistics
+
+Parent Idea:
+IDEA-244 Patina Wreckage Rings
+
+Era:
+Planetary Period
+Trifecta Dominion Period
+
+Tags:
+automation
+orbital
+debris-management
+
+Description:
+Small automated spacecraft originally used to maintain orbital
+traffic corridors around the Patina industrial complex.
+
+The craft slowly reposition debris objects using low-thrust
+propulsion and tractor systems and guide them into designated
+wreckage rings.
+
+After the corporate war many pusher craft continued operating
+autonomously and gradually organized the massive war debris
+field into the wreckage ring system.
+
+
+
+------------------------------------------------
+IDEA-246
+------------------------------------------------
+
+Name: Porcupine Wreck Populations
+Domain: Vehicles
+
+Parent Idea:
+IDEA-242 Patina Porcupine Carrier Architecture
+IDEA-232 Patina Orbital Graveyard
+
+Era:
+Late Planetary Period
+Trifecta Dominion Period
+
+Tags:
+wrecks
+carrier
+salvage
+
+Description:
+Large numbers of Porcupine carriers were present in orbit
+around Patina when the corporate war destroyed much of the
+system's orbital infrastructure.
+
+Several categories of Porcupine wrecks exist in the graveyard.
+
+Unfinished carriers still attached to shipyard construction
+frames.
+
+Abandoned operational carriers that lost their engine modules.
+
+Carrier clusters that had been parked in staging areas when
+the war began.
+
+Many of these structures remain intact and are major salvage
+targets.
+
+
+
+------------------------------------------------
+IDEA-247
+------------------------------------------------
+
+Name: Patina Orbital Object Registry
+Domain: Systems
+
+Parent Idea:
+IDEA-244 Patina Wreckage Rings
+
+Era:
+Planetary Period
+Trifecta Dominion Period
+
+Tags:
+registry
+navigation
+traffic-control
+
+Description:
+Orbital cataloging system used to track debris objects within
+the Patina wreckage rings.
+
+Objects are identified using the format:
+
+Patina OO-[Ring Number]-[Object Number]
+
+Example:
+
+Patina OO-7-285
+
+OO indicates Orbital Object.
+
+The first number indicates the wreckage ring.
+
+The second number indicates the object's sequential index
+within the ring.
+
+The registry likely originates from the industrial traffic
+control systems that once managed the shipyard environment.
+
+
+
+------------------------------------------------
+IDEA-248
+------------------------------------------------
+
+Name: MLG Tactical Fighter Series
+Domain: Vehicles
+
+Parent Idea:
+IDEA-234 Million Labels Group
+
+Era:
+Late Planetary Period
+
+Tags:
+fighter
+security
+corporate-war
+
+Description:
+Series of mass-produced orbital interceptor fighters used by
+security forces operating within the Million Labels Group
+industrial network.
+
+These fighters were designed for rapid production and large
+swarm defense operations around industrial infrastructure.
+
+Ships follow the designation system:
+
+MLG-Tac [Series Number] "Corporation Name"
+
+The name refers to one of the corporate labels within the
+Million Labels Group brand network.
+
+The fighters were often flown by private security contractors
+operating under the operational command of the Million Labels
+Group security fleet.
+
+
+
+------------------------------------------------
+IDEA-249
+------------------------------------------------
+
+Name: Patina OO-7-285
+Domain: Locations
+
+Parent Idea:
+IDEA-247 Patina Orbital Object Registry
+IDEA-246 Porcupine Wreck Populations
+
+Era:
+Late Planetary Period
+Trifecta Dominion Period
+
+Tags:
+wreck
+porcupine
+graveyard
+
+Description:
+Porcupine carrier cluster located in Patina Wreckage Ring 7.
+
+The structure still contains multiple Container Spine
+Freighters attached to the carrier truss.
+
+The carrier lost its engine module during the Oxyde corporate
+war after a damaged interceptor fighter collided with the
+carrier cluster.
+
+The interceptor involved was MLG-Tac 557 "Piratha Corp",
+operated by a private security contractor under Million
+Labels Group command.
+
+After the collision the powerless carrier drifted outward and
+was eventually moved into Wreckage Ring 7 by automated orbital
+pusher craft.
+
+The object is cataloged as Patina OO-7-285.
+
+
+------------------------------------------------
+IDEA-250
+------------------------------------------------
+
+Name: BDP Terraforming Phases
+Domain: Terraforming
+
+Parent Idea: None
+
+Era:
+Planetary Period
+Trifecta Dominion Period
+
+Tags:
+terraforming
+bdp
+ecology
+planetary_engineering
+
+Description:
+Standardized terraforming methodology used by the Terran
+Biome Diversity Project (BDP). Instead of introducing full
+Earth ecosystems at once, planetary biospheres are constructed
+gradually in sequential ecological phases to stabilize planetary
+biogeochemical cycles.
+
+Phase 1 — Planetary Stabilization
+Atmospheric regulation, microbial biosphere introduction,
+hydrological cycle formation, ocean chemistry stabilization,
+and temperature balancing.
+
+Phase 2 — Structural Ecosystems
+Introduction of organisms that physically structure environments
+such as reef-building organisms, kelp forests, marsh vegetation,
+microbial mats, and soil-forming plant systems.
+
+Phase 3 — Primary Ecological Web
+Introduction of herbivores, plankton systems, detritivores,
+reef grazers, and small omnivores to stabilize nutrient cycles.
+
+Phase 4 — Predator Layer
+Predators are introduced after lower trophic layers demonstrate
+long-term stability. These regulate population dynamics.
+
+Phase 5 — Biodiversity Expansion
+Expansion of ecological complexity through specialized niches,
+rare species, and complex predator–prey interactions.
+
+
+
+------------------------------------------------
+IDEA-251
+------------------------------------------------
+
+Name: Tibnen
+Domain: Places
+
+Parent Idea:
+IDEA-250 BDP Terraforming Phases
+
+Era:
+Planetary Period
+Trifecta Dominion Period
+
+Tags:
+planet
+terraforming
+bdp
+biosphere
+
+Description:
+Tibnen is a temperate oceanic world located in a distant
+star system. The planet was terraformed by the Terran
+Biome Diversity Project and remained largely untouched
+by non-BDP humans until the middle Trifecta Dominion Period.
+
+Before terraforming, Tibnen was a dry rocky world with
+limited shallow seas. The planetary system contained a ring
+of ice asteroids that were redirected during terraforming
+operations to increase planetary water reserves and stabilize
+the hydrological cycle.
+
+One of the planet’s most prominent features is a massive
+ancient impact basin with a diameter of approximately
+1057 km.
+
+The basin contains a central rebound mountain and a
+ring-shaped shallow sea. Reef ecosystems developed along
+the inner and outer basin slopes, forming one of the
+primary marine biodiversity regions on the planet.
+
+
+
+------------------------------------------------
+IDEA-252
+------------------------------------------------
+
+Name: BDP Ark Operations
+Domain: Terraforming Infrastructure
+
+Parent Idea:
+IDEA-250 BDP Terraforming Phases
+
+Era:
+Planetary Period
+
+Tags:
+bdp
+terraforming
+infrastructure
+ark
+
+Description:
+Large-scale BDP terraforming projects are often conducted
+from Ark-class vessels rather than permanent planetary
+settlements.
+
+These vessels function as mobile planetary engineering
+platforms and ecological research stations.
+
+Ark vessels typically provide:
+
+• biological storage and transport for introduced species
+• research laboratories
+• command centers for planetary engineering operations
+• habitation for BDP personnel
+
+This operational model minimizes long-term human presence
+on developing biospheres.
+
+
+
+------------------------------------------------
+IDEA-253
+------------------------------------------------
+
+Name: BDP Observation Posts
+Domain: Terraforming Infrastructure
+
+Parent Idea:
+IDEA-250 BDP Terraforming Phases
+
+Era:
+Planetary Period
+Trifecta Dominion Period
+
+Tags:
+bdp
+observation
+monitoring
+cryosleep
+
+Description:
+After planetary ecosystems stabilize, the BDP withdraws
+most operational personnel and infrastructure. Long-term
+monitoring is performed from orbital installations designated:
+
+BDP Observation Post Number [X]
+
+These posts monitor biosphere stability, ecological evolution,
+and possible external interference.
+
+Observation posts are staffed by small guardian detachments.
+Most personnel remain in long-duration cryogenic suspension
+and awaken only for scheduled inspection cycles, automated
+system alerts, or major ecological disturbances.
+
+
+
+____________________________________________________________________________
+
+254
+
+Manu Mano – Port Archipelago World
+
+System: Raspanstor System
+Planet: Manu Mano
+Type: Terraformed logistics world
+
+Manu Mano is a major logistics planet whose ports are located inside several large
+ancient impact craters that formed before the planet was terraformed.
+
+After the hydrosphere was established, these craters filled with water and became
+large natural harbor basins.
+
+The crater rims form archipelagos of islands where the main population centers are
+located. The crater basins themselves host extensive floating port infrastructure.
+
+Floating platforms inside the crater harbors contain container terminals, crane
+forests, shuttle landing zones and cargo processing facilities.
+
+Cargo movement relies on a combination of large crane systems and autonomous cargo
+transports moving through the port districts, loudly beeping as workers navigate
+around them.
+
+Many spacecraft arriving at Manu Mano are capable of landing on water and touch
+down directly inside the protected crater harbors.
+
+The overall atmosphere of the rim island cities is chaotic but relaxed, with a
+Caribbean-style port culture of music, street food and open bars frequented by
+logistics workers.
+
+Most residents work directly in logistics, while smaller local industries exist
+mainly to supplement the company store economy.
+
+____________________________________________________________________________
+
+255
+
+Manu Mano Rocket Fuel Complex
+
+Location: Rim Island – Crater Harbor
+Planet: Manu Mano
+
+A major industrial installation on Manu Mano is a rocket fuel production complex
+located along the coastline of a rim island.
+
+The facility draws seawater from the crater harbor using massive intake pipes
+extending deep into the ocean.
+
+Water is processed through electrolysis systems to produce liquid hydrogen and
+liquid oxygen rocket propellant, with smaller methane production lines operating
+alongside the primary process.
+
+The produced propellant is pumped through high-pressure pipelines climbing the
+crater rim mountains to an elevated launch platform at the summit.
+
+This separates hazardous fuel production from the dense port platforms inside the
+crater basin while allowing spacecraft to launch from a high-altitude site with
+clear ascent corridors.
+
+Characteristic elements include refinery towers, cryogenic storage tanks, large
+seawater intake pipes and fuel pipelines running up the mountain slopes.
+
+____________________________________________________________________________
+
+256
+
+Port Flying Boats (Manu Mano)
+
+Specialized flying boats operate throughout the crater harbors of Manu Mano.
+
+These aircraft function as harbor service craft connecting water-landed spacecraft,
+floating port platforms and the rim island settlements.
+
+Typical tasks include crew transport, cargo shuttling, harbor inspection and ship
+coordination.
+
+Flying boats are one of the most recognizable vehicles in the Raspanstor system
+ports.
+
+____________________________________________________________________________
+
+257
+
+Industrial Fests
+
+Industrial fests are ceremonial gatherings originating on heavily industrialized
+worlds.
+
+They take place in large halls heated to sauna-like temperatures recreating the
+conditions of traditional heavy industry.
+
+During the fest performers enact an industrial theater in which dancers and
+workers collaboratively produce a ceremonial Werkstück.
+
+Participants are invited to join by hammering metal or performing rhythmic
+pseudo-production actions, creating a collective industrial rhythm.
+
+Depending on the tradition the produced Werkstück may be symbolic or later used
+as a real functional object.
+
+____________________________________________________________________________
+
+258
+
+Salvage Pilgrimages
+
+In some industrial cultures individuals undertake salvage pilgrimages to
+historically significant sites such as abandoned factories, old infrastructure
+zones or battlefield wreck fields.
+
+Participants recover a small piece of metal or machinery which is later
+incorporated into tools, personal equipment or workshop shrines.
+
+The practice symbolizes industrial lineage and the continuity of labor.
+
+____________________________________________________________________________
+
+259
+
+Bismark Oil Fields
+
+Planet: Bismark
+
+Bismark is an industrialized world whose surface was devastated during a major war.
+
+Large regions of the planet became hydrocarbon sludge fields composed of drilling
+waste, crude oil and refinery byproducts.
+
+Industrial infrastructure was rebuilt above the polluted terrain using elevated
+steel frameworks, pipe bridges and maintenance walkways.
+
+Older transport systems such as large industrial rail corridors remain embedded
+within the structures but are often abandoned.
+
+____________________________________________________________________________
+
+260
+
+Rust Sector Oxidation Culture
+
+Across Rust Sector industrial worlds many buildings contain exposed metal bands
+running horizontally around the structure.
+
+Originally these bands indicated industrial function, production sector and
+operational age.
+
+Because the metal was intentionally exposed it oxidized over time.
+
+In Rust Sector culture oxidation became a symbol of endurance and continued
+usefulness. Machines and infrastructure that remain operational despite corrosion
+are often valued more highly than newly manufactured replacements.
+
+The practice originated in an industrial advertising campaign on Oxyde but was
+later adopted by revolutionary movements opposing the MLG and eventually became
+a widespread cultural aesthetic.
+
+____________________________________________________________________________
+
+261
+
+Banner in the Manor City
+
+Illustration concept.
+
+A revolutionary moment in a major cultural city on a CSG world.
+
+A large banner is unfurled across the facade of an important civic building
+carrying the slogan:
+
+“Thus always onto tyrants.”
+
+The act has a theatrical quality typical for cultural revolutions in CSG cities.
+
+As one observer described:
+
+„Es war wie alles ernst gemeinte ein bisschen albern, das nahm seiner Kraft
+nichts.“
+
+The scene captures the paradox of revolutionary symbolism: earnest conviction
+combined with a certain self-aware absurdity that does not diminish its power.
+
+____________________________________________________________________________
+
+
+------------------------------------------------
+IDEA-262
+------------------------------------------------
+
+Name: Rust Sector Bolt Class – Interstellar Vessel
+Domain: Vehicles
+
+Parent Idea:
+
+Era:
+Trifecta Dominion Period
+
+Tags:
+rust-sector
+spacecraft
+interstellar
+cargo
+infiltration
+
+Description:
+The Bolt Class is a Rust Sector interstellar cargo and infiltration vessel
+characterized by an extremely narrow needle-like hull designed to minimize
+the probability of micro-collisions during interstellar transit.
+
+The ship resembles a long screw or needle rather than a conventional wide
+spacecraft. This geometry reduces the forward cross-section exposed to
+high-velocity dust particles encountered between star systems.
+
+The vessel is built around a central structural spine ending in a reinforced
+needle tip containing impact shielding and forward sensors.
+
+Cargo and mission modules attach externally along the central span while
+maintaining a very small forward profile. Some modules function as detachable
+infiltration pods capable of independent operations.
+
+During interstellar travel the vessel rotates along its longitudinal axis,
+spreading micro-impact wear across the hull while generating partial
+artificial gravity.
+
+Because of the narrow hull the ship cannot produce full Earth gravity.
+The rear crew habitat section, where the diameter is largest, reaches
+approximately 0.7 g.
+
+The ship employs a hybrid propulsion architecture consisting of a deployable
+lightsail mounted along the central spine for interstellar acceleration and
+large ion engines used for deceleration and maneuvering within star systems.
+
+The vessel also features docking ports for Rust Sector Symbiont Ships,
+smaller spacecraft that attach using standardized interface modules.
+
+
+------------------------------------------------
+IDEA-263
+------------------------------------------------
+
+Name: Rust Sector Symbiont Interface Module
+Domain: Vehicles
+
+Parent Idea:
+Rust Sector Bolt Class – Interstellar Vessel
+
+Era:
+Trifecta Dominion Period
+
+Tags:
+rust-sector
+spacecraft
+docking
+systems
+
+Description:
+The Rust Sector Symbiont Interface Module is a standardized docking and
+integration system used across many Rust Sector vessels.
+
+The module allows smaller spacecraft, known as symbiont ships, to attach
+securely to a larger host vessel.
+
+The interface provides structural locking, power transfer, data exchange,
+and life-support integration.
+
+The standardization of this system allows many different types of symbiont
+craft to operate with a variety of larger vessels without requiring
+custom docking mechanisms.
+
+
+------------------------------------------------
+IDEA-264
+------------------------------------------------
+
+Name: Rust Sector Symbiont Ships
+Domain: Vehicles
+
+Parent Idea:
+Rust Sector Symbiont Interface Module
+
+Era:
+Trifecta Dominion Period
+
+Tags:
+rust-sector
+spacecraft
+auxiliary
+modular
+
+Description:
+Symbiont ships are smaller spacecraft designed to operate in conjunction
+with larger Rust Sector vessels through the Symbiont Interface Module.
+
+Rather than designing large ships to perform every possible task,
+Rust Sector engineering frequently relies on ecosystems of cooperating
+craft.
+
+Symbiont ships may fulfill many roles including reconnaissance,
+repair operations, cargo transfer, inspection, infiltration, or
+security missions.
+
+Large vessels such as the Bolt Class may carry several different
+symbiont ships simultaneously depending on mission requirements.
+
+------------------------------------------------
+IDEA-262
+------------------------------------------------
+
+Name: Dorcas Gazelle
+Domain: Species
+
+Parent Idea:
+
+Era:
+
+Tags:
+earth-reference
+herbivore
+ungulate
+prey-species
+
+Description:
+The Dorcas gazelle (Gazella dorcas) is a small antelope native to arid
+and semi-arid regions of North Africa and the Middle East.
+
+The species is highly adapted to open terrain such as steppe, savanna,
+and desert grasslands. It survives long periods without direct water
+intake by deriving moisture from plants and metabolic processes.
+
+In planetary ecosystems it functions well as a fast-moving herd grazer
+occupying open plains. Its high reproductive rate and herd behavior
+make it a suitable primary prey species for medium and large predators.
+
+
+------------------------------------------------
+IDEA-263
+------------------------------------------------
+
+Name: Feral Aurochs-Type Bovine
+Domain: Species
+
+Parent Idea:
+
+Era:
+
+Tags:
+bovine
+herbivore
+megafauna
+terraforming
+
+Description:
+A large grazing bovine species derived from domesticated cattle stock
+that has become feral in sparsely populated terraformed ecosystems.
+
+The species fills a similar ecological niche to the extinct aurochs
+(Bos primigenius), forming large roaming herds across plains and river
+basins.
+
+Adults are extremely large and difficult for most predators to hunt
+directly, but calves and weakened individuals are vulnerable.
+
+The species also produces large carcasses that become an important
+food source for scavengers and opportunistic predators within the
+ecosystem.
+
+
+------------------------------------------------
+IDEA-264
+------------------------------------------------
+
+Name: Giant Beaver
+Domain: Species
+
+Parent Idea:
+
+Era:
+
+Tags:
+earth-reference
+rodent
+semi-aquatic
+herbivore
+
+Description:
+The giant beaver (Castoroides) is an extinct Pleistocene rodent that
+reached sizes comparable to modern black bears.
+
+Unlike modern beavers it likely did not construct large dams but
+inhabited slow-moving rivers, marshes, and lake margins.
+
+In terrestrial ecosystems it functions as a large semi-aquatic
+herbivore inhabiting river systems, wetlands, and floodplains.
+
+
+------------------------------------------------
+IDEA-265
+------------------------------------------------
+
+Name: Pronghorn
+Domain: Species
+
+Parent Idea:
+
+Era:
+
+Tags:
+earth-reference
+ungulate
+herbivore
+plains
+
+Description:
+The pronghorn (Antilocapra americana) is a North American ungulate
+adapted to open plains and grasslands.
+
+It is capable of extremely high sustained running speeds and is
+well suited to open terrain ecosystems.
+
+Within a terraformed biosphere it functions as a fast-moving herd
+grazer and a common prey species for large pursuit predators.
+
+
+------------------------------------------------
+IDEA-262
+------------------------------------------------
+
+Name: Dorcas Gazelle
+Domain: Species
+
+Parent Idea:
+
+Era:
+
+Tags:
+earth-reference
+ungulate
+herbivore
+prey
+
+Description:
+The Dorcas gazelle (Gazella dorcas) is a small antelope native to arid and
+semi-arid regions of North Africa and the Middle East.
+
+The species is highly adapted to open terrain such as steppe, savanna and
+semi-desert grasslands. It is capable of surviving long periods without
+direct water intake by deriving moisture from plants and metabolic
+processes.
+
+Within large terrestrial ecosystems the Dorcas gazelle functions as a
+fast-moving herd grazer occupying open plains. Its high reproductive rate
+and herd behavior make it an ideal primary prey species for medium and
+large predators.
+
+
+------------------------------------------------
+IDEA-263
+------------------------------------------------
+
+Name: Feral Aurochs-Type Bovine
+Domain: Species
+
+Parent Idea:
+
+Era:
+
+Tags:
+bovine
+herbivore
+megafauna
+grazers
+terraforming
+
+Description:
+A large grazing bovine derived from domesticated cattle stock that has
+become feral within sparsely populated terraformed ecosystems.
+
+The species occupies an ecological niche similar to the extinct aurochs
+(Bos primigenius), forming large roaming herds across plains and river
+basins.
+
+Adults are extremely large and difficult for most predators to hunt
+directly, but calves and weakened individuals are vulnerable to
+predation.
+
+Large carcasses produced by the species form an important food source
+for scavengers and opportunistic predators within the ecosystem.
+
+
+------------------------------------------------
+IDEA-264
+------------------------------------------------
+
+Name: Giant Beaver
+Domain: Species
+
+Parent Idea:
+
+Era:
+
+Tags:
+earth-reference
+rodent
+semi-aquatic
+herbivore
+
+Description:
+The giant beaver (Castoroides) is an extinct Pleistocene rodent that
+reached sizes comparable to modern black bears.
+
+Unlike modern beavers it likely did not construct large dams but lived
+along slow-moving rivers, wetlands and lake margins.
+
+In planetary ecosystems the species functions as a major semi-aquatic
+herbivore inhabiting river systems and floodplains, feeding on aquatic
+plants and shoreline vegetation.
+
+
+------------------------------------------------
+IDEA-265
+------------------------------------------------
+
+Name: Pronghorn
+Domain: Species
+
+Parent Idea:
+
+Era:
+
+Tags:
+earth-reference
+ungulate
+herbivore
+plains
+
+Description:
+The pronghorn (Antilocapra americana) is a North American ungulate
+adapted to open plains and grasslands.
+
+It is capable of extremely high sustained running speeds and is well
+suited to predator-rich open terrain ecosystems.
+
+Within terraformed biospheres the pronghorn functions as a fast-moving
+herd grazer and a common prey animal for large pursuit predators.
+
+
+------------------------------------------------
+IDEA-266
+------------------------------------------------
+
+Name: Gustamal Coastal Riparian Steppe Bioregion
+Domain: Bioregion
+
+Parent Idea:
+Gustamal System
+
+Era:
+
+Tags:
+steppe
+coastal
+riverine
+ecosystem
+
+Description:
+A major bioregion within one of the terraformed planets of the Gustamal
+System.
+
+The landscape consists of coastal steppe plains intersected by large
+braided river systems that descend from inland plateaus and spread into
+floodplains before reaching the ocean.
+
+The ecosystem forms a mosaic of habitats including short-grass steppe,
+river corridors, floodplain wetlands, reed beds along riverbanks and
+coastal estuaries.
+
+Vegetation renewal in the region is primarily driven by grazing cycles
+of large herbivores rather than by fire or seasonal flooding.
+
+
+------------------------------------------------
+IDEA-267
+------------------------------------------------
+
+Name: Andrewsarchus Ecological Role (Gustamal System)
+Domain: Species
+
+Parent Idea:
+Gustamal Coastal Riparian Steppe Bioregion
+
+Era:
+
+Tags:
+earth-reference
+omnivore
+scavenger
+predator
+
+Description:
+Andrewsarchus is an extinct Eocene mammal known primarily from a large
+skull fossil discovered in Mongolia.
+
+Based on dentition and jaw structure the animal was likely a powerful
+omnivore capable of crushing bone and consuming a wide range of food
+sources.
+
+Within the Gustamal Coastal Riparian Steppe Bioregion the species
+occupies the role of a large opportunistic predator and scavenger.
+
+It hunts medium-sized prey such as gazelles and pronghorn when
+possible, scavenges large herbivore carcasses, exploits riverine food
+sources and may consume plant matter opportunistically.
+
+The species is moderately common within the bioregion and typically
+occurs as solitary individuals moving between steppe hunting grounds,
+river systems and carcass sites.
+
+------------------------------------------------
+IDEA-268
+------------------------------------------------
+
+Name: Industrial Reentry Phenomena (Patina)
+Domain: Environment
+
+Parent Idea:
+Rustfall Basin
+
+Era:
+Late Planetary Period
+
+Tags:
+atmospheric
+industrial
+orbital-debris
+patina
+
+Description:
+During the peak industrial expansion of Patina, large quantities of
+scrap material were regularly deorbited from orbital shipyards and
+directed into Rustfall Basin.
+
+Although the basin was located in a remote region, nearby industrial
+areas occasionally experienced atmospheric effects produced by large
+debris objects entering the planet’s atmosphere.
+
+Typical phenomena included faint high-altitude reentry streaks visible
+during night hours, distant sonic booms from large objects breaking up
+or impacting within the basin, and occasional daylight vapor trails
+when debris entered the atmosphere during daytime operations.
+
+These events became a routine background feature of life during the
+planet’s industrial boom and were generally regarded as a normal part
+of the orbital manufacturing economy surrounding Patina.
+
+
+
+------------------------------------------------
+IDEA-269
+------------------------------------------------
+
+Name: Coastal Fog Signal System
+Domain: Technology
+
+Parent Idea:
+Dangerous Coastal Navigation Environments
+
+Era:
+Industrial Maritime Navigation
+
+Tags:
+navigation
+maritime
+fog
+safety
+
+Description:
+A maritime navigation system designed to guide ships through hazardous
+coastal waters during periods of low visibility such as fog or storms.
+
+Stations emit powerful acoustic signals that can travel several
+kilometers across open water. Mariners determine their position by
+identifying the direction and pattern of the sound relative to nautical
+charts.
+
+Historically these systems used steam whistles, compressed-air horns,
+or diaphone signals and were often installed at lighthouse stations.
+
+
+------------------------------------------------
+IDEA-270
+------------------------------------------------
+
+Name: Fog Signal Emitter
+Domain: Component
+
+Parent Idea:
+Coastal Fog Signal System
+
+Era:
+
+Tags:
+acoustic
+navigation
+maritime
+
+Description:
+A high-power acoustic device used to produce warning signals audible
+over long distances at sea. Typical implementations include steam
+whistles, compressed-air horns and diaphone fog signals.
+
+
+------------------------------------------------
+IDEA-271
+------------------------------------------------
+
+Name: Fog Detection Sensor
+Domain: Component
+
+Parent Idea:
+Coastal Fog Signal System
+
+Era:
+
+Tags:
+sensor
+visibility
+automation
+
+Description:
+A device used to detect low-visibility conditions and activate fog
+signals automatically. Systems historically used humidity detection,
+optical visibility measurement, or manual activation by lighthouse
+keepers.
+
+
+------------------------------------------------
+IDEA-272
+------------------------------------------------
+
+Name: Compressed Air Supply System
+Domain: Component
+
+Parent Idea:
+Coastal Fog Signal System
+
+Era:
+
+Tags:
+mechanical
+pressure
+acoustic-system
+
+Description:
+A mechanical system generating and storing compressed air to power
+acoustic fog signal emitters. Typically includes compressors,
+pressure tanks and control valves.
+
+
+------------------------------------------------
+IDEA-273
+------------------------------------------------
+
+Name: Acoustic Directional Horn
+Domain: Component
+
+Parent Idea:
+Coastal Fog Signal System
+
+Era:
+
+Tags:
+acoustic
+amplification
+navigation
+
+Description:
+A large horn structure that amplifies and directs sound toward open
+water, increasing the audible range of fog signal emitters and focusing
+the signal toward shipping lanes.
+
+
+------------------------------------------------
+IDEA-274
+------------------------------------------------
+
+Name: Signal Timing Controller
+Domain: Component
+
+Parent Idea:
+Coastal Fog Signal System
+
+Era:
+
+Tags:
+control-system
+navigation
+automation
+
+Description:
+A control mechanism regulating the repeating pattern of fog signals.
+Distinct timing patterns allow mariners to identify specific lighthouse
+stations and hazards using nautical charts.
+
+
+------------------------------------------------
+IDEA-275
+------------------------------------------------
+
+Name: LM Lines
+
+Domain:
+Organizations
+
+Parent Idea:
+Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+transport
+mars
+luna
+interplanetary
+logistics
+
+Description:
+LM Lines (Luna–Mars Lines) was a medium-sized private interplanetary
+transport company operating between lunar orbit and Mars from 2184
+to 2270.
+
+The company specialized in ferrying settlers, engineers, industrial
+personnel, construction equipment, and prefabricated infrastructure
+modules to expanding Martian settlements.
+
+Operations were centered on a lunar Lagrange transfer station where
+passengers and cargo were assembled before departure windows. Ships
+used Hohmann transfer trajectories, launching during regular Mars
+transfer windows.
+
+LM Lines operated under a government-backed concession model in
+cooperation with Joined Lunar Command, combining public infrastructure
+support with privately owned vessels and crews.
+
+As Mars settlements matured and developed their own shipyards and
+transport infrastructure, the demand for lunar-based ferry services
+declined. The company ultimately became financially unsustainable
+and declared bankruptcy around 2270.
+
+
+
+------------------------------------------------
+IDEA-276
+------------------------------------------------
+
+Name: Lunar Lagrange Transfer Station
+
+Domain:
+Infrastructure
+
+Parent Idea:
+Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+station
+lagrange
+transport
+mars
+logistics
+
+Description:
+A large interplanetary transfer station located at a lunar Lagrange
+point, serving as a staging hub for Mars-bound departures during the
+expansion phase of Martian settlement.
+
+Passengers, cargo modules, construction equipment, and prefabricated
+infrastructure were assembled at the station prior to departure.
+Ships departing for Mars gathered here during transfer windows before
+entering Hohmann transfer trajectories.
+
+The station was operated under the authority of Joined Lunar Command,
+which coordinated interplanetary navigation windows and traffic
+control between Earth orbit, lunar infrastructure, and Mars transfer
+lanes.
+
+Private transport operators such as LM Lines used the station as
+their primary departure hub.
+
+
+
+------------------------------------------------
+IDEA-277
+------------------------------------------------
+
+Name: Holly Hohmann Festivals
+
+Domain:
+Culture
+
+Parent Idea:
+Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+culture
+transport
+mars
+migration
+lagrange
+
+Description:
+A cultural tradition associated with Mars transfer departures during
+the Race for Sol.
+
+Before major Mars transfer windows, travelers gathered at lunar
+Lagrange transfer stations for informal celebrations known as
+“Holly Hohmann Festivals.”
+
+Families, workers, corporate personnel, and transport crews spent
+several days waiting for the departure window while ships assembled
+in formation for the Mars transfer trajectory.
+
+The gatherings typically included farewell celebrations, music,
+small markets, and ceremonial countdown events as vessels departed
+one by one for the long interplanetary voyage.
+
+The festivals became a recognizable cultural feature of early Mars
+migration and transport life.
+
+
+
+------------------------------------------------
+IDEA-278
+------------------------------------------------
+
+Name: Murder on the Mars Express
+
+Domain:
+Events
+
+Parent Idea:
+Mars Ferry Operations
+
+Era:
+Race for Sol
+
+Tags:
+crime
+mystery
+transport
+mars
+spaceflight
+
+Description:
+A famous murder case occurring aboard a Mars-bound interplanetary
+ferry during a Hohmann transfer between lunar orbit and Mars.
+
+The crime took place during the months-long voyage when passengers,
+crew, and cargo were confined aboard a transport vessel traveling
+along the Mars transfer trajectory.
+
+Because the ship was isolated in deep space and outside intervention
+was impossible until arrival at Mars, the investigation had to be
+conducted entirely onboard.
+
+The case later became widely known and inspired numerous fictional
+retellings and dramatizations.
+
+
+------------------------------------------------
+IDEA-279
+------------------------------------------------
+Name:
+Blue Sector
+
+Domain:
+Region
+
+Parent Idea:
+Twin Empires
+
+Era:
+Twin Empires → Intersector Assembly
+
+Tags:
+sector
+empire
+castracate
+
+Description:
+The Blue Sector refers to the interstellar region historically
+dominated by the Twin Empires of Triadan and Dol Atul.
+
+Initially consisting of only a small number of star systems, the
+sector gradually expanded through exploration, settlement, and
+political consolidation.
+
+At its peak the Blue Sector encompassed approximately 251 star
+systems before its eventual integration into the Intersector
+Assembly.
+
+During the early and middle periods of its history the Castracate
+system served as a major mechanism for conflict resolution and
+political competition.
+
+By the time of the Intersector Assembly the Castracate competitions
+had largely evolved into a ceremonial and sporting tradition with
+little real danger compared to earlier eras.
+
+
+
+------------------------------------------------
+IDEA-280
+------------------------------------------------
+Name:
+Castracate System
+
+Domain:
+Political System
+
+Parent Idea:
+Blue Sector
+
+Era:
+Twin Empires → Blue Sector
+
+Tags:
+governance
+competition
+knights
+conflict_resolution
+
+Description:
+The Castracate system is a political and social structure used
+throughout the Blue Sector in which disputes, territorial claims,
+and economic concessions are resolved through structured competitions
+known as Knightly Order Rulings (KORs).
+
+Rather than uncontrolled warfare, conflicts are ritualized into
+formal competitions governed by rulesets and monitored by the
+Castracate Observer network.
+
+KORs exist in many tiers ranging from small personal challenges to
+large-scale territorial campaigns involving fleets and armies.
+Participants accumulate points and prestige through their
+contributions to these competitions.
+
+The system is dominated by numerous knightly and monastic orders,
+though licensed individuals and mercenary groups may also
+participate.
+
+Through KOR victories participants may gain territorial authority,
+economic concessions, or prestige within the Castracate ranking
+system.
+
+
+
+------------------------------------------------
+IDEA-281
+------------------------------------------------
+Name:
+Castracate Observers
+
+Domain:
+Institution / Technology
+
+Parent Idea:
+Castracate System
+
+Era:
+Blue Sector
+
+Tags:
+ai
+drones
+adjudication
+competitions
+
+Description:
+The Castracate Observers are a distributed robotic adjudication and
+scoring network responsible for monitoring Knightly Order Rulings
+(KORs).
+
+Small autonomous drones accompany participants during competitions,
+recording actions and calculating scores based on their
+contributions.
+
+The Observer network enforces rulesets, detects violations,
+assigns points, and maintains the leaderboards that determine the
+prestige of both individual competitors and knightly orders.
+
+In large arenas and battle environments the system may also deploy
+projection systems and local control infrastructure to display
+statistics, objectives, and live scoring.
+
+
+
+------------------------------------------------
+IDEA-282
+------------------------------------------------
+Name:
+Castracate Worlds
+
+Domain:
+Locations
+
+Parent Idea:
+Castracate System
+
+Era:
+Blue Sector
+
+Tags:
+battleworld
+arenas
+competitions
+
+Description:
+Certain planets within the Blue Sector are designated as Castracate
+Worlds and serve as major locations for large-scale KOR competitions.
+
+These worlds contain extensive battle infrastructure including
+vehicle arenas, aerial combat zones, armored warfare continents,
+and specialized competition environments.
+
+Large territorial KORs are frequently conducted on these planets in
+order to avoid uncontrolled destruction of core imperial regions.
+
+
+
+------------------------------------------------
+IDEA-283
+------------------------------------------------
+Name:
+Castracate Arenas
+
+Domain:
+Infrastructure
+
+Parent Idea:
+Castracate System
+
+Era:
+Blue Sector
+
+Tags:
+arenas
+competitions
+spectacle
+
+Description:
+Most inhabited planets in the Blue Sector contain multiple
+Castracate arenas designed for different competition categories.
+
+These facilities host events ranging from ritual duels and athletic
+competitions to vehicle battles, aerial engagements, and tactical
+simulations.
+
+Large arenas often feature atmospheric projection systems displaying
+live statistics from the Observer network.
+
+
+
+------------------------------------------------
+IDEA-284
+------------------------------------------------
+Name:
+Castracate Knight Culture
+
+Domain:
+Culture
+
+Parent Idea:
+Castracate System
+
+Era:
+Blue Sector
+
+Tags:
+knights
+competition
+warfare
+
+Description:
+Castracate knights participate in the KOR system for a variety of
+motivations including stable income, prestige, and the possibility
+of receiving territorial or economic grants through successful
+competition.
+
+The culture strongly emphasizes competition and achievement within
+the Castracate ranking system.
+
+Because KOR conflicts are framed as point-based competitions rather
+than conventional warfare, death in competition is culturally
+normalized as a consequence of high-stakes rivalry.
+
+
+
+------------------------------------------------
+IDEA-285
+------------------------------------------------
+Name:
+Specialized Knightly Orders
+
+Domain:
+Organizations
+
+Parent Idea:
+Castracate System
+
+Era:
+Blue Sector
+
+Tags:
+orders
+knights
+specialization
+
+Description:
+Hundreds of knightly orders operate within the Castracate system.
+
+Many orders specialize in particular categories of KOR competitions
+rather than attempting to compete across all possible formats.
+
+For example an order may consist of a small fleet of specialized
+aircraft optimized for aerial logistics or delivery missions under
+restricted technological rulesets.
+
+
+
+------------------------------------------------
+IDEA-286
+------------------------------------------------
+Name:
+Castracate Competitive Vehicle Market
+
+Domain:
+Economy
+
+Parent Idea:
+Castracate System
+
+Era:
+Blue Sector
+
+Tags:
+industry
+vehicles
+markets
+
+Description:
+A specialized industrial market exists within the Blue Sector
+dedicated to producing vehicles optimized for Castracate
+competitions.
+
+Manufacturers build a wide range of equipment designed to function
+under specific technological restrictions frequently imposed in KOR
+rulesets.
+
+Knightly orders often maintain multiple vehicle types tailored to
+different competition environments.
+
+
+
+------------------------------------------------
+IDEA-287
+------------------------------------------------
+Name:
+Auxiliary KOR Missions
+
+Domain:
+Competition Structure
+
+Parent Idea:
+Castracate System
+
+Era:
+Blue Sector
+
+Tags:
+missions
+competitions
+logistics
+
+Description:
+During large-scale KOR competitions the Castracate Observer network
+may deploy numerous smaller auxiliary competitions across the
+battlefield.
+
+These missions often involve logistics, scouting, or tactical
+objectives such as transporting a package across contested terrain.
+
+Participants from lower Castracate tiers or freelance competitors
+commonly participate in these missions to earn prestige and points.
+
+
+
+------------------------------------------------
+IDEA-288
+------------------------------------------------
+Name:
+Prolonged War KOR Strategy
+
+Domain:
+Military Doctrine
+
+Parent Idea:
+Castracate System
+
+Era:
+Blue Sector
+
+Tags:
+strategy
+warfare
+competition
+
+Description:
+Because points are awarded for contributions to KOR objectives,
+some knightly orders deliberately prolong conflicts in order to
+create additional scoring opportunities.
+
+Extended campaigns allow numerous auxiliary competitions to occur
+within the larger conflict environment.
+
+
+
+------------------------------------------------
+IDEA-289
+------------------------------------------------
+Name:
+Castracate Competition Categories
+
+Domain:
+Competition System
+
+Parent Idea:
+Castracate System
+
+Era:
+Blue Sector
+
+Tags:
+taxonomy
+competitions
+
+Description:
+KOR competitions exist across a vast range of categories including
+personal duels, vehicle combat, aerial engagements, naval warfare,
+logistics challenges, and territorial campaigns.
+
+The Castracate system maintains an evolving taxonomy of competition
+types which determines scoring systems and eligible participants.
+
+
+
+------------------------------------------------
+IDEA-290
+------------------------------------------------
+Name:
+Castracate Knight Equipment
+
+Domain:
+Material Culture
+
+Parent Idea:
+Castracate System
+
+Era:
+Blue Sector
+
+Tags:
+armor
+equipment
+vehicles
+
+Description:
+Equipment used by Castracate knights varies widely depending on
+competition categories and technological restrictions.
+
+Some competitions feature highly advanced military gear while others
+require lower technological levels.
+
+Ceremonial armor inspired by traditional knight aesthetics is often
+used during formal events or competitions staged on medieval-level
+cultural worlds.
+
+
+
+------------------------------------------------
+IDEA-291
+------------------------------------------------
+Name:
+Evolution of Knightly Orders
+
+Domain:
+Organizations
+
+Parent Idea:
+Castracate System
+
+Era:
+Blue Sector
+
+Tags:
+orders
+politics
+institutions
+
+Description:
+Knightly orders within the Castracate system are dynamic institutions
+that evolve over time.
+
+Some orders grow into powerful political actors controlling fleets
+and territories, while others fragment, reform, or decline.
+
+Imperial authorities and rival orders sometimes intervene through
+large KOR competitions to rebalance the system.
+
+
+
+------------------------------------------------
+IDEA-292
+------------------------------------------------
+Name:
+Blue Sector Soft Force
+
+Domain:
+Institution
+
+Parent Idea:
+Castracate System
+
+Era:
+Blue Sector
+
+Tags:
+knights
+diplomacy
+soft_power
+
+Description:
+The Blue Sector Soft Force is an imperial institution composed
+primarily of retired Castracate knights.
+
+Members travel across the sector acting as diplomats, advisors,
+and cultural ambassadors promoting the Castracate system as a
+civilized alternative to conventional warfare.
+
+------------------------------------------------
+IDEA-293
+------------------------------------------------
+Name:
+Twin Empires
+
+Domain:
+Political History
+
+Parent Idea:
+Blue Sector
+
+Era:
+Early Blue Sector Formation
+
+Tags:
+empire
+triadan
+dol_atul
+union
+
+Description:
+The Twin Empires refers to the political consolidation of the
+empires of Triadan and Dol Atul into a shared imperial framework
+that would later define the political structure of the Blue Sector.
+
+Prior to their consolidation both empires possessed strong martial
+traditions and competitive aristocracies. The fusion of these
+systems produced a political environment in which knightly orders,
+imperial authorities, and technological infrastructure became
+intertwined.
+
+During the early Twin Empires period the Castracate Observer
+network was introduced in order to regulate and standardize
+existing competitive conflict traditions.
+
+The political structures created during this era ultimately formed
+the institutional foundation of the Blue Sector civilization.
+
+
+------------------------------------------------
+IDEA-294
+------------------------------------------------
+Name:
+Robot Bonding Culture
+
+Domain:
+Culture
+
+Parent Idea:
+Oka II
+
+Era:
+Planetary Period
+
+Tags:
+robots
+culture
+implants
+companions
+
+Description:
+Robot Bonding is a cultural practice originating on Oka II in
+which individuals form long-term relationships with robotic
+companions.
+
+Through neural interfaces, implants, and shared design traditions,
+people and machines operate as collaborative pairs. These bonds
+are often regarded as personal partnerships rather than simple
+ownership relationships.
+
+In many cases a person and their bonded robot jointly design and
+create new robotic species as part of a major life milestone.
+
+The practice deeply influences the social organization,
+technological development, and artistic expression of Oka culture.
+
+
+------------------------------------------------
+IDEA-295
+------------------------------------------------
+Name:
+Oka II Robotic Ecosystem
+
+Domain:
+Artificial Ecology
+
+Parent Idea:
+Oka II
+
+Era:
+Planetary Period
+
+Tags:
+robots
+ecosystem
+technology
+
+Description:
+Unlike most inhabited planets, Oka II lacks a natural biological
+ecosystem. Instead the planet hosts a complex artificial ecology
+composed of numerous robotic species.
+
+These machines perform environmental maintenance, infrastructure
+construction, and specialized industrial roles.
+
+Many robot species are created as small production runs during
+personal or institutional design projects and then integrated
+into the broader robotic ecosystem.
+
+Over time this has produced a diverse and constantly evolving
+technological biosphere unique to Oka II.
+
+
+------------------------------------------------
+IDEA-296
+------------------------------------------------
+Name:
+Robot Species Creation Rite
+
+Domain:
+Culture
+
+Parent Idea:
+Oka II
+
+Era:
+Planetary Period
+
+Tags:
+robots
+ritual
+engineering
+
+Description:
+Among the inhabitants of Oka II the design and creation of a new
+robot species is considered an important rite of passage.
+
+Engineers, designers, and bonded robot companions collaborate to
+create machines intended for specific ecological or technical roles.
+
+These creations are usually produced in limited numbers and
+introduced into the planetary robotic ecosystem where they
+contribute specialized capabilities.
+
+The ritual combines engineering practice, cultural expression,
+and personal achievement.
+
+
+------------------------------------------------
+IDEA-297
+------------------------------------------------
+Name:
+Okata Design Bureau
+
+Domain:
+Organization
+
+Parent Idea:
+Oka II
+
+Era:
+Planetary Period → Intersector
+
+Tags:
+industry
+design
+technology
+
+Description:
+The Okata Design Bureau is a major engineering organization
+originating on Oka II known for producing spacecraft and
+high-precision technological components.
+
+Drawing on the planet's strong robotics and material science
+traditions, the bureau develops advanced vehicles and industrial
+systems used throughout multiple sectors.
+
+Although deeply rooted in Oka culture, the organization operates
+on an interstellar scale and collaborates with many off-world
+institutions and governments.
+
+
+------------------------------------------------
+IDEA-298
+------------------------------------------------
+Name:
+Kimishi Municipality
+
+Domain:
+City State
+
+Parent Idea:
+Oka II
+
+Era:
+Planetary Period
+
+Tags:
+city
+municipality
+oka
+
+Description:
+Kimishi Municipality is a long-standing city-state located on
+Oka II and one of the planet's most influential political
+entities.
+
+The city serves as a center of robotics research, advanced
+manufacturing, and cultural development related to robot
+bonding traditions.
+
+Over time Kimishi became both a regional political authority
+and an important hub for technological innovation within the
+Oka system.
+
+
+------------------------------------------------
+IDEA-299
+------------------------------------------------
+Name:
+Oka System
+
+Domain:
+Star System
+
+Parent Idea:
+Golden Core
+
+Era:
+Planetary Period
+
+Tags:
+system
+colonization
+technology
+
+Description:
+The Oka System is a single-star system located within the
+Golden Core region.
+
+The system was colonized during the early Planetary Period
+and gradually developed into a specialized center of robotics,
+material science, and advanced manufacturing.
+
+Its second planet, Oka II, became the primary inhabited world
+and the cultural heart of the system.
+
+
+------------------------------------------------
+IDEA-300
+------------------------------------------------
+Name:
+Oka Culture
+
+Domain:
+Culture
+
+Parent Idea:
+Oka II
+
+Era:
+Planetary Period
+
+Tags:
+robots
+technology
+society
+
+Description:
+Oka Culture refers to the technological and social traditions
+developed by the inhabitants of Oka II.
+
+Central elements of the culture include robotic bonding,
+collaborative human-machine design practices, and a strong
+emphasis on engineering creativity.
+
+The society places great value on the creation of new robotic
+forms and the development of specialized machines that
+contribute to the planetary ecosystem.
+
+
+------------------------------------------------
+IDEA-301
+------------------------------------------------
+Name:
+Superpower Wars
+
+Domain:
+Events
+
+Parent Idea:
+Late Planetary Period
+
+Era:
+Late Planetary Period
+
+Tags:
+war
+collapse
+geopolitics
+
+Description:
+The Superpower Wars were a series of prolonged global conflicts
+occurring during the late Planetary Period of Earth.
+
+Unlike earlier world wars, the conflicts unfolded over decades
+as shifting alliances, economic collapse, and proxy conflicts
+gradually destabilized the international order.
+
+The wars exhausted most major military powers and destroyed large
+portions of the global nuclear arsenal.
+
+By the final phase of the wars many states had lost the ability
+to maintain centralized authority over their territories.
+
+The conflict environment ultimately triggered the political
+collapse of several major states, most prominently the United
+States of America.
+
+
+------------------------------------------------
+IDEA-302
+------------------------------------------------
+Name:
+Collapse of the United States of America
+
+Domain:
+Events
+
+Parent Idea:
+Superpower Wars
+
+Era:
+Late Planetary Period
+
+Tags:
+collapse
+geopolitics
+states
+
+Description:
+During the final stages of the Superpower Wars the federal
+government of the United States gradually lost the ability
+to maintain political and military control over the country.
+
+Economic disruption, prolonged overseas conflicts, and domestic
+political instability produced widespread unrest.
+
+As federal authority weakened, several states declared
+independence in rapid succession, initiating a fragmentation
+process sometimes referred to as the American Independence
+Cascade.
+
+The territory of the former United States eventually split
+into a number of successor states and regional alliances.
+
+
+------------------------------------------------
+IDEA-303
+------------------------------------------------
+Name:
+American Independence Cascade
+
+Domain:
+Events
+
+Parent Idea:
+Collapse of the United States of America
+
+Era:
+Late Planetary Period
+
+Tags:
+secession
+states
+politics
+
+Description:
+The American Independence Cascade refers to the rapid sequence
+of state-level independence declarations that followed the
+collapse of federal authority in the United States.
+
+Some states declared independence individually while others
+formed regional alliances or federations.
+
+The cascade fundamentally reshaped the political map of
+North America and produced numerous successor states.
+
+
+------------------------------------------------
+IDEA-304
+------------------------------------------------
+Name:
+Panamericana
+
+Domain:
+Political Entity
+
+Parent Idea:
+American Independence Cascade
+
+Era:
+Late Planetary Period → Early Expansion
+
+Tags:
+state
+pacific
+maritime
+
+Description:
+Panamericana is a political entity formed along the Pacific
+coast of the Americas following the collapse of the United
+States and the fragmentation of North American political
+structures.
+
+The state gradually expanded into a long coastal corridor
+extending from Alaska to Chile.
+
+Because many coastal regions retained functioning ports and
+maritime infrastructure after the collapse, Panamericana
+developed a strongly maritime-oriented political and economic
+system.
+
+Shipping, shipbuilding, and ocean logistics became central
+elements of its economy and later influenced its participation
+in early space infrastructure development.
+
+The capital of Panamericana eventually developed in Panama,
+where the Panama Canal remained a strategic economic center.
+
+
+------------------------------------------------
+IDEA-305
+------------------------------------------------
+Name:
+Great Lakes Union
+
+Domain:
+Political Entity
+
+Parent Idea:
+American Independence Cascade
+
+Era:
+Late Planetary Period
+
+Tags:
+federation
+states
+industry
+
+Description:
+The Great Lakes Union emerged as a regional federation of
+states surrounding the Great Lakes after the collapse of the
+United States.
+
+The region retained a large industrial base inherited from
+automotive and heavy manufacturing industries.
+
+Member states maintained their own National Guard forces
+while coordinating industrial policy and regional security.
+
+The federation later became an important industrial supplier
+for early orbital manufacturing and the Race for Sol.
+
+
+------------------------------------------------
+IDEA-306
+------------------------------------------------
+Name:
+Mississippi Basin Authority
+
+Domain:
+Institution
+
+Parent Idea:
+American Independence Cascade
+
+Era:
+Late Planetary Period
+
+Tags:
+river
+trade
+logistics
+
+Description:
+The Mississippi Basin Authority formed as a regional governing
+institution responsible for maintaining navigation and trade
+along the Mississippi River system.
+
+River patrol boats constantly monitored and protected the
+major shipping corridors.
+
+Control of the Mississippi trade network became a major
+economic factor for many inland successor states.
+
+
+------------------------------------------------
+IDEA-307
+------------------------------------------------
+Name:
+PAMEC (Panamericana Machinery Engineering Corporation)
+
+Domain:
+Organization
+
+Parent Idea:
+Panamericana
+
+Era:
+Late Planetary Period → Early Expansion
+
+Tags:
+industry
+machinery
+ports
+
+Description:
+PAMEC is a major industrial manufacturer founded by
+Panamericana to support coastal infrastructure and port
+construction.
+
+The company produces a wide range of heavy machinery
+including cranes, dredgers, harbor construction vehicles,
+forklifts, containers, and other port logistics equipment.
+
+Because Panamericana relied heavily on maritime transport,
+companies such as PAMEC played an essential role in
+maintaining the economic infrastructure of the coastal
+corridor.
+
+Some PAMEC facilities also developed the capability to
+perform limited ship maintenance and refitting.
+
+
+------------------------------------------------
+IDEA-308
+------------------------------------------------
+Name:
+Dock Mast Crane Barge
+
+Domain:
+Vehicles
+
+Parent Idea:
+PAMEC
+
+Era:
+Late Planetary Period
+
+Tags:
+barge
+crane
+shipyard
+
+Description:
+The Dock Mast is a large floating crane barge designed for
+heavy shipyard operations and harbor construction projects.
+
+The vessel carries a massive crane system mounted on a
+reinforced barge platform, allowing it to lift heavy ship
+components, port infrastructure elements, and construction
+modules.
+
+Dock Mast units were frequently deployed together with
+auxiliary crane barges during large harbor construction
+projects along the Panamericana coast.
+
+
+------------------------------------------------
+IDEA-309
+------------------------------------------------
+Name:
+New Caledonia
+
+Domain:
+Geography
+
+Parent Idea:
+Pacific Region
+
+Era:
+Planetary Period
+
+Tags:
+island
+pacific
+ecosystem
+
+Description:
+New Caledonia is an island region in the southwest Pacific
+Ocean consisting primarily of the island of Grande Terre
+and numerous smaller surrounding islands.
+
+The archipelago is known for its unusual geological history
+and highly endemic ecosystems.
+
+A large number of plant and animal species found on the
+islands exist nowhere else on Earth.
+
+
+------------------------------------------------
+IDEA-310
+------------------------------------------------
+Name:
+New Caledonian Crow
+
+Domain:
+Species
+
+Parent Idea:
+New Caledonia
+
+Era:
+Planetary Period
+
+Tags:
+bird
+tool_use
+
+Description:
+The New Caledonian Crow (Corvus moneduloides) is a highly
+intelligent bird species native to New Caledonia.
+
+It is famous for its sophisticated use of tools, including
+the ability to manufacture hooked sticks to extract insects
+from tree bark.
+
+
+------------------------------------------------
+IDEA-311
+------------------------------------------------
+Name:
+Kagu
+
+Domain:
+Species
+
+Parent Idea:
+New Caledonia
+
+Era:
+Planetary Period
+
+Tags:
+bird
+endemic
+
+Description:
+The Kagu (Rhynochetos jubatus) is a flightless bird species
+endemic to New Caledonia.
+
+It inhabits forest environments and is notable for its
+distinctive crest and elaborate territorial displays.
+
+
+------------------------------------------------
+IDEA-312
+------------------------------------------------
+Name:
+New Caledonian Imperial Pigeon
+
+Domain:
+Species
+
+Parent Idea:
+New Caledonia
+
+Era:
+Planetary Period
+
+Tags:
+bird
+endemic
+
+Description:
+The New Caledonian Imperial Pigeon (Ducula goliath) is a
+large pigeon species endemic to the forests of New Caledonia.
+
+It is one of the largest arboreal pigeons in the Pacific
+region.
+
+
+------------------------------------------------
+IDEA-313
+------------------------------------------------
+Name:
+Cloven-feathered Dove
+
+Domain:
+Species
+
+Parent Idea:
+New Caledonia
+
+Era:
+Planetary Period
+
+Tags:
+bird
+endemic
+
+Description:
+The Cloven-feathered Dove (Drepanoptila holosericea) is a
+distinctive forest pigeon species endemic to New Caledonia.
+
+The species is known for the unusual structure of its
+feathers which give the plumage a split or “cloven”
+appearance.
+
+------------------------------------------------
+IDEA-314
+------------------------------------------------
+Name:
+SAP – Antonia Experiment
+
+Domain:
+Science & Research
+
+Parent Idea:
+Cultural Seeding Group
+
+Era:
+Planetary Period
+
+Tags:
+sap
+csg
+civilization_experiment
+rome
+mediterranean
+
+Description:
+The Antonia Experiment is a Cultural Seeding Group (CSG) planetary civilization experiment designed to study whether societies based on artificial historical myths can evolve into stable political cultures.
+
+The Seeding Approach Paper specifies the controlled creation of several civilizations modeled on cultures of the ancient Mediterranean world. The primary subject is the Antonian Republic, a society designed to reproduce the political and cultural structures of the Late Roman Republic (approximately 100–30 BC).
+
+The Antonian population was seeded with an implanted historical narrative describing ancient republican traditions, legendary founders, aristocratic family lineages, and long-standing political institutions. Although fictional, this narrative provides the cultural framework through which the population understands its society.
+
+Technological development was restricted to a near-authentic Roman technological level including iron metallurgy, animal-powered agriculture, sailing vessels, chariot transport, and masonry construction. Only minor stabilizing improvements were introduced such as improved crop strains and marginally enhanced metallurgy.
+
+To reproduce a Mediterranean geopolitical ecosystem the experiment also seeded neighboring civilizations including Greek-style maritime city states, an Egyptian-style river monarchy whose administrative elite speaks Ptolemaic Greek, and a Persian-style imperial civilization located on another continent of the planet.
+
+The experiment observes the evolution of republican institutions, aristocratic competition, patron–client networks, military prestige politics, and the long-term stability of myth-based historical identity.
+
+
+------------------------------------------------
+IDEA-315
+------------------------------------------------
+Name:
+Antonia
+
+Domain:
+Planets
+
+Parent Idea:
+Antonia Experiment
+
+Era:
+Planetary Period
+
+Tags:
+csg
+experimental_world
+mediterranean
+civilization_seed
+
+Description:
+Antonia is a Cultural Seeding Group experimental world designed to host several civilizations modeled after societies of the ancient Mediterranean basin.
+
+The planet’s dominant geographic feature is a large inland sea surrounded by a temperate continental region. Warm climates, fertile coastal plains, island chains, and navigable rivers were deliberately selected to reproduce environmental conditions similar to the historical Mediterranean world.
+
+Although Antonia contains multiple continents, the primary experiment occurs on a single continent surrounding the inland sea. This region hosts several seeded civilizations whose interaction recreates a complex ancient geopolitical system.
+
+The Antonian Republic occupies a large peninsula projecting into the inland sea. The peninsula contains fertile plains, upland pastoral regions, and navigable rivers connecting inland settlements with maritime trade routes.
+
+The capital of the republic developed along a major river several kilometers inland from the sea, occupying several hills overlooking the river valley. Temples and aristocratic residences dominate elevated terrain while markets, warehouses, and docks developed along the riverbanks.
+
+Other seeded civilizations around the inland sea include Greek-style maritime city states and a powerful Egyptian-style river kingdom with a Ptolemaic Greek administrative elite. A Persian-style imperial civilization exists on another continent of the planet and initially interacts with the inland sea civilizations through long-distance maritime exploration.
+
+
+------------------------------------------------
+IDEA-316
+------------------------------------------------
+Name:
+Antonian Republic
+
+Domain:
+Factions
+
+Parent Idea:
+Antonia
+
+Era:
+Planetary Period
+
+Tags:
+republic
+rome
+senate
+legions
+roman_society
+
+Description:
+The Antonian Republic is the primary civilization seeded in the Antonia cultural experiment and represents a close reconstruction of the political and social structures of the Late Roman Republic.
+
+The state is organized as a senatorial republic governed by aristocratic families whose members dominate the senate. The senate directs foreign policy, finances, and military command while elected magistrates exercise executive authority for limited terms.
+
+Citizen assemblies formally elect magistrates and approve legislation, though political influence is heavily shaped by patronage networks maintained by elite families.
+
+Society reproduces Roman republican social hierarchy including senatorial aristocracy, equestrian commercial elites, ordinary citizens, freedmen, and enslaved populations. Wealth and prestige are strongly tied to agricultural land ownership and maritime trade.
+
+Military organization follows the Roman legionary model. Citizen legions are raised for campaigns and commanded by magistrates, while auxiliary forces recruited from allied communities provide cavalry and specialized troops. Successful generals gain enormous prestige and political influence, creating structural tensions between republican institutions and ambitious military leaders.
+
+Religion follows the Roman civic religious system including temples, priesthoods, public festivals, and ritual ceremonies reinforcing the authority of the republic.
+
+
+------------------------------------------------
+IDEA-317
+------------------------------------------------
+Name:
+Mark Anthony Seed
+
+Domain:
+People
+
+Parent Idea:
+Antonia Experiment
+
+Era:
+Planetary Period
+
+Tags:
+person_seed
+roman_republic
+general
+aristocrat
+
+Description:
+The Mark Anthony Seed is a Cultural Seeding Group personality template introduced into the Antonian Republic as part of the Antonia Experiment.
+
+The template is based on the historical Roman figure Marcus Antonius and represents the archetype of a charismatic aristocratic military commander emerging from a declining noble lineage.
+
+Individuals derived from this seed typically originate from established aristocratic families but grow up during periods of intense political rivalry. Their early lives often include excessive spending, political scandal, and debt before entering military service as a path to restore family prestige.
+
+Within the Antonian Republic this personality pattern tends to produce ambitious political figures who gain popularity through military success, personal charisma, and patronage networks. Such individuals frequently become central actors in elite political competition and may accumulate personal loyalty from soldiers and clients.
+
+The template was introduced to observe the emergence of powerful republican generals whose ambitions may challenge the stability of senatorial government.
+
+

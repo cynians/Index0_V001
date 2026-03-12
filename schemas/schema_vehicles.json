@@ -1,0 +1,200 @@
+{
+  "metadata": {
+    "name": "Index0 Vehicle Schema",
+    "version": 3
+  },
+
+  "vehicles": {
+
+    "vehicle_base": {
+
+      "required": [
+        "id",
+        "name",
+        "type"
+      ],
+
+      "base_fields": {
+
+        "id": "string",
+
+        "name": "string",
+
+        "type": "string",
+
+        "vehicle_class": "string",
+
+        "manufacturer": ["object", "null"],
+
+        "parent_model": ["object", "null"],
+
+        "tags": "array",
+
+        "start_year": ["number", "null"],
+
+        "end_year": ["number", "null"]
+      },
+
+      "structural_fields": {
+
+        "operators": "array",
+
+        "production_sites": "array",
+
+        "variants": "array",
+
+        "related_vehicles": "array",
+
+        "serial_numbers": "array",
+
+        "component_requirements": "object",
+
+        "assembly_methods": "array"
+      },
+
+      "knowledge_fields": [
+
+        "description",
+
+        "design",
+
+        "role",
+
+        "history"
+
+      ]
+
+    },
+
+    "subtypes": {
+
+      "Spacecraft": {
+
+        "inherits": "vehicle_base",
+
+        "structural_fields": {
+
+          "propulsion": "string",
+
+          "crew": ["number", "null"],
+
+          "cargo_capacity": ["string", "null"],
+
+          "docking_interfaces": "array"
+
+        },
+
+        "knowledge_fields": [
+
+          "description",
+          "design",
+          "role",
+          "history"
+
+        ]
+
+      },
+
+      "Aircraft": {
+
+        "inherits": "vehicle_base",
+
+        "structural_fields": {
+
+          "propulsion": "string",
+
+          "crew": ["number", "null"],
+
+          "range_km": ["number", "null"]
+
+        },
+
+        "knowledge_fields": [
+
+          "description",
+          "design",
+          "role",
+          "history"
+
+        ]
+
+      },
+
+      "NavalVessel": {
+
+        "inherits": "vehicle_base",
+
+        "structural_fields": {
+
+          "displacement": ["string", "null"],
+
+          "crew": ["number", "null"],
+
+          "range_km": ["number", "null"]
+
+        },
+
+        "knowledge_fields": [
+
+          "description",
+          "design",
+          "role",
+          "history"
+
+        ]
+
+      },
+
+      "GroundVehicle": {
+
+        "inherits": "vehicle_base",
+
+        "structural_fields": {
+
+          "propulsion": "string",
+
+          "crew": ["number", "null"]
+
+        },
+
+        "knowledge_fields": [
+
+          "description",
+          "design",
+          "role",
+          "history"
+
+        ]
+
+      },
+
+      "IndustrialVehicle": {
+
+        "inherits": "vehicle_base",
+
+        "structural_fields": {
+
+          "propulsion": "string",
+
+          "crew": ["number", "null"],
+
+          "industrial_role": "string"
+
+        },
+
+        "knowledge_fields": [
+
+          "description",
+          "design",
+          "role",
+          "history"
+
+        ]
+
+      }
+
+    }
+
+  }
+
+}

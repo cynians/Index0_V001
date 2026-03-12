@@ -1,0 +1,66 @@
+{
+  "metadata": {
+    "name": "Index0 Faction Schema",
+    "version": 1
+  },
+
+  "factions": {
+
+    "faction_base": {
+
+      "required": [
+        "id",
+        "name",
+        "type"
+      ],
+
+      "base_fields": {
+
+        "id": "string",
+
+        "name": "string",
+
+        "type": "string",
+
+        "faction_class": "string",
+
+        "parent_faction": ["object", "null"],
+
+        "tags": "array",
+
+        "start_year": ["number", "null"],
+
+        "end_year": ["number", "null"]
+
+      },
+
+      "structural_fields": {
+
+        "headquarters": "object",
+
+        "territories": "array",
+
+        "members": "array",
+
+        "subfactions": "array",
+
+        "markets": "array",
+
+        "assets": "array"
+
+      },
+
+      "knowledge_fields": [
+
+        "description",
+        "culture",
+        "history",
+        "goals"
+
+      ]
+
+    }
+
+  }
+
+}

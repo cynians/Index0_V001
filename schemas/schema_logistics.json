@@ -1,0 +1,131 @@
+{
+  "metadata": {
+    "name": "Index0 Logistics Schema",
+    "version": 1
+  },
+
+  "logistics": {
+
+    "logistics_system_base": {
+
+      "required": [
+        "id",
+        "name",
+        "type"
+      ],
+
+      "base_fields": {
+
+        "id": "string",
+
+        "name": "string",
+
+        "type": "string",
+
+        "logistics_class": "string",
+
+        "operators": "array",
+
+        "tags": "array",
+
+        "start_year": ["number", "null"],
+
+        "end_year": ["number", "null"]
+
+      },
+
+      "structural_fields": {
+
+        "routes": "array",
+
+        "vehicles": "object",
+
+        "cargo": "object",
+
+        "connected_locations": "array",
+
+        "related_markets": "array",
+
+        "related_production_systems": "array"
+
+      },
+
+      "knowledge_fields": [
+
+        "description",
+
+        "transport_structure",
+
+        "economic_role",
+
+        "history"
+
+      ]
+
+    },
+
+    "route_base": {
+
+      "required": [
+        "id",
+        "name",
+        "type",
+        "origin",
+        "destination"
+      ],
+
+      "base_fields": {
+
+        "id": "string",
+
+        "name": "string",
+
+        "type": "string",
+
+        "origin": "object",
+
+        "destination": "object",
+
+        "distance": ["string", "null"],
+
+        "travel_time": ["string", "null"],
+
+        "hazard_level": ["string", "null"],
+
+        "tags": "array",
+
+        "start_year": ["number", "null"],
+
+        "end_year": ["number", "null"]
+
+      },
+
+      "structural_fields": {
+
+        "operators": "array",
+
+        "allowed_vehicles": "array",
+
+        "connected_logistics_systems": "array",
+
+        "related_locations": "array"
+
+      },
+
+      "knowledge_fields": [
+
+        "description",
+
+        "navigation_conditions",
+
+        "economic_role",
+
+        "history"
+
+      ]
+
+    }
+
+  }
+
+}

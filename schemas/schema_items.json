@@ -1,0 +1,167 @@
+{
+  "metadata": {
+    "name": "Index0 Item Schema",
+    "version": 1
+  },
+
+  "items": {
+
+    "item_base": {
+
+      "required": [
+        "id",
+        "name",
+        "type"
+      ],
+
+      "base_fields": {
+
+        "id": "string",
+
+        "name": "string",
+
+        "type": "string",
+
+        "item_class": "string",
+
+        "manufacturer": ["object", "null"],
+
+        "parent_item": ["object", "null"],
+
+        "tags": "array",
+
+        "start_year": ["number", "null"],
+
+        "end_year": ["number", "null"]
+
+      },
+
+      "structural_fields": {
+
+        "production_methods": "array",
+
+        "required_technologies": "array",
+
+        "producers": "array",
+
+        "operators": "array",
+
+        "markets": "array",
+
+        "used_in": "array",
+
+        "related_items": "array"
+
+      },
+
+      "economic_fields": {
+
+        "mass": ["string", "null"],
+
+        "volume": ["string", "null"],
+
+        "value_class": ["string", "null"]
+
+      },
+
+      "knowledge_fields": [
+
+        "description",
+
+        "design",
+
+        "role",
+
+        "history"
+
+      ]
+
+    },
+
+    "subtypes": {
+
+      "Material": {
+
+        "inherits": "item_base",
+
+        "structural_fields": {
+
+          "extraction_methods": "array",
+
+          "refinement_methods": "array"
+
+        },
+
+        "knowledge_fields": [
+
+          "description",
+
+          "composition",
+
+          "industrial_use",
+
+          "history"
+
+        ]
+
+      },
+
+      "Good": {
+
+        "inherits": "item_base",
+
+        "structural_fields": {
+
+          "manufacturing_methods": "array",
+
+          "used_by": "array"
+
+        },
+
+        "knowledge_fields": [
+
+          "description",
+
+          "design",
+
+          "industrial_use",
+
+          "history"
+
+        ]
+
+      },
+
+      "Component": {
+
+        "inherits": "item_base",
+
+        "structural_fields": {
+
+          "component_technology": "object",
+
+          "compatible_vehicles": "array",
+
+          "variants": "array"
+
+        },
+
+        "knowledge_fields": [
+
+          "description",
+
+          "design",
+
+          "engineering_principle",
+
+          "history"
+
+        ]
+
+      }
+
+    }
+
+  }
+
+}

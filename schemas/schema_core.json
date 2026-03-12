@@ -1,0 +1,39 @@
+{
+  "metadata": {
+    "name": "Index0 Core Schema",
+    "version": 1
+  },
+
+  "base_entities": {
+
+    "entity_base": {
+
+      "base_fields": {
+
+        "id": "string",
+
+        "name": "string",
+
+        "type": "string",
+
+        "tags": "array",
+
+        "start_year": ["number", "null"],
+
+        "end_year": ["number", "null"]
+
+      }
+
+    }
+
+  },
+
+  "reference_types": {
+
+    "entity_reference": "object",
+
+    "entity_list": "array"
+
+  }
+
+}

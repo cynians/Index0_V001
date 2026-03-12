@@ -1,0 +1,159 @@
+{
+  "schema": "formations",
+  "version": 2,
+
+  "description": "Schema describing military, corporate, or organizational formations such as fleets, armies, task forces, or strike groups.",
+
+  "fields": {
+
+    "id": {
+      "type": "string",
+      "description": "Unique identifier of the formation."
+    },
+
+    "name": {
+      "type": "string",
+      "description": "Human readable name of the formation."
+    },
+
+    "type": {
+      "type": "string",
+      "description": "Entity type identifier. Always 'formation'."
+    },
+
+    "parent_faction": {
+      "type": "string",
+      "description": "Faction controlling or operating this formation."
+    },
+
+    "formation_class": {
+      "type": "string",
+      "description": "General classification of the formation such as fleet, strike force, security fleet, etc."
+    },
+
+    "operational_role": {
+      "type": "array",
+      "description": "Primary mission roles performed by the formation."
+    },
+
+    "deployment_model": {
+      "type": "string",
+      "description": "Describes how the formation is deployed structurally (permanent fleet, distributed security force, temporary strike force, etc.)."
+    },
+
+    "command_model": {
+      "type": "string",
+      "description": "Command structure model such as centralized command, distributed command, or dual command."
+    },
+
+    "command_structure": {
+      "type": "object",
+      "description": "Narrative or structural description of command layers."
+    },
+
+    "operational_area": {
+      "type": "array",
+      "description": "Locations or systems where the formation operates."
+    },
+
+    "culture": {
+      "type": "array",
+      "description": "Internal cultural traits of the formation."
+    },
+
+    "reputation": {
+      "type": "array",
+      "description": "How the formation is perceived historically or culturally."
+    },
+
+    "doctrine": {
+      "type": "object",
+      "description": "Operational doctrine or phases used in engagements."
+    },
+
+    "strategic_objective": {
+      "type": "array",
+      "description": "Strategic goals of the formation in a given conflict."
+    },
+
+    "historical_role": {
+      "type": "object",
+      "description": "Historical context of the formation in a specific event or conflict."
+    },
+
+    "fleet_size": {
+      "type": "number",
+      "description": "Total number of ships or vehicles assigned to the formation."
+    },
+
+    "composition": {
+      "type": "object",
+      "description": "General description of the formation's ship or vehicle classes."
+    },
+
+
+
+    "personnel": {
+      "type": "object",
+      "description": "Personnel structure and role distribution of the formation.",
+      "fields": {
+
+        "total_personnel": {
+          "type": "number",
+          "description": "Total number of personnel assigned to the formation."
+        },
+
+        "roles": {
+          "type": "object",
+          "description": "Roles and job positions within the formation.",
+
+          "example_structure": {
+            "fleet_commander": {
+              "positions": 1
+            },
+            "ship_captain": {
+              "positions": 50
+            },
+            "pilot": {
+              "positions": 400
+            },
+            "engineer": {
+              "positions": 900
+            },
+            "security_personnel": {
+              "positions": 600
+            }
+          }
+        }
+      }
+    },
+
+
+
+    "assets": {
+      "type": "object",
+      "description": "Inventory of vehicles and equipment assigned to the formation.",
+
+      "example_structure": {
+
+        "light_frigate": {
+          "model": "xc_52_light_frigate",
+          "count": 12
+        },
+
+        "patrol_interceptor": {
+          "model": "generic_patrol_interceptor",
+          "count": 46
+        },
+
+        "mercenary_raider": {
+          "model": null,
+          "type": "raider_craft",
+          "count": 10
+        }
+
+      }
+    }
+
+  }
+}
