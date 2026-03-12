@@ -172,6 +172,32 @@ IDEA-408  Macao | historic foreign trade enclave port city | Location | All Eras
 IDEA-409  South China Sea Trade Network | monsoon driven maritime trade system | Historical Reference | All Eras
 IDEA-410  Pearl River Delta | major river delta maritime trade region | Location | All Eras
 
+IDEA-411  Saab 29 Tunnan | early Swedish swept wing jet fighter | Vehicle | Cold War
+IDEA-412  Saab 32 Lansen | Swedish jet attack and reconnaissance aircraft | Vehicle | Cold War
+IDEA-413  Saab 35 Draken | Swedish supersonic double delta interceptor | Vehicle | Cold War
+IDEA-414  Saab 37 Viggen | Swedish canard delta multirole combat aircraft | Vehicle | Cold War
+
+IDEA-415  Saab AB | Swedish aerospace and defense manufacturer | Organization | All Eras
+IDEA-416  Swedish Air Force (Flygvapnet) | national air defense service of Sweden | Organization | All Eras
+
+IDEA-417  Air-to-Air Missiles | guided aircraft launched aerial combat missiles | Technology | Cold War
+IDEA-418  Variable Geometry Wing | adjustable sweep aircraft wing system | Technology | Cold War
+
+IDEA-419  General Dynamics F-111 Aardvark | long range terrain following strike aircraft | Vehicle | Cold War
+IDEA-420  Grumman F-14 Tomcat | carrier based variable sweep interceptor fighter | Vehicle | Cold War
+IDEA-421  Panavia Tornado | European low level strike swing wing aircraft | Vehicle | Cold War
+
+IDEA-422  Lift Engines | dedicated vertical thrust engines for VTOL aircraft | Technology | Cold War
+IDEA-423  Yakovlev Yak-38 | Soviet VTOL naval strike aircraft | Vehicle | Cold War
+
+IDEA-424  Thrust Vectoring Nozzle | controllable jet exhaust direction system | Technology | Cold War
+IDEA-425  Terrain-Following Radar | automatic low altitude terrain tracking radar | Technology | Cold War
+
+IDEA-426  Eurofighter Typhoon | European multirole canard delta fighter aircraft | Vehicle | Modern Era
+IDEA-427  Cold War Aircraft Navigator | multi crew aircraft navigation and targeting specialist | Role | Cold War
+IDEA-428  Test Pilot | pilot specialized in experimental aircraft evaluation | Role | All Eras
+IDEA-429  Flight Testing | engineering process for evaluating aircraft performance | Technology | All Eras
+
 ================================================
 REFERENCE: MACRO ERAS
 ================================================
@@ -8864,3 +8890,470 @@ The Pearl River Delta is a large river delta located on the southern coast of Ch
 The region developed into one of the most economically active maritime zones in the world, combining inland river transport with coastal and international trade routes.
 
 Its complex network of waterways, ports, and trading settlements made the region a central hub of maritime commerce in East Asia.
+
+
+
+------------------------------------------------
+IDEA-411
+------------------------------------------------
+
+Name: Saab 29 Tunnan
+Domain: Vehicle
+
+Parent Idea:
+Earth
+
+Era:
+Cold War
+
+Tags:
+aircraft
+fighter
+sweden
+jet
+
+Description:
+The Saab 29 Tunnan was an early Swedish jet fighter introduced in the early Cold War period.
+
+It was one of the first European aircraft with a swept wing design and represented Sweden’s transition from piston aircraft to modern jet-powered fighters.
+
+The aircraft served primarily as an interceptor within the Swedish Air Force and formed the backbone of Swedish air defense during the early jet age.
+
+
+------------------------------------------------
+IDEA-412
+------------------------------------------------
+
+Name: Saab 32 Lansen
+Domain: Vehicle
+
+Parent Idea:
+Earth
+
+Era:
+Cold War
+
+Tags:
+aircraft
+attack
+sweden
+jet
+
+Description:
+The Saab 32 Lansen was a Swedish jet-powered attack and reconnaissance aircraft developed during the Cold War.
+
+Designed as a multi-role combat aircraft, it served in strike, reconnaissance, and later electronic warfare roles within the Swedish Air Force.
+
+The aircraft represented an important transitional generation between early jet fighters and later supersonic Swedish aircraft.
+
+
+------------------------------------------------
+IDEA-413
+------------------------------------------------
+
+Name: Saab 35 Draken
+Domain: Vehicle
+
+Parent Idea:
+Earth
+
+Era:
+Cold War
+
+Tags:
+aircraft
+fighter
+interceptor
+sweden
+
+Description:
+The Saab 35 Draken was a supersonic interceptor aircraft developed by Sweden during the Cold War to defend national airspace.
+
+The aircraft introduced a distinctive double-delta wing configuration which allowed stable supersonic performance while retaining acceptable low-speed handling.
+
+The Draken formed a key component of Swedish air defense during the 1960s and 1970s.
+
+
+------------------------------------------------
+IDEA-414
+------------------------------------------------
+
+Name: Saab 37 Viggen
+Domain: Vehicle
+
+Parent Idea:
+Earth
+
+Era:
+Cold War
+
+Tags:
+aircraft
+fighter
+multirole
+sweden
+
+Description:
+The Saab 37 Viggen was a Swedish multirole combat aircraft developed during the Cold War.
+
+The aircraft used a canard-delta wing configuration and advanced avionics systems and was designed to operate from Sweden’s dispersed road-base airfield network.
+
+A unique thrust reverser allowed the aircraft to land on short runways and highway strips.
+
+
+------------------------------------------------
+IDEA-415
+------------------------------------------------
+
+Name: Saab AB
+Domain: Organization
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+company
+aerospace
+sweden
+defense
+
+Description:
+Saab AB is a Swedish aerospace and defense company responsible for the development of many Swedish military aircraft and defense technologies.
+
+During the Cold War the company produced several generations of indigenous jet fighters and strike aircraft designed specifically for Sweden’s national defense doctrine.
+
+
+------------------------------------------------
+IDEA-416
+------------------------------------------------
+
+Name: Swedish Air Force (Flygvapnet)
+Domain: Organization
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+military
+airforce
+sweden
+
+Description:
+The Swedish Air Force, known as Flygvapnet, is the aerial warfare branch of the Swedish Armed Forces.
+
+During the Cold War it developed a distinctive doctrine emphasizing dispersed airbases, rapid aircraft turnaround, and domestically produced combat aircraft.
+
+
+------------------------------------------------
+IDEA-417
+------------------------------------------------
+
+Name: Air-to-Air Missiles
+Domain: Technology
+
+Parent Idea:
+Earth
+
+Era:
+Cold War
+
+Tags:
+missile
+aircombat
+weapon
+
+Description:
+Air-to-air missiles are guided weapons launched from aircraft against other aircraft.
+
+Developed during the Cold War, these missiles allowed fighters to engage enemy aircraft beyond visual range using infrared or radar guidance systems.
+
+
+------------------------------------------------
+IDEA-418
+------------------------------------------------
+
+Name: Variable Geometry Wing
+Domain: Technology
+
+Parent Idea:
+Earth
+
+Era:
+Cold War
+
+Tags:
+aircraft
+wing
+aerodynamics
+
+Description:
+A variable geometry wing, also known as a swing wing, is an aircraft wing design that can change its sweep angle during flight.
+
+This allows an aircraft to optimize aerodynamic performance for both low-speed operations and high-speed supersonic flight.
+
+
+------------------------------------------------
+IDEA-419
+------------------------------------------------
+
+Name: General Dynamics F-111 Aardvark
+Domain: Vehicle
+
+Parent Idea:
+Earth
+
+Era:
+Cold War
+
+Tags:
+aircraft
+strike
+usa
+
+Description:
+The F-111 Aardvark was a long-range strike aircraft developed in the United States during the Cold War.
+
+It introduced technologies such as variable geometry wings and terrain-following radar, allowing high-speed low-level penetration missions.
+
+
+------------------------------------------------
+IDEA-420
+------------------------------------------------
+
+Name: Grumman F-14 Tomcat
+Domain: Vehicle
+
+Parent Idea:
+Earth
+
+Era:
+Cold War
+
+Tags:
+aircraft
+fighter
+naval
+
+Description:
+The F-14 Tomcat was a carrier-based interceptor developed for the United States Navy.
+
+The aircraft used variable geometry wings and powerful radar systems to intercept long-range bomber threats.
+
+
+------------------------------------------------
+IDEA-421
+------------------------------------------------
+
+Name: Panavia Tornado
+Domain: Vehicle
+
+Parent Idea:
+Earth
+
+Era:
+Cold War
+
+Tags:
+aircraft
+strike
+europe
+
+Description:
+The Panavia Tornado was a multirole combat aircraft developed through a collaboration between the United Kingdom, Germany, and Italy.
+
+The aircraft featured variable geometry wings and was optimized for low-level high-speed strike missions.
+
+
+------------------------------------------------
+IDEA-422
+------------------------------------------------
+
+Name: Lift Engines
+Domain: Technology
+
+Parent Idea:
+Earth
+
+Era:
+Cold War
+
+Tags:
+vtol
+engine
+aircraft
+
+Description:
+Lift engines are dedicated vertical thrust engines used in some vertical takeoff aircraft.
+
+They provide upward thrust during takeoff and landing while a separate propulsion engine provides forward flight.
+
+
+------------------------------------------------
+IDEA-423
+------------------------------------------------
+
+Name: Yakovlev Yak-38
+Domain: Vehicle
+
+Parent Idea:
+Earth
+
+Era:
+Cold War
+
+Tags:
+aircraft
+vtol
+soviet
+
+Description:
+The Yak-38 was a Soviet VTOL strike aircraft designed for operation from small aircraft carriers.
+
+The aircraft used a hybrid propulsion system consisting of a main engine and additional lift engines for vertical takeoff.
+
+
+------------------------------------------------
+IDEA-424
+------------------------------------------------
+
+Name: Thrust Vectoring Nozzle
+Domain: Technology
+
+Parent Idea:
+Earth
+
+Era:
+Cold War
+
+Tags:
+propulsion
+aircraft
+
+Description:
+A thrust vectoring nozzle allows the direction of engine exhaust to be controlled.
+
+By redirecting thrust, the system can improve maneuverability or provide vertical lift in certain aircraft designs.
+
+
+------------------------------------------------
+IDEA-425
+------------------------------------------------
+
+Name: Terrain-Following Radar
+Domain: Technology
+
+Parent Idea:
+Earth
+
+Era:
+Cold War
+
+Tags:
+radar
+navigation
+aircraft
+
+Description:
+Terrain-following radar is a navigation system that allows an aircraft to automatically maintain a low altitude above the terrain.
+
+The system enabled high-speed low-level flight designed to avoid enemy radar detection.
+
+
+------------------------------------------------
+IDEA-426
+------------------------------------------------
+
+Name: Eurofighter Typhoon
+Domain: Vehicle
+
+Parent Idea:
+Earth
+
+Era:
+Modern Era
+
+Tags:
+aircraft
+fighter
+europe
+
+Description:
+The Eurofighter Typhoon is a multirole fighter aircraft developed through a collaboration between several European nations.
+
+The aircraft features a canard-delta configuration, advanced avionics, and high maneuverability for both air-to-air and strike missions.
+
+
+------------------------------------------------
+IDEA-427
+------------------------------------------------
+
+Name: Cold War Aircraft Navigator
+Domain: Role
+
+Parent Idea:
+Earth
+
+Era:
+Cold War
+
+Tags:
+aviation
+crew
+military
+
+Description:
+The aircraft navigator was a specialized crew member responsible for navigation, radar operation, and mission management in multi-crew aircraft such as bombers and strike aircraft.
+
+Navigators were especially important in long-range or low-level strike missions.
+
+
+------------------------------------------------
+IDEA-428
+------------------------------------------------
+
+Name: Test Pilot
+Domain: Role
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+aviation
+testing
+
+Description:
+A test pilot is an aviator responsible for flying experimental or newly developed aircraft during evaluation and development.
+
+Test pilots assess aircraft performance, handling characteristics, and operational limits.
+
+
+------------------------------------------------
+IDEA-429
+------------------------------------------------
+
+Name: Flight Testing
+Domain: Technology
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+engineering
+aviation
+
+Description:
+Flight testing is the engineering process used to evaluate aircraft performance and safety through controlled test flights.
+
+The process allows engineers to validate aircraft systems, measure performance, and refine aircraft design.
