@@ -1,22 +1,242 @@
 ================================================
 INDEX_0 IDEA REPOSITORY
 ================================================
+================================================
+IDEA REGISTRY
+================================================
 
+IDEA-001  Map System | multi scale simulation mapping | System | All Eras
+IDEA-002  QuantCom Communication Network | interstellar quantum communication backbone | Infrastructure | Planetary Period
+IDEA-003  QuantCom Bonding Maturation | stabilized long distance communication | Infrastructure | Planetary Period
+IDEA-004  Planetary Population Control System | demographic regulation planetary infrastructure | Governance | GGO Hegemony
 
+IDEA-005–009  — reserved —
+
+IDEA-010  Mitchell Class Seaplane Tender | naval aviation support vessel | Vehicle | Postmodernist Period
+IDEA-011  Hunter Class Frigate | multi role escort warship | Vehicle | Postmodernist Period
+IDEA-012  Cyberpunk Car | dense megacity civilian transport | Vehicle | Postmodernist Period
+IDEA-013  UH-63 Whitehawk Helicopter | military logistics rotorcraft platform | Vehicle | Postmodernist Period
+IDEA-014  Barbento BR120 Aircraft | medium range passenger aircraft | Vehicle | Postmodernist Period
+IDEA-015  7P2 Coil Energy Ship | orbital colony energy generator | Vehicle | Planetary Period
+IDEA-016  Race for Sol Bulldozer | early planetary construction vehicle | Vehicle | Race for Sol
+
+IDEA-017–019  — reserved —
+
+IDEA-020  Foldable Cargo Container | collapsible standardized cargo container | Logistics | Race for Sol
+
+IDEA-021–029  — reserved —
+
+IDEA-030  Distributed Microfactory Production | decentralized modular industrial manufacturing | Production | Planetary Period
+IDEA-031  Orbital Shipyard Assembly | large scale spacecraft construction | Production | Planetary Period
+IDEA-032  Vertical Arcology Manufacturing | megastructure integrated industrial production | Production | Planetary Period
+
+IDEA-033–049  — reserved —
+
+IDEA-050  Sikorski Aircraft Corporation | aerospace manufacturing corporation entity | Organization | Postmodernist Period
+IDEA-051  US Army | terrestrial military organization structure | Organization | Postmodernist Period
+
+IDEA-052–164  — reserved —
+
+IDEA-165  Terran Biome Diversity Project | interstellar planetary terraforming institution | Organization | Planetary Period
+
+IDEA-166–170  — reserved —
+
+IDEA-171  Container Retrieval Craft | orbital cargo recovery spacecraft | Technology | Race for Inter Sol
+IDEA-172–173  — reserved —
+IDEA-174  GGO Container Latch Standard | standardized cargo attachment interface | Technology | GGO Hegemony
+
+IDEA-175–219  — reserved —
+
+IDEA-220  CSG Experimental Civilizations | controlled planetary society experiments | Institution | Planetary Period
+IDEA-221  Seeding Approach Papers | cultural seeding theoretical frameworks | Research | Planetary Period
+IDEA-222  Pre Contact Culturals | isolated planetary cultural development | Civilization | Planetary Period
+IDEA-223  Post Contact Culturals | contacted experimental planetary societies | Civilization | Planetary Period
+IDEA-224  SAP Completion Conditions | civilization experiment termination criteria | Research | Planetary Period
+IDEA-225  Persanul Corporate Interaction | corporation civilization contact event | Event | Planetary Period
+
+IDEA-226  Rust Sector Oxidation Bands | industrial architecture identification bands | Culture | Trifecta Dominion
+IDEA-227  Rust Sector Industrial Architecture | oxidized metal industrial megastructures | Architecture | Trifecta Dominion
+IDEA-228  Orbital Graveyards | abandoned spacecraft accumulation zones | Space Infrastructure | Planetary Period
+IDEA-229  Keggel Class Hansa Bulk Carrier | large autonomous cargo freighter | Vehicle | Planetary Period
+
+IDEA-230  Oxyde System | metal rich industrial star system | Star System | Planetary Period
+IDEA-231  Planet Patina | partially terraformed industrial world | Planet | Planetary Period
+IDEA-232  Patina Orbital Graveyard | orbital wreckage salvage belts | Location | Planetary Period
+IDEA-233  Capital Pursuits | venture capitalism space conglomerate | Organization | Planetary Period
+IDEA-234  Million Labels Group | corporate industrial defense conglomerate | Organization | Planetary Period
+
+IDEA-235  — unused —
+
+IDEA-236  Patina Omni Production Shipyard | autonomous orbital megashipyard complex | Production | Planetary Period
+IDEA-237  Container Spine Freighter | modular cargo spine spacecraft | Vehicle | Planetary Period
+IDEA-238  Patina Porcupine Carrier | modular interstellar container carrier | Vehicle | Planetary Period
+IDEA-239  Porcupine Engine Module | detachable propulsion cargo unit | Technology | Planetary Period
+
+IDEA-240–244  Patina orbital infrastructure cluster | mixed | Planetary Period
+
+IDEA-245  Orbital Pusher Craft | automated debris repositioning spacecraft | Technology | Planetary Period
+IDEA-246  Porcupine Wreck Populations | abandoned carrier salvage settlements | Culture | Planetary Period
+IDEA-247  Patina Orbital Object Registry | orbital debris catalog system | Infrastructure | Planetary Period
+IDEA-248  MLG Tactical Fighter Series | corporate security interceptor craft | Vehicle | Planetary Period
+IDEA-249  Patina OO-7-285 | wrecked porcupine carrier cluster | Location | Planetary Period
+
+IDEA-250  BDP Terraforming Phases | staged planetary biosphere construction | Terraforming | Planetary Period
+IDEA-251  Tibnen | terraformed oceanic world | Planet | Planetary Period
+IDEA-252  BDP Ark Operations | mobile planetary terraforming missions | Terraforming | Planetary Period
+IDEA-253  BDP Observation Posts | orbital biosphere monitoring stations | Terraforming | Planetary Period
+
+IDEA-254–261  planetary settlement cluster | mixed | Planetary Period
+
+IDEA-262  Rust Sector Bolt Class Vessel | rugged modular industrial spacecraft | Vehicle | Trifecta Dominion
+IDEA-263  Rust Sector Symbiont Interface | neural industrial vehicle interface | Technology | Trifecta Dominion
+IDEA-264  Rust Sector Symbiont Ships | pilot integrated industrial spacecraft | Vehicle | Trifecta Dominion
+
+IDEA-265  Pronghorn | plains adapted grazing ungulate | Species | Planetary Period
+IDEA-266  Gustamal Coastal Riparian Steppe | coastal steppe river ecosystem | Bioregion | Planetary Period
+IDEA-267  Andrewsarchus Ecological Role | omnivore predator scavenger niche | Ecology | Planetary Period
+IDEA-268  Industrial Reentry Phenomena | atmospheric debris reentry effects | Environment | Planetary Period
+
+IDEA-269–274  coastal fog signal technologies | components | Industrial Period
+
+IDEA-275  LM Lines | lunar mars transport company | Organization | Race for Sol
+IDEA-276–278  lunar mars infrastructure cluster | mixed | Race for Sol
+
+IDEA-279–293  Blue Sector civilization cluster | mixed | Trifecta Dominion
+
+IDEA-294–300  Oka robotic culture cluster | mixed | Planetary Period
+
+IDEA-301  Superpower Wars | global geopolitical collapse conflict | Event | Superpower Wars
+IDEA-302–308  superpower war political entities | mixed | Superpower Wars
+
+IDEA-309–313  New Caledonia ecology cluster | mixed | Planetary Period
+
+IDEA-314  SAP Antonia Experiment | historical civilization recreation experiment | Research | Planetary Period
+IDEA-315  Antonia | roman historical reconstruction world | Planet | Planetary Period
+IDEA-316  Antonian Republic | recreated roman republican polity | Faction | Planetary Period
+IDEA-317  Mark Anthony Seed | reconstructed historical personality template | Person | Planetary Period
+
+IDEA-318–362  — reserved —
+
+IDEA-363  Patina Drifter Population | multicultural frontier migrant population | Culture | Planetary Period
+IDEA-364  Patina Surface Taxi | industrial frontier urban vehicle | Vehicle | Planetary Period
+IDEA-365  Patina Dock Transfer Tug | orbital cargo maneuvering tug | Vehicle | Planetary Period
+IDEA-366  Patina Tug Pilot | civilian orbital tug operator | Person | Planetary Period
+IDEA-367  Orbital Deployable Habitation Stack | modular orbital settlement megastructure | Infrastructure | Planetary Period
+IDEA-368  Habitation Stack Manufacturer | orbital settlement construction corporation | Organization | Planetary Period
+IDEA-369  Transfer Hansa Market | interstellar logistics trading network | Organization | Planetary Period
+IDEA-370  Patina Industrial Utility Helicopter | industrial cargo rotorcraft transport | Vehicle | Planetary Period
+IDEA-371  Stacklinger | megablock based frontier city | City | Planetary Period
+
+IDEA-372  Neurons | long duration ark pilots | Persons / Technology | Planetary Period
+IDEA-373  Ark Seed Terraforming Vessel | autonomous planetary terraform vessel | Vehicle | Planetary Period
+IDEA-374  Ark Seed Propulsion Architecture | long endurance interstellar propulsion | Technology | Planetary Period
+IDEA-375  Automated Terraforming Industry | autonomous planetary transformation industry | Production | Planetary Period
+IDEA-376  Industry Seed Capsules | packaged planetary industrial bootstrap | Technology | Planetary Period
+IDEA-377  BDP Priming Fleet | planetary terraforming preparation fleet | Organization | Planetary Period
+IDEA-378  Terran BDP Observers | cryosleep biosphere monitoring personnel | Persons | Planetary Period
+IDEA-379  Artificial Omni Wombs | automated planetary species generation | Technology | Planetary Period
 ================================================
 REFERENCE: MACRO ERAS
 ================================================
 
-POSTMODERNIST PERIOD
+POSTMODERNIST PERIOD (≈2024)
 
-Late industrial and early space age civilization on Earth.
-Geopolitical tensions culminate in the Superpower Wars.
+Baseline technological and geopolitical world.
+Reusable launch systems and large orbital satellite
+constellations emerge.
 
 
-RACE FOR SOL
+SUPERPOWER WARS (≈2024–2090)
 
-Human expansion into the Solar System.
-Major colonization of Mars, the Moon, and other Sol bodies.
+A prolonged period of intermittent global conflict.
+The rules-based international order collapses and
+numerous geopolitical struggles erupt across the world.
+
+Major powers fragment or reorganize, including the
+collapse of the United States, the unification of
+Europe into the ENU, the fragmentation of China,
+and the emergence of a Pan-African Union.
+
+The wars end with the establishment of the New Order
+Treaty, a global collective defense framework that
+prevents large-scale interstate war.
+
+
+RACE FOR SOL (2090–2440)
+
+With terrestrial expansion politically constrained
+by the New Order Treaty, geopolitical competition
+moves into space.
+
+National and bloc-based space agencies initiate
+a prolonged period of prestige-driven exploration
+and technological competition known as the Race
+for Sol.
+
+Early expansion focuses on symbolic achievements
+such as permanent lunar settlements, Mars
+expeditions and large orbital infrastructure.
+Human presence gradually spreads throughout the
+Solar System, beginning with the Moon and Mars
+and later extending to the asteroid belt and
+outer planetary bodies.
+
+Although open warfare between major powers
+remains politically constrained under the New
+Order framework, covert military confrontations
+occur in space in a series of clandestine
+conflicts later known as the Silent Wars.
+
+Over the course of the era, orbital industry,
+planetary settlements and interplanetary
+transport networks slowly transform the Solar
+System into a permanently inhabited human
+environment.
+
+Near the end of the Race for Sol, the first
+experimental interstellar missions are attempted,
+including early expeditions toward the Alpha
+Centauri system.
+GGO HEGEMONY PERIOD
+
+During this era the Global Government Organization (GGO)
+consolidates political control over most of Earth and
+extends its influence across the Solar System and the
+first interstellar colonies.
+
+Early interstellar settlements founded during the Race
+for Inter Sol remain isolated due to the vast distances
+between star systems. Colonies often reproduce the
+institutional structure of the GGO but operate largely
+autonomously.
+
+Terraforming projects initiated during the late Race for
+Sol continue to develop, and a small number of nearby
+systems become permanently inhabited.
+
+Shortly before the First Contraction Event in the year
+3000, construction begins on the COG, a massive terrestrial
+population megastructure that gradually concentrates the
+majority of Earth's inhabitants.
+
+The unexplained contraction of interstellar distances
+triggers a large expansion wave of colonial missions.
+Offworld settlement becomes an important tool of population
+management, sending large numbers of people to distant
+systems with varying success.
+
+During the later centuries of the era the GGO reaches the
+height of its power, controlling much of the Solar System,
+before eventually losing its dominance on Earth to
+Retronationalist forces.
+
+PLANETARY PERIOD
+
+
+TRIFECTA DOMINION PERIOD
+
+
+INTERSECTOR ASSEMBLY
 
 
 GGO HEGEMONY PERIOD
@@ -4166,3 +4386,3402 @@ Within the Antonian Republic this personality pattern tends to produce ambitious
 The template was introduced to observe the emergence of powerful republican generals whose ambitions may challenge the stability of senatorial government.
 
 
+------------------------------------------------
+IDEA-318
+------------------------------------------------
+
+id:
+tech_cargo_strap_system
+
+name:
+Cargo Strap System
+
+type:
+Technology
+
+tags:
+logistics
+cargo
+transport
+fastening
+
+start_year:
+1950
+
+Domain:
+Technology
+
+Parent Idea:
+Cargo Handling Equipment
+
+Era:
+All Eras
+
+Description:
+A reusable strap and tensioning mechanism used to secure cargo
+during transport.
+
+Cargo strap systems typically consist of high-strength fabric or
+composite webbing combined with a mechanical tensioning device
+such as a ratchet or cam buckle.
+
+They are widely used to secure containers, crates, machinery,
+and loose equipment on trucks, ships, aircraft, and cargo
+platforms.
+
+
+
+------------------------------------------------
+IDEA-319
+------------------------------------------------
+
+id:
+tech_industrial_work_gloves
+
+name:
+Industrial Work Gloves
+
+type:
+Technology
+
+tags:
+safety
+industrial
+workwear
+tools
+
+start_year:
+1900
+
+Domain:
+Technology
+
+Parent Idea:
+Industrial Safety Equipment
+
+Era:
+All Eras
+
+Description:
+Protective gloves worn by workers handling tools,
+machinery, and raw materials.
+
+Industrial work gloves protect against abrasion, heat,
+sharp edges, and mechanical stress depending on their
+construction and materials.
+
+They are standard safety equipment in manufacturing,
+construction, maintenance, and industrial logistics.
+
+
+
+------------------------------------------------
+IDEA-320
+------------------------------------------------
+
+id:
+tech_portable_field_stove
+
+name:
+Portable Field Stove
+
+type:
+Technology
+
+tags:
+expedition
+survival
+camping
+cooking
+
+start_year:
+1890
+
+Domain:
+Technology
+
+Parent Idea:
+Field Equipment
+
+Era:
+All Eras
+
+Description:
+A compact portable cooking device used by travelers,
+expedition teams, and field workers.
+
+Portable field stoves operate with small fuel cartridges
+or liquid fuel and provide a controlled heat source for
+preparing food or boiling water in remote environments.
+
+
+
+------------------------------------------------
+IDEA-321
+------------------------------------------------
+
+id:
+tech_hand_signal_lamp
+
+name:
+Hand Signal Lamp
+
+type:
+Technology
+
+tags:
+communication
+navigation
+visual-signal
+maritime
+
+start_year:
+1850
+
+Domain:
+Technology
+
+Parent Idea:
+Visual Signaling Equipment
+
+Era:
+Industrial Period
+Early Space Period
+
+Description:
+A portable lamp used to transmit coded visual signals
+between distant observers.
+
+These devices were historically used in maritime
+communication, harbor operations, and military
+signaling before the widespread adoption of radio
+communication systems.
+
+
+
+------------------------------------------------
+IDEA-322
+------------------------------------------------
+
+id:
+tech_utility_knife
+
+name:
+Utility Knife
+
+type:
+Technology
+
+tags:
+tool
+cutting
+maintenance
+workshop
+
+start_year:
+1850
+
+Domain:
+Technology
+
+Parent Idea:
+Hand Tools
+
+Era:
+All Eras
+
+Description:
+A compact cutting tool with a sharp replaceable blade
+used for a wide range of tasks.
+
+Utility knives are commonly used for cutting rope,
+opening cargo packaging, trimming materials, and
+general maintenance work in workshops, warehouses,
+and field environments.
+
+
+
+------------------------------------------------
+IDEA-323
+------------------------------------------------
+
+id:
+tech_tool_belt_harness
+
+name:
+Tool Belt Harness
+
+type:
+Technology
+
+tags:
+tools
+equipment
+workgear
+
+start_year:
+1900
+
+Domain:
+Technology
+
+Parent Idea:
+Industrial Work Equipment
+
+Era:
+All Eras
+
+Description:
+A wearable belt or harness system designed to carry
+tools while allowing workers to keep both hands free.
+
+Tool belt systems typically include multiple pouches,
+loops, and attachment points for hand tools and
+fasteners and are widely used by construction workers,
+mechanics, and maintenance technicians.
+
+
+
+------------------------------------------------
+IDEA-324
+------------------------------------------------
+
+id:
+tech_portable_work_light
+
+name:
+Portable Work Light
+
+type:
+Technology
+
+tags:
+lighting
+industrial
+maintenance
+portable
+
+start_year:
+1920
+
+Domain:
+Technology
+
+Parent Idea:
+Field Lighting Equipment
+
+Era:
+All Eras
+
+Description:
+A portable lighting device used to illuminate work
+areas where permanent lighting is unavailable.
+
+Portable work lights are widely used in construction,
+repair work, industrial maintenance, and field
+operations.
+
+
+
+------------------------------------------------
+IDEA-325
+------------------------------------------------
+
+id:
+tech_field_ration_pack
+
+name:
+Field Ration Pack
+
+type:
+Technology
+
+tags:
+food
+military
+expedition
+logistics
+
+start_year:
+1930
+
+Domain:
+Technology
+
+Parent Idea:
+Field Supply Systems
+
+Era:
+All Eras
+
+Description:
+A pre-packaged meal kit designed for easy storage
+and consumption during travel, expeditions, or
+military operations.
+
+Ration packs contain preserved foods and
+nutrient-dense components that allow meals to be
+consumed with minimal preparation equipment.
+
+------------------------------------------------
+IDEA-326
+------------------------------------------------
+
+id:
+item_mooring_line
+
+name:
+Mooring Line
+
+type:
+Good
+
+item_class:
+maritime_equipment
+
+tags:
+naval
+shipping
+rope
+mooring
+
+start_year:
+1600
+
+Domain:
+Items
+
+Parent Idea:
+Maritime Dock Equipment
+
+Era:
+All Eras
+
+Description:
+A heavy rope or cable used to secure a vessel to docks, piers,
+or mooring buoys.
+
+Mooring lines must withstand constant tension caused by waves,
+wind, and tidal movement. Historically they were made from
+natural fibers such as hemp or manila, while modern versions
+use synthetic materials like nylon or polypropylene.
+
+
+------------------------------------------------
+IDEA-327
+------------------------------------------------
+
+id:
+item_signal_flag_set
+
+name:
+Signal Flag Set
+
+type:
+Good
+
+item_class:
+maritime_signaling_equipment
+
+tags:
+naval
+communication
+flags
+navigation
+
+start_year:
+1800
+
+Domain:
+Items
+
+Parent Idea:
+Visual Signaling Equipment
+
+Era:
+Industrial Period
+Early Space Period
+
+Description:
+A standardized collection of colored flags used for visual
+communication between ships.
+
+Each flag represents letters, numbers, or specific coded
+messages defined by maritime signaling systems such as the
+International Code of Signals.
+
+
+------------------------------------------------
+IDEA-328
+------------------------------------------------
+
+id:
+item_oilskin_weather_coat
+
+name:
+Oilskin Weather Coat
+
+type:
+Good
+
+item_class:
+maritime_clothing
+
+tags:
+naval
+clothing
+weather_protection
+sailor_equipment
+
+start_year:
+1700
+
+Domain:
+Items
+
+Parent Idea:
+Maritime Work Clothing
+
+Era:
+All Eras
+
+Description:
+A waterproof protective coat traditionally worn by sailors
+working on exposed decks in heavy weather.
+
+Oilskin coats were originally made from tightly woven fabric
+treated with oils or waxes to repel water. Modern variants
+use synthetic waterproof materials.
+
+
+------------------------------------------------
+IDEA-329
+------------------------------------------------
+
+id:
+item_galley_mess_tray
+
+name:
+Galley Mess Tray
+
+type:
+Good
+
+item_class:
+shipboard_dining_equipment
+
+tags:
+naval
+food
+shipboard_life
+kitchen
+
+start_year:
+1800
+
+Domain:
+Items
+
+Parent Idea:
+Shipboard Galley Equipment
+
+Era:
+All Eras
+
+Description:
+A durable serving tray used aboard ships for distributing
+meals from the galley to crew members.
+
+Mess trays are typically made from metal or durable plastic
+and are designed to withstand frequent washing and heavy
+use in confined shipboard kitchens.
+
+
+------------------------------------------------
+IDEA-330
+------------------------------------------------
+
+id:
+item_sounding_line
+
+name:
+Sounding Line
+
+type:
+Good
+
+item_class:
+navigation_instrument
+
+tags:
+naval
+navigation
+depth_measurement
+
+start_year:
+1500
+
+Domain:
+Items
+
+Parent Idea:
+Maritime Navigation Instruments
+
+Era:
+All Eras
+
+Description:
+A weighted line used to measure the depth of water beneath
+a vessel.
+
+The line is lowered until the weight reaches the seabed,
+allowing sailors to determine water depth and identify
+safe navigation channels.
+
+
+------------------------------------------------
+IDEA-331
+------------------------------------------------
+
+id:
+item_bosuns_whistle
+
+name:
+Bosun's Whistle
+
+type:
+Good
+
+item_class:
+shipboard_command_tool
+
+tags:
+naval
+communication
+command
+shipboard_life
+
+start_year:
+1700
+
+Domain:
+Items
+
+Parent Idea:
+Shipboard Command Instruments
+
+Era:
+All Eras
+
+Description:
+A small metal whistle used by boatswains to signal commands
+to crew members on deck.
+
+Different tones and patterns convey specific orders during
+shipboard operations such as raising sails, assembling crew,
+or performing maneuvers.
+
+
+------------------------------------------------
+IDEA-332
+------------------------------------------------
+
+id:
+component_deck_cleat
+
+name:
+Deck Cleat
+
+type:
+Component
+
+item_class:
+maritime_fastening_component
+
+tags:
+naval
+mooring
+hardware
+deck_equipment
+
+start_year:
+1600
+
+Domain:
+Items
+
+Parent Idea:
+Maritime Deck Hardware
+
+Era:
+All Eras
+
+Description:
+A fixed metal fitting mounted on the deck of a ship or dock
+used to secure mooring lines.
+
+Mooring ropes are wrapped around the cleat in specific
+patterns to hold a vessel in position while allowing the
+line to be released quickly when required.
+
+
+------------------------------------------------
+IDEA-333
+------------------------------------------------
+
+id:
+tech_watermill
+
+name:
+Watermill
+
+type:
+Technology
+
+tags:
+medieval
+agriculture
+mechanical_power
+milling
+
+start_year:
+200
+
+Domain:
+Technology
+
+Parent Idea:
+Hydraulic Power Systems
+
+Era:
+Medieval Period
+
+Description:
+A mechanical system that converts the kinetic energy of flowing
+water into rotational power.
+
+Watermills were widely used in medieval Europe for grinding grain,
+sawing timber, forging metal, and powering various industrial
+processes. They represent one of the earliest large-scale uses of
+renewable mechanical energy in human industry.
+
+
+
+------------------------------------------------
+IDEA-334
+------------------------------------------------
+
+id:
+tech_windmill
+
+name:
+Windmill
+
+type:
+Technology
+
+tags:
+medieval
+agriculture
+mechanical_power
+milling
+
+start_year:
+900
+
+Domain:
+Technology
+
+Parent Idea:
+Wind Power Systems
+
+Era:
+Medieval Period
+
+Description:
+A mechanical structure that uses wind energy to drive rotating
+machinery.
+
+Windmills were commonly used to grind grain and pump water in
+regions lacking strong river systems. Their rotating sails convert
+wind energy into rotational motion transmitted through gears to
+millstones or pumps.
+
+
+
+------------------------------------------------
+IDEA-335
+------------------------------------------------
+
+id:
+tech_heavy_plow
+
+name:
+Heavy Plow
+
+type:
+Technology
+
+tags:
+medieval
+agriculture
+farming
+
+start_year:
+600
+
+Domain:
+Technology
+
+Parent Idea:
+Agricultural Implements
+
+Era:
+Medieval Period
+
+Description:
+A large iron-tipped plow designed to turn heavy clay soils found
+in northern Europe.
+
+Unlike earlier scratch plows, the heavy plow included a moldboard
+that turned the soil completely, improving aeration and allowing
+more productive farming.
+
+
+
+------------------------------------------------
+IDEA-336
+------------------------------------------------
+
+id:
+tech_horse_collar
+
+name:
+Horse Collar
+
+type:
+Technology
+
+tags:
+medieval
+agriculture
+transport
+animal_power
+
+start_year:
+800
+
+Domain:
+Technology
+
+Parent Idea:
+Animal Harness Systems
+
+Era:
+Medieval Period
+
+Description:
+A harness device that allows horses to pull heavy loads efficiently
+without restricting breathing.
+
+The horse collar distributes load across the animal's shoulders,
+greatly increasing the power horses could exert in agriculture
+and transportation.
+
+
+
+------------------------------------------------
+IDEA-337
+------------------------------------------------
+
+id:
+tech_stirrup
+
+name:
+Stirrup
+
+type:
+Technology
+
+tags:
+medieval
+military
+cavalry
+equipment
+
+start_year:
+500
+
+Domain:
+Technology
+
+Parent Idea:
+Mounted Combat Equipment
+
+Era:
+Medieval Period
+
+Description:
+A foot support attached to a saddle that stabilizes a rider while
+mounted on a horse.
+
+Stirrups improved balance and control during riding and enabled
+the development of heavily armed cavalry by allowing riders to
+apply greater force with weapons such as lances.
+
+
+
+------------------------------------------------
+IDEA-338
+------------------------------------------------
+
+id:
+tech_chainmail_armor
+
+name:
+Chainmail Armor
+
+type:
+Technology
+
+tags:
+medieval
+military
+armor
+equipment
+
+start_year:
+300
+
+Domain:
+Technology
+
+Parent Idea:
+Personal Armor Systems
+
+Era:
+Medieval Period
+
+Description:
+A flexible protective armor composed of thousands of interlinked
+metal rings forming a protective mesh.
+
+Chainmail armor provided effective protection against cutting
+weapons while allowing considerable mobility.
+
+
+
+------------------------------------------------
+IDEA-339
+------------------------------------------------
+
+id:
+tech_trebuchet
+
+name:
+Trebuchet
+
+type:
+Technology
+
+tags:
+medieval
+military
+siege
+weapon
+
+start_year:
+1100
+
+Domain:
+Technology
+
+Parent Idea:
+Siege Weapon Systems
+
+Era:
+Medieval Period
+
+Description:
+A large counterweight-powered siege engine used to launch heavy
+projectiles against fortified structures.
+
+Trebuchets could hurl stones, incendiary materials, and other
+projectiles over long distances during medieval siege warfare.
+
+
+
+------------------------------------------------
+IDEA-340
+------------------------------------------------
+
+id:
+tech_stone_keep_castle_design
+
+name:
+Stone Keep Castle Design
+
+type:
+Technology
+
+tags:
+medieval
+military
+architecture
+fortification
+
+start_year:
+1000
+
+Domain:
+Technology
+
+Parent Idea:
+Fortified Architecture
+
+Era:
+Medieval Period
+
+Description:
+A fortified castle design centered around a massive stone tower
+known as the keep.
+
+Stone keeps served as the final defensive stronghold within a
+castle complex and housed garrisons, supplies, and command
+structures.
+
+
+
+------------------------------------------------
+IDEA-341
+------------------------------------------------
+
+id:
+tech_treadwheel_crane
+
+name:
+Treadwheel Crane
+
+type:
+Technology
+
+tags:
+medieval
+construction
+engineering
+
+start_year:
+1200
+
+Domain:
+Technology
+
+Parent Idea:
+Mechanical Lifting Systems
+
+Era:
+Medieval Period
+
+Description:
+A crane powered by human operators walking inside a large wheel
+that functions as a treadwheel.
+
+The rotational motion of the wheel winds a rope around a drum,
+lifting heavy loads used in medieval construction projects.
+
+
+
+------------------------------------------------
+IDEA-342
+------------------------------------------------
+
+id:
+tech_early_blast_furnace
+
+name:
+Early Blast Furnace
+
+type:
+Technology
+
+tags:
+medieval
+metallurgy
+iron_production
+
+start_year:
+1300
+
+Domain:
+Technology
+
+Parent Idea:
+Metallurgical Furnaces
+
+Era:
+Late Medieval Period
+
+Description:
+A furnace used to smelt iron ore at high temperatures using a
+continuous blast of air.
+
+Early blast furnaces allowed significantly larger production of
+iron compared to earlier bloomery furnaces.
+
+
+
+------------------------------------------------
+IDEA-343
+------------------------------------------------
+
+id:
+tech_quern_mill
+
+name:
+Quern Mill
+
+type:
+Technology
+
+tags:
+medieval
+food_processing
+milling
+
+start_year:
+-500
+
+Domain:
+Technology
+
+Parent Idea:
+Grain Processing Tools
+
+Era:
+Ancient Period
+Medieval Period
+
+Description:
+A hand-operated stone mill used to grind grain into flour.
+
+Querns consist of two circular stones, one rotating on top of
+the other, allowing grain to be crushed between them.
+
+
+
+------------------------------------------------
+IDEA-344
+------------------------------------------------
+
+id:
+tech_longbow
+
+name:
+Longbow
+
+type:
+Technology
+
+tags:
+medieval
+military
+archery
+weapon
+
+start_year:
+1200
+
+Domain:
+Technology
+
+Parent Idea:
+Projectile Weapons
+
+Era:
+Medieval Period
+
+Description:
+A tall powerful bow capable of launching arrows over long
+distances with high penetration power.
+
+The longbow became a defining weapon in medieval warfare,
+particularly associated with English armies.
+
+
+
+------------------------------------------------
+IDEA-345
+------------------------------------------------
+
+id:
+tech_illuminated_manuscript_production
+
+name:
+Illuminated Manuscript Production
+
+type:
+Technology
+
+tags:
+medieval
+writing
+art
+manuscripts
+
+start_year:
+600
+
+Domain:
+Technology
+
+Parent Idea:
+Medieval Book Production
+
+Era:
+Medieval Period
+
+Description:
+The process of producing handwritten books decorated with
+ornamental lettering, illustrations, and gold leaf.
+
+Illuminated manuscripts were created in monasteries and
+scriptoria and served as important cultural and religious
+artifacts.
+
+
+
+------------------------------------------------
+IDEA-346
+------------------------------------------------
+
+id:
+tech_astrolabe_navigation_instrument
+
+name:
+Astrolabe Navigation Instrument
+
+type:
+Technology
+
+tags:
+medieval
+navigation
+astronomy
+instrument
+
+start_year:
+200
+
+Domain:
+Technology
+
+Parent Idea:
+Astronomical Instruments
+
+Era:
+Ancient Period
+Medieval Period
+
+Description:
+An astronomical instrument used to determine the position of
+celestial bodies and estimate geographic latitude.
+
+Astrolabes were widely used by scholars, navigators, and
+astronomers during the medieval period.
+
+
+
+------------------------------------------------
+IDEA-347
+------------------------------------------------
+
+id:
+tech_mechanical_clock
+
+name:
+Mechanical Clock
+
+type:
+Technology
+
+tags:
+medieval
+timekeeping
+mechanical
+
+start_year:
+1300
+
+Domain:
+Technology
+
+Parent Idea:
+Timekeeping Instruments
+
+Era:
+Late Medieval Period
+
+Description:
+A timekeeping device powered by weights or springs that drives
+a regulated gear mechanism.
+
+Mechanical clocks first appeared in medieval Europe and were
+often installed in towers to regulate daily urban and monastic
+life.
+
+
+------------------------------------------------
+IDEA-348
+------------------------------------------------
+
+id:
+tech_pigeon_photography_camera_harness
+
+name:
+Pigeon Photography Camera Harness
+
+type:
+Technology
+
+tags:
+reconnaissance
+photography
+early_aerial_imaging
+military
+
+start_year:
+1907
+
+Domain:
+Technology
+
+Parent Idea:
+Aerial Reconnaissance Technologies
+
+Era:
+Early Aviation Period
+
+Description:
+A miniature camera mounted on a harness worn by carrier pigeons.
+The device automatically captured photographs during flight using
+a timed mechanism.
+
+Developed in the early twentieth century, pigeon photography was
+one of the earliest forms of aerial reconnaissance before reliable
+aircraft-based photography became widespread.
+
+
+
+------------------------------------------------
+IDEA-349
+------------------------------------------------
+
+id:
+tech_dog_powered_turnspit
+
+name:
+Dog-Powered Turnspit
+
+type:
+Technology
+
+tags:
+medieval
+kitchen
+mechanical_power
+food_preparation
+
+start_year:
+1500
+
+Domain:
+Technology
+
+Parent Idea:
+Mechanical Food Preparation Devices
+
+Era:
+Early Modern Period
+
+Description:
+A roasting mechanism used in large kitchens where a dog ran inside
+a wheel connected to a spit, slowly rotating meat over a fire.
+
+The device automated the turning of roasting meat, a laborious task
+in large households and inns before the widespread use of mechanical
+kitchen equipment.
+
+
+
+------------------------------------------------
+IDEA-350
+------------------------------------------------
+
+id:
+tech_explosive_whaling_harpoon
+
+name:
+Explosive Whaling Harpoon
+
+type:
+Technology
+
+tags:
+whaling
+maritime
+industrial_hunting
+weapon
+
+start_year:
+1864
+
+Domain:
+Technology
+
+Parent Idea:
+Industrial Whaling Equipment
+
+Era:
+Industrial Period
+
+Description:
+A specialized harpoon containing an explosive charge that detonates
+after penetrating the body of a whale.
+
+The technology dramatically increased the efficiency of commercial
+whaling operations during the nineteenth century.
+
+
+
+------------------------------------------------
+IDEA-351
+------------------------------------------------
+
+id:
+tech_soviet_listening_sphere
+
+name:
+Soviet Listening Sphere
+
+type:
+Technology
+
+tags:
+cold_war
+acoustic_detection
+military
+radar_predecessor
+
+start_year:
+1930
+
+Domain:
+Technology
+
+Parent Idea:
+Acoustic Aircraft Detection Systems
+
+Era:
+Early Radar Period
+
+Description:
+Large spherical acoustic listening devices used to detect aircraft
+by amplifying engine noise.
+
+These installations were deployed in several countries before the
+development of effective radar systems.
+
+
+
+------------------------------------------------
+IDEA-352
+------------------------------------------------
+
+id:
+item_roman_dodecahedron_tool
+
+name:
+Roman Dodecahedron Tool
+
+type:
+Good
+
+item_class:
+mysterious_artifact
+
+tags:
+roman
+artifact
+tool
+unknown_function
+
+start_year:
+100
+
+Domain:
+Items
+
+Parent Idea:
+Roman Metal Artifacts
+
+Era:
+Ancient Period
+
+Description:
+A small hollow bronze object with twelve pentagonal faces,
+each containing circular holes of varying diameter.
+
+The exact purpose of Roman dodecahedra remains uncertain,
+with theories suggesting uses in measurement, ritual,
+or craft production.
+
+
+
+------------------------------------------------
+IDEA-353
+------------------------------------------------
+
+id:
+item_pneumatic_mail_capsule
+
+name:
+Pneumatic Mail Capsule
+
+type:
+Good
+
+item_class:
+communication_logistics_container
+
+tags:
+postal_system
+pneumatic_tube
+communication
+
+start_year:
+1850
+
+Domain:
+Items
+
+Parent Idea:
+Pneumatic Tube Communication Systems
+
+Era:
+Industrial Period
+
+Description:
+A cylindrical container designed to carry letters or small
+packages through pneumatic tube networks used in cities,
+banks, and government offices.
+
+
+
+------------------------------------------------
+IDEA-354
+------------------------------------------------
+
+id:
+tech_folding_kayak
+
+name:
+Folding Kayak
+
+type:
+Technology
+
+tags:
+watercraft
+exploration
+portable_transport
+
+start_year:
+1905
+
+Domain:
+Technology
+
+Parent Idea:
+Portable Watercraft
+
+Era:
+Modern Period
+
+Description:
+A collapsible kayak consisting of a lightweight frame covered
+by a waterproof skin.
+
+Folding kayaks were widely used by explorers, military units,
+and travelers who required portable boats that could be
+transported over land.
+
+
+
+------------------------------------------------
+IDEA-355
+------------------------------------------------
+
+id:
+tech_fire_arrow_launcher
+
+name:
+Fire Arrow Launcher
+
+type:
+Technology
+
+tags:
+medieval
+rocketry
+weapon
+asia
+
+start_year:
+1200
+
+Domain:
+Technology
+
+Parent Idea:
+Early Rocket Weapons
+
+Era:
+Medieval Period
+
+Description:
+A weapon used in East Asia that launched rocket-propelled
+arrows using early gunpowder propulsion.
+
+These devices represent some of the earliest military uses
+of rocket technology.
+
+
+
+------------------------------------------------
+IDEA-356
+------------------------------------------------
+
+id:
+tech_clockwork_monk_automaton
+
+name:
+Clockwork Monk Automaton
+
+type:
+Technology
+
+tags:
+automation
+mechanical
+renaissance
+
+start_year:
+1560
+
+Domain:
+Technology
+
+Parent Idea:
+Mechanical Automata
+
+Era:
+Renaissance Period
+
+Description:
+A mechanical automaton designed to resemble a walking monk,
+capable of performing repetitive gestures such as prayer
+movements.
+
+The device demonstrates early experimentation with mechanical
+automation and clockwork engineering.
+
+
+
+------------------------------------------------
+IDEA-357
+------------------------------------------------
+
+id:
+item_gas_lamp_igniter_pole
+
+name:
+Gas Lamp Igniter Pole
+
+type:
+Good
+
+item_class:
+urban_maintenance_tool
+
+tags:
+urban_infrastructure
+lighting
+maintenance
+
+start_year:
+1820
+
+Domain:
+Items
+
+Parent Idea:
+Gas Street Lighting Systems
+
+Era:
+Industrial Period
+
+Description:
+A long pole used by lamplighters to ignite gas street lamps
+before automated lighting systems were introduced.
+
+
+
+------------------------------------------------
+IDEA-358
+------------------------------------------------
+
+id:
+tech_ice_harvesting_saw
+
+name:
+Ice Harvesting Saw
+
+type:
+Technology
+
+tags:
+industrial
+ice_harvesting
+tool
+
+start_year:
+1800
+
+Domain:
+Technology
+
+Parent Idea:
+Ice Harvesting Technologies
+
+Era:
+Industrial Period
+
+Description:
+A long saw designed for cutting large blocks of ice from
+frozen lakes during winter harvesting operations.
+
+
+
+------------------------------------------------
+IDEA-359
+------------------------------------------------
+
+id:
+tech_pocket_sextant
+
+name:
+Pocket Sextant
+
+type:
+Technology
+
+tags:
+navigation
+instrument
+maritime
+
+start_year:
+1750
+
+Domain:
+Technology
+
+Parent Idea:
+Celestial Navigation Instruments
+
+Era:
+Early Modern Period
+
+Description:
+A compact version of the sextant used by navigators to measure
+the angle between celestial objects and the horizon for
+determining geographic position.
+
+
+
+------------------------------------------------
+IDEA-360
+------------------------------------------------
+
+id:
+tech_player_piano_roll_system
+
+name:
+Player Piano Roll System
+
+type:
+Technology
+
+tags:
+music
+mechanical
+automation
+
+start_year:
+1880
+
+Domain:
+Technology
+
+Parent Idea:
+Mechanical Music Instruments
+
+Era:
+Industrial Period
+
+Description:
+A system using perforated paper rolls to control the automatic
+playing of a piano through pneumatic mechanisms.
+
+
+
+------------------------------------------------
+IDEA-361
+------------------------------------------------
+
+id:
+tech_steam_fire_engine
+
+name:
+Steam Fire Engine
+
+type:
+Technology
+
+tags:
+steam_power
+firefighting
+industrial
+
+start_year:
+1852
+
+Domain:
+Technology
+
+Parent Idea:
+Steam-Powered Emergency Equipment
+
+Era:
+Industrial Period
+
+Description:
+A firefighting pump powered by a steam engine capable of
+delivering large volumes of water to extinguish fires.
+
+
+
+------------------------------------------------
+IDEA-362
+------------------------------------------------
+
+id:
+tech_submarine_escape_breathing_hood
+
+name:
+Submarine Escape Breathing Hood
+
+type:
+Technology
+
+tags:
+submarine
+safety
+diving
+
+start_year:
+1910
+
+Domain:
+Technology
+
+Parent Idea:
+Submarine Emergency Equipment
+
+Era:
+Early Submarine Period
+
+Description:
+A breathing hood designed to allow submariners to escape a
+disabled submarine by supplying air while ascending to the
+surface.
+
+------------------------------------------------
+IDEA-363
+------------------------------------------------
+
+Name:
+Patina Drifter Population
+
+Domain:
+Cultures and Populations
+
+Parent Idea:
+Planet Patina
+
+Era:
+Planetary Period
+
+Tags:
+population
+culture
+terraforming
+frontier
+patina
+
+Description:
+The population of Patina emerged from centuries of loosely
+regulated terraforming activity and speculative industrial
+expansion.
+
+Instead of Cultural Seeding Group (CSG) colony plants, Patina
+attracted independent settlers, technicians, prospectors,
+corporate contractors, and economic drifters from many worlds.
+
+Surface settlements formed gradually around infrastructure nodes,
+terraforming stations, and later the massive orbital shipyard
+complexes. Over time these settlements grew into irregular cities
+sprawling outward from corporate megastructure installations.
+
+The population therefore developed as a heterogeneous frontier
+society without a dominant cultural tradition. Patina inhabitants
+are widely known for improvisational engineering skills,
+opportunistic entrepreneurship, and a strong tolerance for
+economic risk and speculative ventures.
+
+
+
+------------------------------------------------
+IDEA-364
+------------------------------------------------
+
+Name:
+Patina Surface Taxi Vehicle
+
+Domain:
+Vehicles
+
+Parent Idea:
+Planet Patina
+
+Era:
+Planetary Period
+
+Tags:
+vehicle
+transport
+urban
+patina
+
+Description:
+A common urban ground vehicle used for passenger transport in the
+sprawling cities surrounding Patina's orbital shipyard
+megastructures.
+
+Unlike standardized transport fleets on more regulated worlds,
+Patina taxis exist in many locally modified variants assembled
+from widely available industrial components.
+
+Vehicles must tolerate rough terrain, unfinished infrastructure,
+and frequent mechanical improvisation by drivers and local
+garages. As a result, Patina taxi culture emphasizes modular
+parts, durable chassis construction, and easy field repair.
+
+
+
+------------------------------------------------
+IDEA-365
+------------------------------------------------
+
+Name:
+Patina Dock Transfer Tug
+
+Domain:
+Vehicles
+
+Parent Idea:
+Patina Omni-Production Shipyard
+
+Era:
+Planetary Period
+
+Tags:
+vehicle
+orbital
+cargo
+shipyard
+patina
+
+Description:
+A small maneuverable spacecraft used within the Patina orbital
+shipyard complex to move cargo containers, ship components, and
+unfinished hull sections between construction modules.
+
+Dock transfer tugs operate entirely within orbital construction
+zones and are optimized for precise low-velocity maneuvering
+rather than long-distance travel.
+
+The craft typically features powerful attitude control thrusters,
+reinforced docking clamps, and modular cargo grapples allowing
+operators to reposition containers and structural elements during
+ship assembly.
+
+Because the Patina shipyard relied on large-scale modular
+construction methods, these tugs became one of the most common
+working spacecraft in the orbital complex.
+
+
+
+------------------------------------------------
+IDEA-366
+------------------------------------------------
+
+Name:
+Patina Tug Pilot
+
+Domain:
+People
+
+Parent Idea:
+Patina Omni-Production Shipyard
+
+Era:
+Planetary Period
+
+Tags:
+person
+pilot
+patina
+shipyard
+freighter
+
+Description:
+A Patina-born pilot descended from the planet's heterogeneous
+drifter population. He grew up in one of the sprawling cities
+that developed around the massive shipyard megastructure
+complexes on the surface.
+
+In early adulthood he worked as a taxi driver before being
+noticed by a Capital Pursuits middle manager while transporting
+shipyard personnel. The manager recruited him into orbital
+operations where he began working as a dock transfer tug pilot
+inside the Patina orbital shipyard.
+
+After years of routine tug work he was eventually promoted to
+the crew of a container spine freighter and later commanded an
+older model vessel during the final period of Capital Pursuits
+ownership.
+
+Following the acquisition of the shipyard by Million Labels
+Group (MLG), older freighter models were gradually phased out
+and he returned to tug duty. Though the change had little
+outward impact on his life, he quietly preferred flying
+freighters and occasionally missed operating them.
+
+
+------------------------------------------------
+IDEA-367
+------------------------------------------------
+
+Name:
+Orbital Deployable Habitation Stack
+
+Domain:
+Infrastructure
+
+Parent Idea:
+Planetary Settlement Infrastructure
+
+Era:
+Planetary Period
+
+Tags:
+infrastructure
+habitation
+modular
+colonization
+
+Description:
+A vertically structured modular habitation complex designed for
+rapid deployment on newly settled planetary surfaces.
+
+The structure typically takes the form of a massive rectangular
+megablock containing stacked residential, service, and technical
+modules capable of housing approximately ten thousand inhabitants.
+
+Deployable habitation stacks were originally intended as temporary
+settlement infrastructure during terraforming and early industrial
+development phases. In practice they frequently became permanent
+urban cores as surrounding settlements grew around them.
+
+
+
+------------------------------------------------
+IDEA-368
+------------------------------------------------
+
+Name:
+Deployable Habitation Stack Manufacturer
+
+Domain:
+Organizations
+
+Parent Idea:
+Planetary Settlement Infrastructure
+
+Era:
+Planetary Period
+
+Tags:
+corporation
+infrastructure
+colonization
+habitation
+
+Description:
+An industrial manufacturer specializing in modular habitation
+stacks designed for early planetary settlement and terraforming
+operations.
+
+These companies produced large deployable megablock structures
+capable of housing thousands of workers and technicians during
+the initial phases of planetary development.
+
+
+
+------------------------------------------------
+IDEA-369
+------------------------------------------------
+
+Name:
+Transfer Hansa Market
+
+Domain:
+Organizations
+
+Parent Idea:
+Transfer Hansa
+
+Era:
+Planetary Period
+
+Tags:
+market
+trade
+logistics
+infrastructure
+
+Description:
+A commercial market network operated by the Transfer Hansa,
+providing frontier settlements with access to imported goods,
+construction materials, industrial components, and surplus
+equipment.
+
+On rapidly growing worlds such as Patina, Transfer Hansa markets
+served as supply nodes where settlers, contractors, and small
+industrial operators could acquire standardized building modules,
+tools, and materials not produced locally.
+
+
+
+------------------------------------------------
+IDEA-370
+------------------------------------------------
+
+Name:
+Patina Industrial Utility Helicopter
+
+Domain:
+Vehicles
+
+Parent Idea:
+Planet Patina
+
+Era:
+Planetary Period
+
+Tags:
+vehicle
+transport
+industrial
+patina
+aircraft
+
+Description:
+A rugged rotary-wing aircraft used on Patina for short-distance
+transport between surface settlements, industrial installations,
+and orbital infrastructure zones.
+
+Because Patina's surface settlements developed organically across
+partially terraformed terrain, helicopters became an important
+means of connecting scattered facilities not yet integrated into
+formal transport networks.
+
+
+
+------------------------------------------------
+IDEA-371
+------------------------------------------------
+
+Name:
+Stacklinger
+
+Domain:
+Locations
+
+Parent Idea:
+Planet Patina
+
+Era:
+Planetary Period
+
+Tags:
+city
+settlement
+patina
+industrial
+
+Description:
+Stacklinger is a surface settlement on Patina that developed
+around a large deployable habitation megablock originally
+designated Habitation Stack 14.
+
+The megablock housed approximately ten thousand inhabitants and
+served as a self-contained settlement core during the early
+planetary development period.
+
+Over time clusters of independent settlements formed around the
+structure, built from local stone, industrial scrap originating
+from nearby shipyard activity, and imported construction materials
+obtained through Transfer Hansa markets.
+
+These clusters gradually merged into an irregular city connected
+by improvised infrastructure networks for power, water, and
+transport which were later formalized through asphalt road
+construction.
+
+Located roughly fifteen kilometers from the Patina orbital
+shipyard complex, Stacklinger developed into a major worker
+settlement serving the surrounding industrial economy.
+
+During the lifetime of the Patina tug pilot, the city had grown to
+approximately one hundred thousand inhabitants.
+
+The name “Stacklinger” originated as a worker nickname for the
+people living around Habitation Stack 14 before eventually
+becoming the settlement's common and later official name.
+
+------------------------------------------------
+IDEA-372
+------------------------------------------------
+
+Name: Superpower Wars
+
+Domain: Conflicts
+
+Parent Idea: None
+
+Era:
+Superpower Wars
+
+Tags:
+global-war
+geopolitics
+multipolar
+collapse-of-order
+
+Description:
+The Superpower Wars were a prolonged period of intermittent global
+conflict lasting roughly from the mid-2020s until the end of the 21st
+century.
+
+The wars began with a large-scale conflict in Eastern Europe involving
+Russia and Belarus against NATO members without direct initial
+participation by the United States.
+
+Shortly afterwards China launched an invasion of Taiwan, drawing the
+United States into open conflict in the Pacific theater.
+
+Over the following decades numerous additional regional conflicts
+erupted around the world as long-suppressed geopolitical disputes
+resurfaced.
+
+The weakening of international institutions and the collapse of the
+post–Cold War rules-based order allowed many states and regional
+powers to pursue territorial ambitions or settle historic rivalries
+through military force.
+
+The wars therefore consisted not of a single continuous global
+conflict but of overlapping wars, ceasefires, proxy conflicts and
+renewed escalations across multiple theaters over nearly a century.
+
+By the end of the era several states had collapsed or disappeared,
+global political structures had been radically transformed, and the
+world entered a new geopolitical configuration.
+
+The devastation and instability of this period ultimately contributed
+to a growing political desire to redirect human competition away from
+Earth and toward expansion into space, laying the psychological and
+political foundations for the Race for Sol.
+
+
+
+------------------------------------------------
+IDEA-373
+------------------------------------------------
+
+Name: Autonomous Precision Warfare
+
+Domain: Military Technology
+
+Parent Idea:
+IDEA-372 Superpower Wars
+
+Era:
+Superpower Wars
+
+Tags:
+military
+autonomous-weapons
+hypersonic
+space-warfare
+
+Description:
+During the Superpower Wars a new military paradigm emerged centered
+around autonomous weapon platforms and extremely fast long-range
+precision strike systems.
+
+Autonomous combat systems such as drone swarms, unmanned armored
+vehicles, automated air-defense networks and semi-independent naval
+systems became widely deployed across many theaters of the conflict.
+Human operators typically remained in supervisory roles rather than
+directly controlling individual systems.
+
+At the same time hypersonic missile technology and advanced precision
+strike capabilities allowed states to attack critical infrastructure,
+military bases and logistics hubs at extremely high speeds and from
+great distances.
+
+Limited space warfare also occurred during the period. Satellites were
+occasionally targeted through kinetic interception, electronic warfare
+or ground-based anti-satellite systems, temporarily disrupting
+communication and navigation networks.
+
+Although human soldiers continued to fight in many theaters, the
+character of warfare increasingly shifted toward automated combat
+systems, long-range strike capabilities and battles over technological
+infrastructure rather than traditional massed armies.
+
+
+
+------------------------------------------------
+IDEA-374
+------------------------------------------------
+
+Name: The New Order Treaty
+
+Domain: Geopolitics
+
+Parent Idea:
+IDEA-372 Superpower Wars
+
+Era:
+Superpower Wars
+
+Tags:
+treaty
+collective-defense
+postwar-order
+geopolitics
+
+Description:
+The New Order Treaty is the international security framework that
+emerged at the end of the Superpower Wars.
+
+After nearly a century of intermittent global conflict, the surviving
+major political blocs sought to prevent another large-scale interstate
+war. The resulting treaty established a system combining collective
+defense guarantees, strict recognition of sovereign borders, and
+limitations on large-scale conventional military offensives between
+signatory states.
+
+Under the treaty an attack on any participating sovereign state would
+be treated as an attack on all members of the agreement, creating an
+inverted alliance structure designed to make open interstate warfare
+politically and militarily unviable.
+
+Although the treaty dramatically reduced the likelihood of large
+conventional wars, covert operations, proxy conflicts and intelligence
+competition between major powers continued to occur.
+
+Crucially, the treaty does not regulate or restrict expansion beyond
+Earth. Outer space remained outside the jurisdiction of the New Order
+framework.
+
+This omission unintentionally redirected geopolitical competition away
+from terrestrial conquest and toward extraterrestrial expansion,
+triggering the surge of exploration and settlement efforts that
+became known as the Race for Sol.
+
+
+------------------------------------------------
+IDEA-375
+------------------------------------------------
+
+Name: Pan-African Union
+
+Domain: Organization
+
+Parent Idea:
+IDEA-372 Superpower Wars
+
+Era:
+Superpower Wars
+
+Tags:
+africa
+federation
+geopolitics
+postwar
+
+Description:
+The Pan-African Union (PAU) is a large political federation formed
+during the final decades of the Superpower Wars.
+
+Decades of global instability and the collapse of several major
+international powers created conditions that encouraged political
+integration across large parts of the African continent.
+
+Through a gradual process of regional alliances, economic integration
+agreements and defensive cooperation pacts, a majority of African
+states consolidated into a single political entity.
+
+By the end of the Superpower Wars the PAU encompassed roughly
+seventy percent of the African continent.
+
+The union was created partly as a defensive measure against external
+interference and partly as an effort to stabilize internal development
+after decades of global conflict.
+
+The PAU later became one of the major signatories of the New Order
+Treaty and emerged as an important political actor in the early
+postwar world.
+
+
+------------------------------------------------
+IDEA-376
+------------------------------------------------
+
+Name: Race for Sol
+
+Domain: Historical Era
+
+Parent Idea:
+IDEA-374 The New Order Treaty
+
+Era:
+Race for Sol
+
+Tags:
+space-expansion
+solar-system
+colonization
+space-industry
+
+Description:
+The Race for Sol was the first major era of large-scale human expansion
+into the Solar System, beginning shortly after the establishment of the
+New Order Treaty in the late 21st century.
+
+Because the New Order framework effectively prevented territorial
+expansion on Earth, geopolitical competition between the surviving
+power blocs increasingly shifted toward space.
+
+National space agencies and newly formed political coalitions began
+rapidly expanding their space programs, initiating a prolonged period
+of technological development, exploration and settlement throughout
+the Solar System.
+
+Early spacecraft designs during the first centuries of the era still
+closely resembled late Postmodernist launch vehicles and spacecraft,
+relying on large chemical rockets and modular space stations.
+
+The first permanent human footholds were established on the Moon,
+followed by early settlements on Mars. Over time human presence spread
+to additional planetary bodies including asteroids, orbital habitats
+and outer planetary systems.
+
+Orbital manufacturing and large-scale space industry gradually emerged
+as economically viable sectors, producing specialized materials and
+components that could not easily be manufactured on Earth.
+
+Although open warfare between major powers remained politically
+dangerous under the New Order Treaty, covert military operations
+in space occurred throughout the era in a series of clandestine
+confrontations later referred to as the Silent Wars.
+
+Despite these tensions, the overall human presence within the Solar
+System grew steadily throughout the Race for Sol, transforming space
+from a frontier of exploration into a permanently inhabited human
+environment.
+
+
+
+------------------------------------------------
+IDEA-377
+------------------------------------------------
+
+Name: Nationalistic Space Agency Competition
+
+Domain: Space Policy
+
+Parent Idea:
+IDEA-376 Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+space-agencies
+competition
+geopolitics
+
+Description:
+During the early centuries of the Race for Sol, space exploration was
+dominated by national and bloc-based space agencies representing the
+major political powers that had emerged after the Superpower Wars.
+
+These organizations pursued prestige missions, technological
+demonstrations and territorial footholds within the Solar System.
+
+Political rivalries between blocs resulted in intense competition for
+symbolic achievements such as the first permanent lunar city, early
+Mars expeditions and the establishment of orbital infrastructure.
+
+Alliances between spacefaring powers frequently formed and dissolved
+as political interests shifted during the early stages of Solar System
+expansion.
+
+
+
+------------------------------------------------
+IDEA-378
+------------------------------------------------
+
+Name: Silent Wars
+
+Domain: Conflicts
+
+Parent Idea:
+IDEA-376 Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+space-warfare
+covert-conflict
+military
+
+Description:
+The Silent Wars were a series of covert military confrontations between
+spacefaring powers during the Race for Sol.
+
+Although the New Order Treaty discouraged open warfare between major
+states, the treaty did not prohibit military activity beyond Earth.
+
+This legal ambiguity allowed space militaries to conduct covert
+operations targeting rival infrastructure, spacecraft and industrial
+facilities throughout the Solar System.
+
+Engagements during the Silent Wars were typically limited in scale and
+rarely acknowledged publicly, involving sabotage missions, electronic
+warfare, clandestine interception of spacecraft and occasional
+destruction of isolated installations.
+
+These conflicts accelerated the development of experimental spacecraft,
+advanced propulsion systems and specialized military technologies for
+operations in space.
+
+
+------------------------------------------------
+IDEA-379
+------------------------------------------------
+
+Name: Joined Lunar Command
+
+Domain: Organization
+
+Parent Idea:
+IDEA-376 Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+moon
+space-agency
+lunar
+administration
+
+Description:
+Joined Lunar Command (JLC) is the multinational authority responsible
+for coordinating early human activity on the Moon during the Race for
+Sol.
+
+The organization emerged as multiple political blocs began establishing
+permanent lunar infrastructure. In order to prevent operational
+conflicts and ensure safe coordination of launches, landings and
+surface operations, participating space powers created a joint
+administrative and logistical structure.
+
+JLC oversees lunar traffic coordination, shared infrastructure,
+emergency response operations and the administration of the first
+large lunar settlements.
+
+Although formally cooperative in nature, the command structure also
+reflects the geopolitical rivalries of the early Solar expansion era.
+
+
+
+------------------------------------------------
+IDEA-380
+------------------------------------------------
+
+Name: Moon
+
+Domain: Place
+
+Parent Idea:
+IDEA-376 Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+moon
+solar-system
+settlement
+
+Description:
+Earth’s Moon was the first extraterrestrial body to host permanent
+human settlements.
+
+Because of its proximity to Earth, the Moon became the primary staging
+ground for early Solar System expansion during the Race for Sol.
+
+Initial installations consisted of research stations and logistics
+facilities supporting exploration missions. Over time these developed
+into permanent settlements, industrial infrastructure and launch
+facilities supporting operations deeper into the Solar System.
+
+The Moon served as the central hub of early off-world human activity
+before the expansion of large settlements on Mars and other planetary
+bodies.
+
+
+
+------------------------------------------------
+IDEA-381
+------------------------------------------------
+
+Name: Mare Ibrum Region
+
+Domain: Surface Region
+
+Parent Idea:
+IDEA-380 Moon
+
+Era:
+Race for Sol
+
+Tags:
+moon
+lunar-region
+settlement-zone
+
+Description:
+The Mare Ibrum Region is one of the earliest and most significant
+lunar settlement zones established during the Race for Sol.
+
+Located within the large basaltic plains of Mare Imbrium, the region
+provided relatively stable terrain suitable for early landing sites,
+surface construction and dome-based habitats.
+
+Several major lunar installations were constructed within this area,
+including the settlement of Ibrum Central, which became a central hub
+for lunar operations and administration.
+
+
+
+------------------------------------------------
+IDEA-382
+------------------------------------------------
+
+Name: Ibrum Central
+
+Domain: City
+
+Parent Idea:
+IDEA-381 Mare Ibrum Region
+
+Era:
+Race for Sol
+
+Tags:
+lunar-city
+settlement
+moon
+
+Description:
+Ibrum Central is one of the earliest large-scale human settlements
+constructed on the Moon.
+
+The city consists primarily of pressurized dome structures and
+subsurface habitation modules built using locally processed lunar
+regolith for radiation shielding and structural support.
+
+Ibrum Central functions as a major hub for lunar logistics,
+administration and scientific research and serves as one of the main
+operational centers of Joined Lunar Command.
+
+During the early centuries of the Race for Sol the settlement became
+a focal point for human activity on the Moon and a symbol of the
+growing permanent human presence beyond Earth.
+
+
+
+------------------------------------------------
+IDEA-383
+------------------------------------------------
+
+Name: Prestige-Driven Space Expansion
+
+Domain: Space Policy
+
+Parent Idea:
+IDEA-376 Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+space-race
+prestige
+geopolitics
+
+Description:
+The early centuries of the Race for Sol were characterized primarily
+by prestige-driven expansion rather than immediate economic return.
+
+Following the establishment of the New Order Treaty, geopolitical
+competition between major powers increasingly shifted toward symbolic
+achievements in space.
+
+Governments and political blocs pursued high-profile milestones such
+as the first permanent lunar settlements, the first Mars expeditions
+and the establishment of large orbital infrastructure.
+
+Although initially expensive and economically inefficient, these
+projects gradually produced the infrastructure necessary for sustained
+human presence throughout the Solar System.
+
+As settlements grew and off-world populations increased, space
+activity began to justify itself through local economies and
+industrial development.
+
+------------------------------------------------
+IDEA-384
+------------------------------------------------
+
+Name: Ovid Program
+
+Domain: Space Program
+
+Parent Idea:
+IDEA-376 Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+mars
+space-program
+enu
+
+Description:
+The Ovid Program is a major Mars settlement and exploration program
+conducted by the European National Union (ENU) during the early
+centuries of the Race for Sol.
+
+The program established several early permanent installations on
+Mars and played a major role in expanding human presence on the
+planet.
+
+
+
+------------------------------------------------
+IDEA-385
+------------------------------------------------
+
+Name: Nova Roma
+
+Domain: City
+
+Parent Idea:
+IDEA-384 Ovid Program
+
+Era:
+Race for Sol
+
+Tags:
+mars
+city
+settlement
+
+Description:
+Nova Roma is one of the earliest permanent human cities established
+on Mars.
+
+The settlement originated as part of the ENU Ovid Program and later
+grew into a major urban center on the planet.
+
+
+
+------------------------------------------------
+IDEA-386
+------------------------------------------------
+
+Name: Lumen Free City
+
+Domain: City
+
+Parent Idea:
+IDEA-376 Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+mars
+city
+free-city
+
+Description:
+Lumen Free City is an early autonomous settlement established on Mars
+during the Race for Sol.
+
+The city developed a reputation for political independence and
+economic experimentation compared to many government-sponsored
+settlements.
+
+
+
+------------------------------------------------
+IDEA-387
+------------------------------------------------
+
+Name: Castelli Automobiles
+
+Domain: Organization
+
+Parent Idea:
+IDEA-376 Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+vehicle
+manufacturer
+mars
+
+Description:
+Castelli Automobiles is a vehicle manufacturer active during the
+early centuries of human settlement on Mars.
+
+The company developed a range of specialized vehicles designed for
+operation in the Martian environment.
+
+
+
+------------------------------------------------
+IDEA-388
+------------------------------------------------
+
+Name: Swiss Cross Confederation
+
+Domain: Faction
+
+Parent Idea:
+IDEA-376 Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+mars
+faction
+settlement
+
+Description:
+The Swiss Cross Confederation is a political and cultural community
+that established settlements on the slopes of the Martian south pole
+during the Race for Sol.
+
+
+
+------------------------------------------------
+IDEA-389
+------------------------------------------------
+
+Name: Olympus Mons
+
+Domain: Place
+
+Parent Idea:
+Mars
+
+Era:
+Race for Sol
+
+Tags:
+mars
+volcano
+landmark
+
+Description:
+Olympus Mons is the largest volcano in the Solar System and one of
+the most prominent geographic features on Mars.
+
+The mountain became an important landmark and later a region of
+human activity during the expansion of Martian settlements.
+
+------------------------------------------------
+IDEA-390
+------------------------------------------------
+
+Name: Asteroid Belt
+
+Domain: Place
+
+Parent Idea:
+Sol System
+
+Era:
+Race for Sol
+
+Tags:
+asteroids
+solar-system
+space
+
+Description:
+The Asteroid Belt is the region of the Solar System located between
+the orbits of Mars and Jupiter containing a vast number of rocky
+and metallic bodies.
+
+During the Race for Sol the region gradually became a major frontier
+of human activity as exploration missions, mining operations and
+experimental settlements expanded outward from the inner planets.
+
+Although large-scale industrial exploitation developed only later,
+the Asteroid Belt quickly attracted a diverse mixture of government
+programs, private companies and independent frontier groups.
+
+Over time the belt evolved into one of the most complex and populated
+regions of human activity in the Solar System.
+
+
+------------------------------------------------
+IDEA-391
+------------------------------------------------
+
+Name: Ceres
+
+Domain: Place
+
+Parent Idea:
+Sol System
+
+Era:
+Race for Sol
+
+Tags:
+asteroid-belt
+planet
+dwarf-planet
+
+Description:
+Ceres is the largest body in the asteroid belt and one of the earliest
+major destinations for human exploration beyond Mars during the Race
+for Sol.
+
+Because of its size and relatively stable gravity compared to most
+asteroids, Ceres gradually developed into a central hub for operations
+in the asteroid belt.
+
+
+
+------------------------------------------------
+IDEA-392
+------------------------------------------------
+
+Name: Titan
+
+Domain: Place
+
+Parent Idea:
+Saturn
+
+Era:
+Race for Sol
+
+Tags:
+saturn
+planet
+moon
+
+Description:
+Titan is the largest moon of Saturn and one of the most distinctive
+planetary bodies in the Solar System due to its dense atmosphere and
+liquid hydrocarbon lakes.
+
+During the later phases of the Race for Sol the moon became a major
+destination for scientific exploration and experimental settlements
+in the outer Solar System.
+
+------------------------------------------------
+IDEA-393
+------------------------------------------------
+
+Name: Armamento LatinMo
+
+Domain: Organization
+
+Parent Idea:
+IDEA-376 Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+military
+arms-industry
+latin-america
+
+Description:
+Armamento LatinMo is a consolidated military industrial organization
+formed by several Latin American factions during the Race for Sol.
+
+The company became a major supplier of small arms and military
+equipment and produced the widely distributed PA Series of firearms.
+
+Weapons manufactured by Armamento LatinMo were widely used during
+the covert space conflicts known as the Silent Wars.
+
+
+
+------------------------------------------------
+IDEA-394
+------------------------------------------------
+
+Name: PA Series Firearms
+
+Domain: Technology
+
+Parent Idea:
+IDEA-393 Armamento LatinMo
+
+Era:
+Race for Sol
+
+Tags:
+firearms
+military
+weapons
+
+Description:
+The PA Series is a family of firearms produced by Armamento LatinMo
+during the Race for Sol.
+
+These weapons became widely distributed among military forces,
+security units and independent factions operating during the Silent
+Wars.
+
+
+
+------------------------------------------------
+IDEA-395
+------------------------------------------------
+
+Name: Parisvieux City
+
+Domain: City
+
+Parent Idea:
+Mars
+
+Era:
+Race for Sol
+GGO Hegemony Period
+
+Tags:
+mars
+city
+settlement
+
+Description:
+Parisvieux City is one of the major early urban settlements founded on
+Mars during the Race for Sol.
+
+The city later became one of the most important Martian population
+centers during the GGO Hegemony Period.
+
+
+
+------------------------------------------------
+IDEA-396
+------------------------------------------------
+
+Name: Project One Way
+
+Domain: Space Program
+
+Parent Idea:
+IDEA-376 Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+interstellar
+exploration
+space-program
+
+Description:
+Project One Way was an experimental interstellar exploration program
+developed near the end of the Race for Sol.
+
+The project attempted one of the first interstellar missions from the
+Solar System and targeted the Alpha Centauri system.
+
+
+
+------------------------------------------------
+IDEA-397
+------------------------------------------------
+
+Name: Alpha Centauri System
+
+Domain: Place
+
+Parent Idea:
+Interstellar Space
+
+Era:
+Race for Sol
+
+Tags:
+star-system
+interstellar
+
+Description:
+The Alpha Centauri System is the nearest stellar system to Sol and the
+target of some of the earliest interstellar exploration attempts.
+
+In later eras the system would become known as P. Taurini.
+
+
+
+------------------------------------------------
+IDEA-398
+------------------------------------------------
+
+Name: P. Taurini
+
+Domain: Place
+
+Parent Idea:
+Alpha Centauri System
+
+Era:
+GGO Hegemony Period
+Planetary Period
+
+Tags:
+star-system
+interstellar
+
+Description:
+P. Taurini is the later name used for the Alpha Centauri System in
+interstellar civilization.
+
+The system became one of the first major destinations of interstellar
+exploration and settlement.
+
+------------------------------------------------
+IDEA-372
+------------------------------------------------
+
+Name: Neurons
+Domain: Persons / Technology
+
+Parent Idea:
+IDEA-165 Terran Biome Diversity Project
+
+Era:
+Planetary Period
+
+Tags:
+bdp
+pilots
+genetic
+terraforming
+
+Description:
+Neurons are genetically modified humans used by the Terran
+Biome Diversity Project to operate Ark-seed terraforming
+vessels during long-duration interstellar missions.
+
+These individuals are adapted for extreme isolation and
+continuous spacecraft operation over decades or centuries.
+They live permanently aboard their vessels and supervise
+the deployment of automated industrial systems used to
+initiate planetary terraforming operations.
+
+Unlike mythologized navigator figures found in fiction,
+Neurons possess no supernatural abilities and function
+primarily as long-term mission operators and technical
+overseers.
+
+
+------------------------------------------------
+IDEA-373
+------------------------------------------------
+
+Name: Ark Seed Terraforming Vessel
+Domain: Vehicles
+
+Parent Idea:
+IDEA-165 Terran Biome Diversity Project
+
+Era:
+Planetary Period
+
+Tags:
+terraforming
+spacecraft
+bdp
+interstellar
+
+Description:
+Autonomous interstellar vessel used by the Terran Biome
+Diversity Project to initiate planetary terraforming
+operations.
+
+Ark-seed vessels transport industrial deployment systems,
+ecological starter materials and monitoring personnel to
+new planetary systems.
+
+Upon arrival the vessel deploys automated industrial
+infrastructure designed to gradually transform the
+planetary environment.
+
+After the initial deployment phase the Ark-seed vessel
+does not remain in the system and instead departs to
+continue further terraforming missions.
+
+
+------------------------------------------------
+IDEA-374
+------------------------------------------------
+
+Name: Ark Seed Propulsion Architecture
+Domain: Technology / Propulsion
+
+Parent Idea:
+IDEA-373 Ark Seed Terraforming Vessel
+
+Era:
+Planetary Period
+
+Tags:
+propulsion
+interstellar
+bdp
+
+Description:
+Long-endurance propulsion system used by Ark-seed
+terraforming vessels.
+
+The architecture is designed for extremely long-duration
+interstellar travel and repeated mission cycles between
+planetary systems.
+
+During terraforming operations Ark-seed vessels gradually
+refuel their propulsion systems before departing to the
+next mission destination.
+
+
+------------------------------------------------
+IDEA-375
+------------------------------------------------
+
+Name: Automated Terraforming Industry
+Domain: Production
+
+Parent Idea:
+IDEA-373 Ark Seed Terraforming Vessel
+
+Era:
+Planetary Period
+
+Tags:
+terraforming
+automation
+industry
+
+Description:
+Network of automated industrial systems deployed on
+newly targeted planets by Ark-seed terraforming missions.
+
+These systems construct atmospheric processors,
+hydrological infrastructure and large-scale ecological
+support installations required to stabilize planetary
+environments.
+
+The infrastructure is designed to operate autonomously
+for centuries while gradually transforming the planet
+into a habitable biosphere.
+
+
+------------------------------------------------
+IDEA-376
+------------------------------------------------
+
+Name: Industry Seed Capsules
+Domain: Technology / Infrastructure
+
+Parent Idea:
+IDEA-375 Automated Terraforming Industry
+
+Era:
+Planetary Period
+
+Tags:
+terraforming
+industry
+deployment
+
+Description:
+Prepackaged industrial deployment modules used by BDP
+terraforming missions.
+
+Each capsule contains automated manufacturing systems,
+construction robotics, atmospheric processors and
+resource extraction equipment.
+
+The capsules are delivered to planetary surfaces where
+they rapidly bootstrap the automated industrial
+infrastructure required for long-term terraforming.
+
+
+------------------------------------------------
+IDEA-377
+------------------------------------------------
+
+Name: BDP Priming Fleet
+Domain: Organizations
+
+Parent Idea:
+IDEA-165 Terran Biome Diversity Project
+
+Era:
+Planetary Period
+
+Tags:
+terraforming
+fleet
+bdp
+
+Description:
+Specialized fleet responsible for preparing planets for
+large-scale terraforming operations.
+
+Priming fleets deploy industry seed capsules and
+preliminary industrial infrastructure before the
+deployment of full ecological terraforming phases.
+
+
+------------------------------------------------
+IDEA-378
+------------------------------------------------
+
+Name: Terran BDP Observers
+Domain: Persons
+
+Parent Idea:
+IDEA-165 Terran Biome Diversity Project
+
+Era:
+Planetary Period
+
+Tags:
+bdp
+terraforming
+observation
+
+Description:
+Long-lived sterile humans stationed on terraforming
+worlds to supervise the development of planetary
+biospheres.
+
+Observers remain in cryosleep for extended periods and
+periodically awaken to evaluate ecosystem stability,
+release new species and adjust biosphere development
+parameters.
+
+Their role is to guide ecological development without
+allowing large permanent human populations to interfere
+with early biosphere formation.
+
+
+------------------------------------------------
+IDEA-379
+------------------------------------------------
+
+Name: Artificial Omni Wombs
+Domain: Technology / Biology
+
+Parent Idea:
+IDEA-165 Terran Biome Diversity Project
+
+Era:
+Planetary Period
+
+Tags:
+biology
+terraforming
+bdp
+
+Description:
+Biological manufacturing systems used to generate
+organisms during planetary terraforming operations.
+
+Artificial omni wombs allow large numbers of plant and
+animal species to be grown locally from genetic archives
+rather than transported alive between star systems.
+
+This system enables controlled ecological deployment
+during biosphere construction phases.

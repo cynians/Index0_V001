@@ -171,7 +171,8 @@ class CanvasScene(QGraphicsScene):
 
             views = self.views()
             if views:
-                views[0].update_zoom_limits()
+                if hasattr(views[0], "update_zoom_limits"):
+                    views[0].update_zoom_limits()
                 logger.debug("View zoom limits updated")
 
             return node
@@ -201,23 +202,48 @@ class CanvasScene(QGraphicsScene):
             return None
 
     def mouseDoubleClickEvent(self, event):
+
         logger.debug(
             "Scene double click | x=%.2f | y=%.2f",
             event.scenePos().x(),
             event.scenePos().y()
         )
 
+        # check if click hit an existing item
+        item = self.itemAt(event.scenePos(), self.views()[0].transform())
+
+        # If we clicked a node or widget inside a node
+        from ui.node_item import NodeItem
+
+        if item:
+
+            node = item
+
+            while node and not isinstance(node, NodeItem):
+                node = node.parentItem()
+
+            if node:
+                logger.debug("Forwarding double click to node edit mode")
+                node.widget.set_edit_mode(True)
+                event.accept()
+                return
+
         available = self.get_available_entity_ids()
 
         if available:
             first_id = available[0]
+
             try:
                 entry = self.backend.get_entity(first_id)
                 category = entry.get("_dataset", "unknown") if entry else "unknown"
+
                 self.open_tile(category, first_id)
+
             except Exception:
                 logger.exception("Double click open failed")
+
         else:
             logger.warning("Double click ignored, no entities loaded")
 
         event.accept()
+

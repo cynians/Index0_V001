@@ -1,16 +1,88 @@
 from PySide6.QtWidgets import (
+    QGraphicsRectItem,
     QGraphicsItem,
-    QDialog,
+    QGraphicsProxyWidget,
+    QWidget,
     QVBoxLayout,
-    QPushButton,
-    QLineEdit
+    QLabel,
+    QLineEdit,
+    QGridLayout,
+    QFrame,
+    QStackedLayout
 )
 
-from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QPen, QBrush, QFont
+from PySide6.QtGui import QTextOption
+from PySide6.QtWidgets import QPushButton, QHBoxLayout
 
 
-class NodeItem(QGraphicsItem):
+
+DATASET_COLORS = {
+    "events": "#f39c12",
+    "factions": "#3498db",
+    "people": "#27ae60",
+    "technology": "#9b59b6",
+    "location": "#16a085",
+    "institutions": "#e74c3c",
+    "production": "#8e6e53"
+}
+
+
+NODE_Z_COUNTER = 0
+
+from PySide6.QtWidgets import QTextEdit
+
+
+class FieldWidget(QWidget):
+
+    def __init__(self, value):
+        super().__init__()
+
+        self.layout = QStackedLayout()
+
+        # display label
+        self.label = QLabel(str(value))
+        self.label.setWordWrap(True)
+        self.label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+
+        # edit widget
+        self.edit = QTextEdit(str(value))
+        self.edit.setAcceptRichText(False)
+        self.edit.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
+        self.edit.setMaximumHeight(120)
+
+        self.layout.addWidget(self.label)
+        self.layout.addWidget(self.edit)
+
+        self.setLayout(self.layout)
+
+    def set_edit_mode(self, enabled):
+
+        if enabled:
+            self.layout.setCurrentIndex(1)
+
+        else:
+            text = self.edit.toPlainText()
+            self.label.setText(text)
+            self.layout.setCurrentIndex(0)
+
+    def get_value(self):
+        return self.edit.toPlainText()
+
+class HeaderLabel(QLabel):
+
+    def __init__(self, text, double_click_callback):
+        super().__init__(text)
+        self._double_click_callback = double_click_callback
+
+    def mouseDoubleClickEvent(self, event):
+        if self._double_click_callback:
+            self._double_click_callback(event)
+        else:
+            super().mouseDoubleClickEvent(event)
+
+class NodeWidget(QWidget):
 
     STRUCTURE_FIELDS = {
         "parent",
@@ -19,371 +91,255 @@ class NodeItem(QGraphicsItem):
         "neighbours"
     }
 
-    def __init__(self, x=0, y=0, entry_data=None, category=None, schema=None):
+    def __init__(self, entry_data, schema, category):
         super().__init__()
 
-        self.setPos(x, y)
+        self.entry_data = entry_data or {}
+        self.schema = schema or {}
+        self.category = category or "unknown"
+
+        self.edit_mode = False
+
+        root = QVBoxLayout()
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # ----------------
+        # HEADER
+        # ----------------
+
+        name = self.entry_data.get("name", "")
+        dataset = str(self.category).upper()
+
+        font = QFont()
+        font.setPointSize(11)
+        font.setBold(True)
+
+        color = DATASET_COLORS.get(self.category, "#888")
+
+        header_container = QWidget()
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(6, 2, 6, 2)
+
+        self.header = HeaderLabel(
+            f"{dataset}  —  {name}",
+            self._header_double_click
+        )
+
+        self.header.setFont(font)
+
+        self.done_button = QPushButton("✓")
+        self.done_button.setFixedWidth(26)
+        self.done_button.setVisible(False)
+        self.done_button.clicked.connect(self._finish_edit)
+
+        header_layout.addWidget(self.header)
+        header_layout.addStretch()
+        header_layout.addWidget(self.done_button)
+
+        header_container.setLayout(header_layout)
+
+        header_container.setStyleSheet(
+            f"""
+            background-color: {color};
+            color: white;
+            """
+        )
+
+        root.addWidget(header_container)
+
+        # ----------------
+        # CONTENT AREA
+        # ----------------
+
+        content = QWidget()
+        content_layout = QVBoxLayout()
+        content_layout.setContentsMargins(6, 6, 6, 6)
+        content_layout.setSpacing(6)
+
+        self.fields = {}
+
+        # ----------------
+        # SCHEMA BLOCKS
+        # ----------------
+
+        if isinstance(self.schema, dict):
+
+            for block_name, block_fields in self.schema.items():
+
+                block = self._create_block(
+                    block_name,
+                    block_fields
+                )
+
+                content_layout.addWidget(block)
+
+        # ----------------
+        # EXTRA FIELDS
+        # ----------------
+
+        extras = []
+
+        for key in self.entry_data.keys():
+
+            if key == "name":
+                continue
+
+            if key in self.STRUCTURE_FIELDS:
+                continue
+
+            found = False
+
+            for block_fields in self.schema.values():
+                if key in block_fields:
+                    found = True
+
+            if not found:
+                extras.append(key)
+
+        if extras:
+
+            block = self._create_block("extra", extras)
+
+            content_layout.addWidget(block)
+
+        content.setLayout(content_layout)
+
+        root.addWidget(content)
+
+        self.setLayout(root)
+
+
+
+    # ----------------
+    # BLOCK CREATION
+    # ----------------
+
+    def _create_block(self, block_name, fields):
+
+        block_widget = QWidget()
+        layout = QVBoxLayout()
+
+        title = QLabel(block_name.upper())
+        title.setStyleSheet(
+            """
+            font-weight: bold;
+            color: #444;
+            padding-top: 4px;
+            """
+        )
+
+        layout.addWidget(title)
+
+        grid = QGridLayout()
+        grid.setColumnStretch(1, 1)
+
+        row = 0
+
+        for key in fields:
+
+            if key == "name":
+                continue
+
+            value = self.entry_data.get(key, "")
+
+            label = QLabel(key)
+            label.setWordWrap(True)
+            label.setStyleSheet("color:#666")
+
+            field = FieldWidget(value)
+
+            grid.addWidget(label, row, 0)
+            grid.addWidget(field, row, 1)
+
+            self.fields[key] = field
+
+            row += 1
+
+        layout.addLayout(grid)
+
+        divider = QFrame()
+        divider.setFrameShape(QFrame.HLine)
+
+        layout.addWidget(divider)
+
+        block_widget.setLayout(layout)
+
+        return block_widget
+
+    def _header_double_click(self, event):
+
+        self.set_edit_mode(True)
+
+        event.accept()
+
+    # ----------------
+    # EDIT MODE
+    # ----------------
+
+    def set_edit_mode(self, enabled):
+
+        self.edit_mode = enabled
+
+        for field in self.fields.values():
+            field.set_edit_mode(enabled)
+
+class NodeItem(QGraphicsRectItem):
+
+    def __init__(self, x=0, y=0, entry_data=None, category=None, schema=None):
+        super().__init__()
 
         self.entry_data = entry_data or {}
         self.category = category
         self.schema = schema
 
-        self.width = 320
-        self.height = 200
+        self.setRect(0, 0, 320, 200)
+        self.setPos(x, y)
 
-        self.border = 6
-        self.min_w = 240
-        self.min_h = 120
+        pen = QPen(QColor(120, 120, 120))
+        pen.setWidth(1)
 
-        self.dragging = False
-        self.resizing = None
-        self.drag_offset = None
+        self.setPen(pen)
+        self.setBrush(QBrush(QColor(255, 255, 255)))
 
-        self.field_rects = []
+        self.setFlag(QGraphicsItem.ItemIsMovable)
+        self.setFlag(QGraphicsItem.ItemIsSelectable)
+        self.setFlag(QGraphicsItem.ItemSendsGeometryChanges)
+        self.setFlag(QGraphicsItem.ItemIsFocusable)
 
-        self.edit_mode = False
-        self.edit_buffer = {}
+        self.widget = NodeWidget(self.entry_data, self.schema, self.category)
 
-    # -------------------------------------------------------
-    # BOUNDING
-    # -------------------------------------------------------
+        self.proxy = QGraphicsProxyWidget(self)
+        self.proxy.setWidget(self.widget)
+        self.proxy.setPos(4, 4)
 
-    def boundingRect(self):
-        pad = self.border
-        return QRectF(-pad, -pad, self.width + pad * 2, self.height + pad * 2)
+        self.adjust_size()
 
-    # -------------------------------------------------------
-    # PAINT
-    # -------------------------------------------------------
+    def adjust_size(self):
 
-    def paint(self, painter, option, widget):
+        self.widget.adjustSize()
 
-        self.field_rects = []
+        w = max(self.widget.width() + 8, 240)
+        h = max(self.widget.height() + 8, 120)
 
-        margin = 12
-        row_gap = 6
-
-        font = painter.font()
-        font.setPointSize(10)
-        painter.setFont(font)
-
-        metrics = painter.fontMetrics()
-
-        label_width = 0
-
-        for key in self.entry_data:
-
-            if key in ["id", "name"]:
-                continue
-
-            label_width = max(label_width, metrics.horizontalAdvance(key))
-
-        label_width += 20
-        value_width = 260
-
-        self.width = max(
-            self.min_w,
-            label_width + value_width + margin * 2
-        )
-
-        painter.setPen(Qt.black)
-        painter.setBrush(Qt.white)
-        painter.drawRect(0, 0, self.width, self.height)
-
-        x = margin
-        y = margin
-
-        # TITLE
-
-        title_font = painter.font()
-        title_font.setPointSize(12)
-        title_font.setBold(True)
-
-        painter.setFont(title_font)
-
-        name = self.entry_data.get("name", "")
-
-        painter.drawText(x, y + 18, name)
-
-        painter.setFont(font)
-
-        painter.drawText(
-            x + label_width,
-            y + 18,
-            f"({self.category})"
-        )
-
-        y += 32
-
-        structure = {}
-        knowledge = {}
-
-        for k, v in self.entry_data.items():
-
-            if k in ["id", "name"]:
-                continue
-
-            if k in self.STRUCTURE_FIELDS:
-                structure[k] = v
-            else:
-                knowledge[k] = v
-
-        y = self.render_section(
-            painter,
-            "STRUCTURE",
-            structure,
-            x,
-            y,
-            label_width,
-            value_width,
-            metrics,
-            row_gap
-        )
-
-        y = self.render_section(
-            painter,
-            "KNOWLEDGE",
-            knowledge,
-            x,
-            y,
-            label_width,
-            value_width,
-            metrics,
-            row_gap
-        )
-
-        required_height = y + margin
-
-        if required_height != self.height:
-            self.prepareGeometryChange()
-            self.height = max(required_height, self.min_h)
-
-    # -------------------------------------------------------
-    # SECTION RENDERER
-    # -------------------------------------------------------
-
-    def render_section(
-        self,
-        painter,
-        title,
-        fields,
-        x,
-        y,
-        label_width,
-        value_width,
-        metrics,
-        gap
-    ):
-
-        if not fields:
-            return y
-
-        font = painter.font()
-
-        section_font = painter.font()
-        section_font.setBold(True)
-
-        painter.setFont(section_font)
-        painter.setPen(Qt.black)
-
-        painter.drawText(x, y + 16, title)
-
-        painter.setFont(font)
-
-        y += 22
-
-        for key, value in fields.items():
-
-            painter.setPen(Qt.black)
-            painter.drawText(x, y + 14, key)
-
-            value_x = x + label_width
-
-            if self.edit_mode:
-                display_value = self.edit_buffer.get(key, value)
-                color = QColor(20, 120, 20)
-            else:
-                display_value = value
-                color = QColor(30, 90, 200) if isinstance(value, str) else Qt.black
-
-            painter.setPen(color)
-
-            measure_rect = QRectF(
-                value_x,
-                y,
-                value_width,
-                1000
-            )
-
-            text_height = metrics.boundingRect(
-                measure_rect.toRect(),
-                Qt.TextWordWrap,
-                str(display_value)
-            ).height()
-
-            draw_rect = QRectF(
-                value_x,
-                y,
-                value_width,
-                text_height
-            )
-
-            painter.drawText(
-                draw_rect,
-                Qt.TextWordWrap,
-                str(display_value)
-            )
-
-            rect = QRectF(
-                0,
-                y,
-                self.width,
-                max(18, text_height)
-            )
-
-            self.field_rects.append((key, rect, "inline", value))
-
-            y += max(18, text_height) + gap
-
-        y += 8
-
-        return y
-
-    # -------------------------------------------------------
-    # EDIT MODE
-    # -------------------------------------------------------
-
-    def enter_edit_mode(self):
-
-        self.edit_mode = True
-        self.edit_buffer = dict(self.entry_data)
-        self.update()
-
-    def exit_edit_mode(self, save=False):
-
-        if save:
-            self.entry_data.update(self.edit_buffer)
-
-        self.edit_mode = False
-        self.update()
-
-    def edit_field(self, field):
-
-        dialog = QDialog()
-        dialog.setWindowTitle(field)
-
-        layout = QVBoxLayout()
-        dialog.setLayout(layout)
-
-        editor = QLineEdit()
-        editor.setText(str(self.edit_buffer.get(field, "")))
-
-        layout.addWidget(editor)
-
-        save = QPushButton("Save")
-        layout.addWidget(save)
-
-        def apply():
-            self.edit_buffer[field] = editor.text()
-            dialog.accept()
-            self.update()
-
-        save.clicked.connect(apply)
-
-        dialog.exec()
-
-    # -------------------------------------------------------
-    # MOUSE
-    # -------------------------------------------------------
+        self.setRect(0, 0, w, h)
 
     def mouseDoubleClickEvent(self, event):
 
-        if not self.edit_mode:
-            self.enter_edit_mode()
-        else:
-            self.exit_edit_mode(save=True)
+        self.widget.set_edit_mode(True)
 
         event.accept()
 
     def mousePressEvent(self, event):
+        global NODE_Z_COUNTER
 
-        pos = event.pos()
-        scene = self.scene()
+        NODE_Z_COUNTER += 1
+        self.setZValue(NODE_Z_COUNTER)
 
-        if scene and hasattr(scene, "entity_selected"):
-            scene.entity_selected.emit(self.entry_data)
-
-        for key, rect, mode, value in self.field_rects:
-
-            if rect.contains(pos):
-
-                if self.edit_mode:
-                    self.edit_field(key)
-
-                else:
-
-                    if isinstance(value, str) and value:
-
-                        scene = self.scene()
-
-                        if scene and hasattr(scene, "backend"):
-
-                            backend = scene.backend
-
-                            # ask backend where this entity lives
-                            entity_info = backend.entity_index.get(value)
-
-                            if entity_info:
-                                category = entity_info["dataset"]
-
-                                scene.open_tile(category, value)
-
-                event.accept()
-                return
-
-        if pos.x() < self.border:
-            self.resizing = "left"
-
-        elif pos.x() > self.width - self.border:
-            self.resizing = "right"
-
-        elif pos.y() < self.border:
-            self.resizing = "top"
-
-        elif pos.y() > self.height - self.border:
-            self.resizing = "bottom"
-
-        else:
-            self.dragging = True
-            self.drag_offset = pos
-
-        event.accept()
-
-    def mouseMoveEvent(self, event):
-
-        pos = event.pos()
-
-        if self.dragging:
-
-            new_pos = self.mapToScene(pos - self.drag_offset)
-            self.setPos(new_pos)
-
-        elif self.resizing == "right":
-
-            self.prepareGeometryChange()
-            self.width = max(self.min_w, pos.x())
-            self.update()
-
-        elif self.resizing == "bottom":
-
-            self.prepareGeometryChange()
-            self.height = max(self.min_h, pos.y())
-            self.update()
-
-        event.accept()
+        super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
 
-        self.dragging = False
-        self.resizing = None
-        event.accept()
+        self.adjust_size()
+
+        super().mouseReleaseEvent(event)

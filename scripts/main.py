@@ -6,8 +6,9 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, Q
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QShortcut, QKeySequence
 
+
 from tools.world_model import WorldModel
-from ui.asset_editor_panel import AssetEditorPanel
+
 
 from ui.canvas_view import CanvasView
 from ui.timeline_widget import TimelineWidget
@@ -16,6 +17,7 @@ from ui.canvas_scene import CanvasScene
 
 
 LOG_PATH = Path(__file__).resolve().parents[1] / "index0_debug.log"
+
 
 
 def ensure_logging():
@@ -76,12 +78,9 @@ class MainWindow(QMainWindow):
 
         from PySide6.QtWidgets import QDockWidget
 
-        self.asset_editor = AssetEditorPanel(self.world)
 
-        self.asset_dock = QDockWidget("Asset Editor", self)
-        self.asset_dock.setWidget(self.asset_editor)
 
-        self.addDockWidget(Qt.RightDockWidgetArea, self.asset_dock)
+
 
         self.timeline.event_clicked.connect(self.open_event)
 
