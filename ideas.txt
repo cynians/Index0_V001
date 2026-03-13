@@ -198,6 +198,69 @@ IDEA-427  Cold War Aircraft Navigator | multi crew aircraft navigation and targe
 IDEA-428  Test Pilot | pilot specialized in experimental aircraft evaluation | Role | All Eras
 IDEA-429  Flight Testing | engineering process for evaluating aircraft performance | Technology | All Eras
 
+IDEA-430  Doppler Radar | velocity measuring radar using Doppler shift | Technology | Modern Period
+IDEA-431  RF Power Amplifier | radio frequency signal amplification module | Component | Modern Period
+IDEA-432  Frequency Stabilized Oscillator | stable reference frequency generator | Component | Modern Period
+IDEA-433  Radar Waveguide System | microwave signal transmission waveguide network | Component | Modern Period
+IDEA-434  Radar Cooling System | thermal management system for radar electronics | Component | Modern Period
+IDEA-435  Microwave Magnetron | vacuum tube microwave generator | Component | Modern Period
+IDEA-436  Solid State Radar Transmitter | semiconductor microwave transmission module | Component | Modern Period
+IDEA-437  Radar Phase Detector | circuit detecting Doppler phase differences | Component | Modern Period
+IDEA-438  Radar Signal Filter Bank | frequency filtering system for radar signals | Component | Modern Period
+IDEA-439  Radar Timing Controller | radar pulse synchronization controller | Component | Modern Period
+
+IDEA-440  Light Emitting Diode | semiconductor electroluminescent light source | Technology | Modern Period
+IDEA-441  Semiconductor Junction | semiconductor interface enabling electronic effects | Component | Modern Period
+IDEA-442  Current Driver Circuit | electronic circuit regulating device current | Component | Modern Period
+IDEA-443  Optical Emission Lens | optical element directing emitted light | Component | Modern Period
+IDEA-444  Thermal Dissipation Module | heat transfer module for electronic systems | Component | Modern Period
+IDEA-445  Electronic Device Package | protective enclosure for semiconductor devices | Component | Modern Period
+
+IDEA-446  Integrated Circuit | monolithic semiconductor electronic circuit | Technology | Modern Period
+IDEA-447  Semiconductor Substrate | semiconductor base material for device fabrication | Component | Modern Period
+IDEA-448  Transistor Switching Element | semiconductor electronic switching device | Component | Modern Period
+IDEA-449  Circuit Interconnect Network | conductive pathways connecting circuit elements | Component | Modern Period
+IDEA-450  Integrated Circuit Package | protective chip housing with electrical contacts | Component | Modern Period
+IDEA-451  Signal Control Logic | circuit structures controlling logical operations | Component | Modern Period
+IDEA-445  Electronic Device Package | protective enclosure for semiconductor devices | Component | Modern Period
+
+IDEA-446  Integrated Circuit | monolithic semiconductor electronic circuit | Technology | Modern Period
+IDEA-447  Semiconductor Substrate | semiconductor base material for device fabrication | Component | Modern Period
+IDEA-448  Transistor Switching Element | semiconductor electronic switching device | Component | Modern Period
+IDEA-449  Circuit Interconnect Network | conductive pathways connecting circuit elements | Component | Modern Period
+IDEA-450  Integrated Circuit Package | protective chip housing with electrical contacts | Component | Modern Period
+IDEA-451  Signal Control Logic | circuit structures controlling logical operations | Component | Modern Period
+
+IDEA-452  Central Asian Steppe CoG Site | location of the Center of Gravity megastructure | Location | GGO Hegemony Period
+IDEA-453  CoG Leveling Access Structure | regulated access system between CoG rings | Cultural Aspect | GGO Hegemony Period
+IDEA-454  CoG Commodity Quarters | internal consumer goods production districts | Economic System | GGO Hegemony Period
+IDEA-455  GGO Apparent Independent Production | controlled pseudo-corporate production system | Economic System | GGO Hegemony Period
+IDEA-456  GGO Engineering Groups | numbered technical institutions managing infrastructure and technology | Institution | GGO Hegemony Period
+IDEA-457  GGO Engineering Group 0 – Megastructure Engineering | megastructure design and structural engineering division | Institution | GGO Hegemony Period
+IDEA-458  GGO Engineering Group 8 – Automotive Engineering | vehicle design and ground transport engineering division | Institution | GGO Hegemony Period
+IDEA-459  CoG High-Speed Ring Rail Network | high-speed rail system running along CoG rings | Infrastructure | GGO Hegemony Period
+IDEA-460  Central CoG Space Elevator | primary Earth-to-orbit transport structure of the CoG | Infrastructure | GGO Hegemony Period
+IDEA-461  Upper CoG | geostationary orbital station connected to the CoG elevator | Orbital Infrastructure | GGO Hegemony Period
+IDEA-462  CoG Orbital Launch Fields | distributed launch and landing installations for spacecraft | Infrastructure | GGO Hegemony Period
+IDEA-463  CoG Interior Hobby Agriculture | small-scale gardening and cultivation inside the CoG | Cultural Aspect | GGO Hegemony Period
+IDEA-464  GGO Agricultural Machine | automated planetary agricultural production system | Infrastructure System | GGO Hegemony Period
+IDEA-465  Ringleague Racing | multi-ring motorsport and recreational driving network | Cultural Institution | GGO Hegemony Period
+IDEA-466  Ringleague Grand Route | periodically reserved race circuit through the Ringleague network | Event System | GGO Hegemony Period
+IDEA-467  GGO CoG – Center of Gravity | massive terrestrial megacity megastructure built by the GGO | Infrastructure | GGO Hegemony Period
+IDEA-468  CoG Outer Wall | four-kilometer-thick arcological outer boundary of the original CoG | Megastructure Component | GGO Hegemony Period
+IDEA-469  CoG Infrastructure | integrated transport, energy, water, and utility systems of the CoG | Infrastructure System | GGO Hegemony Period
+IDEA-470  CoG Ring 1 | innermost urban ring surrounding the central core | Megastructure Component | GGO Hegemony Period
+IDEA-471  CoG Ring 2 | second urban ring of the CoG megacity | Megastructure Component | GGO Hegemony Period
+IDEA-472  CoG Ring 3 | third urban ring containing early commodity quarters | Megastructure Component | GGO Hegemony Period
+IDEA-473  CoG Ring 4 | fourth urban ring of the original CoG structure | Megastructure Component | GGO Hegemony Period
+IDEA-474  CoG Ring 5 | outermost ring of the original CoG city | Megastructure Component | GGO Hegemony Period
+IDEA-475  CoG Central Core District | central administrative and civic district of the CoG | Megastructure Component | GGO Hegemony Period
+IDEA-476  CoG Infrastructure Belts | inhabited structural belts separating CoG rings | Megastructure Component | GGO Hegemony Period
+IDEA-477  CoG Space Elevator Hover Construction Platform | hovering construction platform used during elevator assembly | Infrastructure Technology | GGO Hegemony Period
+IDEA-478  GGO Engineering Group 3 – Construction & Logistics Systems | infrastructure machinery and deployment engineering division | Institution | GGO Hegemony Period
+IDEA-479  CoG Water System | integrated water distribution and canal system of the CoG | Infrastructure System | GGO Hegemony Period
+IDEA-480  CoG Energy System | integrated power generation and distribution network of the CoG | Infrastructure System | GGO Hegemony Period
+
 ================================================
 REFERENCE: MACRO ERAS
 ================================================
@@ -9357,3 +9420,1270 @@ Description:
 Flight testing is the engineering process used to evaluate aircraft performance and safety through controlled test flights.
 
 The process allows engineers to validate aircraft systems, measure performance, and refine aircraft design.
+
+
+------------------------------------------------
+IDEA-430
+------------------------------------------------
+
+Name: Doppler Radar
+Domain: Technology
+
+Parent Idea:
+Radar Systems
+
+Era:
+Modern Period
+
+Tags:
+radar
+sensor
+velocity
+navigation
+
+Description:
+A radar system that measures motion relative to the sensor by detecting frequency shifts in reflected radio waves.
+
+Doppler radar allows measurement of target velocity and is widely used in aviation navigation, meteorology, and vehicle motion sensing.
+
+
+------------------------------------------------
+IDEA-431
+------------------------------------------------
+
+Name: RF Power Amplifier
+Domain: Component
+
+Parent Idea:
+Doppler Radar
+
+Era:
+Modern Period
+
+Tags:
+electronics
+radar
+
+Description:
+Electronic amplifier used to increase the power of a radio-frequency signal before transmission.
+
+
+------------------------------------------------
+IDEA-432
+------------------------------------------------
+
+Name: Frequency Stabilized Oscillator
+Domain: Component
+
+Parent Idea:
+Doppler Radar
+
+Era:
+Modern Period
+
+Tags:
+electronics
+oscillator
+
+Description:
+Precision oscillator generating a stable reference frequency used by radar transmitters.
+
+
+------------------------------------------------
+IDEA-433
+------------------------------------------------
+
+Name: Radar Waveguide System
+Domain: Component
+
+Parent Idea:
+Doppler Radar
+
+Era:
+Modern Period
+
+Tags:
+radar
+rf
+
+Description:
+Waveguide structures directing microwave signals between radar transmitter, receiver, and antenna.
+
+
+------------------------------------------------
+IDEA-434
+------------------------------------------------
+
+Name: Radar Cooling System
+Domain: Component
+
+Parent Idea:
+Doppler Radar
+
+Era:
+Modern Period
+
+Tags:
+thermal
+electronics
+
+Description:
+Thermal management system removing heat from radar electronics and transmitters.
+
+
+------------------------------------------------
+IDEA-435
+------------------------------------------------
+
+Name: Microwave Magnetron
+Domain: Component
+
+Parent Idea:
+RF Power Amplifier
+
+Era:
+Modern Period
+
+Tags:
+electronics
+microwave
+
+Description:
+Vacuum tube device generating high-power microwave radiation used in early radar transmitters.
+
+
+------------------------------------------------
+IDEA-436
+------------------------------------------------
+
+Name: Solid State Radar Transmitter
+Domain: Component
+
+Parent Idea:
+RF Power Amplifier
+
+Era:
+Modern Period
+
+Tags:
+electronics
+semiconductor
+
+Description:
+Semiconductor-based microwave transmitter used in modern radar systems.
+
+
+------------------------------------------------
+IDEA-437
+------------------------------------------------
+
+Name: Radar Phase Detector
+Domain: Component
+
+Parent Idea:
+Doppler Radar
+
+Era:
+Modern Period
+
+Tags:
+electronics
+signal
+
+Description:
+Electronic circuit measuring phase differences between transmitted and received radar signals to determine Doppler shift.
+
+
+------------------------------------------------
+IDEA-438
+------------------------------------------------
+
+Name: Radar Signal Filter Bank
+Domain: Component
+
+Parent Idea:
+Doppler Radar
+
+Era:
+Modern Period
+
+Tags:
+electronics
+signal
+
+Description:
+Set of frequency filters isolating Doppler signals from background noise in radar returns.
+
+
+------------------------------------------------
+IDEA-439
+------------------------------------------------
+
+Name: Radar Timing Controller
+Domain: Component
+
+Parent Idea:
+Doppler Radar
+
+Era:
+Modern Period
+
+Tags:
+electronics
+control
+
+Description:
+Electronic timing system synchronizing radar pulse emission, reception windows, and processing cycles.
+
+
+------------------------------------------------
+IDEA-440
+------------------------------------------------
+
+Name: Light Emitting Diode
+Domain: Technology
+
+Parent Idea:
+Semiconductor Electronics
+
+Era:
+Modern Period
+
+Tags:
+electronics
+lighting
+semiconductor
+
+Description:
+Semiconductor device that emits light when electrical current passes through a p–n junction, producing photons through electroluminescence.
+
+
+------------------------------------------------
+IDEA-441
+------------------------------------------------
+
+Name: Semiconductor Junction
+Domain: Component
+
+Parent Idea:
+Light Emitting Diode
+
+Era:
+Modern Period
+
+Tags:
+semiconductor
+electronics
+
+Description:
+Interface between semiconductor regions where charge recombination produces electrical or optical effects.
+
+
+------------------------------------------------
+IDEA-442
+------------------------------------------------
+
+Name: Current Driver Circuit
+Domain: Component
+
+Parent Idea:
+Light Emitting Diode
+
+Era:
+Modern Period
+
+Tags:
+electronics
+control
+
+Description:
+Electronic circuit regulating the electrical current supplied to semiconductor devices.
+
+
+------------------------------------------------
+IDEA-443
+------------------------------------------------
+
+Name: Optical Emission Lens
+Domain: Component
+
+Parent Idea:
+Light Emitting Diode
+
+Era:
+Modern Period
+
+Tags:
+optics
+lighting
+
+Description:
+Optical element shaping and directing light emitted from a source.
+
+
+------------------------------------------------
+IDEA-444
+------------------------------------------------
+
+Name: Thermal Dissipation Module
+Domain: Component
+
+Parent Idea:
+Light Emitting Diode
+
+Era:
+Modern Period
+
+Tags:
+thermal
+electronics
+
+Description:
+Component designed to transfer heat away from electronic or optical devices.
+
+
+------------------------------------------------
+IDEA-445
+------------------------------------------------
+
+Name: Electronic Device Package
+Domain: Component
+
+Parent Idea:
+Light Emitting Diode
+
+Era:
+Modern Period
+
+Tags:
+electronics
+housing
+
+Description:
+Protective enclosure containing semiconductor devices and providing electrical contact interfaces.
+
+
+------------------------------------------------
+IDEA-446
+------------------------------------------------
+
+Name: Integrated Circuit
+Domain: Technology
+
+Parent Idea:
+Semiconductor Electronics
+
+Era:
+Modern Period
+
+Tags:
+electronics
+semiconductor
+microelectronics
+
+Description:
+Electronic circuit in which transistors and interconnects are fabricated on a single semiconductor substrate.
+
+
+------------------------------------------------
+IDEA-447
+------------------------------------------------
+
+Name: Semiconductor Substrate
+Domain: Component
+
+Parent Idea:
+Integrated Circuit
+
+Era:
+Modern Period
+
+Tags:
+semiconductor
+
+Description:
+Base material on which semiconductor devices and circuit structures are fabricated.
+
+
+------------------------------------------------
+IDEA-448
+------------------------------------------------
+
+Name: Transistor Switching Element
+Domain: Component
+
+Parent Idea:
+Integrated Circuit
+
+Era:
+Modern Period
+
+Tags:
+electronics
+semiconductor
+
+Description:
+Semiconductor device functioning as a controllable switch or amplifier within electronic circuits.
+
+
+------------------------------------------------
+IDEA-449
+------------------------------------------------
+
+Name: Circuit Interconnect Network
+Domain: Component
+
+Parent Idea:
+Integrated Circuit
+
+Era:
+Modern Period
+
+Tags:
+electronics
+circuit
+
+Description:
+Conductive pathways connecting electronic components inside an integrated circuit.
+
+
+------------------------------------------------
+IDEA-450
+------------------------------------------------
+
+Name: Integrated Circuit Package
+Domain: Component
+
+Parent Idea:
+Integrated Circuit
+
+Era:
+Modern Period
+
+Tags:
+electronics
+housing
+
+Description:
+Protective package enclosing a semiconductor chip and providing external electrical connections.
+
+
+------------------------------------------------
+IDEA-451
+------------------------------------------------
+
+Name: Signal Control Logic
+Domain: Component
+
+Parent Idea:
+Integrated Circuit
+
+Era:
+Modern Period
+
+Tags:
+electronics
+logic
+
+Description:
+Circuit structures responsible for controlling logical operations and signal flow within electronic systems.
+
+------------------------------------------------
+IDEA-452
+------------------------------------------------
+
+Name: Central Asian Steppe CoG Site
+
+Domain:
+Location
+
+Parent Idea:
+Earth
+
+Era:
+GGO Hegemony Period
+
+Tags:
+earth
+steppe
+megastructure
+cog
+
+Description:
+The Core Governance (CoG) megastructure is located in the Central Asian steppes. The region was selected due to its vast open land area, relatively low population density prior to construction, and suitable geological conditions for supporting extremely large structural foundations.
+
+Construction of the CoG began shortly before the First Contraction Event around the year 3000 and was completed around 3080. The megastructure later expanded through additional outer rings, eventually reaching a diameter of roughly 350 km.
+
+The location also hosts large segments of the infrastructure systems supporting the CoG, including logistics links to the GGO Agricultural Machine and external industrial production zones.
+
+
+------------------------------------------------
+IDEA-453
+------------------------------------------------
+
+Name: CoG Leveling Access Structure
+
+Domain:
+Cultural Aspect
+
+Parent Idea:
+GGO CoG - Center of Gravity
+
+Era:
+GGO Hegemony Period
+
+Tags:
+cog
+society
+mobility
+access
+
+Description:
+The CoG Leveling Access Structure refers to the regulated system controlling movement between the concentric rings of the Center of Gravity megastructure.
+
+Passage between rings occurs through controlled gates located in the CoG Infrastructure Belts separating the rings. Access permissions determine which rings residents may enter or reside in.
+
+Over time this system developed into a central element of CoG society, influencing residence rights, employment opportunities, and social status.
+
+Movement toward the inner rings is commonly interpreted as upward progression within the social hierarchy of the megastructure.
+
+
+------------------------------------------------
+IDEA-454
+------------------------------------------------
+
+Name: CoG Commodity Quarters
+
+Domain:
+Economic System
+
+Parent Idea:
+GGO CoG - Center of Gravity
+
+Era:
+GGO Hegemony Period
+
+Tags:
+cog
+production
+craft
+consumer-goods
+culture
+
+Description:
+The CoG Commodity Quarters are a network of numbered production districts within the Center of Gravity megastructure responsible for producing a wide range of high-level consumer goods for the population.
+
+The earliest Commodity Quarters were primarily located in CoG Ring 3 and CoG Ring 4 of the original megacity.
+
+Examples of products include specialty foods such as fine breads, ornamental animals such as aquarium fish, hobby equipment, consumer electronics, decorative goods, and other lifestyle commodities.
+
+As the CoG expanded outward and new habitation rings were constructed, additional Commodity Quarters were established in the CoG Outer Wall districts and later expansion rings.
+
+The quarters also function as social environments where residents pursue craftsmanship and specialized personal production activities.
+
+
+------------------------------------------------
+IDEA-455
+------------------------------------------------
+
+Name: GGO Apparent Independent Production
+
+Domain:
+Economic System
+
+Parent Idea:
+GGO Hegemony
+
+Era:
+GGO Hegemony Period
+
+Tags:
+economy
+consumer-goods
+branding
+propaganda
+
+Description:
+GGO Apparent Independent Production (AIP) refers to a system of controlled production entities designed to simulate independent corporate activity within the economic structure of the Global Government Organization.
+
+These organizations operate as branded product producers with distinct identities, marketing styles, and design variations.
+
+In reality they remain integrated into the centralized production structure of the GGO and operate under strict regulatory oversight.
+
+The system emerged after residents of the CoG became dissatisfied with the standardized products supplied through engineering-directed production systems.
+
+AIP entities provide product variation and consumer choice while maintaining centralized economic control.
+
+
+------------------------------------------------
+IDEA-456
+------------------------------------------------
+
+Name: GGO Engineering Groups
+
+Domain:
+Institution
+
+Parent Idea:
+GGO Hegemony
+
+Era:
+GGO Hegemony Period
+
+Tags:
+engineering
+technology
+infrastructure
+
+Description:
+The GGO Engineering Groups are a network of numbered technical institutions responsible for the design, development, and maintenance of infrastructure and industrial systems throughout GGO territories.
+
+Several major Engineering Groups maintain headquarters and research facilities within the inner rings of the CoG.
+
+While prototype manufacturing occurs inside the megastructure, most large-scale industrial production takes place in external industrial zones and is later transported to the CoG.
+
+
+------------------------------------------------
+IDEA-457
+------------------------------------------------
+
+Name: GGO Engineering Group 0 – Megastructure Engineering
+
+Domain:
+Institution
+
+Parent Idea:
+GGO Engineering Groups
+
+Era:
+GGO Hegemony Period
+
+Tags:
+engineering
+megastructure
+construction
+
+Description:
+GGO Engineering Group 0 is responsible for megastructure engineering and large-scale structural construction projects.
+
+The group predates the construction of the Center of Gravity megastructure and played a central role in its planning and assembly.
+
+Engineering Group 0 continues to oversee major structural maintenance and expansion of the CoG infrastructure.
+
+
+------------------------------------------------
+IDEA-458
+------------------------------------------------
+
+Name: GGO Engineering Group 8 – Automotive Engineering
+
+Domain:
+Institution
+
+Parent Idea:
+GGO Engineering Groups
+
+Era:
+GGO Hegemony Period
+
+Tags:
+engineering
+vehicles
+transport
+
+Description:
+GGO Engineering Group 8 specializes in the development of ground transportation technologies and vehicle systems.
+
+The group oversees the design and technical standardization of many vehicles used throughout GGO territories.
+
+Alternative vehicle designs used in Ringleague Racing often originate from experimental or modified engineering concepts.
+
+
+------------------------------------------------
+IDEA-459
+------------------------------------------------
+
+Name: CoG High-Speed Ring Rail Network
+
+Domain:
+Infrastructure
+
+Parent Idea:
+CoG Infrastructure
+
+Era:
+GGO Hegemony Period
+
+Tags:
+transport
+rail
+cog
+
+Description:
+The CoG High-Speed Ring Rail Network consists of high-speed train systems running along the circumference of each ring of the CoG.
+
+The network forms one of the primary long-distance transit systems within the megacity and connects major transport hubs located within the CoG Infrastructure Belts.
+
+Construction and maintenance are overseen by the GGO Engineering Groups.
+
+
+------------------------------------------------
+IDEA-460
+------------------------------------------------
+
+Name: Central CoG Space Elevator
+
+Domain:
+Infrastructure
+
+Parent Idea:
+CoG Central Core District
+
+Era:
+GGO Hegemony Period
+
+Tags:
+space-elevator
+orbital
+transport
+
+Description:
+The Central CoG Space Elevator is the primary Earth–orbit transport structure of the CoG.
+
+Located in the CoG Central Core District, the elevator connects the megacity directly to the geostationary orbital station known as Upper CoG.
+
+
+------------------------------------------------
+IDEA-461
+------------------------------------------------
+
+Name: Upper CoG
+
+Domain:
+Orbital Infrastructure
+
+Parent Idea:
+Central CoG Space Elevator
+
+Era:
+GGO Hegemony Period
+
+Tags:
+orbital
+station
+transport
+
+Description:
+Upper CoG is a geostationary orbital station connected to Earth by the Central CoG Space Elevator.
+
+The station serves as the primary orbital logistics and transfer hub associated with the CoG.
+
+
+------------------------------------------------
+IDEA-462
+------------------------------------------------
+
+Name: CoG Orbital Launch Fields
+
+Domain:
+Infrastructure
+
+Parent Idea:
+GGO CoG - Center of Gravity
+
+Era:
+GGO Hegemony Period
+
+Tags:
+spaceport
+orbital
+
+Description:
+Distributed across several rings of the CoG are specialized launch and landing installations used for orbital and atmospheric spacecraft operations.
+
+These facilities complement the Central CoG Space Elevator and handle mission-specific transport operations.
+
+
+------------------------------------------------
+IDEA-463
+------------------------------------------------
+
+Name: CoG Interior Hobby Agriculture
+
+Domain:
+Cultural Aspect
+
+Parent Idea:
+GGO CoG - Center of Gravity
+
+Era:
+GGO Hegemony Period
+
+Tags:
+agriculture
+culture
+urban
+
+Description:
+Agriculture within the CoG exists primarily on an artisanal or hobby scale.
+
+Residents cultivate gardens, hydroponic installations, and decorative agricultural spaces within residential terraces and public areas.
+
+Large-scale food supply for the megacity is provided by the GGO Agricultural Machine.
+
+
+------------------------------------------------
+IDEA-464
+------------------------------------------------
+
+Name: GGO Agricultural Machine
+
+Domain:
+Infrastructure System
+
+Parent Idea:
+GGO Hegemony
+
+Era:
+GGO Hegemony Period
+
+Tags:
+agriculture
+automation
+permaculture
+
+Description:
+The GGO Agricultural Machine is the distributed automated agricultural system responsible for supplying food to the population of the CoG and other GGO population centers.
+
+The system combines automated farming systems, ecological engineering, and large-scale agricultural logistics networks.
+
+
+------------------------------------------------
+IDEA-465
+------------------------------------------------
+
+Name: Ringleague Racing
+
+Domain:
+Cultural Institution
+
+Parent Idea:
+GGO CoG - Center of Gravity
+
+Era:
+GGO Hegemony Period
+
+Tags:
+sport
+vehicles
+entertainment
+
+Description:
+Ringleague Racing is a major motorsport and recreational driving system within the CoG.
+
+The system consists of a vast network of interconnected race tracks spanning multiple rings of the megacity.
+
+The network is open to recreational driving during normal operation periods.
+
+
+------------------------------------------------
+IDEA-466
+------------------------------------------------
+
+Name: Ringleague Grand Route
+
+Domain:
+Infrastructure / Event System
+
+Parent Idea:
+Ringleague Racing
+
+Era:
+GGO Hegemony Period
+
+Tags:
+racing
+event
+
+Description:
+The Ringleague Grand Route is a designated race circuit assembled from segments of the Ringleague network.
+
+At scheduled intervals this route is reserved for major racing events.
+
+
+------------------------------------------------
+IDEA-467
+------------------------------------------------
+
+Name: GGO CoG - Center of Gravity
+
+Domain:
+Infrastructure
+
+Parent Idea:
+GGO Hegemony
+
+Era:
+GGO Hegemony Period
+
+Tags:
+cog
+megastructure
+earth
+
+Description:
+The Center of Gravity (CoG) is a massive terrestrial megastructure constructed by the Global Government Organization.
+
+Located in the Central Asian steppes, the CoG became the primary population and administrative center of Earth during the GGO Hegemony Period.
+
+The original structure consisted of five concentric rings surrounding the CoG Central Core District and enclosed by the CoG Outer Wall.
+
+The megastructure later expanded outward through additional habitation rings.
+
+
+------------------------------------------------
+IDEA-468
+------------------------------------------------
+
+Name: CoG Outer Wall
+
+Domain:
+Megastructure Component
+
+Parent Idea:
+GGO CoG - Center of Gravity
+
+Era:
+GGO Hegemony Period
+
+Tags:
+cog
+arcology
+
+Description:
+The CoG Outer Wall is the massive arcological structure forming the outer boundary of the original five-ring CoG megacity.
+
+The wall is approximately four kilometers thick and roughly one kilometer tall and contains large residential districts, infrastructure corridors, and transit hubs.
+
+
+------------------------------------------------
+IDEA-469
+------------------------------------------------
+
+Name: CoG Infrastructure
+
+Domain:
+Infrastructure System
+
+Parent Idea:
+GGO CoG - Center of Gravity
+
+Era:
+GGO Hegemony Period
+
+Tags:
+cog
+infrastructure
+
+Description:
+CoG Infrastructure refers to the integrated network of transport, energy, water, and utility systems operating within the CoG.
+
+
+------------------------------------------------
+IDEA-470
+------------------------------------------------
+
+Name: CoG Ring 1
+
+Domain:
+Megastructure Component
+
+Parent Idea:
+GGO CoG - Center of Gravity
+
+Era:
+GGO Hegemony Period
+
+Tags:
+cog
+ring
+urban
+
+Description:
+CoG Ring 1 is the innermost urban ring of the Center of Gravity megastructure.
+
+The ring surrounds the CoG Central Core District and forms the first of the five primary rings of the original megacity.
+
+
+------------------------------------------------
+IDEA-471
+------------------------------------------------
+
+Name: CoG Ring 2
+
+Domain:
+Megastructure Component
+
+Parent Idea:
+GGO CoG - Center of Gravity
+
+Era:
+GGO Hegemony Period
+
+Tags:
+cog
+ring
+urban
+
+Description:
+CoG Ring 2 is the second urban ring of the Center of Gravity megastructure.
+
+The ring surrounds CoG Ring 1 and forms part of the original five-ring structure of the megacity.
+
+
+------------------------------------------------
+IDEA-472
+------------------------------------------------
+
+Name: CoG Ring 3
+
+Domain:
+Megastructure Component
+
+Parent Idea:
+GGO CoG - Center of Gravity
+
+Era:
+GGO Hegemony Period
+
+Tags:
+cog
+ring
+urban
+
+Description:
+CoG Ring 3 is the third urban ring of the Center of Gravity megastructure.
+
+Several early CoG Commodity Quarters were historically located within this ring.
+
+
+------------------------------------------------
+IDEA-473
+------------------------------------------------
+
+Name: CoG Ring 4
+
+Domain:
+Megastructure Component
+
+Parent Idea:
+GGO CoG - Center of Gravity
+
+Era:
+GGO Hegemony Period
+
+Tags:
+cog
+ring
+urban
+
+Description:
+CoG Ring 4 is the fourth urban ring of the Center of Gravity megastructure.
+
+Several early CoG Commodity Quarters were historically located within this ring.
+
+
+------------------------------------------------
+IDEA-474
+------------------------------------------------
+
+Name: CoG Ring 5
+
+Domain:
+Megastructure Component
+
+Parent Idea:
+GGO CoG - Center of Gravity
+
+Era:
+GGO Hegemony Period
+
+Tags:
+cog
+ring
+urban
+
+Description:
+CoG Ring 5 is the outermost ring of the original five-ring structure of the Center of Gravity megastructure.
+
+The ring forms the interface between the inner megacity and the CoG Outer Wall.
+
+
+------------------------------------------------
+IDEA-475
+------------------------------------------------
+
+Name: CoG Central Core District
+
+Domain:
+Megastructure Component
+
+Parent Idea:
+GGO CoG - Center of Gravity
+
+Era:
+GGO Hegemony Period
+
+Tags:
+cog
+core
+administration
+
+Description:
+The CoG Central Core District is the central administrative and civic zone of the Center of Gravity megastructure.
+
+Located at the geometric center of the megacity, the district contains major governmental institutions and infrastructure including the Central CoG Space Elevator.
+
+
+------------------------------------------------
+IDEA-476
+------------------------------------------------
+
+Name: CoG Infrastructure Belts
+
+Domain:
+Megastructure Component
+
+Parent Idea:
+CoG Infrastructure
+
+Era:
+GGO Hegemony Period
+
+Tags:
+cog
+infrastructure
+transport
+
+Description:
+The CoG Infrastructure Belts are large inhabited structural districts separating the urban rings of the Center of Gravity megastructure.
+
+Each belt forms a circular zone approximately one kilometer thick and roughly 250 meters tall.
+
+These belts house major transport corridors, transit stations, utilities, logistics hubs, and access checkpoints associated with the CoG Leveling Access Structure.
+
+
+------------------------------------------------
+IDEA-477
+------------------------------------------------
+
+Name: CoG Space Elevator Hover Construction Platform
+
+Domain:
+Infrastructure Technology
+
+Parent Idea:
+Central CoG Space Elevator
+
+Era:
+GGO Hegemony Period
+
+Tags:
+construction
+space-elevator
+engineering
+
+Description:
+The CoG Space Elevator Hover Construction Platform was a specialized construction system used during the assembly of the Central CoG Space Elevator.
+
+The pressurized platform hovered above the partially completed structure using a distributed base of finely controlled rocket engines.
+
+Fuel for the engines was supplied through the elevator structure beneath the platform.
+
+The platform served as a mobile construction base from which additional elevator sections were assembled and attached.
+
+The system was developed by GGO Engineering Group 3.
+
+
+------------------------------------------------
+IDEA-478
+------------------------------------------------
+
+Name: GGO Engineering Group 3 – Construction & Logistics Systems
+
+Domain:
+Institution
+
+Parent Idea:
+GGO Engineering Groups
+
+Era:
+GGO Hegemony Period
+
+Tags:
+engineering
+construction
+logistics
+
+Description:
+GGO Engineering Group 3 specializes in the development of construction machinery, logistics systems, and infrastructure deployment technologies.
+
+The group designs large-scale construction equipment and specialized engineering systems used to build and maintain major infrastructure projects.
+
+Among its creations was the hover construction platform used during the assembly of the Central CoG Space Elevator.
+
+
+------------------------------------------------
+IDEA-479
+------------------------------------------------
+
+Name: CoG Water System
+
+Domain:
+Infrastructure System
+
+Parent Idea:
+CoG Infrastructure
+
+Era:
+GGO Hegemony Period
+
+Tags:
+water
+utilities
+cog
+
+Description:
+The CoG Water System is the integrated water supply and circulation infrastructure of the Center of Gravity megastructure.
+
+Large artificial rivers and canals are present in several districts for aesthetic and recreational purposes.
+
+Most water supply and distribution occurs through subterranean reservoirs and pipelines located primarily within the CoG Infrastructure Belts.
+
+
+------------------------------------------------
+IDEA-480
+------------------------------------------------
+
+Name: CoG Energy System
+
+Domain:
+Infrastructure System
+
+Parent Idea:
+CoG Infrastructure
+
+Era:
+GGO Hegemony Period
+
+Tags:
+energy
+power
+infrastructure
+
+Description:
+The CoG Energy System is the integrated power generation and distribution network supplying the Center of Gravity megastructure.
+
+Energy is generated through a combination of external energy farms, orbital solar power systems associated with Upper CoG, and internal power plants located within the megastructure.
+
+Energy distribution occurs through major power corridors integrated into the CoG Infrastructure Belts.
