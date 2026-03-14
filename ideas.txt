@@ -261,6 +261,32 @@ IDEA-478  GGO Engineering Group 3 – Construction & Logistics Systems | infrast
 IDEA-479  CoG Water System | integrated water distribution and canal system of the CoG | Infrastructure System | GGO Hegemony Period
 IDEA-480  CoG Energy System | integrated power generation and distribution network of the CoG | Infrastructure System | GGO Hegemony Period
 
+IDEA-481  AIM-9 Sidewinder | Cold War infrared-guided air-to-air missile | Technology | Cold War
+IDEA-482  Infrared Homing Seeker | passive heat-tracking missile guidance sensor system | Technology | Cold War
+IDEA-483  Transfer Hansa Interstellar Transport Monopoly | Hansa-controlled interstellar transport system dominating Planetary Period travel | Economic System / Infrastructure | Planetary Period
+IDEA-484  Lübeck Class Shellship | early 2.5 km convoy carrier shellship enabling Hansa expansion | Vehicle / Megastructure Transport | Early Planetary Period
+IDEA-485  Transfer Hansa Transit Accommodation Model | mixed habitation and cryosleep system for shellship passengers | Transport System | Planetary Period
+IDEA-486  Independent Light Trader Class | small privately owned merchant spacecraft | Vehicle | Planetary Period
+IDEA-487  Independent Medium Cargo Freighter | mid-sized cargo transport vessel used in Hansa convoys | Vehicle | Planetary Period
+IDEA-488  Independent Heavy Bulk Carrier | large industrial cargo transport ship | Vehicle | Planetary Period
+IDEA-489  Lübeck Class Docking Procedure | rear-tunnel convoy docking system used by Lübeck shellships | Transport Technology | Early Planetary Period
+IDEA-490  Transfer Hansa Early Interstellar Drive | early constant-acceleration propulsion system reaching ~0.2c | Propulsion Technology | Early Planetary Period
+IDEA-491  Lübeck Class Crew Complement and Job Distribution | operational staffing model for Lübeck shellships (~1300 crew) | Organizational System | Early Planetary Period
+IDEA-492  Pontiferrum Harbor | artificial industrial harbor capital of the Ironclad Shipyard Republic on Nanhai | Location / Infrastructure | Planetary Period
+
+IDEA-493  Mars Delivery Vehicle Program | reusable interplanetary cargo transport system for Earth–Mars logistics | Vehicle System | Race for Sol
+IDEA-494  MDV-1 Mars Delivery Vehicle | early reusable Earth-launched Mars cargo rocket (~140 t payload) | Vehicle | Race for Sol
+IDEA-495  MDV-2 Mars Delivery Vehicle | improved modular Mars cargo transport rocket | Vehicle | Race for Sol
+IDEA-496  MDV-3 Mars Delivery Vehicle | orbital-built interplanetary Mars freight ship (~385 t payload) | Vehicle | Race for Sol
+IDEA-497  MDV-4 Mars Delivery Vehicle | cislunar-built heavy Mars cargo freighter | Vehicle | Race for Sol
+IDEA-498  MDV-5 Mars Delivery Vehicle | lunar-built large-scale Mars freight spacecraft | Vehicle | Race for Sol
+IDEA-499  Mars Orbital Refueling Infrastructure | orbital propellant depot network supporting Mars traffic | Infrastructure | Race for Sol
+IDEA-500  Orbital Cargo Terminals | Earth-orbit freight transfer and staging hubs | Infrastructure | Race for Sol
+IDEA-501  Mars Orbital Logistics Hubs | Mars orbit freight distribution stations | Infrastructure | Race for Sol
+IDEA-502  Taltos-class Mars Cargo Lander | reusable Mars orbit-to-surface cargo lander (~45 t payload) | Vehicle | Race for Sol
+IDEA-503  Mars Surface Landing Pads | modular rocket landing sites across Mars | Infrastructure | Race for Sol
+IDEA-504  Martian Cargo Crane | heavy cargo handling crane used at Martian landing sites | Industrial Equipment | Race for Sol
+
 ================================================
 REFERENCE: MACRO ERAS
 ================================================
@@ -10664,3 +10690,742 @@ The CoG Energy System is the integrated power generation and distribution networ
 Energy is generated through a combination of external energy farms, orbital solar power systems associated with Upper CoG, and internal power plants located within the megastructure.
 
 Energy distribution occurs through major power corridors integrated into the CoG Infrastructure Belts.
+
+------------------------------------------------
+IDEA-481
+------------------------------------------------
+
+Name: AIM-9 Sidewinder
+Domain: Technology
+
+Parent Idea:
+IDEA-417 Air-to-Air Missiles
+
+Era:
+Cold War
+
+Tags:
+missile
+air-combat
+infrared
+guided-weapon
+
+Description:
+The AIM-9 Sidewinder is a short-range infrared-guided air-to-air missile developed during the Cold War.
+
+The missile homes on the heat signature of aircraft engines using a passive infrared seeker. Because the guidance system does not require radar illumination from the launching aircraft, pilots can disengage immediately after launch.
+
+The Sidewinder became one of the most widely used air-to-air missiles in history and served as a foundational design for later infrared-guided missile systems.
+
+
+------------------------------------------------
+IDEA-482
+------------------------------------------------
+
+Name: Infrared Homing Seeker
+Domain: Technology
+
+Parent Idea:
+IDEA-481 AIM-9 Sidewinder
+
+Era:
+Cold War
+
+Tags:
+infrared
+sensor
+guidance
+missile
+
+Description:
+An infrared homing seeker is a missile guidance system that detects and tracks heat signatures emitted by aircraft engines and other hot components.
+
+The seeker uses infrared-sensitive detectors and optical systems to identify and follow targets based on thermal contrast against the surrounding environment.
+
+Because infrared homing systems are passive and emit no signals, they are difficult for targets to detect prior to missile launch.
+
+
+------------------------------------------------
+IDEA-483
+------------------------------------------------
+
+Name: Transfer Hansa Interstellar Transport Monopoly
+Domain: Economic System / Infrastructure
+
+Parent Idea:
+IDEA-401 Transfer Hansa
+
+Era:
+Planetary Period
+
+Tags:
+interstellar-travel
+transport
+trade
+logistics
+
+Description:
+During the Planetary Period, the vast majority of interstellar travel is conducted through the logistics infrastructure of the Transfer Hansa.
+
+Independent interstellar travel is extremely rare due to the immense cost and complexity of constructing and operating long-distance interstellar vessels. As a result, most planets, corporations, and political entities rely on Transfer Hansa transport services to move cargo, passengers, and equipment between star systems.
+
+The Hansa primarily operates large interstellar shellships which transport entire merchant convoys between star systems.
+
+Only the largest political or economic powers maintain independent interstellar fleets. Most societies therefore depend on the Transfer Hansa network for regular access to interstellar trade and travel.
+
+
+------------------------------------------------
+IDEA-484
+------------------------------------------------
+
+Name: Lübeck Class Shellship
+Domain: Vehicle / Infrastructure
+
+Parent Idea:
+IDEA-401 Transfer Hansa
+
+Era:
+Early Planetary Period
+
+Tags:
+interstellar-transport
+shellship
+hansa
+logistics
+
+Description:
+The Lübeck Class Shellship is one of the earliest successful interstellar convoy carriers used during the formative expansion of the Transfer Hansa.
+
+Measuring roughly 2.5 kilometers in length, Lübeck Class vessels transport fleets of merchant ships between nearby star systems.
+
+The ship is built around a large cylindrical carrier body forming a hollow docking tunnel running through most of the vessel’s length. This tunnel is not pressurized and remains open to vacuum.
+
+The rear of the tunnel is open, allowing merchant vessels to enter directly from behind the ship during docking operations.
+
+Inside the carrier tunnel, ships attach to modular docking platforms connected to an internal rail logistics system. These platforms allow vessels to be repositioned within the tunnel according to unloading order or cargo configuration.
+
+Most ships are carried inside the tunnel, while exceptionally large bulk carriers attach to reinforced external hardpoints along the hull.
+
+A typical convoy configuration includes roughly 15 heavy bulk carriers, around 80 medium freighters, and numerous smaller trader vessels.
+
+The outer hull surrounding the carrier tunnel contains life-support systems, engineering sections, cargo processing facilities, and habitation areas. Some of these habitation sections rotate to provide artificial gravity.
+
+Propulsion is provided by a large engine block mounted behind the carrier body and connected by heavy thrust trusses.
+
+The Lübeck Class enabled the rapid expansion of early Transfer Hansa interstellar trade routes.
+
+
+------------------------------------------------
+IDEA-485
+------------------------------------------------
+
+Name: Transfer Hansa Transit Accommodation Model
+Domain: Transport System / Infrastructure
+
+Parent Idea:
+IDEA-401 Transfer Hansa
+
+Era:
+Planetary Period
+
+Tags:
+interstellar-travel
+passenger
+transport
+hansa
+
+Description:
+The Transfer Hansa Transit Accommodation Model describes how passengers and crews are accommodated during long interstellar voyages aboard Hansa shellships.
+
+Ships carried inside the shellship may remain inhabited or be placed into cold storage depending on the preferences of their crews.
+
+Some hangar sections rotate slowly to provide artificial gravity, allowing passengers to remain aboard their vessels.
+
+Other travelers disembark into dedicated habitation facilities or cryogenic sleep chambers within the shellship.
+
+This mixed system allows shellships to support passengers, merchants, and cargo transport simultaneously during multi-year voyages.
+
+
+------------------------------------------------
+IDEA-486
+------------------------------------------------
+
+Name: Independent Light Trader Class
+Domain: Vehicle
+
+Parent Idea:
+IDEA-483 Transfer Hansa Interstellar Transport Monopoly
+
+Era:
+Planetary Period
+
+Tags:
+merchant
+trader
+spacecraft
+
+Description:
+Independent Light Traders are small privately owned merchant spacecraft commonly operating within Transfer Hansa transport networks.
+
+These vessels typically measure between 30 and 60 meters in length and transport small cargo loads between orbital stations, planetary ports, and larger interstellar carriers.
+
+They are often owned by independent merchants or small trading companies and serve as flexible last-mile logistics vessels once cargo reaches a destination star system.
+
+
+------------------------------------------------
+IDEA-487
+------------------------------------------------
+
+Name: Independent Medium Cargo Freighter
+Domain: Vehicle
+
+Parent Idea:
+IDEA-483 Transfer Hansa Interstellar Transport Monopoly
+
+Era:
+Planetary Period
+
+Tags:
+freighter
+cargo
+merchant
+
+Description:
+Independent Medium Cargo Freighters are common merchant vessels transporting bulk goods between orbital industrial facilities and planetary ports.
+
+These ships typically measure between 80 and 150 meters in length and form the core merchant vessels within many Transfer Hansa convoys.
+
+They are frequently operated by trading companies, merchant guilds, and logistics firms.
+
+
+------------------------------------------------
+IDEA-488
+------------------------------------------------
+
+Name: Independent Heavy Bulk Carrier
+Domain: Vehicle
+
+Parent Idea:
+IDEA-483 Transfer Hansa Interstellar Transport Monopoly
+
+Era:
+Planetary Period
+
+Tags:
+bulk
+cargo
+industrial
+
+Description:
+Independent Heavy Bulk Carriers are large cargo ships designed to transport raw materials, construction resources, and industrial cargo.
+
+Ships of this class typically measure between 200 and 400 meters in length and are commonly operated by industrial corporations or large trading houses.
+
+Within shellships they represent the largest vessels typically able to be transported inside the carrier structure, although some may be mounted externally.
+
+
+------------------------------------------------
+IDEA-489
+------------------------------------------------
+
+Name: Lübeck Class Docking Procedure
+Domain: Technology / Transport System
+
+Parent Idea:
+IDEA-484 Lübeck Class Shellship
+
+Era:
+Early Planetary Period
+
+Tags:
+docking
+spacecraft-operations
+logistics
+
+Description:
+Merchant vessels approaching a Lübeck Class shellship align with the carrier axis and enter the open rear aperture of the docking tunnel.
+
+Smaller ships fly directly into the tunnel and attach to rail-mounted docking platforms.
+
+Larger vessels may be guided by tug drones during final positioning.
+
+Once attached, the ships can be repositioned along the internal rail logistics network to organize the convoy for cargo distribution and unloading.
+
+
+------------------------------------------------
+IDEA-490
+------------------------------------------------
+
+Name: Transfer Hansa Early Interstellar Drive
+Domain: Technology / Propulsion
+
+Parent Idea:
+IDEA-401 Transfer Hansa
+
+Era:
+Early Planetary Period
+
+Tags:
+propulsion
+interstellar-travel
+
+Description:
+The Transfer Hansa Early Interstellar Drive refers to the propulsion systems used by early shellships during the expansion of the Hansa interstellar trade network.
+
+These drives enable long-duration constant acceleration travel, gradually reaching cruise velocities of roughly 0.2c.
+
+This allows travel between stars separated by approximately one light year in about five years, excluding acceleration and deceleration phases.
+
+
+------------------------------------------------
+IDEA-491
+------------------------------------------------
+
+Name: Lübeck Class Crew Complement and Job Distribution
+Domain: Organization / Transport System
+
+Parent Idea:
+IDEA-484 Lübeck Class Shellship
+
+Era:
+Early Planetary Period
+
+Tags:
+crew
+logistics
+hansa
+
+Description:
+A Lübeck Class shellship is operated by roughly 1,300 permanent Transfer Hansa personnel.
+
+The crew is distributed across command, propulsion engineering, life support operations, docking control, cargo logistics, maintenance workshops, passenger services, and security departments.
+
+Because the vessel functions as an interstellar carrier, mobile port, and passenger habitat, its operational crew is significantly larger than that of most spacecraft.
+
+
+------------------------------------------------
+IDEA-492
+------------------------------------------------
+
+Name: Pontiferrum Harbor
+Domain: Location / Infrastructure
+
+Parent Idea:
+IDEA-406 Ironclad Shipyard Republic
+
+Era:
+Planetary Period
+
+Tags:
+harbor
+shipbuilding
+industry
+nanhai
+
+Description:
+Pontiferrum Harbor is the central industrial and population hub of the Ironclad Shipyard Republic on the planet Nanhai.
+
+The harbor lies within a volcanic island chain rich in metallic resources used for heavy ship construction.
+
+Artificial harbor expansions and floating industrial platforms transformed the region into a massive shipbuilding complex containing dry docks, foundries, and fabrication yards.
+
+Pontiferrum Harbor produces the ironclad warships and armored vessels that define the republic’s naval industry and serves as a major port within the maritime trade networks of Nanhai.
+
+
+------------------------------------------------
+IDEA-493
+------------------------------------------------
+
+Name: Mars Delivery Vehicle Program
+Domain: Vehicle System
+
+Parent Idea:
+Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+spaceflight
+transport
+mars
+logistics
+
+Description:
+The Mars Delivery Vehicle (MDV) program was a family of reusable
+interplanetary cargo spacecraft developed during the Race for Sol to
+support large-scale logistics between Earth and Mars.
+
+The program evolved through several generations (MDV-1 through MDV-5),
+reflecting the gradual industrialization of near-Earth space. Early
+vehicles launched directly from Earth using reusable boosters, while
+later generations were constructed and launched from orbital and
+lunar infrastructure.
+
+MDV vehicles served as the primary freight carriers of the early Mars
+colonization period, transporting mixed cargo such as habitat modules,
+industrial machinery, construction materials, and settlement supplies.
+
+
+------------------------------------------------
+IDEA-494
+------------------------------------------------
+
+Name: MDV-1 Mars Delivery Vehicle
+Domain: Vehicle
+
+Parent Idea:
+IDEA-493 Mars Delivery Vehicle Program
+
+Era:
+Race for Sol
+
+Tags:
+spaceflight
+cargo
+mars
+
+Description:
+MDV-1 was the first operational Mars Delivery Vehicle used during the
+early Race for Sol expansion phase.
+
+The vehicle was launched from Earth using a reusable heavy-lift booster
+that returned to Earth after stage separation. The interplanetary
+transfer stage continued toward Mars using conventional chemical
+propulsion.
+
+MDV-1 carried approximately 140 tons of cargo and followed Hohmann
+transfer trajectories between Earth and Mars. Cargo delivered to Earth
+orbit was typically staged through Orbital Cargo Terminals (IDEA-500)
+before transfer to interplanetary vehicles.
+
+Approximate introduction: ~2140
+
+
+------------------------------------------------
+IDEA-495
+------------------------------------------------
+
+Name: MDV-2 Mars Delivery Vehicle
+Domain: Vehicle
+
+Parent Idea:
+IDEA-493 Mars Delivery Vehicle Program
+
+Era:
+Race for Sol
+
+Tags:
+spaceflight
+cargo
+mars
+
+Description:
+MDV-2 represented an improved generation of Mars Delivery Vehicle
+developed during the expansion of orbital logistics infrastructure
+around Earth.
+
+While still launched from Earth using reusable boosters, MDV-2 vehicles
+incorporated modular cargo architecture and improved transfer stage
+efficiency, allowing greater launch cadence and operational flexibility.
+
+
+------------------------------------------------
+IDEA-496
+------------------------------------------------
+
+Name: MDV-3 Mars Delivery Vehicle
+Domain: Vehicle
+
+Parent Idea:
+IDEA-493 Mars Delivery Vehicle Program
+
+Era:
+Race for Sol
+
+Tags:
+spaceflight
+cargo
+mars
+orbital industry
+
+Description:
+MDV-3 represented the transition to large-scale orbital shipbuilding
+during the Race for Sol.
+
+Unlike earlier vehicles, MDV-3 units were constructed entirely in orbit
+and were too large to be launched from Earth’s surface. They were
+designed as permanent reusable interplanetary freighters that never
+entered planetary atmospheres.
+
+MDV-3 transported approximately 385 tons of cargo between Earth orbital
+logistics terminals and Mars orbital logistics hubs.
+
+Cargo was transferred to Mars Orbital Logistics Hubs (IDEA-501) where
+it was redistributed to the Martian surface using Taltos-class cargo
+landers (IDEA-502).
+
+Approximate introduction: ~2170–2190
+
+
+------------------------------------------------
+IDEA-497
+------------------------------------------------
+
+Name: MDV-4 Mars Delivery Vehicle
+Domain: Vehicle
+
+Parent Idea:
+IDEA-493 Mars Delivery Vehicle Program
+
+Era:
+Race for Sol
+
+Tags:
+spaceflight
+cargo
+mars
+cislunar
+
+Description:
+MDV-4 vehicles were developed during the mature cislunar industrial
+phase of the Race for Sol.
+
+These spacecraft were constructed and launched from cislunar shipyards
+and Earth–Moon Lagrange infrastructure, allowing significantly larger
+interplanetary cargo capacity compared to earlier generations.
+
+
+------------------------------------------------
+IDEA-498
+------------------------------------------------
+
+Name: MDV-5 Mars Delivery Vehicle
+Domain: Vehicle
+
+Parent Idea:
+IDEA-493 Mars Delivery Vehicle Program
+
+Era:
+Race for Sol
+
+Tags:
+spaceflight
+cargo
+mars
+lunar
+
+Description:
+MDV-5 represented the late-stage evolution of the Mars Delivery Vehicle
+program.
+
+These spacecraft were produced in lunar shipyards using materials
+sourced from the Moon and near-Earth asteroids, reflecting the
+maturation of off-Earth industry during the Race for Sol.
+
+
+------------------------------------------------
+IDEA-499
+------------------------------------------------
+
+Name: Mars Orbital Refueling Infrastructure
+Domain: Infrastructure
+
+Parent Idea:
+Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+mars
+space infrastructure
+propellant
+isru
+
+Description:
+Mars Orbital Refueling Infrastructure refers to the network of
+propellant depots established in Mars orbit during the Race for Sol.
+
+These facilities supplied methane and oxygen propellants produced by
+Martian in-situ resource utilization plants on the surface. The depots
+enabled reusable interplanetary cargo spacecraft to refuel in Mars
+orbit and return to Earth without carrying return propellant from the
+initial launch.
+
+The system enabled reusable spacecraft such as Mars Delivery Vehicles
+(IDEA-493) and orbital lander support craft to refuel in Mars orbit.
+
+Approximate emergence: ~2150
+
+
+------------------------------------------------
+IDEA-500
+------------------------------------------------
+
+Name: Orbital Cargo Terminals
+Domain: Infrastructure
+
+Parent Idea:
+Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+space infrastructure
+orbital logistics
+cargo
+
+Description:
+Orbital Cargo Terminals were large logistics stations established in
+Earth orbit during the Race for Sol.
+
+These facilities served as transfer hubs where cargo delivered from
+Earth by launch vehicles was assembled, stored, and loaded onto
+interplanetary cargo freighters.
+
+Interplanetary cargo vessels such as Mars Delivery Vehicles (IDEA-493)
+were loaded and serviced at these terminals.
+
+
+------------------------------------------------
+IDEA-501
+------------------------------------------------
+
+Name: Mars Orbital Logistics Hubs
+Domain: Infrastructure
+
+Parent Idea:
+Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+mars
+space infrastructure
+logistics
+
+Description:
+Mars Orbital Logistics Hubs were major stations in orbit around Mars
+that functioned as the primary freight transfer nodes for
+interplanetary cargo traffic.
+
+These hubs received cargo from Mars Delivery Vehicles (IDEA-493) and
+distributed it to the Martian surface.
+
+Surface delivery operations were carried out using Taltos-class cargo
+landers (IDEA-502) operating between orbit and surface landing sites.
+
+
+------------------------------------------------
+IDEA-502
+------------------------------------------------
+
+Name: Taltos-class Mars Cargo Lander
+Domain: Vehicle
+
+Parent Idea:
+Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+mars
+spacecraft
+cargo
+enu
+
+Description:
+The Taltos-class Mars Cargo Lander was a reusable freight spacecraft
+used to transport cargo between Mars orbital logistics hubs and the
+Martian surface.
+
+The vehicle carried approximately 45 tons of cargo per landing and was
+capable of landing on any sufficiently flat terrain without requiring
+large prepared spaceports.
+
+Taltos landers used detachable modular lifting wings that could be
+removed and re-mounted in reversed orientation depending on mission
+configuration. The wings were designed to be serviced by small crews
+using standard Martian cargo cranes.
+
+The spacecraft received cargo from Mars Orbital Logistics Hubs
+(IDEA-501) and delivered freight to distributed Mars Surface Landing
+Pads (IDEA-503).
+
+Ground handling and wing servicing operations were typically performed
+using Martian Cargo Cranes (IDEA-504).
+
+The landers typically performed around 50 orbital transfer cycles
+before requiring replacement.
+
+The name follows the ENU spacecraft naming tradition based on European
+mythology.
+
+Approximate introduction: ~2180
+
+
+------------------------------------------------
+IDEA-503
+------------------------------------------------
+
+Name: Mars Surface Landing Pads
+Domain: Infrastructure
+
+Parent Idea:
+Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+mars
+infrastructure
+spaceflight
+
+Description:
+Mars Surface Landing Pads were modular infrastructure installations
+used to support reusable rocket landings across the Martian surface.
+
+These pads consisted of compacted regolith or prefabricated landing
+plates capable of withstanding rocket exhaust and typically included
+navigation beacons, cargo staging zones, and propellant storage
+systems.
+
+The pads primarily supported reusable spacecraft such as Taltos-class
+cargo landers (IDEA-502).
+
+
+------------------------------------------------
+IDEA-504
+------------------------------------------------
+
+Name: Martian Cargo Crane
+Domain: Industrial Equipment
+
+Parent Idea:
+Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+mars
+industry
+cargo
+
+Description:
+Martian Cargo Cranes were specialized heavy lifting machines used to
+unload cargo from spacecraft operating on the Martian surface.
+
+These cranes were commonly used to unload cargo from Taltos-class Mars
+cargo landers (IDEA-502) and to service modular spacecraft components
+such as detachable wing structures.
+
+Designed for low gravity and dusty conditions, the cranes featured
+extended lifting booms, stabilized bases, and enclosed mechanical
+systems to protect against regolith contamination.
+
