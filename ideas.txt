@@ -287,6 +287,77 @@ IDEA-502  Taltos-class Mars Cargo Lander | reusable Mars orbit-to-surface cargo 
 IDEA-503  Mars Surface Landing Pads | modular rocket landing sites across Mars | Infrastructure | Race for Sol
 IDEA-504  Martian Cargo Crane | heavy cargo handling crane used at Martian landing sites | Industrial Equipment | Race for Sol
 
+IDEA-505  Tibesti Mountains | volcanic mountain range in the central Sahara | Geographic Region | All Eras
+IDEA-506  Sahara Desert | largest hot desert covering much of North Africa | Geographic Region | All Eras
+IDEA-507  Hyrax | small herbivorous mammal related to elephants and manatees | Species | All Eras
+IDEA-508  Togu People | desert-adapted cultural group of the central Sahara | Culture | All Eras
+IDEA-509  Ennedi Massif | sandstone plateau with canyons and rock arches in Chad | Geographic Region | All Eras
+IDEA-510  Guelta | permanent desert rock pool forming localized water source | Geographic Feature | All Eras
+IDEA-511  Zaganwa People | Saharan cultural group associated with oasis settlements | Culture | All Eras
+IDEA-512  Haruj Volcanic Plateau | vast basalt lava field region in Libya | Geographic Region | All Eras
+IDEA-513  Aïr People | Tuareg-associated populations of the Aïr Mountains | Culture | All Eras
+IDEA-514  Hoggar Mountains | volcanic mountain massif in southern Algeria | Geographic Region | All Eras
+IDEA-515  Tamanrasset | desert city and trade hub in southern Algeria | Location | All Eras
+IDEA-516  Green Sahara Period | humid climatic phase when the Sahara supported lakes and grasslands | Climate Phase | Prehistoric
+IDEA-517  Atlas Mountains | major North African mountain system separating Mediterranean and Sahara | Geographic Region | All Eras
+IDEA-518  Venetians | maritime merchant republic society centered on Venice | Culture | Medieval
+IDEA-519  Romans | people and civilization of the Roman Empire | Culture | Classical Antiquity
+IDEA-520  Ottomans | ruling population and elite of the Ottoman Empire | Culture | Early Modern
+IDEA-521  Umayyads | early Islamic ruling dynasty of a vast caliphate | Culture | Early Medieval
+IDEA-522  Bodélé Depression | major Saharan dust source basin in northern Chad | Geographic Region | All Eras
+IDEA-523  Timbuktu | historic Sahelian trade and scholarship city | Location | Medieval
+IDEA-524  Mali Empire | powerful West African state controlling trans-Saharan trade | Civilization | Medieval
+IDEA-525  Songhai Empire | major Sahelian empire succeeding Mali | Civilization | Medieval
+IDEA-526  Cactus Trees | arborescent cactus growth forms adapted to deserts | Plant Growth Form | All Eras
+IDEA-527  Galápagos Islands | volcanic Pacific archipelago famous for endemic species | Geographic Region | All Eras
+IDEA-528  Opuntia Cactus | prickly pear cactus genus adapted to arid climates | Species | All Eras
+IDEA-529  Giant Galápagos Tortoise | large island tortoise species of the Galápagos | Species | All Eras
+IDEA-530  Birds of the Galápagos | diverse island bird assemblage including Darwin’s finches | Species Group | All Eras
+IDEA-531  Marine Iguanas | algae-feeding marine lizard endemic to the Galápagos | Species | All Eras
+IDEA-532  Galápagos Penguin | equatorial penguin species native to the Galápagos | Species | All Eras
+IDEA-533  Indonesia | large Southeast Asian island archipelago | Geographic Region | All Eras
+IDEA-534  Cape Floristic Kingdom | biodiversity hotspot plant region of South Africa | Bioregion | All Eras
+IDEA-535  Daisy Trees | woody tree-form plants evolved from herbaceous daisies | Species Group | All Eras
+IDEA-536  Cape Penguin | coastal penguin species native to southern Africa | Species | All Eras
+IDEA-537  Silurian Period | Paleozoic geological period of early terrestrial ecosystems | Geological Era | Paleozoic
+IDEA-538  Prototaxites | giant trunk-like fungal organism of the Silurian–Devonian | Species | Paleozoic
+IDEA-539  Redwoods | extremely tall conifer trees of western North America | Species Group | All Eras
+IDEA-540  Canada | large northern North American country of forests and tundra | Geographic Region | All Eras
+IDEA-541  Scotland | northern region of Great Britain with highlands and islands | Geographic Region | All Eras
+IDEA-542  Germany | central European country with temperate landscapes | Geographic Region | All Eras
+IDEA-543  Australia | continent-sized country with unique endemic ecosystems | Geographic Region | All Eras
+IDEA-544  Cooksonia | early vascular land plant from the Silurian | Species | Paleozoic
+IDEA-545  Silurian Biomass Amassing for Terraforming | terraforming strategy based on early terrestrial biomass accumulation | Terraforming Concept | Planetary Period
+IDEA-546  Trigonotarbida | extinct order of early spider-like arachnids | Species | Paleozoic
+IDEA-547  Scorpions | ancient predatory arachnids originating in the Paleozoic | Species Group | All Eras
+IDEA-548  Framoscorpius | early fossil scorpion from Silurian deposits | Species | Paleozoic
+IDEA-549  Silurian Flightless Insects | primitive terrestrial hexapods before evolution of wings | Species Group | Paleozoic
+IDEA-550  Millipedes | detritivorous many-segmented arthropods important for soil ecosystems | Species Group | All Eras
+
+IDEA-552  Lacora | temperate lake-rich terraformed planet | Planet | Multiple Eras
+IDEA-553  Solex Terraforming Initiative | Solex-based mass probe terraforming program | Organization | Race for Sol
+IDEA-554  Solex Terraforming Probe | automated planetary augmentation probe | Technology | Race for Sol
+IDEA-555  Lacora Terraforming Event | successful activation of a Solex probe on Lacora | Historical Event | Race for Sol
+IDEA-556  Sols Accord Site | crash landing site of the Sols Accord in a mountain lake | Location | Multiple Eras
+IDEA-557  Cords People of Lacora | descendant culture of the Sols Accord settlers | Culture | Planetary Period
+IDEA-558  Path Concord Class | early interstellar expedition vessel class | Vehicle Class | GGO Hegemony Period
+IDEA-559  Solaccord Pact | alliance associated with Solex interstellar launch infrastructure | Faction | Race for Sol
+IDEA-560  Sols Accord | third Path Concord Class interstellar expedition vessel | Vehicle | Multiple Eras
+IDEA-561  Slingshot System | magnetic acceleration infrastructure for high-velocity spacecraft launches | Technology | Race for Sol
+IDEA-562  Solex Station | Solar Exit Gateway Station for interstellar departure | Infrastructure | Race for Sol
+IDEA-563  Orbit Political Landscape during the Race for Sol | distribution of political control in orbital infrastructure | Historical Reference | Race for Sol
+IDEA-564  Orbit Politics | study of political control of orbital infrastructure in planetary systems | Academic Field | Multiple Eras
+
+IDEA-565  Ship Cabin | shipboard living compartment | Infrastructure | All Eras
+IDEA-566  Age of Sail Ship Cabin | officer cabin aboard sailing warships | Infrastructure | Age of Sail
+IDEA-567  1800 Naval Cannon | smoothbore naval artillery piece | Technology | Age of Sail
+IDEA-568  Age of Sail | era of global sailing ship dominance | Historical Era | Early Modern Period
+IDEA-569  Tailor | craftsperson producing fitted garments | Role | All Eras
+IDEA-570  Rattlesnake | venomous pit viper snake of the Americas | Species | All Eras
+
+
+
+
 ================================================
 REFERENCE: MACRO ERAS
 ================================================
@@ -11429,3 +11500,1931 @@ Designed for low gravity and dusty conditions, the cranes featured
 extended lifting booms, stabilized bases, and enclosed mechanical
 systems to protect against regolith contamination.
 
+------------------------------------------------
+IDEA-505
+------------------------------------------------
+
+Name: Tibesti Mountains
+Domain: Geographic Region
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+mountains
+sahara
+volcanic
+desert
+
+Description:
+The Tibesti Mountains are a volcanic mountain range located in the
+central Sahara across northern Chad and southern Libya.
+
+The massif forms the highest region of the Sahara and contains several
+extinct and dormant volcanoes. Due to their elevation the mountains
+create localized microclimates that support isolated vegetation and
+wildlife within the otherwise extremely arid desert.
+
+------------------------------------------------
+IDEA-506
+------------------------------------------------
+
+Name: Sahara Desert
+Domain: Geographic Region
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+desert
+africa
+climate
+biome
+
+Description:
+The Sahara Desert is the largest hot desert on Earth, covering most of
+North Africa from the Atlantic Ocean to the Red Sea.
+
+Although today dominated by hyper-arid landscapes of sand seas,
+rock plateaus, and gravel plains, the Sahara has undergone major
+climatic fluctuations throughout geological history.
+
+------------------------------------------------
+IDEA-507
+------------------------------------------------
+
+Name: Hyrax
+Domain: Species
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+animal
+mammal
+africa
+herbivore
+
+Description:
+The hyrax (Procavia capensis) is a small herbivorous mammal native
+to Africa and parts of the Middle East.
+
+Despite its rodent-like appearance, the hyrax is evolutionarily
+related to elephants and manatees and typically inhabits rocky
+terrain such as cliffs and desert escarpments.
+
+------------------------------------------------
+IDEA-508
+------------------------------------------------
+
+Name: Togu People
+Domain: Culture
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+culture
+sahara
+nomadic
+africa
+
+Description:
+The Togu people are a desert-adapted cultural group associated with
+mountain regions of the central Sahara, particularly the Tibesti
+Mountains.
+
+Their traditional societies developed mobile pastoral and trade-based
+lifeways suited to the harsh environment of the Sahara.
+
+------------------------------------------------
+IDEA-509
+------------------------------------------------
+
+Name: Ennedi Massif
+Domain: Geographic Region
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+mountains
+sahara
+plateau
+rock-formations
+
+Description:
+The Ennedi Massif is a large sandstone plateau located in northeastern
+Chad.
+
+The region contains dramatic rock arches, canyons, and wind-eroded
+formations. Protected canyon systems host permanent desert water
+sources and localized ecosystems.
+
+------------------------------------------------
+IDEA-510
+------------------------------------------------
+
+Name: Guelta
+Domain: Geographic Feature
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+water
+desert
+oasis
+sahara
+
+Description:
+A guelta is a permanent or seasonal pool of water found in desert
+rock formations.
+
+These water sources support small desert ecosystems and have
+historically been critical for wildlife and human travel across
+arid regions.
+
+------------------------------------------------
+IDEA-511
+------------------------------------------------
+
+Name: Zaganwa People
+Domain: Culture
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+culture
+sahara
+ethnic-group
+africa
+
+Description:
+The Zaganwa people are a cultural group associated with the central
+Sahara region.
+
+Their communities historically relied on oasis settlements,
+pastoralism, and participation in trans-Saharan trade networks.
+
+------------------------------------------------
+IDEA-512
+------------------------------------------------
+
+Name: Haruj Volcanic Plateau
+Domain: Geographic Region
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+volcanic
+sahara
+plateau
+lava-field
+
+Description:
+The Haruj volcanic plateau is a large basaltic volcanic region in
+central Libya consisting of extensive lava fields and volcanic cones.
+
+------------------------------------------------
+IDEA-513
+------------------------------------------------
+
+Name: Aïr People
+Domain: Culture
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+culture
+tuareg
+sahara
+nomadic
+
+Description:
+The Aïr people are desert populations historically associated with
+the Aïr Mountains region of northern Niger.
+
+Many communities are culturally connected to Tuareg societies and
+their nomadic pastoral traditions.
+
+------------------------------------------------
+IDEA-514
+------------------------------------------------
+
+Name: Hoggar Mountains
+Domain: Geographic Region
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+mountains
+sahara
+volcanic
+africa
+
+Description:
+The Hoggar Mountains are a volcanic massif located in southern
+Algeria within the central Sahara.
+
+------------------------------------------------
+IDEA-515
+------------------------------------------------
+
+Name: Tamanrasset
+Domain: Location
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+city
+sahara
+algeria
+trade
+
+Description:
+Tamanrasset is a desert city in southern Algeria located within the
+Hoggar Mountains region.
+
+Historically it functioned as an oasis settlement and caravan stop
+along trans-Saharan trade routes.
+
+------------------------------------------------
+IDEA-516
+------------------------------------------------
+
+Name: Green Sahara Period
+Domain: Climate Phase
+
+Parent Idea:
+Earth
+
+Era:
+Prehistoric
+
+Tags:
+climate
+sahara
+holocene
+africa
+
+Description:
+The Green Sahara Period, also known as the African Humid Period,
+was a climatic phase during which the Sahara supported grasslands,
+lakes, rivers, and large animal populations.
+
+------------------------------------------------
+IDEA-517
+------------------------------------------------
+
+Name: Atlas Mountains
+Domain: Geographic Region
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+mountains
+north-africa
+mediterranean
+geography
+
+Description:
+The Atlas Mountains are a major mountain system extending across
+Morocco, Algeria, and Tunisia.
+
+------------------------------------------------
+IDEA-518
+------------------------------------------------
+
+Name: Venetians
+Domain: Culture
+
+Parent Idea:
+Earth
+
+Era:
+Medieval
+
+Tags:
+italy
+maritime
+trade
+republic
+
+Description:
+The Venetians were the inhabitants of the maritime city-state of
+Venice, a powerful trading republic of the medieval Mediterranean.
+
+------------------------------------------------
+IDEA-519
+------------------------------------------------
+
+Name: Romans
+Domain: Culture
+
+Parent Idea:
+Earth
+
+Era:
+Classical Antiquity
+
+Tags:
+rome
+empire
+civilization
+mediterranean
+
+Description:
+The Romans were the people of the Roman civilization centered on
+the city of Rome, which expanded into one of the largest empires
+of the ancient world.
+
+------------------------------------------------
+IDEA-520
+------------------------------------------------
+
+Name: Ottomans
+Domain: Culture
+
+Parent Idea:
+Earth
+
+Era:
+Early Modern
+
+Tags:
+empire
+middle-east
+mediterranean
+
+Description:
+The Ottomans were the ruling elite of the Ottoman Empire, which
+controlled large territories across Europe, North Africa, and the
+Middle East.
+
+------------------------------------------------
+IDEA-521
+------------------------------------------------
+
+Name: Umayyads
+Domain: Culture
+
+Parent Idea:
+Earth
+
+Era:
+Early Medieval
+
+Tags:
+caliphate
+islam
+empire
+
+Description:
+The Umayyad dynasty ruled one of the earliest large Islamic empires,
+stretching from Iberia to Central Asia.
+
+------------------------------------------------
+IDEA-522
+------------------------------------------------
+
+Name: Bodélé Depression
+Domain: Geographic Region
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+sahara
+basin
+dust
+chad
+
+Description:
+The Bodélé Depression is a low-lying basin in northern Chad and
+one of the largest sources of atmospheric mineral dust on Earth.
+
+------------------------------------------------
+IDEA-523
+------------------------------------------------
+
+Name: Timbuktu
+Domain: Location
+
+Parent Idea:
+Earth
+
+Era:
+Medieval
+
+Tags:
+city
+sahel
+trade
+scholarship
+
+Description:
+Timbuktu is a historic city near the Niger River that became a
+major center of trans-Saharan trade and Islamic scholarship.
+
+------------------------------------------------
+IDEA-524
+------------------------------------------------
+
+Name: Mali Empire
+Domain: Civilization
+
+Parent Idea:
+Earth
+
+Era:
+Medieval
+
+Tags:
+empire
+west-africa
+trade
+gold
+
+Description:
+The Mali Empire was a powerful West African state controlling major
+gold trade routes across the Sahara.
+
+------------------------------------------------
+IDEA-525
+------------------------------------------------
+
+Name: Songhai Empire
+Domain: Civilization
+
+Parent Idea:
+Earth
+
+Era:
+Medieval
+
+Tags:
+empire
+west-africa
+sahel
+
+Description:
+The Songhai Empire succeeded the Mali Empire as the dominant state
+of the Sahel during the 15th and 16th centuries.
+
+------------------------------------------------
+IDEA-526
+------------------------------------------------
+
+Name: Cactus Trees
+Domain: Plant Growth Form
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+plants
+desert
+succulent
+
+Description:
+Cactus trees are large arborescent cacti adapted to extremely arid
+environments through water storage and reduced leaf surfaces.
+
+------------------------------------------------
+IDEA-527
+------------------------------------------------
+
+Name: Galápagos Islands
+Domain: Geographic Region
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+islands
+pacific
+volcanic
+evolution
+
+Description:
+The Galápagos Islands are a volcanic archipelago famous for their
+unique endemic wildlife and role in the study of evolution.
+
+------------------------------------------------
+IDEA-528
+------------------------------------------------
+
+Name: Opuntia Cactus
+Domain: Species
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+plant
+cactus
+desert
+
+Description:
+Opuntia is a genus of cactus commonly known as prickly pear,
+characterized by flat pads and spines.
+
+------------------------------------------------
+IDEA-529
+------------------------------------------------
+
+Name: Giant Galápagos Tortoise
+Domain: Species
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+animal
+reptile
+islands
+
+Description:
+Large tortoises endemic to the Galápagos Islands known for their
+longevity and evolutionary diversification.
+
+------------------------------------------------
+IDEA-530
+------------------------------------------------
+
+Name: Birds of the Galápagos
+Domain: Species Group
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+birds
+evolution
+islands
+
+Description:
+The birds of the Galápagos include many endemic species such as
+Darwin's finches that demonstrate adaptive radiation.
+
+------------------------------------------------
+IDEA-531
+------------------------------------------------
+
+Name: Marine Iguanas
+Domain: Species
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+reptile
+marine
+islands
+
+Description:
+Marine iguanas are the only lizard species adapted to feeding in
+marine environments.
+
+------------------------------------------------
+IDEA-532
+------------------------------------------------
+
+Name: Galápagos Penguin
+Domain: Species
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+penguin
+islands
+bird
+
+Description:
+The Galápagos penguin is the only penguin species living near the
+equator.
+
+------------------------------------------------
+IDEA-533
+------------------------------------------------
+
+Name: Indonesia
+Domain: Geographic Region
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+archipelago
+asia
+islands
+
+Description:
+Indonesia is a vast archipelago between the Indian and Pacific
+Oceans containing thousands of islands.
+
+------------------------------------------------
+IDEA-534
+------------------------------------------------
+
+Name: Cape Floristic Kingdom
+Domain: Bioregion
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+plants
+south-africa
+flora
+
+Description:
+A globally important plant biodiversity hotspot located in
+southwestern South Africa.
+
+------------------------------------------------
+IDEA-535
+------------------------------------------------
+
+Name: Daisy Trees
+Domain: Species Group
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+plants
+islands
+evolution
+
+Description:
+Woody tree-like plants derived from herbaceous members of the
+daisy family.
+
+------------------------------------------------
+IDEA-536
+------------------------------------------------
+
+Name: Cape Penguin
+Domain: Species
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+penguin
+africa
+bird
+
+Description:
+The Cape penguin is a coastal penguin species native to southwestern
+Africa.
+
+------------------------------------------------
+IDEA-537
+------------------------------------------------
+
+Name: Silurian Period
+Domain: Geological Era
+
+Parent Idea:
+Earth
+
+Era:
+Paleozoic
+
+Tags:
+geology
+paleozoic
+
+Description:
+The Silurian Period marks a time when early land plants and
+arthropods began colonizing terrestrial environments.
+
+------------------------------------------------
+IDEA-538
+------------------------------------------------
+
+Name: Prototaxites
+Domain: Species
+
+Parent Idea:
+Earth
+
+Era:
+Paleozoic
+
+Tags:
+fungus
+paleozoic
+
+Description:
+Prototaxites was a massive trunk-like organism believed to be a
+giant fungus living during the Silurian and Devonian periods.
+
+------------------------------------------------
+IDEA-539
+------------------------------------------------
+
+Name: Redwoods
+Domain: Species Group
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+trees
+forests
+
+Description:
+Redwoods are extremely tall conifer trees among the largest and
+longest-lived organisms on Earth.
+
+------------------------------------------------
+IDEA-540
+------------------------------------------------
+
+Name: Canada
+Domain: Geographic Region
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+country
+north-america
+
+Description:
+Canada is a large northern North American country characterized
+by vast forests, tundra, and mountain ranges.
+
+------------------------------------------------
+IDEA-541
+------------------------------------------------
+
+Name: Scotland
+Domain: Geographic Region
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+country
+europe
+
+Description:
+Scotland is a northern region of Great Britain known for highlands,
+islands, and rugged coastal landscapes.
+
+------------------------------------------------
+IDEA-542
+------------------------------------------------
+
+Name: Germany
+Domain: Geographic Region
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+country
+europe
+
+Description:
+Germany is a central European country with diverse landscapes
+including forests, rivers, and agricultural regions.
+
+------------------------------------------------
+IDEA-543
+------------------------------------------------
+
+Name: Australia
+Domain: Geographic Region
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+continent
+biodiversity
+
+Description:
+Australia is both a continent and a country with highly unique
+ecosystems and endemic wildlife.
+
+------------------------------------------------
+IDEA-544
+------------------------------------------------
+
+Name: Cooksonia
+Domain: Species
+
+Parent Idea:
+Earth
+
+Era:
+Paleozoic
+
+Tags:
+plant
+silurian
+
+Description:
+Cooksonia is one of the earliest known vascular land plants.
+
+------------------------------------------------
+IDEA-545
+------------------------------------------------
+
+Name: Silurian Biomass Amassing for Terraforming
+Domain: Terraforming Concept
+
+Parent Idea:
+Earth
+
+Era:
+Planetary Period
+
+Tags:
+terraforming
+biology
+
+Description:
+A terraforming approach inspired by early terrestrial ecosystems,
+using primitive biomass to initiate soil and atmosphere formation.
+
+------------------------------------------------
+IDEA-546
+------------------------------------------------
+
+Name: Trigonotarbida
+Domain: Species
+
+Parent Idea:
+Earth
+
+Era:
+Paleozoic
+
+Tags:
+arachnid
+arthropod
+
+Description:
+An extinct order of early spider-like arachnids that lived during
+the Paleozoic era.
+
+------------------------------------------------
+IDEA-547
+------------------------------------------------
+
+Name: Scorpions
+Domain: Species Group
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+arachnid
+predator
+
+Description:
+Scorpions are ancient predatory arachnids that first appeared in
+the Paleozoic and still exist today.
+
+------------------------------------------------
+IDEA-548
+------------------------------------------------
+
+Name: Framoscorpius
+Domain: Species
+
+Parent Idea:
+Earth
+
+Era:
+Paleozoic
+
+Tags:
+scorpion
+fossil
+
+Description:
+An early fossil scorpion known from Silurian deposits.
+
+------------------------------------------------
+IDEA-549
+------------------------------------------------
+
+Name: Silurian Flightless Insects
+Domain: Species Group
+
+Parent Idea:
+Earth
+
+Era:
+Paleozoic
+
+Tags:
+insects
+arthropods
+
+Description:
+Early terrestrial hexapods and primitive insect-like arthropods
+that existed before the evolution of flight.
+
+------------------------------------------------
+IDEA-550
+------------------------------------------------
+
+Name: Millipedes
+Domain: Species Group
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+arthropods
+detritivore
+
+Description:
+Millipedes are many-legged arthropods that feed primarily on
+decaying plant material and contribute to soil formation.
+
+------------------------------------------------
+IDEA-552
+------------------------------------------------
+
+Name:
+Lacora
+
+Domain:
+Planet
+
+Parent Idea:
+Interstellar Exploration
+
+Era:
+Multiple Eras
+
+Tags:
+planet
+lakes
+temperate
+colony
+
+Description:
+Lacora is a temperate planet characterized by numerous lakes and inland freshwater basins.
+
+The planet had previously undergone environmental modification through automated terraforming probes launched during the late Race for Sol period. These probes focused on augmenting natural planetary processes rather than constructing large-scale infrastructure.
+
+Much later the damaged interstellar vessel Sols Accord entered the Lacora system and its survivors established the first human settlement near a mountain lake.
+
+
+------------------------------------------------
+IDEA-553
+------------------------------------------------
+
+Name:
+Solex Terraforming Initiative
+
+Domain:
+Organization
+
+Parent Idea:
+Solex Station
+
+Era:
+Race for Sol
+
+Tags:
+terraforming
+automation
+interstellar
+
+Description:
+The Solex Terraforming Initiative was an engineering consortium associated with infrastructure around Solex Station during the late Race for Sol period.
+
+The initiative launched large numbers of inexpensive automated probes toward promising Earth-like planets. These missions used excess launch capacity and schedule gaps in Solex departure operations.
+
+The strategy relied on high numbers of probes rather than individual mission success, accepting that most probes would fail or never reach their targets.
+
+
+------------------------------------------------
+IDEA-554
+------------------------------------------------
+
+Name:
+Solex Terraforming Probe
+
+Domain:
+Technology
+
+Parent Idea:
+Solex Terraforming Initiative
+
+Era:
+Race for Sol
+
+Tags:
+terraforming
+automation
+probe
+
+Description:
+Solex Terraforming Probes were automated interstellar probes designed to initiate environmental modification on planets that were already broadly Earth-like.
+
+Instead of constructing massive planetary infrastructure, the probes attempted to augment existing planetary processes by stabilizing water systems, modifying terrain features, and introducing microbial or plant life.
+
+Many probes failed, but a small number successfully altered planetary environments over long timescales.
+
+
+------------------------------------------------
+IDEA-555
+------------------------------------------------
+
+Name:
+Lacora Terraforming Event
+
+Domain:
+Historical Event
+
+Parent Idea:
+IDEA-552 Lacora
+
+Era:
+Race for Sol
+
+Tags:
+terraforming
+lacora
+
+Description:
+The Lacora Terraforming Event refers to the successful activation of a Solex Terraforming Probe on the planet Lacora.
+
+The probe gradually modified the planet’s hydrological systems and ecosystems, resulting in a lake-dominated temperate biosphere that later allowed human settlers to survive on the world.
+
+
+------------------------------------------------
+IDEA-556
+------------------------------------------------
+
+Name:
+Sols Accord Site
+
+Domain:
+Location
+
+Parent Idea:
+IDEA-552 Lacora
+
+Era:
+Multiple Eras
+
+Tags:
+crash-site
+colony-origin
+spacecraft
+
+Description:
+The Sols Accord Site is the location on Lacora where the interstellar expedition vessel Sols Accord intentionally performed a controlled crash landing.
+
+The ship came to rest in the shallow waters of a mountain lake. Because the landing occurred in shallow water and at relatively low speed, large portions of the vessel remained intact and accessible to the survivors.
+
+The wreck served as an important early source of materials and technology for the first settlers of Lacora.
+
+
+------------------------------------------------
+IDEA-557
+------------------------------------------------
+
+Name:
+Cords People of Lacora
+
+Domain:
+Culture
+
+Parent Idea:
+IDEA-552 Lacora
+
+Era:
+Planetary Period
+
+Tags:
+culture
+lacora
+
+Description:
+The Cords People are the descendant population of the original settlers of Lacora.
+
+The name derives from the expedition vessel Sols Accord from which the first colonists originated. Over time the term “Accords” gradually shortened in common usage and became “Cords”, the name by which the inhabitants of Lacora refer to themselves.
+
+
+------------------------------------------------
+IDEA-558
+------------------------------------------------
+
+Name:
+Path Concord Class
+
+Domain:
+Vehicle Class
+
+Parent Idea:
+Solex Station
+
+Era:
+GGO Hegemony Period
+
+Tags:
+interstellar
+expedition
+spacecraft
+cryosleep
+
+Description:
+The Path Concord Class is a class of early interstellar expedition vessels launched from the Solar System using the departure infrastructure associated with Solex Station.
+
+The ships were designed for long-duration missions toward nearby star systems and relied heavily on cryosleep to sustain passengers during transit.
+
+The vessel Sols Accord was the third ship constructed in this class.
+
+
+------------------------------------------------
+IDEA-559
+------------------------------------------------
+
+Name:
+Solaccord Pact
+
+Domain:
+Faction
+
+Parent Idea:
+Solex Station
+
+Era:
+Race for Sol
+
+Tags:
+alliance
+interstellar
+launch-infrastructure
+
+Description:
+The Solaccord Pact was an alliance associated with the interstellar launch infrastructure around Solex Station.
+
+The pact coordinated cooperative efforts between multiple actors interested in interstellar exploration and expansion beyond the Solar System.
+
+
+------------------------------------------------
+IDEA-560
+------------------------------------------------
+
+Name:
+Sols Accord
+
+Domain:
+Vehicle
+
+Parent Idea:
+IDEA-558 Path Concord Class
+
+Era:
+Multiple Eras
+
+Tags:
+interstellar
+expedition
+spacecraft
+
+Description:
+The Sols Accord was the third vessel of the Path Concord Class of interstellar expedition ships.
+
+During acceleration after departure from the Solar System the ship suffered severe damage after colliding with a high-velocity micro-asteroid. The impact disrupted navigation and cryosleep management systems.
+
+After drifting through interstellar space for an extended period the damaged vessel eventually captured into the Lacora system where the surviving crew intentionally crashed the ship in a mountain lake and established the first human settlement on the planet.
+
+
+------------------------------------------------
+IDEA-561
+------------------------------------------------
+
+Name:
+Slingshot System
+
+Domain:
+Technology
+
+Parent Idea:
+Interplanetary Infrastructure
+
+Era:
+Race for Sol
+
+Tags:
+transport
+magnetic-acceleration
+spaceflight
+
+Description:
+The Slingshot System refers to large-scale magnetic acceleration infrastructure used for high-velocity spacecraft launches and interplanetary travel.
+
+These systems used electromagnetic acceleration tracks or launch corridors to propel spacecraft to extremely high velocities before entering deep space trajectories.
+
+
+------------------------------------------------
+IDEA-562
+------------------------------------------------
+
+Name:
+Solex Station
+
+Domain:
+Infrastructure
+
+Parent Idea:
+Solar System Infrastructure
+
+Era:
+Race for Sol
+
+Tags:
+launch
+interstellar
+gateway
+
+Description:
+Solex Station, the Solar Exit Gateway Station, is a large interplanetary infrastructure installation used to accelerate spacecraft departing the Solar System.
+
+The station hosts magnetic acceleration systems and launch infrastructure capable of imparting extremely high velocities to spacecraft intended for interstellar missions.
+
+
+------------------------------------------------
+IDEA-563
+------------------------------------------------
+
+Name:
+Orbit Political Landscape during the Race for Sol
+
+Domain:
+Historical Reference
+
+Parent Idea:
+Race for Sol
+
+Era:
+Race for Sol
+
+Tags:
+politics
+orbit
+infrastructure
+
+Description:
+The orbit political landscape during the Race for Sol refers to the distribution of political influence and control over orbital infrastructure within the Solar System.
+
+Competition over stations, launch infrastructure, and orbital industrial facilities played an important role in shaping interstellar expansion efforts.
+
+
+------------------------------------------------
+IDEA-564
+------------------------------------------------
+
+Name:
+Orbit Politics
+
+Domain:
+Academic Field
+
+Parent Idea:
+Space Governance
+
+Era:
+Multiple Eras
+
+Tags:
+politics
+orbit
+governance
+
+Description:
+Orbit Politics is the study of political control and influence over orbital infrastructure and space-based assets within a planetary system.
+
+The field examines how access to orbital space, launch infrastructure, and industrial facilities shapes political and economic power.
+
+
+------------------------------------------------
+IDEA-565
+------------------------------------------------
+Name:
+Ship Cabin
+
+Domain:
+Infrastructure
+
+Parent Idea:
+Ships
+
+Era:
+All Eras
+
+Tags:
+ship
+interior
+habitat
+crew
+
+Description:
+A ship cabin is a private or semi-private living compartment
+aboard a vessel used by crew members or passengers.
+
+Cabins provide sleeping space, storage, and personal living
+facilities during voyages and are a fundamental element of
+long-distance maritime and space travel infrastructure.
+
+
+------------------------------------------------
+IDEA-566
+------------------------------------------------
+Name:
+Age of Sail Ship Cabin
+
+Domain:
+Infrastructure
+
+Parent Idea:
+IDEA-568 Age of Sail
+
+Era:
+Age of Sail
+
+Tags:
+ship
+naval
+interior
+crew
+
+Description:
+Cabins aboard Age of Sail vessels were small wooden
+compartments used by officers and sometimes passengers.
+
+Most sailors slept in communal areas such as the gun deck
+or hammocks slung between beams, while officers occupied
+small partitioned cabins near the stern of the ship.
+
+
+------------------------------------------------
+IDEA-567
+------------------------------------------------
+Name:
+1800 Naval Cannon
+
+Domain:
+Technology
+
+Parent Idea:
+IDEA-568 Age of Sail
+
+Era:
+Age of Sail
+
+Tags:
+weapon
+naval
+artillery
+
+Description:
+Naval cannons around the year 1800 were smoothbore
+muzzle-loading artillery pieces mounted along the gun
+decks of warships.
+
+These cannons fired solid iron shot and formed the
+primary offensive and defensive weapon system of
+Age of Sail naval warfare.
+
+
+------------------------------------------------
+IDEA-568
+------------------------------------------------
+Name:
+Age of Sail
+
+Domain:
+Historical Era
+
+Parent Idea:
+Earth
+
+Era:
+Early Modern Period
+
+Tags:
+maritime
+naval
+exploration
+trade
+
+Description:
+The Age of Sail refers to the historical period in which
+large sailing ships dominated global maritime transport,
+trade, and naval warfare.
+
+The era roughly spans the 16th to mid-19th centuries and
+saw the expansion of global trade networks, naval empires,
+and long-distance exploration.
+
+
+------------------------------------------------
+IDEA-569
+------------------------------------------------
+Name:
+Tailor
+
+Domain:
+Role
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+profession
+craft
+clothing
+
+Description:
+A tailor is a craftsperson specializing in the cutting,
+alteration, and construction of garments.
+
+Tailors historically worked in workshops or as traveling
+craftspeople producing fitted clothing for individuals
+or institutions such as militaries and merchant crews.
+
+
+------------------------------------------------
+IDEA-570
+------------------------------------------------
+Name:
+Rattlesnake
+
+Domain:
+Species
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+animal
+reptile
+snake
+venomous
+
+Description:
+Rattlesnakes are venomous pit vipers native to the
+Americas.
+
+They are known for the distinctive rattle at the end
+of their tail which produces a warning sound when the
+snake feels threatened. Rattlesnakes are ambush
+predators feeding primarily on small mammals.
+
+
+------------------------------------------------
+IDEA-571
+------------------------------------------------
+
+Name: US Invasion of Cuba (2028)
+
+Domain: Event
+
+Parent Idea:
+Superpower Wars
+
+Era:
+Superpower Wars
+
+Tags:
+war
+cuba
+united-states
+military
+
+Description:
+A major United States military invasion of Cuba during the
+Superpower Wars.
+
+The operation aimed to remove the Cuban government and secure
+strategic control of the island. The invasion triggered intense
+regional tensions and several significant military engagements,
+including the Siege of Guantanamo Bay.
+
+
+------------------------------------------------
+IDEA-572
+------------------------------------------------
+
+Name: Siege of Guantanamo Bay
+
+Domain: Event
+
+Parent Idea:
+US Invasion of Cuba (2028)
+
+Era:
+Superpower Wars
+
+Tags:
+war
+cuba
+siege
+military
+
+Description:
+Major military engagement during the United States invasion of
+Cuba in 2028.
+
+Cuban armed forces surrounded the Guantanamo Bay naval base,
+resulting in a prolonged siege and heavy fighting between
+Cuban and United States forces.
+
+
+------------------------------------------------
+IDEA-573
+------------------------------------------------
+
+Name: Cuban Armed Forces
+
+Domain: Organization
+
+Parent Idea:
+Cuba
+
+Era:
+All Eras
+
+Tags:
+military
+cuba
+armed-forces
+
+Description:
+The unified military forces of Cuba responsible for the defense
+of the country and the conduct of military operations.
+
+During the United States invasion of 2028 the Cuban Armed Forces
+played a central role in resisting the invasion and organizing
+defensive operations across the island.
+
+
+------------------------------------------------
+IDEA-574
+------------------------------------------------
+
+Name: South American Union Continental Hegemony
+
+Domain: Political Development
+
+Parent Idea:
+South America
+
+Era:
+Superpower Wars
+
+Tags:
+politics
+south-america
+union
+geopolitics
+
+Description:
+A political and military union of South American states originally
+formed as a defensive pact during the Superpower Wars.
+
+Over time the member states became increasingly economically and
+politically integrated.
+
+Following the collapse of the United States in 2062 the union
+emerged as the dominant continental power in South America.
+
+
+------------------------------------------------
+IDEA-575
+------------------------------------------------
+
+Name: Ghost of Havana
+
+Domain: Event
+
+Parent Idea:
+US Invasion of Cuba (2028)
+
+Era:
+Superpower Wars
+
+Tags:
+military
+air-war
+rumor
+aviation
+
+Description:
+A mysterious series of air combat incidents during the United
+States invasion of Cuba in 2028.
+
+Several US aircraft were reportedly shot down under unclear
+circumstances during operations near Havana.
+
+Pilots and analysts speculated that an advanced Russian or
+Chinese stealth aircraft might have been operating in the
+area, though no official confirmation was ever released.
+
+The incident became informally known among pilots as the
+"Ghost of Havana."
+
+
+------------------------------------------------
+IDEA-576
+------------------------------------------------
+
+Name: Iran Air War (2026)
+
+Domain: Event
+
+Parent Idea:
+Middle East Conflicts
+
+Era:
+Superpower Wars
+
+Tags:
+war
+iran
+israel
+united-states
+air-war
+
+Description:
+A major air campaign conducted by Israel and the United States
+against Iran in 2026 during the early phase of the Superpower
+Wars.
+
+The conflict consisted primarily of large-scale air strikes
+against Iranian military infrastructure and strategic targets.
+
+
+------------------------------------------------
+IDEA-577
+------------------------------------------------
+
+Name: F-16 Fighting Falcon
+
+Domain: Vehicle
+
+Parent Idea:
+United States Air Force
+
+Era:
+Modern Era
+
+Tags:
+aircraft
+fighter
+military
+aviation
+
+Description:
+A widely used multirole fighter aircraft developed by the
+United States.
+
+The F-16 has been operated by numerous air forces worldwide
+and played a role in several conflicts of the late 20th and
+early 21st centuries.
+
+
+------------------------------------------------
+IDEA-578
+------------------------------------------------
+
+Name: F-22 Raptor
+
+Domain: Vehicle
+
+Parent Idea:
+United States Air Force
+
+Era:
+Modern Era
+
+Tags:
+aircraft
+fighter
+stealth
+aviation
+
+Description:
+A fifth-generation stealth fighter aircraft developed by
+the United States.
+
+The aircraft was designed primarily for air superiority
+missions and incorporates advanced stealth and sensor
+technologies.
+
+
+------------------------------------------------
+IDEA-579
+------------------------------------------------
+
+Name: Israeli Air Force
+
+Domain: Organization
+
+Parent Idea:
+Israel
+
+Era:
+All Eras
+
+Tags:
+military
+air-force
+israel
+aviation
+
+Description:
+The aerial warfare branch of the Israeli Defense Forces.
+
+The Israeli Air Force has played a central role in Israel's
+military strategy and participated in numerous regional
+conflicts.
+
+
+------------------------------------------------
+IDEA-592
+------------------------------------------------
+
+Name: Blueballs
+
+Domain: Culture
+
+Parent Idea:
+Rust Sector
+
+Era:
+Trifecta Dominion Period
+
+Tags:
+slang
+rust-sector
+blue-sector
+culture
+
+Description:
+A derogatory slang term used in the Rust Sector for residents
+of the Blue Sector.
+
+The expression reflects Rust Sector resentment toward what
+they perceive as the bureaucratic and privileged societies
+of the Blue Sector.
+
+
+------------------------------------------------
+IDEA-596
+------------------------------------------------
+
+Name: Crusade Era Cultural Seeding World
+
+Domain: Civilization
+
+Parent Idea:
+IDEA-220 CSG Experimental Civilizations
+
+Era:
+Planetary Period
+
+Tags:
+csg
+civilization
+experiment
+medieval
+
+Description:
+A Cultural Seeding Group experimental planet designed to
+reproduce the geopolitical environment of the 12th-century
+Crusader period.
+
+The experiment recreated a compressed version of the eastern
+Mediterranean political landscape, including societies inspired
+by Latin Crusader kingdoms, Islamic states, Byzantine-style
+territories, and regional feudal polities.
+
+The world functions as a living historical simulation used
+to study medieval political systems, religious conflict,
+trade networks, and crusading movements within a controlled
+planetary environment.
