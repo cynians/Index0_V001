@@ -1,0 +1,19 @@
+schema: species
+
+extends: entity_core
+
+fields:
+
+  species_class:
+    type: string
+    optional: true
+
+  native_locations:
+    type: entity_list
+    target: location
+    optional: true
+
+  related_species:
+    type: entity_list
+    target: species
+    optional: true
