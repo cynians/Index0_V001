@@ -1,0 +1,24 @@
+schema: production
+
+extends: entity_core
+
+fields:
+
+  production_class:
+    type: string
+    optional: true
+
+  produced_item:
+    type: entity
+    target: entity
+    optional: true
+
+  produced_by:
+    type: entity_list
+    target: faction
+    optional: true
+
+  production_location:
+    type: entity
+    target: location
+    optional: true

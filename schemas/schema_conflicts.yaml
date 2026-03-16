@@ -1,0 +1,24 @@
+metadata:
+  name: Index0 Conflict Schema
+  version: 1
+
+extends: entity_base
+
+fields:
+
+  conflict_type: string
+
+  participants:
+    type: entity_list
+
+  locations:
+    type: entity_list
+
+  start_event:
+    type: entity|null
+
+  end_event:
+    type: entity|null
+
+  outcome:
+    type: string

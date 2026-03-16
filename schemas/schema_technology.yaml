@@ -1,0 +1,29 @@
+schema: technology
+
+extends: entity_core
+
+fields:
+
+  technology_class:
+    type: string
+    optional: true
+
+  developed_by:
+    type: entity_list
+    target: faction
+    optional: true
+
+  used_by:
+    type: entity_list
+    target: faction
+    optional: true
+
+  related_technologies:
+    type: entity_list
+    target: technology
+    optional: true
+
+  associated_locations:
+    type: entity_list
+    target: location
+    optional: true

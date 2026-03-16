@@ -1,0 +1,29 @@
+schema: entity_core
+
+required:
+  - id
+  - pretty_name
+  - type
+
+fields:
+
+  id:
+    type: string
+
+  pretty_name:
+    type: string
+
+  type:
+    type: string
+
+  tags:
+    type: string_list
+    optional: true
+
+  start_year:
+    type: number
+    optional: true
+
+  end_year:
+    type: number
+    optional: true

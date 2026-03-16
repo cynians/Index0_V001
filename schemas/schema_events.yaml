@@ -1,0 +1,29 @@
+schema: event
+
+extends: entity_core
+
+fields:
+
+  event_class:
+    type: string
+    optional: true
+
+  participants:
+    type: entity_list
+    target: entity
+    optional: true
+
+  locations:
+    type: entity_list
+    target: location
+    optional: true
+
+  involved_factions:
+    type: entity_list
+    target: faction
+    optional: true
+
+  related_conflict:
+    type: entity
+    target: conflict
+    optional: true

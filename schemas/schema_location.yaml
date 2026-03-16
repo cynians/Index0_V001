@@ -1,0 +1,28 @@
+schema: location
+
+extends: entity_core
+
+fields:
+
+  location_class:
+    type: string
+    optional: true
+
+  parent_location:
+    type: entity
+    target: location
+    optional: true
+
+  controlling_factions:
+    type: entity_list
+    target: faction
+    optional: true
+
+  associated_cultures:
+    type: entity_list
+    target: culture
+    optional: true
+
+  population:
+    type: number
+    optional: true

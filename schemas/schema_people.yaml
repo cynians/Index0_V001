@@ -1,0 +1,29 @@
+schema: person
+
+extends: entity_core
+
+fields:
+
+  person_class:
+    type: string
+    optional: true
+
+  affiliated_factions:
+    type: entity_list
+    target: faction
+    optional: true
+
+  affiliated_institutions:
+    type: entity_list
+    target: institution
+    optional: true
+
+  associated_locations:
+    type: entity_list
+    target: location
+    optional: true
+
+  participated_events:
+    type: entity_list
+    target: event
+    optional: true

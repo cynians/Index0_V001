@@ -1,0 +1,28 @@
+schema: culture
+
+extends: entity_core
+
+fields:
+
+  culture_class:
+    type: string
+
+  parent_culture:
+    type: entity
+    target: culture
+    optional: true
+
+  associated_factions:
+    type: entity_list
+    target: faction
+    optional: true
+
+  associated_locations:
+    type: entity_list
+    target: location
+    optional: true
+
+  cultural_aspects:
+    type: entity_list
+    target: cultural_aspect
+    optional: true

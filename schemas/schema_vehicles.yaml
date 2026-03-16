@@ -1,0 +1,24 @@
+schema: vehicle
+
+extends: entity_core
+
+fields:
+
+  vehicle_class:
+    type: string
+    optional: true
+
+  produced_by:
+    type: entity_list
+    target: faction
+    optional: true
+
+  uses_technology:
+    type: entity_list
+    target: technology
+    optional: true
+
+  operated_by:
+    type: entity_list
+    target: formation
+    optional: true

@@ -1,0 +1,96 @@
+# ================================================================
+# Pan-African Union Urban Culture
+# ================================================================
+
+- id: culture_pan_african_union_urban
+  name: Pan-African Union Urban Culture
+  type: culture
+
+  culture_class: continental_civic
+
+  parent_culture: null
+
+  associated_factions:
+    - faction_pan_african_union
+
+  associated_locations:
+    - earth_africa
+
+  cultural_aspects:
+    - aspect_pan_african_identity
+    - aspect_urban_cooperative_economy
+    - aspect_postcolonial_unity
+
+  tags:
+    - african
+    - urban
+    - civic
+
+  start_year: 2062
+  end_year: "2158"
+
+
+
+# ================================================================
+# Transfer Hansa Frontier Culture
+# ================================================================
+
+- id: culture_transfer_hansa_frontier
+  name: Transfer Hansa Frontier Culture
+  type: culture
+
+  culture_class: merchant_frontier
+
+  parent_culture: null
+
+  associated_factions:
+    - faction_transfer_hansa
+
+  associated_locations:
+    - system_lubeck
+
+  cultural_aspects:
+    - aspect_contract_honor_norm
+    - aspect_trade_network_identity
+    - aspect_mobile_frontier_ethos
+
+  tags:
+    - merchant
+    - frontier
+    - interstellar
+
+  start_year: 2390
+  end_year: "null"
+
+
+
+# ================================================================
+# CSG Crusader Reconstruction Culture
+# ================================================================
+
+- id: culture_csg_crusader_reconstruction
+  name: CSG Crusader Reconstruction Culture
+  type: culture
+
+  culture_class: historical_reconstruction
+
+  parent_culture: null
+
+  associated_factions:
+    - faction_cultural_seeding_group
+
+  associated_locations:
+    - planet_crusader_world
+
+  cultural_aspects:
+    - aspect_crusader_zeal
+    - aspect_feudal_honor_structure
+    - aspect_religious_militancy
+
+  tags:
+    - historical_reconstruction
+    - crusader
+    - experimental_society
+
+  start_year: 2700
+  end_year: "null"

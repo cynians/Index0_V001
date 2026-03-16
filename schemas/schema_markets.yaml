@@ -1,0 +1,19 @@
+schema: market
+
+extends: entity_core
+
+fields:
+
+  market_class:
+    type: string
+    optional: true
+
+  market_location:
+    type: entity
+    target: location
+    optional: true
+
+  traded_items:
+    type: entity_list
+    target: item
+    optional: true

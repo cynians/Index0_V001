@@ -1,0 +1,418 @@
+IDEA-001  Map System | multi scale simulation mapping | System | All Eras
+IDEA-002  QuantCom Communication Network | interstellar quantum communication backbone | Infrastructure | Planetary Period
+IDEA-003  QuantCom Bonding Maturation | stabilized long distance communication | Infrastructure | Planetary Period
+IDEA-004  Planetary Population Control System | demographic regulation planetary infrastructure | Governance | GGO Hegemony
+
+IDEA-005–009  — reserved —
+
+IDEA-010  Mitchell Class Seaplane Tender | naval aviation support vessel | Vehicle | Postmodernist Period
+IDEA-011  Hunter Class Frigate | multi role escort warship | Vehicle | Postmodernist Period
+IDEA-012  Cyberpunk Car | dense megacity civilian transport | Vehicle | Postmodernist Period
+IDEA-013  UH-63 Whitehawk Helicopter | military logistics rotorcraft platform | Vehicle | Postmodernist Period
+IDEA-014  Barbento BR120 Aircraft | medium range passenger aircraft | Vehicle | Postmodernist Period
+IDEA-015  7P2 Coil Energy Ship | orbital colony energy generator | Vehicle | Planetary Period
+IDEA-016  Race for Sol Bulldozer | early planetary construction vehicle | Vehicle | Race for Sol
+
+IDEA-017–019  — reserved —
+
+IDEA-020  Foldable Cargo Container | collapsible standardized cargo container | Logistics | Race for Sol
+
+IDEA-021–029  — reserved —
+
+IDEA-030  Distributed Microfactory Production | decentralized modular industrial manufacturing | Production | Planetary Period
+IDEA-031  Orbital Shipyard Assembly | large scale spacecraft construction | Production | Planetary Period
+IDEA-032  Vertical Arcology Manufacturing | megastructure integrated industrial production | Production | Planetary Period
+
+IDEA-033–049  — reserved —
+
+IDEA-050  Sikorski Aircraft Corporation | aerospace manufacturing corporation entity | Organization | Postmodernist Period
+IDEA-051  US Army | terrestrial military organization structure | Organization | Postmodernist Period
+
+IDEA-052–164  — reserved —
+
+IDEA-165  Terran Biome Diversity Project | interstellar planetary terraforming institution | Organization | Planetary Period
+
+IDEA-166–170  — reserved —
+
+IDEA-171  Container Retrieval Craft | orbital cargo recovery spacecraft | Technology | Race for Inter Sol
+IDEA-172–173  — reserved —
+IDEA-174  GGO Container Latch Standard | standardized cargo attachment interface | Technology | GGO Hegemony
+
+IDEA-175–219  — reserved —
+
+IDEA-220  CSG Experimental Civilizations | controlled planetary society experiments | Institution | Planetary Period
+IDEA-221  Seeding Approach Papers | cultural seeding theoretical frameworks | Research | Planetary Period
+IDEA-222  Pre Contact Culturals | isolated planetary cultural development | Civilization | Planetary Period
+IDEA-223  Post Contact Culturals | contacted experimental planetary societies | Civilization | Planetary Period
+IDEA-224  SAP Completion Conditions | civilization experiment termination criteria | Research | Planetary Period
+IDEA-225  Persanul Corporate Interaction | corporation civilization contact event | Event | Planetary Period
+
+IDEA-226  Rust Sector Oxidation Bands | industrial architecture identification bands | Culture | Trifecta Dominion
+IDEA-227  Rust Sector Industrial Architecture | oxidized metal industrial megastructures | Architecture | Trifecta Dominion
+IDEA-228  Orbital Graveyards | abandoned spacecraft accumulation zones | Space Infrastructure | Planetary Period
+IDEA-229  Keggel Class Hansa Bulk Carrier | large autonomous cargo freighter | Vehicle | Planetary Period
+
+IDEA-230  Oxyde System | metal rich industrial star system | Star System | Planetary Period
+IDEA-231  Planet Patina | partially terraformed industrial world | Planet | Planetary Period
+IDEA-232  Patina Orbital Graveyard | orbital wreckage salvage belts | Location | Planetary Period
+IDEA-233  Capital Pursuits | venture capitalism space conglomerate | Organization | Planetary Period
+IDEA-234  Million Labels Group | corporate industrial defense conglomerate | Organization | Planetary Period
+
+IDEA-235  — unused —
+
+IDEA-236  Patina Omni Production Shipyard | autonomous orbital megashipyard complex | Production | Planetary Period
+IDEA-237  Container Spine Freighter | modular cargo spine spacecraft | Vehicle | Planetary Period
+IDEA-238  Patina Porcupine Carrier | modular interstellar container carrier | Vehicle | Planetary Period
+IDEA-239  Porcupine Engine Module | detachable propulsion cargo unit | Technology | Planetary Period
+
+IDEA-240–244  Patina orbital infrastructure cluster | mixed | Planetary Period
+
+IDEA-245  Orbital Pusher Craft | automated debris repositioning spacecraft | Technology | Planetary Period
+IDEA-246  Porcupine Wreck Populations | abandoned carrier salvage settlements | Culture | Planetary Period
+IDEA-247  Patina Orbital Object Registry | orbital debris catalog system | Infrastructure | Planetary Period
+IDEA-248  MLG Tactical Fighter Series | corporate security interceptor craft | Vehicle | Planetary Period
+IDEA-249  Patina OO-7-285 | wrecked porcupine carrier cluster | Location | Planetary Period
+
+IDEA-250  BDP Terraforming Phases | staged planetary biosphere construction | Terraforming | Planetary Period
+IDEA-251  Tibnen | terraformed oceanic world | Planet | Planetary Period
+IDEA-252  BDP Ark Operations | mobile planetary terraforming missions | Terraforming | Planetary Period
+IDEA-253  BDP Observation Posts | orbital biosphere monitoring stations | Terraforming | Planetary Period
+
+IDEA-254–261  planetary settlement cluster | mixed | Planetary Period
+
+IDEA-262  Rust Sector Bolt Class Vessel | rugged modular industrial spacecraft | Vehicle | Trifecta Dominion
+IDEA-263  Rust Sector Symbiont Interface | neural industrial vehicle interface | Technology | Trifecta Dominion
+IDEA-264  Rust Sector Symbiont Ships | pilot integrated industrial spacecraft | Vehicle | Trifecta Dominion
+
+IDEA-265  Pronghorn | plains adapted grazing ungulate | Species | Planetary Period
+IDEA-266  Gustamal Coastal Riparian Steppe | coastal steppe river ecosystem | Bioregion | Planetary Period
+IDEA-267  Andrewsarchus Ecological Role | omnivore predator scavenger niche | Ecology | Planetary Period
+IDEA-268  Industrial Reentry Phenomena | atmospheric debris reentry effects | Environment | Planetary Period
+
+IDEA-269–274  coastal fog signal technologies | components | Industrial Period
+
+IDEA-275  LM Lines | lunar mars transport company | Organization | Race for Sol
+IDEA-276–278  lunar mars infrastructure cluster | mixed | Race for Sol
+
+IDEA-279–293  Blue Sector civilization cluster | mixed | Trifecta Dominion
+
+IDEA-294–300  Oka robotic culture cluster | mixed | Planetary Period
+
+IDEA-301  Superpower Wars | global geopolitical collapse conflict | Event | Superpower Wars
+IDEA-302–308  superpower war political entities | mixed | Superpower Wars
+
+IDEA-309–313  New Caledonia ecology cluster | mixed | Planetary Period
+
+IDEA-314  SAP Antonia Experiment | historical civilization recreation experiment | Research | Planetary Period
+IDEA-315  Antonia | roman historical reconstruction world | Planet | Planetary Period
+IDEA-316  Antonian Republic | recreated roman republican polity | Faction | Planetary Period
+IDEA-317  Mark Anthony Seed | reconstructed historical personality template | Person | Planetary Period
+
+IDEA-318–362  — reserved —
+
+IDEA-363  Patina Drifter Population | multicultural frontier migrant population | Culture | Planetary Period
+IDEA-364  Patina Surface Taxi | industrial frontier urban vehicle | Vehicle | Planetary Period
+IDEA-365  Patina Dock Transfer Tug | orbital cargo maneuvering tug | Vehicle | Planetary Period
+IDEA-366  Patina Tug Pilot | civilian orbital tug operator | Person | Planetary Period
+IDEA-367  Orbital Deployable Habitation Stack | modular orbital settlement megastructure | Infrastructure | Planetary Period
+IDEA-368  Habitation Stack Manufacturer | orbital settlement construction corporation | Organization | Planetary Period
+IDEA-369  Transfer Hansa Market | interstellar logistics trading network | Organization | Planetary Period
+IDEA-370  Patina Industrial Utility Helicopter | industrial cargo rotorcraft transport | Vehicle | Planetary Period
+IDEA-371  Stacklinger | megablock based frontier city | City | Planetary Period
+
+IDEA-372  Neurons | long duration ark pilots | Persons / Technology | Planetary Period
+IDEA-373  Ark Seed Terraforming Vessel | autonomous planetary terraform vessel | Vehicle | Planetary Period
+IDEA-374  Ark Seed Propulsion Architecture | long endurance interstellar propulsion | Technology | Planetary Period
+IDEA-375  Automated Terraforming Industry | autonomous planetary transformation industry | Production | Planetary Period
+IDEA-376  Industry Seed Capsules | packaged planetary industrial bootstrap | Technology | Planetary Period
+IDEA-377  BDP Priming Fleet | planetary terraforming preparation fleet | Organization | Planetary Period
+IDEA-378  Terran BDP Observers | cryosleep biosphere monitoring personnel | Persons | Planetary Period
+IDEA-379  Artificial Omni Wombs | automated planetary species generation | Technology | Planetary Period
+
+IDEA-380  Akanur Corp | P. Taurini high end industrial manufacturing omnicorporation | Organization | Late Race for Inter Sol / GGO Hegemony Period
+IDEA-381  Henry Garler | neurophilosopher of human cognitive wonder | Person | Planetary Period
+IDEA-382  EGrav | artificial directional gravity propulsion technology | Technology | Early Trifecta Dominion Period
+IDEA-383  Taxations Grave | mobile cloaked corporate tax haven planetoid | Place | Trifecta Dominion Period
+IDEA-384  Sulker System | desert mining star system with major gold reserves | Place | Planetary Period
+IDEA-385  Sulker Gold Desert Planet | terraformed Triassic desert gold world | Planet | Planetary Period
+IDEA-386  Central Bedrock Desert | exposed gold vein desert bioregion | Bioregion | Planetary Period
+IDEA-387  Aureate Impact Basin | gold rich asteroid impact mining basin | Bioregion | Planetary Period
+IDEA-388  Escarpment Belt | tectonic cliff desert transition region | Bioregion | Planetary Period
+IDEA-389  Seasonal Salt Flats | evaporative desert basin bioregion | Bioregion | Planetary Period
+IDEA-390  Highland Dry Steppe | elevated semi arid plateau ecosystem | Bioregion | Planetary Period
+IDEA-391  Field Horsetail | runoff channel colonizing horsetail plant | Species | Planetary Period
+IDEA-392  Athel Tamarisk | deep rooted salt tolerant desert tree | Species | Planetary Period
+IDEA-393  Date Palm | oasis forming desert agricultural palm | Species | Planetary Period
+IDEA-394  Gemsbok | large desert antelope herbivore | Species | Planetary Period
+IDEA-395  Coelophysis | small fast Triassic desert predator dinosaur | Species | Planetary Period
+IDEA-396  Desert Spiny Lizard | rock dwelling desert insectivore reptile | Species | Planetary Period
+
+IDEA-397  Nanhai | monsoon ocean trade world | Planet | Planetary Period
+IDEA-398  Nanhai Delta Sea | monsoon driven inland trade basin | Location | Planetary Period
+IDEA-399  Pao Archipelago | island labyrinth piracy region | Location | Planetary Period
+IDEA-400  Pao Pirate Fleets | decentralized archipelago pirate groups | Organization | Planetary Period
+
+IDEA-401  Transfer Hansa | interstellar bulk cargo logistics network | Organization | Planetary Period
+IDEA-402  Transfer Hansa Port | interstellar cargo exchange and storage hub | Infrastructure | Planetary Period
+IDEA-403  Nested Market System | hierarchical market network with merchant actors | Economic System | Planetary Period
+
+IDEA-404  Gateway Strait Merchant Republic | fortified charter trading republic | Organization | Planetary Period
+IDEA-405  River Delta Trade Republic | inland trade oligarchy delta port | Organization | Planetary Period
+IDEA-406  Ironclad Shipyard Republic | naval industry ironclad shipbuilding state | Organization | Planetary Period
+
+IDEA-407  Ching Shih | legendary South China Sea pirate confederation leader | Historical Figure | All Eras
+IDEA-408  Macao | historic foreign trade enclave port city | Location | All Eras
+IDEA-409  South China Sea Trade Network | monsoon driven maritime trade system | Historical Reference | All Eras
+IDEA-410  Pearl River Delta | major river delta maritime trade region | Location | All Eras
+
+IDEA-411  Saab 29 Tunnan | early Swedish swept wing jet fighter | Vehicle | Cold War
+IDEA-412  Saab 32 Lansen | Swedish jet attack and reconnaissance aircraft | Vehicle | Cold War
+IDEA-413  Saab 35 Draken | Swedish supersonic double delta interceptor | Vehicle | Cold War
+IDEA-414  Saab 37 Viggen | Swedish canard delta multirole combat aircraft | Vehicle | Cold War
+
+IDEA-415  Saab AB | Swedish aerospace and defense manufacturer | Organization | All Eras
+IDEA-416  Swedish Air Force (Flygvapnet) | national air defense service of Sweden | Organization | All Eras
+
+IDEA-417  Air-to-Air Missiles | guided aircraft launched aerial combat missiles | Technology | Cold War
+IDEA-418  Variable Geometry Wing | adjustable sweep aircraft wing system | Technology | Cold War
+
+IDEA-419  General Dynamics F-111 Aardvark | long range terrain following strike aircraft | Vehicle | Cold War
+IDEA-420  Grumman F-14 Tomcat | carrier based variable sweep interceptor fighter | Vehicle | Cold War
+IDEA-421  Panavia Tornado | European low level strike swing wing aircraft | Vehicle | Cold War
+
+IDEA-422  Lift Engines | dedicated vertical thrust engines for VTOL aircraft | Technology | Cold War
+IDEA-423  Yakovlev Yak-38 | Soviet VTOL naval strike aircraft | Vehicle | Cold War
+
+IDEA-424  Thrust Vectoring Nozzle | controllable jet exhaust direction system | Technology | Cold War
+IDEA-425  Terrain-Following Radar | automatic low altitude terrain tracking radar | Technology | Cold War
+
+IDEA-426  Eurofighter Typhoon | European multirole canard delta fighter aircraft | Vehicle | Modern Era
+IDEA-427  Cold War Aircraft Navigator | multi crew aircraft navigation and targeting specialist | Role | Cold War
+IDEA-428  Test Pilot | pilot specialized in experimental aircraft evaluation | Role | All Eras
+IDEA-429  Flight Testing | engineering process for evaluating aircraft performance | Technology | All Eras
+
+IDEA-430  Doppler Radar | velocity measuring radar using Doppler shift | Technology | Modern Period
+IDEA-431  RF Power Amplifier | radio frequency signal amplification module | Component | Modern Period
+IDEA-432  Frequency Stabilized Oscillator | stable reference frequency generator | Component | Modern Period
+IDEA-433  Radar Waveguide System | microwave signal transmission waveguide network | Component | Modern Period
+IDEA-434  Radar Cooling System | thermal management system for radar electronics | Component | Modern Period
+IDEA-435  Microwave Magnetron | vacuum tube microwave generator | Component | Modern Period
+IDEA-436  Solid State Radar Transmitter | semiconductor microwave transmission module | Component | Modern Period
+IDEA-437  Radar Phase Detector | circuit detecting Doppler phase differences | Component | Modern Period
+IDEA-438  Radar Signal Filter Bank | frequency filtering system for radar signals | Component | Modern Period
+IDEA-439  Radar Timing Controller | radar pulse synchronization controller | Component | Modern Period
+
+IDEA-440  Light Emitting Diode | semiconductor electroluminescent light source | Technology | Modern Period
+IDEA-441  Semiconductor Junction | semiconductor interface enabling electronic effects | Component | Modern Period
+IDEA-442  Current Driver Circuit | electronic circuit regulating device current | Component | Modern Period
+IDEA-443  Optical Emission Lens | optical element directing emitted light | Component | Modern Period
+IDEA-444  Thermal Dissipation Module | heat transfer module for electronic systems | Component | Modern Period
+IDEA-445  Electronic Device Package | protective enclosure for semiconductor devices | Component | Modern Period
+
+IDEA-446  Integrated Circuit | monolithic semiconductor electronic circuit | Technology | Modern Period
+IDEA-447  Semiconductor Substrate | semiconductor base material for device fabrication | Component | Modern Period
+IDEA-448  Transistor Switching Element | semiconductor electronic switching device | Component | Modern Period
+IDEA-449  Circuit Interconnect Network | conductive pathways connecting circuit elements | Component | Modern Period
+IDEA-450  Integrated Circuit Package | protective chip housing with electrical contacts | Component | Modern Period
+IDEA-451  Signal Control Logic | circuit structures controlling logical operations | Component | Modern Period
+IDEA-445  Electronic Device Package | protective enclosure for semiconductor devices | Component | Modern Period
+
+IDEA-446  Integrated Circuit | monolithic semiconductor electronic circuit | Technology | Modern Period
+IDEA-447  Semiconductor Substrate | semiconductor base material for device fabrication | Component | Modern Period
+IDEA-448  Transistor Switching Element | semiconductor electronic switching device | Component | Modern Period
+IDEA-449  Circuit Interconnect Network | conductive pathways connecting circuit elements | Component | Modern Period
+IDEA-450  Integrated Circuit Package | protective chip housing with electrical contacts | Component | Modern Period
+IDEA-451  Signal Control Logic | circuit structures controlling logical operations | Component | Modern Period
+
+IDEA-452  Central Asian Steppe CoG Site | location of the Center of Gravity megastructure | Location | GGO Hegemony Period
+IDEA-453  CoG Leveling Access Structure | regulated access system between CoG rings | Cultural Aspect | GGO Hegemony Period
+IDEA-454  CoG Commodity Quarters | internal consumer goods production districts | Economic System | GGO Hegemony Period
+IDEA-455  GGO Apparent Independent Production | controlled pseudo-corporate production system | Economic System | GGO Hegemony Period
+IDEA-456  GGO Engineering Groups | numbered technical institutions managing infrastructure and technology | Institution | GGO Hegemony Period
+IDEA-457  GGO Engineering Group 0 – Megastructure Engineering | megastructure design and structural engineering division | Institution | GGO Hegemony Period
+IDEA-458  GGO Engineering Group 8 – Automotive Engineering | vehicle design and ground transport engineering division | Institution | GGO Hegemony Period
+IDEA-459  CoG High-Speed Ring Rail Network | high-speed rail system running along CoG rings | Infrastructure | GGO Hegemony Period
+IDEA-460  Central CoG Space Elevator | primary Earth-to-orbit transport structure of the CoG | Infrastructure | GGO Hegemony Period
+IDEA-461  Upper CoG | geostationary orbital station connected to the CoG elevator | Orbital Infrastructure | GGO Hegemony Period
+IDEA-462  CoG Orbital Launch Fields | distributed launch and landing installations for spacecraft | Infrastructure | GGO Hegemony Period
+IDEA-463  CoG Interior Hobby Agriculture | small-scale gardening and cultivation inside the CoG | Cultural Aspect | GGO Hegemony Period
+IDEA-464  GGO Agricultural Machine | automated planetary agricultural production system | Infrastructure System | GGO Hegemony Period
+IDEA-465  Ringleague Racing | multi-ring motorsport and recreational driving network | Cultural Institution | GGO Hegemony Period
+IDEA-466  Ringleague Grand Route | periodically reserved race circuit through the Ringleague network | Event System | GGO Hegemony Period
+IDEA-467  GGO CoG – Center of Gravity | massive terrestrial megacity megastructure built by the GGO | Infrastructure | GGO Hegemony Period
+IDEA-468  CoG Outer Wall | four-kilometer-thick arcological outer boundary of the original CoG | Megastructure Component | GGO Hegemony Period
+IDEA-469  CoG Infrastructure | integrated transport, energy, water, and utility systems of the CoG | Infrastructure System | GGO Hegemony Period
+IDEA-470  CoG Ring 1 | innermost urban ring surrounding the central core | Megastructure Component | GGO Hegemony Period
+IDEA-471  CoG Ring 2 | second urban ring of the CoG megacity | Megastructure Component | GGO Hegemony Period
+IDEA-472  CoG Ring 3 | third urban ring containing early commodity quarters | Megastructure Component | GGO Hegemony Period
+IDEA-473  CoG Ring 4 | fourth urban ring of the original CoG structure | Megastructure Component | GGO Hegemony Period
+IDEA-474  CoG Ring 5 | outermost ring of the original CoG city | Megastructure Component | GGO Hegemony Period
+IDEA-475  CoG Central Core District | central administrative and civic district of the CoG | Megastructure Component | GGO Hegemony Period
+IDEA-476  CoG Infrastructure Belts | inhabited structural belts separating CoG rings | Megastructure Component | GGO Hegemony Period
+IDEA-477  CoG Space Elevator Hover Construction Platform | hovering construction platform used during elevator assembly | Infrastructure Technology | GGO Hegemony Period
+IDEA-478  GGO Engineering Group 3 – Construction & Logistics Systems | infrastructure machinery and deployment engineering division | Institution | GGO Hegemony Period
+IDEA-479  CoG Water System | integrated water distribution and canal system of the CoG | Infrastructure System | GGO Hegemony Period
+IDEA-480  CoG Energy System | integrated power generation and distribution network of the CoG | Infrastructure System | GGO Hegemony Period
+
+IDEA-481  AIM-9 Sidewinder | Cold War infrared-guided air-to-air missile | Technology | Cold War
+IDEA-482  Infrared Homing Seeker | passive heat-tracking missile guidance sensor system | Technology | Cold War
+IDEA-483  Transfer Hansa Interstellar Transport Monopoly | Hansa-controlled interstellar transport system dominating Planetary Period travel | Economic System / Infrastructure | Planetary Period
+IDEA-484  Lübeck Class Shellship | early 2.5 km convoy carrier shellship enabling Hansa expansion | Vehicle / Megastructure Transport | Early Planetary Period
+IDEA-485  Transfer Hansa Transit Accommodation Model | mixed habitation and cryosleep system for shellship passengers | Transport System | Planetary Period
+IDEA-486  Independent Light Trader Class | small privately owned merchant spacecraft | Vehicle | Planetary Period
+IDEA-487  Independent Medium Cargo Freighter | mid-sized cargo transport vessel used in Hansa convoys | Vehicle | Planetary Period
+IDEA-488  Independent Heavy Bulk Carrier | large industrial cargo transport ship | Vehicle | Planetary Period
+IDEA-489  Lübeck Class Docking Procedure | rear-tunnel convoy docking system used by Lübeck shellships | Transport Technology | Early Planetary Period
+IDEA-490  Transfer Hansa Early Interstellar Drive | early constant-acceleration propulsion system reaching ~0.2c | Propulsion Technology | Early Planetary Period
+IDEA-491  Lübeck Class Crew Complement and Job Distribution | operational staffing model for Lübeck shellships (~1300 crew) | Organizational System | Early Planetary Period
+IDEA-492  Pontiferrum Harbor | artificial industrial harbor capital of the Ironclad Shipyard Republic on Nanhai | Location / Infrastructure | Planetary Period
+
+IDEA-493  Mars Delivery Vehicle Program | reusable interplanetary cargo transport system for Earth–Mars logistics | Vehicle System | Race for Sol
+IDEA-494  MDV-1 Mars Delivery Vehicle | early reusable Earth-launched Mars cargo rocket (~140 t payload) | Vehicle | Race for Sol
+IDEA-495  MDV-2 Mars Delivery Vehicle | improved modular Mars cargo transport rocket | Vehicle | Race for Sol
+IDEA-496  MDV-3 Mars Delivery Vehicle | orbital-built interplanetary Mars freight ship (~385 t payload) | Vehicle | Race for Sol
+IDEA-497  MDV-4 Mars Delivery Vehicle | cislunar-built heavy Mars cargo freighter | Vehicle | Race for Sol
+IDEA-498  MDV-5 Mars Delivery Vehicle | lunar-built large-scale Mars freight spacecraft | Vehicle | Race for Sol
+IDEA-499  Mars Orbital Refueling Infrastructure | orbital propellant depot network supporting Mars traffic | Infrastructure | Race for Sol
+IDEA-500  Orbital Cargo Terminals | Earth-orbit freight transfer and staging hubs | Infrastructure | Race for Sol
+IDEA-501  Mars Orbital Logistics Hubs | Mars orbit freight distribution stations | Infrastructure | Race for Sol
+IDEA-502  Taltos-class Mars Cargo Lander | reusable Mars orbit-to-surface cargo lander (~45 t payload) | Vehicle | Race for Sol
+IDEA-503  Mars Surface Landing Pads | modular rocket landing sites across Mars | Infrastructure | Race for Sol
+IDEA-504  Martian Cargo Crane | heavy cargo handling crane used at Martian landing sites | Industrial Equipment | Race for Sol
+
+IDEA-505  Tibesti Mountains | volcanic mountain range in the central Sahara | Geographic Region | All Eras
+IDEA-506  Sahara Desert | largest hot desert covering much of North Africa | Geographic Region | All Eras
+IDEA-507  Hyrax | small herbivorous mammal related to elephants and manatees | Species | All Eras
+IDEA-508  Togu People | desert-adapted cultural group of the central Sahara | Culture | All Eras
+IDEA-509  Ennedi Massif | sandstone plateau with canyons and rock arches in Chad | Geographic Region | All Eras
+IDEA-510  Guelta | permanent desert rock pool forming localized water source | Geographic Feature | All Eras
+IDEA-511  Zaganwa People | Saharan cultural group associated with oasis settlements | Culture | All Eras
+IDEA-512  Haruj Volcanic Plateau | vast basalt lava field region in Libya | Geographic Region | All Eras
+IDEA-513  Aïr People | Tuareg-associated populations of the Aïr Mountains | Culture | All Eras
+IDEA-514  Hoggar Mountains | volcanic mountain massif in southern Algeria | Geographic Region | All Eras
+IDEA-515  Tamanrasset | desert city and trade hub in southern Algeria | Location | All Eras
+IDEA-516  Green Sahara Period | humid climatic phase when the Sahara supported lakes and grasslands | Climate Phase | Prehistoric
+IDEA-517  Atlas Mountains | major North African mountain system separating Mediterranean and Sahara | Geographic Region | All Eras
+IDEA-518  Venetians | maritime merchant republic society centered on Venice | Culture | Medieval
+IDEA-519  Romans | people and civilization of the Roman Empire | Culture | Classical Antiquity
+IDEA-520  Ottomans | ruling population and elite of the Ottoman Empire | Culture | Early Modern
+IDEA-521  Umayyads | early Islamic ruling dynasty of a vast caliphate | Culture | Early Medieval
+IDEA-522  Bodélé Depression | major Saharan dust source basin in northern Chad | Geographic Region | All Eras
+IDEA-523  Timbuktu | historic Sahelian trade and scholarship city | Location | Medieval
+IDEA-524  Mali Empire | powerful West African state controlling trans-Saharan trade | Civilization | Medieval
+IDEA-525  Songhai Empire | major Sahelian empire succeeding Mali | Civilization | Medieval
+IDEA-526  Cactus Trees | arborescent cactus growth forms adapted to deserts | Plant Growth Form | All Eras
+IDEA-527  Galápagos Islands | volcanic Pacific archipelago famous for endemic species | Geographic Region | All Eras
+IDEA-528  Opuntia Cactus | prickly pear cactus genus adapted to arid climates | Species | All Eras
+IDEA-529  Giant Galápagos Tortoise | large island tortoise species of the Galápagos | Species | All Eras
+IDEA-530  Birds of the Galápagos | diverse island bird assemblage including Darwin’s finches | Species Group | All Eras
+IDEA-531  Marine Iguanas | algae-feeding marine lizard endemic to the Galápagos | Species | All Eras
+IDEA-532  Galápagos Penguin | equatorial penguin species native to the Galápagos | Species | All Eras
+IDEA-533  Indonesia | large Southeast Asian island archipelago | Geographic Region | All Eras
+IDEA-534  Cape Floristic Kingdom | biodiversity hotspot plant region of South Africa | Bioregion | All Eras
+IDEA-535  Daisy Trees | woody tree-form plants evolved from herbaceous daisies | Species Group | All Eras
+IDEA-536  Cape Penguin | coastal penguin species native to southern Africa | Species | All Eras
+IDEA-537  Silurian Period | Paleozoic geological period of early terrestrial ecosystems | Geological Era | Paleozoic
+IDEA-538  Prototaxites | giant trunk-like fungal organism of the Silurian–Devonian | Species | Paleozoic
+IDEA-539  Redwoods | extremely tall conifer trees of western North America | Species Group | All Eras
+IDEA-540  Canada | large northern North American country of forests and tundra | Geographic Region | All Eras
+IDEA-541  Scotland | northern region of Great Britain with highlands and islands | Geographic Region | All Eras
+IDEA-542  Germany | central European country with temperate landscapes | Geographic Region | All Eras
+IDEA-543  Australia | continent-sized country with unique endemic ecosystems | Geographic Region | All Eras
+IDEA-544  Cooksonia | early vascular land plant from the Silurian | Species | Paleozoic
+IDEA-545  Silurian Biomass Amassing for Terraforming | terraforming strategy based on early terrestrial biomass accumulation | Terraforming Concept | Planetary Period
+IDEA-546  Trigonotarbida | extinct order of early spider-like arachnids | Species | Paleozoic
+IDEA-547  Scorpions | ancient predatory arachnids originating in the Paleozoic | Species Group | All Eras
+IDEA-548  Framoscorpius | early fossil scorpion from Silurian deposits | Species | Paleozoic
+IDEA-549  Silurian Flightless Insects | primitive terrestrial hexapods before evolution of wings | Species Group | Paleozoic
+IDEA-550  Millipedes | detritivorous many-segmented arthropods important for soil ecosystems | Species Group | All Eras
+
+IDEA-552  Lacora | temperate lake-rich terraformed planet | Planet | Multiple Eras
+IDEA-553  Solex Terraforming Initiative | Solex-based mass probe terraforming program | Organization | Race for Sol
+IDEA-554  Solex Terraforming Probe | automated planetary augmentation probe | Technology | Race for Sol
+IDEA-555  Lacora Terraforming Event | successful activation of a Solex probe on Lacora | Historical Event | Race for Sol
+IDEA-556  Sols Accord Site | crash landing site of the Sols Accord in a mountain lake | Location | Multiple Eras
+IDEA-557  Cords People of Lacora | descendant culture of the Sols Accord settlers | Culture | Planetary Period
+IDEA-558  Path Concord Class | early interstellar expedition vessel class | Vehicle Class | GGO Hegemony Period
+IDEA-559  Solaccord Pact | alliance associated with Solex interstellar launch infrastructure | Faction | Race for Sol
+IDEA-560  Sols Accord | third Path Concord Class interstellar expedition vessel | Vehicle | Multiple Eras
+IDEA-561  Slingshot System | magnetic acceleration infrastructure for high-velocity spacecraft launches | Technology | Race for Sol
+IDEA-562  Solex Station | Solar Exit Gateway Station for interstellar departure | Infrastructure | Race for Sol
+IDEA-563  Orbit Political Landscape during the Race for Sol | distribution of political control in orbital infrastructure | Historical Reference | Race for Sol
+IDEA-564  Orbit Politics | study of political control of orbital infrastructure in planetary systems | Academic Field | Multiple Eras
+
+IDEA-565  Ship Cabin | shipboard living compartment | Infrastructure | All Eras
+IDEA-566  Age of Sail Ship Cabin | officer cabin aboard sailing warships | Infrastructure | Age of Sail
+IDEA-567  1800 Naval Cannon | smoothbore naval artillery piece | Technology | Age of Sail
+IDEA-568  Age of Sail | era of global sailing ship dominance | Historical Era | Early Modern Period
+IDEA-569  Tailor | craftsperson producing fitted garments | Role | All Eras
+IDEA-570  Rattlesnake | venomous pit viper snake of the Americas | Species | All Eras
+
+IDEA-598  Tharsis Plateau Trade Corridor | primary Martian plateau logistics corridor linking early settlements | Infrastructure System | Race for Sol
+IDEA-599  Nova Roma | early ENU Martian settlement on the Tharsis Plateau | Settlement | Race for Sol
+IDEA-600  Portus Novae Romae | primary landing and cargo handling complex of Nova Roma | Infrastructure | Race for Sol
+
+IDEA-604  Tharsis Express | heavy freight rail network across the Tharsis Plateau | Infrastructure System | Race for Sol
+
+IDEA-605  Tempe Terra | highland plateau region on the northeastern edge of Tharsis | Geographic Region | All Eras
+IDEA-606  Lumumba Station | PAU industrial extraction settlement in the Tempe Terra highlands | Settlement | Race for Sol
+IDEA-607  Lumumba Landing Complex | primary heavy landing facility serving Lumumba Station | Infrastructure | Race for Sol
+IDEA-608  Tempe Terra Ballistic Delivery Network | rocket-based cargo logistics network linking remote Tempe Terra installations | Infrastructure System | Race for Sol
+
+IDEA-609  Prospect Basin | corporate industrial settlement in the Chryse Planitia basin | Settlement | Race for Sol
+
+IDEA-613  Chryse Planitia | vast northern Martian lowland basin suitable for large landing fields | Geographic Region | All Eras
+IDEA-614  Ares Group Gateway | corporate logistics and industrial transport network centered in Chryse Planitia | Infrastructure System | Race for Sol
+IDEA-615  Prospect Basin Interplanetary Space Port | major corporate interplanetary cargo spaceport in Chryse Planitia | Infrastructure | Race for Sol
+
+IDEA-616  Northern Ocean Formation of Mars | planetary hydrological transformation creating the northern Martian ocean | Planetary Engineering | GGO Hegemony Period
+IDEA-617  Borealis Ocean | large ocean occupying the northern Martian lowlands | Geographic Feature | GGO Hegemony Period
+IDEA-618  Borealis Coastline | global Martian coastline formed between highlands and Borealis Ocean | Geographic Region | GGO Hegemony Period
+
+IDEA-632  Lagrange I Cargo Terminal | first orbital cargo terminal at Earth–Sun L1 enabling interplanetary freight logistics | Infrastructure | Race for Sol
+IDEA-633  Tangier Orbital Logistics Hub | first Mars orbital cargo logistics station built by ENU–PAU cooperation | Infrastructure | Race for Sol
+IDEA-634  Tangier Orbital Propellant Depot | first Mars orbital propellant storage and transfer installation | Infrastructure | Race for Sol
+
+IDEA-632  Lagrange I Cargo Terminal | first orbital cargo terminal at Earth–Sun L1 enabling interplanetary freight logistics | Infrastructure | Race for Sol
+IDEA-633  Tangier Orbital Logistics Hub | first Mars orbital cargo logistics station built through ENU–PAU cooperation | Infrastructure | Race for Sol
+IDEA-634  Tangier Orbital Propellant Depot | first Mars orbital propellant storage and transfer installation | Infrastructure | Race for Sol
+IDEA-635  Early GGO Consolidation Phase | transitional political phase following formation of the Global Governance Organization | Historical Period | GGO Hegemony Period
+IDEA-636  Apparent Plural Governance Structure | early GGO political structure where multiple actors retained nominal autonomy | Political System | GGO Hegemony Period
+IDEA-637  CoG Construction City | temporary industrial settlement supporting early CoG construction | Infrastructure | GGO Hegemony Period
+IDEA-638  Samia Bashir | Sudanese PAU industrial systems engineer and CoG construction director | Historical Figure | GGO Hegemony Period
+
+IDEA-639  Terran Rewilding Initiative | large-scale ecological restoration and biosphere engineering program on Earth | Environmental Program | Race for Sol
+IDEA-640  Extraterrestrial Wildlife Domes | sealed biosphere research habitats on Mars and Luna | Terraforming Infrastructure | Race for Sol
+IDEA-641  Terran Biosphere Development Program | interstellar biosphere expansion initiative founded by Sol factions | Terraforming Program | Race for Sol
+IDEA-642  BDP Ark Seed 1 | first interstellar biosphere seeding mission of the Terran Biosphere Development Program | Interstellar Mission | GGO Hegemony Period
+IDEA-643  BDP Ark Seed 2 | second Ark Seed vessel launched in the first BDP deployment batch | Interstellar Mission | GGO Hegemony Period
+IDEA-644  BDP Ark Seed 3 | third Ark Seed vessel of the initial BDP biosphere deployment wave | Interstellar Mission | GGO Hegemony Period
+IDEA-645  BDP Ark Seed 4 | fourth Ark Seed vessel completing the first BDP deployment batch | Interstellar Mission | GGO Hegemony Period
+
+IDEA-646  Retronationalist Entente | alliance of retronationalist states opposing GGO authority on Earth | Political Alliance | Second Modernity (Earth)
+IDEA-647  Siege of the CoG | decisive military siege of the Center of Gravity megastructure during the Borders Rebellion | Historical Event | Second Modernity (Earth)
+IDEA-648  Borders Rebellion | 105-year global war ending GGO rule on Earth | War | Second Modernity (Earth)
+IDEA-649  Teutonian Resurgence | retronationalist cultural-political movement active during the Borders Rebellion | Political Movement | Second Modernity (Earth)
+IDEA-650  Kellerschacht | subterranean GGO emergency installation later rediscovered during the Borders Rebellion | Location | GGO Hegemony Period
+IDEA-651  Kellerschacht Emergency Depot | Engineering Group 0 strategic underground logistics reserve facility | Infrastructure | GGO Hegemony Period
+IDEA-652  Kaiserwerke | industrial complex built above the Kellerschacht depot producing walker platforms | Industrial Organization | Second Modernity (Earth)
+IDEA-653  KW-1 Werker | industrial walker platform derived from exoskeleton cores | Vehicle | Second Modernity (Earth)
+IDEA-654  KW-2 Heber | heavy lifting walker platform used for logistics and reconstruction | Vehicle | Second Modernity (Earth)
+IDEA-655  KW-6 Kämpfer | militarized combat walker platform used during the Borders Rebellion | Vehicle | Second Modernity (Earth)
+
+IDEA-656  BDP Ark 43 | interstellar biosphere deployment mission to the Oka System | Interstellar Mission | GGO Hegemony Period
+IDEA-657  BDP Ark 72 | late-generation pre-Contraction Ark biosphere deployment vessel | Interstellar Mission | GGO Hegemony Period
+IDEA-658  Pre-Contraction Ark | class of Ark biosphere deployment vessels launched before the Great Contraction Event | Vehicle Class | GGO Hegemony Period
+
+IDEA-659  Ice Ant Class Interplanetary Mining Hauler | nuclear-electric asteroid ice push-tug used for Mars water transport | Vehicle | Race for Sol
+IDEA-660  Mars Ice Logistics Authority | Martian organization managing asteroid water imports | Organization | Race for Sol
+IDEA-661  Mars Ice Capture Corridor | Mars orbital approach corridor for captured ice asteroid deliveries | Location | Race for Sol
+
+IDEA-662  OPEV-1 Distant Dawn | crewed interplanetary exploration vessel for Titan and Enceladus launched from Moon; 5 units produced; paired with Mars return vehicle | Vehicle | Race for Sol
+IDEA-663  Mars Return Vehicle | support spacecraft retrieving crews from outer planets missions | Vehicle | Race for Sol
+IDEA-664  Armamento LatinMo Mobile Drone Strike Carrier | heavy military logistics vehicle deploying combined strike drones | Vehicle | Superpower Wars
+IDEA-665  External Structural Maintenance Walker | megastructure exterior maintenance vehicle for CoG | Vehicle | GGO Hegemony Period
+IDEA-666  CoG Outer Wall Exterior Maintenance Perimeter | dedicated external maintenance zone for CoG | Infrastructure | GGO Hegemony Period
+IDEA-667  CoG Construction-Site Racing (Heritage) | informal illegal racing events at CoG construction sites, precursor to Ringleague Racing | Cultural Practice | GGO Hegemony Period
+IDEA-668  GGO Engineering Group 9 – Vehicle Systems Division | post-3000 modular vehicle and infrastructure engineering division | Organization | GGO Hegemony Period
+IDEA-669  GGO Circuit Racer-32 | standard-issue racing vehicle produced by GGO Engineering Group 8 for Ringleague multi-ring racing circuits | Vehicle | GGO Hegemony Period, 32nd Century

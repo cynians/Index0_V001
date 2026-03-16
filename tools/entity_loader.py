@@ -1,14 +1,27 @@
 import json
+import yaml
 from pathlib import Path
 import logging
-
 
 logger = logging.getLogger(__name__)
 
 
 class EntityLoader:
+
     """
-    Global entity loader for Index_0.
+    Loads entity datasets from the entries directory.
+
+    Supported formats
+    -----------------
+    JSON / YAML
+
+    Dataset structure
+    -----------------
+    Each dataset file contains a list of entities:
+
+    - id: entity_id
+      name: ...
+      type: ...
     """
 
     def __init__(self, entries_directory=None):
@@ -19,15 +32,11 @@ class EntityLoader:
 
         self.entries_directory = Path(entries_directory)
 
-        logger.debug("EntityLoader entries directory: %s", self.entries_directory)
-
         self.datasets = {}
         self.entities = {}
         self.edges = {}
 
-        self.load_datasets()
-        self.build_entity_index()
-        self.build_reference_graph()
+        self.refresh()
 
     # --------------------------------------------------
 
@@ -35,30 +44,66 @@ class EntityLoader:
 
         self.datasets = {}
 
-        if not self.entries_directory.exists():
-            logger.warning("Entries directory not found: %s", self.entries_directory)
-            return
-
         files = list(self.entries_directory.glob("*.json"))
-
-        logger.debug("Entry files discovered: %s", [f.name for f in files])
+        files += list(self.entries_directory.glob("*.yaml"))
+        files += list(self.entries_directory.glob("*.yml"))
 
         for file in files:
 
             dataset_name = file.stem
 
             try:
-                with open(file, "r", encoding="utf-8") as f:
-                    self.datasets[dataset_name] = json.load(f)
 
-                logger.debug(
-                    "Loaded dataset %s | entities=%s",
+                if file.suffix == ".json":
+                    with open(file, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+
+                else:
+                    with open(file, "r", encoding="utf-8") as f:
+                        data = yaml.safe_load(f)
+
+                if not isinstance(data, list):
+
+                    logger.warning(
+                        "Dataset %s is not a list of entities",
+                        dataset_name
+                    )
+
+                    continue
+
+                dataset_dict = {}
+
+                for entity in data:
+
+                    if not isinstance(entity, dict):
+                        continue
+
+                    entity_id = entity.get("id")
+
+                    if not entity_id:
+                        logger.warning(
+                            "Entity without id in dataset %s",
+                            dataset_name
+                        )
+                        continue
+
+                    entity["_dataset"] = dataset_name
+                    dataset_dict[entity_id] = entity
+
+                self.datasets[dataset_name] = dataset_dict
+
+                logger.info(
+                    "Loaded dataset %s | %s entities",
                     dataset_name,
-                    len(self.datasets[dataset_name])
+                    len(dataset_dict)
                 )
 
-            except Exception as e:
-                logger.exception("Failed loading %s", file)
+            except Exception:
+
+                logger.exception(
+                    "Failed loading dataset: %s",
+                    file
+                )
 
     # --------------------------------------------------
 
@@ -66,14 +111,13 @@ class EntityLoader:
 
         self.entities = {}
 
-        for dataset_name, dataset in self.datasets.items():
+        for dataset in self.datasets.values():
 
             for entity_id, entity in dataset.items():
 
-                entity["_dataset"] = dataset_name
                 self.entities[entity_id] = entity
 
-        logger.debug("Entity index built | count=%s", len(self.entities))
+        logger.info("Total entities loaded: %s", len(self.entities))
 
     # --------------------------------------------------
 
@@ -101,22 +145,25 @@ class EntityLoader:
 
     # --------------------------------------------------
 
-    def get(self, entity_id):
-        return self.entities.get(entity_id)
-
-    def get_dataset(self, dataset_name):
-        return self.datasets.get(dataset_name, {})
-
-    def get_connections(self, entity_id):
-        return self.edges.get(entity_id, [])
-
-    # --------------------------------------------------
-
     def refresh(self):
 
         self.load_datasets()
         self.build_entity_index()
         self.build_reference_graph()
+
+    # --------------------------------------------------
+
+    def get(self, entity_id):
+
+        return self.entities.get(entity_id)
+
+    def get_dataset(self, dataset_name):
+
+        return self.datasets.get(dataset_name, {})
+
+    def get_connections(self, entity_id):
+
+        return self.edges.get(entity_id, [])
 
     # --------------------------------------------------
 

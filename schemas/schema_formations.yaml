@@ -1,0 +1,29 @@
+schema: formation
+
+extends: entity_core
+
+fields:
+
+  formation_class:
+    type: string
+    optional: true
+
+  controlling_faction:
+    type: entity
+    target: faction
+    optional: true
+
+  associated_locations:
+    type: entity_list
+    target: location
+    optional: true
+
+  participating_events:
+    type: entity_list
+    target: event
+    optional: true
+
+  parent_formation:
+    type: entity
+    target: formation
+    optional: true

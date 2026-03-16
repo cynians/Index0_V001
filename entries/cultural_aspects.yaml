@@ -1,0 +1,188 @@
+# ================================================================
+# aspect_pan_african_identity
+# Pan-African Identity
+# ================================================================
+
+- id: aspect_pan_african_identity
+  name: Pan-African Identity
+  type: cultural_aspect
+
+  aspect_class: political_identity
+
+  tags:
+    - african
+    - unity
+    - postcolonial
+
+  behavioural_modifiers:
+    continental_solidarity: high
+    regional_cooperation: strong
+
+  realizations:
+    - faction_pan_african_union
+
+  description: >
+    Cultural identification with a shared African political
+    and historical destiny across national and ethnic
+    boundaries.
+
+  origin: >
+    Emerged from historical Pan-African movements and gained
+    institutional form during the formation of the
+    Pan-African Union.
+
+  historical_examples:
+    - pan_african_congress_movements
+
+  derived_from_ideas:
+    - IDEA-???
+
+
+
+# ================================================================
+# aspect_urban_cooperative_economy
+# Urban Cooperative Economy
+# ================================================================
+
+- id: aspect_urban_cooperative_economy
+  name: Urban Cooperative Economy
+  type: cultural_aspect
+
+  aspect_class: economic_ethos
+
+  tags:
+    - economy
+    - urban
+    - cooperative
+
+  behavioural_modifiers:
+    cooperative_enterprises: high
+    public_private_partnerships: strong
+
+  realizations:
+    - institution_urban_cooperative_networks
+
+  description: >
+    Economic model emphasizing cooperative ownership,
+    urban production networks and shared infrastructure.
+
+  origin: >
+    Developed in rapidly urbanizing regions seeking
+    inclusive economic development models.
+
+  derived_from_ideas:
+    - IDEA-???
+
+
+
+# ================================================================
+# aspect_contract_honor_norm
+# Contract Honor Norm
+# ================================================================
+
+- id: aspect_contract_honor_norm
+  name: Contract Honor Norm
+  type: cultural_aspect
+
+  aspect_class: economic_ethos
+
+  tags:
+    - commerce
+    - law
+    - trade
+
+  behavioural_modifiers:
+    trade_trust: high
+    reputation_enforcement: strong
+
+  realizations:
+    - faction_transfer_hansa
+
+  description: >
+    Cultural expectation that agreements must be honored
+    even when formal enforcement institutions are weak.
+
+  origin: >
+    Emerged in long-distance merchant networks where
+    reputation acted as the primary enforcement mechanism.
+
+  historical_examples:
+    - medieval_merchant_guilds
+    - hanseatic_trade_network
+
+  derived_from_ideas:
+    - IDEA-403
+
+
+
+# ================================================================
+# aspect_mobile_frontier_ethos
+# Mobile Frontier Ethos
+# ================================================================
+
+- id: aspect_mobile_frontier_ethos
+  name: Mobile Frontier Ethos
+  type: cultural_aspect
+
+  aspect_class: frontier_culture
+
+  tags:
+    - frontier
+    - exploration
+    - mobility
+
+  behavioural_modifiers:
+    exploration_drive: high
+    settlement_flexibility: strong
+
+  realizations:
+    - faction_transfer_hansa
+
+  description: >
+    Cultural orientation favoring mobility, exploration and
+    adaptive frontier settlement rather than permanent
+    territorial attachment.
+
+  origin: >
+    Developed in interstellar transport networks where
+    mobility and adaptability were essential.
+
+  derived_from_ideas:
+    - IDEA-401
+
+
+
+# ================================================================
+# aspect_crusader_zeal
+# Crusader Zeal
+# ================================================================
+
+- id: aspect_crusader_zeal
+  name: Crusader Zeal
+  type: cultural_aspect
+
+  aspect_class: religious_militancy
+
+  tags:
+    - religion
+    - warfare
+
+  behavioural_modifiers:
+    religious_motivation: high
+    conflict_willingness: strong
+
+  realizations:
+    - faction_crusader_order
+    - event_great_crusade
+
+  description: >
+    Religious belief that warfare in defense of sacred
+    territory is spiritually justified.
+
+  origin: >
+    Derived from medieval crusading traditions and later
+    reproduced in Cultural Seeding Group experimental
+    societies.
+
+  derived_from_ideas:
+    - IDEA-571

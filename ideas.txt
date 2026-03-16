@@ -355,8 +355,30 @@ IDEA-568  Age of Sail | era of global sailing ship dominance | Historical Era | 
 IDEA-569  Tailor | craftsperson producing fitted garments | Role | All Eras
 IDEA-570  Rattlesnake | venomous pit viper snake of the Americas | Species | All Eras
 
+IDEA-598  Tharsis Plateau Trade Corridor | primary Martian plateau logistics corridor linking early settlements | Infrastructure System | Race for Sol
+IDEA-599  Nova Roma | early ENU Martian settlement on the Tharsis Plateau | Settlement | Race for Sol
+IDEA-600  Portus Novae Romae | primary landing and cargo handling complex of Nova Roma | Infrastructure | Race for Sol
 
+IDEA-604  Tharsis Express | heavy freight rail network across the Tharsis Plateau | Infrastructure System | Race for Sol
 
+IDEA-605  Tempe Terra | highland plateau region on the northeastern edge of Tharsis | Geographic Region | All Eras
+IDEA-606  Lumumba Station | PAU industrial extraction settlement in the Tempe Terra highlands | Settlement | Race for Sol
+IDEA-607  Lumumba Landing Complex | primary heavy landing facility serving Lumumba Station | Infrastructure | Race for Sol
+IDEA-608  Tempe Terra Ballistic Delivery Network | rocket-based cargo logistics network linking remote Tempe Terra installations | Infrastructure System | Race for Sol
+
+IDEA-609  Prospect Basin | corporate industrial settlement in the Chryse Planitia basin | Settlement | Race for Sol
+
+IDEA-613  Chryse Planitia | vast northern Martian lowland basin suitable for large landing fields | Geographic Region | All Eras
+IDEA-614  Ares Group Gateway | corporate logistics and industrial transport network centered in Chryse Planitia | Infrastructure System | Race for Sol
+IDEA-615  Prospect Basin Interplanetary Space Port | major corporate interplanetary cargo spaceport in Chryse Planitia | Infrastructure | Race for Sol
+
+IDEA-616  Northern Ocean Formation of Mars | planetary hydrological transformation creating the northern Martian ocean | Planetary Engineering | GGO Hegemony Period
+IDEA-617  Borealis Ocean | large ocean occupying the northern Martian lowlands | Geographic Feature | GGO Hegemony Period
+IDEA-618  Borealis Coastline | global Martian coastline formed between highlands and Borealis Ocean | Geographic Region | GGO Hegemony Period
+
+IDEA-632  Lagrange I Cargo Terminal | first orbital cargo terminal at Earth–Sun L1 enabling interplanetary freight logistics | Infrastructure | Race for Sol
+IDEA-633  Tangier Orbital Logistics Hub | first Mars orbital cargo logistics station built by ENU–PAU cooperation | Infrastructure | Race for Sol
+IDEA-634  Tangier Orbital Propellant Depot | first Mars orbital propellant storage and transfer installation | Infrastructure | Race for Sol
 
 ================================================
 REFERENCE: MACRO ERAS
@@ -2843,6 +2865,293 @@ grazer and a common prey species for large pursuit predators.
 
 
 ------------------------------------------------
+IDEA-266
+------------------------------------------------
+
+Name:
+Dorcas Gazelle
+
+Domain:
+Species
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+animal
+mammal
+antelope
+desert
+
+Description:
+The Dorcas Gazelle (Gazella dorcas) is a small desert-adapted antelope native to North Africa and the Middle East.
+
+It inhabits arid plains, rocky deserts, and semi-desert regions where it feeds on grasses, leaves, and desert shrubs. The species is highly adapted to low-water environments and can survive long periods without direct access to water.
+
+Within rewilding or ecological reconstruction contexts it represents a typical small desert ungulate and prey species.
+
+
+------------------------------------------------
+IDEA-267
+------------------------------------------------
+
+Name:
+Feral Aurochs-Type Bovine
+
+Domain:
+Species
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+animal
+mammal
+bovine
+rewilding
+
+Description:
+A feral aurochs-type bovine refers to reconstructed or selectively bred cattle populations intended to approximate the ecological role and morphology of the extinct aurochs (Bos primigenius).
+
+Such animals are used in ecological restoration and rewilding programs to recreate large grazing herbivore pressure in open landscapes, grasslands, and forest margins.
+
+They typically exhibit larger body size, forward-curving horns, and more robust behavior than domestic cattle.
+
+
+------------------------------------------------
+IDEA-268
+------------------------------------------------
+
+Name:
+Giant Beaver
+
+Domain:
+Species
+
+Parent Idea:
+Earth
+
+Era:
+Pleistocene
+
+Tags:
+animal
+mammal
+rodent
+megafauna
+
+Description:
+The Giant Beaver (Castoroides) was a large Pleistocene rodent native to North America.
+
+Reaching lengths of over two meters, it inhabited wetlands, lakes, and slow-moving river systems. Unlike modern beavers it likely did not build large dams but lived in marsh and lake environments.
+
+In speculative ecological reconstruction scenarios it represents a large wetland herbivore and ecosystem engineer analogue.
+
+------------------------------------------------
+IDEA-265
+------------------------------------------------
+
+Name: Pronghorn
+Domain: Species
+
+Parent Idea:
+
+Era:
+
+Tags:
+earth-reference
+ungulate
+herbivore
+plains
+
+Description:
+The pronghorn (Antilocapra americana) is a North American ungulate
+adapted to open plains and grasslands.
+
+It is capable of extremely high sustained running speeds and is well
+suited to predator-rich open terrain ecosystems.
+
+Within terraformed biospheres the pronghorn functions as a fast-moving
+herd grazer and a common prey animal for large pursuit predators.
+
+
+------------------------------------------------
+IDEA-266
+------------------------------------------------
+
+Name: Gustamal Coastal Riparian Steppe Bioregion
+Domain: Bioregion
+
+Parent Idea:
+Gustamal System
+
+Era:
+
+Tags:
+steppe
+coastal
+riverine
+ecosystem
+
+Description:
+A major bioregion within one of the terraformed planets of the Gustamal
+System.
+
+The landscape consists of coastal steppe plains intersected by large
+braided river systems that descend from inland plateaus and spread into
+floodplains before reaching the ocean.
+
+The ecosystem forms a mosaic of habitats including short-grass steppe,
+river corridors, floodplain wetlands, reed beds along riverbanks and
+coastal estuaries.
+
+Vegetation renewal in the region is primarily driven by grazing cycles
+of large herbivores rather than by fire or seasonal flooding.
+
+
+------------------------------------------------
+IDEA-267
+------------------------------------------------
+
+Name: Andrewsarchus Ecological Role (Gustamal System)
+Domain: Species
+
+Parent Idea:
+Gustamal Coastal Riparian Steppe Bioregion
+
+Era:
+
+Tags:
+earth-reference
+omnivore
+scavenger
+predator
+
+Description:
+Andrewsarchus is an extinct Eocene mammal known primarily from a large
+skull fossil discovered in Mongolia.
+
+Based on dentition and jaw structure the animal was likely a powerful
+omnivore capable of crushing bone and consuming a wide range of food
+sources.
+
+Within the Gustamal Coastal Riparian Steppe Bioregion the species
+occupies the role of a large opportunistic predator and scavenger.
+
+It hunts medium-sized prey such as gazelles and pronghorn when
+possible, scavenges large herbivore carcasses, exploits riverine food
+sources and may consume plant matter opportunistically.
+
+The species is moderately common within the bioregion and typically
+occurs as solitary individuals moving between steppe hunting grounds,
+river systems and carcass sites.
+
+------------------------------------------------
+IDEA-268
+------------------------------------------------
+
+Name: Industrial Reentry Phenomena (Patina)
+Domain: Environment
+
+Parent Idea:
+Rustfall Basin
+
+Era:
+Late Planetary Period
+
+Tags:
+atmospheric
+industrial
+orbital-debris
+patina
+
+Description:
+During the peak industrial expansion of Patina, large quantities of
+scrap material were regularly deorbited from orbital shipyards and
+directed into Rustfall Basin.
+
+Although the basin was located in a remote region, nearby industrial
+areas occasionally experienced atmospheric effects produced by large
+debris objects entering the planet’s atmosphere.
+
+Typical phenomena included faint high-altitude reentry streaks visible
+during night hours, distant sonic booms from large objects breaking up
+or impacting within the basin, and occasional daylight vapor trails
+when debris entered the atmosphere during daytime operations.
+
+These events became a routine background feature of life during the
+planet’s industrial boom and were generally regarded as a normal part
+of the orbital manufacturing economy surrounding Patina.
+
+
+
+------------------------------------------------
+IDEA-269
+------------------------------------------------
+
+Name: Coastal Fog Signal System
+Domain: Technology
+
+Parent Idea:
+Dangerous Coastal Navigation Environments
+
+Era:
+Industrial Maritime Navigation
+
+Tags:
+navigation
+maritime
+fog
+safety
+
+Description:
+A maritime navigation system designed to guide ships through hazardous
+coastal waters during periods of low visibility such as fog or storms.
+
+Stations emit powerful acoustic signals that can travel several
+kilometers across open water. Mariners determine their position by
+identifying the direction and pattern of the sound relative to nautical
+charts.
+
+Historically these systems used steam whistles, compressed-air horns,
+or diaphone signals and were often installed at lighthouse stations.
+
+
+------------------------------------------------
+IDEA-270
+------------------------------------------------
+
+Name: Fog Signal Emitter
+Domain: Component
+
+Parent Idea:
+Coastal Fog Signal System
+
+Era:
+
+Tags:
+acoustic
+navigation
+maritime
+
+Description:
+A high-power acoustic device used to produce warning signals audible
+over long distances at sea. Typical implementations include steam
+whistles, compressed-air horns and diaphone fog signals.
+
+
+------------------------------------------------
+IDEA-271
+------------------------------------------------
+
+
+------------------------------------------------
 IDEA-262
 ------------------------------------------------
 
@@ -2855,23 +3164,21 @@ Era:
 
 Tags:
 earth-reference
-ungulate
 herbivore
-prey
+ungulate
+prey-species
 
 Description:
-The Dorcas gazelle (Gazella dorcas) is a small antelope native to arid and
-semi-arid regions of North Africa and the Middle East.
+The Dorcas gazelle (Gazella dorcas) is a small antelope native to arid
+and semi-arid regions of North Africa and the Middle East.
 
-The species is highly adapted to open terrain such as steppe, savanna and
-semi-desert grasslands. It is capable of surviving long periods without
-direct water intake by deriving moisture from plants and metabolic
-processes.
+The species is highly adapted to open terrain such as steppe, savanna,
+and desert grasslands. It survives long periods without direct water
+intake by deriving moisture from plants and metabolic processes.
 
-Within large terrestrial ecosystems the Dorcas gazelle functions as a
-fast-moving herd grazer occupying open plains. Its high reproductive rate
-and herd behavior make it an ideal primary prey species for medium and
-large predators.
+In planetary ecosystems it functions well as a fast-moving herd grazer
+occupying open plains. Its high reproductive rate and herd behavior
+make it a suitable primary prey species for medium and large predators.
 
 
 ------------------------------------------------
@@ -2889,23 +3196,22 @@ Tags:
 bovine
 herbivore
 megafauna
-grazers
 terraforming
 
 Description:
-A large grazing bovine derived from domesticated cattle stock that has
-become feral within sparsely populated terraformed ecosystems.
+A large grazing bovine species derived from domesticated cattle stock
+that has become feral in sparsely populated terraformed ecosystems.
 
-The species occupies an ecological niche similar to the extinct aurochs
+The species fills a similar ecological niche to the extinct aurochs
 (Bos primigenius), forming large roaming herds across plains and river
 basins.
 
 Adults are extremely large and difficult for most predators to hunt
-directly, but calves and weakened individuals are vulnerable to
-predation.
+directly, but calves and weakened individuals are vulnerable.
 
-Large carcasses produced by the species form an important food source
-for scavengers and opportunistic predators within the ecosystem.
+The species also produces large carcasses that become an important
+food source for scavengers and opportunistic predators within the
+ecosystem.
 
 
 ------------------------------------------------
@@ -2929,13 +3235,129 @@ Description:
 The giant beaver (Castoroides) is an extinct Pleistocene rodent that
 reached sizes comparable to modern black bears.
 
-Unlike modern beavers it likely did not construct large dams but lived
-along slow-moving rivers, wetlands and lake margins.
+Unlike modern beavers it likely did not construct large dams but
+inhabited slow-moving rivers, marshes, and lake margins.
 
-In planetary ecosystems the species functions as a major semi-aquatic
-herbivore inhabiting river systems and floodplains, feeding on aquatic
-plants and shoreline vegetation.
+In terrestrial ecosystems it functions as a large semi-aquatic
+herbivore inhabiting river systems, wetlands, and floodplains.
 
+
+------------------------------------------------
+IDEA-265
+------------------------------------------------
+
+Name: Pronghorn
+Domain: Species
+
+Parent Idea:
+
+Era:
+
+Tags:
+earth-reference
+ungulate
+herbivore
+plains
+
+Description:
+The pronghorn (Antilocapra americana) is a North American ungulate
+adapted to open plains and grasslands.
+
+It is capable of extremely high sustained running speeds and is
+well suited to open terrain ecosystems.
+
+Within a terraformed biosphere it functions as a fast-moving herd
+grazer and a common prey species for large pursuit predators.
+
+
+------------------------------------------------
+IDEA-266
+------------------------------------------------
+
+Name:
+Dorcas Gazelle
+
+Domain:
+Species
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+animal
+mammal
+antelope
+desert
+
+Description:
+The Dorcas Gazelle (Gazella dorcas) is a small desert-adapted antelope native to North Africa and the Middle East.
+
+It inhabits arid plains, rocky deserts, and semi-desert regions where it feeds on grasses, leaves, and desert shrubs. The species is highly adapted to low-water environments and can survive long periods without direct access to water.
+
+Within rewilding or ecological reconstruction contexts it represents a typical small desert ungulate and prey species.
+
+
+------------------------------------------------
+IDEA-267
+------------------------------------------------
+
+Name:
+Feral Aurochs-Type Bovine
+
+Domain:
+Species
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+animal
+mammal
+bovine
+rewilding
+
+Description:
+A feral aurochs-type bovine refers to reconstructed or selectively bred cattle populations intended to approximate the ecological role and morphology of the extinct aurochs (Bos primigenius).
+
+Such animals are used in ecological restoration and rewilding programs to recreate large grazing herbivore pressure in open landscapes, grasslands, and forest margins.
+
+They typically exhibit larger body size, forward-curving horns, and more robust behavior than domestic cattle.
+
+
+------------------------------------------------
+IDEA-268
+------------------------------------------------
+
+Name:
+Giant Beaver
+
+Domain:
+Species
+
+Parent Idea:
+Earth
+
+Era:
+Pleistocene
+
+Tags:
+animal
+mammal
+rodent
+megafauna
+
+Description:
+The Giant Beaver (Castoroides) was a large Pleistocene rodent native to North America.
+
+Reaching lengths of over two meters, it inhabited wetlands, lakes, and slow-moving river systems. Unlike modern beavers it likely did not build large dams but lived in marsh and lake environments.
+
+In speculative ecological reconstruction scenarios it represents a large wetland herbivore and ecosystem engineer analogue.
 
 ------------------------------------------------
 IDEA-265
@@ -7443,6 +7865,7 @@ industrial development.
 IDEA-384
 ------------------------------------------------
 
+
 Name: Ovid Program
 
 Domain: Space Program
@@ -7451,7 +7874,7 @@ Parent Idea:
 IDEA-376 Race for Sol
 
 Era:
-Race for Sol
+Superpower Wars
 
 Tags:
 mars
@@ -7459,14 +7882,18 @@ space-program
 enu
 
 Description:
-The Ovid Program is a major Mars settlement and exploration program
-conducted by the European National Union (ENU) during the early
-centuries of the Race for Sol.
+The Ovid Program is a Mars exploration and settlement program conducted
+by the European National Union (ENU).
 
-The program established several early permanent installations on
-Mars and played a major role in expanding human presence on the
-planet.
+The program began during the late Superpower Wars as part of the ENU's
+strategic space expansion efforts. Early missions established the first
+human surface installations on Mars, including the pioneer base created
+by the Ovid-4, Ovid-5 and Ovid-6 missions and the landing site later
+associated with the Nova Roma settlement.
 
+Following the New Order Treaty and the beginning of the Race for Sol,
+the Ovid Program expanded dramatically and became one of the principal
+drivers of early Martian colonization and infrastructure development.
 
 
 ------------------------------------------------
@@ -13428,3 +13855,2033 @@ The world functions as a living historical simulation used
 to study medieval political systems, religious conflict,
 trade networks, and crusading movements within a controlled
 planetary environment.
+
+
+------------------------------------------------
+IDEA-598
+------------------------------------------------
+
+Name: Tharsis Plateau Trade Corridor
+Domain: Infrastructure System
+
+Parent Idea:
+Mars
+
+Era:
+Race for Sol
+
+Tags:
+mars
+transport
+logistics
+trade
+
+Description:
+The Tharsis Plateau Trade Corridor refers to the primary surface logistics network connecting settlements on the Tharsis Plateau with surrounding Martian regions during the Race for Sol period.
+
+The corridor emerged as cargo landed at Nova Roma and other plateau landing complexes was distributed across Tharsis using heavy cargo crawler convoys and autonomous truck fleets.
+
+Early infrastructure consisted primarily of graded regolith roads capable of supporting large pressurized cargo crawlers and heavy surface trucks operating in convoy formations.
+
+As Martian industry expanded, segments of the corridor were gradually upgraded with permanent rail infrastructure linking major settlements and industrial installations.
+
+
+------------------------------------------------
+IDEA-599
+------------------------------------------------
+
+Name: Nova Roma
+Domain: Settlement
+
+Parent Idea:
+Mars
+
+Era:
+Race for Sol
+
+Tags:
+mars
+enu
+settlement
+city
+
+Description:
+Nova Roma is one of the earliest permanent settlements established on Mars during the Race for Sol period.
+
+The settlement originated as part of the European New Union's Ovid colonization missions, which deployed the first permanent habitation modules and landing infrastructure on the eastern Tharsis Plateau.
+
+Over time the settlement expanded from an expeditionary base into a major Martian urban center and administrative hub of ENU activity on Mars.
+
+
+------------------------------------------------
+IDEA-600
+------------------------------------------------
+
+Name: Portus Novae Romae
+Domain: Infrastructure
+
+Parent Idea:
+IDEA-599 Nova Roma
+
+Era:
+Race for Sol
+
+Tags:
+mars
+spaceport
+logistics
+
+Description:
+Portus Novae Romae is the primary landing and cargo handling complex serving the settlement of Nova Roma.
+
+The port originated as the initial landing zone of the Ovid colonization missions and later expanded into a large Martian cargo port supporting interplanetary logistics.
+
+The complex contains reinforced landing pads, cargo staging yards, crawler depots, and heavy crane systems used for unloading interplanetary cargo landers.
+
+
+------------------------------------------------
+IDEA-604
+------------------------------------------------
+
+Name: Tharsis Express
+Domain: Infrastructure System
+
+Parent Idea:
+IDEA-598 Tharsis Plateau Trade Corridor
+
+Era:
+Race for Sol
+
+Tags:
+mars
+rail
+transport
+tharsis
+
+Description:
+The Tharsis Express is a heavy freight rail network constructed across the Tharsis Plateau to support the growing industrial economy of early Mars.
+
+The system emerged when cargo volumes exceeded the capacity of crawler convoys and truck logistics.
+
+The rail system connects Nova Roma with plateau mining sites, propellant production fields, research installations, and export spaceports.
+
+
+------------------------------------------------
+IDEA-605
+------------------------------------------------
+
+Name: Tempe Terra
+Domain: Geographic Region
+
+Parent Idea:
+Mars
+
+Era:
+All Eras
+
+Tags:
+mars
+plateau
+highlands
+
+Description:
+Tempe Terra is a high plateau region located on the northeastern edge of the Tharsis volcanic province on Mars.
+
+Its elevated terrain made it an attractive location for early Martian settlements that sought to avoid the risk of flooding in the northern lowlands during future terraforming phases.
+
+
+------------------------------------------------
+IDEA-606
+------------------------------------------------
+
+Name: Lumumba Station
+Domain: Settlement
+
+Parent Idea:
+IDEA-375 Pan-African Union
+
+Era:
+Race for Sol
+
+Tags:
+mars
+pau
+industry
+settlement
+
+Description:
+Lumumba Station is an industrial Martian settlement established by the Pan-African Union in the Tempe Terra highlands.
+
+Named after Patrice Lumumba, the settlement developed as a resource extraction and industrial processing colony focused on water extraction and propellant production.
+
+The colony supports mining operations, water processing plants, and cargo logistics systems across the Tempe Terra plateau.
+
+
+------------------------------------------------
+IDEA-607
+------------------------------------------------
+
+Name: Lumumba Landing Complex
+Domain: Infrastructure
+
+Parent Idea:
+IDEA-606 Lumumba Station
+
+Era:
+Race for Sol
+
+Tags:
+mars
+spaceport
+logistics
+
+Description:
+The Lumumba Landing Complex is the primary heavy landing facility serving Lumumba Station.
+
+The complex includes reinforced landing pads designed for interplanetary cargo rockets as well as large cargo staging fields and crawler logistics yards.
+
+
+------------------------------------------------
+IDEA-608
+------------------------------------------------
+
+Name: Tempe Terra Ballistic Delivery Network
+Domain: Infrastructure System
+
+Parent Idea:
+IDEA-606 Lumumba Station
+
+Era:
+Race for Sol
+
+Tags:
+mars
+transport
+ballistic
+
+Description:
+The Tempe Terra Ballistic Delivery Network is a distributed transport system supplying remote industrial installations across the Tempe Terra plateau.
+
+Small reusable cargo rockets operating on ballistic trajectories deliver equipment and materials between Lumumba Station and distant extraction sites.
+
+
+------------------------------------------------
+IDEA-609
+------------------------------------------------
+
+Name: Prospect Basin
+Domain: Settlement
+
+Parent Idea:
+IDEA-613 Chryse Planitia
+
+Era:
+Race for Sol
+
+Tags:
+mars
+corporate
+industry
+
+Description:
+Prospect Basin was a corporate Martian settlement established in the northern lowlands of Mars during the Race for Sol period.
+
+The colony served as the industrial center of corporate Mars operations focused on resource extraction and logistics.
+
+
+------------------------------------------------
+IDEA-613
+------------------------------------------------
+
+Name: Chryse Planitia
+Domain: Geographic Region
+
+Parent Idea:
+Mars
+
+Era:
+All Eras
+
+Tags:
+mars
+lowlands
+basin
+
+Description:
+Chryse Planitia is a vast plain located in the northern lowlands of Mars at the outlet of the Valles Marineris outflow channels.
+
+Its extremely flat terrain made it a favorable location for early industrial settlements and large landing complexes during the Race for Sol period.
+
+
+------------------------------------------------
+IDEA-614
+------------------------------------------------
+
+Name: Ares Group Gateway
+Domain: Infrastructure System
+
+Parent Idea:
+IDEA-613 Chryse Planitia
+
+Era:
+Race for Sol
+
+Tags:
+mars
+corporate
+trade
+
+Description:
+The Ares Group Gateway was the industrial logistics network operated by the Ares Group across the Chryse Planitia basin.
+
+The network coordinated mining operations, water extraction facilities, fabrication plants, and cargo transport infrastructure.
+
+
+------------------------------------------------
+IDEA-615
+------------------------------------------------
+
+Name: Prospect Basin Interplanetary Space Port
+Domain: Infrastructure
+
+Parent Idea:
+IDEA-609 Prospect Basin
+
+Era:
+Race for Sol
+
+Tags:
+mars
+spaceport
+interplanetary
+
+Description:
+Prospect Basin Interplanetary Space Port was the principal heavy launch and landing complex of the corporate settlement at Prospect Basin.
+
+Constructed on the flat plains of Chryse Planitia, the port handled interplanetary cargo traffic between Mars, orbital infrastructure, and Earth.
+
+
+------------------------------------------------
+IDEA-616
+------------------------------------------------
+
+Name: Northern Ocean Formation of Mars
+Domain: Planetary Engineering
+
+Parent Idea:
+Mars
+
+Era:
+GGO Hegemony Period
+
+Tags:
+mars
+terraforming
+hydrology
+
+Description:
+The Northern Ocean Formation of Mars refers to the planetary-scale hydrological transformation that produced a permanent ocean in the Martian northern lowlands.
+
+Although implemented during the GGO Hegemony Period, early planning and settlement strategies during the Race for Sol already accounted for the possibility of such flooding.
+
+
+------------------------------------------------
+IDEA-617
+------------------------------------------------
+
+Name: Borealis Ocean
+Domain: Geographic Feature
+
+Parent Idea:
+Mars
+
+Era:
+GGO Hegemony Period
+
+Tags:
+mars
+ocean
+
+Description:
+The Borealis Ocean is the large ocean occupying the northern Martian lowlands after planetary hydrological transformation during the GGO Hegemony Period.
+
+
+------------------------------------------------
+IDEA-618
+------------------------------------------------
+
+Name: Borealis Coastline
+Domain: Geographic Region
+
+Parent Idea:
+IDEA-617 Borealis Ocean
+
+Era:
+GGO Hegemony Period
+
+Tags:
+mars
+coast
+settlement
+
+Description:
+The Borealis Coastline is the boundary between the Martian highlands and the Borealis Ocean formed after the hydrological transformation of Mars.
+
+The region became one of the most favorable settlement zones of terraformed Mars.
+
+
+------------------------------------------------
+IDEA-619
+------------------------------------------------
+
+Name: Dorcas Gazelle
+Domain: Species
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+earth-reference
+herbivore
+ungulate
+prey-species
+
+Description:
+The Dorcas gazelle (Gazella dorcas) is a small antelope native to arid
+and semi-arid regions of North Africa and the Middle East.
+
+The species is highly adapted to open terrain such as steppe, savanna,
+and desert grasslands. It survives long periods without direct water
+intake by deriving moisture from plants and metabolic processes.
+
+In planetary ecosystems it functions well as a fast-moving herd grazer
+occupying open plains and serves as a primary prey species for
+medium-sized predators.
+
+
+------------------------------------------------
+IDEA-620
+------------------------------------------------
+
+Name: Feral Aurochs-Type Bovine
+Domain: Species
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+bovine
+herbivore
+megafauna
+terraforming
+
+Description:
+A large grazing bovine species derived from domesticated cattle stock
+that has become feral in sparsely populated terraformed ecosystems.
+
+The species fills a similar ecological niche to the extinct aurochs
+(Bos primigenius), forming large roaming herds across plains and river
+basins.
+
+Adults are extremely large and difficult for most predators to hunt
+directly, but calves and weakened individuals are vulnerable.
+
+The species also produces large carcasses that become an important
+food source for scavengers and opportunistic predators.
+
+
+------------------------------------------------
+IDEA-621
+------------------------------------------------
+
+Name: Giant Beaver
+Domain: Species
+
+Parent Idea:
+Earth
+
+Era:
+Pleistocene
+
+Tags:
+earth-reference
+rodent
+semi-aquatic
+herbivore
+
+Description:
+The giant beaver (Castoroides) was a large Pleistocene rodent inhabiting
+slow-moving rivers, marshes and lake margins.
+
+Unlike modern beavers it likely did not construct large dams but lived
+in wetland ecosystems where it fed on aquatic vegetation.
+
+
+------------------------------------------------
+IDEA-622
+------------------------------------------------
+
+Name: Pronghorn
+Domain: Species
+
+Parent Idea:
+Earth
+
+Era:
+All Eras
+
+Tags:
+earth-reference
+ungulate
+herbivore
+plains
+
+Description:
+The pronghorn (Antilocapra americana) is a North American ungulate
+adapted to open plains and grasslands.
+
+It is capable of extremely high sustained running speeds and is well
+suited to predator-rich open terrain ecosystems.
+
+Within terraformed biospheres the pronghorn functions as a fast-moving
+herd grazer and a common prey animal for large pursuit predators.
+
+
+------------------------------------------------
+IDEA-623
+------------------------------------------------
+
+Name: Gustamal Coastal Riparian Steppe Bioregion
+Domain: Bioregion
+
+Parent Idea:
+Gustamal System
+
+Era:
+
+Tags:
+steppe
+coastal
+riverine
+ecosystem
+
+Description:
+A major bioregion within one of the terraformed planets of the Gustamal
+System.
+
+The landscape consists of coastal steppe plains intersected by large
+braided river systems that descend from inland plateaus and spread into
+floodplains before reaching the ocean.
+
+The ecosystem forms a mosaic of habitats including short-grass steppe,
+river corridors, floodplain wetlands, reed beds along riverbanks and
+coastal estuaries.
+
+Vegetation renewal in the region is primarily driven by grazing cycles
+of large herbivores rather than by fire or seasonal flooding.
+
+
+------------------------------------------------
+IDEA-624
+------------------------------------------------
+
+Name: Andrewsarchus Ecological Role (Gustamal System)
+Domain: Species
+
+Parent Idea:
+Gustamal Coastal Riparian Steppe Bioregion
+
+Era:
+
+Tags:
+earth-reference
+omnivore
+scavenger
+predator
+
+Description:
+Andrewsarchus is an extinct Eocene mammal known primarily from a large
+skull fossil discovered in Mongolia.
+
+Within the Gustamal Coastal Riparian Steppe Bioregion the species
+occupies the role of a large opportunistic predator and scavenger.
+
+It hunts medium-sized prey such as gazelles and pronghorn when
+possible, scavenges large herbivore carcasses and exploits riverine
+food sources.
+
+
+------------------------------------------------
+IDEA-625
+------------------------------------------------
+
+Name: Industrial Reentry Phenomena (Patina)
+Domain: Environment
+
+Parent Idea:
+Rustfall Basin
+
+Era:
+Late Planetary Period
+
+Tags:
+atmospheric
+industrial
+orbital-debris
+patina
+
+Description:
+During the peak industrial expansion of Patina large quantities of
+scrap material were regularly deorbited from orbital shipyards and
+directed into Rustfall Basin.
+
+Although the basin was located in a remote region, nearby industrial
+areas occasionally experienced atmospheric effects produced by large
+debris objects entering the planet’s atmosphere.
+
+Typical phenomena included faint high-altitude reentry streaks visible
+during night hours, distant sonic booms from large objects breaking up
+or impacting within the basin, and occasional daylight vapor trails
+when debris entered the atmosphere during daytime operations.
+
+------------------------------------------------
+IDEA-632
+------------------------------------------------
+
+Name: Lagrange I Cargo Terminal
+Domain: Infrastructure
+
+Parent Idea:
+IDEA-500 Orbital Cargo Terminals
+
+Era:
+Race for Sol
+
+Tags:
+space
+orbit
+logistics
+infrastructure
+lagrange
+
+Description:
+The Lagrange I Cargo Terminal was the first large-scale orbital cargo
+terminal constructed during the early Race for Sol period.
+
+Located near the Earth–Sun L1 Lagrange point, the installation served
+as a major logistics hub where cargo spacecraft arriving from Earth
+orbit could transfer freight, refuel and reorganize shipments before
+departing for destinations across the Solar System.
+
+The terminal marked the beginning of permanent orbital freight
+infrastructure and enabled the large-scale interplanetary logistics
+networks that characterized the Race for Sol.
+
+
+------------------------------------------------
+IDEA-633
+------------------------------------------------
+
+Name: Tangier Orbital Logistics Hub
+Domain: Infrastructure
+
+Parent Idea:
+IDEA-501 Mars Orbital Logistics Hubs
+
+Era:
+Race for Sol
+
+Tags:
+mars
+orbit
+logistics
+infrastructure
+enu
+pau
+
+Description:
+The Tangier Orbital Logistics Hub was the first dedicated cargo
+logistics facility established in orbit around Mars during the early
+Race for Sol period.
+
+The station was developed as a joint ENU–PAU infrastructure project
+symbolizing the growing cooperation between European and African
+space programs.
+
+Cargo spacecraft arriving from Earth orbit logistics terminals could
+transfer freight, refuel and reorganize shipments before cargo was
+delivered to Martian surface installations.
+
+The hub became the primary orbital freight node linking interplanetary
+shipping routes with the early settlements on Mars.
+
+
+------------------------------------------------
+IDEA-634
+------------------------------------------------
+
+Name: Tangier Orbital Propellant Depot
+Domain: Infrastructure
+
+Parent Idea:
+IDEA-499 Mars Orbital Refueling Infrastructure
+
+Era:
+Race for Sol
+
+Tags:
+mars
+orbit
+propellant
+infrastructure
+enu
+pau
+
+Description:
+The Tangier Orbital Propellant Depot was the first dedicated propellant
+storage and transfer installation constructed in Mars orbit during the
+early Race for Sol period.
+
+Developed as part of the expanding logistics infrastructure surrounding
+the Tangier Orbital Logistics Hub, the depot allowed spacecraft
+arriving from Earth to refuel before continuing operations in the
+Martian system.
+
+The facility enabled sustained cargo transport between Earth and Mars
+and became a key component of the early interplanetary logistics
+network.
+
+
+------------------------------------------------
+IDEA-635
+------------------------------------------------
+
+Name: Early GGO Consolidation Phase
+Domain: Historical Period
+
+Parent Idea:
+IDEA-371 Global Governance Organization
+
+Era:
+GGO Hegemony Period
+
+Tags:
+politics
+earth
+governance
+transition
+
+Description:
+The Early GGO Consolidation Phase refers to the first centuries
+following the emergence of the Global Governance Organization.
+
+During this period the GGO functioned less as a unified planetary
+regime and more as a large multi-continental political federation.
+
+Numerous independent political actors continued to exist both on Earth
+and across the Solar System. The GGO maintained significant influence
+over global institutions and infrastructure but had not yet achieved
+the centralized administrative and economic control that characterized
+its later historical development.
+
+The phase represents the transitional period during which the GGO
+expanded its institutional reach and gradually absorbed or subordinated
+other major political actors.
+
+
+------------------------------------------------
+IDEA-636
+------------------------------------------------
+
+Name: Apparent Plural Governance Structure
+Domain: Political System
+
+Parent Idea:
+IDEA-635 Early GGO Consolidation Phase
+
+Era:
+GGO Hegemony Period
+
+Tags:
+politics
+governance
+federation
+power-structure
+
+Description:
+During the early centuries of the GGO Hegemony Period the political
+structure of Earth retained the appearance of a pluralistic system
+containing multiple autonomous governments and institutions.
+
+In practice many of these actors operated within a growing framework
+of coordination mechanisms administered by the Global Governance
+Organization.
+
+The system allowed regional powers, economic blocs and legacy
+institutions to continue functioning while gradually integrating
+their administrative and security structures into the expanding
+GGO governance framework.
+
+This structure gradually evolved into the far more centralized
+administrative regime that emerged during the megastructure and
+CoG development era.
+
+
+------------------------------------------------
+IDEA-637
+------------------------------------------------
+
+Name: CoG Construction City
+Domain: Infrastructure
+
+Parent Idea:
+Center of Gravity Megastructure
+
+Era:
+GGO Hegemony Period
+
+Tags:
+construction
+city
+industrial
+megastructure
+ggo
+
+Description:
+The CoG Construction City was a temporary industrial settlement
+established outside the planned outer perimeter of the Center of
+Gravity megastructure.
+
+The city functioned as the primary logistical and administrative base
+for the early construction phases of the CoG project.
+
+It housed large populations of engineers, construction workers and
+technical personnel while supporting extensive fabrication yards,
+material depots and transportation infrastructure required for the
+assembly of megastructure components.
+
+Although construction relied heavily on automated fabrication
+equipment, the scale of the project required vast numbers of workers
+to manage logistics, installation, maintenance and engineering tasks.
+
+The settlement was located just outside the planned outer wall of the
+future megastructure so that large structural elements could be moved
+directly from fabrication yards into the construction zone.
+
+
+------------------------------------------------
+IDEA-638
+------------------------------------------------
+
+Name: Samia Bashir
+Domain: Historical Figure
+
+Parent Idea:
+IDEA-478 GGO Engineering Group 0 – Megastructure Engineering
+
+Era:
+GGO Hegemony Period
+
+Tags:
+person
+engineer
+pau
+cog
+construction
+
+Description:
+Samia Bashir was a Sudanese industrial systems engineer from the
+Pan-African Union who served as Construction Director during the
+early phases of the Center of Gravity megastructure project.
+
+Having built a reputation within PAU industrial logistics and
+large-scale infrastructure coordination, Bashir was appointed to
+organize the immense construction effort of the CoG under the
+oversight of Engineering Group 0.
+
+Known for a somewhat flamboyant public style unusual among GGO
+technocrats, Bashir became one of the most recognizable figures
+associated with the early construction years of the megastructure.
+
+------------------------------------------------
+IDEA-639
+------------------------------------------------
+
+Name:
+Terran Rewilding Initiative
+
+Domain:
+Environmental Program
+
+Parent Idea:
+
+Era:
+Race for Sol
+
+Tags:
+ecology
+rewilding
+earth
+biosphere
+environment
+
+Description:
+The Terran Rewilding Initiative was a large-scale ecological
+restoration program launched on Earth in 2102 during the early
+decades following the Superpower Wars and the establishment of
+the New Order Treaty.
+
+The initiative aimed to restore damaged ecosystems, rebuild
+biodiversity and develop advanced biosphere engineering
+techniques.
+
+Technologies and ecological management systems developed through
+this program later formed the scientific and technical foundation
+for extraterrestrial biosphere engineering and ultimately the
+Terran Biosphere Development Program.
+
+
+
+------------------------------------------------
+IDEA-640
+------------------------------------------------
+
+Name:
+Extraterrestrial Wildlife Domes
+
+Domain:
+Terraforming Infrastructure
+
+Parent Idea:
+IDEA-639 Terran Rewilding Initiative
+
+Era:
+Race for Sol
+
+Tags:
+mars
+luna
+biosphere
+terraforming
+ecology
+
+Description:
+Extraterrestrial Wildlife Domes were large sealed ecological
+enclosures constructed on Mars and Luna during the later phases
+of the Race for Sol period.
+
+Originally designed as experimental habitats for biodiversity
+preservation and ecological research, the domes hosted controlled
+ecosystems containing Earth species.
+
+These installations allowed scientists to study closed biosphere
+dynamics in extraterrestrial environments and became important
+testbeds for early terraforming technologies.
+
+The experience gained through these facilities played a crucial
+role in the later development of interstellar biosphere
+construction programs.
+
+
+
+------------------------------------------------
+IDEA-641
+------------------------------------------------
+
+Name:
+Terran Biosphere Development Program
+
+Domain:
+Terraforming Program
+
+Parent Idea:
+IDEA-640 Extraterrestrial Wildlife Domes
+
+Era:
+Race for Sol
+
+Tags:
+terraforming
+biosphere
+interstellar
+cooperation
+bdp
+
+Description:
+The Terran Biosphere Development Program (BDP) was founded in the
+year 2258 as a cooperative initiative between Earth governments
+and the various spaceborn factions that had emerged across the
+Solar System during the Race for Sol.
+
+The program evolved out of earlier ecological restoration efforts
+on Earth and biosphere engineering experiments conducted within
+extraterrestrial wildlife domes on Mars and Luna.
+
+Its long-term objective was the expansion of Earth-origin
+biospheres beyond the Solar System.
+
+Over the following millennia the BDP would grow into the most
+significant terraforming organization in human history, shaping
+the ecological development of numerous planetary systems during
+the Planetary Period.
+
+
+
+------------------------------------------------
+IDEA-642
+------------------------------------------------
+
+Name:
+BDP Ark Seed 1
+
+Domain:
+Interstellar Mission
+
+Parent Idea:
+IDEA-252 BDP Ark Operations
+
+Era:
+GGO Hegemony Period
+
+Tags:
+bdp
+terraforming
+interstellar
+biosphere
+
+Description:
+BDP Ark Seed 1 was the first interstellar biosphere seeding
+mission launched by the Terran Biosphere Development Program.
+
+The vessel carried automated ecological deployment systems,
+genetic archives and biosphere construction technologies
+designed to initiate long-term ecosystem development within a
+target star system.
+
+The mission launched in 2590 roughly 150 years after the end of
+the Race for Sol period, marking the beginning of large-scale
+interstellar biosphere deployment by the BDP.
+
+
+
+------------------------------------------------
+IDEA-643
+------------------------------------------------
+
+Name:
+BDP Ark Seed 2
+
+Domain:
+Interstellar Mission
+
+Parent Idea:
+IDEA-252 BDP Ark Operations
+
+Era:
+GGO Hegemony Period
+
+Tags:
+bdp
+terraforming
+interstellar
+biosphere
+
+Description:
+BDP Ark Seed 2 was the second vessel launched in the first Ark
+Seed deployment wave of the Terran Biosphere Development Program.
+
+The mission carried automated biosphere construction systems and
+biological archives intended to support long-term ecological
+development in a distant planetary system.
+
+Ark Seed 2 launched in 2592 as part of the same coordinated
+deployment effort that produced the first generation of Ark Seed
+missions.
+
+
+
+------------------------------------------------
+IDEA-644
+------------------------------------------------
+
+Name:
+BDP Ark Seed 3
+
+Domain:
+Interstellar Mission
+
+Parent Idea:
+IDEA-252 BDP Ark Operations
+
+Era:
+GGO Hegemony Period
+
+Tags:
+bdp
+terraforming
+interstellar
+biosphere
+
+Description:
+BDP Ark Seed 3 was one of the early interstellar biosphere
+deployment vessels constructed during the initial expansion phase
+of the Terran Biosphere Development Program.
+
+The ship transported automated ecological engineering systems and
+large biological archives intended for long-term planetary
+biosphere construction.
+
+Ark Seed 3 launched in 2594 as part of the first Ark Seed mission
+batch.
+
+
+
+------------------------------------------------
+IDEA-645
+------------------------------------------------
+
+Name:
+BDP Ark Seed 4
+
+Domain:
+Interstellar Mission
+
+Parent Idea:
+IDEA-252 BDP Ark Operations
+
+Era:
+GGO Hegemony Period
+
+Tags:
+bdp
+terraforming
+interstellar
+biosphere
+
+Description:
+BDP Ark Seed 4 was the fourth vessel launched during the first
+production batch of Ark Seed interstellar biosphere deployment
+ships.
+
+The mission continued the early expansion of the Terran Biosphere
+Development Program’s interstellar activities and carried
+automated ecological construction systems designed to initiate
+biosphere development in a target star system.
+
+Ark Seed 4 launched in 2596, completing the first operational
+deployment wave of Ark Seed missions.
+
+------------------------------------------------
+IDEA-646
+------------------------------------------------
+
+Name:
+Retronationalist Entente
+
+Domain:
+Political Alliance
+
+Parent Idea:
+
+Era:
+Second Modernity (Earth)
+
+Tags:
+politics
+earth
+alliance
+war
+retronationalism
+
+Description:
+The Retronationalist Entente was a political and military alliance
+formed by several retronationalist states during the later stages
+of the Borders Rebellion.
+
+The member states were characterized by highly stylized and often
+exaggerated interpretations of historical national identities and
+cultural traditions.
+
+Despite ideological differences the alliance united around the
+objective of defeating the Global Governance Organization on Earth.
+
+
+------------------------------------------------
+IDEA-647
+------------------------------------------------
+
+Name:
+Siege of the CoG
+
+Domain:
+Historical Event
+
+Parent Idea:
+IDEA-467 GGO CoG – Center of Gravity
+
+Era:
+Second Modernity (Earth)
+
+Tags:
+war
+earth
+cog
+siege
+ggo
+
+Description:
+The Siege of the Center of Gravity was the decisive military
+confrontation of the Borders Rebellion.
+
+For several years forces of the Retronationalist Entente fought
+to capture or destroy the GGO administrative megastructure that
+served as the symbolic and logistical center of the global regime.
+
+Large sections of the megastructure were destroyed during the
+siege, including several outer rings and major infrastructure
+systems.
+
+
+------------------------------------------------
+IDEA-648
+------------------------------------------------
+
+Name:
+Borders Rebellion
+
+Domain:
+War
+
+Parent Idea:
+IDEA-371 Global Governance Organization
+
+Era:
+Second Modernity (Earth)
+
+Tags:
+war
+earth
+revolution
+ggo
+
+Description:
+The Borders Rebellion was a long global conflict fought on Earth
+during the final phase of the GGO Hegemony Period.
+
+The war was driven by a growing movement of retronationalist
+states rejecting the political and cultural homogenization
+associated with GGO governance.
+
+The conflict lasted 105 years and ended with the defeat of the
+GGO and the collapse of its authority on Earth.
+
+
+------------------------------------------------
+IDEA-649
+------------------------------------------------
+
+Name:
+Teutonian Resurgence
+
+Domain:
+Political Movement
+
+Parent Idea:
+IDEA-646 Retronationalist Entente
+
+Era:
+Second Modernity (Earth)
+
+Tags:
+earth
+retronationalism
+movement
+politics
+
+Description:
+The Teutonian Resurgence was a retronationalist political and
+cultural movement that emerged during the Borders Rebellion.
+
+The movement promoted a highly stylized revival of Germanic
+historical symbolism and played a major role in the military
+forces of the Retronationalist Entente.
+
+During the war the movement was responsible for the discovery
+and later exploitation of the Kellerschacht depot.
+
+
+------------------------------------------------
+IDEA-650
+------------------------------------------------
+
+Name:
+Kellerschacht
+
+Domain:
+Location
+
+Parent Idea:
+
+Era:
+GGO Hegemony Period
+
+Tags:
+earth
+underground
+infrastructure
+ggo
+
+Description:
+Kellerschacht is a subterranean installation originally built by
+GGO Engineering Group 0 as an emergency logistics depot during the
+middle period of the GGO Hegemony.
+
+The facility stored large quantities of industrial equipment and
+exoskeleton power cores intended for contingency use.
+
+The depot was rediscovered during the Borders Rebellion by forces
+associated with the Teutonian Resurgence.
+
+
+------------------------------------------------
+IDEA-651
+------------------------------------------------
+
+Name:
+Kellerschacht Emergency Depot
+
+Domain:
+Infrastructure
+
+Parent Idea:
+IDEA-650 Kellerschacht
+
+Era:
+GGO Hegemony Period
+
+Tags:
+ggo
+military
+logistics
+infrastructure
+
+Description:
+The Kellerschacht Emergency Depot was a strategic underground
+reserve installation constructed by GGO Engineering Group 0.
+
+The depot contained industrial machinery, reserve equipment and
+exoskeleton power cores intended for rapid mobilization during
+large-scale emergencies.
+
+
+------------------------------------------------
+IDEA-652
+------------------------------------------------
+
+Name:
+Kaiserwerke
+
+Domain:
+Industrial Organization
+
+Parent Idea:
+IDEA-650 Kellerschacht
+
+Era:
+Second Modernity (Earth)
+
+Tags:
+industry
+manufacturing
+walkers
+earth
+
+Description:
+Kaiserwerke was an industrial complex established by the
+Teutonian Resurgence during the early years of the Borders
+Rebellion.
+
+The facility was constructed directly above the rediscovered
+Kellerschacht depot.
+
+Using exoskeleton power cores recovered from the installation,
+Kaiserwerke engineers began producing a series of walker
+platforms adapted for industrial and military roles.
+
+
+------------------------------------------------
+IDEA-653
+------------------------------------------------
+
+Name:
+KW-1 Werker
+
+Domain:
+Vehicle
+
+Parent Idea:
+IDEA-652 Kaiserwerke
+
+Era:
+Second Modernity (Earth)
+
+Tags:
+walker
+industrial
+exoskeleton
+
+Description:
+The KW-1 Werker was an early walker platform produced by
+Kaiserwerke using modified exoskeleton cores recovered from the
+Kellerschacht depot.
+
+The machine was primarily intended for heavy industrial and
+construction work in damaged urban environments.
+
+
+------------------------------------------------
+IDEA-654
+------------------------------------------------
+
+Name:
+KW-2 Heber
+
+Domain:
+Vehicle
+
+Parent Idea:
+IDEA-652 Kaiserwerke
+
+Era:
+Second Modernity (Earth)
+
+Tags:
+walker
+industrial
+logistics
+
+Description:
+The KW-2 Heber was a heavy lifting walker developed by
+Kaiserwerke for construction and salvage operations during the
+Borders Rebellion.
+
+
+------------------------------------------------
+IDEA-655
+------------------------------------------------
+
+Name:
+KW-6 Kämpfer
+
+Domain:
+Vehicle
+
+Parent Idea:
+IDEA-652 Kaiserwerke
+
+Era:
+Second Modernity (Earth)
+
+Tags:
+walker
+military
+combat
+
+Description:
+The KW-6 Kämpfer was a militarized walker platform produced by
+Kaiserwerke using modified exoskeleton systems originating from
+the Kellerschacht depot.
+
+The design served as a combat walker for urban warfare during the
+later phases of the Borders Rebellion.
+
+------------------------------------------------
+IDEA-656
+------------------------------------------------
+
+Name:
+BDP Ark 43
+
+Domain:
+Interstellar Mission
+
+Parent Idea:
+IDEA-252 BDP Ark Operations
+
+Era:
+GGO Hegemony Period
+
+Tags:
+bdp
+terraforming
+interstellar
+biosphere
+neuron
+oka-system
+
+Description:
+BDP Ark 43 was an interstellar biosphere deployment vessel
+launched by the Terran Biosphere Development Program during
+the expansion phase of the Ark program under the Global
+Governance Organization.
+
+The vessel was operated by a Neuron pilot core, a modified
+human neural system designed to tolerate high acceleration
+and extended autonomous operation.
+
+Ark 43 was launched in 2648 toward the Oka System and arrived
+in 2719 where it began automated ecological deployment
+operations on a terrestrial candidate world.
+
+
+------------------------------------------------
+IDEA-657
+------------------------------------------------
+
+Name:
+BDP Ark 72
+
+Domain:
+Interstellar Mission
+
+Parent Idea:
+IDEA-252 BDP Ark Operations
+
+Era:
+GGO Hegemony Period
+
+Tags:
+bdp
+terraforming
+interstellar
+biosphere
+pre-contraction
+
+Description:
+BDP Ark 72 was a late-generation Ark vessel launched during
+the mature phase of the Terran Biosphere Development Program.
+
+By the late GGO period Ark vessels had grown substantially in
+size and ecological capacity, which increased manufacturing
+times compared to the earlier Ark program.
+
+Ark 72 was launched in 2891 and represents one of the last
+major Ark missions launched before the Great Contraction
+Event altered effective interstellar distances.
+
+
+------------------------------------------------
+IDEA-658
+------------------------------------------------
+
+Name:
+Pre-Contraction Ark
+
+Domain:
+Vehicle Class
+
+Parent Idea:
+IDEA-252 BDP Ark Operations
+
+Era:
+GGO Hegemony Period
+
+Tags:
+bdp
+interstellar
+vehicle
+pre-contraction
+
+Description:
+Pre-Contraction Arks were interstellar biosphere deployment
+vessels launched before the Great Contraction Event of the
+year 3000.
+
+Because effective stellar distances had not yet been reduced,
+these missions were designed for longer interstellar transit
+times and emphasized durable ecological payload systems,
+high-acceleration neuron-operated control cores and robust
+autonomous biosphere engineering capabilities.
+
+After the Contraction Event reduced effective stellar
+distances between star systems by roughly an order of
+magnitude, Ark mission profiles and vessel architectures
+changed significantly.
+
+------------------------------------------------
+IDEA-659
+------------------------------------------------
+
+Name:
+Ice Ant Class Interplanetary Mining Hauler
+
+Domain:
+Vehicle
+
+Parent Idea:
+Mars Terraforming
+
+Era:
+Race for Sol
+
+Tags:
+asteroid-mining
+cargo
+mars
+terraforming
+water
+industrial
+
+Description:
+The Ice Ant Class is a large autonomous asteroid-hauling spacecraft
+used during the Race for Sol period to transport water ice from
+C-type asteroids in the outer main asteroid belt to Mars.
+
+The vessel operates as a push-tug system. After mining operations
+detach a suitable ice fragment from a water-rich asteroid body,
+the Ice Ant docks to the rear surface and slowly accelerates the
+mass toward Mars.
+
+Propulsion is provided by a nuclear-electric water plasma drive.
+The ship drills directly into the attached ice fragment, melting
+and processing water which is used as reaction mass for the
+electric propulsion system. This allows the vehicle to refuel
+from its own cargo and operate for extremely long-duration
+transport missions.
+
+Typical cargo fragments range between 50 and 150 meters in
+diameter and represent millions of tons of water ice used for
+Mars terraforming, industrial chemistry, and propellant
+production.
+
+For very large fragments multiple Ice Ant vessels can operate
+in coordinated cluster formations to provide combined thrust
+and steering control.
+
+The technical designation of the class is IMH-1
+(Interplanetary Mining Hauler).
+
+
+------------------------------------------------
+IDEA-660
+------------------------------------------------
+
+Name:
+Mars Ice Logistics Authority
+
+Domain:
+Organization
+
+Parent Idea:
+Mars
+
+Era:
+Race for Sol
+
+Tags:
+mars
+terraforming
+asteroid-mining
+infrastructure
+industrial
+
+Description:
+The Mars Ice Logistics Authority is a Martian industrial
+organization responsible for securing large-scale water
+resources from the asteroid belt during the Race for Sol
+period.
+
+The authority operates fleets of Ice Ant Class interplanetary
+mining haulers that capture and redirect water-rich asteroid
+fragments toward Mars.
+
+Water delivered through these operations supports early
+terraforming programs and provides the foundation for
+Martian fuel production, industrial chemistry, agriculture,
+and habitat expansion.
+
+The organization represents one of the earliest major
+infrastructure institutions headquartered primarily on Mars
+rather than Earth.
+
+
+------------------------------------------------
+IDEA-661
+------------------------------------------------
+
+Name:
+Mars Ice Capture Corridor
+
+Domain:
+Location
+
+Parent Idea:
+Mars Orbit
+
+Era:
+Race for Sol
+
+Tags:
+mars
+orbit
+terraforming
+asteroid-mining
+infrastructure
+
+Description:
+The Mars Ice Capture Corridor is a controlled orbital
+approach region used to receive ice asteroid fragments
+transported from the outer asteroid belt.
+
+Ice Ant Class haulers deliver their cargo fragments
+into carefully calculated capture trajectories where
+orbital processing facilities and tug fleets break the
+asteroids down into usable industrial material.
+
+The corridor functions as the primary intake gateway
+for Mars terraforming water imports during the Race
+for Sol period.
+
+
+------------------------------------------------
+IDEA-662
+------------------------------------------------
+
+Name:
+OPEV-1 Distant Dawn
+
+Domain:
+Vehicle
+
+Parent Idea:
+Outer Planets Exploration Program
+
+Era:
+Race for Sol
+
+Tags:
+spacecraft
+manned
+exploration
+titan
+enceladus
+nuclear-thermal
+moon-launched
+
+Description:
+The OPEV-1 Distant Dawn is the first crewed interplanetary exploration vessel
+produced by a consortium of factions and manufacturers using Moon-based
+launch infrastructure.
+
+Five units were constructed during the early-mid Race for Sol period:
+three dedicated to Titan exploration and two to Enceladus.
+
+The vessel is powered by nuclear thermal propulsion and supports a crew of
+10–12 scientists and engineers on four-year missions to target moons.
+
+It carries modular surface and orbital survey modules to support
+scientific research, resource assessment, and environmental studies.
+
+OPEV-1 missions are paired with Mars return vehicles that retrieve the
+crew after completion of the research trip.
+
+
+------------------------------------------------
+IDEA-663
+------------------------------------------------
+
+Name:
+Mars Return Vehicle
+
+Domain:
+Vehicle
+
+Parent Idea:
+Outer Planets Exploration Program
+
+Era:
+Race for Sol
+
+Tags:
+spacecraft
+manned
+mars-return
+logistics
+outer-planets
+
+Description:
+The Mars Return Vehicle is a support spacecraft designed to retrieve crews
+from OPEV-class outer planets missions.
+
+The vehicle rendezvouses with OPEV-class exploration vessels after
+completion of their multi-year missions to moons such as Titan and
+Enceladus, and safely returns the crew to Mars orbital bases.
+
+
+------------------------------------------------
+IDEA-664
+------------------------------------------------
+
+Name:
+Armamento LatinMo Mobile Drone Strike Carrier
+
+Domain:
+Vehicle
+
+Parent Idea:
+IDEA-393 Armamento LatinMo
+
+Era:
+Superpower Wars
+
+Tags:
+vehicle
+drone
+military
+logistics
+latin-america
+
+Description:
+The Armamento LatinMo Mobile Drone Strike Carrier is a heavy
+military logistics vehicle developed during the Superpower
+Wars to deploy and coordinate mixed drone strike packages.
+
+The vehicle carries a medium array of drones in containerized
+launch racks mounted on the rear of a large multi-axle military
+truck platform. Rail launch systems allow rapid sequential
+deployment of reconnaissance, electronic warfare, strike,
+and loitering munition drones.
+
+A typical vehicle carries between thirty and sixty drones
+forming a combined strike package capable of conducting
+independent reconnaissance, targeting, and attack operations.
+
+The system was designed to support dispersed warfare
+doctrines emerging during the Superpower Wars. Instead of
+relying on fixed airbases, drone strike carriers can deploy
+from highways, temporary logistics hubs, or remote forward
+positions.
+
+The platform is produced by Armamento LatinMo for use by
+the continental Latin American defense bloc.
+
+
+------------------------------------------------
+IDEA-665
+------------------------------------------------
+
+Name:
+External Structural Maintenance Walker
+
+Domain:
+Vehicle
+
+Parent Idea:
+IDEA-468 CoG Outer Wall
+
+Era:
+GGO Hegemony Period
+
+Tags:
+vehicle
+cog
+infrastructure
+maintenance
+megastructure
+
+Description:
+The External Structural Maintenance Walker (ESMW) is a large
+megastructure servicing vehicle used to maintain the exterior
+surface of the CoG Outer Wall.
+
+The vehicle operates along the CoG Outer Wall Exterior Maintenance
+Perimeter, a dedicated infrastructure belt constructed at the
+base of the outer wall to support heavy maintenance operations.
+
+An EMSW combines the capabilities of a large mobile crane and
+a structural servicing platform. The vehicle travels slowly
+along the maintenance perimeter using a heavy wheeled drive
+system, while six articulated stepping legs allow it to brace,
+level, and elevate itself against the outer wall during work
+operations.
+
+In working configuration the vehicle unfolds a large articulated
+maintenance mast capable of reaching approximately one kilometer
+up the exterior surface of the wall. At the top of the mast a
+combined crane and servicing assembly allows workers to perform
+structural repairs, façade replacement, utility servicing, and
+inspection work across the megastructure exterior.
+
+Early EMSW units were crewed vehicles with onboard operator
+stations and maintenance crews. Later variants introduced hybrid
+operation with remote assistance and interchangeable mission
+modules replacing the integrated servicing head.
+
+Because of their tall articulated maintenance masts the vehicles
+are commonly referred to by workers as "Giraffes".
+
+Over the course of 231 years of CoG infrastructure development
+a total of 145 EMSW units were constructed.
+
+
+------------------------------------------------
+IDEA-666
+------------------------------------------------
+
+Name:
+CoG Outer Wall Exterior Maintenance Perimeter
+
+Domain:
+Infrastructure
+
+Parent Idea:
+IDEA-468 CoG Outer Wall
+
+Era:
+GGO Hegemony Period
+
+Tags:
+cog
+infrastructure
+maintenance
+perimeter
+logistics
+
+Description:
+The CoG Outer Wall Exterior Maintenance Perimeter is the dedicated
+service zone running along the outer base of the CoG Outer Wall.
+
+The perimeter contains heavy service roads, stabilization pads,
+maintenance depots, crane staging areas, power interfaces, and
+restricted access corridors used by large exterior servicing
+vehicles such as the External Structural Maintenance Walker.
+
+The zone forms the primary terrestrial operations belt for
+inspection, structural reinforcement, façade replacement,
+utility servicing, and general maintenance of the outer
+megastructure surface.
+
+
+------------------------------------------------
+IDEA-667
+------------------------------------------------
+
+Name:
+CoG Construction-Site Racing (Heritage)
+
+Domain:
+Cultural Practice
+
+Parent Idea:
+GGO CoG – Early Vehicle Culture
+
+Era:
+GGO Hegemony Period
+
+Tags:
+racing
+underground
+vehicles
+heritage
+cog
+
+Description:
+Prior to the formal establishment of the Ringleague Racing network,
+drivers and engineers within the CoG participated in informal,
+sometimes illegal, racing events on active construction sites. These
+early competitions involved navigating partially constructed rings,
+industrial scaffolding, and operational machinery, requiring extreme
+vehicle control, modular adaptations, and rapid innovation in mobility
+and stability systems.
+
+The technical and cultural knowledge developed during these illicit
+events directly influenced the design of later sanctioned Ringleague
+racing vehicles, including advanced maglev and modular pod systems.
+
+
+------------------------------------------------
+IDEA-668
+------------------------------------------------
+
+Name:
+GGO Engineering Group 9 – Vehicle Systems Division
+
+Domain:
+Organization
+
+Parent Idea:
+GGO Hegemony Engineering Corps
+
+Era:
+GGO Hegemony Period, post-3000
+
+Tags:
+engineering
+vehicles
+racing
+cultural-heritage
+cog
+
+Description:
+GGO Engineering Group 9, Vehicle Systems Division (EGG-9), is a specialized
+industrial and vehicle engineering unit within the GGO Hegemony. Formed
+after the acceleration of CoG construction post-Contraction Event (~3000),
+EGG-9 develops modular maglev, hover, and specialized infrastructure vehicles.
+
+The division draws on the cultural and technical heritage of early
+construction-site racing (IDEA-667), applying lessons in mobility,
+stability, and modular design to the sanctioned Ringleague Racing network
+and CoG industrial transport systems.
+
+
+------------------------------------------------
+IDEA-669
+------------------------------------------------
+
+Name:
+GGO Circuit Racer-32
+
+Domain:
+Vehicle
+
+Parent Idea:
+GGO Engineering Group 8 – Automotive Engineering
+
+Era:
+GGO Hegemony Period, 32nd Century
+
+Tags:
+vehicle
+racing
+Ringleague
+maglev
+wheeled
+CoG
+
+Description:
+The GGO Circuit Racer-32 is a standard-issue racing vehicle produced
+by GGO Engineering Group 8 for sanctioned Ringleague racing events
+within the Center of Gravity megastructure.
+
+The vehicle features a medium wheeled chassis capable of transporting
+two crew members: a pilot and a co-driver/engineer for telemetry.
+It is designed for mixed multi-ring circuits with balanced speed
+and handling characteristics. The vehicle includes an experimental
+adjustable suspension gimmick which initially does not function fully,
+reflecting iterative design practices of GGO Engineering.
+
+Construction combines lightweight GGO standard alloys for durability
+and high-performance composites for critical modules including the
+suspension and propulsion systems. Its design reflects decades of
+racing heritage, evolving from early construction-site racing through
+the Ringleague network.
+
+The GGO Circuit Racer-32 is a utilitarian, elegant vehicle, optimized
+for performance on the Grand Route and other multi-ring CoG racing
+circuits.

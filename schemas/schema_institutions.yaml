@@ -1,0 +1,29 @@
+schema: institution
+
+extends: entity_core
+
+fields:
+
+  institution_class:
+    type: string
+    optional: true
+
+  parent_institution:
+    type: entity
+    target: institution
+    optional: true
+
+  controlling_faction:
+    type: entity
+    target: faction
+    optional: true
+
+  associated_cultures:
+    type: entity_list
+    target: culture
+    optional: true
+
+  associated_locations:
+    type: entity_list
+    target: location
+    optional: true

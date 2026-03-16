@@ -1,0 +1,33 @@
+schema: cultural_aspect
+
+extends: entity_core
+
+fields:
+
+  aspect_class:
+    type: string
+
+  behavioural_modifiers:
+    type: dictionary
+    optional: true
+
+  realizations:
+    type: entity_list
+    target: entity
+    optional: true
+
+  description:
+    type: text
+    optional: true
+
+  origin:
+    type: text
+    optional: true
+
+  historical_examples:
+    type: string_list
+    optional: true
+
+  derived_from_ideas:
+    type: idea_list
+    optional: true
