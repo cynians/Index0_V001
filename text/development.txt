@@ -145,6 +145,499 @@ Unidirectional gravity:
 END OF SESSION 1 PLAN
 =====================
 
+## Session 1 — Addendum: Solar Simulation, Camera Stability, and Rendering Refactor
+
+During this session, the prototype simulation environment was extended from a simple test setup into a more structured and scalable architecture capable of supporting multi-scale space simulation and future integration with gameplay systems.
+
+### 1. Introduction of Hierarchical Orbital Simulation
+
+A basic celestial hierarchy was successfully implemented:
+
+* A central Sun (static reference body)
+* An Earth object in Keplerian orbit around the Sun
+* A Moon object in Keplerian orbit around the Earth
+
+Key insight:
+* Orbital correctness depends on update order (parent → child)
+* This dependency was later abstracted into a centralized system manager
+
+---
+
+### 2. Migration to CelestialSystem
+
+To remove manual update and synchronization logic from test_sim.py, a new abstraction was introduced:
+
+CelestialSystem
+
+Responsibilities:
+* Stores all simulation bodies
+* Maintains update order
+* Handles position propagation
+* Provides a unified interface for rendering access
+
+Result:
+* test_sim shifted from manual orchestration to system-driven simulation
+
+---
+
+### 3. Map Layer Abstraction (MapLayerStack)
+
+Planetary detail representation was refactored:
+
+* Previous: inline procedural layer generation
+* New: MapLayerStack
+
+Features:
+* Encapsulates hierarchical spatial layers:
+  * planet → continent → region → city → production site → building
+* Designed as a placeholder abstraction
+* Prepared for future replacement with real geographic or simulation data
+
+This establishes the foundation for:
+* multi-scale planetary interaction
+* later RTS and person-layer transitions
+
+---
+
+### 4. Camera System Overhaul
+
+The camera system was significantly improved to support extreme scale navigation:
+
+Features introduced:
+* Continuous movement (frame-rate independent)
+* Zoom centered on cursor position
+* Exponential zoom behavior
+* Zoom-dependent movement speed
+
+Critical architectural change:
+camera.world_to_screen(...) may return None
+
+This enables:
+* safe handling of extreme coordinate values
+* prevention of overflow and rendering crashes at high zoom levels
+
+---
+
+### 5. Rendering Stability Fixes
+
+Following the camera change, multiple rendering issues emerged.
+
+Problem:
+Rendering functions assumed all projections return valid screen coordinates.
+
+Solution:
+A global rendering rule was introduced:
+
+screen_pos = camera.world_to_screen(world_pos)
+if screen_pos is None:
+    skip rendering
+
+This was applied to:
+* orbit rendering
+* origin rendering
+* entity rendering
+* planetary layer rendering
+
+Result:
+* Stable rendering across all zoom levels
+* No crashes from invalid coordinate projections
+
+---
+
+### 6. Orbit Visualization Refactor
+
+Orbit rendering was encapsulated into:
+
+orbit_visualizer.py
+
+Improvements:
+* Separation of orbit drawing from simulation logic
+* Safe handling of invalid projected points
+* Preparation for future extension (e.g. trajectory visualization)
+
+---
+
+### 7. Transition Toward Structured Rendering Architecture
+
+A key architectural limitation was identified:
+
+test_sim.py currently mixes:
+* simulation logic
+* rendering logic
+* UI logic
+
+Conclusion:
+A separation of concerns is required.
+
+Target structure:
+
+SimWindow
+ ├── WorldRenderer
+ ├── EntityRenderer
+ └── UIOverlay
+
+This will:
+* eliminate rendering duplication
+* prevent UI/world overlap issues
+* enable future multi-view systems (planetary, orbital, RTS, person)
+
+---
+
+### 8. Design Decisions Established
+
+* Rendering must be robust to invalid projections
+* Simulation logic must be decoupled from rendering
+* Systems (e.g. CelestialSystem) should own update order
+* Visual layers (e.g. MapLayerStack) are replaceable abstractions
+* Camera must support infinite-scale navigation
+
+---
+
+### 9. Current State
+
+The system now supports:
+
+* Hierarchical orbital motion (Sun–Earth–Moon)
+* Infinite-scale camera navigation
+* Stable rendering at extreme zoom levels
+* Modular simulation structure (CelestialSystem)
+* Abstracted planetary detail layers (MapLayerStack)
+
+---
+
+### 10. Next Step (Defined but Not Yet Implemented)
+
+The next architectural step is:
+
+Extraction of rendering responsibilities into dedicated renderer modules
+
+Beginning with:
+* WorldRenderer (orbits + bodies + layers)
+
+---
+
+This marks the transition from a prototype script toward a structured simulation engine with clear system boundaries.
+
+================================================
+DEVELOPMENT SESSION 1
+=====================
+
+---
+
+## CORE GOAL
+
+End state after this session:
+
+* Working orbit system (Kepler + dynamic)
+* Working SpaceObject system
+* Working central clock (tick-based)
+* Integrated into test_sim (replacing placeholder orbit)
+
+Out of scope:
+
+* Timeline system
+* Producer simulation
+* Person layer
+* Advanced UI
+
+---
+
+## FILES TO IMPLEMENT / MODIFY
+
+scripts/sim_core/
+clock.py           (implement)
+space/
+orbit.py       (implement)
+object.py      (implement)
+
+test_sim.py            (integrate)
+
+---
+
+## SYSTEM OVERVIEW
+
+Clock
+└ provides tick + dt
+
+SpaceObject
+└ has Orbit
+
+Orbit
+├ KeplerOrbit (planets)
+└ DynamicOrbit (spacecraft)
+
+---
+
+## IMPLEMENTATION ORDER
+
+STEP 1 — clock.py
+
+Responsibilities:
+
+* tick counter
+* fixed dt (seconds per tick)
+* time progression
+
+Interface:
+Clock
+tick
+dt
+update()
+
+---
+
+STEP 2 — orbit.py
+
+KeplerOrbit:
+
+* 2D elliptical orbits
+* parent-based
+* tick-driven
+
+DynamicOrbit:
+
+* position + velocity
+* gravity from bodies
+
+---
+
+STEP 3 — object.py
+
+SpaceObject:
+
+* holds orbit
+* resolves position
+* optional mass (for gravity source)
+
+---
+
+STEP 4 — test_sim integration
+
+Replace placeholder orbit logic with:
+
+* star (no orbit)
+* planet (Kepler orbit)
+* optional spacecraft (dynamic orbit)
+
+---
+
+## CONSTRAINTS
+
+* 2D only (no inclination yet)
+* Tick-based time (not frame dt)
+
+Hybrid orbit system:
+
+* Kepler → planets
+* Dynamic → spacecraft
+
+Unidirectional gravity:
+
+* planets affect spacecraft
+* spacecraft do not affect planets
+
+---
+
+## MINIMAL PHYSICS SCOPE
+
+* Newton gravity
+* semi-implicit Euler integration
+* no collisions
+* no thrust
+
+---
+
+## EXPECTED RESULT
+
+* planet orbits star (ellipse)
+* optional spacecraft moves under gravity
+* stable motion
+* tick counter increases
+
+---
+
+## NEXT SESSION
+
+* SimulationManager
+* ProducerSimulation
+
+================================================
+END OF SESSION 1 PLAN
+=====================
+
+## Session 1 — Addendum: Solar Simulation, Camera Stability, and Rendering Refactor
+
+During this session, the prototype simulation environment was extended from a simple test setup into a more structured and scalable architecture capable of supporting multi-scale space simulation and future integration with gameplay systems.
+
+### 1. Introduction of Hierarchical Orbital Simulation
+
+A basic celestial hierarchy was successfully implemented:
+
+* A central Sun (static reference body)
+* An Earth object in Keplerian orbit around the Sun
+* A Moon object in Keplerian orbit around the Earth
+
+Key insight:
+* Orbital correctness depends on update order (parent → child)
+* This dependency was later abstracted into a centralized system manager
+
+---
+
+### 2. Migration to CelestialSystem
+
+To remove manual update and synchronization logic from test_sim.py, a new abstraction was introduced:
+
+CelestialSystem
+
+Responsibilities:
+* Stores all simulation bodies
+* Maintains update order
+* Handles position propagation
+* Provides a unified interface for rendering access
+
+Result:
+* test_sim shifted from manual orchestration to system-driven simulation
+
+---
+
+### 3. Map Layer Abstraction (MapLayerStack)
+
+Planetary detail representation was refactored:
+
+* Previous: inline procedural layer generation
+* New: MapLayerStack
+
+Features:
+* Encapsulates hierarchical spatial layers:
+  * planet → continent → region → city → production site → building
+* Designed as a placeholder abstraction
+* Prepared for future replacement with real geographic or simulation data
+
+This establishes the foundation for:
+* multi-scale planetary interaction
+* later RTS and person-layer transitions
+
+---
+
+### 4. Camera System Overhaul
+
+The camera system was significantly improved to support extreme scale navigation:
+
+Features introduced:
+* Continuous movement (frame-rate independent)
+* Zoom centered on cursor position
+* Exponential zoom behavior
+* Zoom-dependent movement speed
+
+Critical architectural change:
+camera.world_to_screen(...) may return None
+
+This enables:
+* safe handling of extreme coordinate values
+* prevention of overflow and rendering crashes at high zoom levels
+
+---
+
+### 5. Rendering Stability Fixes
+
+Following the camera change, multiple rendering issues emerged.
+
+Problem:
+Rendering functions assumed all projections return valid screen coordinates.
+
+Solution:
+A global rendering rule was introduced:
+
+screen_pos = camera.world_to_screen(world_pos)
+if screen_pos is None:
+    skip rendering
+
+This was applied to:
+* orbit rendering
+* origin rendering
+* entity rendering
+* planetary layer rendering
+
+Result:
+* Stable rendering across all zoom levels
+* No crashes from invalid coordinate projections
+
+---
+
+### 6. Orbit Visualization Refactor
+
+Orbit rendering was encapsulated into:
+
+orbit_visualizer.py
+
+Improvements:
+* Separation of orbit drawing from simulation logic
+* Safe handling of invalid projected points
+* Preparation for future extension (e.g. trajectory visualization)
+
+---
+
+### 7. Transition Toward Structured Rendering Architecture
+
+A key architectural limitation was identified:
+
+test_sim.py currently mixes:
+* simulation logic
+* rendering logic
+* UI logic
+
+Conclusion:
+A separation of concerns is required.
+
+Target structure:
+
+SimWindow
+ ├── WorldRenderer
+ ├── EntityRenderer
+ └── UIOverlay
+
+This will:
+* eliminate rendering duplication
+* prevent UI/world overlap issues
+* enable future multi-view systems (planetary, orbital, RTS, person)
+
+---
+
+### 8. Design Decisions Established
+
+* Rendering must be robust to invalid projections
+* Simulation logic must be decoupled from rendering
+* Systems (e.g. CelestialSystem) should own update order
+* Visual layers (e.g. MapLayerStack) are replaceable abstractions
+* Camera must support infinite-scale navigation
+
+---
+
+### 9. Current State
+
+The system now supports:
+
+* Hierarchical orbital motion (Sun–Earth–Moon)
+* Infinite-scale camera navigation
+* Stable rendering at extreme zoom levels
+* Modular simulation structure (CelestialSystem)
+* Abstracted planetary detail layers (MapLayerStack)
+
+---
+
+### 10. Next Step (Defined but Not Yet Implemented)
+
+The next architectural step is:
+
+Extraction of rendering responsibilities into dedicated renderer modules
+
+Beginning with:
+* WorldRenderer (orbits + bodies + layers)
+
+---
+
+This marks the transition from a prototype script toward a structured simulation engine with clear system boundaries.
+
 ================================================
 DEVELOPMENT SESSION 2 (ARCHITECTURE DESIGN)
 ===========================================
@@ -438,3 +931,53 @@ person becomes worker POP
 ================================================
 END OF SESSION 2 PLAN
 =====================
+
+------------------------------------------------
+ADDENDUM — ENTRY POINT RESTRUCTURING
+------------------------------------------------
+
+The use of `test_sim.py` as the primary simulation entry point is deprecated.
+
+Rationale:
+
+* `test_sim.py` currently mixes:
+  * simulation setup
+  * execution loop
+  * rendering
+  * input handling
+
+* This contradicts the architectural goal of separating:
+  * Simulation
+  * Rendering
+  * Input / UI
+
+New Direction:
+
+* Introduce a structured application entry system
+* Replace `test_sim.py` with a dedicated application layer
+
+Planned Replacement:
+
+scripts/sim_core/application/
+    app.py                (main entry point)
+    simulation_manager.py
+    tab_manager.py
+
+Responsibilities of new entry system:
+
+* Initialize application
+* Manage simulation instances
+* Manage tabs (simulation sessions)
+* Coordinate update/render/input loop
+
+Transition Plan:
+
+* `test_sim.py` will be:
+  * used temporarily for testing only
+  * progressively stripped of responsibilities
+  * eventually removed
+
+Constraint:
+
+* Existing simulation logic (space system, orbit, clock) must remain untouched
+* Refactor must wrap around current implementation, not rewrite it
