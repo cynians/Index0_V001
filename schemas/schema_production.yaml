@@ -20,5 +20,5 @@ fields:
 
   production_location:
     type: entity
-    target: location
+    target: locations
     optional: true

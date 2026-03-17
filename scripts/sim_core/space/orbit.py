@@ -52,6 +52,31 @@ class KeplerOrbit:
         px, py = self.parent.position
         return px + x, py + y
 
+    def get_path_points(self, num_points=120):
+        """
+        Returns world-space points along the orbital path.
+        """
+
+        points = []
+
+        for i in range(num_points):
+            t = (i / num_points) * 2 * math.pi
+
+            # eccentric anomaly approximation
+            E = t
+
+            cos_E = math.cos(E)
+            sin_E = math.sin(E)
+
+            x = self.a * (cos_E - self.e)
+            y = self.a * math.sqrt(1 - self.e ** 2) * sin_E
+
+            # parent offset
+            px, py = self.parent.position
+            points.append((px + x, py + y))
+
+        return points
+
     def _solve_kepler(self, M, e, tol=1e-6, max_iter=50):
         E = M if e < 0.8 else math.pi
 

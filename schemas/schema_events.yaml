@@ -15,7 +15,7 @@ fields:
 
   locations:
     type: entity_list
-    target: location
+    target: locations
     optional: true
 
   involved_factions:

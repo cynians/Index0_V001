@@ -1,4 +1,4 @@
-schema: location
+schema: locations
 
 extends: entity_core
 
@@ -10,7 +10,7 @@ fields:
 
   parent_location:
     type: entity
-    target: location
+    target: locations
     optional: true
 
   controlling_factions:

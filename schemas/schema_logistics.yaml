@@ -15,5 +15,5 @@ fields:
 
   associated_locations:
     type: entity_list
-    target: location
+    target: locations
     optional: true

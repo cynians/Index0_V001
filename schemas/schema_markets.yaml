@@ -10,7 +10,7 @@ fields:
 
   market_location:
     type: entity
-    target: location
+    target: locations
     optional: true
 
   traded_items:

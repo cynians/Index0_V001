@@ -1,6 +1,6 @@
 import pygame
 import math
-from sim_core.camera import Camera
+from scripts.sim_core.camera import Camera
 
 
 class SimWindow:
@@ -13,7 +13,7 @@ class SimWindow:
     - camera
     - adaptive world grid
     - optional debug info
-    - update/draw hooks
+    - layered draw hooks (background / world / UI)
     """
 
     def __init__(self, width=1200, height=800, title="Simulation"):
@@ -67,6 +67,18 @@ class SimWindow:
         pass
 
     def draw(self):
+        """
+        Main draw pipeline (layered).
+        """
+
+        self.draw_background()
+        self.draw_world()
+        self.draw_ui()
+
+    def draw_background(self):
+        """
+        Background + grid + origin (shared).
+        """
 
         self.screen.fill(self.background_color)
 
@@ -74,6 +86,17 @@ class SimWindow:
             self.draw_grid()
 
         self.draw_origin()
+
+    def draw_world(self):
+        """
+        World rendering hook (override in simulation).
+        """
+        pass
+
+    def draw_ui(self):
+        """
+        UI overlay hook (override in simulation).
+        """
 
         if self.show_fps:
             self.draw_fps()
@@ -86,13 +109,8 @@ class SimWindow:
     # --------------------------------------------------
 
     def get_grid_spacing(self):
-        """
-        Determines grid spacing based on zoom so that
-        grid density remains stable.
-        """
 
         pixels_per_meter = self.camera.zoom
-
         target_pixels = 120
 
         meters = target_pixels / pixels_per_meter
@@ -133,7 +151,6 @@ class SimWindow:
             if abs(x) % major_step < 1e-6:
                 pygame.draw.line(self.screen, color_major, p1, p2, 2)
 
-                # label major grid lines
                 label = self.format_distance(x)
                 text = self.default_font.render(label, True, (150, 150, 150))
                 self.screen.blit(text, (p1[0] + 3, 3))
@@ -155,7 +172,6 @@ class SimWindow:
 
             if abs(y) % major_step < 1e-6:
                 pygame.draw.line(self.screen, color_major, p1, p2, 2)
-
             else:
                 pygame.draw.line(self.screen, color_minor, p1, p2, 1)
 
@@ -193,11 +209,11 @@ class SimWindow:
         x = 30
         y = self.height - 30
 
-        pygame.draw.line(self.screen, (200,200,200), (x, y), (x + screen_length, y), 3)
+        pygame.draw.line(self.screen, (200, 200, 200), (x, y), (x + screen_length, y), 3)
 
         label = self.format_distance(step)
 
-        text = self.default_font.render(label, True, (200,200,200))
+        text = self.default_font.render(label, True, (200, 200, 200))
         self.screen.blit(text, (x, y - 22))
 
     # --------------------------------------------------
@@ -208,6 +224,8 @@ class SimWindow:
 
         pos = self.camera.world_to_screen((0, 0))
 
+        if pos is not None:
+            pygame.draw.circle(self.screen, (200, 80, 80), pos, 6)
         pygame.draw.circle(self.screen, (200, 80, 80), pos, 6)
 
     # --------------------------------------------------
@@ -249,6 +267,7 @@ class SimWindow:
                 self.camera.handle_event(event)
                 self.handle_event(event)
 
+            self.camera.update(dt)
             self.update(dt)
 
             self.draw()
