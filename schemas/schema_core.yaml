@@ -16,6 +16,14 @@ fields:
   type:
     type: string
 
+  description:
+    type: text
+    optional: true
+
+  notes:
+    type: text
+    optional: true
+
   tags:
     type: string_list
     optional: true
@@ -26,4 +34,8 @@ fields:
 
   end_year:
     type: number
+    optional: true
+
+  derived_from_ideas:
+    type: idea_list
     optional: true

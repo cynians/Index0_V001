@@ -1,0 +1,440 @@
+================================================
+DEVELOPMENT SESSION 1
+=====================
+
+---
+
+## CORE GOAL
+
+End state after this session:
+
+* Working orbit system (Kepler + dynamic)
+* Working SpaceObject system
+* Working central clock (tick-based)
+* Integrated into test_sim (replacing placeholder orbit)
+
+Out of scope:
+
+* Timeline system
+* Producer simulation
+* Person layer
+* Advanced UI
+
+---
+
+## FILES TO IMPLEMENT / MODIFY
+
+scripts/sim_core/
+clock.py           (implement)
+space/
+orbit.py       (implement)
+object.py      (implement)
+
+test_sim.py            (integrate)
+
+---
+
+## SYSTEM OVERVIEW
+
+Clock
+└ provides tick + dt
+
+SpaceObject
+└ has Orbit
+
+Orbit
+├ KeplerOrbit (planets)
+└ DynamicOrbit (spacecraft)
+
+---
+
+## IMPLEMENTATION ORDER
+
+STEP 1 — clock.py
+
+Responsibilities:
+
+* tick counter
+* fixed dt (seconds per tick)
+* time progression
+
+Interface:
+Clock
+tick
+dt
+update()
+
+---
+
+STEP 2 — orbit.py
+
+KeplerOrbit:
+
+* 2D elliptical orbits
+* parent-based
+* tick-driven
+
+DynamicOrbit:
+
+* position + velocity
+* gravity from bodies
+
+---
+
+STEP 3 — object.py
+
+SpaceObject:
+
+* holds orbit
+* resolves position
+* optional mass (for gravity source)
+
+---
+
+STEP 4 — test_sim integration
+
+Replace placeholder orbit logic with:
+
+* star (no orbit)
+* planet (Kepler orbit)
+* optional spacecraft (dynamic orbit)
+
+---
+
+## CONSTRAINTS
+
+* 2D only (no inclination yet)
+* Tick-based time (not frame dt)
+
+Hybrid orbit system:
+
+* Kepler → planets
+* Dynamic → spacecraft
+
+Unidirectional gravity:
+
+* planets affect spacecraft
+* spacecraft do not affect planets
+
+---
+
+## MINIMAL PHYSICS SCOPE
+
+* Newton gravity
+* semi-implicit Euler integration
+* no collisions
+* no thrust
+
+---
+
+## EXPECTED RESULT
+
+* planet orbits star (ellipse)
+* optional spacecraft moves under gravity
+* stable motion
+* tick counter increases
+
+---
+
+## NEXT SESSION
+
+* SimulationManager
+* ProducerSimulation
+
+================================================
+END OF SESSION 1 PLAN
+=====================
+
+================================================
+DEVELOPMENT SESSION 2 (ARCHITECTURE DESIGN)
+===========================================
+
+---
+
+## CORE DESIGN DIRECTION
+
+Establish a layered, multi-simulation architecture with:
+
+* parallel simulation instances
+* tick-based global time
+* time resolution depending on lowest active layer
+* cross-layer interactions (person ↔ institution ↔ world)
+
+---
+
+## SIMULATION ARCHITECTURE
+
+SimulationManager
+├ active_simulations
+├ global_tick
+└ TimelineManager
+
+Simulations run in parallel (tab-based):
+
+* WorldSimulation
+* ProducerSimulation (multiple instances)
+* PersonSimulation
+
+No simulation pauses others.
+
+---
+
+## TIME SYSTEM DESIGN
+
+* Global tick system
+* Later: real time units derived from tick
+
+Time resolution rule:
+
+* lowest active simulation determines tick scale
+
+Example:
+
+strategy → yearly
+producer → minute
+person → second
+
+→ global tick = second
+
+---
+
+## TIMELINE SYSTEM (PLANNED)
+
+Timeline
+├ canon_events
+└ simulation_events
+
+* simulations emit events
+* events recorded only on significant changes
+* produces diverging world history
+
+---
+
+## PRODUCER SIMULATION DESIGN
+
+ProducerSimulation
+└ production_sites
+
+ProductionSite
+└ production_lines
+
+ProductionLine
+input_resources
+output_resources
+cycle_duration
+workers_required
+machines_required
+
+---
+
+## PRODUCTION MODEL
+
+* discrete production cycles
+* production happens on cycle completion
+
+Example:
+
+10 ticks → 1 output
+
+---
+
+## PLAYER-DRIVEN INDUSTRY
+
+* production defined by production lines
+* factories are containers
+
+Player can:
+
+* add/remove lines
+* assign workers
+* upgrade systems
+
+---
+
+## POP SYSTEM INTEGRATION (PLANNED)
+
+Person → Worker POP
+
+* production efficiency depends on workforce
+
+---
+
+## PERSON SIMULATION DESIGN
+
+Person
+id
+position
+job
+current_location
+
+* RTS-style movement
+* interaction with institutions
+
+---
+
+## CROSS-LAYER INTERACTION
+
+Person enters production site →
+opens ProducerSimulation →
+person becomes worker POP
+
+---
+
+## DEVELOPMENT ORDER (CONFIRMED)
+
+1. Minimal tick engine
+2. Producer simulation
+3. Timeline divergence system
+4. Complex clock system
+5. Person RTS simulation
+
+================================================
+END OF SESSION 2 PLAN
+=====================
+
+================================================
+DEVELOPMENT SESSION 2 (ARCHITECTURE DESIGN)
+===========================================
+
+---
+
+## CORE DESIGN DIRECTION
+
+Establish a layered, multi-simulation architecture with:
+
+* parallel simulation instances
+* tick-based global time
+* time resolution depending on lowest active layer
+* cross-layer interactions (person ↔ institution ↔ world)
+
+---
+
+## SIMULATION ARCHITECTURE
+
+SimulationManager
+├ active_simulations
+├ global_tick
+└ TimelineManager
+
+Simulations run in parallel (tab-based):
+
+* WorldSimulation
+* ProducerSimulation (multiple instances)
+* PersonSimulation
+
+No simulation pauses others.
+
+---
+
+## TIME SYSTEM DESIGN
+
+* Global tick system
+* Later: real time units derived from tick
+
+Time resolution rule:
+
+* lowest active simulation determines tick scale
+
+Example:
+
+strategy → yearly
+producer → minute
+person → second
+
+→ global tick = second
+
+---
+
+## TIMELINE SYSTEM (PLANNED)
+
+Timeline
+├ canon_events
+└ simulation_events
+
+* simulations emit events
+* events recorded only on significant changes
+* produces diverging world history
+
+---
+
+## PRODUCER SIMULATION DESIGN
+
+ProducerSimulation
+└ production_sites
+
+ProductionSite
+└ production_lines
+
+ProductionLine
+input_resources
+output_resources
+cycle_duration
+workers_required
+machines_required
+
+---
+
+## PRODUCTION MODEL
+
+* discrete production cycles
+* production happens on cycle completion
+
+Example:
+
+10 ticks → 1 output
+
+---
+
+## PLAYER-DRIVEN INDUSTRY
+
+* production defined by production lines
+* factories are containers
+
+Player can:
+
+* add/remove lines
+* assign workers
+* upgrade systems
+
+---
+
+## POP SYSTEM INTEGRATION (PLANNED)
+
+Person → Worker POP
+
+* production efficiency depends on workforce
+
+---
+
+## PERSON SIMULATION DESIGN
+
+Person
+id
+position
+job
+current_location
+
+* RTS-style movement
+* interaction with institutions
+
+---
+
+## CROSS-LAYER INTERACTION
+
+Person enters production site →
+opens ProducerSimulation →
+person becomes worker POP
+
+---
+
+## DEVELOPMENT ORDER (CONFIRMED)
+
+1. Minimal tick engine
+2. Producer simulation
+3. Timeline divergence system
+4. Complex clock system
+5. Person RTS simulation
+
+================================================
+END OF SESSION 2 PLAN
+=====================

@@ -1,0 +1,22 @@
+schema: year
+
+extends: entity_core
+
+fields:
+
+  year_number:
+    type: number
+
+  era:
+    type: string
+    optional: true
+
+  canonical_events:
+    type: entity_list
+    target: event
+    optional: true
+
+  simulated_changes:
+    type: entity_list
+    target: entity_core
+    optional: true

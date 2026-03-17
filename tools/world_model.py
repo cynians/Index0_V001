@@ -1,7 +1,7 @@
 from tools.entity_loader import EntityLoader
 from tools.relationship_graph import TouchDegrees
 from tools.schema_loader import SchemaLoader
-
+from tools.yearer import Yearer
 
 class WorldModel:
     """
@@ -22,7 +22,15 @@ class WorldModel:
 
         self.loader = EntityLoader()
         self.schemas = SchemaLoader()
+
         self.touch_degrees = TouchDegrees(self.loader, self.schemas)
+
+        # compatibility alias for UI
+        self.graph = self.touch_degrees
+
+        # temporal resolver
+        self.yearer = Yearer(self.loader)
+
 
     # ----------------------------------
     # Entity Access
@@ -73,6 +81,23 @@ class WorldModel:
                 events.append(event)
 
         return events
+
+    # ----------------------------------
+    # Year resolution
+    # ----------------------------------
+
+    def resolve_entity(self, entity_id, year):
+        """
+        Returns the entity state at a given year.
+        """
+        return self.yearer.resolve(entity_id, year)
+
+
+    def entities_active(self, year):
+        """
+        Returns all entities active during the given year.
+        """
+        return self.yearer.entities_active(year)
 
     # ----------------------------------
     # Refresh

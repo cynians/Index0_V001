@@ -6,10 +6,16 @@ fields:
 
   culture_class:
     type: string
+    optional: true
 
   parent_culture:
     type: entity
     target: culture
+    optional: true
+
+  cultural_aspects:
+    type: entity_list
+    target: cultural_aspect
     optional: true
 
   associated_factions:
@@ -22,7 +28,23 @@ fields:
     target: location
     optional: true
 
-  cultural_aspects:
+  institutions:
     type: entity_list
-    target: cultural_aspect
+    target: institution
+    optional: true
+
+  belief_systems:
+    type: string_list
+    optional: true
+
+  moral_values:
+    type: string_list
+    optional: true
+
+  taboos:
+    type: string_list
+    optional: true
+
+  mythology:
+    type: string_list
     optional: true

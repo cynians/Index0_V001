@@ -1,11 +1,23 @@
-schema: formation
+schema: pop
 
 extends: entity_core
 
 fields:
 
-  formation_class:
+  pop_class:
     type: string
+    optional: true
+
+  role:
+    type: string
+    optional: true
+
+  size_min:
+    type: number
+    optional: true
+
+  size_max:
+    type: number
     optional: true
 
   faction:
@@ -13,27 +25,22 @@ fields:
     target: faction
     optional: true
 
-  parent_formation:
-    type: entity
-    target: formation
-    optional: true
-
   location:
     type: entity
     target: location
     optional: true
 
-  vehicles:
-    type: entity_list
-    target: vehicle
+  formation:
+    type: entity
+    target: formation
     optional: true
 
-  pops:
-    type: entity_list
-    target: pop
+  culture:
+    type: entity
+    target: culture
     optional: true
 
-  commanding_officers:
+  members:
     type: entity_list
     target: person
     optional: true

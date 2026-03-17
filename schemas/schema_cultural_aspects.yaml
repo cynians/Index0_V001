@@ -6,9 +6,18 @@ fields:
 
   aspect_class:
     type: string
+    optional: true
+
+  influence_domains:
+    type: string_list
+    optional: true
 
   behavioural_modifiers:
     type: dictionary
+    optional: true
+
+  cultural_influences:
+    type: string_list
     optional: true
 
   realizations:
@@ -16,18 +25,6 @@ fields:
     target: entity
     optional: true
 
-  description:
-    type: text
-    optional: true
-
-  origin:
-    type: text
-    optional: true
-
   historical_examples:
     type: string_list
-    optional: true
-
-  derived_from_ideas:
-    type: idea_list
     optional: true
