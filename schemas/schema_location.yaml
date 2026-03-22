@@ -26,3 +26,11 @@ fields:
   population:
     type: number
     optional: true
+
+  coords:
+    type: dict
+    optional: true
+
+  bounds:
+    type: dict
+    optional: true

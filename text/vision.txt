@@ -1,0 +1,502 @@
+================================================
+INDEX_0 DEVELOPMENT NOTES
+=========================
+
+Name: Index_0_DevNotes
+Version: v2
+Date: 2026-03-17
+
+---
+
+## INSTRUCTIONS
+
+* Every entry must have a UNIQUE ID.
+
+* IDs use a PREFIX based on category:
+
+  IM  = Immediate Task
+  LP  = Long Term Plan
+  RI  = Random Idea
+
+* Format:
+  PREFIX-XXX
+
+  Examples:
+  IM-001
+  LP-014
+  RI-003
+
+* IDs must NEVER be reused.
+
+* When adding new entries:
+  → increment the last number within that category
+
+* Sub-items do NOT get their own ID (only top-level entries).
+
+---
+
+## IMMEDIATE TASKS
+
+IM-001 Core Sim
+-- Remove remaining dependencies on test_sim.py
+-- Ensure App is the only entry point
+-- Verify SimulationInstance isolation between tabs
+-- Prepare tab pause / resume behavior (no implementation yet)
+
+IM-002 Camera System
+-- CameraController: verify constraints across all sim types
+-- Move towards simulation-defined camera setup (later step)
+-- Test behavior when switching rapidly between tabs
+
+IM-003 Renderer
+-- Ensure renderer supports both SpaceSimulation and MapSimulation cleanly
+-- Remove any remaining simulation-specific assumptions
+-- Prepare for zoom-dependent rendering
+
+IM-004 Map Sim
+-- Introduce polygon-based region shapes (schema integration)
+-- Restrict camera movement to region bounds (DONE → verify edge cases)
+-- Add image placeholder support for regions
+-- Prepare structure for subregions (no implementation yet)
+
+IM-005 Schema Integration
+-- Add simulation block to entity schemas
+-- Ensure temporal filtering compatibility with sim_clock
+-- Align spatial definitions with MapSimulation coordinates
+
+---
+
+## SCHEMA / DATA MODEL (UPDATE)
+
+IM-006 Region Shape System
+-- Regions use MULTIPOLYGON as canonical shape
+-- Format:
+
+simulation:
+spatial:
+type: region
+shape:
+type: multipolygon
+polygons:
+- [[x1, y1], [x2, y2], [x3, y3]]
+- [[x4, y4], [x5, y5], [x6, y6]]
+
+-- Single polygon = multipolygon with one entry
+-- Coordinates are in world space (MapSimulation)
+-- Polygons should remain low resolution (10–50 points)
+-- Holes are NOT supported (future extension)
+
+IM-007 Image Asset System
+-- Images are stored as ENTITY ASSETS, not renderer properties
+-- Images are reusable across:
+--- map rendering
+--- UI (entry cards)
+--- inspection views
+
+-- Format:
+
+assets:
+image:
+path: "assets/images/region_001.png"
+pixel_size: [2048, 2048]
+
+IM-008 Image Scaling Model
+-- Images are NOT defined by fixed world_size
+-- Images scale based on DETAIL LEVEL
+
+-- Format:
+
+assets:
+image:
+path: "..."
+pixel_size: [...]
+detail_level: "planet | region | city | building"
+
+-- Renderer selects appropriate representation based on zoom
+
+IM-009 Image Placement
+-- Images are anchored to the REGION BOUNDING BOX
+-- Polygon defines logical region
+-- Image is scaled to bounding box automatically
+-- No manual transform required (for now)
+
+IM-010 Logic vs Rendering Separation
+-- Simulation logic MUST NOT depend on assets
+-- Assets (images) are purely visual
+-- Polygon shapes are used for:
+--- containment
+--- adjacency (future)
+--- simulation logic
+
+-- Rendering layer uses assets independently of simulation logic
+
+---
+
+SCHEMA / DATA MODEL (UPDATE)
+
+IM-011 Culture Spatial Model
+-- Culture has NO fixed spatial definition
+-- Culture presence is derived from population distribution
+
+-- Pops define culture:
+pop:
+culture: culture_id
+position: [x, y]
+
+-- Regions store aggregated culture distribution (cached)
+-- Culture representation is built bottom-up:
+--- pop → region → higher-level aggregations
+
+-- Enables:
+--- dynamic spread via migration
+--- culture intensity (% based)
+--- simulation-driven evolution
+
+IM-012 Structure Spatial Model
+-- Structures use hybrid spatial representation:
+--- point anchor (required)
+--- optional polygon footprint
+
+-- Format:
+
+simulation:
+spatial:
+type: structure
+position: [x, y]
+shape:
+type: multipolygon
+polygons:
+- [[...], [...], [...]] # optional
+
+-- Position = interaction/reference point
+-- Shape = physical footprint (if applicable)
+
+IM-013 Planet Multi-Representation System
+-- Planets support multiple simulation representations
+
+-- Format:
+
+representations:
+space:
+orbit:
+parent: ...
+a: ...
+e: ...
+map:
+surface_ref: "planet_surface_id"
+
+-- SpaceSimulation uses orbital representation
+-- MapSimulation uses surface_ref
+
+-- Enables:
+--- seamless transition between space and surface
+--- multi-layer simulation (space ↔ region ↔ local)
+
+IM-015 Latent NPC Generation
+-- Implicit pop members are NOT instantiated entities
+
+-- They become entities only when:
+--- player encounters them
+--- system requires them (events, UI, simulation detail)
+
+-- Enables scalable population without full simulation
+
+IM-016 Entity Card System
+-- Every entity is represented as a "card"
+
+entity:
+id: entity_id
+
+knowledge:
+state: untouched | seen | known | detailed
+
+-- Knowledge state controls visible information
+
+IM-017 Discovery System (Touched / Untouched)
+-- Entities start as "untouched"
+-- Player interaction reveals them progressively
+
+States:
+--- untouched → no access
+--- seen → basic info
+--- known → partial attributes
+--- detailed → full data
+
+-- Discovery is persistent across sessions
+
+IM-018 Deck-Based World Seeding
+-- Discovered entities form a player "deck"
+
+-- Before simulation start:
+--- player selects cards
+--- cards modify world generation
+
+-- Effects may include:
+--- spawning entities
+--- modifying regions
+--- influencing cultures
+--- altering simulation parameters
+
+SCHEMA / SYSTEM DESIGN (UPDATE)
+
+IM-019 Heatmap System (Spatial Analysis Layer)
+-- Heatmaps represent spatial aggregation of simulation data
+
+heatmap:
+id: heatmap_id
+
+source:
+type: entity_type
+attribute: attribute_name
+
+aggregation:
+type: spatial_sum | density | average
+
+-- Heatmaps are:
+--- derived at runtime
+--- resolution-dependent (based on zoom)
+--- not permanently stored (optional caching)
+
+IM-020 Ledger System (Statistical Aggregation Layer)
+-- Ledger provides structured, non-spatial summaries
+
+ledger:
+id: ledger_id
+
+source:
+type: entity_type
+
+metrics:
+- metric_name_1
+- metric_name_2
+
+-- Ledgers aggregate:
+--- totals
+--- distributions
+--- categorized counts
+
+IM-021 Analysis Layer (Separation of Concerns)
+-- Heatmap and Ledger belong to a dedicated analysis layer
+
+Location:
+sim_core/analysis/
+
+-- Responsibilities:
+--- collect data from simulations
+--- compute derived values
+--- provide structured outputs for UI
+
+-- Simulations MUST NOT contain aggregation logic
+
+IM-022 Knowledge-Dependent Information Rendering
+-- Heatmaps and ledgers respect entity knowledge state
+
+-- Example:
+--- low knowledge → blurred / partial data
+--- high knowledge → precise data
+
+-- Enables:
+--- fog-of-war for information
+--- discovery-driven analytics
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+---
+
+## LONG TERM PLANS
+
+LP-001 Simulation Type: Biosphere Simulation
+-- Plant growth system (time-based)
+-- Animal behavior (feeding, movement)
+-- Species introduction events (timeline-driven)
+-- Modular behavior system (plug-in logic per species)
+
+LP-002 Simulation Type: Person Simulation
+-- Individual agent logic
+-- Interaction with entities (species, culture, structures)
+-- Perspective switching within same region
+
+LP-003 Simulation Type: RTS / Faction Simulation
+-- Resource management
+-- Territory control (based on regions)
+-- Multi-region interaction
+
+LP-004 Layer System (CRITICAL)
+-- Hierarchical layers:
+--- planet → region → city → building
+-- Zoom-dependent activation of layers
+-- Efficient filtering of visible layers
+
+LP-005 Event / Sync System
+-- Cross-simulation event bus
+-- Event types:
+--- state change (entity update)
+--- signal (notification)
+-- Time-aware propagation between simulations
+
+LP-006 Entity System
+-- entities.yaml → runtime loader
+-- Active entity filtering by year
+-- Write-back system for simulation changes
+
+LP-007 Camera System (Advanced)
+-- Simulation-specific camera profiles
+-- Follow entity mode
+-- Cinematic transitions
+-- RTS-style controls
+
+LP-008 Multi-Level Image Representation (LOD System)
+-- Support multiple images per entity at different detail levels
+--- planet → region → city → building
+-- Renderer selects appropriate image based on zoom level
+-- Enables seamless zoom transitions and progressive detail
+
+LP-009 Region Geometry System Expansion
+-- Add support for:
+--- region adjacency detection
+--- spatial queries (point-in-region)
+--- region subdivision (subregions)
+-- Future: support holes and complex geometries
+
+LP-010 External Asset Pipeline
+-- Support integration with external drawing tools (Photoshop, Krita, etc.)
+-- Standardized asset folder structure
+-- Optional file dialog for asset selection in UI
+-- Link assets dynamically to entities
+
+---
+
+LP-011 Emergent Culture Simulation
+-- Culture derived from population distribution
+-- Region-level aggregation of culture
+-- Future:
+--- influence gradients
+--- cultural diffusion
+--- conflict / overlap systems
+
+LP-012 Structure Aggregation System
+-- Structures can aggregate into:
+--- settlements
+--- cities
+--- megastructures
+
+-- Aggregation based on:
+--- proximity
+--- function
+--- population density
+
+LP-013 Planetary Multi-Layer Simulation
+-- Planets act as containers for:
+--- orbital layer (space)
+--- surface layer (map)
+--- subregion layers
+
+-- Supports:
+--- zoom-based transitions
+--- cross-layer interactions
+
+
+LONG TERM PLANS (UPDATE)
+
+LP-014 Dynamic NPC Instantiation
+-- Generate individuals from pops dynamically
+-- Assign traits based on pop attributes
+
+LP-015 Card Effect System
+-- Define gameplay effects for entity cards
+-- Allow stacking and combinations
+
+LP-016 Knowledge-Based UI
+-- UI adapts to entity knowledge state
+-- Hidden / revealed information layers
+
+LP-017 Advanced Heatmap Rendering
+-- GPU-based rendering
+-- multi-layer overlays
+-- blending modes
+
+LP-018 Historical Ledger Tracking
+-- store time snapshots
+-- allow trend analysis
+-- enable replay / history UI
+
+LP-019 Cross-Simulation Analysis
+-- combine data from:
+--- space simulation
+--- map simulation
+--- future biosphere simulation
+
+-- unified information interface
+
+IM-014 Pop System (Aggregated Population Model)
+-- Pops represent aggregated humans
+
+-- Pop size includes ALL individuals (explicit + implicit)
+
+pop:
+id: pop_id
+name: string
+size: integer
+
+individuals:
+- person_id_1
+- person_id_2
+
+attributes:
+culture: culture_id
+profession: string
+location: region_id
+
+-- Individuals are a subset of the pop
+-- Remaining population is implicit
+
+
+
+
+---
+
+## RANDOM IDEAS
+
+RI-001 Vehicles
+-- Vehicle inspection via tab pop-up
+-- Internal component visualization (based on vehicle template system)
+-- Link to simulation (position, usage, ownership)
+
+RI-002 UI / Interaction
+-- Tab-based navigation with context switching
+-- Future: draggable simulation views (multi-view canvas)
+
+RI-003 World Representation
+-- Knowledge-canvas style interface (node-based world view)
+-- Click entities → open related simulations
+
+RI-004 Regions
+-- Visual identity via textures/images instead of colors
+-- Cultural overlays (later: borders, influence zones)
+
+RI-005 Misc
+-- “Zoom storytelling”: different info revealed at different scales
+-- Simulation replay / timeline scrubbing
+
+---
+
+## END OF FILE

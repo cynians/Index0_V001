@@ -1,4 +1,4 @@
-from scripts.sim_core.space.orbit import KeplerOrbit, DynamicOrbit
+from simulations.space.orbit import KeplerOrbit, DynamicOrbit
 
 
 class SpaceObject:

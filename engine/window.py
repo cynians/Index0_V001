@@ -1,7 +1,7 @@
 import pygame
 
-from scripts.sim_core.camera import Camera
-from scripts.sim_core.input_controller import InputController
+from engine.camera import Camera
+from engine.input_controller import InputController
 
 
 class SimWindow:

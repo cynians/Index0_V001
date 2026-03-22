@@ -981,3 +981,317 @@ Constraint:
 
 * Existing simulation logic (space system, orbit, clock) must remain untouched
 * Refactor must wrap around current implementation, not rewrite it
+
+SESSION 2 — Simulation Architecture, App Entry Point, and Map Layer Foundation
+
+---
+
+## OVERVIEW
+
+This session focused on transitioning from a monolithic test simulation (`test_sim.py`) to a modular, multi-simulation architecture with a clean application entry point. The groundwork for multiple simulation types (space, map, later person/RTS) was established, including tab-based execution, simulation isolation, and camera behavior abstraction.
+
+---
+
+## WHAT HAS BEEN IMPLEMENTED
+
+1. APPLICATION ENTRY POINT
+
+* Introduced `app.py` as the main executable entry point.
+* `App` now inherits from `SimWindow` and replaces `test_sim.py` as the primary runtime.
+* Responsibilities of App:
+
+  * manage simulation tabs
+  * route update / draw / input
+  * remain as thin as possible (no simulation logic)
+
+Result:
+
+* Clean separation between runtime shell and simulation logic.
+
+2. TAB-BASED SIMULATION SYSTEM
+
+* Implemented:
+
+  * `TabManager`
+  * `Tab`
+  * `SimulationInstance`
+
+* Each tab holds one simulation instance.
+
+* Multiple simulations can run in parallel (currently limited to 2 for testing).
+
+* Active tab receives input; all tabs update (subject to future pause rules).
+
+Design decisions:
+
+* Tabs represent parallel simulation contexts.
+* Future: inactive tabs may run at reduced fidelity / be paused.
+
+3. SIMULATION TYPES (FIRST SPLIT)
+
+Two distinct simulation types introduced:
+
+A) SpaceSimulation
+
+* Orbital mechanics (Kepler orbits)
+* Celestial system (sun, earth, moon)
+* Infinite / unbounded camera
+
+B) MapSimulation (NEW)
+
+* Fixed-location simulation
+* No orbital mechanics
+* Single anchored map layer (planet-scale)
+* Designed as base for:
+
+  * region sim
+  * city sim
+  * biosim
+  * person sim
+
+4. MAP LAYER SYSTEM INTEGRATION
+
+* Reused `MapLayerStack` for MapSimulation.
+
+* Map is defined as:
+
+  * large square region (`map_size`)
+  * centered at origin
+  * composed of layered tiles
+
+* Introduced:
+
+  * `get_layers()` → renderer hook
+
+Result:
+
+* MapSim renders using same layer abstraction as planetary bodies, but without orbit logic.
+
+5. RENDERER REFACTOR
+
+* Renderer updated to support:
+
+  * SpaceSimulation (system + orbits)
+  * MapSimulation (direct layers)
+
+* Key separation:
+
+  * `view` → camera, screen, fonts
+  * `simulation` → world data
+
+* Renderer now:
+
+  * does NOT depend on test_sim
+  * works with any simulation exposing expected hooks
+
+6. CAMERA ARCHITECTURE (MAJOR CHANGE)
+
+Problem:
+
+* Camera behavior differed per simulation but was handled ad hoc in App.
+
+Solution:
+
+* Introduced `CameraController` in `sim_core`.
+
+Responsibilities:
+
+* initialize camera per simulation (center + zoom)
+* enforce constraints (bounds, zoom limits)
+
+MapSimulation provides:
+
+* bounds
+* min/max zoom
+* center
+
+App:
+
+* delegates camera behavior to controller
+
+Result:
+
+* Camera logic fully decoupled from:
+
+  * rendering
+  * simulations
+  * application shell
+
+7. MAP CAMERA BEHAVIOR
+
+Implemented:
+
+* On switching to MapSimulation:
+
+  * camera centers on map
+  * zoom auto-fits map to screen
+
+* During runtime:
+
+  * camera is clamped to map bounds
+  * zoom is restricted
+
+Result:
+
+* Map view behaves like a contained world
+* Space view remains unrestricted
+
+8. REMOVAL OF test_sim DEPENDENCY
+
+* test_sim.py reduced to minimal / temporary usage.
+* All meaningful logic migrated into:
+
+  * simulations
+  * renderer
+  * app
+
+Goal achieved:
+
+* test_sim no longer defines architecture.
+
+---
+
+## CURRENT SYSTEM STATE
+
+Architecture now:
+
+App (entry point)
+→ TabManager
+→ Tab
+→ SimulationInstance
+→ Simulation (Space / Map)
+
+Camera
+→ CameraController (policy layer)
+
+Renderer
+→ consumes simulation + camera
+→ no simulation-specific logic beyond hooks
+
+Simulations
+→ define world + rules
+→ expose rendering data
+
+---
+
+## WHAT IS LEFT TO DO (NEXT STEPS)
+
+1. LAYER HIERARCHY SYSTEM (CRITICAL)
+
+Currently:
+
+* Map layers are flat
+
+Next:
+
+* introduce zoom-dependent layer hierarchy:
+
+  * planet → region → city → building
+
+Requirements:
+
+* layers activate based on zoom level
+* hierarchical nesting of MapLayerStacks
+* efficient filtering for rendering
+
+This is the next core system.
+
+2. SIMULATION-SPECIFIC CAMERA DEFINITIONS
+
+Currently:
+
+* CameraController uses generic heuristics (map_size, bounds)
+
+Next:
+
+* move toward simulation-defined camera configs:
+
+  * get_camera_setup()
+  * get_camera_constraints()
+
+Improves flexibility and removes assumptions.
+
+3. TAB EXECUTION MODEL (PAUSE / CATCH-UP)
+
+Planned behavior:
+
+* active tab → high fidelity simulation
+* inactive tabs → paused or reduced fidelity
+* on switch:
+
+  * simulation “catches up” via compressed history
+
+Needed:
+
+* time compression model
+* event replay / aggregation
+
+4. EVENT / MESSAGE SYNC SYSTEM
+
+Core design already defined:
+
+* simulations communicate via:
+
+  * events (state changes)
+  * signals (notifications)
+
+Example:
+
+* biosim introduces species
+* person sim later encounters it
+
+Next:
+
+* define event format
+* implement minimal event bus
+
+5. ENTITY INTEGRATION (entities.yaml)
+
+Planned:
+
+* simulations read/write entity state
+* entities evolve over time
+
+Needed:
+
+* entity loader
+* time-based filtering
+* write-back system
+
+6. RENDERER EXTENSION
+
+Currently:
+
+* basic drawing works
+
+Next:
+
+* conditional rendering by zoom
+* labels scaling
+* layer toggles
+* later: UI overlays per simulation
+
+7. CLEANUP PASS
+
+* remove remaining legacy code from test_sim
+* verify all imports and module boundaries
+* ensure no simulation logic leaks into App
+
+---
+
+## SUMMARY
+
+This session established the **core engine architecture**:
+
+* modular simulations
+* tab-based execution
+* reusable renderer
+* simulation-driven camera behavior
+* separation of concerns across all layers
+
+The system is now ready to transition from:
+“prototype simulation”
+→ “extensible multi-simulation engine”
+
+Next session focus:
+→ Layer hierarchy and zoom-dependent world structure

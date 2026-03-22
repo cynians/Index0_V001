@@ -1,0 +1,398 @@
+------------------------------------------------
+TASK LIST
+------------------------------------------------
+
+------------------------------------------------
+INCOMING IDEAS (UNSORTED / PRE-CONSOLIDATION)
+------------------------------------------------
+
+# Add new ideas here BEFORE assigning TASK-IDs
+# Format (temporary):
+
+# IDEA-X
+# Description:
+# Notes:
+# Dependencies (optional):
+
+------------------------------------------------
+CORE APPLICATION / ARCHITECTURE
+------------------------------------------------
+
+TASK-001
+Difficulty: 3
+Requires: None
+Description: Refactor App to use SimulationInstance + Tab system as single entry point
+
+TASK-033
+Difficulty: 6
+Requires: TASK-001
+Description: Implement tab switching UI and active simulation routing
+
+TASK-002
+Difficulty: 4
+Requires: TASK-001
+Description: Separate simulation (logic) from view (SimWindow) across all sims
+
+TASK-003
+Difficulty: 4
+Requires: TASK-002
+Description: Refactor Renderer to use active simulation via App instead of TestSimulation
+
+TASK-004
+Difficulty: 3
+Requires: TASK-002
+Description: Remove legacy TestSimulation responsibilities and reduce it to minimal test harness
+
+------------------------------------------------
+RENDERING SYSTEM
+------------------------------------------------
+
+TASK-009
+Difficulty: 6
+Requires: TASK-003
+Description: Extend Renderer to support both SpaceSimulation and MapSimulation rendering modes
+
+TASK-010
+Difficulty: 5
+Requires: TASK-006
+Description: Add layer rendering pipeline for MapSimulation (non-orbital)
+
+TASK-011
+Difficulty: 6
+Requires: TASK-010
+Description: Implement zoom-based layer resolution handling for map layers
+
+TASK-012
+Difficulty: 7
+Requires: TASK-011
+Description: Introduce hierarchical map layers (planet → region → subregion)
+
+------------------------------------------------
+BASE SIMULATIONS
+------------------------------------------------
+
+TASK-005
+Difficulty: 5
+Requires: TASK-002
+Description: Implement SpaceSimulation as standalone simulation module
+
+TASK-006
+Difficulty: 5
+Requires: TASK-002
+Description: Implement MapSimulation as standalone simulation module with fixed layer system
+
+TASK-034
+Difficulty: 5
+Requires: TASK-006
+Description: Implement camera behavior profiles per simulation type
+
+TASK-007
+Difficulty: 4
+Requires: TASK-006
+Description: Add camera constraints for MapSimulation (bounded movement + zoom limits)
+
+TASK-008
+Difficulty: 3
+Requires: TASK-006
+Description: Initialize MapSimulation camera centered and scaled to region size
+
+TASK-032
+Difficulty: 7
+Requires: TASK-005
+Description: Implement multi-representation system for planets (space ↔ map linkage)
+
+------------------------------------------------
+WORLD / SPATIAL SYSTEM
+------------------------------------------------
+
+TASK-013
+Difficulty: 6
+Requires: TASK-006
+Description: Implement entity loading into MapSimulation from world model
+
+TASK-021
+Difficulty: 6
+Requires: TASK-006
+Description: Implement structure spatial system (point anchor + optional polygon footprint), including:
+- Environmental modifiers (e.g. sleep quality, safety, comfort)
+
+TASK-022
+Difficulty: 7
+Requires: TASK-006
+Description: Implement region shape system using multipolygon geometry
+
+TASK-023
+Difficulty: 8
+Requires: TASK-022
+Description: Implement spatial queries (point-in-region, overlap detection)
+
+TASK-019
+Difficulty: 6
+Requires: TASK-006
+Description: Implement support for external map images (file dialog + display pipeline)
+
+TASK-020
+Difficulty: 5
+Requires: TASK-019
+Description: Implement resolution/scale system for map images independent of real-world size
+
+------------------------------------------------
+POPULATION / ENTITY CORE
+------------------------------------------------
+
+TASK-014
+Difficulty: 7
+Requires: TASK-013
+Description: Implement pop system (aggregated population with optional individuals)
+
+TASK-015
+Difficulty: 6
+Requires: TASK-014
+Description: Implement latent NPC generation from pops (on-demand instantiation)
+
+TASK-016
+Difficulty: 7
+Requires: TASK-014
+Description: Implement entity knowledge state system (untouched → detailed), including:
+- Information propagation delays (distance, medium, infrastructure)
+- Optional distortion/decay of information
+
+------------------------------------------------
+PLAYER INTERACTION LAYER
+------------------------------------------------
+
+TASK-017
+Difficulty: 8
+Requires: TASK-016
+Description: Implement card system representing all entities with progressive discovery, including:
+- Personality traits and behavioral tendencies
+
+TASK-018
+Difficulty: 7
+Requires: TASK-017
+Description: Implement deck system allowing player to select discovered entities before simulation start
+
+------------------------------------------------
+ANALYSIS / INFORMATION LAYER
+------------------------------------------------
+
+TASK-026
+Difficulty: 6
+Requires: TASK-006
+Description: Create analysis module (sim_core/analysis) for derived data systems
+
+TASK-027
+Difficulty: 7
+Requires: TASK-026
+Description: Implement heatmap system for spatial aggregation (population, culture, etc.)
+
+TASK-028
+Difficulty: 6
+Requires: TASK-026
+Description: Implement ledger system for statistical summaries
+
+TASK-029
+Difficulty: 7
+Requires: TASK-027
+Description: Integrate heatmap rendering into MapSimulation (toggleable overlay)
+
+TASK-030
+Difficulty: 7
+Requires: TASK-028
+Description: Implement UI panel for ledger display
+
+TASK-031
+Difficulty: 8
+Requires: TASK-016
+Description: Make heatmap and ledger outputs dependent on knowledge state (fog-of-information)
+
+------------------------------------------------
+CULTURE SYSTEM
+------------------------------------------------
+
+TASK-024
+Difficulty: 7
+Requires: TASK-014
+Description: Implement culture as derived property from population distribution
+
+TASK-025
+Difficulty: 8
+Requires: TASK-024
+Description: Implement region-level aggregation of culture (percent-based)
+
+------------------------------------------------
+BIOLOGICAL LAYER
+------------------------------------------------
+
+TASK-052
+Difficulty: 8
+Requires: TASK-014
+Description: Implement SpeciesSimulation (biological layer for entities), including:
+- Physiological needs (sleep, hunger, hydration)
+- Body state variables (fatigue, health, stress)
+- Species-specific parameters (cycles, metabolism)
+- Time-based progression of needs
+- Sleep system:
+  - Base recovery anywhere
+  - Environmental modifiers (temperature, safety, exposure)
+  - Infrastructure modifiers (beds, shelter)
+  - Sleep debt and recovery curves
+- Physiological and psychological conditions (illness, fatigue disorders, mental states)
+- Exposure of normalized need signals to decision systems
+
+------------------------------------------------
+CORE SIMULATION SYSTEMS
+------------------------------------------------
+
+TASK-037
+Difficulty: 7
+Requires: TASK-014
+Description: Implement PersonSimulation (individual agents), including:
+- Need/effort-driven decision system (from SpeciesSimulation)
+- Dynamic task queue (enqueue, reprioritize, abort)
+- Multi-need arbitration:
+  - Weighted utility
+  - Stochastic variation
+  - Personality modifiers
+- Task origin tracking (need, institution, faction, opportunity)
+- Evaluation of assigned tasks:
+  - compliance, delay, refusal, deviation
+- Habit system:
+  - adaptive learning and decay
+  - personality interaction
+  - hard constraints (e.g. compulsions)
+- Sleep as task with quality tradeoff (location-dependent)
+- Integration with capabilities, infrastructure, and knowledge
+
+TASK-035
+Difficulty: 6
+Requires: TASK-014
+Description: Implement ProducerSimulation, including:
+- Agent-driven production processes
+- Interruptible execution (pause/resume/abort)
+- Inventory system:
+  - entity-based
+  - structure-based
+  - spatial anchoring
+- Resource decay/spoilage system:
+  - time-based
+  - condition-based modifiers
+
+TASK-036
+Difficulty: 6
+Requires: TASK-014
+Description: Implement InstitutionSimulation, including:
+- Role system
+- Hierarchical command structures
+- Task assignment pipelines
+- Enforcement strength
+- Group-context execution (shared tasks/resources)
+- Role assignment systems (employment, conscription)
+
+TASK-043
+Difficulty: 7
+Requires: TASK-036
+Description: Implement FactionSimulation, including:
+- Directives and policies
+- Propagation into institutions
+
+TASK-042
+Difficulty: 8
+Requires: TASK-043
+Description: Implement ConflictSimulation
+
+TASK-044
+Difficulty: 7
+Requires: TASK-036
+Description: Implement TechnologySimulation, including:
+- Localized availability and diffusion
+- Skill system:
+  - experience-based progression
+  - context-dependent learning (tools, environment, teaching)
+
+TASK-045
+Difficulty: 7
+Requires: TASK-016
+Description: Implement EventSimulation, including:
+- Behavioral overrides (panic, morale shifts)
+- Biological impacts (fatigue, stress, illness)
+
+------------------------------------------------
+ECONOMY / LOGISTICS SYSTEMS
+------------------------------------------------
+
+TASK-040
+Difficulty: 8
+Requires: TASK-035
+Description: Implement EconomySimulation
+
+TASK-041
+Difficulty: 7
+Requires: TASK-040
+Description: Implement LogisticsSimulation, including:
+- Movement as task
+- Dynamic rerouting and interruption
+
+TASK-048
+Difficulty: 8
+Requires: TASK-041
+Description: Implement InfrastructureSimulation (capability networks)
+
+------------------------------------------------
+ECONOMY DETAIL LAYER
+------------------------------------------------
+
+TASK-046
+Difficulty: 8
+Requires: TASK-040
+Description: Implement MarketSimulation
+
+TASK-047
+Difficulty: 7
+Requires: TASK-037
+Description: Implement MerchantSimulation, including:
+- Task-driven behavior
+- Opportunistic decision-making
+- Multi-motivation system
+
+------------------------------------------------
+ENVIRONMENT / BIOREGION / RESOURCES
+------------------------------------------------
+
+TASK-039
+Difficulty: 7
+Requires: TASK-006
+Description: Implement BioregionSimulation, including:
+- Species distribution
+- Environmental interaction
+- Dynamic propagation (plants/ecosystems)
+
+TASK-049
+Difficulty: 5
+Requires: TASK-039
+Description: Resource nodes
+
+TASK-050
+Difficulty: 7
+Requires: TASK-049
+Description: Resource extraction processes
+
+TASK-051
+Difficulty: 7
+Requires: TASK-044
+Description: Capability checks, including:
+- Composite evaluation (person, tools, infrastructure, environment)
+- Runtime validation and mid-task invalidation
+
+------------------------------------------------
+VEHICLE SYSTEM
+------------------------------------------------
+
+TASK-038
+Difficulty: 8
+Requires: TASK-002
+Description: Implement VehicleSimulation
+
+------------------------------------------------
+END
+------------------------------------------------

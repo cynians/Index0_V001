@@ -1,0 +1,46 @@
+# ================================================================
+# Earth (Planet)
+# ================================================================
+
+- id: planet_earth
+  name: Earth
+  type: location
+
+  location_class: planet
+
+  coords:
+    type: point
+    x: 0
+    y: 0
+
+  bounds:
+    type: radius
+    value: 6371000
+
+  population: 8000000000
+
+  start_year: 0
+
+
+# ================================================================
+# Europe (Continent)
+# ================================================================
+
+- id: geo_europe
+  name: Europe
+  type: location
+
+  location_class: continent
+
+  parent_location: planet_earth
+
+  bounds:
+    type: bbox
+    min_x: -5000000
+    max_x:  5000000
+    min_y:  3000000
+    max_y:  9000000
+
+  population: 450000000
+
+  start_year: 0
