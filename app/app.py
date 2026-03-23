@@ -46,7 +46,7 @@ class App(SimWindow):
             world_model=self.world_model
         )
 
-        sim1 = SimulationInstance(SpaceSimulation())
+        sim1 = SimulationInstance(SpaceSimulation(world_model=self.world_model))
         sim2 = SimulationInstance(MapSimulation(context))
 
         self.tab_manager.add_tab(Tab(sim1, name="Space"))
@@ -98,6 +98,31 @@ class App(SimWindow):
         self.tab_manager.active_index = len(self.tab_manager.tabs) - 1
         self.camera_controller.setup_for_sim(new_map_sim)
 
+    def _open_map_for_selected_space_body(self, space_sim):
+        """
+        Ensure a map anchor exists for the selected space body and open it.
+        """
+        if space_sim is None:
+            return
+
+        if not hasattr(space_sim, "get_selected_body_entity"):
+            return
+
+        body_entity = space_sim.get_selected_body_entity()
+        if not body_entity:
+            return
+
+        location_id, _created = space_sim.system.ensure_location_anchor_for_body_entity(
+            body_entity,
+            self.world_model
+        )
+
+        if not location_id:
+            return
+
+        self.world_model.refresh()
+        self._open_region_map_tab(location_id)
+
     def update(self, dt):
         self.tab_manager.update(dt)
 
@@ -137,12 +162,24 @@ class App(SimWindow):
             if action_id == "open_region_map" and active_sim is not None:
                 selected_entity_id = getattr(active_sim, "selected_entity_id", None)
                 self._open_region_map_tab(selected_entity_id)
+
+            elif action_id == "open_space_body_map" and active_sim is not None:
+                self._open_map_for_selected_space_body(active_sim)
+
             return
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 2:
             if active_sim is not None:
                 self.camera_controller.setup_for_sim(active_sim)
             return
+
+        if active_sim and hasattr(active_sim, "handle_pointer_motion"):
+            if event.type == pygame.MOUSEMOTION:
+                active_sim.handle_pointer_motion(
+                    event=event,
+                    camera=self.camera,
+                    screen_pos=event.pos
+                )
 
         if active_sim and hasattr(active_sim, "handle_pointer_event"):
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:

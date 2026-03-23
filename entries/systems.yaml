@@ -1,54 +1,30 @@
-# ================================================================
-# Sol System Root
-# ================================================================
-
 - id: system_sol
   name: Sol System
   type: system
-
   system_role: star_system
   system_class: stellar_system
-
   start_year: 0
-
-
-# ================================================================
-# Sol
-# ================================================================
-
 - id: body_sol
   name: Sol
   type: system
-
   system_role: orbital_body
   star_system: system_sol
-
   body_class: star
   parent_body: null
   location_entity: null
-
   mass_kg: 1.98847e30
   radius_m: 696340000
-
   semi_major_axis_m: 0
   eccentricity: 0.0
   inclination_deg: 0.0
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-
   display_color:
-    - 255
-    - 220
-    - 120
-
+  - 255
+  - 220
+  - 120
   start_year: 0
-
-
-# ================================================================
-# Inner Planets
-# ================================================================
-
 - id: body_mercury
   name: Mercury
   type: system
@@ -65,9 +41,11 @@
   longitude_of_ascending_node_deg: 48.331
   argument_of_periapsis_deg: 29.124
   mean_anomaly_deg_at_epoch: 174.796
-  display_color: [170, 165, 160]
+  display_color:
+  - 170
+  - 165
+  - 160
   start_year: 0
-
 - id: body_venus
   name: Venus
   type: system
@@ -81,12 +59,14 @@
   semi_major_axis_m: 108208000000
   eccentricity: 0.006772
   inclination_deg: 3.39458
-  longitude_of_ascending_node_deg: 76.680
+  longitude_of_ascending_node_deg: 76.68
   argument_of_periapsis_deg: 54.884
   mean_anomaly_deg_at_epoch: 50.115
-  display_color: [210, 190, 140]
+  display_color:
+  - 210
+  - 190
+  - 140
   start_year: 0
-
 - id: body_earth
   name: Earth
   type: system
@@ -99,13 +79,15 @@
   radius_m: 6371000
   semi_major_axis_m: 149597870700
   eccentricity: 0.0167086
-  inclination_deg: 0.00005
+  inclination_deg: 5.0e-05
   longitude_of_ascending_node_deg: -11.26064
   argument_of_periapsis_deg: 114.20783
   mean_anomaly_deg_at_epoch: 358.617
-  display_color: [100, 140, 255]
+  display_color:
+  - 100
+  - 140
+  - 255
   start_year: 0
-
 - id: body_luna
   name: Luna
   type: system
@@ -122,9 +104,11 @@
   longitude_of_ascending_node_deg: 125.08
   argument_of_periapsis_deg: 318.15
   mean_anomaly_deg_at_epoch: 135.27
-  display_color: [200, 200, 210]
+  display_color:
+  - 200
+  - 200
+  - 210
   start_year: 0
-
 - id: body_mars
   name: Mars
   type: system
@@ -132,18 +116,20 @@
   star_system: system_sol
   body_class: planet
   parent_body: body_sol
-  location_entity: null
+  location_entity: planet_mars
   mass_kg: 6.4171e23
   radius_m: 3389500
   semi_major_axis_m: 227939200000
   eccentricity: 0.0934
-  inclination_deg: 1.850
+  inclination_deg: 1.85
   longitude_of_ascending_node_deg: 49.558
   argument_of_periapsis_deg: 286.502
   mean_anomaly_deg_at_epoch: 19.373
-  display_color: [210, 120, 90]
+  display_color:
+  - 210
+  - 120
+  - 90
   start_year: 0
-
 - id: body_phobos
   name: Phobos
   type: system
@@ -160,9 +146,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [150, 140, 135]
+  display_color:
+  - 150
+  - 140
+  - 135
   start_year: 0
-
 - id: body_deimos
   name: Deimos
   type: system
@@ -179,14 +167,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [130, 125, 120]
+  display_color:
+  - 130
+  - 125
+  - 120
   start_year: 0
-
-
-# ================================================================
-# Main Belt Planetoids / Dwarf Planets
-# ================================================================
-
 - id: body_ceres
   name: Ceres
   type: system
@@ -203,9 +188,11 @@
   longitude_of_ascending_node_deg: 80.305
   argument_of_periapsis_deg: 73.597
   mean_anomaly_deg_at_epoch: 95.989
-  display_color: [175, 175, 165]
+  display_color:
+  - 175
+  - 175
+  - 165
   start_year: 0
-
 - id: body_vesta
   name: Vesta
   type: system
@@ -220,11 +207,13 @@
   eccentricity: 0.0887
   inclination_deg: 7.14
   longitude_of_ascending_node_deg: 103.85
-  argument_of_periapsis_deg: 151.20
+  argument_of_periapsis_deg: 151.2
   mean_anomaly_deg_at_epoch: 20.0
-  display_color: [160, 160, 155]
+  display_color:
+  - 160
+  - 160
+  - 155
   start_year: 0
-
 - id: body_pallas
   name: Pallas
   type: system
@@ -241,9 +230,11 @@
   longitude_of_ascending_node_deg: 173.09
   argument_of_periapsis_deg: 310.17
   mean_anomaly_deg_at_epoch: 33.0
-  display_color: [150, 155, 150]
+  display_color:
+  - 150
+  - 155
+  - 150
   start_year: 0
-
 - id: body_hygiea
   name: Hygiea
   type: system
@@ -257,17 +248,14 @@
   semi_major_axis_m: 470300000000
   eccentricity: 0.112
   inclination_deg: 3.84
-  longitude_of_ascending_node_deg: 283.20
+  longitude_of_ascending_node_deg: 283.2
   argument_of_periapsis_deg: 312.32
   mean_anomaly_deg_at_epoch: 12.0
-  display_color: [135, 145, 135]
+  display_color:
+  - 135
+  - 145
+  - 135
   start_year: 0
-
-
-# ================================================================
-# Outer Planets
-# ================================================================
-
 - id: body_jupiter
   name: Jupiter
   type: system
@@ -283,10 +271,12 @@
   inclination_deg: 1.304
   longitude_of_ascending_node_deg: 100.464
   argument_of_periapsis_deg: 273.867
-  mean_anomaly_deg_at_epoch: 20.020
-  display_color: [215, 175, 130]
+  mean_anomaly_deg_at_epoch: 20.02
+  display_color:
+  - 215
+  - 175
+  - 130
   start_year: 0
-
 - id: body_io
   name: Io
   type: system
@@ -303,9 +293,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [235, 220, 140]
+  display_color:
+  - 235
+  - 220
+  - 140
   start_year: 0
-
 - id: body_europa
   name: Europa
   type: system
@@ -322,9 +314,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [220, 215, 200]
+  display_color:
+  - 220
+  - 215
+  - 200
   start_year: 0
-
 - id: body_ganymede
   name: Ganymede
   type: system
@@ -341,9 +335,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [165, 165, 160]
+  display_color:
+  - 165
+  - 165
+  - 160
   start_year: 0
-
 - id: body_callisto
   name: Callisto
   type: system
@@ -360,9 +356,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [145, 145, 140]
+  display_color:
+  - 145
+  - 145
+  - 140
   start_year: 0
-
 - id: body_amalthea
   name: Amalthea
   type: system
@@ -379,9 +377,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [155, 120, 110]
+  display_color:
+  - 155
+  - 120
+  - 110
   start_year: 0
-
 - id: body_himalia
   name: Himalia
   type: system
@@ -398,9 +398,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [120, 120, 115]
+  display_color:
+  - 120
+  - 120
+  - 115
   start_year: 0
-
 - id: body_saturn
   name: Saturn
   type: system
@@ -416,10 +418,12 @@
   inclination_deg: 2.485
   longitude_of_ascending_node_deg: 113.665
   argument_of_periapsis_deg: 339.392
-  mean_anomaly_deg_at_epoch: 317.020
-  display_color: [220, 205, 150]
+  mean_anomaly_deg_at_epoch: 317.02
+  display_color:
+  - 220
+  - 205
+  - 150
   start_year: 0
-
 - id: body_mimas
   name: Mimas
   type: system
@@ -436,9 +440,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [180, 180, 175]
+  display_color:
+  - 180
+  - 180
+  - 175
   start_year: 0
-
 - id: body_enceladus
   name: Enceladus
   type: system
@@ -455,9 +461,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [235, 235, 240]
+  display_color:
+  - 235
+  - 235
+  - 240
   start_year: 0
-
 - id: body_tethys
   name: Tethys
   type: system
@@ -474,9 +482,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [210, 210, 205]
+  display_color:
+  - 210
+  - 210
+  - 205
   start_year: 0
-
 - id: body_dione
   name: Dione
   type: system
@@ -493,9 +503,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [195, 195, 195]
+  display_color:
+  - 195
+  - 195
+  - 195
   start_year: 0
-
 - id: body_rhea
   name: Rhea
   type: system
@@ -512,9 +524,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [185, 185, 182]
+  display_color:
+  - 185
+  - 185
+  - 182
   start_year: 0
-
 - id: body_titan
   name: Titan
   type: system
@@ -531,9 +545,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [210, 170, 110]
+  display_color:
+  - 210
+  - 170
+  - 110
   start_year: 0
-
 - id: body_iapetus
   name: Iapetus
   type: system
@@ -550,9 +566,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [160, 155, 135]
+  display_color:
+  - 160
+  - 155
+  - 135
   start_year: 0
-
 - id: body_phoebe
   name: Phoebe
   type: system
@@ -569,9 +587,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [100, 100, 105]
+  display_color:
+  - 100
+  - 100
+  - 105
   start_year: 0
-
 - id: body_uranus
   name: Uranus
   type: system
@@ -588,9 +608,11 @@
   longitude_of_ascending_node_deg: 74.006
   argument_of_periapsis_deg: 96.998857
   mean_anomaly_deg_at_epoch: 142.2386
-  display_color: [170, 225, 230]
+  display_color:
+  - 170
+  - 225
+  - 230
   start_year: 0
-
 - id: body_miranda
   name: Miranda
   type: system
@@ -607,9 +629,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [185, 185, 180]
+  display_color:
+  - 185
+  - 185
+  - 180
   start_year: 0
-
 - id: body_ariel
   name: Ariel
   type: system
@@ -626,9 +650,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [215, 215, 220]
+  display_color:
+  - 215
+  - 215
+  - 220
   start_year: 0
-
 - id: body_umbriel
   name: Umbriel
   type: system
@@ -645,9 +671,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [120, 120, 125]
+  display_color:
+  - 120
+  - 120
+  - 125
   start_year: 0
-
 - id: body_titania
   name: Titania
   type: system
@@ -664,9 +692,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [190, 190, 200]
+  display_color:
+  - 190
+  - 190
+  - 200
   start_year: 0
-
 - id: body_oberon
   name: Oberon
   type: system
@@ -683,9 +713,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [165, 165, 170]
+  display_color:
+  - 165
+  - 165
+  - 170
   start_year: 0
-
 - id: body_neptune
   name: Neptune
   type: system
@@ -698,13 +730,15 @@
   radius_m: 24622000
   semi_major_axis_m: 4495060000000
   eccentricity: 0.009456
-  inclination_deg: 1.770
+  inclination_deg: 1.77
   longitude_of_ascending_node_deg: 131.784
   argument_of_periapsis_deg: 273.187
   mean_anomaly_deg_at_epoch: 259.908
-  display_color: [90, 130, 230]
+  display_color:
+  - 90
+  - 130
+  - 230
   start_year: 0
-
 - id: body_triton
   name: Triton
   type: system
@@ -716,14 +750,16 @@
   mass_kg: 2.139e22
   radius_m: 1353400
   semi_major_axis_m: 354759000
-  eccentricity: 0.000016
+  eccentricity: 1.6e-05
   inclination_deg: 156.865
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [205, 195, 210]
+  display_color:
+  - 205
+  - 195
+  - 210
   start_year: 0
-
 - id: body_nereid
   name: Nereid
   type: system
@@ -740,9 +776,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [150, 150, 160]
+  display_color:
+  - 150
+  - 150
+  - 160
   start_year: 0
-
 - id: body_proteus
   name: Proteus
   type: system
@@ -759,14 +797,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [110, 110, 120]
+  display_color:
+  - 110
+  - 110
+  - 120
   start_year: 0
-
-
-# ================================================================
-# Kuiper Belt Planetoids / Dwarf Planets
-# ================================================================
-
 - id: body_pluto
   name: Pluto
   type: system
@@ -783,9 +818,11 @@
   longitude_of_ascending_node_deg: 110.299
   argument_of_periapsis_deg: 113.834
   mean_anomaly_deg_at_epoch: 14.53
-  display_color: [165, 145, 130]
+  display_color:
+  - 165
+  - 145
+  - 130
   start_year: 0
-
 - id: body_charon
   name: Charon
   type: system
@@ -802,9 +839,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [175, 175, 170]
+  display_color:
+  - 175
+  - 175
+  - 170
   start_year: 0
-
 - id: body_nix
   name: Nix
   type: system
@@ -821,9 +860,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [185, 185, 180]
+  display_color:
+  - 185
+  - 185
+  - 180
   start_year: 0
-
 - id: body_hydra
   name: Hydra
   type: system
@@ -840,9 +881,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [190, 190, 190]
+  display_color:
+  - 190
+  - 190
+  - 190
   start_year: 0
-
 - id: body_kerberos
   name: Kerberos
   type: system
@@ -859,9 +902,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [120, 120, 125]
+  display_color:
+  - 120
+  - 120
+  - 125
   start_year: 0
-
 - id: body_styx
   name: Styx
   type: system
@@ -878,9 +923,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [100, 100, 105]
+  display_color:
+  - 100
+  - 100
+  - 105
   start_year: 0
-
 - id: body_haumea
   name: Haumea
   type: system
@@ -897,9 +944,11 @@
   longitude_of_ascending_node_deg: 121.79
   argument_of_periapsis_deg: 240.0
   mean_anomaly_deg_at_epoch: 210.0
-  display_color: [210, 210, 220]
+  display_color:
+  - 210
+  - 210
+  - 220
   start_year: 0
-
 - id: body_hiiaka
   name: Hiʻiaka
   type: system
@@ -916,9 +965,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [185, 185, 195]
+  display_color:
+  - 185
+  - 185
+  - 195
   start_year: 0
-
 - id: body_namaka
   name: Namaka
   type: system
@@ -935,9 +986,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [150, 150, 160]
+  display_color:
+  - 150
+  - 150
+  - 160
   start_year: 0
-
 - id: body_makemake
   name: Makemake
   type: system
@@ -954,9 +1007,11 @@
   longitude_of_ascending_node_deg: 79.62
   argument_of_periapsis_deg: 294.8
   mean_anomaly_deg_at_epoch: 165.0
-  display_color: [200, 170, 150]
+  display_color:
+  - 200
+  - 170
+  - 150
   start_year: 0
-
 - id: body_mk2
   name: MK2
   type: system
@@ -973,9 +1028,11 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [140, 140, 145]
+  display_color:
+  - 140
+  - 140
+  - 145
   start_year: 0
-
 - id: body_eris
   name: Eris
   type: system
@@ -992,9 +1049,11 @@
   longitude_of_ascending_node_deg: 35.95
   argument_of_periapsis_deg: 151.64
   mean_anomaly_deg_at_epoch: 204.0
-  display_color: [210, 210, 215]
+  display_color:
+  - 210
+  - 210
+  - 215
   start_year: 0
-
 - id: body_dysnomia
   name: Dysnomia
   type: system
@@ -1011,5 +1070,8 @@
   longitude_of_ascending_node_deg: 0.0
   argument_of_periapsis_deg: 0.0
   mean_anomaly_deg_at_epoch: 0.0
-  display_color: [165, 165, 175]
+  display_color:
+  - 165
+  - 165
+  - 175
   start_year: 0

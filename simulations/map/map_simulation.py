@@ -147,12 +147,28 @@ class MapSimulation:
                     x = 0
                     y = 0
 
+                if bounds.get("type") == "bbox":
+                    min_x = bounds.get("min_x", -self.MAP_PLANET_WIDTH // 2)
+                    max_x = bounds.get("max_x", self.MAP_PLANET_WIDTH // 2)
+                    min_y = bounds.get("min_y", -self.MAP_PLANET_HEIGHT // 2)
+                    max_y = bounds.get("max_y", self.MAP_PLANET_HEIGHT // 2)
+
+                    width_world = max_x - min_x
+                    height_world = max_y - min_y
+
+                    if coords.get("type") != "point":
+                        x = (min_x + max_x) / 2
+                        y = (min_y + max_y) / 2
+                else:
+                    width_world = self.MAP_PLANET_WIDTH
+                    height_world = self.MAP_PLANET_HEIGHT
+
                 layers.append({
                     "shape": "map_rect",
                     "x": x,
                     "y": y,
-                    "width_world": self.MAP_PLANET_WIDTH,
-                    "height_world": self.MAP_PLANET_HEIGHT,
+                    "width_world": width_world,
+                    "height_world": height_world,
                     "name": entity.get("name"),
                     "entity_id": entity_id,
                     "color": color,

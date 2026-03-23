@@ -1,179 +1,121 @@
-# ================================================================
-# Earth (Planet Surface Container)
-# ================================================================
-
 - id: planet_earth
   name: Earth
   type: location
-
   location_class: planet
-
   coords:
     type: point
     x: 0
     y: 0
-
   bounds:
     type: radius
     value: 6371000
-
   population: 8000000000
-
   start_year: 0
-
-
-# ================================================================
-# Europe (Projected Continent Layer)
-# ================================================================
-
 - id: geo_europe
   name: Europe
   type: location
-
   location_class: continent
   parent_location: planet_earth
-
   bounds:
     type: bbox
     min_x: -250
-    max_x:  420
+    max_x: 420
     min_y: -120
-    max_y:  320
-
+    max_y: 320
   population: 450000000
-
   start_year: 0
-
-
-# ================================================================
-# Central Europe (Projected Region Layer)
-# ================================================================
-
 - id: geo_central_europe
   name: Central Europe
   type: location
-
   location_class: region
   parent_location: geo_europe
-
   bounds:
     type: bbox
     min_x: -40
-    max_x:  220
+    max_x: 220
     min_y: -40
-    max_y:  180
-
+    max_y: 180
   population: 180000000
-
   start_year: 0
-
-
-# ================================================================
-# Germany (Projected Country Layer)
-# ================================================================
-
 - id: geo_germany
   name: Germany
   type: location
-
   location_class: country
   parent_location: geo_central_europe
-
   bounds:
     type: bbox
     min_x: 10
     max_x: 130
     min_y: 10
     max_y: 120
-
   population: 83000000
-
   start_year: 0
-
-
-# ================================================================
-# France (Projected Country Layer)
-# ================================================================
-
 - id: geo_france
   name: France
   type: location
-
   location_class: country
   parent_location: geo_europe
-
   bounds:
     type: bbox
     min_x: -120
     max_x: 20
     min_y: -10
     max_y: 120
-
   population: 68000000
-
   start_year: 0
-
-
-# ================================================================
-# Alps (Projected Region Layer)
-# ================================================================
-
 - id: geo_alps
   name: Alps
   type: location
-
   location_class: region
   parent_location: geo_central_europe
-
   bounds:
     type: bbox
     min_x: 40
     max_x: 180
     min_y: -10
     max_y: 50
-
   population: 14000000
-
   start_year: 0
-
-
-# ================================================================
-# Berlin (Projected City Marker)
-# ================================================================
-
 - id: city_berlin
   name: Berlin
   type: location
-
   location_class: city
   parent_location: geo_germany
-
   coords:
     type: point
     x: 95
     y: 95
-
   population: 3800000
-
   start_year: 0
-
-
-# ================================================================
-# Paris (Projected City Marker)
-# ================================================================
-
 - id: city_paris
   name: Paris
   type: location
-
   location_class: city
   parent_location: geo_france
-
   coords:
     type: point
     x: -35
     y: 70
-
   population: 2100000
-
+  start_year: 0
+- id: planet_mars
+  name: Mars
+  type: location
+  location_class: planet
+  coords:
+    type: point
+    x: 0
+    y: 0
+  bounds:
+    type: bbox
+    min_x: -1064
+    max_x: 1064
+    min_y: -532
+    max_y: 532
+  derived_from_system_body: body_mars
+  map_projection: equirectangular
+  map_status: empty_generated
+  map_canvas_width_px: 2048
+  map_canvas_height_px: 1024
+  population: 0
   start_year: 0
