@@ -68,7 +68,7 @@ class UIManager:
             "timeline_fraction": seconds_in_day / self.DAY_SECONDS,
         }
 
-    def rebuild_for_state(self, active_sim, app_width, app_height, tab_manager=None, camera=None):
+    def rebuild_for_state(self, active_sim, app_width, app_height, tab_manager=None, camera=None, menu_active=False):
         """
         Rebuild the current widget set for the active simulation state.
         """
@@ -86,6 +86,37 @@ class UIManager:
         if tab_manager is not None:
             self.tab_labels = [tab.name for tab in tab_manager.tabs]
             self.active_tab_index = tab_manager.active_index
+
+        if menu_active:
+            button_width = 240
+            button_height = 42
+            center_x = app_width // 2 - button_width // 2
+            center_y = app_height // 2 - 30
+
+            self.scope_label = "Index_0"
+            self.breadcrumb_label = "Launch a simulation layer"
+
+            self.buttons.append(
+                UIButton(
+                    button_id="launch_space_root",
+                    label="Launch System: Sol",
+                    rect=pygame.Rect(center_x, center_y, button_width, button_height),
+                    visible=True,
+                    enabled=True,
+                )
+            )
+
+            self.buttons.append(
+                UIButton(
+                    button_id="launch_earth_map",
+                    label="Launch Map: Earth",
+                    rect=pygame.Rect(center_x, center_y + 56, button_width, button_height),
+                    visible=True,
+                    enabled=True,
+                )
+            )
+
+            return
 
         if active_sim is None:
             return
@@ -393,12 +424,13 @@ class UIManager:
         self._draw_tab_strip(screen, font)
         self._draw_time_panel(screen, font)
 
-        timeline_x = 20
-        timeline_y = 135
-        timeline_w = 320
-        timeline_h = 12
-        self._draw_timeline_bar(screen, timeline_x, timeline_y, timeline_w, timeline_h)
-        self._draw_timeline_labels(screen, font, timeline_x, timeline_y + 18, timeline_w)
+        if self.time_lines:
+            timeline_x = 20
+            timeline_y = 135
+            timeline_w = 320
+            timeline_h = 12
+            self._draw_timeline_bar(screen, timeline_x, timeline_y, timeline_w, timeline_h)
+            self._draw_timeline_labels(screen, font, timeline_x, timeline_y + 18, timeline_w)
 
         for button in self.buttons:
             if not button.visible:

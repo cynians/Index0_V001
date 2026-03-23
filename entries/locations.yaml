@@ -161,3 +161,24 @@
   map_canvas_height_px: 8192
   population: 0
   start_year: 0
+- id: planet_titan
+  name: Titan
+  type: location
+  location_class: planet
+  coords:
+    type: point
+    x: 0
+    y: 0
+  bounds:
+    type: bbox
+    min_x: -808
+    max_x: 808
+    min_y: -404
+    max_y: 404
+  derived_from_system_body: body_titan
+  map_projection: equirectangular
+  map_status: empty_generated
+  map_canvas_width_px: 2048
+  map_canvas_height_px: 1024
+  population: 0
+  start_year: 0

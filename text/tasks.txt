@@ -11,6 +11,7 @@ DONE: TASK-002 Logic View Separation
 DONE: TASK-003 Renderer App Routing
 DONE: TASK-005 Standalone SpaceSimulation
 DONE: TASK-006 Standalone MapSimulation
+DONE: TASK-007 Bounded Map Movement and Reset-To-View Camera
 DONE: TASK-008 Map Camera Initialization
 DONE: TASK-009 Dual Mode Rendering
 DONE: TASK-010 Map Layer Pipeline
@@ -30,7 +31,10 @@ TASK-004
 Status: PARTIAL
 Difficulty: 3
 Requires: TASK-002
-Description: Remove remaining legacy TestSimulation responsibilities
+Description: Continue removing remaining legacy mixed app responsibilities, including:
+- Further separation of app-level coordination from simulation-specific routing
+- Tab/session awareness improvements
+- Reuse/focus of already-open logical tabs instead of duplicate tab creation
 
 TASK-053
 Status: TODO
@@ -72,10 +76,13 @@ BASE SIMULATIONS
 ------------------------------------------------
 
 TASK-007
-Status: PARTIAL
+Status: DONE
 Difficulty: 4
 Requires: TASK-006
-Description: Finalize bounded map movement and reset-to-view camera behavior
+Description: Finalized bounded map movement and reset-to-view camera behavior, including:
+- Root-scope-aware map bounds
+- Reset-to-view centered on active root scope
+- Parent-region map navigation
 
 ------------------------------------------------
 WORLD / SPATIAL SYSTEM

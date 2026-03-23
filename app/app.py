@@ -17,6 +17,7 @@ class App(SimWindow):
     Main application entry point.
 
     Responsibilities:
+    * manage app-level menu state
     * manage tabs
     * route update / draw / input
     * bridge UI events to the active simulation
@@ -37,40 +38,15 @@ class App(SimWindow):
 
         self.tab_manager = TabManager()
         self.world_model = WorldModel()
-
-        from world.simulation_context import SimulationContext
-
-        context = SimulationContext(
-            year=2400,
-            root_entity_id="planet_earth",
-            world_model=self.world_model
-        )
-
-        sim1 = SimulationInstance(SpaceSimulation(world_model=self.world_model))
-        sim2 = SimulationInstance(MapSimulation(context))
-
-        self.tab_manager.add_tab(
-            Tab(
-                sim1,
-                name="Space",
-                tab_key=("space", "root")
-            )
-        )
-        self.tab_manager.add_tab(
-            Tab(
-                sim2,
-                name="Map: Earth",
-                tab_key=("map", "planet_earth")
-            )
-        )
-
         self.renderer = Renderer(self)
         self.ui_manager = UIManager()
 
-        active_sim = self.get_active_simulation()
-        self.camera_controller.setup_for_sim(active_sim)
+        self.menu_active = True
 
     def get_active_simulation(self):
+        if self.menu_active:
+            return None
+
         tab = self.tab_manager.get_active()
 
         if tab:
@@ -90,6 +66,57 @@ class App(SimWindow):
         self.camera_controller.setup_for_sim(active_sim)
         return True
 
+    def _launch_space_root_tab(self):
+        """
+        Open or focus the root space simulation tab.
+        """
+        tab_key = ("space", "root")
+
+        if self._focus_existing_tab_by_key(tab_key):
+            self.menu_active = False
+            return
+
+        new_tab = Tab(
+            SimulationInstance(SpaceSimulation(world_model=self.world_model)),
+            name="System: Sol",
+            tab_key=tab_key
+        )
+
+        self.tab_manager.add_tab(new_tab)
+        self.tab_manager.active_index = len(self.tab_manager.tabs) - 1
+        self.menu_active = False
+        self.camera_controller.setup_for_sim(new_tab.sim_instance.simulation)
+
+    def _launch_earth_map_tab(self):
+        """
+        Open or focus the default Earth map simulation tab.
+        """
+        tab_key = ("map", "planet_earth")
+
+        if self._focus_existing_tab_by_key(tab_key):
+            self.menu_active = False
+            return
+
+        from world.simulation_context import SimulationContext
+
+        context = SimulationContext(
+            year=2400,
+            root_entity_id="planet_earth",
+            world_model=self.world_model
+        )
+
+        new_map_sim = MapSimulation(context)
+        new_tab = Tab(
+            SimulationInstance(new_map_sim),
+            name="Map: Earth",
+            tab_key=tab_key
+        )
+
+        self.tab_manager.add_tab(new_tab)
+        self.tab_manager.active_index = len(self.tab_manager.tabs) - 1
+        self.menu_active = False
+        self.camera_controller.setup_for_sim(new_map_sim)
+
     def _open_region_map_tab(self, entity_id):
         """
         Open a new map simulation tab rooted at the selected entity,
@@ -104,12 +131,13 @@ class App(SimWindow):
 
         tab_key = ("map", entity_id)
         if self._focus_existing_tab_by_key(tab_key):
+            self.menu_active = False
             return
 
         from world.simulation_context import SimulationContext
 
         active_sim = self.get_active_simulation()
-        year = getattr(active_sim, "year", 2400)
+        year = getattr(active_sim, "year", 2400) if active_sim is not None else 2400
 
         context = SimulationContext(
             year=year,
@@ -126,6 +154,7 @@ class App(SimWindow):
 
         self.tab_manager.add_tab(new_tab)
         self.tab_manager.active_index = len(self.tab_manager.tabs) - 1
+        self.menu_active = False
         self.camera_controller.setup_for_sim(new_map_sim)
 
     def _open_parent_region_map_tab(self, map_sim):
@@ -173,6 +202,9 @@ class App(SimWindow):
         """
         Handle application-level keyboard controls.
         """
+        if self.menu_active:
+            return
+
         if event.key == pygame.K_TAB:
             self.tab_manager.switch_next()
 
@@ -196,8 +228,16 @@ class App(SimWindow):
 
     def _handle_ui_action(self, action_id, active_sim):
         """
-        Route UI button actions for the active simulation.
+        Route UI button actions for either the main menu or the active simulation.
         """
+        if action_id == "launch_space_root":
+            self._launch_space_root_tab()
+            return True
+
+        elif action_id == "launch_earth_map":
+            self._launch_earth_map_tab()
+            return True
+
         if action_id == "open_region_map" and active_sim is not None:
             selected_entity_id = getattr(active_sim, "selected_entity_id", None)
             self._open_region_map_tab(selected_entity_id)
@@ -245,6 +285,9 @@ class App(SimWindow):
                 )
 
     def update(self, dt):
+        if self.menu_active:
+            return
+
         self.tab_manager.update(dt)
 
         sim = self.get_active_simulation()
@@ -254,15 +297,15 @@ class App(SimWindow):
         if event.type == pygame.KEYDOWN:
             self._handle_keydown(event)
 
-        self.tab_manager.handle_event(event)
-
         active_sim = self.get_active_simulation()
+
         self.ui_manager.rebuild_for_state(
             active_sim,
             self.width,
             self.height,
             tab_manager=self.tab_manager,
-            camera=self.camera
+            camera=self.camera,
+            menu_active=self.menu_active
         )
 
         action_id = self.ui_manager.handle_event(event)
@@ -270,6 +313,13 @@ class App(SimWindow):
             handled = self._handle_ui_action(action_id, active_sim)
             if handled:
                 return
+
+        if self.menu_active:
+            return
+
+        self.tab_manager.handle_event(event)
+
+        active_sim = self.get_active_simulation()
 
         if self._handle_middle_click_reset(event, active_sim):
             return
@@ -285,7 +335,8 @@ class App(SimWindow):
             self.width,
             self.height,
             tab_manager=self.tab_manager,
-            camera=self.camera
+            camera=self.camera,
+            menu_active=self.menu_active
         )
 
         if active_sim:

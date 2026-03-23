@@ -536,7 +536,7 @@
   star_system: system_sol
   body_class: moon
   parent_body: body_saturn
-  location_entity: null
+  location_entity: planet_titan
   mass_kg: 1.3452e23
   radius_m: 2574700
   semi_major_axis_m: 1221870000
