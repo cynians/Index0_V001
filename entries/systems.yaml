@@ -1,0 +1,1015 @@
+# ================================================================
+# Sol System Root
+# ================================================================
+
+- id: system_sol
+  name: Sol System
+  type: system
+
+  system_role: star_system
+  system_class: stellar_system
+
+  start_year: 0
+
+
+# ================================================================
+# Sol
+# ================================================================
+
+- id: body_sol
+  name: Sol
+  type: system
+
+  system_role: orbital_body
+  star_system: system_sol
+
+  body_class: star
+  parent_body: null
+  location_entity: null
+
+  mass_kg: 1.98847e30
+  radius_m: 696340000
+
+  semi_major_axis_m: 0
+  eccentricity: 0.0
+  inclination_deg: 0.0
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+
+  display_color:
+    - 255
+    - 220
+    - 120
+
+  start_year: 0
+
+
+# ================================================================
+# Inner Planets
+# ================================================================
+
+- id: body_mercury
+  name: Mercury
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: planet
+  parent_body: body_sol
+  location_entity: null
+  mass_kg: 3.3011e23
+  radius_m: 2439700
+  semi_major_axis_m: 57909050000
+  eccentricity: 0.20563
+  inclination_deg: 7.005
+  longitude_of_ascending_node_deg: 48.331
+  argument_of_periapsis_deg: 29.124
+  mean_anomaly_deg_at_epoch: 174.796
+  display_color: [170, 165, 160]
+  start_year: 0
+
+- id: body_venus
+  name: Venus
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: planet
+  parent_body: body_sol
+  location_entity: null
+  mass_kg: 4.8675e24
+  radius_m: 6051800
+  semi_major_axis_m: 108208000000
+  eccentricity: 0.006772
+  inclination_deg: 3.39458
+  longitude_of_ascending_node_deg: 76.680
+  argument_of_periapsis_deg: 54.884
+  mean_anomaly_deg_at_epoch: 50.115
+  display_color: [210, 190, 140]
+  start_year: 0
+
+- id: body_earth
+  name: Earth
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: planet
+  parent_body: body_sol
+  location_entity: planet_earth
+  mass_kg: 5.97219e24
+  radius_m: 6371000
+  semi_major_axis_m: 149597870700
+  eccentricity: 0.0167086
+  inclination_deg: 0.00005
+  longitude_of_ascending_node_deg: -11.26064
+  argument_of_periapsis_deg: 114.20783
+  mean_anomaly_deg_at_epoch: 358.617
+  display_color: [100, 140, 255]
+  start_year: 0
+
+- id: body_luna
+  name: Luna
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_earth
+  location_entity: null
+  mass_kg: 7.342e22
+  radius_m: 1737400
+  semi_major_axis_m: 384400000
+  eccentricity: 0.0549
+  inclination_deg: 5.145
+  longitude_of_ascending_node_deg: 125.08
+  argument_of_periapsis_deg: 318.15
+  mean_anomaly_deg_at_epoch: 135.27
+  display_color: [200, 200, 210]
+  start_year: 0
+
+- id: body_mars
+  name: Mars
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: planet
+  parent_body: body_sol
+  location_entity: null
+  mass_kg: 6.4171e23
+  radius_m: 3389500
+  semi_major_axis_m: 227939200000
+  eccentricity: 0.0934
+  inclination_deg: 1.850
+  longitude_of_ascending_node_deg: 49.558
+  argument_of_periapsis_deg: 286.502
+  mean_anomaly_deg_at_epoch: 19.373
+  display_color: [210, 120, 90]
+  start_year: 0
+
+- id: body_phobos
+  name: Phobos
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_mars
+  location_entity: null
+  mass_kg: 1.0659e16
+  radius_m: 11267
+  semi_major_axis_m: 9376000
+  eccentricity: 0.0151
+  inclination_deg: 1.093
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [150, 140, 135]
+  start_year: 0
+
+- id: body_deimos
+  name: Deimos
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_mars
+  location_entity: null
+  mass_kg: 1.4762e15
+  radius_m: 6200
+  semi_major_axis_m: 23463000
+  eccentricity: 0.0002
+  inclination_deg: 0.93
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [130, 125, 120]
+  start_year: 0
+
+
+# ================================================================
+# Main Belt Planetoids / Dwarf Planets
+# ================================================================
+
+- id: body_ceres
+  name: Ceres
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: dwarf_planet
+  parent_body: body_sol
+  location_entity: null
+  mass_kg: 9.3835e20
+  radius_m: 469700
+  semi_major_axis_m: 413767000000
+  eccentricity: 0.0758
+  inclination_deg: 10.593
+  longitude_of_ascending_node_deg: 80.305
+  argument_of_periapsis_deg: 73.597
+  mean_anomaly_deg_at_epoch: 95.989
+  display_color: [175, 175, 165]
+  start_year: 0
+
+- id: body_vesta
+  name: Vesta
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: asteroid
+  parent_body: body_sol
+  location_entity: null
+  mass_kg: 2.59076e20
+  radius_m: 262700
+  semi_major_axis_m: 353300000000
+  eccentricity: 0.0887
+  inclination_deg: 7.14
+  longitude_of_ascending_node_deg: 103.85
+  argument_of_periapsis_deg: 151.20
+  mean_anomaly_deg_at_epoch: 20.0
+  display_color: [160, 160, 155]
+  start_year: 0
+
+- id: body_pallas
+  name: Pallas
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: asteroid
+  parent_body: body_sol
+  location_entity: null
+  mass_kg: 2.04e20
+  radius_m: 256000
+  semi_major_axis_m: 414500000000
+  eccentricity: 0.231
+  inclination_deg: 34.84
+  longitude_of_ascending_node_deg: 173.09
+  argument_of_periapsis_deg: 310.17
+  mean_anomaly_deg_at_epoch: 33.0
+  display_color: [150, 155, 150]
+  start_year: 0
+
+- id: body_hygiea
+  name: Hygiea
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: asteroid
+  parent_body: body_sol
+  location_entity: null
+  mass_kg: 8.32e19
+  radius_m: 217000
+  semi_major_axis_m: 470300000000
+  eccentricity: 0.112
+  inclination_deg: 3.84
+  longitude_of_ascending_node_deg: 283.20
+  argument_of_periapsis_deg: 312.32
+  mean_anomaly_deg_at_epoch: 12.0
+  display_color: [135, 145, 135]
+  start_year: 0
+
+
+# ================================================================
+# Outer Planets
+# ================================================================
+
+- id: body_jupiter
+  name: Jupiter
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: planet
+  parent_body: body_sol
+  location_entity: null
+  mass_kg: 1.89813e27
+  radius_m: 69911000
+  semi_major_axis_m: 778570000000
+  eccentricity: 0.0489
+  inclination_deg: 1.304
+  longitude_of_ascending_node_deg: 100.464
+  argument_of_periapsis_deg: 273.867
+  mean_anomaly_deg_at_epoch: 20.020
+  display_color: [215, 175, 130]
+  start_year: 0
+
+- id: body_io
+  name: Io
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_jupiter
+  location_entity: null
+  mass_kg: 8.9319e22
+  radius_m: 1821600
+  semi_major_axis_m: 421700000
+  eccentricity: 0.0041
+  inclination_deg: 0.036
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [235, 220, 140]
+  start_year: 0
+
+- id: body_europa
+  name: Europa
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_jupiter
+  location_entity: null
+  mass_kg: 4.7998e22
+  radius_m: 1560800
+  semi_major_axis_m: 671100000
+  eccentricity: 0.0094
+  inclination_deg: 0.466
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [220, 215, 200]
+  start_year: 0
+
+- id: body_ganymede
+  name: Ganymede
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_jupiter
+  location_entity: null
+  mass_kg: 1.4819e23
+  radius_m: 2634100
+  semi_major_axis_m: 1070400000
+  eccentricity: 0.0013
+  inclination_deg: 0.177
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [165, 165, 160]
+  start_year: 0
+
+- id: body_callisto
+  name: Callisto
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_jupiter
+  location_entity: null
+  mass_kg: 1.0759e23
+  radius_m: 2410300
+  semi_major_axis_m: 1882700000
+  eccentricity: 0.0074
+  inclination_deg: 0.192
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [145, 145, 140]
+  start_year: 0
+
+- id: body_amalthea
+  name: Amalthea
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_jupiter
+  location_entity: null
+  mass_kg: 2.08e18
+  radius_m: 83500
+  semi_major_axis_m: 181400000
+  eccentricity: 0.0032
+  inclination_deg: 0.374
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [155, 120, 110]
+  start_year: 0
+
+- id: body_himalia
+  name: Himalia
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_jupiter
+  location_entity: null
+  mass_kg: 4.19e18
+  radius_m: 69850
+  semi_major_axis_m: 11461000000
+  eccentricity: 0.162
+  inclination_deg: 27.5
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [120, 120, 115]
+  start_year: 0
+
+- id: body_saturn
+  name: Saturn
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: planet
+  parent_body: body_sol
+  location_entity: null
+  mass_kg: 5.6834e26
+  radius_m: 58232000
+  semi_major_axis_m: 1433530000000
+  eccentricity: 0.0565
+  inclination_deg: 2.485
+  longitude_of_ascending_node_deg: 113.665
+  argument_of_periapsis_deg: 339.392
+  mean_anomaly_deg_at_epoch: 317.020
+  display_color: [220, 205, 150]
+  start_year: 0
+
+- id: body_mimas
+  name: Mimas
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_saturn
+  location_entity: null
+  mass_kg: 3.7493e19
+  radius_m: 198200
+  semi_major_axis_m: 185540000
+  eccentricity: 0.0196
+  inclination_deg: 1.57
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [180, 180, 175]
+  start_year: 0
+
+- id: body_enceladus
+  name: Enceladus
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_saturn
+  location_entity: null
+  mass_kg: 1.08022e20
+  radius_m: 252100
+  semi_major_axis_m: 238040000
+  eccentricity: 0.0047
+  inclination_deg: 0.009
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [235, 235, 240]
+  start_year: 0
+
+- id: body_tethys
+  name: Tethys
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_saturn
+  location_entity: null
+  mass_kg: 6.1745e20
+  radius_m: 531100
+  semi_major_axis_m: 294670000
+  eccentricity: 0.0001
+  inclination_deg: 1.12
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [210, 210, 205]
+  start_year: 0
+
+- id: body_dione
+  name: Dione
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_saturn
+  location_entity: null
+  mass_kg: 1.095452e21
+  radius_m: 561400
+  semi_major_axis_m: 377420000
+  eccentricity: 0.0022
+  inclination_deg: 0.028
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [195, 195, 195]
+  start_year: 0
+
+- id: body_rhea
+  name: Rhea
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_saturn
+  location_entity: null
+  mass_kg: 2.3065e21
+  radius_m: 763800
+  semi_major_axis_m: 527070000
+  eccentricity: 0.001
+  inclination_deg: 0.345
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [185, 185, 182]
+  start_year: 0
+
+- id: body_titan
+  name: Titan
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_saturn
+  location_entity: null
+  mass_kg: 1.3452e23
+  radius_m: 2574700
+  semi_major_axis_m: 1221870000
+  eccentricity: 0.0288
+  inclination_deg: 0.34854
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [210, 170, 110]
+  start_year: 0
+
+- id: body_iapetus
+  name: Iapetus
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_saturn
+  location_entity: null
+  mass_kg: 1.8056e21
+  radius_m: 734500
+  semi_major_axis_m: 3560840000
+  eccentricity: 0.0283
+  inclination_deg: 15.47
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [160, 155, 135]
+  start_year: 0
+
+- id: body_phoebe
+  name: Phoebe
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_saturn
+  location_entity: null
+  mass_kg: 8.292e18
+  radius_m: 106500
+  semi_major_axis_m: 12952000000
+  eccentricity: 0.1634
+  inclination_deg: 175.3
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [100, 100, 105]
+  start_year: 0
+
+- id: body_uranus
+  name: Uranus
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: planet
+  parent_body: body_sol
+  location_entity: null
+  mass_kg: 8.6810e25
+  radius_m: 25362000
+  semi_major_axis_m: 2872460000000
+  eccentricity: 0.046381
+  inclination_deg: 0.773
+  longitude_of_ascending_node_deg: 74.006
+  argument_of_periapsis_deg: 96.998857
+  mean_anomaly_deg_at_epoch: 142.2386
+  display_color: [170, 225, 230]
+  start_year: 0
+
+- id: body_miranda
+  name: Miranda
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_uranus
+  location_entity: null
+  mass_kg: 6.59e19
+  radius_m: 235800
+  semi_major_axis_m: 129390000
+  eccentricity: 0.0013
+  inclination_deg: 4.338
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [185, 185, 180]
+  start_year: 0
+
+- id: body_ariel
+  name: Ariel
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_uranus
+  location_entity: null
+  mass_kg: 1.353e21
+  radius_m: 578900
+  semi_major_axis_m: 191020000
+  eccentricity: 0.0012
+  inclination_deg: 0.26
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [215, 215, 220]
+  start_year: 0
+
+- id: body_umbriel
+  name: Umbriel
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_uranus
+  location_entity: null
+  mass_kg: 1.172e21
+  radius_m: 584700
+  semi_major_axis_m: 266300000
+  eccentricity: 0.0039
+  inclination_deg: 0.128
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [120, 120, 125]
+  start_year: 0
+
+- id: body_titania
+  name: Titania
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_uranus
+  location_entity: null
+  mass_kg: 3.527e21
+  radius_m: 788900
+  semi_major_axis_m: 435910000
+  eccentricity: 0.0011
+  inclination_deg: 0.079
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [190, 190, 200]
+  start_year: 0
+
+- id: body_oberon
+  name: Oberon
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_uranus
+  location_entity: null
+  mass_kg: 3.014e21
+  radius_m: 761400
+  semi_major_axis_m: 583520000
+  eccentricity: 0.0014
+  inclination_deg: 0.068
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [165, 165, 170]
+  start_year: 0
+
+- id: body_neptune
+  name: Neptune
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: planet
+  parent_body: body_sol
+  location_entity: null
+  mass_kg: 1.02413e26
+  radius_m: 24622000
+  semi_major_axis_m: 4495060000000
+  eccentricity: 0.009456
+  inclination_deg: 1.770
+  longitude_of_ascending_node_deg: 131.784
+  argument_of_periapsis_deg: 273.187
+  mean_anomaly_deg_at_epoch: 259.908
+  display_color: [90, 130, 230]
+  start_year: 0
+
+- id: body_triton
+  name: Triton
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_neptune
+  location_entity: null
+  mass_kg: 2.139e22
+  radius_m: 1353400
+  semi_major_axis_m: 354759000
+  eccentricity: 0.000016
+  inclination_deg: 156.865
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [205, 195, 210]
+  start_year: 0
+
+- id: body_nereid
+  name: Nereid
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_neptune
+  location_entity: null
+  mass_kg: 3.1e19
+  radius_m: 170000
+  semi_major_axis_m: 5513400000
+  eccentricity: 0.7507
+  inclination_deg: 7.23
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [150, 150, 160]
+  start_year: 0
+
+- id: body_proteus
+  name: Proteus
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_neptune
+  location_entity: null
+  mass_kg: 4.4e19
+  radius_m: 210000
+  semi_major_axis_m: 117647000
+  eccentricity: 0.0005
+  inclination_deg: 0.075
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [110, 110, 120]
+  start_year: 0
+
+
+# ================================================================
+# Kuiper Belt Planetoids / Dwarf Planets
+# ================================================================
+
+- id: body_pluto
+  name: Pluto
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: dwarf_planet
+  parent_body: body_sol
+  location_entity: null
+  mass_kg: 1.303e22
+  radius_m: 1188300
+  semi_major_axis_m: 5906440000000
+  eccentricity: 0.2488
+  inclination_deg: 17.16
+  longitude_of_ascending_node_deg: 110.299
+  argument_of_periapsis_deg: 113.834
+  mean_anomaly_deg_at_epoch: 14.53
+  display_color: [165, 145, 130]
+  start_year: 0
+
+- id: body_charon
+  name: Charon
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_pluto
+  location_entity: null
+  mass_kg: 1.586e21
+  radius_m: 606000
+  semi_major_axis_m: 19596000
+  eccentricity: 0.0002
+  inclination_deg: 0.0
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [175, 175, 170]
+  start_year: 0
+
+- id: body_nix
+  name: Nix
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_pluto
+  location_entity: null
+  mass_kg: 4.5e16
+  radius_m: 24500
+  semi_major_axis_m: 48694000
+  eccentricity: 0.002
+  inclination_deg: 0.13
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [185, 185, 180]
+  start_year: 0
+
+- id: body_hydra
+  name: Hydra
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_pluto
+  location_entity: null
+  mass_kg: 4.8e16
+  radius_m: 30500
+  semi_major_axis_m: 64738000
+  eccentricity: 0.0059
+  inclination_deg: 0.24
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [190, 190, 190]
+  start_year: 0
+
+- id: body_kerberos
+  name: Kerberos
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_pluto
+  location_entity: null
+  mass_kg: 1.0e16
+  radius_m: 9500
+  semi_major_axis_m: 57783000
+  eccentricity: 0.003
+  inclination_deg: 0.39
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [120, 120, 125]
+  start_year: 0
+
+- id: body_styx
+  name: Styx
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_pluto
+  location_entity: null
+  mass_kg: 7.5e15
+  radius_m: 8000
+  semi_major_axis_m: 42656000
+  eccentricity: 0.0058
+  inclination_deg: 0.81
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [100, 100, 105]
+  start_year: 0
+
+- id: body_haumea
+  name: Haumea
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: dwarf_planet
+  parent_body: body_sol
+  location_entity: null
+  mass_kg: 4.006e21
+  radius_m: 816000
+  semi_major_axis_m: 6452000000000
+  eccentricity: 0.191
+  inclination_deg: 28.19
+  longitude_of_ascending_node_deg: 121.79
+  argument_of_periapsis_deg: 240.0
+  mean_anomaly_deg_at_epoch: 210.0
+  display_color: [210, 210, 220]
+  start_year: 0
+
+- id: body_hiiaka
+  name: Hiʻiaka
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_haumea
+  location_entity: null
+  mass_kg: 1.79e19
+  radius_m: 155000
+  semi_major_axis_m: 49880000
+  eccentricity: 0.051
+  inclination_deg: 0.0
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [185, 185, 195]
+  start_year: 0
+
+- id: body_namaka
+  name: Namaka
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_haumea
+  location_entity: null
+  mass_kg: 1.79e18
+  radius_m: 85000
+  semi_major_axis_m: 25657000
+  eccentricity: 0.249
+  inclination_deg: 0.0
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [150, 150, 160]
+  start_year: 0
+
+- id: body_makemake
+  name: Makemake
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: dwarf_planet
+  parent_body: body_sol
+  location_entity: null
+  mass_kg: 3.1e21
+  radius_m: 715000
+  semi_major_axis_m: 6850000000000
+  eccentricity: 0.159
+  inclination_deg: 29.0
+  longitude_of_ascending_node_deg: 79.62
+  argument_of_periapsis_deg: 294.8
+  mean_anomaly_deg_at_epoch: 165.0
+  display_color: [200, 170, 150]
+  start_year: 0
+
+- id: body_mk2
+  name: MK2
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_makemake
+  location_entity: null
+  mass_kg: 3.0e17
+  radius_m: 87500
+  semi_major_axis_m: 21000000
+  eccentricity: 0.0
+  inclination_deg: 0.0
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [140, 140, 145]
+  start_year: 0
+
+- id: body_eris
+  name: Eris
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: dwarf_planet
+  parent_body: body_sol
+  location_entity: null
+  mass_kg: 1.6466e22
+  radius_m: 1163000
+  semi_major_axis_m: 10125000000000
+  eccentricity: 0.436
+  inclination_deg: 44.04
+  longitude_of_ascending_node_deg: 35.95
+  argument_of_periapsis_deg: 151.64
+  mean_anomaly_deg_at_epoch: 204.0
+  display_color: [210, 210, 215]
+  start_year: 0
+
+- id: body_dysnomia
+  name: Dysnomia
+  type: system
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_eris
+  location_entity: null
+  mass_kg: 8.2e19
+  radius_m: 350000
+  semi_major_axis_m: 37350000
+  eccentricity: 0.01
+  inclination_deg: 0.0
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color: [165, 165, 175]
+  start_year: 0

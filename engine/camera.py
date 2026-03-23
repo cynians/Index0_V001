@@ -1,6 +1,7 @@
 import pygame
 import math
 
+
 class Camera:
     """
     Infinite-scale 2D camera.
@@ -15,7 +16,6 @@ class Camera:
     """
 
     def __init__(self, width, height):
-
         self.width = width
         self.height = height
 
@@ -26,8 +26,8 @@ class Camera:
         # zoom = pixels per meter
         self.zoom = 0.001
 
-        self.min_zoom = 1e-9
-        self.max_zoom = 1e6
+        # numeric safety only
+        self.min_zoom = 1e-18
 
         # movement tuning
         self.base_speed = 300.0  # meters/sec at zoom=1
@@ -45,7 +45,6 @@ class Camera:
     # --------------------------------------------------
 
     def change_zoom(self, factor, mouse_pos=None):
-
         if mouse_pos is None:
             mouse_pos = (self.width / 2, self.height / 2)
 
@@ -54,12 +53,17 @@ class Camera:
         # world before zoom
         world_before = self.screen_to_world((mx, my))
 
-        # apply zoom (clamped)
+        # apply zoom (no hard cap, only numeric safety)
         new_zoom = self.zoom * factor
-        new_zoom = max(self.min_zoom, min(self.max_zoom, new_zoom))
+
+        if not math.isfinite(new_zoom):
+            return
+
+        if new_zoom <= self.min_zoom:
+            new_zoom = self.min_zoom
 
         # prevent tiny useless changes
-        if abs(new_zoom - self.zoom) < 1e-15:
+        if abs(new_zoom - self.zoom) < 1e-18:
             return
 
         self.zoom = new_zoom
@@ -75,10 +79,7 @@ class Camera:
     # Transform
     # --------------------------------------------------
 
-
-
     def world_to_screen(self, pos):
-
         wx, wy = pos
 
         # compute in float first
@@ -96,7 +97,6 @@ class Camera:
         return int(sx), int(sy)
 
     def screen_to_world(self, pos):
-
         sx, sy = pos
 
         wx = (sx - self.width / 2) / self.zoom + self.x
@@ -109,7 +109,6 @@ class Camera:
     # --------------------------------------------------
 
     def update(self, dt):
-
         keys = pygame.key.get_pressed()
 
         # movement speed scales with zoom
@@ -137,13 +136,10 @@ class Camera:
     # --------------------------------------------------
 
     def handle_event(self, event):
-
-        # mouse wheel zoom (best UX)
+        # mouse wheel zoom
         if event.type == pygame.MOUSEWHEEL:
-
             mouse_pos = pygame.mouse.get_pos()
 
-            # smooth exponential scaling
             zoom_factor = 1.0 + (event.y * 0.15)
 
             if zoom_factor <= 0:
@@ -153,7 +149,6 @@ class Camera:
 
         # keyboard fallback
         if event.type == pygame.KEYDOWN:
-
             mouse_pos = pygame.mouse.get_pos()
 
             if event.key == pygame.K_q:

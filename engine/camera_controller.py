@@ -39,15 +39,8 @@ class CameraController:
         if sim is None:
             return
 
-        min_zoom = getattr(sim, "min_zoom", None)
-        max_zoom = getattr(sim, "max_zoom", None)
-
-        if min_zoom is not None and max_zoom is not None:
-            self.camera.zoom = max(
-                min_zoom,
-                min(max_zoom, self.camera.zoom)
-            )
-
+        # No hard zoom clamping here anymore.
+        # Only positional bounds remain, if a simulation explicitly defines them.
         if hasattr(sim, "bounds"):
             half_w = self.screen_w / (2 * self.camera.zoom)
             half_h = self.screen_h / (2 * self.camera.zoom)

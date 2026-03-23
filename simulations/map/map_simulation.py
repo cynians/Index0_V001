@@ -1,178 +1,326 @@
+from engine.logger import logger
+
+
 class MapSimulation:
     """
-    Map simulation driven by SimulationContext.
+    Pure map simulation (entity-driven).
+
+    In map mode, planets are rendered as 2D surface containers rather than
+    physical spheres. Child regions are expected to use projected map-space
+    coordinates inside that container.
+
+    Selection ownership also lives here:
+    * click handling is map-specific
+    * picking is done in world/map coordinates
+    * selected entity state is stored on the simulation
+    * hover state is stored on the simulation
     """
 
-    def __init__(self, context):
+    MAP_PLANET_WIDTH = 4000
+    MAP_PLANET_HEIGHT = 2000
+
+    def __init__(self, simulation_context):
         from engine.clock import Clock
-        from simulations.map.map_layers import MapLayerStack
+        from engine.simulation_manager import SimulationManager
 
         self.render_mode = "map"
 
-        self.context = context
-        self.year = context.year
+        self.context = simulation_context
+        self.world_model = simulation_context.world_model
 
-        self.sim_clock = Clock(base_dt=4.8)
+        self.sim_clock = Clock(base_dt=1.0)
 
-        self.map_size = 50_000_000
-        self.map_layers = MapLayerStack(self.map_size)
-        self.origin = (0, 0)
+        class _DummySystem:
+            def update(self, dt):
+                pass
 
-        half = self.map_size // 2
-        self.bounds = {
-            "min_x": -half,
-            "max_x": half,
-            "min_y": -half,
-            "max_y": half,
-        }
+        self.system = _DummySystem()
+        self.sim_manager = SimulationManager(self.sim_clock, self.system)
 
-        self.min_zoom = 1e-8
-        self.max_zoom = 1e-3
-        self.preferred_zoom = min(1200 / self.map_size, 800 / self.map_size) * 0.9
+        self.min_zoom = 0.02
+        self.max_zoom = 10.0
+        self.preferred_zoom = 0.22
 
-        self.entities_by_id = {}
-        self.root_entities = []
+        self._layer_cache = None
+        self._cache_year = None
 
-        self.reload_from_context()
+        self.selected_entity_id = None
+        self.hover_entity_id = None
+        self.hover_screen_pos = None
 
-    # --------------------------------------------------
-    # Context loading
-    # --------------------------------------------------
+    @property
+    def year(self):
+        return getattr(self.context, "year", 0)
 
-    def reload_from_context(self):
-        location_entities = self.context.get_active_locations()
-        self.build_entity_graph(location_entities)
-        self.build_layers_from_entities()
+    def get_root_entity(self):
+        return self.world_model.get_entity(self.context.root_entity_id)
 
-    # --------------------------------------------------
-    # Runtime
-    # --------------------------------------------------
+    def get_root_name(self):
+        root_entity = self.get_root_entity()
+        if not root_entity:
+            return self.context.root_entity_id
+        return root_entity.get("name", self.context.root_entity_id)
 
-    def update(self, dt):
-        self.sim_clock.update(dt)
+    def get_parent_root_entity_id(self):
+        root_entity = self.get_root_entity()
+        if not root_entity:
+            return None
+        return root_entity.get("parent_location")
 
-        while self.sim_clock.should_step():
-            self.sim_clock.consume_step()
+    def get_scope_breadcrumb(self):
+        """
+        Return a root breadcrumb from top ancestor down to the current root.
+        """
+        breadcrumb = []
+        visited = set()
+        current_entity = self.get_root_entity()
 
-    # --------------------------------------------------
-    # Public API
-    # --------------------------------------------------
+        while current_entity:
+            entity_id = current_entity.get("id")
+            if entity_id in visited:
+                break
 
-    def get_layers(self):
+            visited.add(entity_id)
+            breadcrumb.append(current_entity.get("name", entity_id))
+
+            parent_id = current_entity.get("parent_location")
+            if not parent_id:
+                break
+
+            current_entity = self.world_model.get_entity(parent_id)
+
+        breadcrumb.reverse()
+        return breadcrumb
+
+    def _color_for_entity(self, entity):
+        location_class = entity.get("location_class")
+
+        if location_class == "planet":
+            return (70, 90, 120)
+
+        if location_class == "continent":
+            return (120, 140, 170)
+
+        if location_class == "country":
+            return (155, 170, 195)
+
+        if location_class == "region":
+            return (180, 190, 205)
+
+        if location_class == "city":
+            return (220, 220, 220)
+
+        return (200, 200, 200)
+
+    def _build_layers(self, year):
+        """
+        Build render layers from active entities.
+
+        Supported map geometry:
+        * planet       -> map_rect surface container
+        * bbox region  -> rect
+        * point place  -> marker
+        """
         layers = []
 
-        for layer in self.map_layers.get_layers():
+        for entity in self.context.get_active_locations():
+            if not entity:
+                continue
+
+            entity_id = entity.get("id")
+
+            coords = entity.get("coords") or {}
+            bounds = entity.get("bounds") or {}
+
+            x = None
+            y = None
+
+            if coords.get("type") == "point":
+                x = coords.get("x", 0)
+                y = coords.get("y", 0)
+
+            location_class = entity.get("location_class")
+            color = self._color_for_entity(entity)
+
+            if location_class == "planet":
+                if x is None or y is None:
+                    x = 0
+                    y = 0
+
+                layers.append({
+                    "shape": "map_rect",
+                    "x": x,
+                    "y": y,
+                    "width_world": self.MAP_PLANET_WIDTH,
+                    "height_world": self.MAP_PLANET_HEIGHT,
+                    "name": entity.get("name"),
+                    "entity_id": entity_id,
+                    "color": color,
+                })
+                continue
+
+            if bounds.get("type") == "bbox":
+                min_x = bounds.get("min_x", 0)
+                max_x = bounds.get("max_x", 0)
+                min_y = bounds.get("min_y", 0)
+                max_y = bounds.get("max_y", 0)
+
+                width_world = max_x - min_x
+                height_world = max_y - min_y
+
+                if x is None or y is None:
+                    x = (min_x + max_x) / 2
+                    y = (min_y + max_y) / 2
+
+                layers.append({
+                    "shape": "rect",
+                    "x": x,
+                    "y": y,
+                    "width_world": width_world,
+                    "height_world": height_world,
+                    "name": entity.get("name"),
+                    "entity_id": entity_id,
+                    "color": color,
+                })
+                continue
+
+            if x is None or y is None:
+                continue
+
             layers.append({
-                "x": self.origin[0] + layer["x"],
-                "y": self.origin[1] + layer["y"],
-                "size": layer["size"],
-                "color": layer["color"],
-                "name": layer["name"],
+                "shape": "marker",
+                "x": x,
+                "y": y,
+                "min_screen_size": 8,
+                "name": entity.get("name"),
+                "entity_id": entity_id,
+                "color": color,
             })
 
         return layers
 
-    def get_center(self):
-        return self.origin
+    def get_layers(self):
+        year = self.year
 
-    def get_entity(self, entity_id):
-        return self.entities_by_id.get(entity_id)
+        if self._layer_cache is None or self._cache_year != year:
+            logger.debug(
+                f"[MapSimulation] Rebuilding layer cache for year {year}",
+                key="map_layers_build",
+                interval=0.5
+            )
+            self._layer_cache = self._build_layers(year)
+            self._cache_year = year
 
-    # --------------------------------------------------
-    # Graph
-    # --------------------------------------------------
+        return self._layer_cache
 
-    def build_entity_graph(self, entities):
-        self.entities_by_id = {}
-        self.root_entities = []
+    def get_entries(self):
+        entries = []
 
-        local_entities = {}
+        for entity in self.context.get_active_locations():
+            if not entity:
+                continue
 
-        for entity in entities:
-            entity_copy = dict(entity)
-            entity_copy["children"] = []
-            entity_copy["parent_ref"] = None
-            local_entities[entity_copy["id"]] = entity_copy
+            entries.append({
+                "entity": entity,
+                "name": entity.get("name"),
+                "entity_id": entity.get("id"),
+            })
 
-        self.entities_by_id = local_entities
+        return entries
 
-        for entity in self.entities_by_id.values():
-            parent_id = entity.get("parent_location") or entity.get("parent")
+    def _screen_to_world(self, camera, screen_pos):
+        sx, sy = screen_pos
 
-            if parent_id and parent_id in self.entities_by_id:
-                parent = self.entities_by_id[parent_id]
-                parent["children"].append(entity)
-                entity["parent_ref"] = parent
-            else:
-                self.root_entities.append(entity)
+        world_x = (sx - camera.width / 2) / camera.zoom + camera.x
+        world_y = (sy - camera.height / 2) / camera.zoom + camera.y
 
-    # --------------------------------------------------
-    # Layers
-    # --------------------------------------------------
+        return world_x, world_y
 
-    def build_layers_from_entities(self):
-        self.map_layers.clear()
+    def _point_in_rect_layer(self, world_x, world_y, layer):
+        half_w = layer.get("width_world", 0) / 2
+        half_h = layer.get("height_world", 0) / 2
 
-        for entity in self.entities_by_id.values():
-            layer = self.build_layer_for_entity(entity)
+        min_x = layer["x"] - half_w
+        max_x = layer["x"] + half_w
+        min_y = layer["y"] - half_h
+        max_y = layer["y"] + half_h
 
-            if layer is not None:
-                self.map_layers.add_layer(layer)
+        return min_x <= world_x <= max_x and min_y <= world_y <= max_y
 
-    def build_layer_for_entity(self, entity):
-        bounds = entity.get("bounds")
+    def _point_in_marker_layer(self, world_x, world_y, layer, camera):
+        pick_radius_world = max(12.0 / max(camera.zoom, 1e-9), 8.0)
 
-        if not bounds:
-            return None
+        dx = world_x - layer["x"]
+        dy = world_y - layer["y"]
 
-        bounds_type = bounds.get("type")
-        name = entity.get("name") or entity.get("id")
+        return (dx * dx + dy * dy) <= (pick_radius_world * pick_radius_world)
 
-        if bounds_type == "radius":
-            center = self.resolve_entity_center(entity)
-            radius = bounds.get("value")
+    def _pick_layer_at_world(self, world_x, world_y, camera):
+        """
+        Pick from topmost to bottommost.
 
-            return {
-                "x": center["x"],
-                "y": center["y"],
-                "size": radius * 2,
-                "color": (90, 90, 90),
-                "name": name,
-            }
+        Reverse iteration matters so that:
+        * Berlin beats Germany
+        * Germany beats Europe
+        * Europe beats Earth
+        """
+        layers = self.get_layers()
 
-        if bounds_type == "bbox":
-            cx = (bounds["min_x"] + bounds["max_x"]) / 2
-            cy = (bounds["min_y"] + bounds["max_y"]) / 2
-            anchor = self.get_inherited_coords(entity) or {"x": 0, "y": 0}
+        for layer in reversed(layers):
+            shape = layer.get("shape", "marker")
 
-            return {
-                "x": anchor["x"] + cx,
-                "y": anchor["y"] + cy,
-                "size": max(
-                    bounds["max_x"] - bounds["min_x"],
-                    bounds["max_y"] - bounds["min_y"],
-                ),
-                "color": (120, 120, 120),
-                "name": name,
-            }
+            if shape in ("map_rect", "rect"):
+                if self._point_in_rect_layer(world_x, world_y, layer):
+                    return layer
 
-    # --------------------------------------------------
-    # Helpers
-    # --------------------------------------------------
-
-    def get_inherited_coords(self, entity):
-        current = entity
-
-        while current is not None:
-            coords = current.get("coords")
-
-            if isinstance(coords, dict):
-                return coords
-
-            current = current.get("parent_ref")
+            elif shape == "marker":
+                if self._point_in_marker_layer(world_x, world_y, layer, camera):
+                    return layer
 
         return None
 
-    def resolve_entity_center(self, entity):
-        coords = self.get_inherited_coords(entity)
-        return coords or {"x": 0, "y": 0}
+    def handle_pointer_motion(self, event, camera, screen_pos):
+        """
+        Update hover state from pointer motion.
+        """
+        world_x, world_y = self._screen_to_world(camera, screen_pos)
+        picked_layer = self._pick_layer_at_world(world_x, world_y, camera)
+
+        if picked_layer is None:
+            self.hover_entity_id = None
+            self.hover_screen_pos = None
+            return
+
+        self.hover_entity_id = picked_layer.get("entity_id")
+        self.hover_screen_pos = screen_pos
+
+    def handle_pointer_event(self, event, camera, screen_pos):
+        """
+        Handle pointer input for the map simulation.
+
+        This method receives screen coordinates from the app and performs
+        picking in world/map coordinates.
+        """
+        world_x, world_y = self._screen_to_world(camera, screen_pos)
+        picked_layer = self._pick_layer_at_world(world_x, world_y, camera)
+
+        self.hover_screen_pos = screen_pos
+        self.hover_entity_id = picked_layer.get("entity_id") if picked_layer else None
+
+        if picked_layer is None:
+            self.selected_entity_id = None
+            return
+
+        self.selected_entity_id = picked_layer.get("entity_id")
+
+        logger.debug(
+            f"[MapSimulation] Selected entity: {self.selected_entity_id}",
+            key="map_selection",
+            interval=0.1
+        )
+
+    def get_center(self):
+        return 0.0, 0.0
+
+    def update(self, dt):
+        self.sim_manager.update(dt)

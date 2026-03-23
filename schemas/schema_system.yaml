@@ -1,0 +1,67 @@
+schema: systems
+
+extends: entity_core
+
+fields:
+
+  system_role:
+    type: string
+
+  system_class:
+    type: string
+    optional: true
+
+  star_system:
+    type: entity
+    target: systems
+    optional: true
+
+  body_class:
+    type: string
+    optional: true
+
+  parent_body:
+    type: entity
+    target: systems
+    optional: true
+
+  location_entity:
+    type: entity
+    target: locations
+    optional: true
+
+  mass_kg:
+    type: number
+    optional: true
+
+  radius_m:
+    type: number
+    optional: true
+
+  semi_major_axis_m:
+    type: number
+    optional: true
+
+  eccentricity:
+    type: number
+    optional: true
+
+  inclination_deg:
+    type: number
+    optional: true
+
+  longitude_of_ascending_node_deg:
+    type: number
+    optional: true
+
+  argument_of_periapsis_deg:
+    type: number
+    optional: true
+
+  mean_anomaly_deg_at_epoch:
+    type: number
+    optional: true
+
+  display_color:
+    type: string_list
+    optional: true
