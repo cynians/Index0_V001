@@ -460,28 +460,29 @@ class UIManager:
         if getattr(active_sim, "render_mode", None) == "bioregion":
             self.scope_label = "Scope: Bioregion Test Map | 10 km x 10 km"
 
-            selected_cell = getattr(active_sim, "selected_cell", None)
-            hover_cell = getattr(active_sim, "hover_cell", None)
-
+            avg_surface = active_sim.get_average_surface_water()
             avg_top = active_sim.get_average_top_moisture()
             avg_deep = active_sim.get_average_deep_moisture()
 
             rain_text = "Rain: active" if getattr(active_sim, "is_raining", False) else "Rain: dry"
             self.breadcrumb_label = (
-                f"{rain_text} | Avg top: {avg_top:.3f} | Avg deep: {avg_deep:.3f}"
+                f"{rain_text} | Avg surf: {avg_surface:.3f} | "
+                f"Avg top: {avg_top:.3f} | Avg deep: {avg_deep:.3f}"
             )
 
-            info_lines = []
+            selected_cell = getattr(active_sim, "selected_cell", None)
+            hover_cell = getattr(active_sim, "hover_cell", None)
 
             if selected_cell is not None:
                 selected_grid_cell = active_sim.get_selected_grid_cell()
-                self.scope_label = (
-                    "Scope: Bioregion Test Map | 10 km x 10 km"
-                )
-
                 if selected_grid_cell is not None:
                     self.hover_tooltip_lines = [
                         active_sim.get_cell_label(selected_cell),
+                        f"soil: {selected_grid_cell['soil_type']}",
+                        f"bedrock: {selected_grid_cell['bedrock_type']}",
+                        f"altitude: {selected_grid_cell['altitude']:.3f}",
+                        f"z: {selected_grid_cell['z']:.3f}",
+                        f"surface water: {selected_grid_cell['surface_water']:.3f}",
                         f"top moisture: {selected_grid_cell['top_moisture']:.3f}",
                         f"deep moisture: {selected_grid_cell['deep_moisture']:.3f}",
                     ]
@@ -492,6 +493,11 @@ class UIManager:
                 if hover_grid_cell is not None:
                     self.hover_tooltip_lines = [
                         active_sim.get_cell_label(hover_cell),
+                        f"soil: {hover_grid_cell['soil_type']}",
+                        f"bedrock: {hover_grid_cell['bedrock_type']}",
+                        f"altitude: {hover_grid_cell['altitude']:.3f}",
+                        f"z: {hover_grid_cell['z']:.3f}",
+                        f"surface water: {hover_grid_cell['surface_water']:.3f}",
                         f"top moisture: {hover_grid_cell['top_moisture']:.3f}",
                         f"deep moisture: {hover_grid_cell['deep_moisture']:.3f}",
                     ]

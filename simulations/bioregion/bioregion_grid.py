@@ -2,12 +2,65 @@ class BioregionGrid:
     """
     Grid-backed resource substrate for the prototype bioregion simulation.
 
-    Each subsection cell stores two soil-moisture layers:
-    * top_moisture
-    * deep_moisture
-
-    Units are prototype-relative moisture units, clamped to [0.0, 1.0].
+    Each subsection cell stores:
+    * geology fields
+      - soil_type
+      - bedrock_type
+      - altitude
+      - z
+    * water fields
+      - surface_water
+      - top_moisture
+      - deep_moisture
     """
+
+    SOIL_PRESETS = {
+        "very_sandy": {
+            "infiltration_rate": 0.00120,
+            "top_field_capacity": 0.22,
+            "deep_field_capacity": 0.30,
+            "percolation_rate": 0.00045,
+            "capillary_rise_rate": 0.000015,
+            "surface_evaporation_rate": 0.00030,
+            "top_evaporation_rate": 0.000060,
+        },
+        "sandy_loam": {
+            "infiltration_rate": 0.00095,
+            "top_field_capacity": 0.30,
+            "deep_field_capacity": 0.42,
+            "percolation_rate": 0.00032,
+            "capillary_rise_rate": 0.000020,
+            "surface_evaporation_rate": 0.00024,
+            "top_evaporation_rate": 0.000050,
+        },
+        "loam": {
+            "infiltration_rate": 0.00075,
+            "top_field_capacity": 0.38,
+            "deep_field_capacity": 0.52,
+            "percolation_rate": 0.00022,
+            "capillary_rise_rate": 0.000030,
+            "surface_evaporation_rate": 0.00020,
+            "top_evaporation_rate": 0.000040,
+        },
+        "clay_loam": {
+            "infiltration_rate": 0.00045,
+            "top_field_capacity": 0.48,
+            "deep_field_capacity": 0.64,
+            "percolation_rate": 0.00012,
+            "capillary_rise_rate": 0.000040,
+            "surface_evaporation_rate": 0.00016,
+            "top_evaporation_rate": 0.000032,
+        },
+        "heavy_clay": {
+            "infiltration_rate": 0.00028,
+            "top_field_capacity": 0.58,
+            "deep_field_capacity": 0.76,
+            "percolation_rate": 0.00008,
+            "capillary_rise_rate": 0.000050,
+            "surface_evaporation_rate": 0.00013,
+            "top_evaporation_rate": 0.000026,
+        },
+    }
 
     def __init__(
         self,
@@ -29,7 +82,7 @@ class BioregionGrid:
 
     def _build_cells(self):
         """
-        Build the full subsection-cell grid.
+        Build the full subsection-cell grid with neutral defaults.
         """
         self.cells = []
 
@@ -50,17 +103,30 @@ class BioregionGrid:
                         "min_y": min_y,
                         "max_x": max_x,
                         "max_y": max_y,
-                        "top_moisture": 0.35,
-                        "deep_moisture": 0.55,
+                        "soil_type": "loam",
+                        "bedrock_type": "granite",
+                        "altitude": 0.5,
+                        "z": 0.5,
+                        "surface_water": 0.0,
+                        "top_moisture": 0.266,
+                        "deep_moisture": 0.426,
                     }
                 )
 
             self.cells.append(row_cells)
 
+    def initialize_water_from_soil(self):
+        """
+        Reset top/deep moisture from the assigned soil types.
+        Call this after geology has populated soil_type.
+        """
+        for cell in self.iter_cells():
+            soil = self.SOIL_PRESETS[cell["soil_type"]]
+            cell["surface_water"] = 0.0
+            cell["top_moisture"] = soil["top_field_capacity"] * 0.70
+            cell["deep_moisture"] = soil["deep_field_capacity"] * 0.82
+
     def get_cell(self, row, col):
-        """
-        Return one cell by absolute subsection-grid coordinates.
-        """
         if row < 0 or col < 0:
             return None
 
@@ -70,9 +136,6 @@ class BioregionGrid:
         return self.cells[row][col]
 
     def get_cell_from_world(self, world_x, world_y):
-        """
-        Return one cell from world coordinates.
-        """
         if world_x < 0.0 or world_y < 0.0:
             return None
 
@@ -85,45 +148,22 @@ class BioregionGrid:
         return self.get_cell(row, col)
 
     def iter_cells(self):
-        """
-        Yield all cells in row-major order.
-        """
         for row_cells in self.cells:
             for cell in row_cells:
                 yield cell
 
-    def apply_environment_step(
-        self,
-        dt,
-        is_raining,
-        rain_rate,
-        evaporation_rate,
-        seepage_rate,
-        deep_loss_rate,
-    ):
-        """
-        Advance the moisture state of all cells by one environment step.
-        """
+    def get_average_surface_water(self):
+        total = 0.0
+        count = 0
+
         for cell in self.iter_cells():
-            top = cell["top_moisture"]
-            deep = cell["deep_moisture"]
+            total += cell["surface_water"]
+            count += 1
 
-            if is_raining:
-                top += rain_rate * dt
+        if count == 0:
+            return 0.0
 
-            top_loss_evap = evaporation_rate * dt
-            seep_amount = min(top, seepage_rate * dt)
-
-            top = max(0.0, top - top_loss_evap - seep_amount)
-            deep = min(1.0, deep + seep_amount)
-
-            deep = max(0.0, deep - deep_loss_rate * dt)
-
-            top = min(1.0, top)
-            deep = min(1.0, deep)
-
-            cell["top_moisture"] = top
-            cell["deep_moisture"] = deep
+        return total / count
 
     def get_average_top_moisture(self):
         total = 0.0
