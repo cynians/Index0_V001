@@ -281,69 +281,8 @@ class Renderer:
     # --------------------------------------------------
 
     def draw_ui(self):
-        view = self.sim
-        sim = self.simulation
-
-        tab_manager = view.tab_manager
-
-        x_offset = 20
-        y_offset = 5
-        padding = 10
-
-        for i, tab in enumerate(tab_manager.tabs):
-            label = tab.name
-
-            text_surface = view.default_font.render(
-                label,
-                True,
-                (255, 255, 255)
-            )
-
-            text_rect = text_surface.get_rect()
-
-            rect = pygame.Rect(
-                x_offset,
-                y_offset,
-                text_rect.width + padding * 2,
-                text_rect.height + padding
-            )
-
-            if i == tab_manager.active_index:
-                pygame.draw.rect(self.screen, (80, 80, 120), rect)
-            else:
-                pygame.draw.rect(self.screen, (40, 40, 40), rect)
-
-            pygame.draw.rect(self.screen, (200, 200, 200), rect, 1)
-
-            self.screen.blit(
-                text_surface,
-                (rect.x + padding, rect.y + padding // 2)
-            )
-
-            x_offset += rect.width + 5
-
-        label = view.default_font.render(
-            f"Y {sim.year} | TICK {sim.sim_clock.tick}",
-            True,
-            (220, 220, 220)
-        )
-        self.screen.blit(label, (20, 40))
-
-        time_label = view.default_font.render(
-            f"TIME SCALE x{sim.sim_clock.time_scale:.2f}",
-            True,
-            (180, 180, 180)
-        )
-        self.screen.blit(time_label, (20, 60))
-
-        mouse = pygame.mouse.get_pos()
-
-        wx = int((mouse[0] - view.width / 2) / view.camera.zoom + view.camera.x)
-        wy = int((mouse[1] - view.height / 2) / view.camera.zoom + view.camera.y)
-
-        mouse_text = view.default_font.render(
-            f"mouse world: {wx} , {wy}",
-            True,
-            (150, 150, 150)
-        )
-        self.screen.blit(mouse_text, (20, 80))
+        """
+        App/UI chrome now lives in UIManager.
+        Renderer no longer draws tab/time/status overlays.
+        """
+        return

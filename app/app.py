@@ -155,7 +155,13 @@ class App(SimWindow):
         self.tab_manager.handle_event(event)
 
         active_sim = self.get_active_simulation()
-        self.ui_manager.rebuild_for_state(active_sim, self.width, self.height)
+        self.ui_manager.rebuild_for_state(
+            active_sim,
+            self.width,
+            self.height,
+            tab_manager=self.tab_manager,
+            camera=self.camera
+        )
 
         action_id = self.ui_manager.handle_event(event)
         if action_id is not None:
@@ -193,7 +199,13 @@ class App(SimWindow):
         super().draw_background()
 
         active_sim = self.get_active_simulation()
-        self.ui_manager.rebuild_for_state(active_sim, self.width, self.height)
+        self.ui_manager.rebuild_for_state(
+            active_sim,
+            self.width,
+            self.height,
+            tab_manager=self.tab_manager,
+            camera=self.camera
+        )
 
         if active_sim:
             self.renderer.simulation = active_sim

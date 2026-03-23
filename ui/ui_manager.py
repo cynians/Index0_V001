@@ -1,3 +1,4 @@
+import math
 import pygame
 
 
@@ -16,14 +17,18 @@ class UIButton:
 
 class UIManager:
     """
-    Minimal app-level UI manager.
+    App-level UI manager.
 
     Responsibilities:
     * rebuild visible widgets for current app state
     * draw widgets
     * consume UI clicks and return action ids
-    * draw simple scope/breadcrumb labels and hover tooltip
+    * draw tab strip
+    * draw time / timeline / mouse-world status
+    * draw map/space info panels and hover tooltip
     """
+
+    DAY_SECONDS = 24 * 60 * 60
 
     def __init__(self):
         self.buttons = []
@@ -32,7 +37,38 @@ class UIManager:
         self.hover_tooltip_lines = []
         self.hover_tooltip_pos = None
 
-    def rebuild_for_state(self, active_sim, app_width, app_height):
+        self.tab_labels = []
+        self.active_tab_index = 0
+
+        self.time_lines = []
+        self.timeline_fraction = 0.0
+        self.mouse_world_label = None
+
+    def _format_sim_time(self, sim):
+        """
+        Convert sim year + elapsed sim seconds into a simple year/day/time display.
+        """
+        base_year = getattr(sim, "year", 0)
+        elapsed_seconds = getattr(sim.sim_clock, "time", 0.0)
+
+        whole_days = int(elapsed_seconds // self.DAY_SECONDS)
+        seconds_in_day = elapsed_seconds % self.DAY_SECONDS
+
+        hours = int(seconds_in_day // 3600)
+        minutes = int((seconds_in_day % 3600) // 60)
+
+        display_year = base_year + (whole_days // 365)
+        day_of_year = (whole_days % 365) + 1
+
+        return {
+            "year": display_year,
+            "day_of_year": day_of_year,
+            "hours": hours,
+            "minutes": minutes,
+            "timeline_fraction": seconds_in_day / self.DAY_SECONDS,
+        }
+
+    def rebuild_for_state(self, active_sim, app_width, app_height, tab_manager=None, camera=None):
         """
         Rebuild the current widget set for the active simulation state.
         """
@@ -41,9 +77,37 @@ class UIManager:
         self.breadcrumb_label = None
         self.hover_tooltip_lines = []
         self.hover_tooltip_pos = None
+        self.tab_labels = []
+        self.active_tab_index = 0
+        self.time_lines = []
+        self.timeline_fraction = 0.0
+        self.mouse_world_label = None
+
+        if tab_manager is not None:
+            self.tab_labels = [tab.name for tab in tab_manager.tabs]
+            self.active_tab_index = tab_manager.active_index
 
         if active_sim is None:
             return
+
+        # --------------------------------------------------
+        # Global time / status display
+        # --------------------------------------------------
+
+        time_info = self._format_sim_time(active_sim)
+        self.timeline_fraction = time_info["timeline_fraction"]
+
+        self.time_lines = [
+            f"Year {time_info['year']} | Day {time_info['day_of_year']}",
+            f"{time_info['hours']:02d}:{time_info['minutes']:02d} | Tick {active_sim.sim_clock.tick}",
+            f"Time Scale x{active_sim.sim_clock.time_scale:.2f}",
+        ]
+
+        if camera is not None:
+            mouse_x, mouse_y = pygame.mouse.get_pos()
+            world_x = int((mouse_x - app_width / 2) / camera.zoom + camera.x)
+            world_y = int((mouse_y - app_height / 2) / camera.zoom + camera.y)
+            self.mouse_world_label = f"Mouse World: {world_x} , {world_y}"
 
         button_width = 180
         button_height = 32
@@ -255,10 +319,87 @@ class UIManager:
             screen.blit(text_surface, (tooltip_rect.x + padding, current_y))
             current_y += text_surface.get_height() + line_gap
 
+    def _draw_tab_strip(self, screen, font):
+        x_offset = 20
+        y_offset = 5
+        padding = 10
+
+        for i, label in enumerate(self.tab_labels):
+            text_surface = font.render(label, True, (255, 255, 255))
+            text_rect = text_surface.get_rect()
+
+            rect = pygame.Rect(
+                x_offset,
+                y_offset,
+                text_rect.width + padding * 2,
+                text_rect.height + padding
+            )
+
+            if i == self.active_tab_index:
+                pygame.draw.rect(screen, (80, 80, 120), rect)
+            else:
+                pygame.draw.rect(screen, (40, 40, 40), rect)
+
+            pygame.draw.rect(screen, (200, 200, 200), rect, 1)
+            screen.blit(text_surface, (rect.x + padding, rect.y + padding // 2))
+
+            x_offset += rect.width + 5
+
+    def _draw_time_panel(self, screen, font):
+        lines = list(self.time_lines)
+
+        if self.mouse_world_label:
+            lines.append(self.mouse_world_label)
+
+        if not lines:
+            return
+
+        self._draw_info_panel(screen, font, 20, 40, lines)
+
+    def _draw_timeline_bar(self, screen, x, y, w, h):
+        pygame.draw.rect(screen, (30, 30, 34), (x, y, w, h))
+        pygame.draw.rect(screen, (200, 200, 200), (x, y, w, h), 1)
+
+        filled_w = max(0, min(w, int(round(w * self.timeline_fraction))))
+        if filled_w > 0:
+            pygame.draw.rect(screen, (120, 170, 255), (x, y, filled_w, h))
+
+        tick_positions = [0.0, 0.25, 0.5, 0.75, 1.0]
+        for frac in tick_positions:
+            tick_x = x + int(round(w * frac))
+            pygame.draw.line(screen, (180, 180, 180), (tick_x, y), (tick_x, y + h), 1)
+
+    def _draw_timeline_labels(self, screen, font, x, y, w):
+        labels = ["00:00", "06:00", "12:00", "18:00", "24:00"]
+
+        for i, label in enumerate(labels):
+            frac = i / 4
+            lx = x + int(round(w * frac))
+            text_surface = font.render(label, True, (220, 220, 220))
+
+            if i == 0:
+                draw_x = lx
+            elif i == len(labels) - 1:
+                draw_x = lx - text_surface.get_width()
+            else:
+                draw_x = lx - text_surface.get_width() // 2
+
+            screen.blit(text_surface, (draw_x, y))
+
     def draw(self, screen, font):
         """
         Draw all visible UI widgets and info overlays.
         """
+        self._draw_tab_strip(screen, font)
+        self._draw_time_panel(screen, font)
+
+        timeline_x = 20
+        timeline_y = 135
+        timeline_w = 320
+        timeline_h = 12
+        self._draw_timeline_bar(screen, timeline_x, timeline_y, timeline_w, timeline_h)
+        self._draw_timeline_labels(screen, font, timeline_x, timeline_y + 18, timeline_w)
+
         for button in self.buttons:
             if not button.visible:
                 continue
@@ -271,7 +412,7 @@ class UIManager:
             info_lines.append(self.breadcrumb_label)
 
         if info_lines:
-            self._draw_info_panel(screen, font, 20, 100, info_lines)
+            self._draw_info_panel(screen, font, 20, 170, info_lines)
 
         self._draw_hover_tooltip(screen, font)
 
