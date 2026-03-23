@@ -53,6 +53,8 @@ class UIManager:
         self.knowledge_cards = []
         self.knowledge_world_model = None
         self.knowledge_selected_entity_id = None
+        self.repository_scope_entity_id = None
+        self.repository_scope_label = None
 
     def _format_sim_time(self, sim):
         """
@@ -257,14 +259,15 @@ class UIManager:
             self.knowledge_selected_entity_id = entity_id
 
     def rebuild_for_state(
-        self,
-        active_sim,
-        app_width,
-        app_height,
-        tab_manager=None,
-        camera=None,
-        menu_active=False,
-        world_model=None
+            self,
+            active_sim,
+            app_width,
+            app_height,
+            tab_manager=None,
+            camera=None,
+            menu_active=False,
+            world_model=None,
+            repository_scope_entity_id=None
     ):
         """
         Rebuild the current widget set for the active application state.
@@ -286,6 +289,8 @@ class UIManager:
         self.knowledge_browser_items = []
         self.knowledge_browser_hitboxes = []
         self.knowledge_world_model = world_model
+        self.repository_scope_entity_id = repository_scope_entity_id
+        self.repository_scope_label = None
 
         if tab_manager is not None:
             self.tab_labels = [tab.name for tab in tab_manager.tabs]
@@ -295,7 +300,21 @@ class UIManager:
             self.knowledge_layout = self._build_knowledge_layout(app_width, app_height)
             self.knowledge_browser_items = self._build_knowledge_browser_items(world_model)
 
-            if not self.knowledge_cards and world_model is not None:
+            scope_entity = None
+            if world_model is not None and repository_scope_entity_id:
+                scope_entity = world_model.get_entity(repository_scope_entity_id)
+
+            if scope_entity is not None:
+                scope_name = scope_entity.get("name", repository_scope_entity_id)
+                scope_kind = scope_entity.get(
+                    "location_class",
+                    scope_entity.get("system_role", scope_entity.get("type", "entity"))
+                )
+                self.repository_scope_label = f"Scope stub: {scope_name} [{scope_kind}]"
+                self._ensure_knowledge_card(scope_entity)
+                self.knowledge_selected_entity_id = scope_entity.get("id")
+
+            elif not self.knowledge_cards and world_model is not None:
                 self._ensure_knowledge_card(world_model.get_entity("planet_earth"))
                 self._ensure_knowledge_card(world_model.get_entity("system_sol"))
 
@@ -359,6 +378,16 @@ class UIManager:
             elif existing_status_line:
                 self.breadcrumb_label = existing_status_line
 
+            self.buttons.append(
+                UIButton(
+                    button_id="open_repository",
+                    label="Open Repository",
+                    rect=pygame.Rect(button_x, button_y, button_width, button_height),
+                    visible=True,
+                    enabled=True,
+                )
+            )
+
             selected_entity_id = getattr(active_sim, "selected_entity_id", None)
             root_entity_id = getattr(active_sim.context, "root_entity_id", None)
 
@@ -367,7 +396,7 @@ class UIManager:
                     UIButton(
                         button_id="open_region_map",
                         label="Open Region Map",
-                        rect=pygame.Rect(button_x, button_y, button_width, button_height),
+                        rect=pygame.Rect(button_x, button_y + 40, button_width, button_height),
                         visible=True,
                         enabled=True,
                     )
@@ -382,7 +411,7 @@ class UIManager:
                     UIButton(
                         button_id="open_parent_region_map",
                         label="Up To Parent",
-                        rect=pygame.Rect(button_x, button_y + 40, button_width, button_height),
+                        rect=pygame.Rect(button_x, button_y + 80, button_width, button_height),
                         visible=True,
                         enabled=True,
                     )
@@ -410,6 +439,16 @@ class UIManager:
             return
 
         if getattr(active_sim, "render_mode", None) == "space":
+            self.buttons.append(
+                UIButton(
+                    button_id="open_repository",
+                    label="Open Repository",
+                    rect=pygame.Rect(button_x, button_y, button_width, button_height),
+                    visible=True,
+                    enabled=True,
+                )
+            )
+
             selected_body_entity = None
             if hasattr(active_sim, "get_selected_body_entity"):
                 selected_body_entity = active_sim.get_selected_body_entity()
@@ -424,7 +463,7 @@ class UIManager:
                     UIButton(
                         button_id="open_space_body_map",
                         label="Open Map",
-                        rect=pygame.Rect(button_x, button_y, button_width, button_height),
+                        rect=pygame.Rect(button_x, button_y + 40, button_width, button_height),
                         visible=True,
                         enabled=True,
                     )
@@ -678,7 +717,12 @@ class UIManager:
         pygame.draw.rect(screen, (200, 200, 200), header_rect, 1)
 
         title_surface = font.render("Knowledge Layer", True, (245, 245, 245))
-        subtitle_surface = font.render("Pre-simulation repository workspace", True, (180, 180, 180))
+
+        subtitle_text = "Pre-simulation repository workspace"
+        if self.repository_scope_label:
+            subtitle_text = self.repository_scope_label
+
+        subtitle_surface = font.render(subtitle_text, True, (180, 180, 180))
         screen.blit(title_surface, (header_rect.x + 14, header_rect.y + 10))
         screen.blit(subtitle_surface, (header_rect.x + 14, header_rect.y + 30))
 

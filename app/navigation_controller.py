@@ -165,12 +165,67 @@ class NavigationController:
         self.app.world_model.refresh()
         self.open_region_map_tab(location_id)
 
+    def _infer_repository_scope_entity_id(self, active_sim):
+        """
+        Infer a stub repository scope from the current simulation.
+
+        This is only a temporary navigation helper until a real
+        main-simulation / knowledge-limiting system exists.
+        """
+        if active_sim is None:
+            return self.app.repository_scope_entity_id
+
+        render_mode = getattr(active_sim, "render_mode", None)
+
+        if render_mode == "map":
+            context = getattr(active_sim, "context", None)
+            if context is not None:
+                return getattr(context, "root_entity_id", None)
+
+        if render_mode == "space":
+            if hasattr(active_sim, "get_selected_body_entity"):
+                body_entity = active_sim.get_selected_body_entity()
+                if body_entity:
+                    return body_entity.get("location_entity") or body_entity.get("id")
+
+            return "system_sol"
+
+        return self.app.repository_scope_entity_id
+
+    def open_repository_workspace(self, active_sim):
+        """
+        Return from a simulation into the repository workspace using a stub scope.
+        """
+        self.app.repository_scope_entity_id = self._infer_repository_scope_entity_id(active_sim)
+        self.app.knowledge_layer_active = True
+        return True
+
+    def activate_tab_index(self, tab_index):
+        """
+        Activate an existing simulation tab from the top tab strip.
+        """
+        if tab_index is None:
+            return False
+
+        if not self.app.tab_manager.activate_tab(tab_index):
+            return False
+
+        self.app.knowledge_layer_active = False
+
+        active_sim = self.app.get_active_simulation()
+        self.app.camera_controller.setup_for_sim(active_sim)
+        return True
+
     def handle_ui_action(self, action, active_sim):
         """
         Route UI actions for either the knowledge layer or the active simulation.
         """
         if isinstance(action, dict):
             action_id = action.get("id")
+
+            if action_id == "activate_tab":
+                tab_index = action.get("tab_index")
+                return self.activate_tab_index(tab_index)
 
             if action_id == "knowledge_launch_entry":
                 entity_id = action.get("entity_id")
@@ -213,6 +268,9 @@ class NavigationController:
         elif action_id == "launch_earth_map":
             self.launch_earth_map_tab()
             return True
+
+        elif action_id == "open_repository":
+            return self.open_repository_workspace(active_sim)
 
         if action_id == "open_region_map" and active_sim is not None:
             selected_entity_id = getattr(active_sim, "selected_entity_id", None)

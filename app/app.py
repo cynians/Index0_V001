@@ -2,10 +2,6 @@ import pygame
 
 from engine.window import SimWindow
 from engine.tab_manager import TabManager
-from engine.simulation_instance import SimulationInstance
-from engine.tab import Tab
-from simulations.space.space_simulation import SpaceSimulation
-from simulations.map.map_simulation import MapSimulation
 from engine.renderer import Renderer
 from engine.camera_controller import CameraController
 from world.world_model import WorldModel
@@ -45,6 +41,7 @@ class App(SimWindow):
         self.input_router = InputRouter(self)
 
         self.knowledge_layer_active = True
+        self.repository_scope_entity_id = None
 
     def get_active_simulation(self):
         if self.knowledge_layer_active:
@@ -90,7 +87,8 @@ class App(SimWindow):
             tab_manager=self.tab_manager,
             camera=self.camera,
             menu_active=self.knowledge_layer_active,
-            world_model=self.world_model
+            world_model=self.world_model,
+            repository_scope_entity_id=self.repository_scope_entity_id,
         )
 
         action_id = self.ui_manager.handle_event(event)
@@ -122,7 +120,8 @@ class App(SimWindow):
             tab_manager=self.tab_manager,
             camera=self.camera,
             menu_active=self.knowledge_layer_active,
-            world_model=self.world_model
+            world_model=self.world_model,
+            repository_scope_entity_id=self.repository_scope_entity_id,
         )
 
         if active_sim:
