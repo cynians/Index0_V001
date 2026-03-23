@@ -48,6 +48,8 @@ class MapSimulation:
         self.hover_entity_id = None
         self.hover_screen_pos = None
 
+        self.bounds = self._resolve_root_bounds()
+
     @property
     def year(self):
         return getattr(self.context, "year", 0)
@@ -91,6 +93,68 @@ class MapSimulation:
 
         breadcrumb.reverse()
         return breadcrumb
+
+    def _resolve_root_bounds(self):
+        """
+        Resolve one stable world-space rectangle for the current root scope.
+
+        Rules:
+        * bbox roots use their bbox directly
+        * planet roots use bbox if present, otherwise a default map canvas rect
+        * point roots get a small synthetic scope so reset/clamping still work
+        * final fallback is the default planet-sized rectangle around origin
+        """
+        root_entity = self.get_root_entity()
+        if not root_entity:
+            return {
+                "min_x": -self.MAP_PLANET_WIDTH / 2,
+                "max_x": self.MAP_PLANET_WIDTH / 2,
+                "min_y": -self.MAP_PLANET_HEIGHT / 2,
+                "max_y": self.MAP_PLANET_HEIGHT / 2,
+            }
+
+        coords = root_entity.get("coords") or {}
+        bounds = root_entity.get("bounds") or {}
+
+        if bounds.get("type") == "bbox":
+            return {
+                "min_x": bounds.get("min_x", -self.MAP_PLANET_WIDTH / 2),
+                "max_x": bounds.get("max_x", self.MAP_PLANET_WIDTH / 2),
+                "min_y": bounds.get("min_y", -self.MAP_PLANET_HEIGHT / 2),
+                "max_y": bounds.get("max_y", self.MAP_PLANET_HEIGHT / 2),
+            }
+
+        center_x = 0.0
+        center_y = 0.0
+        if coords.get("type") == "point":
+            center_x = coords.get("x", 0.0)
+            center_y = coords.get("y", 0.0)
+
+        if root_entity.get("location_class") == "planet":
+            half_w = self.MAP_PLANET_WIDTH / 2
+            half_h = self.MAP_PLANET_HEIGHT / 2
+            return {
+                "min_x": center_x - half_w,
+                "max_x": center_x + half_w,
+                "min_y": center_y - half_h,
+                "max_y": center_y + half_h,
+            }
+
+        if coords.get("type") == "point":
+            point_half_extent = 500.0
+            return {
+                "min_x": center_x - point_half_extent,
+                "max_x": center_x + point_half_extent,
+                "min_y": center_y - point_half_extent,
+                "max_y": center_y + point_half_extent,
+            }
+
+        return {
+            "min_x": -self.MAP_PLANET_WIDTH / 2,
+            "max_x": self.MAP_PLANET_WIDTH / 2,
+            "min_y": -self.MAP_PLANET_HEIGHT / 2,
+            "max_y": self.MAP_PLANET_HEIGHT / 2,
+        }
 
     def _color_for_entity(self, entity):
         location_class = entity.get("location_class")
@@ -336,7 +400,10 @@ class MapSimulation:
         )
 
     def get_center(self):
-        return 0.0, 0.0
+        return (
+            (self.bounds["min_x"] + self.bounds["max_x"]) / 2,
+            (self.bounds["min_y"] + self.bounds["max_y"]) / 2,
+        )
 
     def update(self, dt):
         self.sim_manager.update(dt)

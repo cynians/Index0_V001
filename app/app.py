@@ -49,8 +49,20 @@ class App(SimWindow):
         sim1 = SimulationInstance(SpaceSimulation(world_model=self.world_model))
         sim2 = SimulationInstance(MapSimulation(context))
 
-        self.tab_manager.add_tab(Tab(sim1, name="Space"))
-        self.tab_manager.add_tab(Tab(sim2, name="Map"))
+        self.tab_manager.add_tab(
+            Tab(
+                sim1,
+                name="Space",
+                tab_key=("space", "root")
+            )
+        )
+        self.tab_manager.add_tab(
+            Tab(
+                sim2,
+                name="Map: Earth",
+                tab_key=("map", "planet_earth")
+            )
+        )
 
         self.renderer = Renderer(self)
         self.ui_manager = UIManager()
@@ -66,15 +78,32 @@ class App(SimWindow):
 
         return None
 
+    def _focus_existing_tab_by_key(self, tab_key):
+        """
+        Activate an already-open tab by semantic key and reset the camera.
+        """
+        activated = self.tab_manager.activate_tab_by_key(tab_key)
+        if not activated:
+            return False
+
+        active_sim = self.get_active_simulation()
+        self.camera_controller.setup_for_sim(active_sim)
+        return True
+
     def _open_region_map_tab(self, entity_id):
         """
-        Open a new map simulation tab rooted at the selected entity.
+        Open a new map simulation tab rooted at the selected entity,
+        or focus the existing one if it is already open.
         """
         if not entity_id:
             return
 
         entity = self.world_model.get_entity(entity_id)
         if not entity:
+            return
+
+        tab_key = ("map", entity_id)
+        if self._focus_existing_tab_by_key(tab_key):
             return
 
         from world.simulation_context import SimulationContext
@@ -91,12 +120,29 @@ class App(SimWindow):
         new_map_sim = MapSimulation(context)
         new_tab = Tab(
             SimulationInstance(new_map_sim),
-            name=f"Map: {entity.get('name', entity_id)}"
+            name=f"Map: {entity.get('name', entity_id)}",
+            tab_key=tab_key
         )
 
         self.tab_manager.add_tab(new_tab)
         self.tab_manager.active_index = len(self.tab_manager.tabs) - 1
         self.camera_controller.setup_for_sim(new_map_sim)
+
+    def _open_parent_region_map_tab(self, map_sim):
+        """
+        Open the parent root of the given map simulation in a new map tab.
+        """
+        if map_sim is None:
+            return
+
+        if not hasattr(map_sim, "get_parent_root_entity_id"):
+            return
+
+        parent_entity_id = map_sim.get_parent_root_entity_id()
+        if not parent_entity_id:
+            return
+
+        self._open_region_map_tab(parent_entity_id)
 
     def _open_map_for_selected_space_body(self, space_sim):
         """
@@ -123,62 +169,65 @@ class App(SimWindow):
         self.world_model.refresh()
         self._open_region_map_tab(location_id)
 
-    def update(self, dt):
-        self.tab_manager.update(dt)
-
-        sim = self.get_active_simulation()
-        self.camera_controller.apply_constraints(sim)
-
-    def handle_event(self, event):
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_TAB:
-                self.tab_manager.switch_next()
-
-                sim = self.get_active_simulation()
-                self.camera_controller.setup_for_sim(sim)
+    def _handle_keydown(self, event):
+        """
+        Handle application-level keyboard controls.
+        """
+        if event.key == pygame.K_TAB:
+            self.tab_manager.switch_next()
 
             sim = self.get_active_simulation()
+            self.camera_controller.setup_for_sim(sim)
 
-            if sim:
-                if event.key in (pygame.K_EQUALS, pygame.K_PLUS, pygame.K_KP_PLUS):
-                    sim.sim_clock.set_time_scale(sim.sim_clock.time_scale + 0.25)
+        sim = self.get_active_simulation()
 
-                elif event.key in (pygame.K_MINUS, pygame.K_KP_MINUS):
-                    sim.sim_clock.set_time_scale(sim.sim_clock.time_scale - 0.25)
+        if sim:
+            if event.key in (pygame.K_EQUALS, pygame.K_PLUS, pygame.K_KP_PLUS):
+                sim.sim_clock.set_time_scale(sim.sim_clock.time_scale + 0.25)
 
-                elif event.key == pygame.K_0:
-                    sim.sim_clock.set_time_scale(1.0)
+            elif event.key in (pygame.K_MINUS, pygame.K_KP_MINUS):
+                sim.sim_clock.set_time_scale(sim.sim_clock.time_scale - 0.25)
 
-                elif event.key == pygame.K_SPACE:
-                    sim.sim_clock.toggle_pause()
+            elif event.key == pygame.K_0:
+                sim.sim_clock.set_time_scale(1.0)
 
-        self.tab_manager.handle_event(event)
+            elif event.key == pygame.K_SPACE:
+                sim.sim_clock.toggle_pause()
 
-        active_sim = self.get_active_simulation()
-        self.ui_manager.rebuild_for_state(
-            active_sim,
-            self.width,
-            self.height,
-            tab_manager=self.tab_manager,
-            camera=self.camera
-        )
+    def _handle_ui_action(self, action_id, active_sim):
+        """
+        Route UI button actions for the active simulation.
+        """
+        if action_id == "open_region_map" and active_sim is not None:
+            selected_entity_id = getattr(active_sim, "selected_entity_id", None)
+            self._open_region_map_tab(selected_entity_id)
+            return True
 
-        action_id = self.ui_manager.handle_event(event)
-        if action_id is not None:
-            if action_id == "open_region_map" and active_sim is not None:
-                selected_entity_id = getattr(active_sim, "selected_entity_id", None)
-                self._open_region_map_tab(selected_entity_id)
+        elif action_id == "open_parent_region_map" and active_sim is not None:
+            self._open_parent_region_map_tab(active_sim)
+            return True
 
-            elif action_id == "open_space_body_map" and active_sim is not None:
-                self._open_map_for_selected_space_body(active_sim)
+        elif action_id == "open_space_body_map" and active_sim is not None:
+            self._open_map_for_selected_space_body(active_sim)
+            return True
 
-            return
+        return False
 
+    def _handle_middle_click_reset(self, event, active_sim):
+        """
+        Reset camera view for the active simulation on middle click.
+        """
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 2:
             if active_sim is not None:
                 self.camera_controller.setup_for_sim(active_sim)
-            return
+            return True
 
+        return False
+
+    def _handle_pointer_input(self, event, active_sim):
+        """
+        Forward pointer motion and left-click events to the active simulation.
+        """
         if active_sim and hasattr(active_sim, "handle_pointer_motion"):
             if event.type == pygame.MOUSEMOTION:
                 active_sim.handle_pointer_motion(
@@ -194,6 +243,38 @@ class App(SimWindow):
                     camera=self.camera,
                     screen_pos=event.pos
                 )
+
+    def update(self, dt):
+        self.tab_manager.update(dt)
+
+        sim = self.get_active_simulation()
+        self.camera_controller.apply_constraints(sim)
+
+    def handle_event(self, event):
+        if event.type == pygame.KEYDOWN:
+            self._handle_keydown(event)
+
+        self.tab_manager.handle_event(event)
+
+        active_sim = self.get_active_simulation()
+        self.ui_manager.rebuild_for_state(
+            active_sim,
+            self.width,
+            self.height,
+            tab_manager=self.tab_manager,
+            camera=self.camera
+        )
+
+        action_id = self.ui_manager.handle_event(event)
+        if action_id is not None:
+            handled = self._handle_ui_action(action_id, active_sim)
+            if handled:
+                return
+
+        if self._handle_middle_click_reset(event, active_sim):
+            return
+
+        self._handle_pointer_input(event, active_sim)
 
     def draw(self):
         super().draw_background()

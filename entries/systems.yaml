@@ -263,7 +263,7 @@
   star_system: system_sol
   body_class: planet
   parent_body: body_sol
-  location_entity: null
+  location_entity: planet_jupiter
   mass_kg: 1.89813e27
   radius_m: 69911000
   semi_major_axis_m: 778570000000
@@ -452,7 +452,7 @@
   star_system: system_sol
   body_class: moon
   parent_body: body_saturn
-  location_entity: null
+  location_entity: planet_enceladus
   mass_kg: 1.08022e20
   radius_m: 252100
   semi_major_axis_m: 238040000

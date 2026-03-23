@@ -830,7 +830,6 @@ Description: Add interstellar travel stub, including:
 - Long-duration transfer states
 - Origin / destination system linkage
 
-
 TASK-102
 Status: TODO
 Difficulty: 7
@@ -843,9 +842,6 @@ Description: Implement strict vehicle component connection logic, including:
   - weapon connected to mount and ammunition storage
 - Validation of required functional paths before vehicle capabilities become active
 - Foundation for later wiring, piping, damage isolation, and maintenance logic
-
-
-
 
 ------------------------------------------------
 TASK / LOGISTICS FOUNDATION
@@ -1038,7 +1034,6 @@ Description: Reframe LogisticsSimulation as a specialization of the universal ta
   - relocation
   - construction
   - timeline burden
-------------------------------------------------
 
 TASK-115
 Status: TODO
@@ -1232,4 +1227,6 @@ Description: Implement operational result writeback from local battle spaces int
 - Resupply needs
 - Post-encounter control of terrain/space
 - Propagation of those results back into the surrounding world/task systems
+
+------------------------------------------------
 END
