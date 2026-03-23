@@ -4,6 +4,7 @@ from engine.simulation_instance import SimulationInstance
 from engine.tab import Tab
 from simulations.space.space_simulation import SpaceSimulation
 from simulations.map.map_simulation import MapSimulation
+from simulations.bioregion.bioregion_simulation import BioregionSimulation
 
 
 class NavigationController:
@@ -83,6 +84,28 @@ class NavigationController:
         self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
         self.app.knowledge_layer_active = False
         self.app.camera_controller.setup_for_sim(new_map_sim)
+
+    def launch_bioregion_test_tab(self):
+        """
+        Open or focus the prototype bioregion simulation tab.
+        """
+        tab_key = ("bioregion", "test")
+
+        if self.focus_existing_tab_by_key(tab_key):
+            self.app.knowledge_layer_active = False
+            return
+
+        new_bioregion_sim = BioregionSimulation()
+        new_tab = Tab(
+            SimulationInstance(new_bioregion_sim),
+            name="Bioregion: Test",
+            tab_key=tab_key
+        )
+
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+        self.app.camera_controller.setup_for_sim(new_bioregion_sim)
 
     def open_region_map_tab(self, entity_id):
         """
@@ -267,6 +290,10 @@ class NavigationController:
 
         elif action_id == "launch_earth_map":
             self.launch_earth_map_tab()
+            return True
+
+        elif action_id == "launch_bioregion_test":
+            self.launch_bioregion_test_tab()
             return True
 
         elif action_id == "open_repository":

@@ -9,6 +9,7 @@ DONE TASKS (COMPRESSED)
 DONE: TASK-001 App Entry Refactor
 DONE: TASK-002 Logic View Separation
 DONE: TASK-003 Renderer App Routing
+DONE: TASK-004 App Responsibility Cleanup and Tab Reuse
 DONE: TASK-005 Standalone SpaceSimulation
 DONE: TASK-006 Standalone MapSimulation
 DONE: TASK-007 Bounded Map Movement and Reset-To-View Camera
@@ -26,15 +27,6 @@ DONE: TASK-068 Persistent Planet Map Roots
 ------------------------------------------------
 CORE APPLICATION / ARCHITECTURE
 ------------------------------------------------
-
-TASK-004
-Status: PARTIAL
-Difficulty: 3
-Requires: TASK-002
-Description: Continue removing remaining legacy mixed app responsibilities, including:
-- Further separation of app-level coordination from simulation-specific routing
-- Tab/session awareness improvements
-- Reuse/focus of already-open logical tabs instead of duplicate tab creation
 
 TASK-053
 Status: TODO
@@ -95,10 +87,16 @@ Requires: TASK-006
 Description: Implement support for external map images (file dialog + display pipeline)
 
 TASK-020
-Status: TODO
+Status: PARTIAL
 Difficulty: 5
 Requires: TASK-019
-Description: Implement resolution/scale system for map images independent of real-world size
+Description: Implement resolution/scale system for map images independent of real-world size, including:
+- Planet/root map extent derivation from bounds or radius
+- Canonical canvas-size metadata for generated map roots
+- Current state:
+  - projected planet size is derived from radius/bounds
+  - generated roots store canvas width/height metadata
+  - external imported image workflow is not implemented yet
 
 TASK-021
 Status: TODO
@@ -201,7 +199,7 @@ Requires: TASK-016
 Description: Make heatmap and ledger outputs dependent on knowledge state (fog-of-information)
 
 TASK-069
-Status: TODO
+Status: PARTIAL
 Difficulty: 8
 Requires: TASK-016, TASK-054
 Description: Implement degrees-of-touch graph for information proximity, including:
@@ -209,6 +207,10 @@ Description: Implement degrees-of-touch graph for information proximity, includi
 - Indirect touch chains across entities and events
 - Temporal preservation of touch relationships across snapshots
 - Query of shortest touch distance between entities
+- Current state:
+  - direct typed relationship graph exists in world.relationship_graph
+  - reverse links and neighbor queries exist
+  - true degree-distance, temporal capture, and snapshot integration are not implemented yet
 
 TASK-070
 Status: TODO
@@ -1322,7 +1324,7 @@ Description: Implement Knowledge Layer launch resolution from entity type and co
   - year-aware launch and full body/system resolution are not complete yet
 
 TASK-136
-Status: TODO
+Status: PARTIAL
 Difficulty: 5
 Requires: TASK-131, TASK-133
 Description: Expand Knowledge Layer card media model beyond a single flat image field, including:
@@ -1332,6 +1334,9 @@ Description: Expand Knowledge Layer card media model beyond a single flat image 
   - map base image + overlays
   - vehicle exterior + cutaway + interior
 - Foundation for later UI switching between stored visual layers
+- Current state:
+  - cards already reserve an image/layered-view placeholder area
+  - no import pipeline or multiple stored media layers exist yet
 
 TASK-137
 Status: TODO
@@ -1342,27 +1347,3 @@ Description: Implement Knowledge Layer relationship visualization on the right c
 - Card-to-card spatial connection drawing
 - Architecture compatible with later manual relationship authoring
 - No forced inspector-based navigation; preserve canvas-centric interaction
-
-TASK-138
-Status: TODO
-Difficulty: 5
-Requires: TASK-131, TASK-132, TASK-133
-Description: Implement in-place Knowledge Layer card expansion and richer browser grouping, including:
-- Compact and expanded card states on the canvas
-- Expansion in place rather than separate inspector workflow
-- Additional structured entry information in expanded state
-- Switchable browser grouping modes such as:
-  - by entity type
-  - by hierarchy/parent relation
-  - by category/tag
-- Preserve usability of the canvas with multiple expanded cards
-
-TASK-139
-Status: TODO
-Difficulty: 6
-Requires: TASK-004, TASK-131, TASK-135
-Description: Unify Knowledge Layer and simulation tab/session semantics, including:
-- Keep Knowledge Layer as persistent pre-simulation workspace outside simulation tabs
-- Centralize launch/focus logic for simulations opened from the Knowledge Layer
-- Avoid duplicate logical tabs for the same entity/year context unless intentionally allowed
-- Keep simulation session creation and focusing out of ad hoc UI code

@@ -55,6 +55,7 @@ class UIManager:
         self.knowledge_selected_entity_id = None
         self.repository_scope_entity_id = None
         self.repository_scope_label = None
+        self.knowledge_header_button = None
 
     def _format_sim_time(self, sim):
         """
@@ -105,6 +106,22 @@ class UIManager:
             "left_rect": left_rect,
             "right_rect": right_rect,
         }
+    def _build_knowledge_header_button(self):
+        """
+        Build the Knowledge Layer header action button from the current layout.
+        """
+        if self.knowledge_layout is None:
+            self.knowledge_header_button = None
+            return
+
+        header_rect = self.knowledge_layout["header_rect"]
+        self.knowledge_header_button = UIButton(
+            button_id="launch_bioregion_test",
+            label="Launch Bioregion Test",
+            rect=pygame.Rect(header_rect.right - 220, header_rect.y + 11, 200, 30),
+            visible=True,
+            enabled=True,
+        )
 
     def _build_knowledge_browser_items(self, world_model):
         """
@@ -291,6 +308,7 @@ class UIManager:
         self.knowledge_world_model = world_model
         self.repository_scope_entity_id = repository_scope_entity_id
         self.repository_scope_label = None
+        self.knowledge_header_button = None
 
         if tab_manager is not None:
             self.tab_labels = [tab.name for tab in tab_manager.tabs]
@@ -299,6 +317,7 @@ class UIManager:
         if menu_active:
             self.knowledge_layout = self._build_knowledge_layout(app_width, app_height)
             self.knowledge_browser_items = self._build_knowledge_browser_items(world_model)
+            self._build_knowledge_header_button()
 
             scope_entity = None
             if world_model is not None and repository_scope_entity_id:
@@ -435,6 +454,58 @@ class UIManager:
                         self.hover_tooltip_lines.append("selected")
 
                     self.hover_tooltip_pos = hover_screen_pos
+
+            return
+
+        if getattr(active_sim, "render_mode", None) == "bioregion":
+            self.scope_label = "Scope: Bioregion Test Map | 10 km x 10 km"
+
+            selected_cell = getattr(active_sim, "selected_cell", None)
+            hover_cell = getattr(active_sim, "hover_cell", None)
+
+            avg_top = active_sim.get_average_top_moisture()
+            avg_deep = active_sim.get_average_deep_moisture()
+
+            rain_text = "Rain: active" if getattr(active_sim, "is_raining", False) else "Rain: dry"
+            self.breadcrumb_label = (
+                f"{rain_text} | Avg top: {avg_top:.3f} | Avg deep: {avg_deep:.3f}"
+            )
+
+            info_lines = []
+
+            if selected_cell is not None:
+                selected_grid_cell = active_sim.get_selected_grid_cell()
+                self.scope_label = (
+                    "Scope: Bioregion Test Map | 10 km x 10 km"
+                )
+
+                if selected_grid_cell is not None:
+                    self.hover_tooltip_lines = [
+                        active_sim.get_cell_label(selected_cell),
+                        f"top moisture: {selected_grid_cell['top_moisture']:.3f}",
+                        f"deep moisture: {selected_grid_cell['deep_moisture']:.3f}",
+                    ]
+                    self.hover_tooltip_pos = (24, 250)
+
+            elif hover_cell is not None:
+                hover_grid_cell = active_sim.get_hover_grid_cell()
+                if hover_grid_cell is not None:
+                    self.hover_tooltip_lines = [
+                        active_sim.get_cell_label(hover_cell),
+                        f"top moisture: {hover_grid_cell['top_moisture']:.3f}",
+                        f"deep moisture: {hover_grid_cell['deep_moisture']:.3f}",
+                    ]
+                    self.hover_tooltip_pos = (24, 250)
+
+            self.buttons.append(
+                UIButton(
+                    button_id="open_repository",
+                    label="Open Repository",
+                    rect=pygame.Rect(button_x, button_y, button_width, button_height),
+                    visible=True,
+                    enabled=True,
+                )
+            )
 
             return
 
@@ -726,6 +797,9 @@ class UIManager:
         screen.blit(title_surface, (header_rect.x + 14, header_rect.y + 10))
         screen.blit(subtitle_surface, (header_rect.x + 14, header_rect.y + 30))
 
+        if self.knowledge_header_button is not None:
+            self._draw_button(screen, font, self.knowledge_header_button)
+
         pygame.draw.rect(screen, (12, 12, 20), left_rect)
         pygame.draw.rect(screen, (200, 200, 200), left_rect, 1)
 
@@ -838,6 +912,10 @@ class UIManager:
                 }
 
         if self.menu_active:
+            if self.knowledge_header_button is not None:
+                if self.knowledge_header_button.rect.collidepoint(mouse_pos):
+                    print("[DEBUG] Knowledge header button clicked:", self.knowledge_header_button.id)
+                    return self.knowledge_header_button.id
             for entity_id, hitbox in self.knowledge_browser_hitboxes:
                 if hitbox.collidepoint(mouse_pos):
                     self.knowledge_selected_entity_id = entity_id
