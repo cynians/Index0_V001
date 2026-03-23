@@ -1236,4 +1236,133 @@ Description: Implement operational result writeback from local battle spaces int
 - Propagation of those results back into the surrounding world/task systems
 
 ------------------------------------------------
-END
+KNOWLEDGE LAYER / PRE-SIMULATION WORKSPACE
+------------------------------------------------
+
+TASK-131
+Status: PARTIAL
+Difficulty: 4
+Requires: TASK-001, TASK-004, TASK-033
+Description: Replace the legacy launch-only start menu with a Knowledge Layer shell, including:
+- App starts in a dedicated pre-simulation knowledge workspace
+- Two-pane layout:
+  - left repository browser
+  - right free card canvas
+- Knowledge Layer remains app-level UI rather than a simulation
+- Existing simulation launch routing remains available through the new layer
+- Current state:
+  - shell exists
+  - basic split layout exists
+  - old launcher buttons removed from the browser pane
+
+TASK-132
+Status: PARTIAL
+Difficulty: 5
+Requires: TASK-131, TASK-013
+Description: Implement repository-driven browser and card seeding for the Knowledge Layer, including:
+- Populate the left browser from actual repository/world-model entries rather than placeholder text
+- Make browser entries selectable
+- Create/open entry cards on the right canvas from selected browser entries
+- Avoid duplicate cards for the same entity when reopened
+- Current state:
+  - real repository entries are shown
+  - browser selection exists
+  - cards can be spawned from repository entries
+  - further cleanup of grouping and interaction is still needed
+
+TASK-133
+Status: PARTIAL
+Difficulty: 6
+Requires: TASK-131, TASK-132, TASK-067, TASK-068
+Description: Formalize repository entry card model for the Knowledge Layer, including:
+- Card represents persistent repository entry rather than session/tab
+- Compact card structure with:
+  - entry identity
+  - entity grouping/type
+  - image area placeholder
+  - bottom timeline strip
+  - launch area
+- Card creation from actual entity metadata rather than hardcoded placeholders
+- Correct distinction between:
+  - locations
+  - star systems
+  - orbital bodies
+- Current state:
+  - compact cards exist
+  - cards use real entities
+  - system/body classification still needs refinement and cleanup
+
+TASK-134
+Status: TODO
+Difficulty: 6
+Requires: TASK-053, TASK-054, TASK-056, TASK-131, TASK-133
+Description: Integrate meaningful snapshot-year selection into Knowledge Layer cards, including:
+- Replace placeholder or single-value year strip with actual meaningful snapshot years per entity
+- Selectable year markers on cards
+- Distinction between:
+  - card-selected year
+  - globally loaded year
+- Use selected card year as launch context when opening simulations
+- Fallback rules for entities with sparse or missing snapshot years
+
+TASK-135
+Status: PARTIAL
+Difficulty: 6
+Requires: TASK-131, TASK-132, TASK-133, TASK-004
+Description: Implement Knowledge Layer launch resolution from entity type and context, including:
+- Launch correct simulation from selected card/entity
+- Distinguish launch behavior for:
+  - location entities -> map simulation
+  - star system entities -> space simulation
+  - orbital body entities -> linked location map if available, otherwise appropriate fallback
+- Reuse/focus already-open logical tabs when launch context matches
+- Current state:
+  - basic card launch routing exists
+  - browser/card actions are now app-routed
+  - year-aware launch and full body/system resolution are not complete yet
+
+TASK-136
+Status: TODO
+Difficulty: 5
+Requires: TASK-131, TASK-133
+Description: Expand Knowledge Layer card media model beyond a single flat image field, including:
+- Image placeholder/import support on repository cards
+- Canvas size suggestion metadata for externally created visuals
+- Multiple visual layers/views per entry, for example:
+  - map base image + overlays
+  - vehicle exterior + cutaway + interior
+- Foundation for later UI switching between stored visual layers
+
+TASK-137
+Status: TODO
+Difficulty: 6
+Requires: TASK-131, TASK-132, TASK-133
+Description: Implement Knowledge Layer relationship visualization on the right canvas, including:
+- Automatic edges derived from repository relationships between visible cards
+- Card-to-card spatial connection drawing
+- Architecture compatible with later manual relationship authoring
+- No forced inspector-based navigation; preserve canvas-centric interaction
+
+TASK-138
+Status: TODO
+Difficulty: 5
+Requires: TASK-131, TASK-132, TASK-133
+Description: Implement in-place Knowledge Layer card expansion and richer browser grouping, including:
+- Compact and expanded card states on the canvas
+- Expansion in place rather than separate inspector workflow
+- Additional structured entry information in expanded state
+- Switchable browser grouping modes such as:
+  - by entity type
+  - by hierarchy/parent relation
+  - by category/tag
+- Preserve usability of the canvas with multiple expanded cards
+
+TASK-139
+Status: TODO
+Difficulty: 6
+Requires: TASK-004, TASK-131, TASK-135
+Description: Unify Knowledge Layer and simulation tab/session semantics, including:
+- Keep Knowledge Layer as persistent pre-simulation workspace outside simulation tabs
+- Centralize launch/focus logic for simulations opened from the Knowledge Layer
+- Avoid duplicate logical tabs for the same entity/year context unless intentionally allowed
+- Keep simulation session creation and focusing out of ad hoc UI code

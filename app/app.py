@@ -17,7 +17,7 @@ class App(SimWindow):
     Main application entry point.
 
     Responsibilities:
-    * manage app-level menu state
+    * manage app-level knowledge layer state
     * manage tabs
     * route update / draw / input
     * bridge UI events to the active simulation
@@ -41,10 +41,10 @@ class App(SimWindow):
         self.renderer = Renderer(self)
         self.ui_manager = UIManager()
 
-        self.menu_active = True
+        self.knowledge_layer_active = True
 
     def get_active_simulation(self):
-        if self.menu_active:
+        if self.knowledge_layer_active:
             return None
 
         tab = self.tab_manager.get_active()
@@ -73,7 +73,7 @@ class App(SimWindow):
         tab_key = ("space", "root")
 
         if self._focus_existing_tab_by_key(tab_key):
-            self.menu_active = False
+            self.knowledge_layer_active = False
             return
 
         new_tab = Tab(
@@ -84,7 +84,7 @@ class App(SimWindow):
 
         self.tab_manager.add_tab(new_tab)
         self.tab_manager.active_index = len(self.tab_manager.tabs) - 1
-        self.menu_active = False
+        self.knowledge_layer_active = False
         self.camera_controller.setup_for_sim(new_tab.sim_instance.simulation)
 
     def _launch_earth_map_tab(self):
@@ -94,7 +94,7 @@ class App(SimWindow):
         tab_key = ("map", "planet_earth")
 
         if self._focus_existing_tab_by_key(tab_key):
-            self.menu_active = False
+            self.knowledge_layer_active = False
             return
 
         from world.simulation_context import SimulationContext
@@ -114,7 +114,7 @@ class App(SimWindow):
 
         self.tab_manager.add_tab(new_tab)
         self.tab_manager.active_index = len(self.tab_manager.tabs) - 1
-        self.menu_active = False
+        self.knowledge_layer_active = False
         self.camera_controller.setup_for_sim(new_map_sim)
 
     def _open_region_map_tab(self, entity_id):
@@ -131,7 +131,7 @@ class App(SimWindow):
 
         tab_key = ("map", entity_id)
         if self._focus_existing_tab_by_key(tab_key):
-            self.menu_active = False
+            self.knowledge_layer_active = False
             return
 
         from world.simulation_context import SimulationContext
@@ -154,7 +154,7 @@ class App(SimWindow):
 
         self.tab_manager.add_tab(new_tab)
         self.tab_manager.active_index = len(self.tab_manager.tabs) - 1
-        self.menu_active = False
+        self.knowledge_layer_active = False
         self.camera_controller.setup_for_sim(new_map_sim)
 
     def _open_parent_region_map_tab(self, map_sim):
@@ -202,7 +202,7 @@ class App(SimWindow):
         """
         Handle application-level keyboard controls.
         """
-        if self.menu_active:
+        if self.knowledge_layer_active:
             return
 
         if event.key == pygame.K_TAB:
@@ -226,10 +226,47 @@ class App(SimWindow):
             elif event.key == pygame.K_SPACE:
                 sim.sim_clock.toggle_pause()
 
-    def _handle_ui_action(self, action_id, active_sim):
+    def _handle_ui_action(self, action, active_sim):
         """
-        Route UI button actions for either the main menu or the active simulation.
+        Route UI actions for either the knowledge layer or the active simulation.
         """
+        if isinstance(action, dict):
+            action_id = action.get("id")
+
+            if action_id == "knowledge_launch_entry":
+                entity_id = action.get("entity_id")
+                entity = self.world_model.get_entity(entity_id)
+
+                if entity is None:
+                    return False
+
+                dataset_name = entity.get("_dataset")
+
+                if dataset_name == "locations":
+                    self._open_region_map_tab(entity_id)
+                    return True
+
+                if dataset_name == "systems":
+                    system_role = entity.get("system_role")
+
+                    if system_role == "star_system":
+                        self._launch_space_root_tab()
+                        return True
+
+                    if system_role == "orbital_body":
+                        location_entity_id = entity.get("location_entity")
+
+                        if location_entity_id:
+                            self._open_region_map_tab(location_entity_id)
+                            return True
+
+                        self._launch_space_root_tab()
+                        return True
+
+                return False
+        else:
+            action_id = action
+
         if action_id == "launch_space_root":
             self._launch_space_root_tab()
             return True
@@ -285,7 +322,7 @@ class App(SimWindow):
                 )
 
     def update(self, dt):
-        if self.menu_active:
+        if self.knowledge_layer_active:
             return
 
         self.tab_manager.update(dt)
@@ -300,12 +337,13 @@ class App(SimWindow):
         active_sim = self.get_active_simulation()
 
         self.ui_manager.rebuild_for_state(
-            active_sim,
-            self.width,
-            self.height,
+            active_sim=active_sim,
+            app_width=self.width,
+            app_height=self.height,
             tab_manager=self.tab_manager,
             camera=self.camera,
-            menu_active=self.menu_active
+            menu_active=self.knowledge_layer_active,
+            world_model=self.world_model
         )
 
         action_id = self.ui_manager.handle_event(event)
@@ -314,7 +352,7 @@ class App(SimWindow):
             if handled:
                 return
 
-        if self.menu_active:
+        if self.knowledge_layer_active:
             return
 
         self.tab_manager.handle_event(event)
@@ -331,12 +369,13 @@ class App(SimWindow):
 
         active_sim = self.get_active_simulation()
         self.ui_manager.rebuild_for_state(
-            active_sim,
-            self.width,
-            self.height,
+            active_sim=active_sim,
+            app_width=self.width,
+            app_height=self.height,
             tab_manager=self.tab_manager,
             camera=self.camera,
-            menu_active=self.menu_active
+            menu_active=self.knowledge_layer_active,
+            world_model=self.world_model
         )
 
         if active_sim:

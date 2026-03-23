@@ -182,3 +182,24 @@
   map_canvas_height_px: 1024
   population: 0
   start_year: 0
+- id: planet_vesta
+  name: Vesta
+  type: location
+  location_class: planet
+  coords:
+    type: point
+    x: 0
+    y: 0
+  bounds:
+    type: bbox
+    min_x: -128
+    max_x: 128
+    min_y: -64
+    max_y: 64
+  derived_from_system_body: body_vesta
+  map_projection: equirectangular
+  map_status: empty_generated
+  map_canvas_width_px: 2048
+  map_canvas_height_px: 1024
+  population: 0
+  start_year: 0
