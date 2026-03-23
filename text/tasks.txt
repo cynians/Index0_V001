@@ -3,154 +3,133 @@ TASK LIST
 ------------------------------------------------
 
 ------------------------------------------------
-INCOMING IDEAS (UNSORTED / PRE-CONSOLIDATION)
+DONE TASKS (COMPRESSED)
 ------------------------------------------------
 
-# Add new ideas here BEFORE assigning TASK-IDs
-# Format (temporary):
-
-# IDEA-X
-# Description:
-# Notes:
-# Dependencies (optional):
+DONE: TASK-001 App Entry Refactor
+DONE: TASK-002 Logic View Separation
+DONE: TASK-003 Renderer App Routing
+DONE: TASK-005 Standalone SpaceSimulation
+DONE: TASK-006 Standalone MapSimulation
+DONE: TASK-008 Map Camera Initialization
+DONE: TASK-009 Dual Mode Rendering
+DONE: TASK-010 Map Layer Pipeline
+DONE: TASK-012 Hierarchical Map Layers
+DONE: TASK-013 World Model Loading
+DONE: TASK-032 Planet Map Linkage
+DONE: TASK-033 Tab Routing UI
+DONE: TASK-034 Camera Behavior Profiles
+DONE: TASK-067 Entry Driven SpaceSystem
+DONE: TASK-068 Persistent Planet Map Roots
 
 ------------------------------------------------
 CORE APPLICATION / ARCHITECTURE
 ------------------------------------------------
 
-TASK-001
+TASK-004
+Status: PARTIAL
 Difficulty: 3
-Requires: None
-Description: Refactor App to use SimulationInstance + Tab system as single entry point
+Requires: TASK-002
+Description: Remove remaining legacy TestSimulation responsibilities
 
-TASK-033
+TASK-053
+Status: TODO
 Difficulty: 6
 Requires: TASK-001
-Description: Implement tab switching UI and active simulation routing
-
-TASK-002
-Difficulty: 4
-Requires: TASK-001
-Description: Separate simulation (logic) from view (SimWindow) across all sims
-
-TASK-003
-Difficulty: 4
-Requires: TASK-002
-Description: Refactor Renderer to use active simulation via App instead of TestSimulation
-
-TASK-004
-Difficulty: 3
-Requires: TASK-002
-Description: Remove legacy TestSimulation responsibilities and reduce it to minimal test harness
+Description: Introduce app-level year state system, including:
+- Distinction between selected year and loaded year
+- Confirmation step before loading a new year
+- Propagation of loaded year into all active simulations and contexts
 
 ------------------------------------------------
 RENDERING SYSTEM
 ------------------------------------------------
 
-TASK-009
-Difficulty: 6
-Requires: TASK-003
-Description: Extend Renderer to support both SpaceSimulation and MapSimulation rendering modes
-
-TASK-010
-Difficulty: 5
-Requires: TASK-006
-Description: Add layer rendering pipeline for MapSimulation (non-orbital)
-
 TASK-011
+Status: PARTIAL
 Difficulty: 6
 Requires: TASK-010
-Description: Implement zoom-based layer resolution handling for map layers
+Description: Refine zoom-based layer resolution and label handling for maps and space view
 
-TASK-012
-Difficulty: 7
-Requires: TASK-011
-Description: Introduce hierarchical map layers (planet → region → subregion)
+TASK-066
+Status: PARTIAL
+Difficulty: 5
+Requires: TASK-003
+Description: Migrate remaining status/UI display from Renderer into UI system, including:
+- Year display
+- Timeline visualization
+- Mouse-world readout
+- Context-sensitive action buttons
+
+TASK-101
+Status: TODO
+Difficulty: 6
+Requires: TASK-009, TASK-067, TASK-100
+Description: Add display layer for interstellar travel and off-system links
 
 ------------------------------------------------
 BASE SIMULATIONS
 ------------------------------------------------
 
-TASK-005
-Difficulty: 5
-Requires: TASK-002
-Description: Implement SpaceSimulation as standalone simulation module
-
-TASK-006
-Difficulty: 5
-Requires: TASK-002
-Description: Implement MapSimulation as standalone simulation module with fixed layer system
-
-TASK-034
-Difficulty: 5
-Requires: TASK-006
-Description: Implement camera behavior profiles per simulation type
-
 TASK-007
+Status: PARTIAL
 Difficulty: 4
 Requires: TASK-006
-Description: Add camera constraints for MapSimulation (bounded movement + zoom limits)
-
-TASK-008
-Difficulty: 3
-Requires: TASK-006
-Description: Initialize MapSimulation camera centered and scaled to region size
-
-TASK-032
-Difficulty: 7
-Requires: TASK-005
-Description: Implement multi-representation system for planets (space ↔ map linkage)
+Description: Finalize bounded map movement and reset-to-view camera behavior
 
 ------------------------------------------------
 WORLD / SPATIAL SYSTEM
 ------------------------------------------------
 
-TASK-013
+TASK-019
+Status: TODO
 Difficulty: 6
 Requires: TASK-006
-Description: Implement entity loading into MapSimulation from world model
+Description: Implement support for external map images (file dialog + display pipeline)
+
+TASK-020
+Status: TODO
+Difficulty: 5
+Requires: TASK-019
+Description: Implement resolution/scale system for map images independent of real-world size
 
 TASK-021
+Status: TODO
 Difficulty: 6
 Requires: TASK-006
 Description: Implement structure spatial system (point anchor + optional polygon footprint), including:
 - Environmental modifiers (e.g. sleep quality, safety, comfort)
 
 TASK-022
+Status: TODO
 Difficulty: 7
 Requires: TASK-006
 Description: Implement region shape system using multipolygon geometry
 
 TASK-023
+Status: TODO
 Difficulty: 8
 Requires: TASK-022
 Description: Implement spatial queries (point-in-region, overlap detection)
-
-TASK-019
-Difficulty: 6
-Requires: TASK-006
-Description: Implement support for external map images (file dialog + display pipeline)
-
-TASK-020
-Difficulty: 5
-Requires: TASK-019
-Description: Implement resolution/scale system for map images independent of real-world size
 
 ------------------------------------------------
 POPULATION / ENTITY CORE
 ------------------------------------------------
 
 TASK-014
+Status: TODO
 Difficulty: 7
 Requires: TASK-013
 Description: Implement pop system (aggregated population with optional individuals)
 
 TASK-015
+Status: TODO
 Difficulty: 6
 Requires: TASK-014
 Description: Implement latent NPC generation from pops (on-demand instantiation)
 
 TASK-016
+Status: TODO
 Difficulty: 7
 Requires: TASK-014
 Description: Implement entity knowledge state system (untouched → detailed), including:
@@ -162,12 +141,14 @@ PLAYER INTERACTION LAYER
 ------------------------------------------------
 
 TASK-017
+Status: TODO
 Difficulty: 8
 Requires: TASK-016
 Description: Implement card system representing all entities with progressive discovery, including:
 - Personality traits and behavioral tendencies
 
 TASK-018
+Status: TODO
 Difficulty: 7
 Requires: TASK-017
 Description: Implement deck system allowing player to select discovered entities before simulation start
@@ -177,45 +158,102 @@ ANALYSIS / INFORMATION LAYER
 ------------------------------------------------
 
 TASK-026
+Status: TODO
 Difficulty: 6
 Requires: TASK-006
 Description: Create analysis module (sim_core/analysis) for derived data systems
 
 TASK-027
+Status: TODO
 Difficulty: 7
 Requires: TASK-026
 Description: Implement heatmap system for spatial aggregation (population, culture, etc.)
 
 TASK-028
+Status: TODO
 Difficulty: 6
 Requires: TASK-026
 Description: Implement ledger system for statistical summaries
 
 TASK-029
+Status: TODO
 Difficulty: 7
 Requires: TASK-027
 Description: Integrate heatmap rendering into MapSimulation (toggleable overlay)
 
 TASK-030
+Status: TODO
 Difficulty: 7
 Requires: TASK-028
 Description: Implement UI panel for ledger display
 
 TASK-031
+Status: TODO
 Difficulty: 8
 Requires: TASK-016
 Description: Make heatmap and ledger outputs dependent on knowledge state (fog-of-information)
+
+TASK-069
+Status: TODO
+Difficulty: 8
+Requires: TASK-016, TASK-054
+Description: Implement degrees-of-touch graph for information proximity, including:
+- Direct touch (entity encountered / observed / interacted with during a recorded snapshot)
+- Indirect touch chains across entities and events
+- Temporal preservation of touch relationships across snapshots
+- Query of shortest touch distance between entities
+
+TASK-070
+Status: TODO
+Difficulty: 7
+Requires: TASK-069, TASK-045
+Description: Integrate canon events into the degrees-of-touch system, including:
+- Event participation edges
+- Consumption / predation / conflict / transaction links
+- Derived second-order and higher-order touch relations
+- Event-based expansion of the information graph over time
+
+TASK-071
+Status: TODO
+Difficulty: 8
+Requires: TASK-069, TASK-017
+Description: Implement progressive information gathering based on degrees of touch, including:
+- Slower discovery for distant entities
+- Faster discovery for direct or repeated touch
+- Information quality variation by touch distance
+- Optional rumor / uncertainty for distant chains
+
+TASK-072
+Status: TODO
+Difficulty: 7
+Requires: TASK-071, TASK-030
+Description: Implement UI display for touch-distance-based information access, including:
+- Entity card visibility tiers
+- “Known directly / known indirectly / only inferred” states
+- Explanation of why an entity is known
+- Traceback of information chain where useful
+
+TASK-073
+Status: TODO
+Difficulty: 7
+Requires: TASK-054, TASK-069
+Description: Integrate snapshot creation with degrees-of-touch capture, including:
+- Recording which entities directly touched during a snapshot period
+- Snapshot-time event-derived touch links
+- Reuse of touch data when reconstructing information availability in later years
 
 ------------------------------------------------
 CULTURE SYSTEM
 ------------------------------------------------
 
 TASK-024
+Status: TODO
 Difficulty: 7
 Requires: TASK-014
 Description: Implement culture as derived property from population distribution
 
 TASK-025
+Status: TODO
 Difficulty: 8
 Requires: TASK-024
 Description: Implement region-level aggregation of culture (percent-based)
@@ -224,7 +262,32 @@ Description: Implement region-level aggregation of culture (percent-based)
 BIOLOGICAL LAYER
 ------------------------------------------------
 
+TASK-039
+Status: TODO
+Difficulty: 7
+Requires: TASK-006
+Description: Implement BioregionSimulation, including:
+- Species distribution
+- Environmental interaction
+- Dynamic propagation (plants/ecosystems)
+- Mixed-detail organism representation
+- Representative organism spawning
+- Feedback between simulated organisms and abstract populations
+
+TASK-049
+Status: TODO
+Difficulty: 5
+Requires: TASK-039
+Description: Implement resource nodes
+
+TASK-050
+Status: TODO
+Difficulty: 7
+Requires: TASK-049
+Description: Implement resource extraction processes
+
 TASK-052
+Status: TODO
 Difficulty: 8
 Requires: TASK-014
 Description: Implement SpeciesSimulation (biological layer for entities), including:
@@ -240,14 +303,143 @@ Description: Implement SpeciesSimulation (biological layer for entities), includ
 - Physiological and psychological conditions (illness, fatigue disorders, mental states)
 - Exposure of normalized need signals to decision systems
 
+TASK-088
+Status: TODO
+Difficulty: 7
+Requires: TASK-017, TASK-018, TASK-039, TASK-052
+Description: Implement card-driven organism spawning from the knowledge layer, including:
+- Organism and plant cards unlocked through the knowledge/progression layer
+- Optional predefined collections / decks
+- Placement of cards onto the map to instantiate organisms or plant patches
+- Support for starting runs from discovered-entry map states
+
+TASK-089
+Status: TODO
+Difficulty: 6
+Requires: TASK-039, TASK-052, TASK-088
+Description: Implement representative organism spawning for animals, including:
+- Spawn representative animal from card placement
+- Fully simulate all individuals if local count is still small
+- Use representative organism as high-detail proxy for wider local presence
+
+TASK-090
+Status: TODO
+Difficulty: 6
+Requires: TASK-039, TASK-088
+Description: Implement patch spawning for plants, including:
+- Spawn plant patch from card placement
+- Initially allow 100% full simulation for small patches
+- Shift new growth into lower-detail entries as patch expands
+
+TASK-091
+Status: TODO
+Difficulty: 7
+Requires: TASK-039, TASK-052, TASK-089, TASK-090
+Description: Implement diminished organism entry layer, including:
+- Existence
+- Coarse location
+- Life-cycle state
+- Display presence
+- Minimal validation data
+- Eligibility for later promotion back into full simulation
+
+TASK-092
+Status: TODO
+Difficulty: 7
+Requires: TASK-039, TASK-052, TASK-089, TASK-090, TASK-091
+Description: Implement population abstraction threshold rules for plants and animals, including:
+- Full simulation at low counts
+- Proportional abstraction as counts grow
+- Stable mixed-detail population handling
+
+TASK-093
+Status: TODO
+Difficulty: 7
+Requires: TASK-039, TASK-052, TASK-091, TASK-092
+Description: Implement promotion and demotion rules between fully simulated organisms and diminished entries, including:
+- Local relevance
+- Player focus
+- Interaction criticality
+- Density/budget constraints
+- Preservation of identity and key relationships
+
+TASK-094
+Status: TODO
+Difficulty: 8
+Requires: TASK-039, TASK-052, TASK-091, TASK-092, TASK-093
+Description: Implement background population simulation influenced by fully simulated organisms, including:
+- Growth
+- Mortality
+- Reproduction
+- Migration
+- Ecological pressure
+- Feedback between local detail and abstract population truth
+
+TASK-095
+Status: TODO
+Difficulty: 7
+Requires: TASK-069, TASK-071, TASK-091, TASK-093, TASK-094
+Description: Integrate degrees of touch into mixed-detail organism populations, including:
+- Family/group continuity across abstraction levels
+- Relevance-driven promotion
+- Information propagation through ecological/social links
+
+TASK-096
+Status: TODO
+Difficulty: 7
+Requires: TASK-017, TASK-018, TASK-039, TASK-088, TASK-089, TASK-090
+Description: Implement card-driven run initialization from discovered organism entries, connecting:
+- Persistent knowledge progression
+- Organism cards/decks
+- Local simulation seeding
+- Map-based run setup
+
+TASK-097
+Status: TODO
+Difficulty: 6
+Requires: TASK-039, TASK-052, TASK-091, TASK-092, TASK-094
+Description: Formalize three-layer organism representation model, including:
+- Fully simulated organisms
+- Diminished organism entries
+- Abstract population truth
+- Consistent use across bioregion, species, information, and UI systems
+
 ------------------------------------------------
 CORE SIMULATION SYSTEMS
 ------------------------------------------------
 
+TASK-035
+Status: TODO
+Difficulty: 6
+Requires: TASK-014
+Description: Implement ProducerSimulation, including:
+- Agent-driven production processes
+- Interruptible execution (pause/resume/abort)
+- Inventory system:
+  - entity-based
+  - structure-based
+  - spatial anchoring
+- Resource decay/spoilage system:
+  - time-based
+  - condition-based modifiers
+
+TASK-036
+Status: TODO
+Difficulty: 6
+Requires: TASK-014
+Description: Implement InstitutionSimulation, including:
+- Role system
+- Hierarchical command structures
+- Task assignment pipelines
+- Enforcement strength
+- Group-context execution (shared tasks/resources)
+- Role assignment systems (employment, conscription)
+
 TASK-037
+Status: TODO
 Difficulty: 7
 Requires: TASK-014
-Description: Implement PersonSimulation (individual agents), including:
+Description: Implement PersonSimulation, including:
 - Need/effort-driven decision system (from SpeciesSimulation)
 - Dynamic task queue (enqueue, reprioritize, abort)
 - Multi-need arbitration:
@@ -264,44 +456,22 @@ Description: Implement PersonSimulation (individual agents), including:
 - Sleep as task with quality tradeoff (location-dependent)
 - Integration with capabilities, infrastructure, and knowledge
 
-TASK-035
-Difficulty: 6
-Requires: TASK-014
-Description: Implement ProducerSimulation, including:
-- Agent-driven production processes
-- Interruptible execution (pause/resume/abort)
-- Inventory system:
-  - entity-based
-  - structure-based
-  - spatial anchoring
-- Resource decay/spoilage system:
-  - time-based
-  - condition-based modifiers
-
-TASK-036
-Difficulty: 6
-Requires: TASK-014
-Description: Implement InstitutionSimulation, including:
-- Role system
-- Hierarchical command structures
-- Task assignment pipelines
-- Enforcement strength
-- Group-context execution (shared tasks/resources)
-- Role assignment systems (employment, conscription)
+TASK-042
+Status: TODO
+Difficulty: 8
+Requires: TASK-043
+Description: Implement ConflictSimulation
 
 TASK-043
+Status: TODO
 Difficulty: 7
 Requires: TASK-036
 Description: Implement FactionSimulation, including:
 - Directives and policies
 - Propagation into institutions
 
-TASK-042
-Difficulty: 8
-Requires: TASK-043
-Description: Implement ConflictSimulation
-
 TASK-044
+Status: TODO
 Difficulty: 7
 Requires: TASK-036
 Description: Implement TechnologySimulation, including:
@@ -311,22 +481,33 @@ Description: Implement TechnologySimulation, including:
   - context-dependent learning (tools, environment, teaching)
 
 TASK-045
+Status: TODO
 Difficulty: 7
 Requires: TASK-016
 Description: Implement EventSimulation, including:
 - Behavioral overrides (panic, morale shifts)
 - Biological impacts (fatigue, stress, illness)
 
+TASK-051
+Status: TODO
+Difficulty: 7
+Requires: TASK-044
+Description: Implement capability checks, including:
+- Composite evaluation (person, tools, infrastructure, environment)
+- Runtime validation and mid-task invalidation
+
 ------------------------------------------------
 ECONOMY / LOGISTICS SYSTEMS
 ------------------------------------------------
 
 TASK-040
+Status: TODO
 Difficulty: 8
 Requires: TASK-035
 Description: Implement EconomySimulation
 
 TASK-041
+Status: TODO
 Difficulty: 7
 Requires: TASK-040
 Description: Implement LogisticsSimulation, including:
@@ -334,6 +515,7 @@ Description: Implement LogisticsSimulation, including:
 - Dynamic rerouting and interruption
 
 TASK-048
+Status: TODO
 Difficulty: 8
 Requires: TASK-041
 Description: Implement InfrastructureSimulation (capability networks)
@@ -343,11 +525,13 @@ ECONOMY DETAIL LAYER
 ------------------------------------------------
 
 TASK-046
+Status: TODO
 Difficulty: 8
 Requires: TASK-040
 Description: Implement MarketSimulation
 
 TASK-047
+Status: TODO
 Difficulty: 7
 Requires: TASK-037
 Description: Implement MerchantSimulation, including:
@@ -356,43 +540,696 @@ Description: Implement MerchantSimulation, including:
 - Multi-motivation system
 
 ------------------------------------------------
-ENVIRONMENT / BIOREGION / RESOURCES
+TEMPORAL / SNAPSHOT / TIMELINE SYSTEM
 ------------------------------------------------
 
-TASK-039
-Difficulty: 7
-Requires: TASK-006
-Description: Implement BioregionSimulation, including:
-- Species distribution
-- Environmental interaction
-- Dynamic propagation (plants/ecosystems)
+TASK-054
+Status: TODO
+Difficulty: 6
+Requires: TASK-013
+Description: Implement sparse world snapshot system (year-based databank), including:
+- Optional entries for all entity types
+- Support for varying degrees of detail per snapshot
+- Storage of entity state only for years where snapshot data exists
+- Fallback behavior when no snapshot exists for an entity in a given year
 
-TASK-049
+TASK-055
+Status: TODO
+Difficulty: 7
+Requires: TASK-054
+Description: Implement snapshot inheritance / interpolation rules between available years, including:
+- Resolution of nearest prior and next known snapshots
+- Rules for missing fields and partial records
+- Distinction between unchanged state, unknown state, and explicitly overridden state
+
+TASK-056
+Status: TODO
 Difficulty: 5
-Requires: TASK-039
-Description: Resource nodes
+Requires: TASK-053
+Description: Implement year timeline UI using only meaningful content years, including:
+- Display only years for which databank or scenario content exists
+- Current selected year marker
+- Current loaded year marker
+- Confirmation button to load selected year
 
-TASK-050
-Difficulty: 7
-Requires: TASK-049
-Description: Resource extraction processes
+TASK-057
+Status: TODO
+Difficulty: 6
+Requires: TASK-056
+Description: Implement world reload pipeline for selected year, including:
+- Rebuilding SpaceSimulation and MapSimulation from loaded year
+- Preserving valid navigation context where possible
+- Resetting invalid tabs/simulations when their target entity does not exist in the loaded year
 
-TASK-051
+TASK-058
+Status: TODO
+Difficulty: 6
+Requires: TASK-032, TASK-053
+Description: Integrate year loading with planetary and regional navigation workflow, including:
+- Load world for selected year
+- Navigate from space to planetary map
+- Open entity-rooted map tabs in the currently loaded year
+- Ensure year-consistent entity availability across tabs
+
+TASK-059
+Status: TODO
 Difficulty: 7
-Requires: TASK-044
-Description: Capability checks, including:
-- Composite evaluation (person, tools, infrastructure, environment)
-- Runtime validation and mid-task invalidation
+Requires: TASK-054
+Description: Implement per-entity snapshot detail levels, including:
+- Lightweight presence-only snapshots
+- Regional/structural state snapshots
+- Detailed individual/person snapshots
+- Rules for mixing coarse and fine snapshot detail in the same year
+
+TASK-060
+Status: TODO
+Difficulty: 8
+Requires: TASK-037, TASK-054
+Description: Implement person timeline snapshot system, including:
+- Sparse yearly/person snapshots
+- Support for non-canon player-altered periods between years X and Y
+- Next canonical or databank-backed snapshot at later year Z
+- Resolution of actor state when intermediate years are underspecified
+
+TASK-061
+Status: TODO
+Difficulty: 8
+Requires: TASK-060, TASK-041, TASK-045
+Description: Implement timeline burden system, including:
+- Comparison between current simulated state and next known snapshot
+- Generation of background tasks to realign with later timeline state
+- Travel burden (move actor from place A to place B by target year)
+- Activity burden (perform actions required by later snapshots)
+- Handling of unresolved burden as simulation pressure rather than instant teleportation
+
+TASK-062
+Status: TODO
+Difficulty: 7
+Requires: TASK-060, TASK-061
+Description: Implement canonical vs non-canonical timeline state tracking, including:
+- Player-created deviations from databank snapshots
+- Storage of altered periods as separate timeline state
+- Detection of later canon conflicts
+- Exposure of those conflicts to timeline burden generation
+
+TASK-063
+Status: TODO
+Difficulty: 6
+Requires: TASK-056
+Description: Add timeline visualization panel for snapshot density and temporal coverage, including:
+- Marker display for years with known content
+- Visual distinction between sparse and high-detail years
+- Entity-level or simulation-level temporal availability indicators
+
+TASK-064
+Status: TODO
+Difficulty: 7
+Requires: TASK-057, TASK-030
+Description: Implement timeline databank inspection UI, including:
+- Display of available snapshots for selected entity
+- Comparison of current state vs stored snapshot state
+- Visibility of missing years, partial years, and next known canonical state
+
+TASK-065
+Status: TODO
+Difficulty: 8
+Requires: TASK-054, TASK-057
+Description: Design persistence format for yearly snapshot databank, including:
+- Storage layout for sparse snapshots
+- Optional per-field override structure
+- Stable references to entities across years
+- Compatibility with future simulation-generated non-canonical history
 
 ------------------------------------------------
-VEHICLE SYSTEM
+VEHICLE / SPACECRAFT / SPACE NAVIGATION
 ------------------------------------------------
 
 TASK-038
-Difficulty: 8
+Status: TODO
+Difficulty: 9
 Requires: TASK-002
-Description: Implement VehicleSimulation
+Description: Implement VehicleSimulation as a component-based vehicle engineering and runtime system, including:
+- Vehicle support for:
+  - transport platform
+  - mobile workplace / base
+  - weapon system
+- Two vehicle acquisition forms:
+  - predefined / preassembled vehicles
+  - player-built vehicles
+- Capability derivation from installed component combinations rather than flat vehicle stats
+- Engineering consequences of component pairing, including examples such as:
+  - engine + fuel tank -> operational range
+  - component combinations -> emergent vehicle properties
+- Vehicle design workflow based on available components, with support for sourcing components through production and market systems
+- Vehicle graphics generated from in-game component arrangement rather than fixed sprites
+- Light CAD-like design workflow using drawable hull/shape geometry and spline-based layout support
+- Two-plane internal component arrangement for operational display generation
+- Export pipeline for external art workflow, including:
+  - top view export
+  - side view export
+  - appropriate scaling for external hull/detail drawing in an external drawing app
+- Distinction between:
+  - operational/map-like internal representation
+  - exterior sprite-based representation showing hull and external form
+- Engineering simulation consequences of placement, including:
+  - fuel and utility routing implications
+  - crew walking / access distance
+  - center of mass implications
+  - armor / protection coverage
+  - hit / damage propagation
+  - maintenance access
+- Future integration with:
+  - ProducerSimulation
+  - EconomySimulation
+  - MarketSimulation
+  - InfrastructureSimulation
+  - Capability checks
+
+TASK-074
+Status: TODO
+Difficulty: 7
+Requires: TASK-038, TASK-044
+Description: Implement component-based spacecraft trajectory calculation system, including:
+- Navigation component roles
+- Different trajectory-related onboard capabilities
+- Component-combination-dependent planning quality/autonomy
+
+TASK-075
+Status: TODO
+Difficulty: 7
+Requires: TASK-038, TASK-044, TASK-074
+Description: Implement software layer for spacecraft trajectory calculation, including:
+- Transfer estimate
+- Orbit insertion planning
+- Landing approach
+- Rendezvous/intercept
+- Correction burns
+- Software quality/version effects
+
+TASK-076
+Status: TODO
+Difficulty: 7
+Requires: TASK-038, TASK-044, TASK-051, TASK-074, TASK-075
+Description: Separate hardware and software capability in spacecraft navigation
+
+TASK-077
+Status: TODO
+Difficulty: 8
+Requires: TASK-038, TASK-041, TASK-044, TASK-074, TASK-075, TASK-076
+Description: Implement multi-stage spacecraft trajectory workflow, including:
+- State estimation
+- Target acquisition
+- Transfer calculation
+- Burn planning
+- Execution monitoring
+- Correction / replanning
+
+TASK-078
+Status: TODO
+Difficulty: 7
+Requires: TASK-037, TASK-036, TASK-038, TASK-043, TASK-077
+Description: Implement human/operator interaction with spacecraft trajectory systems
+
+TASK-079
+Status: TODO
+Difficulty: 7
+Requires: TASK-038, TASK-044, TASK-045, TASK-051, TASK-076, TASK-077
+Description: Implement degraded and improvised trajectory calculation modes
+
+TASK-080
+Status: TODO
+Difficulty: 7
+Requires: TASK-038, TASK-005, TASK-032
+Description: Add spacecraft system access from space view
+
+TASK-081
+Status: TODO
+Difficulty: 6
+Requires: TASK-038, TASK-080
+Description: Use VehicleSimulation as host simulation for spacecraft internal systems
+
+TASK-082
+Status: TODO
+Difficulty: 7
+Requires: TASK-037, TASK-038, TASK-081
+Description: Allow person simulations nested within spacecraft / vehicle simulations
+
+TASK-083
+Status: TODO
+Difficulty: 5
+Requires: TASK-037, TASK-038, TASK-082
+Description: Implement initial crew linkage model via crewed_by relationship
+
+TASK-084
+Status: TODO
+Difficulty: 8
+Requires: TASK-037, TASK-038, TASK-052, TASK-082, TASK-083
+Description: Implement synchronization model for person and vehicle simulation state
+
+TASK-085
+Status: TODO
+Difficulty: 6
+Requires: TASK-033, TASK-038, TASK-080
+Description: Implement space-view to spacecraft-view transition workflow
+
+TASK-086
+Status: TODO
+Difficulty: 7
+Requires: TASK-036, TASK-037, TASK-038, TASK-082, TASK-083
+Description: Implement internal spacecraft command and role structure
+
+TASK-087
+Status: TODO
+Difficulty: 7
+Requires: TASK-021, TASK-037, TASK-038, TASK-082, TASK-084
+Description: Implement vehicle-local spatial context for crewed spacecraft
+
+TASK-098
+Status: TODO
+Difficulty: 7
+Requires: TASK-041, TASK-048, TASK-038, TASK-067
+Description: Implement space route and transfer network layer between orbital systems, including:
+- Orbital transfer corridors
+- Interplanetary lanes
+- Approach corridors
+- Departure windows
+
+TASK-099
+Status: TODO
+Difficulty: 7
+Requires: TASK-041, TASK-044, TASK-048, TASK-074, TASK-075, TASK-077, TASK-098
+Description: Implement navigation and route knowledge as infrastructure rather than pure vehicle capability
+
+TASK-100
+Status: TODO
+Difficulty: 5
+Requires: TASK-038, TASK-041, TASK-048, TASK-067, TASK-098
+Description: Add interstellar travel stub, including:
+- Interstellar-capable vehicles
+- Interstellar routes
+- Long-duration transfer states
+- Origin / destination system linkage
+
+
+TASK-102
+Status: TODO
+Difficulty: 7
+Requires: TASK-038, TASK-051
+Description: Implement strict vehicle component connection logic, including:
+- Explicit valid connection graph between components
+- Examples such as:
+  - fuel tank connected to engine through valid line/path
+  - crew station connected to control system
+  - weapon connected to mount and ammunition storage
+- Validation of required functional paths before vehicle capabilities become active
+- Foundation for later wiring, piping, damage isolation, and maintenance logic
+
+
+
 
 ------------------------------------------------
-END
+TASK / LOGISTICS FOUNDATION
 ------------------------------------------------
+
+TASK-103
+Status: TODO
+Difficulty: 8
+Requires: TASK-002
+Description: Implement universal task structure as a first-class world object, including:
+- One shared task model across person, institution, faction, producer, vehicle, logistics, and timeline systems
+- Core fields for:
+  - identity
+  - creator / origin
+  - current owner / controller
+  - candidate assignees
+  - target / scope
+  - prerequisites
+  - required capabilities
+  - required resources
+  - timing / deadlines
+  - state / progress / interruption / failure
+  - parent / child task linkage
+  - provenance / reason for existence
+- Extension points for domain-specific task details without breaking the shared base model
+
+TASK-104
+Status: TODO
+Difficulty: 7
+Requires: TASK-103
+Description: Implement unassigned world-task layer, including:
+- Tasks existing before assignment
+- Tasks generated by multiple actor types, including:
+  - persons
+  - institutions
+  - factions
+  - producers
+  - logistics systems
+- Assignment as a later step rather than task creation
+- Tracking of:
+  - creator
+  - current owner
+  - assignment status
+  - spawned downstream tasks
+
+TASK-105
+Status: TODO
+Difficulty: 8
+Requires: TASK-103, TASK-104
+Description: Implement recursive task decomposition with progressive expansion, including:
+- Parent task -> child subtask generation by default
+- Progressive unfolding rather than full expansion at creation time
+- World-driven subtask generation based on current conditions
+- Fine-grained decomposition into:
+  - materials
+  - personnel roles
+  - vehicles
+  - capabilities
+  - site conditions
+- Parent/child dependency graph support
+
+TASK-106
+Status: TODO
+Difficulty: 8
+Requires: TASK-105, TASK-054, TASK-061
+Description: Implement dynamic task replanning and timeline-aware task adaptation, including:
+- Deferred task expansion
+- Invalidation and replacement of subtasks
+- World-state-driven re-planning
+- Adaptation to timeline changes caused in other simulations
+- Support for timeline burden generating or reshaping task trees
+
+TASK-107
+Status: TODO
+Difficulty: 7
+Requires: TASK-103, TASK-105, TASK-106
+Description: Implement blocked-task resolution framework, including:
+- Wait
+- Retry later
+- Search for alternative plan
+- Downgrade goal
+- Fail and escalate to higher-level owner
+- Selection of response based on:
+  - situation
+  - available options
+  - authority
+  - degrees of touch / information access
+
+TASK-108
+Status: TODO
+Difficulty: 6
+Requires: TASK-016, TASK-069, TASK-103
+Description: Implement task qualification and knowledge gating, including:
+- Player-side qualification restrictions based on encountered/discovered entries
+- Separation between:
+  - explicit player knowledge layer
+  - non-player operational awareness via degrees of touch
+- Qualification checks for whether an entity may intentionally generate, accept, or direct a task
+- Avoid treating knowledge primarily as a flat success-rate modifier
+
+TASK-109
+Status: TODO
+Difficulty: 7
+Requires: TASK-103, TASK-037
+Description: Implement multi-factor task priority model, including:
+- Internal factor set rather than one flat priority scalar
+- Examples such as:
+  - urgency
+  - importance
+  - authority
+  - proximity
+  - habit
+  - danger
+  - timeline burden
+  - opportunity
+- Collapse into a final decision score only at execution/selection time
+
+TASK-110
+Status: TODO
+Difficulty: 7
+Requires: TASK-103, TASK-105
+Description: Implement multi-assignee task coordination, including:
+- One task with multiple simultaneous assignees
+- Role slots / requirement slots
+- Support for combinations such as:
+  - engineers
+  - laborers
+  - guards
+  - vehicles
+  - supplies
+- Partial fulfillment tracking before task start
+- Coordination requirements for execution
+
+TASK-111
+Status: TODO
+Difficulty: 6
+Requires: TASK-103, TASK-041, TASK-048
+Description: Implement optional spatial anchoring for tasks, including:
+- Spatially bound tasks
+- Remote-capable tasks
+- Hybrid tasks
+- Required presence mode per task
+- Infrastructure and telecommunication requirements for remote-capable execution
+- Distinction between:
+  - on-site execution
+  - remote planning/command
+  - conditionally remote tasks
+
+TASK-112
+Status: TODO
+Difficulty: 7
+Requires: TASK-103, TASK-037, TASK-036, TASK-043
+Description: Implement player control interaction with task queues, including:
+- Manual insertion of tasks
+- Manual cancellation of tasks
+- Hard overrides against institution/faction pressure
+- Soft influence through priorities and permissions
+- Support for both direct override and indirect steering modes
+
+TASK-113
+Status: TODO
+Difficulty: 8
+Requires: TASK-103, TASK-104, TASK-105, TASK-107, TASK-109
+Description: Implement canonical task lifecycle model, including:
+- task creation
+- open/unassigned state
+- assignment
+- decomposition
+- waiting
+- execution
+- interruption
+- replanning
+- completion
+- failure
+- escalation
+- propagation of state changes across parent and child tasks
+
+TASK-114
+Status: TODO
+Difficulty: 8
+Requires: TASK-103, TASK-104, TASK-105, TASK-110, TASK-111, TASK-113, TASK-040
+Description: Reframe LogisticsSimulation as a specialization of the universal task system, including:
+- Movement as a first-class task
+- Goods/personnel/vehicle transport demands as unassigned world tasks
+- Route generation from infrastructure and world state
+- Dynamic rerouting and interruption
+- Generation of transport subtasks from higher-level demands such as:
+  - procurement
+  - settlement
+  - relocation
+  - construction
+  - timeline burden
+------------------------------------------------
+
+TASK-115
+Status: TODO
+Difficulty: 8
+Requires: TASK-005, TASK-038, TASK-067
+Description: Implement temporary encounter map generation for spacecraft interactions in space simulation, including:
+- Detection of relevant local interaction situations from orbital trajectories
+- Generation of a temporary local encounter frame/truss from orbital interception geometry
+- Initialization of involved spacecraft with inherited relative position, velocity, and approach trajectory
+- Support for interaction types such as:
+  - combat
+  - docking
+  - boarding
+  - inspection
+  - trading
+  - rescue
+  - escort
+  - evasion
+
+TASK-116
+Status: TODO
+Difficulty: 8
+Requires: TASK-115, TASK-074, TASK-075, TASK-077
+Description: Implement encounter truss scaling from tactical relevance, including:
+- Sensor ranges of involved ships
+- Weapon ranges of involved ships
+- Missile engagement envelopes
+- Relative velocity and expected travel distance during reaction windows
+- Docking corridor / close-approach envelope for low-speed encounters
+- Support for both very large high-velocity encounter spaces and compact docking/inspection spaces
+
+TASK-117
+Status: TODO
+Difficulty: 8
+Requires: TASK-115, TASK-081, TASK-082, TASK-084
+Description: Use VehicleSimulation as the detailed encounter-layer simulation for spacecraft inside temporary encounter maps, including:
+- Full vehicle simulation for each involved ship
+- Use of onboard components and systems during the encounter
+- Support for:
+  - sensors
+  - weapons
+  - countermeasures
+  - engines / maneuvering
+  - docking systems
+  - damage and internal systems
+- Future support for crew/person simulations inside encounter-layer vehicles
+
+TASK-118
+Status: TODO
+Difficulty: 7
+Requires: TASK-115, TASK-116, TASK-117
+Description: Implement encounter profile types for spacecraft interactions, including:
+- High-velocity combat profile
+- Slow rendezvous / docking profile
+- Inspection / trade / rescue profile
+- Different local-map assumptions depending on interaction profile
+- Different expected duration, scale, and system emphasis depending on profile
+
+TASK-119
+Status: TODO
+Difficulty: 8
+Requires: TASK-115, TASK-117, TASK-041
+Description: Implement encounter result writeback into orbital simulation, including:
+- Updated spacecraft trajectories / velocities
+- Damage state persistence
+- Destroyed craft removal
+- Fuel / ammunition / missile expenditure
+- Cargo transfer or docking state changes
+- Boarding / capture / rescue outcomes
+- Persistence of mission/task changes caused by the encounter
+
+TASK-120
+Status: TODO
+Difficulty: 7
+Requires: TASK-115, TASK-041, TASK-098
+Description: Implement encounter spawning rules for orbital interactions, including:
+- Proximity threshold alone not being sufficient
+- Triggering based on mission relevance or interaction intent, such as:
+  - hostile intercept
+  - docking intent
+  - escort
+  - trade rendezvous
+  - missile engagement
+- Filtering of irrelevant orbital crossings that should remain abstract
+
+TASK-121
+Status: TODO
+Difficulty: 6
+Requires: TASK-115
+Description: Generalize temporary encounter map concept for later reuse in other movement layers, including:
+- Spacecraft encounters in orbital simulation
+- Aircraft encounters in map simulation later
+- Reusable concept of generated temporary local simulation frame from high-level movement/intercept geometry
+
+TASK-122
+Status: TODO
+Difficulty: 8
+Requires: TASK-115, TASK-041, TASK-043
+Description: Implement WargameSimulation as a higher control layer above temporary encounter/battle spaces, including:
+- Consolidated battlespace view for the currently displayed map layer
+- Display of deployed friendly and hostile units on that layer
+- Unit commanding at the operational level
+- Strategic redeployment
+- Resupply and support assignment
+- Creation and supervision of temporary local battle spaces whenever opposing units encounter one another
+
+TASK-123
+Status: TODO
+Difficulty: 8
+Requires: TASK-122, TASK-115, TASK-117, TASK-118
+Description: Integrate temporary encounter maps as the low-level battle resolution layer of WargameSimulation, including:
+- Spacecraft encounters
+- Aircraft encounters later
+- Naval encounters later
+- Handover from operational unit contact to temporary detailed battle space
+- Return of battle results back into the higher control layer
+
+TASK-124
+Status: TODO
+Difficulty: 7
+Requires: TASK-122, TASK-041, TASK-048
+Description: Implement operational unit management in WargameSimulation, including:
+- Deployment to currently displayed map layer
+- Command routing
+- Strategic movement between regions/layers
+- Resupply state tracking
+- Readiness / cohesion / support state
+- Linkage between operational control and lower-level local battle resolution
+
+TASK-125
+Status: TODO
+Difficulty: 7
+Requires: TASK-122, TASK-021, TASK-022, TASK-023
+Description: Implement battle-map selection rules for WargameSimulation, including:
+- Use existing map layer if the current displayed layer is appropriate for battle resolution
+- Reject inappropriate map scales such as whole-planet layer for local battle
+- Prefer detailed local layers such as city / local terrain when available
+- Fall back to generated temporary battle map when no sufficiently detailed map layer exists
+
+TASK-126
+Status: TODO
+Difficulty: 8
+Requires: TASK-125, TASK-019, TASK-020, TASK-039
+Description: Implement generated ground battle maps from regional terrain data, including:
+- Rough terrain generation for stretches of land lacking detailed maps
+- Use of appropriate assets present in the region
+- Region-derived roads, buildings, and similar structures
+- Visual incorporation of local plants and bioregion appearance
+- Separation between visual environmental dressing in battle map and deeper ecological simulation
+
+TASK-127
+Status: TODO
+Difficulty: 7
+Requires: TASK-122, TASK-021
+Description: Implement ground-force battle representation through formation system, including:
+- Formation-based representation of ground units in WargameSimulation
+- Support for commanding formations rather than only individual entities
+- Compatibility with generated or selected local battle maps
+- Future option to generalize formation representation to other domains
+
+TASK-128
+Status: TODO
+Difficulty: 6
+Requires: TASK-123, TASK-127
+Description: Keep formation-system generalization open for other military domains, including:
+- Possible later reuse for spacecraft
+- Possible later reuse for aircraft
+- Possible later reuse for naval units
+- For now treat ground formations as the first clear use case
+
+TASK-129
+Status: TODO
+Difficulty: 7
+Requires: TASK-122, TASK-125, TASK-126
+Description: Implement battle-environment asset derivation from regional world state, including:
+- Roads from local infrastructure presence
+- Buildings from local settlement/structure state
+- Terrain dressing from region properties
+- Local flora as visual battle-map assets based on bioregion data
+- Region-appropriate asset selection rather than generic map generation
+
+TASK-130
+Status: TODO
+Difficulty: 7
+Requires: TASK-122, TASK-124, TASK-119
+Description: Implement operational result writeback from local battle spaces into WargameSimulation, including:
+- Unit losses
+- Position changes
+- Ammunition/fuel expenditure
+- Damage and readiness changes
+- Resupply needs
+- Post-encounter control of terrain/space
+- Propagation of those results back into the surrounding world/task systems
+END
