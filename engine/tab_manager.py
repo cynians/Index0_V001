@@ -1,6 +1,6 @@
 class TabManager:
     """
-    Manages multiple simulation tabs.
+    Manages application tabs.
     """
 
     def __init__(self):
@@ -16,6 +16,9 @@ class TabManager:
 
     def get_active(self):
         if not self.tabs:
+            return None
+
+        if self.active_index < 0 or self.active_index >= len(self.tabs):
             return None
 
         return self.tabs[self.active_index]
@@ -66,11 +69,13 @@ class TabManager:
 
     def update(self, dt):
         for i, tab in enumerate(self.tabs):
+            tab.active = (i == self.active_index)
+
+            if tab.sim_instance is not None:
+                tab.sim_instance.active = (i == self.active_index)
+
             if i == self.active_index:
-                tab.sim_instance.active = True
                 tab.update(dt)
-            else:
-                tab.sim_instance.active = False
 
     # --------------------------------------------------
 

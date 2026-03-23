@@ -1,0 +1,258 @@
+import pygame
+
+from engine.simulation_instance import SimulationInstance
+from engine.tab import Tab
+from simulations.space.space_simulation import SpaceSimulation
+from simulations.map.map_simulation import MapSimulation
+
+
+class NavigationController:
+    """
+    Handles app-level workspace and tab navigation.
+
+    Responsibilities:
+    * focus existing tabs
+    * launch root space and map tabs
+    * open region map tabs
+    * open parent / linked tabs from active simulations
+    * route UI actions into navigation behavior
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    def focus_existing_tab_by_key(self, tab_key):
+        """
+        Activate an already-open tab by semantic key and reset the camera.
+        """
+        activated = self.app.tab_manager.activate_tab_by_key(tab_key)
+        if not activated:
+            return False
+
+        active_sim = self.app.get_active_simulation()
+        self.app.camera_controller.setup_for_sim(active_sim)
+        return True
+
+    def launch_space_root_tab(self):
+        """
+        Open or focus the root space simulation tab.
+        """
+        tab_key = ("space", "root")
+
+        if self.focus_existing_tab_by_key(tab_key):
+            self.app.knowledge_layer_active = False
+            return
+
+        new_tab = Tab(
+            SimulationInstance(SpaceSimulation(world_model=self.app.world_model)),
+            name="System: Sol",
+            tab_key=tab_key
+        )
+
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+        self.app.camera_controller.setup_for_sim(new_tab.sim_instance.simulation)
+
+    def launch_earth_map_tab(self):
+        """
+        Open or focus the default Earth map simulation tab.
+        """
+        tab_key = ("map", "planet_earth")
+
+        if self.focus_existing_tab_by_key(tab_key):
+            self.app.knowledge_layer_active = False
+            return
+
+        from world.simulation_context import SimulationContext
+
+        context = SimulationContext(
+            year=2400,
+            root_entity_id="planet_earth",
+            world_model=self.app.world_model
+        )
+
+        new_map_sim = MapSimulation(context)
+        new_tab = Tab(
+            SimulationInstance(new_map_sim),
+            name="Map: Earth",
+            tab_key=tab_key
+        )
+
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+        self.app.camera_controller.setup_for_sim(new_map_sim)
+
+    def open_region_map_tab(self, entity_id):
+        """
+        Open a new map simulation tab rooted at the selected entity,
+        or focus the existing one if it is already open.
+        """
+        if not entity_id:
+            return
+
+        entity = self.app.world_model.get_entity(entity_id)
+        if not entity:
+            return
+
+        tab_key = ("map", entity_id)
+        if self.focus_existing_tab_by_key(tab_key):
+            self.app.knowledge_layer_active = False
+            return
+
+        from world.simulation_context import SimulationContext
+
+        active_sim = self.app.get_active_simulation()
+        year = getattr(active_sim, "year", 2400) if active_sim is not None else 2400
+
+        context = SimulationContext(
+            year=year,
+            root_entity_id=entity_id,
+            world_model=self.app.world_model
+        )
+
+        new_map_sim = MapSimulation(context)
+        new_tab = Tab(
+            SimulationInstance(new_map_sim),
+            name=f"Map: {entity.get('name', entity_id)}",
+            tab_key=tab_key
+        )
+
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+        self.app.camera_controller.setup_for_sim(new_map_sim)
+
+    def open_parent_region_map_tab(self, map_sim):
+        """
+        Open the parent root of the given map simulation in a new map tab.
+        """
+        if map_sim is None:
+            return
+
+        if not hasattr(map_sim, "get_parent_root_entity_id"):
+            return
+
+        parent_entity_id = map_sim.get_parent_root_entity_id()
+        if not parent_entity_id:
+            return
+
+        self.open_region_map_tab(parent_entity_id)
+
+    def open_map_for_selected_space_body(self, space_sim):
+        """
+        Ensure a map anchor exists for the selected space body and open it.
+        """
+        if space_sim is None:
+            return
+
+        if not hasattr(space_sim, "get_selected_body_entity"):
+            return
+
+        body_entity = space_sim.get_selected_body_entity()
+        if not body_entity:
+            return
+
+        location_id, _created = space_sim.system.ensure_location_anchor_for_body_entity(
+            body_entity,
+            self.app.world_model
+        )
+
+        if not location_id:
+            return
+
+        self.app.world_model.refresh()
+        self.open_region_map_tab(location_id)
+
+    def handle_ui_action(self, action, active_sim):
+        """
+        Route UI actions for either the knowledge layer or the active simulation.
+        """
+        if isinstance(action, dict):
+            action_id = action.get("id")
+
+            if action_id == "knowledge_launch_entry":
+                entity_id = action.get("entity_id")
+                entity = self.app.world_model.get_entity(entity_id)
+
+                if entity is None:
+                    return False
+
+                dataset_name = entity.get("_dataset")
+
+                if dataset_name == "locations":
+                    self.open_region_map_tab(entity_id)
+                    return True
+
+                if dataset_name == "systems":
+                    system_role = entity.get("system_role")
+
+                    if system_role == "star_system":
+                        self.launch_space_root_tab()
+                        return True
+
+                    if system_role == "orbital_body":
+                        location_entity_id = entity.get("location_entity")
+
+                        if location_entity_id:
+                            self.open_region_map_tab(location_entity_id)
+                            return True
+
+                        self.launch_space_root_tab()
+                        return True
+
+                return False
+        else:
+            action_id = action
+
+        if action_id == "launch_space_root":
+            self.launch_space_root_tab()
+            return True
+
+        elif action_id == "launch_earth_map":
+            self.launch_earth_map_tab()
+            return True
+
+        if action_id == "open_region_map" and active_sim is not None:
+            selected_entity_id = getattr(active_sim, "selected_entity_id", None)
+            self.open_region_map_tab(selected_entity_id)
+            return True
+
+        elif action_id == "open_parent_region_map" and active_sim is not None:
+            self.open_parent_region_map_tab(active_sim)
+            return True
+
+        elif action_id == "open_space_body_map" and active_sim is not None:
+            self.open_map_for_selected_space_body(active_sim)
+            return True
+
+        return False
+
+    def handle_keydown(self, event):
+        """
+        Handle application-level keyboard controls.
+        """
+        if self.app.knowledge_layer_active:
+            return
+
+        if event.key == pygame.K_TAB:
+            self.app.tab_manager.switch_next()
+
+            sim = self.app.get_active_simulation()
+            self.app.camera_controller.setup_for_sim(sim)
+
+        sim = self.app.get_active_simulation()
+
+        if sim:
+            if event.key in (pygame.K_EQUALS, pygame.K_PLUS, pygame.K_KP_PLUS):
+                sim.sim_clock.set_time_scale(sim.sim_clock.time_scale + 0.25)
+
+            elif event.key in (pygame.K_MINUS, pygame.K_KP_MINUS):
+                sim.sim_clock.set_time_scale(sim.sim_clock.time_scale - 0.25)
+
+            elif event.key == pygame.K_0:
+                sim.sim_clock.set_time_scale(1.0)
+
+            elif event.key == pygame.K_SPACE:
+                sim.sim_clock.toggle_pause()

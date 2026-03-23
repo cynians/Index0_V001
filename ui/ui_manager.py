@@ -40,6 +40,7 @@ class UIManager:
 
         self.tab_labels = []
         self.active_tab_index = 0
+        self.tab_hitboxes = []
 
         self.time_lines = []
         self.timeline_fraction = 0.0
@@ -275,6 +276,7 @@ class UIManager:
         self.hover_tooltip_pos = None
         self.tab_labels = []
         self.active_tab_index = 0
+        self.tab_hitboxes = []
         self.time_lines = []
         self.timeline_fraction = 0.0
         self.mouse_world_label = None
@@ -531,6 +533,8 @@ class UIManager:
         y_offset = 5
         padding = 10
 
+        self.tab_hitboxes = []
+
         for i, label in enumerate(self.tab_labels):
             text_surface = font.render(label, True, (255, 255, 255))
             text_rect = text_surface.get_rect()
@@ -550,6 +554,7 @@ class UIManager:
             pygame.draw.rect(screen, (200, 200, 200), rect, 1)
             screen.blit(text_surface, (rect.x + padding, rect.y + padding // 2))
 
+            self.tab_hitboxes.append((i, rect))
             x_offset += rect.width + 5
 
     def _draw_time_panel(self, screen, font):
@@ -780,6 +785,13 @@ class UIManager:
             return None
 
         mouse_pos = event.pos
+
+        for tab_index, hitbox in self.tab_hitboxes:
+            if hitbox.collidepoint(mouse_pos):
+                return {
+                    "id": "activate_tab",
+                    "tab_index": tab_index,
+                }
 
         if self.menu_active:
             for entity_id, hitbox in self.knowledge_browser_hitboxes:

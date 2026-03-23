@@ -10,6 +10,8 @@ from engine.renderer import Renderer
 from engine.camera_controller import CameraController
 from world.world_model import WorldModel
 from ui.ui_manager import UIManager
+from navigation_controller import NavigationController
+from input_router import InputRouter
 
 
 class App(SimWindow):
@@ -17,8 +19,7 @@ class App(SimWindow):
     Main application entry point.
 
     Responsibilities:
-    * manage app-level knowledge layer state
-    * manage tabs
+    * own global app state
     * route update / draw / input
     * bridge UI events to the active simulation
     """
@@ -40,6 +41,8 @@ class App(SimWindow):
         self.world_model = WorldModel()
         self.renderer = Renderer(self)
         self.ui_manager = UIManager()
+        self.navigation = NavigationController(self)
+        self.input_router = InputRouter(self)
 
         self.knowledge_layer_active = True
 
@@ -54,272 +57,16 @@ class App(SimWindow):
 
         return None
 
-    def _focus_existing_tab_by_key(self, tab_key):
+    def get_world_units_to_meters(self):
         """
-        Activate an already-open tab by semantic key and reset the camera.
+        Return the active simulation's world-unit conversion for scale labels.
         """
-        activated = self.tab_manager.activate_tab_by_key(tab_key)
-        if not activated:
-            return False
-
         active_sim = self.get_active_simulation()
-        self.camera_controller.setup_for_sim(active_sim)
-        return True
 
-    def _launch_space_root_tab(self):
-        """
-        Open or focus the root space simulation tab.
-        """
-        tab_key = ("space", "root")
+        if active_sim is None:
+            return 1.0
 
-        if self._focus_existing_tab_by_key(tab_key):
-            self.knowledge_layer_active = False
-            return
-
-        new_tab = Tab(
-            SimulationInstance(SpaceSimulation(world_model=self.world_model)),
-            name="System: Sol",
-            tab_key=tab_key
-        )
-
-        self.tab_manager.add_tab(new_tab)
-        self.tab_manager.active_index = len(self.tab_manager.tabs) - 1
-        self.knowledge_layer_active = False
-        self.camera_controller.setup_for_sim(new_tab.sim_instance.simulation)
-
-    def _launch_earth_map_tab(self):
-        """
-        Open or focus the default Earth map simulation tab.
-        """
-        tab_key = ("map", "planet_earth")
-
-        if self._focus_existing_tab_by_key(tab_key):
-            self.knowledge_layer_active = False
-            return
-
-        from world.simulation_context import SimulationContext
-
-        context = SimulationContext(
-            year=2400,
-            root_entity_id="planet_earth",
-            world_model=self.world_model
-        )
-
-        new_map_sim = MapSimulation(context)
-        new_tab = Tab(
-            SimulationInstance(new_map_sim),
-            name="Map: Earth",
-            tab_key=tab_key
-        )
-
-        self.tab_manager.add_tab(new_tab)
-        self.tab_manager.active_index = len(self.tab_manager.tabs) - 1
-        self.knowledge_layer_active = False
-        self.camera_controller.setup_for_sim(new_map_sim)
-
-    def _open_region_map_tab(self, entity_id):
-        """
-        Open a new map simulation tab rooted at the selected entity,
-        or focus the existing one if it is already open.
-        """
-        if not entity_id:
-            return
-
-        entity = self.world_model.get_entity(entity_id)
-        if not entity:
-            return
-
-        tab_key = ("map", entity_id)
-        if self._focus_existing_tab_by_key(tab_key):
-            self.knowledge_layer_active = False
-            return
-
-        from world.simulation_context import SimulationContext
-
-        active_sim = self.get_active_simulation()
-        year = getattr(active_sim, "year", 2400) if active_sim is not None else 2400
-
-        context = SimulationContext(
-            year=year,
-            root_entity_id=entity_id,
-            world_model=self.world_model
-        )
-
-        new_map_sim = MapSimulation(context)
-        new_tab = Tab(
-            SimulationInstance(new_map_sim),
-            name=f"Map: {entity.get('name', entity_id)}",
-            tab_key=tab_key
-        )
-
-        self.tab_manager.add_tab(new_tab)
-        self.tab_manager.active_index = len(self.tab_manager.tabs) - 1
-        self.knowledge_layer_active = False
-        self.camera_controller.setup_for_sim(new_map_sim)
-
-    def _open_parent_region_map_tab(self, map_sim):
-        """
-        Open the parent root of the given map simulation in a new map tab.
-        """
-        if map_sim is None:
-            return
-
-        if not hasattr(map_sim, "get_parent_root_entity_id"):
-            return
-
-        parent_entity_id = map_sim.get_parent_root_entity_id()
-        if not parent_entity_id:
-            return
-
-        self._open_region_map_tab(parent_entity_id)
-
-    def _open_map_for_selected_space_body(self, space_sim):
-        """
-        Ensure a map anchor exists for the selected space body and open it.
-        """
-        if space_sim is None:
-            return
-
-        if not hasattr(space_sim, "get_selected_body_entity"):
-            return
-
-        body_entity = space_sim.get_selected_body_entity()
-        if not body_entity:
-            return
-
-        location_id, _created = space_sim.system.ensure_location_anchor_for_body_entity(
-            body_entity,
-            self.world_model
-        )
-
-        if not location_id:
-            return
-
-        self.world_model.refresh()
-        self._open_region_map_tab(location_id)
-
-    def _handle_keydown(self, event):
-        """
-        Handle application-level keyboard controls.
-        """
-        if self.knowledge_layer_active:
-            return
-
-        if event.key == pygame.K_TAB:
-            self.tab_manager.switch_next()
-
-            sim = self.get_active_simulation()
-            self.camera_controller.setup_for_sim(sim)
-
-        sim = self.get_active_simulation()
-
-        if sim:
-            if event.key in (pygame.K_EQUALS, pygame.K_PLUS, pygame.K_KP_PLUS):
-                sim.sim_clock.set_time_scale(sim.sim_clock.time_scale + 0.25)
-
-            elif event.key in (pygame.K_MINUS, pygame.K_KP_MINUS):
-                sim.sim_clock.set_time_scale(sim.sim_clock.time_scale - 0.25)
-
-            elif event.key == pygame.K_0:
-                sim.sim_clock.set_time_scale(1.0)
-
-            elif event.key == pygame.K_SPACE:
-                sim.sim_clock.toggle_pause()
-
-    def _handle_ui_action(self, action, active_sim):
-        """
-        Route UI actions for either the knowledge layer or the active simulation.
-        """
-        if isinstance(action, dict):
-            action_id = action.get("id")
-
-            if action_id == "knowledge_launch_entry":
-                entity_id = action.get("entity_id")
-                entity = self.world_model.get_entity(entity_id)
-
-                if entity is None:
-                    return False
-
-                dataset_name = entity.get("_dataset")
-
-                if dataset_name == "locations":
-                    self._open_region_map_tab(entity_id)
-                    return True
-
-                if dataset_name == "systems":
-                    system_role = entity.get("system_role")
-
-                    if system_role == "star_system":
-                        self._launch_space_root_tab()
-                        return True
-
-                    if system_role == "orbital_body":
-                        location_entity_id = entity.get("location_entity")
-
-                        if location_entity_id:
-                            self._open_region_map_tab(location_entity_id)
-                            return True
-
-                        self._launch_space_root_tab()
-                        return True
-
-                return False
-        else:
-            action_id = action
-
-        if action_id == "launch_space_root":
-            self._launch_space_root_tab()
-            return True
-
-        elif action_id == "launch_earth_map":
-            self._launch_earth_map_tab()
-            return True
-
-        if action_id == "open_region_map" and active_sim is not None:
-            selected_entity_id = getattr(active_sim, "selected_entity_id", None)
-            self._open_region_map_tab(selected_entity_id)
-            return True
-
-        elif action_id == "open_parent_region_map" and active_sim is not None:
-            self._open_parent_region_map_tab(active_sim)
-            return True
-
-        elif action_id == "open_space_body_map" and active_sim is not None:
-            self._open_map_for_selected_space_body(active_sim)
-            return True
-
-        return False
-
-    def _handle_middle_click_reset(self, event, active_sim):
-        """
-        Reset camera view for the active simulation on middle click.
-        """
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 2:
-            if active_sim is not None:
-                self.camera_controller.setup_for_sim(active_sim)
-            return True
-
-        return False
-
-    def _handle_pointer_input(self, event, active_sim):
-        """
-        Forward pointer motion and left-click events to the active simulation.
-        """
-        if active_sim and hasattr(active_sim, "handle_pointer_motion"):
-            if event.type == pygame.MOUSEMOTION:
-                active_sim.handle_pointer_motion(
-                    event=event,
-                    camera=self.camera,
-                    screen_pos=event.pos
-                )
-
-        if active_sim and hasattr(active_sim, "handle_pointer_event"):
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                active_sim.handle_pointer_event(
-                    event=event,
-                    camera=self.camera,
-                    screen_pos=event.pos
-                )
+        return getattr(active_sim, "world_units_to_meters", 1.0)
 
     def update(self, dt):
         if self.knowledge_layer_active:
@@ -332,7 +79,7 @@ class App(SimWindow):
 
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN:
-            self._handle_keydown(event)
+            self.navigation.handle_keydown(event)
 
         active_sim = self.get_active_simulation()
 
@@ -348,7 +95,7 @@ class App(SimWindow):
 
         action_id = self.ui_manager.handle_event(event)
         if action_id is not None:
-            handled = self._handle_ui_action(action_id, active_sim)
+            handled = self.navigation.handle_ui_action(action_id, active_sim)
             if handled:
                 return
 
@@ -359,10 +106,10 @@ class App(SimWindow):
 
         active_sim = self.get_active_simulation()
 
-        if self._handle_middle_click_reset(event, active_sim):
+        if self.input_router.handle_middle_click_reset(event, active_sim):
             return
 
-        self._handle_pointer_input(event, active_sim)
+        self.input_router.handle_pointer_input(event, active_sim)
 
     def draw(self):
         super().draw_background()
@@ -382,6 +129,7 @@ class App(SimWindow):
             self.renderer.simulation = active_sim
             self.renderer.draw(self.screen)
 
+        super().draw_ui()
         self.ui_manager.draw(self.screen, self.default_font)
 
 

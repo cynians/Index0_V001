@@ -1,3 +1,5 @@
+import math
+
 from engine.logger import logger
 
 
@@ -14,16 +16,26 @@ class MapSimulation:
     * picking is done in world/map coordinates
     * selected entity state is stored on the simulation
     * hover state is stored on the simulation
+
+    Map-space convention:
+    * 1 world unit = 10 km on the projected surface map
+    * planet roots use a 2:1 equirectangular frame derived from radius
+    * canonical map canvas size follows the same 10 km / px rule
     """
 
-    MAP_PLANET_WIDTH = 4000
-    MAP_PLANET_HEIGHT = 2000
+    MAP_KM_PER_WORLD_UNIT = 10.0
+    MAP_METERS_PER_WORLD_UNIT = MAP_KM_PER_WORLD_UNIT * 1000.0
+
+    DEFAULT_PLANET_WORLD_WIDTH = 4000.0
+    DEFAULT_PLANET_WORLD_HEIGHT = 2000.0
 
     def __init__(self, simulation_context):
         from engine.clock import Clock
         from engine.simulation_manager import SimulationManager
 
         self.render_mode = "map"
+        self.world_units_to_meters = 10000.0
+        self.world_units_to_meters = self.MAP_METERS_PER_WORLD_UNIT
 
         self.context = simulation_context
         self.world_model = simulation_context.world_model
@@ -94,23 +106,115 @@ class MapSimulation:
         breadcrumb.reverse()
         return breadcrumb
 
+    def _planet_world_size_from_radius(self, radius_m):
+        """
+        Derive a 2:1 projected planet frame from physical radius.
+
+        Output world units follow the map convention:
+        * 1 world unit = 10 km
+        """
+        radius_m = float(radius_m)
+
+        circumference_m = 2.0 * math.pi * radius_m
+        width_world = circumference_m / self.MAP_METERS_PER_WORLD_UNIT
+        height_world = width_world / 2.0
+
+        return width_world, height_world
+
+    def _planet_canvas_size_from_radius(self, radius_m):
+        """
+        Derive the canonical planet map canvas size in pixels.
+
+        Rule:
+        * 10 km per pixel
+        * 2:1 aspect ratio
+        """
+        width_world, height_world = self._planet_world_size_from_radius(radius_m)
+
+        width_px = max(1, int(round(width_world)))
+        height_px = max(1, int(round(height_world)))
+
+        return width_px, height_px
+
+    def _planet_rect_from_entity(self, entity):
+        """
+        Resolve a planet rect from either bbox or radius data.
+        """
+        coords = entity.get("coords") or {}
+        bounds = entity.get("bounds") or {}
+
+        center_x = 0.0
+        center_y = 0.0
+
+        if coords.get("type") == "point":
+            center_x = coords.get("x", 0.0)
+            center_y = coords.get("y", 0.0)
+
+        if bounds.get("type") == "bbox":
+            min_x = bounds.get("min_x", -self.DEFAULT_PLANET_WORLD_WIDTH / 2)
+            max_x = bounds.get("max_x", self.DEFAULT_PLANET_WORLD_WIDTH / 2)
+            min_y = bounds.get("min_y", -self.DEFAULT_PLANET_WORLD_HEIGHT / 2)
+            max_y = bounds.get("max_y", self.DEFAULT_PLANET_WORLD_HEIGHT / 2)
+
+            width_world = max_x - min_x
+            height_world = max_y - min_y
+
+            if coords.get("type") != "point":
+                center_x = (min_x + max_x) / 2.0
+                center_y = (min_y + max_y) / 2.0
+
+            canvas_w = entity.get("map_canvas_width_px", max(1, int(round(width_world))))
+            canvas_h = entity.get("map_canvas_height_px", max(1, int(round(height_world))))
+
+            return {
+                "x": center_x,
+                "y": center_y,
+                "width_world": width_world,
+                "height_world": height_world,
+                "canvas_width_px": canvas_w,
+                "canvas_height_px": canvas_h,
+            }
+
+        if bounds.get("type") == "radius":
+            radius_m = bounds.get("value", 0.0)
+            width_world, height_world = self._planet_world_size_from_radius(radius_m)
+            canvas_w, canvas_h = self._planet_canvas_size_from_radius(radius_m)
+
+            return {
+                "x": center_x,
+                "y": center_y,
+                "width_world": width_world,
+                "height_world": height_world,
+                "canvas_width_px": canvas_w,
+                "canvas_height_px": canvas_h,
+            }
+
+        return {
+            "x": center_x,
+            "y": center_y,
+            "width_world": self.DEFAULT_PLANET_WORLD_WIDTH,
+            "height_world": self.DEFAULT_PLANET_WORLD_HEIGHT,
+            "canvas_width_px": int(self.DEFAULT_PLANET_WORLD_WIDTH),
+            "canvas_height_px": int(self.DEFAULT_PLANET_WORLD_HEIGHT),
+        }
+
     def _resolve_root_bounds(self):
         """
         Resolve one stable world-space rectangle for the current root scope.
 
         Rules:
         * bbox roots use their bbox directly
-        * planet roots use bbox if present, otherwise a default map canvas rect
+        * planet roots use bbox if present, otherwise derive a 2:1 frame from radius
         * point roots get a small synthetic scope so reset/clamping still work
         * final fallback is the default planet-sized rectangle around origin
         """
         root_entity = self.get_root_entity()
         if not root_entity:
             return {
-                "min_x": -self.MAP_PLANET_WIDTH / 2,
-                "max_x": self.MAP_PLANET_WIDTH / 2,
-                "min_y": -self.MAP_PLANET_HEIGHT / 2,
-                "max_y": self.MAP_PLANET_HEIGHT / 2,
+                "min_x": -self.DEFAULT_PLANET_WORLD_WIDTH / 2,
+                "max_x": self.DEFAULT_PLANET_WORLD_WIDTH / 2,
+                "min_y": -self.DEFAULT_PLANET_WORLD_HEIGHT / 2,
+                "max_y": self.DEFAULT_PLANET_WORLD_HEIGHT / 2,
             }
 
         coords = root_entity.get("coords") or {}
@@ -118,10 +222,10 @@ class MapSimulation:
 
         if bounds.get("type") == "bbox":
             return {
-                "min_x": bounds.get("min_x", -self.MAP_PLANET_WIDTH / 2),
-                "max_x": bounds.get("max_x", self.MAP_PLANET_WIDTH / 2),
-                "min_y": bounds.get("min_y", -self.MAP_PLANET_HEIGHT / 2),
-                "max_y": bounds.get("max_y", self.MAP_PLANET_HEIGHT / 2),
+                "min_x": bounds.get("min_x", -self.DEFAULT_PLANET_WORLD_WIDTH / 2),
+                "max_x": bounds.get("max_x", self.DEFAULT_PLANET_WORLD_WIDTH / 2),
+                "min_y": bounds.get("min_y", -self.DEFAULT_PLANET_WORLD_HEIGHT / 2),
+                "max_y": bounds.get("max_y", self.DEFAULT_PLANET_WORLD_HEIGHT / 2),
             }
 
         center_x = 0.0
@@ -131,13 +235,15 @@ class MapSimulation:
             center_y = coords.get("y", 0.0)
 
         if root_entity.get("location_class") == "planet":
-            half_w = self.MAP_PLANET_WIDTH / 2
-            half_h = self.MAP_PLANET_HEIGHT / 2
+            rect = self._planet_rect_from_entity(root_entity)
+            half_w = rect["width_world"] / 2.0
+            half_h = rect["height_world"] / 2.0
+
             return {
-                "min_x": center_x - half_w,
-                "max_x": center_x + half_w,
-                "min_y": center_y - half_h,
-                "max_y": center_y + half_h,
+                "min_x": rect["x"] - half_w,
+                "max_x": rect["x"] + half_w,
+                "min_y": rect["y"] - half_h,
+                "max_y": rect["y"] + half_h,
             }
 
         if coords.get("type") == "point":
@@ -150,10 +256,10 @@ class MapSimulation:
             }
 
         return {
-            "min_x": -self.MAP_PLANET_WIDTH / 2,
-            "max_x": self.MAP_PLANET_WIDTH / 2,
-            "min_y": -self.MAP_PLANET_HEIGHT / 2,
-            "max_y": self.MAP_PLANET_HEIGHT / 2,
+            "min_x": -self.DEFAULT_PLANET_WORLD_WIDTH / 2,
+            "max_x": self.DEFAULT_PLANET_WORLD_WIDTH / 2,
+            "min_y": -self.DEFAULT_PLANET_WORLD_HEIGHT / 2,
+            "max_y": self.DEFAULT_PLANET_WORLD_HEIGHT / 2,
         }
 
     def _color_for_entity(self, entity):
@@ -207,32 +313,16 @@ class MapSimulation:
             color = self._color_for_entity(entity)
 
             if location_class == "planet":
-                if x is None or y is None:
-                    x = 0
-                    y = 0
-
-                if bounds.get("type") == "bbox":
-                    min_x = bounds.get("min_x", -self.MAP_PLANET_WIDTH // 2)
-                    max_x = bounds.get("max_x", self.MAP_PLANET_WIDTH // 2)
-                    min_y = bounds.get("min_y", -self.MAP_PLANET_HEIGHT // 2)
-                    max_y = bounds.get("max_y", self.MAP_PLANET_HEIGHT // 2)
-
-                    width_world = max_x - min_x
-                    height_world = max_y - min_y
-
-                    if coords.get("type") != "point":
-                        x = (min_x + max_x) / 2
-                        y = (min_y + max_y) / 2
-                else:
-                    width_world = self.MAP_PLANET_WIDTH
-                    height_world = self.MAP_PLANET_HEIGHT
+                rect = self._planet_rect_from_entity(entity)
 
                 layers.append({
                     "shape": "map_rect",
-                    "x": x,
-                    "y": y,
-                    "width_world": width_world,
-                    "height_world": height_world,
+                    "x": rect["x"],
+                    "y": rect["y"],
+                    "width_world": rect["width_world"],
+                    "height_world": rect["height_world"],
+                    "canvas_width_px": rect["canvas_width_px"],
+                    "canvas_height_px": rect["canvas_height_px"],
                     "name": entity.get("name"),
                     "entity_id": entity_id,
                     "color": color,
