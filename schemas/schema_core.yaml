@@ -16,6 +16,10 @@ fields:
   type:
     type: string
 
+  name:
+    type: string
+    optional: true
+
   description:
     type: text
     optional: true
@@ -39,3 +43,34 @@ fields:
   derived_from_ideas:
     type: idea_list
     optional: true
+
+  entry_status:
+    type: string
+    optional: true
+
+  media_layers:
+    type: dict
+    optional: true
+
+# --------------------------------------------------
+# COMMENTED EXAMPLE ENTRY
+# --------------------------------------------------
+#
+# - id: planet_earth
+#   pretty_name: Earth
+#   type: location
+#   name: earth
+#   description: Homeworld of humanity and a persistent anchor entity across many simulations.
+#   notes: Example core entry showing only broadly reusable fields.
+#   tags:
+#     - planet
+#     - homeworld
+#     - sol
+#   start_year: 0
+#   derived_from_ideas:
+#     - IDEA-001
+#   entry_status: canon
+#   media_layers:
+#     default:
+#       kind: image
+#       description: Primary card image or map preview

@@ -67,9 +67,11 @@ class CelestialSystem:
 
         return {
             "id": location_id,
+            "pretty_name": body_name,
             "name": body_name,
             "type": "location",
             "location_class": "planet",
+            "location_role": "planetary_root",
             "coords": {
                 "type": "point",
                 "x": 0,
@@ -87,7 +89,9 @@ class CelestialSystem:
             "map_status": "empty_generated",
             "map_canvas_width_px": canvas_width_px,
             "map_canvas_height_px": canvas_height_px,
-            "population": 0,
+            "population": {
+                "y0": 0,
+            },
             "start_year": 0,
         }
 
@@ -103,6 +107,62 @@ class CelestialSystem:
     def _write_yaml_list(self, path, data):
         with path.open("w", encoding="utf-8") as f:
             yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
+
+    def _append_generated_location_entry(self, path, entry):
+        """
+        Append one generated location entry to locations.yaml with readable spacing
+        and a visual header, instead of rewriting the whole file.
+
+        Format:
+        * two leading newlines before the block
+        * one header comment with id and pretty name
+        * YAML block for a single list item
+        """
+        entry_id = entry.get("id", "unknown_location")
+        entry_name = entry.get("pretty_name") or entry.get("name") or entry_id
+        header = f"#----------{entry_id}----{entry_name}-----------"
+
+        yaml_block = yaml.safe_dump(
+            [entry],
+            sort_keys=False,
+            allow_unicode=True,
+            default_flow_style=False,
+        ).rstrip()
+
+        with path.open("a", encoding="utf-8") as f:
+            f.write("\n\n")
+            f.write(header)
+            f.write("\n")
+            f.write(yaml_block)
+            f.write("\n")
+
+    def _append_generated_location_entry(self, path, entry):
+        """
+        Append one generated location entry to locations.yaml while preserving
+        existing file layout better than rewriting the full YAML list.
+
+        Format:
+        * one blank line before the generated block
+        * one header comment containing id and name
+        * the generated YAML entry block
+        """
+        entry_id = entry.get("id", "unknown_location")
+        entry_name = entry.get("name") or entry.get("pretty_name") or entry_id
+        header = f"#----------{entry_id}----{entry_name}-----------"
+
+        yaml_block = yaml.safe_dump(
+            [entry],
+            sort_keys=False,
+            allow_unicode=True,
+            default_flow_style=False,
+        ).rstrip()
+
+        with path.open("a", encoding="utf-8") as f:
+            f.write("\n\n")
+            f.write(header)
+            f.write("\n")
+            f.write(yaml_block)
+            f.write("\n")
 
     def ensure_location_anchor_for_body_entity(self, body_entity, world_model=None):
         """
@@ -132,7 +192,7 @@ class CelestialSystem:
 
         if not location_exists:
             locations_data.append(generated_entry)
-            self._write_yaml_list(locations_path, locations_data)
+            self._append_generated_location_entry(locations_path, generated_entry)
 
         body_id = body_entity.get("id")
         systems_changed = False

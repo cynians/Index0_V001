@@ -29,7 +29,15 @@ class WorldModel:
         return self.loader.get_dataset(dataset_name)
 
     def get_entities_by_dataset(self, dataset_name):
-        return list(self.loader.get_dataset(dataset_name).values())
+        dataset = self.loader.get_dataset(dataset_name)
+
+        if isinstance(dataset, dict):
+            return list(dataset.values())
+
+        if isinstance(dataset, list):
+            return dataset
+
+        return []
 
     def get_entities_by_type(self, entity_type):
         return [

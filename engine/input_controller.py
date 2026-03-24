@@ -1,3 +1,5 @@
+import pygame
+
 class InputController:
     """
     Minimal input controller (pass-through mode).
@@ -39,8 +41,11 @@ class InputController:
                 elif event.key == 102:  # F
                     self.show_fps = not self.show_fps
 
+            knowledge_layer_active = getattr(self.simulation, "knowledge_layer_active", False)
+
             # --- Forward events ---
-            self.camera.handle_event(event)
+            if not (knowledge_layer_active and event.type == pygame.MOUSEWHEEL):
+                self.camera.handle_event(event)
 
             if hasattr(self.simulation, "handle_event"):
                 self.simulation.handle_event(event)

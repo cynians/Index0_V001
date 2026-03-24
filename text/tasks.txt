@@ -63,18 +63,26 @@ Difficulty: 6
 Requires: TASK-009, TASK-067, TASK-100
 Description: Add display layer for interstellar travel and off-system links
 
-------------------------------------------------
-BASE SIMULATIONS
-------------------------------------------------
+TASK-151
+Status: PARTIAL
+Difficulty: 5
+Requires: TASK-003, TASK-138
+Description: Separate simulation-specific rendering logic from the central renderer, including:
+- Keep engine/renderer.py focused on dispatch/orchestration
+- Move simulation-specific drawing logic into simulation-local renderer modules
+- Current state:
+  - bioregion-specific rendering has been split into a dedicated bioregion renderer module
+  - map and space renderer migration was discussed but not finalized for the whole pipeline
 
-TASK-007
-Status: DONE
-Difficulty: 4
-Requires: TASK-006
-Description: Finalized bounded map movement and reset-to-view camera behavior, including:
-- Root-scope-aware map bounds
-- Reset-to-view centered on active root scope
-- Parent-region map navigation
+TASK-152
+Status: TODO
+Difficulty: 5
+Requires: TASK-151
+Description: Complete modular renderer split for all simulation types, including:
+- map renderer
+- space renderer
+- future bioregion-specific shared helpers where appropriate
+- Keep only render dispatch and truly shared orchestration in engine/renderer.py
 
 ------------------------------------------------
 WORLD / SPATIAL SYSTEM
@@ -102,8 +110,11 @@ TASK-021
 Status: TODO
 Difficulty: 6
 Requires: TASK-006
-Description: Implement structure spatial system (point anchor + optional polygon footprint), including:
-- Environmental modifiers (e.g. sleep quality, safety, comfort)
+Description: Implement generic structure spatial foundation (point anchor + optional footprint/polygon), including:
+- Spatial anchoring for structures and built entities
+- Optional coarse footprint geometry
+- Foundation for buildings, sites, interiors, access, and environmental modifiers
+- Environmental modifiers such as sleep quality, safety, comfort, and exposure
 
 TASK-022
 Status: TODO
@@ -125,13 +136,20 @@ TASK-014
 Status: TODO
 Difficulty: 7
 Requires: TASK-013
-Description: Implement pop system (aggregated population with optional individuals)
+Description: Implement pop system (aggregated population with optional latent individuals), including:
+- Aggregated population truth
+- Optional latent individual layer
+- Support for later on-demand promotion into explicit persons/NPCs
+- Foundation for culture derivation, person seeding, and mixed-detail population handling
 
 TASK-015
-Status: TODO
-Difficulty: 6
+Status: COMPRESSED
+Difficulty: 4
 Requires: TASK-014
-Description: Implement latent NPC generation from pops (on-demand instantiation)
+Description: Fold latent NPC generation into TASK-014 as a pop-system sub-capability, including:
+- On-demand instantiation from aggregated/latent population truth
+- Promotion into explicit person entities when needed by simulation or player focus
+- Keep this task only as a narrow implementation checkpoint if separate tracking is still useful
 
 TASK-016
 Status: TODO
@@ -316,7 +334,7 @@ TASK-088
 Status: TODO
 Difficulty: 7
 Requires: TASK-017, TASK-018, TASK-039, TASK-052
-Description: Implement card-driven organism spawning from the knowledge layer, including:
+Description: Implement card-driven organism spawning and run initialization from the knowledge layer, including:
 - Organism and plant cards unlocked through the knowledge/progression layer
 - Optional predefined collections / decks
 - Placement of cards onto the map to instantiate organisms or plant patches
@@ -394,14 +412,15 @@ Description: Integrate degrees of touch into mixed-detail organism populations, 
 - Information propagation through ecological/social links
 
 TASK-096
-Status: TODO
-Difficulty: 7
-Requires: TASK-017, TASK-018, TASK-039, TASK-088, TASK-089, TASK-090
-Description: Implement card-driven run initialization from discovered organism entries, connecting:
+Status: COMPRESSED
+Difficulty: 4
+Requires: TASK-088
+Description: Fold run-initialization wording into TASK-088, including:
 - Persistent knowledge progression
 - Organism cards/decks
 - Local simulation seeding
 - Map-based run setup
+- Keep only as a narrow follow-up checkpoint if separate tracking remains useful
 
 TASK-097
 Status: TODO
@@ -420,7 +439,7 @@ CORE SIMULATION SYSTEMS
 TASK-035
 Status: TODO
 Difficulty: 6
-Requires: TASK-014
+Requires: TASK-014, TASK-103
 Description: Implement ProducerSimulation, including:
 - Agent-driven production processes
 - Interruptible execution (pause/resume/abort)
@@ -431,11 +450,12 @@ Description: Implement ProducerSimulation, including:
 - Resource decay/spoilage system:
   - time-based
   - condition-based modifiers
+- Use universal world-task structures rather than an isolated simulation-local task model
 
 TASK-036
 Status: TODO
 Difficulty: 6
-Requires: TASK-014
+Requires: TASK-014, TASK-103
 Description: Implement InstitutionSimulation, including:
 - Role system
 - Hierarchical command structures
@@ -443,14 +463,15 @@ Description: Implement InstitutionSimulation, including:
 - Enforcement strength
 - Group-context execution (shared tasks/resources)
 - Role assignment systems (employment, conscription)
+- Use universal task objects and assignment flow rather than isolated institution-local tasks
 
 TASK-037
 Status: TODO
 Difficulty: 7
-Requires: TASK-014
+Requires: TASK-014, TASK-052, TASK-103, TASK-109
 Description: Implement PersonSimulation, including:
 - Need/effort-driven decision system (from SpeciesSimulation)
-- Dynamic task queue (enqueue, reprioritize, abort)
+- Dynamic task queue operating on universal task objects
 - Multi-need arbitration:
   - Weighted utility
   - Stochastic variation
@@ -474,10 +495,11 @@ Description: Implement ConflictSimulation
 TASK-043
 Status: TODO
 Difficulty: 7
-Requires: TASK-036
+Requires: TASK-036, TASK-103
 Description: Implement FactionSimulation, including:
 - Directives and policies
 - Propagation into institutions
+- Use universal task objects for downstream task creation and routing
 
 TASK-044
 Status: TODO
@@ -516,12 +538,14 @@ Requires: TASK-035
 Description: Implement EconomySimulation
 
 TASK-041
-Status: TODO
-Difficulty: 7
-Requires: TASK-040
-Description: Implement LogisticsSimulation, including:
+Status: COMPRESSED
+Difficulty: 5
+Requires: TASK-040, TASK-103
+Description: Narrow LogisticsSimulation to an early/prototype logistics layer only, including:
 - Movement as task
 - Dynamic rerouting and interruption
+- Initial transport behavior before full universal-task reframing
+- Canonical long-term logistics architecture is TASK-114
 
 TASK-048
 Status: TODO
@@ -1347,3 +1371,555 @@ Description: Implement Knowledge Layer relationship visualization on the right c
 - Card-to-card spatial connection drawing
 - Architecture compatible with later manual relationship authoring
 - No forced inspector-based navigation; preserve canvas-centric interaction
+
+------------------------------------------------
+BIOLOGICAL / BIOREGION PROTOTYPE
+------------------------------------------------
+
+TASK-138
+Status: PARTIAL
+Difficulty: 6
+Requires: TASK-039
+Description: Implement first active BioregionSimulation prototype as a dedicated simulation window/tab, including:
+- Dedicated bioregion simulation shell
+- Dedicated render mode
+- Dedicated UI panel for bioregion state
+- Fixed prototype test map
+- Section/subsection cell picking
+- Current state:
+  - dedicated BioregionSimulation exists
+  - simulation opens in its own tab
+  - subsection selection and hover work
+  - basic bioregion UI/status display exists
+
+TASK-139
+Status: PARTIAL
+Difficulty: 7
+Requires: TASK-039, TASK-049
+Description: Implement first hydrology prototype for BioregionSimulation, including:
+- Grid-backed subsection resource nodes
+- Surface water layer
+- Top-soil moisture layer
+- Deep-soil moisture layer
+- Vertical-only water movement
+- Current state:
+  - subsection cells store surface/top/deep water
+  - weather feeds rain input into the grid
+  - infiltration, evaporation, percolation, and capillary rise are implemented
+  - no lateral runoff between neighboring cells yet
+
+TASK-140
+Status: PARTIAL
+Difficulty: 6
+Requires: TASK-039, TASK-049
+Description: Split geology generation from the raw bioregion grid data layer, including:
+- Soil type generation
+- Bedrock type generation
+- Altitude generation
+- z layer generation for future isometric rendering
+- Current state:
+  - geology generation is separated into geology.py
+  - cells receive soil_type, bedrock_type, altitude, and z
+  - water initialization is derived from soil type after geology population
+
+TASK-141
+Status: PARTIAL
+Difficulty: 5
+Requires: TASK-140
+Description: Implement derived bioregion map-layer generation from simulation state, including:
+- Derived terrain-display layers generated from geology state
+- Cached layer generation instead of direct per-tick visual derivation
+- Foundation for later terrain, moisture, and ecology overlays
+- Current state:
+  - geology can generate default derived terrain-display layers
+  - height-outline segments derived from z-band boundaries are generated and cached
+  - rebuild scheduling is not formalized yet
+
+TASK-142
+Status: PARTIAL
+Difficulty: 4
+Requires: TASK-141
+Description: Implement default bioregion height display based on z-band borders, including:
+- Use 0.1 z-band thresholds
+- Draw thin outline segments around cells where neighboring z-band changes
+- Visual emphasis of hills, basins, and larger formations
+- Current state:
+  - derived height-outline segments are generated
+  - bioregion renderer displays contour-like outlines from cached segments
+  - further view tuning may still be needed
+
+TASK-143
+Status: TODO
+Difficulty: 6
+Requires: TASK-141, TASK-142
+Description: Formalize bioregion map-layer update scheduling, including:
+- Rebuild derived visual layers only when necessary
+- Support for low-frequency accumulation-style updates rather than per-tick regeneration
+- Separation between raw simulation state and derived render layers
+- Later support for multiple derived layer types (terrain, moisture, vegetation, runoff)
+
+TASK-144
+Status: PARTIAL
+Difficulty: 5
+Requires: TASK-139
+Description: Implement dedicated weather controller and dedicated water-cycle controller for BioregionSimulation, including:
+- weather.py for rainfall state/timing
+- water_cycle.py for soil-water transformation logic
+- orchestration in BioregionSimulation
+- Current state:
+  - weather logic is separated into weather.py
+  - vertical hydrology logic is separated into water_cycle.py
+  - BioregionSimulation orchestrates both
+
+TASK-145
+Status: TODO
+Difficulty: 7
+Requires: TASK-139, TASK-140
+Description: Extend the water cycle from vertical-only behavior to neighboring-cell lateral redistribution, including:
+- Surface runoff
+- Downslope water movement using altitude/z
+- Local pooling in depressions
+- Future support for drainage paths and wet lowlands
+
+TASK-146
+Status: TODO
+Difficulty: 7
+Requires: TASK-138, TASK-139, TASK-140
+Description: Implement first individual plant prototype entities for BioregionSimulation, including:
+- Spatial placement of individual plants on the map
+- Two prototype plant strategies:
+  - fast shallow-root species
+  - slower deep-root species
+- Linkage between plant location and local subsection water state
+
+TASK-147
+Status: TODO
+Difficulty: 7
+Requires: TASK-146, TASK-139
+Description: Implement plant growth and water access behavior in the first bioregion prototype, including:
+- Growth state per plant
+- Root-depth growth over time
+- Access to deeper water as roots develop
+- Competition through shared local moisture rather than direct combat/interaction
+- Distinct response curves for shallow-root vs deep-root prototype plants
+
+TASK-148
+Status: TODO
+Difficulty: 5
+Requires: TASK-140, TASK-141
+Description: Add debug bioregion overlay modes derived from current state, including:
+- Soil-type visualization
+- Altitude visualization
+- Moisture visualization
+- Ability to inspect broad terrain patterns and hydrology behavior without changing underlying simulation logic
+
+TASK-149
+Status: TODO
+Difficulty: 6
+Requires: TASK-138, TASK-142
+Description: Prepare the bioregion display pipeline for future isometric rendering, including:
+- Consistent use of z as a render-facing elevation field
+- Geometry/render assumptions that allow later isometric projection
+- Preservation of terrain-derived display layers under future projection changes
+
+TASK-150
+Status: TODO
+Difficulty: 6
+Requires: TASK-138, TASK-144
+Description: Extend the first bioregion weather model beyond one uniform map-wide rain state, including:
+- Localized precipitation patterns
+- Rainfall variation across the map
+- Foundation for later climatic zones, storm movement, and terrain-influenced wet/dry behavior
+
+------------------------------------------------
+CROSS-SIMULATION WORLD DEVELOPMENT
+------------------------------------------------
+
+TASK-168
+Status: TODO
+Difficulty: 8
+Requires: TASK-153, TASK-156, TASK-157, TASK-167
+Description: Implement progressive world development through jumping between simulation runs, including:
+- Player ability to move between different simulation types while affecting the same persistent world state
+- Preservation of generated, surveyed, concretized, and modified map state across run transitions
+- Re-entry into previously affected locations without losing accumulated changes
+
+TASK-169
+Status: TODO
+Difficulty: 8
+Requires: TASK-157, TASK-167
+Description: Implement sensor-gated orbital surface scanning for spacecraft and related vehicle simulations, including:
+- Surface scanning from orbit or similar standoff contexts
+- Scanning limited by available onboard sensor capabilities
+- Scanning of bounded trusses/areas rather than instant full-planet reveal
+- Persistent storage of scanned results for later simulations
+
+TASK-170
+Status: TODO
+Difficulty: 7
+Requires: TASK-157, TASK-159, TASK-169
+Description: Implement dual scan-result handling modes during concretization, including:
+- Automatic concretization from scan findings in normal mode
+- Optional creative mode allowing player editing/adjustment of scan-derived findings before committing them
+- Persistence of accepted edited findings as later world truth
+
+TASK-171
+Status: TODO
+Difficulty: 8
+Requires: TASK-153, TASK-157, TASK-169, TASK-170
+Description: Implement scan-truss based map concretization workflow, including:
+- Selection or generation of scan trusses/areas on rough planetary drafts
+- Concretization of only scanned trusses to higher detail
+- Preservation of rough unresolved state outside scanned areas
+- Support for repeated progressive surveying over time
+
+TASK-172
+Status: TODO
+Difficulty: 8
+Requires: TASK-038, TASK-157, TASK-169
+Description: Integrate vehicle simulation with planetary scanning workflows, including:
+- Vehicle-side execution of surface scan tasks
+- Sensor capability checks on scanning vehicles/spacecraft
+- Scan-result writeback into shared planetary concretization state
+- Exposure of completed scan products to other simulation layers
+
+TASK-173
+Status: TODO
+Difficulty: 8
+Requires: TASK-036, TASK-037, TASK-103, TASK-114, TASK-168
+Description: Implement cross-simulation task carryover between person, vehicle, site, and production simulations, including:
+- Tasks created or advanced in one simulation becoming available in another where relevant
+- Shared task visibility after switching simulation context
+- Persistent task provenance linking actions to their originating simulation layer
+
+TASK-174
+Status: TODO
+Difficulty: 9
+Requires: TASK-153, TASK-161, TASK-168
+Description: Implement first-terraforming-arrival world transition workflow, including:
+- Arrival of first terraforming spacecraft/equipment at a planet
+- Creation or activation of the first terraforming phase for that world
+- Transition from barren generated baseline toward player- and equipment-driven site development
+- Persistent registration of that transition in the planetary world state
+
+TASK-175
+Status: TODO
+Difficulty: 8
+Requires: TASK-174, TASK-021, TASK-035
+Description: Implement terraforming site creation from delivered equipment, including:
+- Creation of a site when first terraforming equipment arrives
+- Spatial anchoring of the site on the planet/map
+- Initial equipment inventory and deployable assets linked to the site
+- Foundation for later production, transformation, and infrastructure development
+
+TASK-176
+Status: TODO
+Difficulty: 8
+Requires: TASK-175, TASK-035, TASK-048
+Description: Implement deployment of terraforming equipment into site/production simulation, including:
+- Equipment transitioning from delivered vehicle payload into site assets
+- Deployment tasks and setup phases
+- Capability changes to the site after deployment
+- Feedback of deployment results into related vehicle and world state
+
+TASK-177
+Status: TODO
+Difficulty: 8
+Requires: TASK-172, TASK-175, TASK-176
+Description: Implement vehicle-to-site result handoff for planetary development workflows, including:
+- Vehicle missions producing persistent site changes
+- Delivery, deployment, and scan outputs feeding into site state
+- Site-created needs and tasks feeding back into later vehicle missions
+- Reusable writeback pattern for other cross-layer logistics chains
+
+TASK-178
+Status: TODO
+Difficulty: 8
+Requires: TASK-173, TASK-174, TASK-175, TASK-176, TASK-177
+Description: Expose planetary development actions back to person simulation as available tasks, including:
+- Person simulation gaining access to tasks created by spacecraft arrival, scans, site creation, and equipment deployment
+- Shared task visibility after switching back from vehicle/site simulations
+- Player ability to continue the same planetary-development chain from the person layer
+
+TASK-179
+Status: TODO
+Difficulty: 9
+Requires: TASK-168, TASK-173, TASK-178
+Description: Implement chained multi-simulation planetary development loops, including:
+- Example sequence: person sim arrival -> vehicle scan -> terraforming initiation -> site creation -> equipment deployment -> return to person sim
+- Persistent continuity across all involved layers
+- Shared availability of created tasks, sites, scan products, and development results
+- Foundation for broader multi-simulation colony and infrastructure workflows
+
+------------------------------------------------
+URBAN / SETTLEMENT ABSTRACTION LAYERS
+------------------------------------------------
+
+TASK-180
+Status: TODO
+Difficulty: 7
+Requires: TASK-021, TASK-035, TASK-048
+Description: Formalize SiteSimulation as the first built-environment abstraction layer, including:
+- Site representing a collection of buildings and infrastructure
+- Site exposing capabilities worth abstracting at the next layer
+- Capability meaning depending on simulation type and flags
+- Examples including castle, space complex, vehicle park, monastery, factory complex, launch site, and similar operational clusters
+
+TASK-181
+Status: TODO
+Difficulty: 7
+Requires: TASK-180
+Description: Implement site capability bundles derived from building/infrastructure composition, including:
+- Concrete operational capabilities exposed upward from the site layer
+- Different capability profiles for military, industrial, civic, logistical, scientific, and settlement functions
+- Support for one physical site being interpreted differently by different simulation layers through flags/context
+
+TASK-182
+Status: TODO
+Difficulty: 6
+Requires: TASK-180
+Description: Implement quarter as the aggregation layer above sites, including:
+- Quarter formed from the sum of contained sites
+- Quarter representing a coherent local urban or settlement zone
+- Support for quarters existing in cities and other larger settlements
+- Clear separation between quarter as aggregation layer and site as concrete capability cluster
+
+TASK-183
+Status: TODO
+Difficulty: 6
+Requires: TASK-182
+Description: Implement city as the aggregation layer above quarters, including:
+- City formed from the sum of contained quarters
+- City-side infrastructure and city-wide systems represented at the city layer
+- Support for cities containing both native urban quarters and embedded specialized sites or quarters owned by other actors
+
+TASK-184
+Status: TODO
+Difficulty: 7
+Requires: TASK-180, TASK-182, TASK-183
+Description: Implement placeholder entities for unresolved built-environment layers, including:
+- Placeholder display and simulation presence where no explicit data exists
+- Placeholder site-space within quarters
+- Placeholder quarters within cities
+- Explicit data replacing placeholders progressively as player or simulation concretizes the area
+
+TASK-185
+Status: TODO
+Difficulty: 7
+Requires: TASK-182, TASK-184
+Description: Implement quarter formation from explicit sites plus placeholder fill, including:
+- Aggregation of existing sites into quarter truth
+- Interpolated placeholder fill for missing explicit local data
+- Preservation of coherent quarter coverage even when only partial site detail exists
+
+TASK-186
+Status: TODO
+Difficulty: 7
+Requires: TASK-183, TASK-184, TASK-185
+Description: Implement city formation from explicit quarters plus placeholder fill, including:
+- Aggregation of explicit quarters into full city truth
+- Placeholder quarter generation where explicit quarter data is absent
+- Continuous city-level coverage even when only some quarters are concretized
+
+TASK-187
+Status: TODO
+Difficulty: 7
+Requires: TASK-180, TASK-182, TASK-185
+Description: Implement replacement rules from placeholder to explicit site data, including:
+- Explicit sites overriding placeholder content in the affected area
+- Quarter aggregation updating automatically after site concretization
+- Preservation of surrounding placeholder content where no explicit replacement exists
+
+TASK-188
+Status: TODO
+Difficulty: 7
+Requires: TASK-182, TASK-183, TASK-186
+Description: Implement replacement rules from placeholder to explicit quarter data, including:
+- Explicit quarters overriding placeholder quarter content
+- City aggregation updating automatically after quarter concretization
+- Preservation of unresolved neighboring city areas as placeholders
+
+TASK-189
+Status: TODO
+Difficulty: 6
+Requires: TASK-180, TASK-182, TASK-183
+Description: Support embedded non-city-native sites and quarters inside city aggregates, including:
+- Faction-owned or externally affiliated sites embedded in or adjacent to cities
+- Examples such as edge-of-town factories, military compounds, launch facilities, and other specialized enclaves
+- Aggregation into the city layer without losing separate ownership or specialized function
+
+TASK-190
+Status: TODO
+Difficulty: 7
+Requires: TASK-180, TASK-182
+Description: Implement site-to-quarter capability aggregation, including:
+- Quarter-level functions derived from contained site capabilities
+- Separation between concrete site capabilities and broader quarter-scale aggregated functions
+- Examples such as housing concentration, industrial character, logistics relevance, service concentration, and similar aggregated properties
+
+TASK-191
+Status: TODO
+Difficulty: 7
+Requires: TASK-182, TASK-183
+Description: Implement quarter-to-city capability aggregation, including:
+- City-level functions derived from the sum of contained quarters
+- Support for city-wide infrastructure, connectivity, service balance, and functional specialization
+- Preservation of both native city functions and embedded specialized quarter/site influence
+
+TASK-192
+Status: TODO
+Difficulty: 7
+Requires: TASK-168, TASK-173, TASK-178, TASK-180, TASK-182, TASK-183
+Description: Implement cross-simulation writeback from explicit site/quarter creation into higher settlement layers, including:
+- New site creation updating quarter truth
+- New quarter creation updating city truth
+- Changes made in person, vehicle, site, or production simulations propagating into settlement aggregates
+- Availability of updated settlement state when switching between simulation runs
+
+TASK-193
+Status: TODO
+Difficulty: 6
+Requires: TASK-180, TASK-184
+Description: Decide whether placeholders are simulation-active abstractions or visual-only provisional entities, including:
+- Capability exposure rules for placeholders
+- Whether placeholders provide rough functional truth before concretization
+- Consistent handling across site, quarter, and city levels
+
+------------------------------------------------
+BUILDING / STRUCTURE LAYER
+------------------------------------------------
+
+TASK-194
+Status: TODO
+Difficulty: 7
+Requires: TASK-021, TASK-180
+Description: Formalize BuildingSimulation / building entity layer beneath sites, including:
+- Buildings as explicit built-environment entities below the site layer
+- Persistent building identity independent of detail stage
+- Building linkage to spatial placement, ownership, function, and condition/state
+- Building-to-site aggregation as the default upward abstraction path
+- Support for placeholder, coarse, and detailed building representations without changing building identity
+
+TASK-195
+Status: TODO
+Difficulty: 7
+Requires: TASK-194, TASK-021
+Description: Implement coarse building representation and placeholder generation, including:
+- Simple polygon footprint or similarly coarse building geometry
+- Support for placement, access, collision, footprint occupation, and coarse capacity
+- Generic placeholder building generation where explicit building data does not exist
+- Placeholder support across all later building-detail stages so the world never has missing structure
+- Compatibility with map-layer display and lower-detail simulation contexts
+
+TASK-196
+Status: TODO
+Difficulty: 8
+Requires: TASK-194, TASK-195
+Description: Implement authored exterior building asset representation linked to repository entries, including:
+- Player-created higher-detail external building models from the entry editing tool
+- Shared external visual asset used across all appropriate visualization contexts
+- Use of the same authored exterior in city view, external person-scale view, attack/combat view, and related map representations
+- Fallback to coarse/placeholder representation where authored exterior data is absent
+
+TASK-197
+Status: TODO
+Difficulty: 8
+Requires: TASK-194, TASK-195
+Description: Implement generalized InteriorSimulation concept for enclosed structures, including:
+- Shared interior simulation model reusable across buildings, spacecraft, naval vessels, and similar enclosed entities
+- Interior spaces represented through rooms, zones, corridors, entrances, and connectivity
+- Generic placeholder interior generation where explicit authored interior data does not exist
+- Foundation for later person-scale traversal, access control, internal events, and detailed simulation
+
+TASK-198
+Status: TODO
+Difficulty: 8
+Requires: TASK-197, TASK-194
+Description: Integrate buildings into the generalized InteriorSimulation layer, including:
+- Buildings using InteriorSimulation for internal layout and traversal
+- Support for authored or generated building interiors
+- Building-specific internal zones, entrances, floors, and access structure
+- Preservation of coarse-only fallback where no explicit interior is available
+
+TASK-199
+Status: TODO
+Difficulty: 8
+Requires: TASK-198
+Description: Implement installation of components, equipment, and items into building interiors, including:
+- Placement of components and items into rooms/zones
+- Support for building functionality deriving partly from installed contents rather than only shell type
+- Foundation for utilities, workshops, storage, habitation, command spaces, and similar installed functions
+- Compatibility with later person interaction, maintenance, damage, and upgrade systems
+
+TASK-200
+Status: TODO
+Difficulty: 7
+Requires: TASK-194, TASK-195, TASK-196, TASK-198, TASK-199, TASK-180
+Description: Implement building-to-site aggregation rules across all building detail stages, including:
+- Site capabilities derived from contained buildings and infrastructure
+- Support for placeholder buildings, coarse buildings, authored exterior buildings, and interior-enabled buildings all aggregating upward consistently
+- Explicit building clusters becoming explicit sites
+- Preservation of site functionality even when some buildings are only represented through placeholders or coarse models
+
+TASK-201
+Status: TODO
+Difficulty: 5
+Requires: TASK-131, TASK-132
+Description: Make the Knowledge Layer repository browser properly scrollable, including:
+- Mouse-wheel scrolling in the left repository pane
+- UI-first wheel-event handling while the Knowledge Layer is active
+- Prevention of camera zoom consuming repository scroll input
+- Stable scroll clamping and hitbox behavior for browser rows
+
+TASK-202
+Status: TODO
+Difficulty: 6
+Requires: TASK-131, TASK-132, TASK-133
+Description: Implement collapsible hierarchical categories in the Knowledge Layer repository browser, including:
+- Tree-style display for repository entries instead of only flat sections
+- Separate expand/collapse controls from normal row selection
+- Persisted expanded/collapsed state while the Knowledge Layer remains open
+- Support for nested visual indentation and per-row toggle hitboxes
+
+TASK-203
+Status: TODO
+Difficulty: 6
+Requires: TASK-202
+Description: Implement orbital-body hierarchy display in the Knowledge Layer browser, including:
+- Group orbital bodies by the body they orbit rather than as one flat list
+- Star-system root row followed by star/body hierarchy
+- Support for examples such as:
+  - Sol System
+  - Sol
+  - Earth
+  - Luna
+- Compatibility with binary stars, artificial light sources, and deeper nested orbital trees
+
+TASK-204
+Status: TODO
+Difficulty: 5
+Requires: TASK-019, TASK-020, TASK-132
+Description: Split location entry storage by system into separate files while preserving one logical locations dataset, including:
+- Physical separation such as entries/locations/sol.yaml and entries/locations/nanhai_system.yaml
+- Recursive entity loading from subdirectories
+- Merging of split location files into one logical locations dataset for runtime use
+- Preservation of current world-model queries against locations
+
+TASK-205
+Status: TODO
+Difficulty: 5
+Requires: TASK-020, TASK-032, TASK-204
+Description: Update space-view-generated location creation to respect the new split location-file layout, including:
+- Writing generated planetary-root location entries into the correct system file
+- Readable append formatting with visual entry headers
+- Preservation of generated map-root metadata
+- Avoidance of full-file rewrite when appending new generated location entries
+
+TASK-206
+Status: TODO
+Difficulty: 4
+Requires: TASK-131, TASK-201
+Description: Prevent simulation background rendering from visually leaking through the Knowledge Layer shell, including:
+- Hiding background-grid drawing while the Knowledge Layer is active
+- Keeping Knowledge Layer rendering purely app/UI-side
+- Preserving simulation state in the background without drawing its visual layer over the repository shell

@@ -8,6 +8,10 @@ fields:
     type: string
     optional: true
 
+  location_role:
+    type: string
+    optional: true
+
   parent_location:
     type: entity
     target: locations
@@ -24,7 +28,7 @@ fields:
     optional: true
 
   population:
-    type: number
+    type: dict
     optional: true
 
   coords:
@@ -34,3 +38,89 @@ fields:
   bounds:
     type: dict
     optional: true
+
+  climate_tags:
+    type: string_list
+    optional: true
+
+  derived_from_system_body:
+    type: entity
+    target: systems
+    optional: true
+
+  map_projection:
+    type: string
+    optional: true
+
+  map_status:
+    type: string
+    optional: true
+
+  map_canvas_width_px:
+    type: number
+    optional: true
+
+  map_canvas_height_px:
+    type: number
+    optional: true
+
+  environment_summary:
+    type: dict
+    optional: true
+
+  atmosphere_summary:
+    type: dict
+    optional: true
+
+  geology_summary:
+    type: dict
+    optional: true
+
+  hydrology_summary:
+    type: dict
+    optional: true
+
+  ecology_summary:
+    type: dict
+    optional: true
+
+# --------------------------------------------------
+# COMMENTED EXAMPLE ENTRY
+# --------------------------------------------------
+#
+# - id: planet_mars
+#   pretty_name: Mars
+#   name: Mars
+#   type: location
+#   location_class: planet
+#   location_role: planetary_root
+#   coords:
+#     type: point
+#     x: 0
+#     y: 0
+#   bounds:
+#     type: bbox
+#     min_x: -1064
+#     max_x: 1064
+#     min_y: -532
+#     max_y: 532
+#   derived_from_system_body: body_mars
+#   map_projection: equirectangular
+#   map_status: empty_generated
+#   map_canvas_width_px: 2048
+#   map_canvas_height_px: 1024
+#   population:
+#     y0: 0
+#   environment_summary:
+#     status: rough_generated
+#     tags:
+#       - planetary
+#       - desert
+#     sources:
+#       - planetary_generator
+#     notes: Exposed world summary only, not the underlying simulation state.
+#     data:
+#       broad_biomes:
+#         - cold_desert
+#   start_year: 0
+#   entry_status: canon

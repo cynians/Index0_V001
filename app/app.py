@@ -92,6 +92,9 @@ class App(SimWindow):
         )
 
         action_id = self.ui_manager.handle_event(event)
+        if action_id == "__ui_consumed__":
+            return
+
         if action_id is not None:
             handled = self.navigation.handle_ui_action(action_id, active_sim)
             if handled:
@@ -110,7 +113,8 @@ class App(SimWindow):
         self.input_router.handle_pointer_input(event, active_sim)
 
     def draw(self):
-        super().draw_background()
+        if not self.knowledge_layer_active:
+            super().draw_background()
 
         active_sim = self.get_active_simulation()
         self.ui_manager.rebuild_for_state(

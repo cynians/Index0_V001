@@ -32,7 +32,7 @@
   star_system: system_sol
   body_class: planet
   parent_body: body_sol
-  location_entity: null
+  location_entity: planet_mercury
   mass_kg: 3.3011e23
   radius_m: 2439700
   semi_major_axis_m: 57909050000
@@ -53,7 +53,7 @@
   star_system: system_sol
   body_class: planet
   parent_body: body_sol
-  location_entity: null
+  location_entity: planet_venus
   mass_kg: 4.8675e24
   radius_m: 6051800
   semi_major_axis_m: 108208000000
@@ -389,7 +389,7 @@
   star_system: system_sol
   body_class: moon
   parent_body: body_jupiter
-  location_entity: null
+  location_entity: planet_himalia
   mass_kg: 4.19e18
   radius_m: 69850
   semi_major_axis_m: 11461000000
@@ -767,7 +767,7 @@
   star_system: system_sol
   body_class: moon
   parent_body: body_neptune
-  location_entity: null
+  location_entity: planet_nereid
   mass_kg: 3.1e19
   radius_m: 170000
   semi_major_axis_m: 5513400000
@@ -809,7 +809,7 @@
   star_system: system_sol
   body_class: dwarf_planet
   parent_body: body_sol
-  location_entity: null
+  location_entity: planet_pluto
   mass_kg: 1.303e22
   radius_m: 1188300
   semi_major_axis_m: 5906440000000

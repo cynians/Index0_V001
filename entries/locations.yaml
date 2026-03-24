@@ -1,4 +1,10 @@
+# ==================================================
+# SYSTEM: SOL
+# ==================================================
+
+# ---------- planet_earth | Earth ----------
 - id: planet_earth
+  pretty_name: Earth
   name: Earth
   type: location
   location_class: planet
@@ -9,9 +15,13 @@
   bounds:
     type: radius
     value: 6371000
-  population: 8000000000
+  population:
+    y0: 8000000000
   start_year: 0
+
+# ---------- geo_europe | Europe ----------
 - id: geo_europe
+  pretty_name: Europe
   name: Europe
   type: location
   location_class: continent
@@ -22,9 +32,13 @@
     max_x: 420
     min_y: -120
     max_y: 320
-  population: 450000000
+  population:
+    y0: 450000000
   start_year: 0
+
+# ---------- geo_central_europe | Central Europe ----------
 - id: geo_central_europe
+  pretty_name: Central Europe
   name: Central Europe
   type: location
   location_class: region
@@ -35,9 +49,13 @@
     max_x: 220
     min_y: -40
     max_y: 180
-  population: 180000000
+  population:
+    y0: 180000000
   start_year: 0
+
+# ---------- geo_germany | Germany ----------
 - id: geo_germany
+  pretty_name: Germany
   name: Germany
   type: location
   location_class: country
@@ -48,22 +66,28 @@
     max_x: 130
     min_y: 10
     max_y: 120
-  population: 83000000
+  population:
+    y0: 83000000
   start_year: 0
-- id: geo_france
-  name: France
+
+# ---------- city_berlin | Berlin ----------
+- id: city_berlin
+  pretty_name: Berlin
+  name: Berlin
   type: location
-  location_class: country
-  parent_location: geo_europe
-  bounds:
-    type: bbox
-    min_x: -120
-    max_x: 20
-    min_y: -10
-    max_y: 120
-  population: 68000000
+  location_class: city
+  parent_location: geo_germany
+  coords:
+    type: point
+    x: 95
+    y: 95
+  population:
+    y0: 3800000
   start_year: 0
+
+# ---------- geo_alps | Alps ----------
 - id: geo_alps
+  pretty_name: Alps
   name: Alps
   type: location
   location_class: region
@@ -74,20 +98,30 @@
     max_x: 180
     min_y: -10
     max_y: 50
-  population: 14000000
+  population:
+    y0: 14000000
   start_year: 0
-- id: city_berlin
-  name: Berlin
+
+# ---------- geo_france | France ----------
+- id: geo_france
+  pretty_name: France
+  name: France
   type: location
-  location_class: city
-  parent_location: geo_germany
-  coords:
-    type: point
-    x: 95
-    y: 95
-  population: 3800000
+  location_class: country
+  parent_location: geo_europe
+  bounds:
+    type: bbox
+    min_x: -120
+    max_x: 20
+    min_y: -10
+    max_y: 120
+  population:
+    y0: 68000000
   start_year: 0
+
+# ---------- city_paris | Paris ----------
 - id: city_paris
+  pretty_name: Paris
   name: Paris
   type: location
   location_class: city
@@ -96,12 +130,69 @@
     type: point
     x: -35
     y: 70
-  population: 2100000
+  population:
+    y0: 2100000
   start_year: 0
+
+# ---------- planet_mercury | Mercury ----------
+- id: planet_mercury
+  pretty_name: Mercury
+  name: Mercury
+  type: location
+  location_class: planet
+  location_role: planetary_root
+  coords:
+    type: point
+    x: 0
+    y: 0
+  bounds:
+    type: bbox
+    min_x: -766
+    max_x: 766
+    min_y: -383
+    max_y: 383
+  derived_from_system_body: body_mercury
+  map_projection: equirectangular
+  map_status: empty_generated
+  map_canvas_width_px: 2048
+  map_canvas_height_px: 1024
+  population:
+    y0: 0
+  start_year: 0
+
+# ---------- planet_venus | Venus ----------
+- id: planet_venus
+  pretty_name: Venus
+  name: Venus
+  type: location
+  location_class: planet
+  location_role: planetary_root
+  coords:
+    type: point
+    x: 0
+    y: 0
+  bounds:
+    type: bbox
+    min_x: -1900
+    max_x: 1900
+    min_y: -950
+    max_y: 950
+  derived_from_system_body: body_venus
+  map_projection: equirectangular
+  map_status: empty_generated
+  map_canvas_width_px: 4096
+  map_canvas_height_px: 2048
+  population:
+    y0: 0
+  start_year: 0
+
+# ---------- planet_mars | Mars ----------
 - id: planet_mars
+  pretty_name: Mars
   name: Mars
   type: location
   location_class: planet
+  location_role: planetary_root
   coords:
     type: point
     x: 0
@@ -117,75 +208,17 @@
   map_status: empty_generated
   map_canvas_width_px: 2048
   map_canvas_height_px: 1024
-  population: 0
+  population:
+    y0: 0
   start_year: 0
-- id: planet_enceladus
-  name: Enceladus
-  type: location
-  location_class: planet
-  coords:
-    type: point
-    x: 0
-    y: 0
-  bounds:
-    type: bbox
-    min_x: -128
-    max_x: 128
-    min_y: -64
-    max_y: 64
-  derived_from_system_body: body_enceladus
-  map_projection: equirectangular
-  map_status: empty_generated
-  map_canvas_width_px: 2048
-  map_canvas_height_px: 1024
-  population: 0
-  start_year: 0
-- id: planet_jupiter
-  name: Jupiter
-  type: location
-  location_class: planet
-  coords:
-    type: point
-    x: 0
-    y: 0
-  bounds:
-    type: bbox
-    min_x: -21946
-    max_x: 21946
-    min_y: -10973
-    max_y: 10973
-  derived_from_system_body: body_jupiter
-  map_projection: equirectangular
-  map_status: empty_generated
-  map_canvas_width_px: 16384
-  map_canvas_height_px: 8192
-  population: 0
-  start_year: 0
-- id: planet_titan
-  name: Titan
-  type: location
-  location_class: planet
-  coords:
-    type: point
-    x: 0
-    y: 0
-  bounds:
-    type: bbox
-    min_x: -808
-    max_x: 808
-    min_y: -404
-    max_y: 404
-  derived_from_system_body: body_titan
-  map_projection: equirectangular
-  map_status: empty_generated
-  map_canvas_width_px: 2048
-  map_canvas_height_px: 1024
-  population: 0
-  start_year: 0
+
+# ---------- planet_vesta | Vesta ----------
 - id: planet_vesta
+  pretty_name: Vesta
   name: Vesta
   type: location
   location_class: planet
+  location_role: planetary_root
   coords:
     type: point
     x: 0
@@ -201,5 +234,212 @@
   map_status: empty_generated
   map_canvas_width_px: 2048
   map_canvas_height_px: 1024
-  population: 0
+  population:
+    y0: 0
+  start_year: 0
+
+# ---------- planet_jupiter | Jupiter ----------
+- id: planet_jupiter
+  pretty_name: Jupiter
+  name: Jupiter
+  type: location
+  location_class: planet
+  location_role: planetary_root
+  coords:
+    type: point
+    x: 0
+    y: 0
+  bounds:
+    type: bbox
+    min_x: -21946
+    max_x: 21946
+    min_y: -10973
+    max_y: 10973
+  derived_from_system_body: body_jupiter
+  map_projection: equirectangular
+  map_status: empty_generated
+  map_canvas_width_px: 16384
+  map_canvas_height_px: 8192
+  population:
+    y0: 0
+  start_year: 0
+
+# ---------- planet_titan | Titan ----------
+- id: planet_titan
+  pretty_name: Titan
+  name: Titan
+  type: location
+  location_class: planet
+  location_role: planetary_root
+  coords:
+    type: point
+    x: 0
+    y: 0
+  bounds:
+    type: bbox
+    min_x: -808
+    max_x: 808
+    min_y: -404
+    max_y: 404
+  derived_from_system_body: body_titan
+  map_projection: equirectangular
+  map_status: empty_generated
+  map_canvas_width_px: 2048
+  map_canvas_height_px: 1024
+  population:
+    y0: 0
+  start_year: 0
+
+# ---------- planet_enceladus | Enceladus ----------
+- id: planet_enceladus
+  pretty_name: Enceladus
+  name: Enceladus
+  type: location
+  location_class: planet
+  location_role: planetary_root
+  coords:
+    type: point
+    x: 0
+    y: 0
+  bounds:
+    type: bbox
+    min_x: -128
+    max_x: 128
+    min_y: -64
+    max_y: 64
+  derived_from_system_body: body_enceladus
+  map_projection: equirectangular
+  map_status: empty_generated
+  map_canvas_width_px: 2048
+  map_canvas_height_px: 1024
+  population:
+    y0: 0
+  start_year: 0
+
+# ==================================================
+# SYSTEM: NANHAI SYSTEM
+# ==================================================
+
+# ---------- planet_nanhai | Nanhai ----------
+- id: planet_nanhai
+  pretty_name: Nanhai
+  name: Nanhai
+  type: location
+  location_class: planet
+  location_role: planetary_root
+  population:
+    y6034: 0
+  start_year: 6034
+  entry_status: draft
+  derived_from_ideas:
+    - IDEA-492
+
+# ---------- city_pontiferrum_harbor | Pontiferrum Harbor ----------
+- id: city_pontiferrum_harbor
+  pretty_name: Pontiferrum Harbor
+  name: Pontiferrum Harbor
+  type: location
+  location_class: city
+  parent_location: planet_nanhai
+  controlling_factions:
+    - faction_ironclad_shipyard_republic
+  start_year: 6034
+  climate_tags:
+    - maritime
+    - volcanic
+    - industrialized
+  population:
+    y6034: 40000
+    y6038: 45000
+  notes: Main industrial port of the Ironclad Shipyard Republic on Nanhai. The city is built around an artificial harbor in a volcanic island chain rich in metallic resources and later contains multiple industrial and shipbuilding sites within its quarters.
+  environment_summary:
+    status: lore_defined
+    tags:
+      - maritime
+      - volcanic_island_chain
+      - metallic_resource_rich
+    sources:
+      - IDEA-492
+    notes: High-level environmental exposure only.
+    data:
+      setting:
+        - artificial_harbor
+        - volcanic_island_chain
+      resource_profile:
+        - metallic_resources
+  geology_summary:
+    status: lore_defined
+    tags:
+      - volcanic
+      - island_chain
+    sources:
+      - IDEA-492
+    notes: Exposed geology summary for the location entry.
+    data:
+      major_features:
+        - volcanic_island_chain
+  ecology_summary:
+    status: minimal
+    tags:
+      - heavily_transformed
+      - port_city
+    sources:
+      - IDEA-492
+    notes: City-scale location with strong industrial transformation; deeper ecological detail not yet defined.
+    data: {}
+  derived_from_ideas:
+    - IDEA-492
+  entry_status: draft
+
+#----------planet_pluto----Pluto-----------
+- id: planet_pluto
+  pretty_name: Pluto
+  name: Pluto
+  type: location
+  location_class: planet
+  location_role: planetary_root
+  coords:
+    type: point
+    x: 0
+    y: 0
+  bounds:
+    type: bbox
+    min_x: -373
+    max_x: 373
+    min_y: -186
+    max_y: 186
+  derived_from_system_body: body_pluto
+  map_projection: equirectangular
+  map_status: empty_generated
+  map_canvas_width_px: 2048
+  map_canvas_height_px: 1024
+  population:
+    y0: 0
+  start_year: 0
+
+
+#----------planet_nereid----Nereid-----------
+- id: planet_nereid
+  pretty_name: Nereid
+  name: Nereid
+  type: location
+  location_class: planet
+  location_role: planetary_root
+  coords:
+    type: point
+    x: 0
+    y: 0
+  bounds:
+    type: bbox
+    min_x: -128
+    max_x: 128
+    min_y: -64
+    max_y: 64
+  derived_from_system_body: body_nereid
+  map_projection: equirectangular
+  map_status: empty_generated
+  map_canvas_width_px: 2048
+  map_canvas_height_px: 1024
+  population:
+    y0: 0
   start_year: 0

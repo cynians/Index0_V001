@@ -56,6 +56,14 @@ class UIManager:
         self.repository_scope_entity_id = None
         self.repository_scope_label = None
         self.knowledge_header_button = None
+        self.knowledge_browser_scroll = 0
+        self.knowledge_browser_tree_state = {
+            "systems": {
+                "system_sol": True,
+                "body_sol": True,
+            }
+        }
+        self.knowledge_browser_toggle_hitboxes = []
 
     def _format_sim_time(self, sim):
         """
@@ -123,6 +131,112 @@ class UIManager:
             enabled=True,
         )
 
+    def _kb_is_expanded(self, entity_id):
+        return self.knowledge_browser_tree_state["systems"].get(entity_id, False)
+
+    def _kb_set_expanded(self, entity_id, expanded):
+        self.knowledge_browser_tree_state["systems"][entity_id] = expanded
+
+    def _build_system_browser_items(self, world_model):
+        """
+        Build a collapsible tree for star systems and orbital bodies.
+
+        Visible structure:
+        star system
+          star/root body
+            child orbital bodies
+              nested moons/sub-bodies
+        """
+        items = []
+
+        if world_model is None:
+            return items
+
+        system_entities = world_model.get_entities_by_dataset("systems")
+        systems_by_id = {
+            entity.get("id"): entity
+            for entity in system_entities
+            if isinstance(entity, dict) and entity.get("id")
+        }
+
+        star_systems = sorted(
+            [
+                entity for entity in system_entities
+                if entity.get("system_role") == "star_system"
+            ],
+            key=lambda entity: entity.get("name", entity.get("id", ""))
+        )
+
+        bodies = [
+            entity for entity in system_entities
+            if entity.get("system_role") == "orbital_body"
+        ]
+
+        bodies_by_parent = {}
+        roots_by_system = {}
+
+        for body in bodies:
+            parent_body = body.get("parent_body")
+            star_system_id = body.get("star_system")
+
+            if parent_body:
+                bodies_by_parent.setdefault(parent_body, []).append(body)
+            else:
+                roots_by_system.setdefault(star_system_id, []).append(body)
+
+        for child_list in bodies_by_parent.values():
+            child_list.sort(key=lambda entity: entity.get("name", entity.get("id", "")))
+
+        for child_list in roots_by_system.values():
+            child_list.sort(key=lambda entity: entity.get("name", entity.get("id", "")))
+
+        def add_body_subtree(body_entity, depth):
+            body_id = body_entity.get("id")
+            body_name = body_entity.get("name", body_id or "unknown")
+            body_class = body_entity.get("body_class", body_entity.get("type", "entity"))
+            children = bodies_by_parent.get(body_id, [])
+            expandable = len(children) > 0
+
+            items.append(
+                {
+                    "kind": "tree_entity",
+                    "entity_id": body_id,
+                    "text": body_name,
+                    "meta_text": f"[{body_class}]",
+                    "depth": depth,
+                    "expandable": expandable,
+                    "expanded": self._kb_is_expanded(body_id),
+                }
+            )
+
+            if expandable and self._kb_is_expanded(body_id):
+                for child in children:
+                    add_body_subtree(child, depth + 1)
+
+        for system_entity in star_systems:
+            system_id = system_entity.get("id")
+            system_name = system_entity.get("name", system_id or "unknown")
+            system_class = system_entity.get("system_class", system_entity.get("type", "entity"))
+            root_bodies = roots_by_system.get(system_id, [])
+
+            items.append(
+                {
+                    "kind": "tree_entity",
+                    "entity_id": system_id,
+                    "text": system_name,
+                    "meta_text": f"[{system_class}]",
+                    "depth": 0,
+                    "expandable": len(root_bodies) > 0,
+                    "expanded": self._kb_is_expanded(system_id),
+                }
+            )
+
+            if self._kb_is_expanded(system_id):
+                for root_body in root_bodies:
+                    add_body_subtree(root_body, 1)
+
+        return items
+
     def _build_knowledge_browser_items(self, world_model):
         """
         Build selectable browser rows from actual repository entries.
@@ -153,44 +267,7 @@ class UIManager:
 
             items.append({"kind": "spacer"})
             items.append({"kind": "section", "text": "Star Systems"})
-
-            system_entities = sorted(
-                world_model.get_entities_by_dataset("systems"),
-                key=lambda entity: entity.get("name", entity.get("id", ""))
-            )
-
-            for entity in system_entities:
-                if entity.get("system_role") != "star_system":
-                    continue
-
-                entity_class = entity.get("system_class", entity.get("type", "entity"))
-                label = entity.get("name", entity.get("id", "unknown"))
-
-                items.append(
-                    {
-                        "kind": "entity",
-                        "entity_id": entity.get("id"),
-                        "text": f"  {label} [{entity_class}]",
-                    }
-                )
-
-            items.append({"kind": "spacer"})
-            items.append({"kind": "section", "text": "Orbital Bodies"})
-
-            for entity in system_entities:
-                if entity.get("system_role") != "orbital_body":
-                    continue
-
-                entity_class = entity.get("body_class", entity.get("type", "entity"))
-                label = entity.get("name", entity.get("id", "unknown"))
-
-                items.append(
-                    {
-                        "kind": "entity",
-                        "entity_id": entity.get("id"),
-                        "text": f"  {label} [{entity_class}]",
-                    }
-                )
+            items.extend(self._build_system_browser_items(world_model))
 
         return items
 
@@ -305,6 +382,7 @@ class UIManager:
         self.knowledge_layout = None
         self.knowledge_browser_items = []
         self.knowledge_browser_hitboxes = []
+        self.knowledge_browser_toggle_hitboxes = []
         self.knowledge_world_model = world_model
         self.repository_scope_entity_id = repository_scope_entity_id
         self.repository_scope_label = None
@@ -819,26 +897,44 @@ class UIManager:
 
         self.knowledge_browser_hitboxes = []
 
-        line_y = left_rect.y + 48
         line_h = font.get_height() + 4
-        max_y = left_rect.bottom - 10
+        content_top = left_rect.y + 48
+        content_bottom = left_rect.bottom - 10
+        visible_h = content_bottom - content_top
+
+        total_h = len(self.knowledge_browser_items) * line_h
+        max_scroll = max(0, total_h - visible_h)
+        self.knowledge_browser_scroll = max(0, min(self.knowledge_browser_scroll, max_scroll))
+
+        line_y = content_top - self.knowledge_browser_scroll
 
         for item in self.knowledge_browser_items:
-            if line_y + line_h > max_y:
-                break
+            row_top = line_y
+            row_bottom = line_y + line_h
 
             if item["kind"] == "spacer":
                 line_y += line_h
                 continue
 
+            if row_bottom < content_top:
+                line_y += line_h
+                continue
+
+            if row_top > content_bottom:
+                break
+
             if item["kind"] == "section":
                 color = (235, 235, 235)
                 text_x = left_rect.x + 12
-                row_rect = None
+                text_surface = font.render(item["text"], True, color)
+                screen.blit(text_surface, (text_x, line_y))
+
             elif item["kind"] == "label":
                 color = (220, 220, 220)
                 text_x = left_rect.x + 12
-                row_rect = None
+                text_surface = font.render(item["text"], True, color)
+                screen.blit(text_surface, (text_x, line_y))
+
             else:
                 row_rect = pygame.Rect(left_rect.x + 10, line_y - 1, left_rect.width - 20, line_h)
                 is_selected = item["entity_id"] == self.knowledge_selected_entity_id
@@ -848,11 +944,56 @@ class UIManager:
                     pygame.draw.rect(screen, (150, 150, 170), row_rect, 1)
 
                 color = (245, 245, 245) if is_selected else (220, 220, 220)
-                text_x = left_rect.x + 12
-                self.knowledge_browser_hitboxes.append((item["entity_id"], row_rect))
 
-            text_surface = font.render(item["text"], True, color)
-            screen.blit(text_surface, (text_x, line_y))
+                depth = item.get("depth", 0)
+                indent_px = depth * 18
+                base_x = left_rect.x + 12 + indent_px
+
+                if item["kind"] == "tree_entity":
+                    if item.get("expandable", False):
+                        caret_rect = pygame.Rect(base_x, line_y + 2, 14, 14)
+                        self.knowledge_browser_toggle_hitboxes.append((item["entity_id"], caret_rect))
+
+                        if item.get("expanded", False):
+                            pygame.draw.polygon(
+                                screen,
+                                color,
+                                [
+                                    (caret_rect.x + 2, caret_rect.y + 4),
+                                    (caret_rect.x + 12, caret_rect.y + 4),
+                                    (caret_rect.x + 7, caret_rect.y + 11),
+                                ],
+                            )
+                        else:
+                            pygame.draw.polygon(
+                                screen,
+                                color,
+                                [
+                                    (caret_rect.x + 4, caret_rect.y + 2),
+                                    (caret_rect.x + 11, caret_rect.y + 7),
+                                    (caret_rect.x + 4, caret_rect.y + 12),
+                                ],
+                            )
+
+                        text_x = base_x + 20
+                    else:
+                        text_x = base_x + 20
+
+                    text_surface = font.render(item["text"], True, color)
+                    screen.blit(text_surface, (text_x, line_y))
+
+                    meta_text = item.get("meta_text")
+                    if meta_text:
+                        meta_surface = font.render(meta_text, True, (170, 170, 170))
+                        screen.blit(meta_surface, (text_x + text_surface.get_width() + 8, line_y))
+
+                    self.knowledge_browser_hitboxes.append((item["entity_id"], row_rect))
+
+                else:
+                    text_x = left_rect.x + 12
+                    text_surface = font.render(item["text"], True, color)
+                    screen.blit(text_surface, (text_x, line_y))
+                    self.knowledge_browser_hitboxes.append((item["entity_id"], row_rect))
 
             line_y += line_h
 
@@ -902,6 +1043,20 @@ class UIManager:
         Returns:
             action payload if a UI element consumed the click, otherwise None.
         """
+        if self.menu_active and self.knowledge_layout is not None:
+            left_rect = self.knowledge_layout["left_rect"]
+
+            if event.type == pygame.MOUSEWHEEL:
+                mouse_pos = pygame.mouse.get_pos()
+
+                if left_rect.collidepoint(mouse_pos):
+                    line_step = 24
+                    self.knowledge_browser_scroll = max(
+                        0,
+                        self.knowledge_browser_scroll - event.y * line_step
+                    )
+                    return "__ui_consumed__"
+
         if event.type != pygame.MOUSEBUTTONDOWN:
             return None
 
@@ -922,6 +1077,11 @@ class UIManager:
                 if self.knowledge_header_button.rect.collidepoint(mouse_pos):
                     print("[DEBUG] Knowledge header button clicked:", self.knowledge_header_button.id)
                     return self.knowledge_header_button.id
+            for entity_id, hitbox in self.knowledge_browser_toggle_hitboxes:
+                if hitbox.collidepoint(mouse_pos):
+                    self._kb_set_expanded(entity_id, not self._kb_is_expanded(entity_id))
+                    return None
+
             for entity_id, hitbox in self.knowledge_browser_hitboxes:
                 if hitbox.collidepoint(mouse_pos):
                     self.knowledge_selected_entity_id = entity_id
