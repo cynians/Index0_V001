@@ -1,0 +1,76 @@
+- id: prod_steel_plate_rolling
+  pretty_name: Steel Plate Rolling
+  name: Steel Plate Rolling
+  type: production
+  production_class: industrial_material_processing
+  production_location: geo_france
+  input_materials:
+    - mat_stainless_steel
+  input_items: []
+  input_components: []
+  output_materials: []
+  output_items:
+    - item_steel_plate
+  output_components: []
+  output_vehicles: []
+  output_buildings: []
+  byproducts: []
+  produced_by: []
+  required_technology: []
+  required_items: []
+  required_components:
+    - comp_storage_rack
+  required_roles:
+    - operator
+    - maintenance_worker
+  required_site_classes:
+    - workshop
+    - factory
+  task_chain_description: Material receipt, rolling setup, plate rolling, cooling, stacking, and staged storage for later logistics or assembly use.
+  supports_repair: false
+  supports_disassembly: false
+  map_representation_notes: Represented as an industrial processing line or rolling hall within a production site.
+  units_per_hour: 40
+  kg_per_day: 12000
+  start_year: 1850
+  entry_status: draft
+
+- id: prod_pump_module_assembly
+  pretty_name: Pump Module Assembly
+  name: Pump Module Assembly
+  type: production
+  production_class: component_assembly
+  production_location: city_pontiferrum_harbor
+  input_materials:
+    - mat_stainless_steel
+    - mat_copper_alloy
+  input_items:
+    - item_pump_module
+  input_components: []
+  output_materials: []
+  output_items: []
+  output_components:
+    - comp_pump_module
+  output_vehicles: []
+  output_buildings: []
+  byproducts:
+    - metal_scrap
+  produced_by:
+    - faction_ironclad_shipyard_republic
+  required_technology: []
+  required_items: []
+  required_components:
+    - comp_storage_rack
+  required_roles:
+    - assembler
+    - inspector
+  required_site_classes:
+    - workshop
+    - shipyard
+  task_chain_description: Receipt of prepared inputs, preparation for assembly, module assembly, inspection, and routing into storage or installation chains.
+  supports_repair: true
+  supports_disassembly: true
+  map_representation_notes: Represented as an assembly hall or modular workshop block within a larger industrial site.
+  components_per_day: 12
+  start_year: 6034
+  entry_status: draft

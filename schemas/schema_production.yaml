@@ -8,9 +8,52 @@ fields:
     type: string
     optional: true
 
-  produced_item:
+  production_location:
     type: entity
-    target: entity
+    target: locations
+    optional: true
+
+  input_materials:
+    type: entity_list
+    target: materials
+    optional: true
+
+  input_items:
+    type: entity_list
+    target: item
+    optional: true
+
+  input_components:
+    type: entity_list
+    target: components
+    optional: true
+
+  output_materials:
+    type: entity_list
+    target: materials
+    optional: true
+
+  output_items:
+    type: entity_list
+    target: item
+    optional: true
+
+  output_components:
+    type: entity_list
+    target: components
+    optional: true
+
+  output_vehicles:
+    type: entity_list
+    target: vehicles
+    optional: true
+
+  output_buildings:
+    type: string_list
+    optional: true
+
+  byproducts:
+    type: string_list
     optional: true
 
   produced_by:
@@ -18,7 +61,166 @@ fields:
     target: faction
     optional: true
 
-  production_location:
-    type: entity
-    target: locations
+  required_technology:
+    type: entity_list
+    target: technology
     optional: true
+
+  required_items:
+    type: entity_list
+    target: item
+    optional: true
+
+  required_components:
+    type: entity_list
+    target: components
+    optional: true
+
+  required_roles:
+    type: string_list
+    optional: true
+
+  required_site_classes:
+    type: string_list
+    optional: true
+
+  task_chain_description:
+    type: text
+    optional: true
+
+  supports_repair:
+    type: string
+    optional: true
+
+  supports_disassembly:
+    type: string
+    optional: true
+
+  map_representation_notes:
+    type: text
+    optional: true
+
+  units_per_hour:
+    type: number
+    optional: true
+
+  units_per_day:
+    type: number
+    optional: true
+
+  kg_per_hour:
+    type: number
+    optional: true
+
+  kg_per_day:
+    type: number
+    optional: true
+
+  liters_per_hour:
+    type: number
+    optional: true
+
+  liters_per_day:
+    type: number
+    optional: true
+
+  m2_per_day:
+    type: number
+    optional: true
+
+  m3_per_day:
+    type: number
+    optional: true
+
+  components_per_day:
+    type: number
+    optional: true
+
+  vehicles_per_year:
+    type: number
+    optional: true
+
+  buildings_per_year:
+    type: number
+    optional: true
+
+# --------------------------------------------------
+# COMMENTED EXAMPLE ENTRY
+# --------------------------------------------------
+#
+# - id: prod_steel_plate_rolling
+#   pretty_name: Steel Plate Rolling
+#   name: Steel Plate Rolling
+#   type: production
+#   production_class: industrial_material_processing
+#   production_location: geo_france
+#   input_materials:
+#     - mat_stainless_steel
+#   input_items: []
+#   input_components: []
+#   output_materials: []
+#   output_items:
+#     - item_steel_plate
+#   output_components: []
+#   output_vehicles: []
+#   output_buildings: []
+#   byproducts: []
+#   produced_by: []
+#   required_technology: []
+#   required_items: []
+#   required_components:
+#     - comp_storage_rack
+#   required_roles:
+#     - operator
+#     - maintenance_worker
+#   required_site_classes:
+#     - workshop
+#     - factory
+#   task_chain_description: Material receipt, rolling setup, plate rolling, cooling, stacking, and staged storage for later logistics or assembly use.
+#   supports_repair: false
+#   supports_disassembly: false
+#   map_representation_notes: Represented as an industrial processing line or rolling hall within a production site.
+#   units_per_hour: 40
+#   kg_per_day: 12000
+#   start_year: 0
+#   entry_status: draft
+#
+# - id: prod_pump_module_assembly
+#   pretty_name: Pump Module Assembly
+#   name: Pump Module Assembly
+#   type: production
+#   production_class: component_assembly
+#   production_location: city_pontiferrum_harbor
+#   input_materials:
+#     - mat_stainless_steel
+#     - mat_copper_alloy
+#   input_items:
+#     - item_pump_module
+#   input_components: []
+#   output_materials: []
+#   output_items: []
+#   output_components:
+#     - comp_pump_module
+#   output_vehicles: []
+#   output_buildings: []
+#   byproducts:
+#     - metal_scrap
+#   produced_by:
+#     - faction_ironclad_shipyard_republic
+#   required_technology: []
+#   required_items: []
+#   required_components:
+#     - comp_storage_rack
+#   required_roles:
+#     - assembler
+#     - inspector
+#   required_site_classes:
+#     - workshop
+#     - shipyard
+#   task_chain_description: Receipt of prepared inputs, preparation for assembly, module assembly, inspection, and routing into storage or installation chains.
+#   supports_repair: true
+#   supports_disassembly: true
+#   map_representation_notes: Represented as an assembly hall or modular workshop block within a larger industrial site.
+#   components_per_day: 12
+#   start_year: 6034
+#   entry_status: draft

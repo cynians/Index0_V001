@@ -1,0 +1,97 @@
+schema: components
+
+extends: entity_core
+
+fields:
+
+  component_class:
+    type: string
+    optional: true
+
+  primary_material:
+    type: entity
+    target: materials
+    optional: true
+
+  secondary_materials:
+    type: entity_list
+    target: materials
+    optional: true
+
+  represented_item:
+    type: entity
+    target: item
+    optional: true
+
+  install_contexts:
+    type: string_list
+    optional: true
+
+  functional_roles:
+    type: string_list
+    optional: true
+
+  requires_technology:
+    type: entity_list
+    target: technology
+    optional: true
+
+  descriptive_capabilities:
+    type: string_list
+    optional: true
+
+  maintenance_notes:
+    type: text
+    optional: true
+
+# --------------------------------------------------
+# COMMENTED EXAMPLE ENTRY
+# --------------------------------------------------
+#
+# - id: comp_pump_module
+#   pretty_name: Pump Module
+#   name: Pump Module
+#   type: component
+#   component_class: fluid_system_component
+#   primary_material: mat_stainless_steel
+#   secondary_materials:
+#     - mat_copper_alloy
+#   represented_item: item_pump_module
+#   install_contexts:
+#     - building
+#     - vehicle
+#     - site
+#     - station
+#   functional_roles:
+#     - fluid_transfer
+#     - circulation
+#   requires_technology: []
+#   descriptive_capabilities:
+#     - replaceable_module
+#     - installable
+#   maintenance_notes: Requires sealing checks and periodic servicing depending on operating context.
+#   start_year: 0
+#   entry_status: draft
+#
+# - id: comp_storage_rack
+#   pretty_name: Storage Rack
+#   name: Storage Rack
+#   type: component
+#   component_class: storage_component
+#   primary_material: mat_stainless_steel
+#   secondary_materials: []
+#   represented_item: item_storage_rack
+#   install_contexts:
+#     - building
+#     - vehicle
+#     - site
+#   functional_roles:
+#     - storage
+#     - organization
+#   requires_technology: []
+#   descriptive_capabilities:
+#     - installable
+#     - supports_inventory_use
+#   maintenance_notes: Low-complexity installed component for organized storage.
+#   start_year: 0
+#   entry_status: draft

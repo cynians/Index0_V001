@@ -8,6 +8,21 @@ fields:
     type: string
     optional: true
 
+  primary_material:
+    type: entity
+    target: materials
+    optional: true
+
+  secondary_materials:
+    type: entity_list
+    target: materials
+    optional: true
+
+  component_equivalent:
+    type: entity
+    target: components
+    optional: true
+
   produced_by:
     type: entity_list
     target: faction
@@ -17,3 +32,91 @@ fields:
     type: entity_list
     target: technology
     optional: true
+
+  storage_modes:
+    type: string_list
+    optional: true
+
+  handling_notes:
+    type: text
+    optional: true
+
+  default_state:
+    type: string
+    optional: true
+
+  portable:
+    type: string
+    optional: true
+
+  placeable:
+    type: string
+    optional: true
+
+  installable:
+    type: string
+    optional: true
+
+  install_contexts:
+    type: string_list
+    optional: true
+
+  descriptive_capabilities:
+    type: string_list
+    optional: true
+
+# --------------------------------------------------
+# COMMENTED EXAMPLE ENTRY
+# --------------------------------------------------
+#
+# - id: item_steel_plate
+#   pretty_name: Steel Plate
+#   name: Steel Plate
+#   type: item
+#   item_class: industrial_good
+#   primary_material: mat_stainless_steel
+#   uses_technology:
+#     - tech_plate_rolling
+#   storage_modes:
+#     - stackable
+#     - palletizable
+#     - containerizable
+#   handling_notes: Commonly stored in stacks or on pallets; exact containerization depends on later logistics systems.
+#   default_state: loose
+#   portable: limited
+#   placeable: true
+#   installable: false
+#   install_contexts: []
+#   descriptive_capabilities:
+#     - structural_input
+#     - construction_material
+#   start_year: 0
+#   entry_status: draft
+#
+# - id: item_pump_module
+#   pretty_name: Pump Module
+#   name: Pump Module
+#   type: item
+#   item_class: machinery_module
+#   primary_material: mat_steel_alloy
+#   component_equivalent: comp_pump_module
+#   uses_technology:
+#     - tech_fluid_pumping
+#   storage_modes:
+#     - stackable
+#     - containerizable
+#   handling_notes: Can exist as cargo, spare part, or installed machinery module.
+#   default_state: loose
+#   portable: limited
+#   placeable: true
+#   installable: true
+#   install_contexts:
+#     - building
+#     - vehicle
+#     - site
+#     - station
+#   descriptive_capabilities:
+#     - fluid_transfer
+#     - maintenance_replaceable
+#   start_year: 0
+#   entry_status: draft

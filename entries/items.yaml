@@ -1,0 +1,85 @@
+- id: item_steel_plate
+  pretty_name: Steel Plate
+  name: Steel Plate
+  type: item
+  item_class: industrial_good
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  component_equivalent: null
+  produced_by: []
+  uses_technology: []
+  storage_modes:
+    - stackable
+    - palletizable
+    - containerizable
+  handling_notes: Commonly stored in stacks or on pallets; exact containerization depends on later logistics systems.
+  default_state: loose
+  portable: limited
+  placeable: true
+  installable: false
+  install_contexts: []
+  descriptive_capabilities:
+    - structural_input
+    - construction_material
+  start_year: 1850
+  entry_status: draft
+
+- id: item_pump_module
+  pretty_name: Pump Module
+  name: Pump Module
+  type: item
+  item_class: machinery_module
+  primary_material: mat_stainless_steel
+  secondary_materials:
+    - mat_copper_alloy
+  component_equivalent: comp_pump_module
+  produced_by:
+    - faction_ironclad_shipyard_republic
+  uses_technology: []
+  storage_modes:
+    - stackable
+    - containerizable
+  handling_notes: Can exist as cargo, spare part, or installed machinery module.
+  default_state: loose
+  portable: limited
+  placeable: true
+  installable: true
+  install_contexts:
+    - building
+    - vehicle
+    - site
+    - station
+  descriptive_capabilities:
+    - fluid_transfer
+    - maintenance_replaceable
+  start_year: 6034
+  entry_status: draft
+
+- id: item_storage_rack
+  pretty_name: Storage Rack
+  name: Storage Rack
+  type: item
+  item_class: storage_fixture
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  component_equivalent: comp_storage_rack
+  produced_by: []
+  uses_technology: []
+  storage_modes:
+    - stackable
+    - containerizable
+  handling_notes: Can be stored as cargo, placed in interiors, or installed as a storage-support fixture.
+  default_state: loose
+  portable: limited
+  placeable: true
+  installable: true
+  install_contexts:
+    - building
+    - vehicle
+    - site
+    - station
+  descriptive_capabilities:
+    - supports_storage
+    - installable_fixture
+  start_year: 1900
+  entry_status: draft

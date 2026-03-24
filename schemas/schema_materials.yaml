@@ -1,0 +1,87 @@
+schema: materials
+
+extends: entity_core
+
+fields:
+
+  material_class:
+    type: string
+    optional: true
+
+  material_form:
+    type: string
+    optional: true
+
+  base_materials:
+    type: entity_list
+    target: materials
+    optional: true
+
+  descriptive_properties:
+    type: string_list
+    optional: true
+
+  hazard_tags:
+    type: string_list
+    optional: true
+
+  storage_notes:
+    type: text
+    optional: true
+
+  common_uses:
+    type: string_list
+    optional: true
+
+  processed_by_technology:
+    type: entity_list
+    target: technology
+    optional: true
+
+# --------------------------------------------------
+# COMMENTED EXAMPLE ENTRY
+# --------------------------------------------------
+#
+# - id: mat_stainless_steel
+#   pretty_name: Stainless Steel
+#   name: Stainless Steel
+#   type: material
+#   material_class: metal_alloy
+#   material_form: engineering_material
+#   base_materials: []
+#   descriptive_properties:
+#     - corrosion_resistant
+#     - structural
+#     - heat_tolerant
+#   hazard_tags: []
+#   storage_notes: Usually stored as stock, plates, bars, or prefabricated forms rather than as loose bulk.
+#   common_uses:
+#     - construction
+#     - machinery
+#     - containers
+#   processed_by_technology:
+#     - tech_metallurgy
+#   start_year: 0
+#   entry_status: draft
+#
+# - id: mat_copper_alloy
+#   pretty_name: Copper Alloy
+#   name: Copper Alloy
+#   type: material
+#   material_class: metal_alloy
+#   material_form: engineering_material
+#   base_materials: []
+#   descriptive_properties:
+#     - workable
+#     - conductive
+#     - corrosion_resistant
+#   hazard_tags: []
+#   storage_notes: Can appear as cast, rolled, or machined stock depending on later production context.
+#   common_uses:
+#     - fittings
+#     - caskets
+#     - electrical_parts
+#   processed_by_technology:
+#     - tech_alloying
+#   start_year: 0
+#   entry_status: draft

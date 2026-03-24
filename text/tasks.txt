@@ -31,12 +31,12 @@ CORE APPLICATION / ARCHITECTURE
 TASK-053
 Status: TODO
 Difficulty: 6
-Requires: TASK-001
+Requires: TASK-001, TASK-213
 Description: Introduce app-level year state system, including:
 - Distinction between selected year and loaded year
 - Confirmation step before loading a new year
 - Propagation of loaded year into all active simulations and contexts
-
+- Compatibility with lightweight year-keyed placeholder values in repository entries before full snapshot implementation
 ------------------------------------------------
 RENDERING SYSTEM
 ------------------------------------------------
@@ -91,8 +91,11 @@ WORLD / SPATIAL SYSTEM
 TASK-019
 Status: TODO
 Difficulty: 6
-Requires: TASK-006
-Description: Implement support for external map images (file dialog + display pipeline)
+Requires: TASK-006, TASK-204
+Description: Implement support for external map images (file dialog + display pipeline), including:
+- Compatibility with split location entry storage by system/domain
+- Loading and display of externally authored map images for location roots
+- Preservation of repository-linked map metadata
 
 TASK-020
 Status: PARTIAL
@@ -105,6 +108,7 @@ Description: Implement resolution/scale system for map images independent of rea
   - projected planet size is derived from radius/bounds
   - generated roots store canvas width/height metadata
   - external imported image workflow is not implemented yet
+  - generated location roots now also need to remain compatible with split per-system location files
 
 TASK-021
 Status: TODO
@@ -439,7 +443,7 @@ CORE SIMULATION SYSTEMS
 TASK-035
 Status: TODO
 Difficulty: 6
-Requires: TASK-014, TASK-103
+Requires: TASK-014, TASK-103, TASK-211
 Description: Implement ProducerSimulation, including:
 - Agent-driven production processes
 - Interruptible execution (pause/resume/abort)
@@ -450,6 +454,7 @@ Description: Implement ProducerSimulation, including:
 - Resource decay/spoilage system:
   - time-based
   - condition-based modifiers
+- Use of reusable production definitions as the process/capability layer
 - Use universal world-task structures rather than an isolated simulation-local task model
 
 TASK-036
@@ -534,24 +539,29 @@ ECONOMY / LOGISTICS SYSTEMS
 TASK-040
 Status: TODO
 Difficulty: 8
-Requires: TASK-035
-Description: Implement EconomySimulation
+Requires: TASK-035, TASK-209, TASK-211
+Description: Implement EconomySimulation, including:
+- Interaction with itemized goods, material flows, and component goods
+- Compatibility with production definitions and throughput fields
+- Foundation for market and logistics treatment of produced, stored, imported, and exported goods
 
 TASK-041
 Status: COMPRESSED
 Difficulty: 5
-Requires: TASK-040, TASK-103
+Requires: TASK-040, TASK-103, TASK-209
 Description: Narrow LogisticsSimulation to an early/prototype logistics layer only, including:
 - Movement as task
 - Dynamic rerouting and interruption
-- Initial transport behavior before full universal-task reframing
+- Initial transport behavior for materials, items, and components before full universal-task reframing
 - Canonical long-term logistics architecture is TASK-114
 
 TASK-048
 Status: TODO
 Difficulty: 8
-Requires: TASK-041
-Description: Implement InfrastructureSimulation (capability networks)
+Requires: TASK-041, TASK-180, TASK-181
+Description: Implement InfrastructureSimulation (capability networks), including:
+- Capability-network support for sites, cities, logistics, and production hosting
+- Relevance to industrial diagrams and map-facing capability layout where appropriate
 
 ------------------------------------------------
 ECONOMY DETAIL LAYER
@@ -560,8 +570,11 @@ ECONOMY DETAIL LAYER
 TASK-046
 Status: TODO
 Difficulty: 8
-Requires: TASK-040
-Description: Implement MarketSimulation
+Requires: TASK-040, TASK-209, TASK-210
+Description: Implement MarketSimulation, including:
+- Trade in materials, items, and component-equivalent goods
+- Compatibility with aggregated goods and later containerization/logistics systems
+- Distinction between repository item definitions and runtime traded quantities
 
 TASK-047
 Status: TODO
@@ -579,12 +592,13 @@ TEMPORAL / SNAPSHOT / TIMELINE SYSTEM
 TASK-054
 Status: TODO
 Difficulty: 6
-Requires: TASK-013
+Requires: TASK-013, TASK-213
 Description: Implement sparse world snapshot system (year-based databank), including:
 - Optional entries for all entity types
 - Support for varying degrees of detail per snapshot
 - Storage of entity state only for years where snapshot data exists
 - Fallback behavior when no snapshot exists for an entity in a given year
+- Eventual replacement/expansion path for simple year-keyed placeholder values already stored in repository entries
 
 TASK-055
 Status: TODO
@@ -617,12 +631,13 @@ Description: Implement world reload pipeline for selected year, including:
 TASK-058
 Status: TODO
 Difficulty: 6
-Requires: TASK-032, TASK-053
+Requires: TASK-032, TASK-053, TASK-204, TASK-205
 Description: Integrate year loading with planetary and regional navigation workflow, including:
 - Load world for selected year
 - Navigate from space to planetary map
 - Open entity-rooted map tabs in the currently loaded year
 - Ensure year-consistent entity availability across tabs
+- Preserve compatibility with generated location roots stored in split location files
 
 TASK-059
 Status: TODO
@@ -792,8 +807,12 @@ Description: Implement degraded and improvised trajectory calculation modes
 TASK-080
 Status: TODO
 Difficulty: 7
-Requires: TASK-038, TASK-005, TASK-032
-Description: Add spacecraft system access from space view
+Requires: TASK-038, TASK-005, TASK-032, TASK-205
+Description: Add spacecraft system access from space view, including:
+- Access from selected space-view entities
+- Compatibility with generated or authored repository links
+- Preservation of split-entry repository storage where body-linked location/context entries are generated on demand
+
 
 TASK-081
 Status: TODO
@@ -840,28 +859,33 @@ Description: Implement vehicle-local spatial context for crewed spacecraft
 TASK-098
 Status: TODO
 Difficulty: 7
-Requires: TASK-041, TASK-048, TASK-038, TASK-067
+Requires: TASK-041, TASK-048, TASK-038, TASK-067, TASK-211
 Description: Implement space route and transfer network layer between orbital systems, including:
 - Orbital transfer corridors
 - Interplanetary lanes
 - Approach corridors
 - Departure windows
+- Compatibility with later production/logistics movement of materials, items, components, and larger constructs
 
 TASK-099
 Status: TODO
 Difficulty: 7
-Requires: TASK-041, TASK-044, TASK-048, TASK-074, TASK-075, TASK-077, TASK-098
-Description: Implement navigation and route knowledge as infrastructure rather than pure vehicle capability
+Requires: TASK-041, TASK-044, TASK-048, TASK-074, TASK-075, TASK-077, TASK-098, TASK-212
+Description: Implement navigation and route knowledge as infrastructure rather than pure vehicle capability, including:
+- Shared infrastructure-side route knowledge
+- Compatibility with movement of materials, items, components, vehicles, and production outputs
+- Later reuse by logistics and industrial transport chains
 
 TASK-100
 Status: TODO
 Difficulty: 5
-Requires: TASK-038, TASK-041, TASK-048, TASK-067, TASK-098
+Requires: TASK-038, TASK-041, TASK-048, TASK-067, TASK-098, TASK-212
 Description: Add interstellar travel stub, including:
 - Interstellar-capable vehicles
 - Interstellar routes
 - Long-duration transfer states
 - Origin / destination system linkage
+- Foundation for later interstellar transport of industrial goods, components, and production outputs
 
 TASK-102
 Status: TODO
@@ -885,7 +909,7 @@ Status: TODO
 Difficulty: 8
 Requires: TASK-002
 Description: Implement universal task structure as a first-class world object, including:
-- One shared task model across person, institution, faction, producer, vehicle, logistics, and timeline systems
+- One shared task model across person, institution, faction, producer, vehicle, logistics, production, and timeline systems
 - Core fields for:
   - identity
   - creator / origin
@@ -1280,6 +1304,7 @@ Description: Replace the legacy launch-only start menu with a Knowledge Layer sh
   - shell exists
   - basic split layout exists
   - old launcher buttons removed from the browser pane
+  - further browser interaction improvements remain pending
 
 TASK-132
 Status: PARTIAL
@@ -1294,7 +1319,7 @@ Description: Implement repository-driven browser and card seeding for the Knowle
   - real repository entries are shown
   - browser selection exists
   - cards can be spawned from repository entries
-  - further cleanup of grouping and interaction is still needed
+  - scrollability and hierarchical category behavior are still incomplete
 
 TASK-133
 Status: PARTIAL
@@ -1317,7 +1342,7 @@ Description: Formalize repository entry card model for the Knowledge Layer, incl
   - compact cards exist
   - cards use real entities
   - system/body classification still needs refinement and cleanup
-
+  - newer schema families such as materials, items, components, and production are not yet surfaced cleanly
 TASK-134
 Status: TODO
 Difficulty: 6
@@ -1346,6 +1371,7 @@ Description: Implement Knowledge Layer launch resolution from entity type and co
   - basic card launch routing exists
   - browser/card actions are now app-routed
   - year-aware launch and full body/system resolution are not complete yet
+  - non-simulation schema families should remain browseable without forcing simulation launch
 
 TASK-136
 Status: PARTIAL
@@ -1365,11 +1391,12 @@ Description: Expand Knowledge Layer card media model beyond a single flat image 
 TASK-137
 Status: TODO
 Difficulty: 6
-Requires: TASK-131, TASK-132, TASK-133
+Requires: TASK-131, TASK-132, TASK-212
 Description: Implement Knowledge Layer relationship visualization on the right canvas, including:
 - Automatic edges derived from repository relationships between visible cards
 - Card-to-card spatial connection drawing
 - Architecture compatible with later manual relationship authoring
+- Support for industrial dependency visibility across materials, items, components, and production entries
 - No forced inspector-based navigation; preserve canvas-centric interaction
 
 ------------------------------------------------
@@ -1538,11 +1565,12 @@ CROSS-SIMULATION WORLD DEVELOPMENT
 TASK-168
 Status: TODO
 Difficulty: 8
-Requires: TASK-153, TASK-156, TASK-157, TASK-167
+Requires: TASK-153, TASK-156, TASK-157, TASK-167, TASK-173
 Description: Implement progressive world development through jumping between simulation runs, including:
 - Player ability to move between different simulation types while affecting the same persistent world state
 - Preservation of generated, surveyed, concretized, and modified map state across run transitions
 - Re-entry into previously affected locations without losing accumulated changes
+- Compatibility with cross-simulation propagation of tasks, production state, and industrial/world-development outputs
 
 TASK-169
 Status: TODO
@@ -1586,11 +1614,12 @@ Description: Integrate vehicle simulation with planetary scanning workflows, inc
 TASK-173
 Status: TODO
 Difficulty: 8
-Requires: TASK-036, TASK-037, TASK-103, TASK-114, TASK-168
+Requires: TASK-036, TASK-037, TASK-103, TASK-114, TASK-211
 Description: Implement cross-simulation task carryover between person, vehicle, site, and production simulations, including:
 - Tasks created or advanced in one simulation becoming available in another where relevant
 - Shared task visibility after switching simulation context
 - Persistent task provenance linking actions to their originating simulation layer
+- Explicit support for production-chain progression and staged industrial/world-development tasks
 
 TASK-174
 Status: TODO
@@ -1605,22 +1634,23 @@ Description: Implement first-terraforming-arrival world transition workflow, inc
 TASK-175
 Status: TODO
 Difficulty: 8
-Requires: TASK-174, TASK-021, TASK-035
+Requires: TASK-174, TASK-021, TASK-035, TASK-180
 Description: Implement terraforming site creation from delivered equipment, including:
 - Creation of a site when first terraforming equipment arrives
 - Spatial anchoring of the site on the planet/map
 - Initial equipment inventory and deployable assets linked to the site
-- Foundation for later production, transformation, and infrastructure development
+- Foundation for later production, transformation, infrastructure development, and hosted production definitions
 
 TASK-176
 Status: TODO
 Difficulty: 8
-Requires: TASK-175, TASK-035, TASK-048
+Requires: TASK-175, TASK-035, TASK-048, TASK-211
 Description: Implement deployment of terraforming equipment into site/production simulation, including:
 - Equipment transitioning from delivered vehicle payload into site assets
 - Deployment tasks and setup phases
 - Capability changes to the site after deployment
 - Feedback of deployment results into related vehicle and world state
+- Compatibility with hosted production definitions and production-chain progression
 
 TASK-177
 Status: TODO
@@ -1658,21 +1688,23 @@ URBAN / SETTLEMENT ABSTRACTION LAYERS
 TASK-180
 Status: TODO
 Difficulty: 7
-Requires: TASK-021, TASK-035, TASK-048
+Requires: TASK-021, TASK-035, TASK-048, TASK-211
 Description: Formalize SiteSimulation as the first built-environment abstraction layer, including:
-- Site representing a collection of buildings and infrastructure
+- Site representing a collection of buildings, infrastructure, and hosted production capability
 - Site exposing capabilities worth abstracting at the next layer
 - Capability meaning depending on simulation type and flags
 - Examples including castle, space complex, vehicle park, monastery, factory complex, launch site, and similar operational clusters
+- Support for hosting production definitions that consolidate task chains, inputs/outputs, and map-facing industrial layout
 
 TASK-181
 Status: TODO
 Difficulty: 7
-Requires: TASK-180
-Description: Implement site capability bundles derived from building/infrastructure composition, including:
+Requires: TASK-180, TASK-200, TASK-211
+Description: Implement site capability bundles derived from building, infrastructure, installed components, items, and hosted production, including:
 - Concrete operational capabilities exposed upward from the site layer
 - Different capability profiles for military, industrial, civic, logistical, scientific, and settlement functions
 - Support for one physical site being interpreted differently by different simulation layers through flags/context
+- Inclusion of production-chain relevance rather than only static building composition
 
 TASK-182
 Status: TODO
@@ -1792,13 +1824,14 @@ BUILDING / STRUCTURE LAYER
 TASK-194
 Status: TODO
 Difficulty: 7
-Requires: TASK-021, TASK-180
+Requires: TASK-021, TASK-180, TASK-209, TASK-210
 Description: Formalize BuildingSimulation / building entity layer beneath sites, including:
 - Buildings as explicit built-environment entities below the site layer
 - Persistent building identity independent of detail stage
 - Building linkage to spatial placement, ownership, function, and condition/state
 - Building-to-site aggregation as the default upward abstraction path
 - Support for placeholder, coarse, and detailed building representations without changing building identity
+- Compatibility with loose items, placed items, and installed components/items in later interior use
 
 TASK-195
 Status: TODO
@@ -1844,19 +1877,21 @@ Description: Integrate buildings into the generalized InteriorSimulation layer, 
 TASK-199
 Status: TODO
 Difficulty: 8
-Requires: TASK-198
+Requires: TASK-198, TASK-209, TASK-210
 Description: Implement installation of components, equipment, and items into building interiors, including:
-- Placement of components and items into rooms/zones
+- Placement of loose and placed items into rooms/zones
+- Installation of components and installable items into rooms/zones
 - Support for building functionality deriving partly from installed contents rather than only shell type
+- Shared applicability to buildings, vehicles, stations, and similar enclosed contexts where relevant
 - Foundation for utilities, workshops, storage, habitation, command spaces, and similar installed functions
-- Compatibility with later person interaction, maintenance, damage, and upgrade systems
+- Compatibility with later person interaction, maintenance, damage, upgrade, and replacement systems
 
 TASK-200
 Status: TODO
 Difficulty: 7
-Requires: TASK-194, TASK-195, TASK-196, TASK-198, TASK-199, TASK-180
+Requires: TASK-194, TASK-195, TASK-196, TASK-198, TASK-199, TASK-180, TASK-181
 Description: Implement building-to-site aggregation rules across all building detail stages, including:
-- Site capabilities derived from contained buildings and infrastructure
+- Site capabilities derived from contained buildings, infrastructure, installed components/items, and hosted production
 - Support for placeholder buildings, coarse buildings, authored exterior buildings, and interior-enabled buildings all aggregating upward consistently
 - Explicit building clusters becoming explicit sites
 - Preservation of site functionality even when some buildings are only represented through placeholders or coarse models
@@ -1923,3 +1958,186 @@ Description: Prevent simulation background rendering from visually leaking throu
 - Hiding background-grid drawing while the Knowledge Layer is active
 - Keeping Knowledge Layer rendering purely app/UI-side
 - Preserving simulation state in the background without drawing its visual layer over the repository shell
+
+TASK-207
+Status: TODO
+Difficulty: 5
+Requires: TASK-013
+Description: Formalize repository schema expansion for material, item, component, and production entries, including:
+- Preservation of current loader/runtime compatibility while extending schema coverage
+- Addition of optional but task-relevant fields rather than premature hard requirements
+- Inclusion of commented filled example entries inside schema files
+- Alignment of new schema structure with current task-driven world model direction
+
+TASK-208
+Status: TODO
+Difficulty: 5
+Requires: TASK-207
+Description: Introduce material schema and entry support as the raw material science layer, including:
+- Material identity distinct from item and component identity
+- Descriptive properties, hazards, storage notes, and common uses
+- Support for alloys/composites through base-material references
+- Use as the dependency layer for items, components, and production chains
+
+TASK-209
+Status: TODO
+Difficulty: 6
+Requires: TASK-207, TASK-208
+Description: Expand item schema into a unified stored-object representation, including:
+- Shared base representation for tools, goods, modules, fixtures, and similar object types
+- Material-linked item definitions
+- Optional linkage from components to equivalent item entries
+- Descriptive storage modes such as aggregate, stackable, refrigerated, hazardous, palletizable, and containerizable
+- Support for loose, placed, stored, and installable item contexts without hardcoding final runtime container logic
+
+TASK-210
+Status: TODO
+Difficulty: 6
+Requires: TASK-207, TASK-208, TASK-209
+Description: Introduce component schema as the functional installed-part layer while preserving item equivalence, including:
+- Functional parts for vehicles, stations, buildings, sites, and similar larger systems
+- Linkage from components to represented item entries
+- Install-context and functional-role description
+- Material dependency support
+- Foundation for later maintenance, replacement, and capability activation logic
+
+TASK-211
+Status: TODO
+Difficulty: 7
+Requires: TASK-035, TASK-103, TASK-207, TASK-208, TASK-209, TASK-210
+Description: Expand production schema into a reusable production-definition and coordination layer, including:
+- Multi-input and multi-output production support
+- Support for materials, items, components, vehicles, buildings, repair, construction, and disassembly
+- Exact throughput fields aligned to output type rather than only abstract scale labels
+- Descriptive production requirements for technologies, roles, tools/components, and site classes
+- Preservation of production_location as the lowest known anchored spatial layer
+
+TASK-212
+Status: TODO
+Difficulty: 6
+Requires: TASK-208, TASK-209, TASK-210, TASK-211
+Description: Integrate repository cross-references between materials, items, components, and production entries, including:
+- Item references to primary and secondary materials
+- Component references to materials and represented item entries
+- Production references to material, item, and component inputs/outputs
+- Stable dependency chains across the new schema family
+
+TASK-213
+Status: TODO
+Difficulty: 5
+Requires: TASK-053, TASK-054, TASK-207
+Description: Support year-aware quantitative placeholder fields in repository entries, including:
+- Simple year-keyed value dicts such as population by year
+- Compatibility with later snapshot/timeline systems
+- Preservation of lightweight entry authoring before full snapshot implementation
+- Initial use in location and similar repository entries where coarse year-state is useful
+
+TASK-214
+Status: TODO
+Difficulty: 5
+Requires: TASK-204, TASK-207
+Description: Extend split repository-entry organization beyond locations where useful, including:
+- Evaluation of when entries should remain in one file versus be split by system/domain
+- Preservation of one logical dataset while using multiple physical files
+- Human-readable organization for growing interstellar content
+- Compatibility with repository-browser and loader expectations
+
+TASK-215
+Status: TODO
+Difficulty: 6
+Requires: TASK-131, TASK-132, TASK-207, TASK-212
+Description: Surface new schema-family entries in the Knowledge Layer repository browser and cards, including:
+- Visibility of materials, items, components, and production entries in the repository browser
+- Card seeding from those entry types
+- Clear grouping/type labeling for the new schema family
+- Foundation for later relationship visualization across production chains
+
+TASK-216
+Status: TODO
+Difficulty: 6
+Requires: TASK-131, TASK-137, TASK-208, TASK-209, TASK-210, TASK-211, TASK-212
+Description: Visualize production-chain relationships in the Knowledge Layer, including:
+- Links between materials, items, components, and production entries
+- Support for browsing industrial dependencies as a graph-like repository structure
+- Foundation for later industrial diagrams and site-level production overviews
+- Compatibility with the free-canvas card workflow
+
+TASK-217
+Status: TODO
+Difficulty: 7
+Requires: TASK-180, TASK-194, TASK-199, TASK-209, TASK-210
+Description: Integrate items and components into interior and site contexts at the repository-definition level, including:
+- Loose item, placed item, and installed-item/component distinctions
+- Shared applicability to buildings, vehicles, stations, and sites
+- Foundation for later inventory, room/zone placement, and installed-functionality derivation
+- Preservation of descriptive schema-layer representation before full runtime systems are implemented
+
+TASK-218
+Status: TODO
+Difficulty: 6
+Requires: TASK-103, TASK-105, TASK-211
+Description: Connect production definitions to the universal task system conceptually, including:
+- Production progression expressed as repeating task-chain steps
+- Preparation/assembly/import staging support
+- Compatibility with queued intermediate steps such as preparing for assembly after imports arrive
+- Foundation for later runtime production execution through world tasks
+
+TASK-219
+Status: TODO
+Difficulty: 5
+Requires: TASK-207, TASK-208, TASK-209, TASK-210, TASK-211
+Description: Determine and assign appropriate repository start_year values for newly added schema-family entries, including:
+- Best-effort historical or lore-grounded dating when adding entry files
+- Avoidance of leaving new entries temporally undefined where reasonable
+- Alignment with timeline-aware repository growth procedure
+- Application to materials, items, components, production, and similar future schema additions
+
+TASK-220
+Status: TODO
+Difficulty: 6
+Requires: TASK-001, TASK-033
+Description: Implement child-subtab framework for active simulations, including:
+- Subtabs attached to a currently running parent simulation rather than always opening a fully separate top-level simulation
+- Shared parent time, world state, and spatial context
+- Separate UI/action panels for child subtabs
+- Support for child contexts being calculated alongside the parent simulation
+
+TASK-221
+Status: TODO
+Difficulty: 6
+Requires: TASK-220, TASK-037, TASK-047
+Description: Support role-based child subtabs under PersonSimulation, including:
+- Merchant-focused subtab attached to a running person simulation
+- Access to trade-relevant information, inventory, opportunities, and actions without leaving the parent person context
+- Shared person location, time, and world/task state
+- Foundation for other role-focused person subtabs later
+
+TASK-222
+Status: TODO
+Difficulty: 7
+Requires: TASK-220, TASK-038, TASK-037
+Description: Implement parent-child simulation ownership rules for person-vehicle relationships, including:
+- Vehicle as child of person for simple single-operator cases such as cars and similar vehicles
+- Person as child of vehicle for larger multi-crew cases such as ships, spacecraft, and similar platforms
+- Shared authoritative world writeback and time progression
+- Clear determination of which simulation owns the current primary context
+
+TASK-223
+Status: TODO
+Difficulty: 7
+Requires: TASK-220, TASK-038, TASK-082, TASK-086
+Description: Support vehicle and crew role subtabs as attached child contexts, including:
+- Driver/operator/gunner/commander-style subtabs where appropriate
+- Shared vehicle state, position, and active tasks across child subtabs
+- Access to role-specific information and controls without splitting into independent simulations
+- Foundation for naval, spacecraft, and other multi-role vehicle operation workflows
+
+TASK-224
+Status: TODO
+Difficulty: 5
+Requires: TASK-220
+Description: Define update and routing rules for child subtabs, including:
+- Parent simulation retaining ownership of time progression and authoritative world state
+- Child subtabs optionally running lightweight per-tick helper/update logic while attached to the parent
+- Separate input/action routing for child subtabs
+- No independent clock, timeline branch, or detached world instance for child subtabs
