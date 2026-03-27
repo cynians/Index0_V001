@@ -284,7 +284,7 @@
   star_system: system_sol
   body_class: moon
   parent_body: body_jupiter
-  location_entity: null
+  location_entity: planet_io
   mass_kg: 8.9319e22
   radius_m: 1821600
   semi_major_axis_m: 421700000
@@ -305,7 +305,7 @@
   star_system: system_sol
   body_class: moon
   parent_body: body_jupiter
-  location_entity: null
+  location_entity: planet_europa
   mass_kg: 4.7998e22
   radius_m: 1560800
   semi_major_axis_m: 671100000

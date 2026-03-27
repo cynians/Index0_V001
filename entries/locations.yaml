@@ -443,3 +443,57 @@
   population:
     y0: 0
   start_year: 0
+
+
+#----------planet_europa----Europa-----------
+- id: planet_europa
+  pretty_name: Europa
+  name: Europa
+  type: location
+  location_class: planet
+  location_role: planetary_root
+  coords:
+    type: point
+    x: 0
+    y: 0
+  bounds:
+    type: bbox
+    min_x: -490
+    max_x: 490
+    min_y: -245
+    max_y: 245
+  derived_from_system_body: body_europa
+  map_projection: equirectangular
+  map_status: empty_generated
+  map_canvas_width_px: 2048
+  map_canvas_height_px: 1024
+  population:
+    y0: 0
+  start_year: 0
+
+
+#----------planet_io----Io-----------
+- id: planet_io
+  pretty_name: Io
+  name: Io
+  type: location
+  location_class: planet
+  location_role: planetary_root
+  coords:
+    type: point
+    x: 0
+    y: 0
+  bounds:
+    type: bbox
+    min_x: -572
+    max_x: 572
+    min_y: -286
+    max_y: 286
+  derived_from_system_body: body_io
+  map_projection: equirectangular
+  map_status: empty_generated
+  map_canvas_width_px: 2048
+  map_canvas_height_px: 1024
+  population:
+    y0: 0
+  start_year: 0
