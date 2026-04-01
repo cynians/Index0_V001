@@ -15885,3 +15885,1011 @@ the Ringleague network.
 The GGO Circuit Racer-32 is a utilitarian, elegant vehicle, optimized
 for performance on the Grand Route and other multi-ring CoG racing
 circuits.
+
+------------------------------------------------
+IDEA-670
+------------------------------------------------
+
+Name:
+Chartered Colony Ships
+
+Domain:
+Colonization Concept
+
+Parent Idea:
+none
+
+Era:
+Planetary Period
+
+Tags:
+colony
+ships
+charter
+settlement
+migration
+transfer-hansa
+
+Description:
+Chartered colony ships are one-way settlement vessels used to transport
+a defined colonization package to a target world.
+
+Rather than operating as open migration traffic, these ships are tied
+to a specific chartering authority and a specific settlement mission.
+They carry people, equipment, tools, biological stock, and other cargo
+needed to found or reinforce a colony.
+
+Some are launched onto interstellar trajectory from larger carrier ships.
+Because they are intended for one-way use, they prioritize transport
+capacity and arrival over return capability.
+
+In some cases, storage-efficient braking systems are used for arrival
+deceleration, including expandable sail-based mechanisms.
+
+------------------------------------------------
+IDEA-671
+------------------------------------------------
+
+Name:
+THC 4-221 "Stoßzahn"
+
+Domain:
+Colony Ship
+
+Parent Idea:
+Chartered Colony Ships
+
+Era:
+Planetary Period, year 8494
+
+Tags:
+ship
+colony
+transfer-hansa
+charter
+keiler-system
+eber
+
+Description:
+THC 4-221 "Stoßzahn" was the 21st ship of the Transfer Hansa Colony
+Version 4-2 series.
+
+It was a one-way colony ship, launched into interstellar trajectory
+from a bigger ship. For arrival deceleration it used storage-efficient
+braking mechanisms, possibly including expanding sails.
+
+In the year 8494, the Stoßzahn arrived in the Keiler System. It carried
+four different colonist groups.
+
+The ship was more than a delivery package. It also carried a small-scale
+industrial colony starter kit with preinstalled manufacturing capability,
+extremely durable tools, and a limited number of vehicles.
+
+This particular ship had been chartered by civilizations from a planet
+that had initially been seeded with 1800s technology. Over the course
+of around 320 years, that world had developed to roughly a 1920s level.
+Through exchange with other Transfer Hansa interstellar travelers, its
+societies had also acquired selected knowledge in some domains while
+remaining at their own level in others.
+
+Under Transfer Hansa ruling, the founding population carried by the
+Stoßzahn consisted of 1000 colonists, with 250 from each of the four
+arriving groups.
+
+------------------------------------------------
+IDEA-672
+------------------------------------------------
+
+Name:
+Biosphere of Eber
+
+Domain:
+Planetary Biosphere
+
+Parent Idea:
+none
+
+Era:
+Planetary Period, before 8494
+
+Tags:
+biosphere
+eber
+terraforming
+bdp
+animals
+plants
+
+Description:
+The biosphere of Eber was established after the planet had been visited
+and terraformed by the Terran BDP, specifically Ark 33.
+
+As part of this process, a variety of animals and plants were introduced
+to the planet.
+
+By the time of later settlement waves, including the arrival of the
+Stoßzahn in 8494, Eber already possessed an established terraformed
+biosphere rather than a purely untouched world.
+
+------------------------------------------------
+IDEA-673
+------------------------------------------------
+
+Name:
+Merged Earth-Derived Colonist Groups of Stoßzahn
+
+Domain:
+Colonial Society
+
+Parent Idea:
+THC 4-221 "Stoßzahn"
+
+Era:
+Planetary Period, year 8494
+
+Tags:
+colonists
+culture
+migration
+settlement
+earth-derived
+eber
+
+Description:
+The Stoßzahn carried four different colonist groups to Eber.
+
+These groups were derived from different merged Earth cultures. They
+originated from societies that had developed separately after initial
+technological seeding and later arrived together in the Keiler System.
+
+They form the basis for later political, social, and cultural
+development on Eber.
+
+------------------------------------------------
+IDEA-674
+------------------------------------------------
+
+Name:
+Relative Year
+
+Domain:
+Time Concept
+
+Parent Idea:
+none
+
+Era:
+Planetary Period
+
+Tags:
+time
+calendar
+settlement
+colonization
+eber
+
+Description:
+Relative Year is a local historical time concept used to count the years
+since first human settlement.
+
+It remains tied to the traditional Earth-derived 24-hour day, but counts
+from 0 at the moment of first landing.
+
+This allows local history, development, and settlement phases to be
+tracked independently from larger interstellar or planetary calendars.
+
+On Eber, this concept is used as Eber Relative Year, or Eber-R.
+
+------------------------------------------------
+IDEA-675
+------------------------------------------------
+
+Name:
+Basic Industry Package Operator of the Stoßzahn
+
+Domain:
+Colonial Manufacturer
+
+Parent Idea:
+THC 4-221 "Stoßzahn"
+
+Era:
+Planetary Period, Eber-R 0
+
+Tags:
+manufacturer
+industry
+stoßzahn
+settlement
+production
+eber
+
+Description:
+The Basic Industry Package Operator of the Stoßzahn was the early
+industrial organization responsible for operating the colony ship’s
+preinstalled manufacturing capabilities after arrival.
+
+Using the ship’s basic industry package, it supported the first phase
+of settlement production on Eber. Its role included the operation,
+maintenance, and allocation of the initial industrial equipment and
+output needed for survival, construction, repair, and expansion.
+
+It formed one of the earliest industrial nuclei of human settlement on
+the planet.
+
+------------------------------------------------
+IDEA-676
+------------------------------------------------
+
+Name:
+Early Stone Quarry of Eber
+
+Domain:
+Resource Extraction
+
+Parent Idea:
+none
+
+Era:
+Planetary Period, Eber-R 0–10
+
+Tags:
+quarry
+stone
+construction
+industry
+eber
+settlement
+
+Description:
+An early stone quarry was established on Eber to support the first phase
+of permanent construction.
+
+Because the colony possessed a small but capable industrial starter kit,
+including durable tools and a limited number of vehicles, quarrying could
+begin early and supply stone for foundational settlement structures.
+
+The quarry formed one of the first local extractive-industrial sites of
+the colony.
+
+It was located near Stoßzahn Crater.
+
+------------------------------------------------
+IDEA-677
+------------------------------------------------
+
+Name:
+Stoßzahn Industrial Starter Kit
+
+Domain:
+Colonial Industrial Package
+
+Parent Idea:
+THC 4-221 "Stoßzahn"
+
+Era:
+Planetary Period, Eber-R 0
+
+Tags:
+industry
+starter-kit
+tools
+vehicles
+manufacturing
+stoßzahn
+
+Description:
+The Stoßzahn carried not only settlers and supplies, but also a small-scale
+industrial colony starter kit.
+
+This package included preinstalled manufacturing capability, extremely
+durable tools, and a limited number of vehicles intended to enable the
+first phase of settlement, extraction, repair, and construction.
+
+Although few in number, these assets allowed the colony to begin durable
+local production earlier than would otherwise have been possible.
+
+------------------------------------------------
+IDEA-678
+------------------------------------------------
+
+Name:
+Industrial Register of Early Eber Settlement
+
+Domain:
+Industrial Register
+
+Parent Idea:
+none
+
+Era:
+Planetary Period, Eber-R 0–10
+
+Tags:
+industry
+register
+manufacturing
+settlement
+eber
+
+Description:
+The Industrial Register of Early Eber Settlement is a period register used
+to track the active industrial base of the colony for a given phase of
+development.
+
+For each period, it records the known producers, technologies, components,
+vehicles, extraction sites, manufacturing capabilities, and core settlement
+locations present in the settlement economy.
+
+This register can be updated as the colony develops through successive
+Eber Relative Year phases.
+
+------------------------------------------------
+IDEA-679
+------------------------------------------------
+
+Name:
+Eber Cooperative Quarry and Construction Supply
+
+Domain:
+Producer
+
+Parent Idea:
+Early Stone Quarry of Eber
+
+Era:
+Planetary Period, Eber-R 0–10
+
+Tags:
+producer
+quarry
+construction
+stone
+cooperative
+eber
+
+Description:
+Eber Cooperative Quarry and Construction Supply was an early colonial
+producer responsible for operating the quarry and supplying construction
+materials during the first phase of settlement.
+
+It was a cooperation of all four arriving groups and formed one of the
+first shared productive organizations on Eber.
+
+Its output for direct public construction use was limited, but it also
+allowed colonists to quarry their own stone and access the relevant
+facilities for housing construction.
+
+Under Transfer Hansa ruling, the founding population consisted of 1000
+colonists, with 250 from each of the four arriving groups.
+
+------------------------------------------------
+IDEA-680
+------------------------------------------------
+
+Name:
+Stoßzahn Crater
+
+Domain:
+Location
+
+Parent Idea:
+THC 4-221 "Stoßzahn"
+
+Era:
+Planetary Period, Eber-R 0
+
+Tags:
+location
+stoßzahn
+crater
+landing-site
+settlement
+eber
+
+Description:
+Stoßzahn Crater is the landing site zone formed around the arrival of the
+THC 4-221 "Stoßzahn" on Eber.
+
+It contains the ship core and serves as the first anchor point of human
+settlement on the planet.
+
+The earliest colonial activity was concentrated around this area before
+settlement began to expand outward.
+
+------------------------------------------------
+IDEA-681
+------------------------------------------------
+
+Name:
+Stoßzahn Ship Core
+
+Domain:
+Location
+
+Parent Idea:
+THC 4-221 "Stoßzahn"
+
+Era:
+Planetary Period, Eber-R 0
+
+Tags:
+location
+ship-core
+stoßzahn
+industry
+settlement
+eber
+
+Description:
+The Stoßzahn Ship Core is the central surviving core zone of the colony
+ship after arrival on Eber.
+
+It functions as the initial nucleus of settlement, industry, storage,
+and coordination during the first phase of colonization.
+
+The first settlement cluster formed around the ship core before colonists
+began expanding outward in search of opportunity.
+
+------------------------------------------------
+IDEA-682
+------------------------------------------------
+
+Name:
+Stoßzahn Quarry District
+
+Domain:
+Location
+
+Parent Idea:
+Early Stone Quarry of Eber
+
+Era:
+Planetary Period, Eber-R 0–10
+
+Tags:
+location
+quarry
+stone
+industry
+eber
+stoßzahn
+
+Description:
+The Stoßzahn Quarry District is the quarry area located near Stoßzahn
+Crater.
+
+It serves as one of the first extractive-industrial zones of the colony
+and provides stone for early permanent construction.
+
+Its proximity to the landing site links it closely to the first phase of
+settlement and industrial activity.
+
+------------------------------------------------
+IDEA-683
+------------------------------------------------
+
+Name:
+Stoßzahn Agricultural Machine Pool
+
+Domain:
+Agricultural Machinery
+
+Parent Idea:
+Stoßzahn Industrial Starter Kit
+
+Era:
+Planetary Period, Eber-R 0
+
+Tags:
+agriculture
+machinery
+stoßzahn
+imported
+tools
+eber
+
+Description:
+The Stoßzahn Agricultural Machine Pool consisted of the medium to high-tech
+agricultural machines brought with the colony ship.
+
+These machines were few in number, but highly capable and extremely durable.
+They were expected to remain operational for around 100 years and were
+greatly valued throughout later phases of colonial development.
+
+The seeding technology was focused mainly on tracked vehicles.
+
+As local lower-tech machinery spread, the surviving Stoßzahn machines
+retained special importance due to their performance, durability, and
+association with the founding phase of settlement.
+
+------------------------------------------------
+IDEA-684
+------------------------------------------------
+
+Name:
+Ship Core Agricultural Works
+
+Domain:
+Producer
+
+Parent Idea:
+Stoßzahn Ship Core
+
+Era:
+Planetary Period, Eber-R 0–10
+
+Tags:
+producer
+agriculture
+machinery
+ship-core
+manufacturing
+eber
+
+Description:
+Ship Core Agricultural Works was an early producer based at the Stoßzahn
+Ship Core and concerned with the domestic production of agricultural
+machinery.
+
+While the colony possessed a limited pool of imported higher-technology
+machines from the Stoßzahn, this producer began local manufacture of
+agricultural machinery at all appropriate 1920s-equivalent levels.
+
+Its early local production already included self-propelled field vehicles,
+with a strong emphasis on tracked designs.
+
+These early local vehicles were primarily steam-powered, using charcoal
+as their main fuel rather than coal.
+
+It formed an early bridge between imported founding equipment and locally
+sustainable industrial production.
+
+------------------------------------------------
+IDEA-685
+------------------------------------------------
+
+Name:
+Early Tracked Field Tractor of Eber
+
+Domain:
+Agricultural Vehicle
+
+Parent Idea:
+Ship Core Agricultural Works
+
+Era:
+Planetary Period, Eber-R 0–10
+
+Tags:
+vehicle
+agriculture
+tractor
+tracked
+eber
+
+Description:
+The Early Tracked Field Tractor of Eber was a general-purpose agricultural
+tracked vehicle produced in the early colonial period.
+
+It was intended for heavy field work and formed one of the basic local
+machine types derived from the colony’s tracked seeding technology.
+
+Its role was broad and practical rather than highly specialized.
+
+------------------------------------------------
+IDEA-686
+------------------------------------------------
+
+Name:
+Early Tracked Agricultural Hauler of Eber
+
+Domain:
+Agricultural Vehicle
+
+Parent Idea:
+Ship Core Agricultural Works
+
+Era:
+Planetary Period, Eber-R 0–10
+
+Tags:
+vehicle
+agriculture
+hauler
+tracked
+eber
+
+Description:
+The Early Tracked Agricultural Hauler of Eber was an early tracked vehicle
+used to move agricultural goods, supplies, and materials between fields,
+settlements, and work sites.
+
+It extended the colony’s emphasis on tracked machinery into local transport
+and support work within the agricultural economy.
+
+------------------------------------------------
+IDEA-687
+------------------------------------------------
+
+Name:
+Early Tracked Agricultural Utility Vehicle of Eber
+
+Domain:
+Agricultural Vehicle
+
+Parent Idea:
+Ship Core Agricultural Works
+
+Era:
+Planetary Period, Eber-R 0–10
+
+Tags:
+vehicle
+agriculture
+utility
+tracked
+eber
+
+Description:
+The Early Tracked Agricultural Utility Vehicle of Eber was a lighter
+multi-purpose tracked machine used for support tasks in the agricultural
+sector.
+
+It served as a practical vehicle for varied farm and settlement work and
+represented the more flexible end of the early tracked vehicle family.
+
+------------------------------------------------
+IDEA-688
+------------------------------------------------
+
+Name:
+Surviving Large Sheep of Stoßzahn
+
+Domain:
+Domestic Animal Population
+
+Parent Idea:
+THC 4-221 "Stoßzahn"
+
+Era:
+Planetary Period, Eber-R 0
+
+Tags:
+animals
+livestock
+sheep
+stoßzahn
+settlement
+eber
+
+Description:
+The surviving large sheep of the Stoßzahn were among the few domesticated
+larger animals that successfully endured interstellar transport to Eber.
+
+They formed part of the colony’s initial domestic animal base, but were
+not a primary heavy traction animal in the earliest settlement phase.
+
+------------------------------------------------
+IDEA-689
+------------------------------------------------
+
+Name:
+Domestic Birds of Stoßzahn
+
+Domain:
+Domestic Animal Population
+
+Parent Idea:
+THC 4-221 "Stoßzahn"
+
+Era:
+Planetary Period, Eber-R 0
+
+Tags:
+animals
+birds
+pigeons
+stoßzahn
+settlement
+eber
+
+Description:
+The domestic birds of the Stoßzahn included a small number of transported
+bird species, including pigeons.
+
+They formed part of the colony’s initial domestic animal base, but did
+not serve as transport animals.
+
+------------------------------------------------
+IDEA-690
+------------------------------------------------
+
+Name:
+Eber Horncow
+
+Domain:
+Animal Species
+
+Parent Idea:
+Biosphere of Eber
+
+Era:
+Planetary Period
+
+Tags:
+animal
+eber
+horncow
+biosphere
+livestock
+draft-animal
+
+Description:
+The Eber Horncow is a local short but stocky rhino-derived cow-like
+creature present in the biosphere of Eber.
+
+Because the colony arrived with very few domesticated larger animals,
+the Eber Horncow became an important local candidate for later use in
+traction, labor, or livestock roles.
+
+------------------------------------------------
+IDEA-691
+------------------------------------------------
+
+Name:
+Stoßzahn Metalworks and Repair Yard
+
+Domain:
+Producer
+
+Parent Idea:
+Stoßzahn Ship Core
+
+Era:
+Planetary Period, Eber-R 0–10
+
+Tags:
+producer
+metalworking
+repair
+workshop
+ship-core
+eber
+
+Description:
+Stoßzahn Metalworks and Repair Yard was an early colonial producer based
+at the Stoßzahn Ship Core.
+
+Its role was to maintain, repair, and adapt the imported industrial
+equipment, tools, and vehicles of the founding phase, while also building
+up local metalworking capability.
+
+Its initial core capability was primarily used to produce industrial
+bottlenecks that would otherwise take much longer to establish locally in
+useful quantity. This included difficult tools, workshop equipment, and
+other key mechanical items needed to support wider colonial production.
+
+It formed one of the key early industrial producers of Eber and acted as
+the main bridge between colony-ship machinery and later local mechanical
+production.
+
+------------------------------------------------
+IDEA-692
+------------------------------------------------
+
+Name:
+Foundational Industrial Tools of Early Eber
+
+Domain:
+Industrial Tool Family
+
+Parent Idea:
+Stoßzahn Metalworks and Repair Yard
+
+Era:
+Planetary Period, Eber-R 0–10
+
+Tags:
+tools
+industry
+metalworking
+manufacturing
+eber
+ship-core
+
+Description:
+The Foundational Industrial Tools of Early Eber were the first key tool
+types whose local production was prioritized in the early settlement phase.
+
+They represented the kind of industrial bottlenecks that had to be solved
+early in order to enable wider colonial production. This included items
+that were difficult to replace, difficult to make without already having
+good tools, or necessary for expanding local workshop capability.
+
+This family included such tools as anvils, pickaxes, hammers, chisels,
+drill tools, cutting tools, and workshop vises.
+
+------------------------------------------------
+IDEA-693
+------------------------------------------------
+
+Name:
+Stoßzahn Engine and Boiler Works
+
+Domain:
+Producer
+
+Parent Idea:
+Stoßzahn Ship Core
+
+Era:
+Planetary Period, Eber-R 0–10
+
+Tags:
+producer
+engine
+boiler
+steam
+manufacturing
+eber
+
+Description:
+Stoßzahn Engine and Boiler Works was an early colonial producer based at
+the Stoßzahn Ship Core.
+
+Its role was to build, maintain, and adapt the steam power systems needed
+for early industrial and vehicle development on Eber. This included
+boilers, engines, and related heavy mechanical assemblies.
+
+Like other early ship-core industry, it focused first on industrial
+bottlenecks and high-value production that would otherwise take much
+longer to establish locally in useful quantity.
+
+It formed one of the key enabling producers for the spread of tracked
+agricultural vehicles and other steam-powered machinery.
+
+------------------------------------------------
+IDEA-694
+------------------------------------------------
+
+Name:
+Eberworks
+
+Domain:
+Producer
+
+Parent Idea:
+Stoßzahn Ship Core
+
+Era:
+Planetary Period, Eber-R 0–10
+
+Tags:
+producer
+vehicles
+tracked
+manufacturing
+eber
+industry
+
+Description:
+Eberworks was the first true manufacturer of tracked vehicles on Eber.
+
+Based in the early industrial sphere around the Stoßzahn Ship Core, it
+built on the repair, metalworking, engine, and agricultural machinery
+capabilities established in the first settlement phase.
+
+Its role was to move beyond repair and limited workshop production into
+the organized manufacture of local tracked vehicles.
+
+Initially, Eberworks operated as a cooperative undertaking of the four
+arriving groups during the period later remembered as the Great
+Cooperation, which lasted until Eber-R 40.
+
+Its first production was based on a shared tracked chassis used for
+multiple roles rather than on fully separate vehicle families from the
+start.
+
+An earlier medium utility concept had been designed first, but the first
+true Eberworks production chassis adopted at scale was a heavier prime
+mover intended for hauling, pulling, and powering attachments, especially
+for quarry and heavy settlement work.
+
+Because no oil was present on the planet and fuel synthesis remained
+difficult, its early vehicles were mainly steam-powered. Plentiful wood
+made charcoal the most practical early fuel base.
+
+Eberworks formed one of the key industrial foundations for the later
+expansion of settlement, transport, and system-colonization capability on
+Eber.
+
+------------------------------------------------
+IDEA-695
+------------------------------------------------
+
+Name:
+Transfer Hansa Observation Storage Unit
+
+Domain:
+Colonial Logistics Concept
+
+Parent Idea:
+Chartered Colony Ships
+
+Era:
+Planetary Period
+
+Tags:
+transfer-hansa
+storage
+logistics
+colony
+observation
+trade
+
+Description:
+The Transfer Hansa Observation Storage Unit is a large storage container
+left by the Transfer Hansa on colony ships.
+
+It contains storage units arranged like a band, in different sizes for
+different goods and components.
+
+Its purpose is to be filled over time by the colonists as their society
+develops. In this way, it serves as a prepared accumulation and observation
+point for later contact.
+
+A colony’s ability to fill and maintain such a unit forms part of the
+conditions by which it may come to merit a later visit by one of the
+Transfer Hansa ships.
+
+------------------------------------------------
+IDEA-696
+------------------------------------------------
+
+Name:
+Eber E-2
+
+Domain:
+Tracked Vehicle
+
+Parent Idea:
+Eberworks
+
+Era:
+Planetary Period, Eber-R 0–10
+
+Tags:
+vehicle
+tracked
+steam
+prime-mover
+eberworks
+eber
+
+Description:
+The Eber E-2 was an early heavy tracked prime mover produced by Eberworks.
+
+Although an earlier medium utility concept had been designed before it,
+the E-2 became the first true Eberworks production chassis adopted at
+scale.
+
+It was intended for hauling, pulling, and powering attachments, especially
+for quarry and heavy settlement work.
+
+Its construction relied on the material and industrial logic of early
+Eber: abundant local bauxite and copper, but continued dependence on the
+ship core for many critical steel components.
+
+The vehicle had a boxy central hull layout with a front operator position.
+
+It was mostly an open working machine, with only a protected operator
+section rather than a fully enclosed body.
+
+Its steam machinery was arranged as a rear boiler and machinery block
+behind the operator.
+
+At the front, it used simple interchangeable fittings rather than a single
+fixed tool arrangement.
+
+At the rear, it was configured mainly for towing hitch and drawbar work.

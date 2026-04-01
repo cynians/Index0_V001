@@ -2141,3 +2141,133 @@ Description: Define update and routing rules for child subtabs, including:
 - Child subtabs optionally running lightweight per-tick helper/update logic while attached to the parent
 - Separate input/action routing for child subtabs
 - No independent clock, timeline branch, or detached world instance for child subtabs
+
+TASK-225
+Status: TODO
+Difficulty: 6
+Requires: TASK-053, TASK-054, TASK-062
+Description: Define Strand of Action as a first-class temporal-context structure, including:
+- One coherent contextual thread across entities, developments, causes, reactions, and consequences
+- Support for very different scopes such as:
+  - colonization histories
+  - offensives / campaigns
+  - design and development histories
+  - family histories
+  - resource and political buildup chains
+- Distinction within one strand between:
+  - already happened by selected year
+  - currently relevant at selected year
+  - future from selected year
+  - canon-known later developments
+- Compatibility with canonical and non-canonical timeline state
+
+TASK-226
+Status: TODO
+Difficulty: 7
+Requires: TASK-225, TASK-055, TASK-056, TASK-064, TASK-065
+Description: Implement year-relative Strand of Action composition and inspection, including:
+- Ordered strand entries spanning meaningful years rather than requiring continuous yearly data
+- Support for strand entries such as:
+  - discoveries
+  - expeditions
+  - shortages
+  - production pressures
+  - awareness shifts
+  - strategic interest changes
+  - plans
+  - consequences
+- Correct filtering of strand content against selected year / loaded year context
+- Ability to inspect what belongs to:
+  - past context
+  - current context
+  - future context
+  - later canon context
+without collapsing all strand information into one undifferentiated timeline
+
+TASK-227
+Status: TODO
+Difficulty: 6
+Requires: TASK-225, TASK-013, TASK-069, TASK-070, TASK-071
+Description: Integrate Strand of Action with involved entities as shared contextual navigation, including:
+- Allow a strand to be attached to all involved entities rather than belonging to only one entity type
+- Support involvement by persons, factions, vehicles, locations, institutions, families, products, and other relevant entities
+- Bidirectional contextual navigation:
+  - entity -> relevant strands
+  - strand -> involved entities
+- Preserve distinction between:
+  - direct relationship edges
+  - contextual participation in a larger temporal strand
+
+TASK-228
+Status: TODO
+Difficulty: 7
+Requires: TASK-226, TASK-227, TASK-131, TASK-133, TASK-134
+Description: Add Strand of Action visibility and navigation to the Knowledge Layer, including:
+- Show strand membership/context on entity cards
+- Allow opening a strand as its own contextual card/view
+- Present strand content relative to the currently viewed year context
+- Allow navigation from a strand to:
+  - involved entities
+  - prior developments
+  - later developments
+  - related contextual shifts
+- Preserve use of strands for both historical reading and current/future world interpretation
+
+TASK-229
+Status: TODO
+Difficulty: 6
+Requires: TASK-225, TASK-061, TASK-062, TASK-103, TASK-106
+Description: Connect Strand of Action to existing timeline-pressure and task systems without reducing it to either, including:
+- Allow timeline burden and future-known state to reference relevant strands
+- Allow tasks to expose larger strand context where applicable
+- Preserve distinction between:
+  - task as actionable unit
+  - strand as contextual temporal thread
+- Support cases where a strand exists as historical/contextual continuity without being reducible to a task tree
+
+TASK-230
+Status: TODO
+Difficulty: 5
+Requires: TASK-033, TASK-151
+Description: Introduce VehicleSimulation as a root simulation type, including:
+- dedicated launch path and tab entry
+- dedicated render_mode = vehicle
+- dedicated vehicle renderer module
+- camera-compatible standalone prototype bounds and center
+- no person/faction/producer coupling yet
+
+TASK-231
+Status: TODO
+Difficulty: 6
+Requires: TASK-230, TASK-066
+Description: Add focused vehicle-tab view modes, including:
+- Vehicle Design mode
+- Interior mode
+- Operational mode
+- mode switching through simulation-aware UI actions
+- simulation-owned selected mode state rather than app-global mode state
+
+TASK-232
+Status: TODO
+Difficulty: 6
+Requires: TASK-230, TASK-151, TASK-152
+Description: Make VehicleSimulation the canonical source of vehicle display payloads, including:
+- focused-tab render payload for the active vehicle tab
+- exported display payload variants for other simulation consumers
+- distinction between:
+  - direct vehicle-tab render view
+  - person-layer vehicle display abstraction
+  - faction-layer vehicle display abstraction
+  - producer-layer vehicle display abstraction
+- keep engine/renderer.py limited to active-tab dispatch rather than cross-simulation vehicle presentation logic
+
+TASK-233
+Status: TODO
+Difficulty: 7
+Requires: TASK-231, TASK-232, TASK-222, TASK-223, TASK-224
+Description: Integrate VehicleSimulation into parent-child simulation workflows, including:
+- support for vehicle as child of person where appropriate
+- support for person/role subtabs under vehicle where appropriate
+- shared authoritative time and world state with parent simulation
+- consumer-specific vehicle information routing based on active simulation context
+- foundation for crew stations, role-specific operation views, and cross-simulation vehicle context export

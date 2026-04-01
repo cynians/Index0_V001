@@ -124,8 +124,8 @@ class UIManager:
 
         header_rect = self.knowledge_layout["header_rect"]
         self.knowledge_header_button = UIButton(
-            button_id="launch_bioregion_test",
-            label="Launch Bioregion Test",
+            button_id="launch_vehicle_test",
+            label="Launch Vehicle Test",
             rect=pygame.Rect(header_rect.right - 220, header_rect.y + 11, 200, 30),
             visible=True,
             enabled=True,
@@ -534,7 +534,90 @@ class UIManager:
                     self.hover_tooltip_pos = hover_screen_pos
 
             return
+        if getattr(active_sim, "render_mode", None) == "vehicle":
+            self.scope_label = (
+                f"Vehicle: {active_sim.get_vehicle_name()} | "
+                f"Mode: {active_sim.get_active_mode_label()}"
+            )
+            self.breadcrumb_label = f"class: {active_sim.get_vehicle_class()}"
 
+            self.buttons.append(
+                UIButton(
+                    button_id="open_repository",
+                    label="Open Repository",
+                    rect=pygame.Rect(button_x, button_y, button_width, button_height),
+                    visible=True,
+                    enabled=True,
+                )
+            )
+
+            self.buttons.append(
+                UIButton(
+                    button_id="vehicle_mode_design",
+                    label="Vehicle Design",
+                    rect=pygame.Rect(button_x, button_y + 40, button_width, button_height),
+                    visible=True,
+                    enabled=active_sim.active_view_mode != "design",
+                )
+            )
+
+            self.buttons.append(
+                UIButton(
+                    button_id="vehicle_mode_interior",
+                    label="Interior",
+                    rect=pygame.Rect(button_x, button_y + 80, button_width, button_height),
+                    visible=True,
+                    enabled=active_sim.active_view_mode != "interior",
+                )
+            )
+
+            self.buttons.append(
+                UIButton(
+                    button_id="vehicle_mode_operational",
+                    label="Operational",
+                    rect=pygame.Rect(button_x, button_y + 120, button_width, button_height),
+                    visible=True,
+                    enabled=active_sim.active_view_mode != "operational",
+                )
+            )
+
+            payload = active_sim.get_focused_render_payload()
+
+            if active_sim.active_view_mode in ("design", "interior"):
+                label_by_part_id = {
+                    block.get("id"): block.get("label", block.get("id", "part"))
+                    for block in payload.get("blocks", [])
+                }
+
+                selected_part_id = payload.get("selected_part_id")
+                hover_part_id = payload.get("hover_part_id")
+
+                focus_part_id = selected_part_id or hover_part_id
+                if focus_part_id:
+                    self.hover_tooltip_lines = [
+                        active_sim.get_active_mode_label(),
+                        label_by_part_id.get(focus_part_id, focus_part_id),
+                    ]
+                    if selected_part_id:
+                        self.hover_tooltip_lines.append("selected")
+                    elif hover_part_id:
+                        self.hover_tooltip_lines.append("hover")
+
+                    self.hover_tooltip_pos = getattr(active_sim, "hover_screen_pos", None) or (24, 250)
+
+            else:
+                operational_state = payload.get("operational_state", {})
+                self.hover_tooltip_lines = [
+                    "Operational State",
+                    f"speed: {operational_state.get('speed_kph', '?')} kph",
+                    f"heading: {operational_state.get('heading_deg', '?')} deg",
+                    f"power: {operational_state.get('power_state', '?')}",
+                    f"crew: {operational_state.get('crew_state', '?')}",
+                    f"range: {operational_state.get('range_km', '?')} km",
+                ]
+                self.hover_tooltip_pos = (24, 250)
+
+            return
         if getattr(active_sim, "render_mode", None) == "bioregion":
             self.scope_label = "Scope: Bioregion Test Map | 10 km x 10 km"
 

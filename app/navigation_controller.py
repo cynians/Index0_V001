@@ -5,6 +5,7 @@ from engine.tab import Tab
 from simulations.space.space_simulation import SpaceSimulation
 from simulations.map.map_simulation import MapSimulation
 from simulations.bioregion.bioregion_simulation import BioregionSimulation
+from simulations.vehicle.vehicle_simulation import VehicleSimulation
 
 
 class NavigationController:
@@ -106,6 +107,28 @@ class NavigationController:
         self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
         self.app.knowledge_layer_active = False
         self.app.camera_controller.setup_for_sim(new_bioregion_sim)
+
+    def launch_vehicle_test_tab(self):
+        """
+        Open or focus the prototype vehicle simulation tab.
+        """
+        tab_key = ("vehicle", "test")
+
+        if self.focus_existing_tab_by_key(tab_key):
+            self.app.knowledge_layer_active = False
+            return
+
+        new_vehicle_sim = VehicleSimulation()
+        new_tab = Tab(
+            SimulationInstance(new_vehicle_sim),
+            name="Vehicle: Test",
+            tab_key=tab_key
+        )
+
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+        self.app.camera_controller.setup_for_sim(new_vehicle_sim)
 
     def open_region_map_tab(self, entity_id):
         """
@@ -295,6 +318,19 @@ class NavigationController:
         elif action_id == "launch_bioregion_test":
             self.launch_bioregion_test_tab()
             return True
+
+        elif action_id == "launch_vehicle_test":
+            self.launch_vehicle_test_tab()
+            return True
+
+        elif action_id == "vehicle_mode_design" and active_sim is not None:
+            return bool(getattr(active_sim, "set_view_mode", lambda mode: False)("design"))
+
+        elif action_id == "vehicle_mode_interior" and active_sim is not None:
+            return bool(getattr(active_sim, "set_view_mode", lambda mode: False)("interior"))
+
+        elif action_id == "vehicle_mode_operational" and active_sim is not None:
+            return bool(getattr(active_sim, "set_view_mode", lambda mode: False)("operational"))
 
         elif action_id == "open_repository":
             return self.open_repository_workspace(active_sim)
