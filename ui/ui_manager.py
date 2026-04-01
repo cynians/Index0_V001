@@ -628,6 +628,7 @@ class UIManager:
                     self.simulation_bar_title = "Vehicle Design"
                     self.simulation_panel_tabs = active_sim.get_simulation_panel_tabs()
                     self.simulation_panel_active_tab_id = active_sim.get_active_simulation_panel_tab_id()
+                    self._rebuild_simulation_panel_tab_hitboxes()
 
                     if self.simulation_panel_active_tab_id == "catalog":
                         self.simulation_bar_hint_lines = [
@@ -890,6 +891,31 @@ class UIManager:
 
                     self.hover_tooltip_pos = hover_screen_pos
 
+    def _rebuild_simulation_panel_tab_hitboxes(self):
+        """
+        Build lower simulation-panel tab hitboxes from current panel state.
+
+        This must happen during rebuild, not only during draw, so the
+        click router can see the hitboxes before rendering.
+        """
+        self.simulation_panel_tab_hitboxes = []
+
+        if self.simulation_bar_rect is None or not self.simulation_panel_tabs:
+            return
+
+        x = self.simulation_bar_rect.x + 12
+        y = self.simulation_bar_rect.y + 30
+        h = 24
+        pad_x = 10
+        gap = 6
+
+        for tab in self.simulation_panel_tabs:
+            label = tab.get("label", tab.get("id", "tab"))
+            tab_w = 8 * len(label) + pad_x * 2 + 4
+
+            rect = pygame.Rect(x, y, tab_w, h)
+            self.simulation_panel_tab_hitboxes.append((tab.get("id"), rect))
+            x += tab_w + gap
     def _draw_simulation_bar(self, screen, font):
         if self.simulation_bar_rect is None:
             return
@@ -921,24 +947,22 @@ class UIManager:
 
     def _draw_simulation_panel_tabs(self, screen, font):
         if self.simulation_bar_rect is None or not self.simulation_panel_tabs:
-            self.simulation_panel_tab_hitboxes = []
             return
 
-        self.simulation_panel_tab_hitboxes = []
-
-        x = self.simulation_bar_rect.x + 12
-        y = self.simulation_bar_rect.y + 30
-        h = 24
-        pad_x = 10
-        gap = 6
+        hitbox_by_id = {
+            tab_id: rect
+            for tab_id, rect in self.simulation_panel_tab_hitboxes
+        }
 
         for tab in self.simulation_panel_tabs:
-            label = tab.get("label", tab.get("id", "tab"))
-            text_surface = font.render(label, True, (240, 240, 240))
-            w = text_surface.get_width() + pad_x * 2
+            tab_id = tab.get("id")
+            rect = hitbox_by_id.get(tab_id)
+            if rect is None:
+                continue
 
-            rect = pygame.Rect(x, y, w, h)
-            active = tab.get("id") == self.simulation_panel_active_tab_id
+            label = tab.get("label", tab_id or "tab")
+            text_surface = font.render(label, True, (240, 240, 240))
+            active = tab_id == self.simulation_panel_active_tab_id
 
             fill = (70, 70, 90) if active else (36, 40, 48)
             border = (230, 230, 230) if active else (170, 170, 170)
@@ -947,11 +971,8 @@ class UIManager:
             pygame.draw.rect(screen, border, rect, 1)
             screen.blit(
                 text_surface,
-                (rect.x + pad_x, rect.y + (h - text_surface.get_height()) // 2),
+                (rect.x + 10, rect.y + (rect.height - text_surface.get_height()) // 2),
             )
-
-            self.simulation_panel_tab_hitboxes.append((tab.get("id"), rect))
-            x += w + gap
 
     def _draw_simulation_panel_placeholder(self, screen, font, text):
         if self.simulation_bar_rect is None:
