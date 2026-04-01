@@ -262,77 +262,92 @@ class NavigationController:
         self.app.camera_controller.setup_for_sim(active_sim)
         return True
 
-    def handle_ui_action(self, action, active_sim):
+    def _handle_dict_ui_action(self, action, active_sim):
         """
-        Route UI actions for either the knowledge layer or the active simulation.
+        Route structured UI action payloads.
         """
-        if isinstance(action, dict):
-            action_id = action.get("id")
+        action_id = action.get("id")
 
-            if action_id == "activate_tab":
-                tab_index = action.get("tab_index")
-                return self.activate_tab_index(tab_index)
+        if action_id == "activate_tab":
+            tab_index = action.get("tab_index")
+            return self.activate_tab_index(tab_index)
 
-            if action_id == "knowledge_launch_entry":
-                entity_id = action.get("entity_id")
-                entity = self.app.world_model.get_entity(entity_id)
+        if action_id == "simulation_panel_tab_select" and active_sim is not None:
+            tab_id = action.get("tab_id")
+            return bool(
+                getattr(active_sim, "set_active_simulation_panel_tab", lambda _tab_id: False)(tab_id)
+            )
 
-                if entity is None:
-                    return False
+        if action_id == "vehicle_catalog_select" and active_sim is not None:
+            catalog_id = action.get("catalog_id")
+            return bool(
+                getattr(active_sim, "select_design_catalog_component", lambda _catalog_id: False)(catalog_id)
+            )
 
-                dataset_name = entity.get("_dataset")
+        if action_id == "knowledge_launch_entry":
+            entity_id = action.get("entity_id")
+            entity = self.app.world_model.get_entity(entity_id)
 
-                if dataset_name == "locations":
-                    self.open_region_map_tab(entity_id)
+            if entity is None:
+                return False
+
+            dataset_name = entity.get("_dataset")
+
+            if dataset_name == "locations":
+                self.open_region_map_tab(entity_id)
+                return True
+
+            if dataset_name == "systems":
+                system_role = entity.get("system_role")
+
+                if system_role == "star_system":
+                    self.launch_space_root_tab()
                     return True
 
-                if dataset_name == "systems":
-                    system_role = entity.get("system_role")
+                if system_role == "orbital_body":
+                    location_entity_id = entity.get("location_entity")
 
-                    if system_role == "star_system":
-                        self.launch_space_root_tab()
+                    if location_entity_id:
+                        self.open_region_map_tab(location_entity_id)
                         return True
 
-                    if system_role == "orbital_body":
-                        location_entity_id = entity.get("location_entity")
+                    self.launch_space_root_tab()
+                    return True
 
-                        if location_entity_id:
-                            self.open_region_map_tab(location_entity_id)
-                            return True
+            return False
 
-                        self.launch_space_root_tab()
-                        return True
+        return False
 
-                return False
-        else:
-            action_id = action
-
+    def _handle_simple_ui_action(self, action_id, active_sim):
+        """
+        Route simple string-based UI action ids.
+        """
         if action_id == "launch_space_root":
             self.launch_space_root_tab()
             return True
 
-        elif action_id == "launch_earth_map":
+        if action_id == "launch_earth_map":
             self.launch_earth_map_tab()
             return True
 
-        elif action_id == "launch_bioregion_test":
+        if action_id == "launch_bioregion_test":
             self.launch_bioregion_test_tab()
             return True
 
-        elif action_id == "launch_vehicle_test":
+        if action_id == "launch_vehicle_test":
             self.launch_vehicle_test_tab()
             return True
 
-        elif action_id == "vehicle_mode_design" and active_sim is not None:
+        if action_id == "vehicle_mode_design" and active_sim is not None:
             return bool(getattr(active_sim, "set_view_mode", lambda mode: False)("design"))
 
-        elif action_id == "vehicle_mode_interior" and active_sim is not None:
+        if action_id == "vehicle_mode_interior" and active_sim is not None:
             return bool(getattr(active_sim, "set_view_mode", lambda mode: False)("interior"))
 
-        elif action_id == "vehicle_mode_operational" and active_sim is not None:
+        if action_id == "vehicle_mode_operational" and active_sim is not None:
             return bool(getattr(active_sim, "set_view_mode", lambda mode: False)("operational"))
 
-        elif action_id == "open_repository":
+        if action_id == "open_repository":
             return self.open_repository_workspace(active_sim)
 
         if action_id == "open_region_map" and active_sim is not None:
@@ -340,15 +355,24 @@ class NavigationController:
             self.open_region_map_tab(selected_entity_id)
             return True
 
-        elif action_id == "open_parent_region_map" and active_sim is not None:
+        if action_id == "open_parent_region_map" and active_sim is not None:
             self.open_parent_region_map_tab(active_sim)
             return True
 
-        elif action_id == "open_space_body_map" and active_sim is not None:
+        if action_id == "open_space_body_map" and active_sim is not None:
             self.open_map_for_selected_space_body(active_sim)
             return True
 
         return False
+
+    def handle_ui_action(self, action, active_sim):
+        """
+        Route UI actions for either the knowledge layer or the active simulation.
+        """
+        if isinstance(action, dict):
+            return self._handle_dict_ui_action(action, active_sim)
+
+        return self._handle_simple_ui_action(action, active_sim)
 
     def handle_keydown(self, event):
         """

@@ -75,42 +75,7 @@ class App(SimWindow):
         self.camera_controller.apply_constraints(sim)
 
     def handle_event(self, event):
-        if event.type == pygame.KEYDOWN:
-            self.navigation.handle_keydown(event)
-
-        active_sim = self.get_active_simulation()
-
-        self.ui_manager.rebuild_for_state(
-            active_sim=active_sim,
-            app_width=self.width,
-            app_height=self.height,
-            tab_manager=self.tab_manager,
-            camera=self.camera,
-            menu_active=self.knowledge_layer_active,
-            world_model=self.world_model,
-            repository_scope_entity_id=self.repository_scope_entity_id,
-        )
-
-        action_id = self.ui_manager.handle_event(event)
-        if action_id == "__ui_consumed__":
-            return
-
-        if action_id is not None:
-            handled = self.navigation.handle_ui_action(action_id, active_sim)
-            if handled:
-                return
-
-        if self.knowledge_layer_active:
-            return
-
-        self.tab_manager.handle_event(event)
-
-        active_sim = self.get_active_simulation()
-
-        if self.input_router.handle_middle_click_reset(event, active_sim):
-            return
-
-        self.input_router.handle_pointer_input(event, active_sim)
+        self.input_router.route_event(event)
 
     def draw(self):
         if not self.knowledge_layer_active:

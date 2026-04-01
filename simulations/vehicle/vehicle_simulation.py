@@ -48,6 +48,13 @@ class VehicleSimulation:
         ]
         self.active_view_mode = self.VIEW_DESIGN
 
+        self.design_panel_tabs = [
+            {"id": "catalog", "label": "Catalog"},
+            {"id": "selection", "label": "Selection"},
+            {"id": "layout", "label": "Layout"},
+        ]
+        self.active_design_panel_tab_id = "catalog"
+
         self.min_zoom = 1.0
         self.max_zoom = 20.0
         self.preferred_zoom = 7.0
@@ -120,14 +127,26 @@ class VehicleSimulation:
     def get_center(self):
         return self.TEST_MAP_SIZE_X_M / 2.0, self.TEST_MAP_SIZE_Y_M / 2.0
 
+    def _clear_interaction_state(self):
+        self.hover_part_id = None
+        self.selected_part_id = None
+        self.hover_screen_pos = None
+        self.design.set_hover_component(None)
+        self.design.set_selected_component(None)
+
+    def _reset_design_panel_state(self):
+        self.active_design_panel_tab_id = "catalog"
+
     def set_view_mode(self, mode):
         if mode not in self.available_view_modes:
             return False
 
         self.active_view_mode = mode
-        self.hover_part_id = None
-        self.selected_part_id = None
-        self.hover_screen_pos = None
+        self._clear_interaction_state()
+
+        if mode == self.VIEW_DESIGN:
+            self._reset_design_panel_state()
+
         return True
 
     def get_vehicle_name(self):
@@ -149,6 +168,43 @@ class VehicleSimulation:
 
     def get_mode_base_rect(self):
         return self.design.get_world_base_rect(self.vehicle.get("position", {}))
+
+    def select_design_catalog_component(self, catalog_id):
+        """
+        Select the active design catalog component for placement.
+        """
+        if self.active_view_mode != self.VIEW_DESIGN:
+            return False
+
+        if self.design.get_component_catalog_entry(catalog_id) is None:
+            return False
+
+        self.design.set_active_catalog_component(catalog_id)
+        self.selected_part_id = None
+        self.design.set_selected_component(None)
+        self.hover_screen_pos = None
+        return True
+
+    def get_simulation_panel_tabs(self):
+        if self.active_view_mode == self.VIEW_DESIGN:
+            return list(self.design_panel_tabs)
+        return []
+
+    def get_active_simulation_panel_tab_id(self):
+        if self.active_view_mode == self.VIEW_DESIGN:
+            return self.active_design_panel_tab_id
+        return None
+
+    def set_active_simulation_panel_tab(self, tab_id):
+        if self.active_view_mode != self.VIEW_DESIGN:
+            return False
+
+        valid_ids = {tab["id"] for tab in self.design_panel_tabs}
+        if tab_id not in valid_ids:
+            return False
+
+        self.active_design_panel_tab_id = tab_id
+        return True
 
     def _layout_to_world_blocks(self, layout_entries):
         base_rect = self.get_mode_base_rect()
@@ -181,6 +237,29 @@ class VehicleSimulation:
 
         return []
 
+    def _build_design_payload(self, payload):
+        design_payload = self.design.get_design_payload(self.vehicle.get("position", {}))
+        payload["base_rect"] = design_payload["base_rect"]
+        payload["blocks"] = design_payload["blocks"]
+        payload["component_catalog"] = design_payload["component_catalog"]
+        payload["catalog_panel_rect"] = design_payload["catalog_panel_rect"]
+        payload["catalog_entry_rects"] = design_payload["catalog_entry_rects"]
+        payload["active_catalog_component_id"] = design_payload["active_catalog_component_id"]
+        payload["hover_catalog_component_id"] = design_payload["hover_catalog_component_id"]
+        return payload
+
+    def _build_interior_payload(self, payload):
+        payload["base_rect"] = self.get_mode_base_rect()
+        payload["blocks"] = self.get_mode_blocks()
+        return payload
+
+    def _build_operational_payload(self, payload):
+        payload["base_rect"] = self.get_mode_base_rect()
+        payload["operational_state"] = self.vehicle.get("operational_state", {})
+        payload["operational_modules"] = []
+        payload["installed_components"] = self.design.get_placed_components()
+        return payload
+
     def get_focused_render_payload(self):
         dimensions = self.get_vehicle_dimensions_m()
 
@@ -200,24 +279,12 @@ class VehicleSimulation:
         }
 
         if self.active_view_mode == self.VIEW_DESIGN:
-            design_payload = self.design.get_design_payload(self.vehicle.get("position", {}))
-            payload["base_rect"] = design_payload["base_rect"]
-            payload["blocks"] = design_payload["blocks"]
-            payload["component_catalog"] = design_payload["component_catalog"]
-            payload["catalog_panel_rect"] = design_payload["catalog_panel_rect"]
-            payload["catalog_entry_rects"] = design_payload["catalog_entry_rects"]
-            payload["active_catalog_component_id"] = design_payload["active_catalog_component_id"]
-            payload["hover_catalog_component_id"] = design_payload["hover_catalog_component_id"]
-            return payload
+            return self._build_design_payload(payload)
 
         if self.active_view_mode == self.VIEW_INTERIOR:
-            payload["base_rect"] = self.get_mode_base_rect()
-            payload["blocks"] = self.get_mode_blocks()
-            return payload
+            return self._build_interior_payload(payload)
 
-        payload["base_rect"] = self.get_mode_base_rect()
-        payload["operational_state"] = self.vehicle.get("operational_state", {})
-        return payload
+        return self._build_operational_payload(payload)
 
     def get_export_render_payload(self, consumer_type="generic"):
         operational_state = self.vehicle.get("operational_state", {})
@@ -295,14 +362,11 @@ class VehicleSimulation:
         if self.active_view_mode == self.VIEW_DESIGN:
             world_x, world_y = camera.screen_to_world(screen_pos)
 
-            hovered_catalog_id = self.design.get_catalog_entry_at_screen_position(screen_pos)
-            self.design.set_hover_catalog_component(hovered_catalog_id)
-
             hovered_block = self._design_block_at_world_position(world_x, world_y)
             hovered_id = hovered_block.get("id") if hovered_block else None
 
             self.hover_part_id = hovered_id
-            self.hover_screen_pos = screen_pos if (hovered_block or hovered_catalog_id) else None
+            self.hover_screen_pos = screen_pos if hovered_block else None
             self.design.set_hover_component(hovered_id)
             return
 
@@ -316,14 +380,6 @@ class VehicleSimulation:
     def handle_pointer_event(self, event, camera, screen_pos):
         if self.active_view_mode == self.VIEW_DESIGN:
             world_x, world_y = camera.screen_to_world(screen_pos)
-
-            clicked_catalog_id = self.design.get_catalog_entry_at_screen_position(screen_pos)
-            if clicked_catalog_id:
-                self.design.set_active_catalog_component(clicked_catalog_id)
-                self.selected_part_id = None
-                self.design.set_selected_component(None)
-                self.hover_screen_pos = screen_pos
-                return
 
             clicked_block = self._design_block_at_world_position(world_x, world_y)
             if clicked_block:
