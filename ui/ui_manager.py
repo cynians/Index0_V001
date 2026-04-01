@@ -584,19 +584,66 @@ class UIManager:
             payload = active_sim.get_focused_render_payload()
 
             if active_sim.active_view_mode in ("design", "interior"):
-                label_by_part_id = {
-                    block.get("id"): block.get("label", block.get("id", "part"))
+                blocks_by_id = {
+                    block.get("id"): block
                     for block in payload.get("blocks", [])
                 }
 
                 selected_part_id = payload.get("selected_part_id")
                 hover_part_id = payload.get("hover_part_id")
-
                 focus_part_id = selected_part_id or hover_part_id
-                if focus_part_id:
+
+                if active_sim.active_view_mode == "design":
+                    active_catalog_id = payload.get("active_catalog_component_id")
+                    hover_catalog_id = payload.get("hover_catalog_component_id")
+                    catalog_by_id = {
+                        entry.get("id"): entry
+                        for entry in payload.get("component_catalog", [])
+                    }
+
+                    if active_catalog_id in catalog_by_id:
+                        entry = catalog_by_id[active_catalog_id]
+                        dims = entry.get("dimensions_m", {})
+                        self.hover_tooltip_lines = [
+                            "Catalog Selection",
+                            entry.get("label", active_catalog_id),
+                            entry.get("component_type", "component"),
+                            f"{dims.get('x', '?')} x {dims.get('y', '?')} x {dims.get('z', '?')} m",
+                            "click hull to place",
+                        ]
+                        self.hover_tooltip_pos = (24, 250)
+
+                    elif hover_catalog_id in catalog_by_id:
+                        entry = catalog_by_id[hover_catalog_id]
+                        dims = entry.get("dimensions_m", {})
+                        self.hover_tooltip_lines = [
+                            "Catalog Item",
+                            entry.get("label", hover_catalog_id),
+                            entry.get("component_type", "component"),
+                            f"{dims.get('x', '?')} x {dims.get('y', '?')} x {dims.get('z', '?')} m",
+                        ]
+                        self.hover_tooltip_pos = (24, 250)
+
+                    elif focus_part_id in blocks_by_id:
+                        block = blocks_by_id[focus_part_id]
+                        self.hover_tooltip_lines = [
+                            "Vehicle Design",
+                            block.get("label", focus_part_id),
+                            block.get("component_type", "component"),
+                            f"{round(block.get('width', 0.0), 2)} x {round(block.get('height', 0.0), 2)} m",
+                        ]
+                        if selected_part_id:
+                            self.hover_tooltip_lines.append("selected")
+                        elif hover_part_id:
+                            self.hover_tooltip_lines.append("hover")
+
+                        self.hover_tooltip_pos = getattr(active_sim, "hover_screen_pos", None) or (24, 250)
+
+                elif focus_part_id in blocks_by_id:
+                    block = blocks_by_id[focus_part_id]
                     self.hover_tooltip_lines = [
                         active_sim.get_active_mode_label(),
-                        label_by_part_id.get(focus_part_id, focus_part_id),
+                        block.get("label", focus_part_id),
                     ]
                     if selected_part_id:
                         self.hover_tooltip_lines.append("selected")
@@ -606,16 +653,70 @@ class UIManager:
                     self.hover_tooltip_pos = getattr(active_sim, "hover_screen_pos", None) or (24, 250)
 
             else:
-                operational_state = payload.get("operational_state", {})
-                self.hover_tooltip_lines = [
-                    "Operational State",
-                    f"speed: {operational_state.get('speed_kph', '?')} kph",
-                    f"heading: {operational_state.get('heading_deg', '?')} deg",
-                    f"power: {operational_state.get('power_state', '?')}",
-                    f"crew: {operational_state.get('crew_state', '?')}",
-                    f"range: {operational_state.get('range_km', '?')} km",
-                ]
-                self.hover_tooltip_pos = (24, 250)
+
+                modules_by_id = {
+
+                    module.get("id"): module
+
+                    for module in payload.get("operational_modules", [])
+
+                }
+
+                selected_part_id = payload.get("selected_part_id")
+
+                hover_part_id = payload.get("hover_part_id")
+
+                focus_part_id = selected_part_id or hover_part_id
+
+                if focus_part_id in modules_by_id:
+
+                    module = modules_by_id[focus_part_id]
+
+                    self.hover_tooltip_lines = [
+
+                        "Operational Capability",
+
+                        module.get("group", "General"),
+
+                        module.get("label", focus_part_id),
+
+                        module.get("component_label", "component"),
+
+                        module.get("status_text", "ready"),
+
+                    ]
+
+                    if selected_part_id:
+
+                        self.hover_tooltip_lines.append("selected")
+
+                    elif hover_part_id:
+
+                        self.hover_tooltip_lines.append("hover")
+
+                    self.hover_tooltip_pos = getattr(active_sim, "hover_screen_pos", None) or (24, 250)
+
+                else:
+
+                    operational_state = payload.get("operational_state", {})
+
+                    installed_components = payload.get("installed_components", [])
+
+                    self.hover_tooltip_lines = [
+
+                        "Operational Control Center",
+
+                        f"components: {len(installed_components)}",
+
+                        f"task: {operational_state.get('task_state', '?')}",
+
+                        f"power: {operational_state.get('power_state', '?')}",
+
+                        f"crew: {operational_state.get('crew_state', '?')}",
+
+                    ]
+
+                    self.hover_tooltip_pos = (24, 250)
 
             return
         if getattr(active_sim, "render_mode", None) == "bioregion":

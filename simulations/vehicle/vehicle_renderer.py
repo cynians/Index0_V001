@@ -25,6 +25,72 @@ class VehicleRenderer:
 
         return pygame.Rect(left, top, right - left, bottom - top)
 
+    def _screen_rect_from_data(self, rect_data):
+        return pygame.Rect(
+            int(rect_data["x"]),
+            int(rect_data["y"]),
+            int(rect_data["width"]),
+            int(rect_data["height"]),
+        )
+
+    def _draw_design_catalog_overlay(self, screen, payload):
+        panel_rect = self._screen_rect_from_data(payload["catalog_panel_rect"])
+        pygame.draw.rect(screen, (20, 22, 28), panel_rect)
+        pygame.draw.rect(screen, (215, 215, 215), panel_rect, 2)
+
+        title_surface = self.app_view.default_font.render(
+            "Design Catalog",
+            True,
+            (240, 240, 240),
+        )
+        screen.blit(title_surface, (panel_rect.x + 12, panel_rect.y + 8))
+
+        active_catalog_component_id = payload.get("active_catalog_component_id")
+        hover_catalog_component_id = payload.get("hover_catalog_component_id")
+        catalog_by_id = {
+            entry.get("id"): entry
+            for entry in payload.get("component_catalog", [])
+        }
+
+        for rect_data in payload.get("catalog_entry_rects", []):
+            catalog_id = rect_data.get("catalog_id")
+            entry = catalog_by_id.get(catalog_id, {})
+            rect = self._screen_rect_from_data(rect_data)
+
+            border_color = (170, 170, 170)
+            fill_color = (34, 38, 46)
+
+            if catalog_id == hover_catalog_component_id:
+                border_color = (120, 220, 255)
+                fill_color = (52, 66, 82)
+
+            if catalog_id == active_catalog_component_id:
+                border_color = (255, 230, 120)
+                fill_color = (92, 84, 50)
+
+            pygame.draw.rect(screen, fill_color, rect)
+            pygame.draw.rect(screen, border_color, rect, 2)
+
+            dims = entry.get("dimensions_m", {})
+            line = (
+                f"{entry.get('label', catalog_id)} | "
+                f"{dims.get('x', '?')} x {dims.get('y', '?')} x {dims.get('z', '?')} m"
+            )
+            text_surface = self.app_view.default_font.render(line, True, (240, 240, 240))
+            screen.blit(text_surface, (rect.x + 8, rect.y + 5))
+
+        footer_lines = [
+            "Click catalog item to arm placement",
+            "Click hull to place",
+            "Click placed component to select",
+            "Click hull to move selected component",
+        ]
+        line_y = panel_rect.bottom + 8
+        for line in footer_lines:
+            text_surface = self.app_view.default_font.render(line, True, (180, 180, 180))
+            screen.blit(text_surface, (panel_rect.x + 2, line_y))
+            line_y += 18
+
     def _draw_design_or_interior(self, screen, sim, camera, payload):
         base_rect = self._world_rect_to_screen(camera, payload["base_rect"])
         if base_rect is None:
@@ -61,6 +127,9 @@ class VehicleRenderer:
                 )
                 text_rect = text_surface.get_rect(center=block_rect.center)
                 screen.blit(text_surface, text_rect)
+
+        if payload.get("mode") == sim.VIEW_DESIGN:
+            self._draw_design_catalog_overlay(screen, payload)
 
     def _draw_operational(self, screen, sim, camera, payload):
         base_rect = self._world_rect_to_screen(camera, payload["base_rect"])
