@@ -1,0 +1,55 @@
+- id: veh_test_rig_01
+  pretty_name: Vehicle Test Rig 01
+  name: Vehicle Test Rig 01
+  type: vehicle
+  description: Prototype utility vehicle rig used as the initial vehicle-design test entity.
+  notes: Repository-backed prototype entity for the vehicle simulation.
+  vehicle_class: prototype_utility_vehicle
+  manufacturer_name: Index Test Works
+  produced_by: []
+  uses_technology: []
+  operated_by: []
+  dimension_x_m: 10.0
+  dimension_y_m: 4.0
+  dimension_z_m: 3.0
+  design_catalog_components:
+    - comp_engine_inline_compact
+    - comp_engine_vblock_heavy
+  design_placed_components:
+    - instance_id: placed_component_001
+      component_id: comp_engine_inline_compact
+      local_x_m: 0.8
+      local_y_m: 1.4
+  interior_layout:
+    - id: driver_station
+      label: Driver
+      x_fraction: 0.00
+      y_fraction: 0.0
+      width_fraction: 0.20
+      height_fraction: 1.0
+    - id: crew_space
+      label: Crew
+      x_fraction: 0.20
+      y_fraction: 0.0
+      width_fraction: 0.25
+      height_fraction: 1.0
+    - id: cargo_bay
+      label: Cargo
+      x_fraction: 0.45
+      y_fraction: 0.0
+      width_fraction: 0.55
+      height_fraction: 1.0
+  operational_state:
+    speed_kph: 38
+    heading_deg: 90
+    power_state: nominal
+    crew_state: ready
+    task_state: idle test state
+    range_km: 420
+  tags:
+    - vehicle
+    - prototype
+    - utility
+    - test_rig
+  start_year: 2400
+  entry_status: draft

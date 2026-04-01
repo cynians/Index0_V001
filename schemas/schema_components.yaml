@@ -44,6 +44,26 @@ fields:
     type: text
     optional: true
 
+  dimension_x_m:
+    type: number
+    optional: true
+
+  dimension_y_m:
+    type: number
+    optional: true
+
+  dimension_z_m:
+    type: number
+    optional: true
+
+  mass_kg:
+    type: number
+    optional: true
+
+  power_kw:
+    type: number
+    optional: true
+
 # --------------------------------------------------
 # COMMENTED EXAMPLE ENTRY
 # --------------------------------------------------
@@ -70,28 +90,10 @@ fields:
 #     - replaceable_module
 #     - installable
 #   maintenance_notes: Requires sealing checks and periodic servicing depending on operating context.
-#   start_year: 0
-#   entry_status: draft
-#
-# - id: comp_storage_rack
-#   pretty_name: Storage Rack
-#   name: Storage Rack
-#   type: component
-#   component_class: storage_component
-#   primary_material: mat_stainless_steel
-#   secondary_materials: []
-#   represented_item: item_storage_rack
-#   install_contexts:
-#     - building
-#     - vehicle
-#     - site
-#   functional_roles:
-#     - storage
-#     - organization
-#   requires_technology: []
-#   descriptive_capabilities:
-#     - installable
-#     - supports_inventory_use
-#   maintenance_notes: Low-complexity installed component for organized storage.
+#   dimension_x_m: 1.2
+#   dimension_y_m: 0.6
+#   dimension_z_m: 0.7
+#   mass_kg: 120
+#   power_kw: 15
 #   start_year: 0
 #   entry_status: draft

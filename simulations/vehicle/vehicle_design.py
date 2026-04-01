@@ -9,6 +9,7 @@ class VehicleDesignController:
     * exposes design render payloads
     * handles design-window catalog selection
     * supports basic placement and repositioning inside the hull
+    * can bootstrap its state from repository entities
     """
 
     CATALOG_PANEL_X = 18
@@ -18,53 +19,155 @@ class VehicleDesignController:
     CATALOG_HEADER_H = 28
     CATALOG_PADDING = 10
 
-    def __init__(self):
-        self.vehicle_dimensions_m = {
+    def __init__(self, world_model=None, vehicle_entity=None):
+        self.world_model = world_model
+        self.vehicle_entity = vehicle_entity
+
+        self.vehicle_dimensions_m = self._load_vehicle_dimensions_m(vehicle_entity)
+        self.component_catalog = self._load_component_catalog(world_model, vehicle_entity)
+        self.placed_components = self._load_placed_components(world_model, vehicle_entity)
+
+        if not self.placed_components and self.component_catalog:
+            first_entry = self.component_catalog[0]
+            self.placed_components = [
+                {
+                    "instance_id": "placed_component_001",
+                    "catalog_id": first_entry["id"],
+                    "label": first_entry["label"],
+                    "component_type": first_entry["component_type"],
+                    "local_rect_m": {
+                        "x": 0.8,
+                        "y": 1.4,
+                        "width": first_entry["dimensions_m"]["x"],
+                        "height": first_entry["dimensions_m"]["y"],
+                    },
+                }
+            ]
+
+        self.next_component_index = self._infer_next_component_index()
+
+        self.hover_component_id = None
+        self.selected_component_id = None
+        self.active_catalog_component_id = None
+        self.hover_catalog_component_id = None
+
+    def _load_vehicle_dimensions_m(self, vehicle_entity):
+        if vehicle_entity:
+            return {
+                "x": float(vehicle_entity.get("dimension_x_m", 10.0)),
+                "y": float(vehicle_entity.get("dimension_y_m", 4.0)),
+                "z": float(vehicle_entity.get("dimension_z_m", 3.0)),
+            }
+
+        return {
             "x": 10.0,
             "y": 4.0,
             "z": 3.0,
         }
 
-        self.component_catalog = [
+    def _build_catalog_entry_from_component_entity(self, entity):
+        return {
+            "id": entity.get("id"),
+            "label": entity.get("pretty_name", entity.get("name", entity.get("id", "component"))),
+            "component_type": entity.get("component_class", "component"),
+            "dimensions_m": {
+                "x": float(entity.get("dimension_x_m", 1.0)),
+                "y": float(entity.get("dimension_y_m", 1.0)),
+                "z": float(entity.get("dimension_z_m", 1.0)),
+            },
+            "mass_kg": float(entity.get("mass_kg", 0.0)),
+            "power_kw": float(entity.get("power_kw", 0.0)),
+        }
+
+    def _default_component_catalog(self):
+        return [
             {
-                "id": "engine_inline_compact",
+                "id": "comp_engine_inline_compact",
                 "label": "Inline Engine",
-                "component_type": "engine",
+                "component_type": "engine_component",
                 "dimensions_m": {"x": 2.2, "y": 1.2, "z": 1.4},
                 "mass_kg": 680.0,
                 "power_kw": 180.0,
             },
             {
-                "id": "engine_vblock_heavy",
+                "id": "comp_engine_vblock_heavy",
                 "label": "V-Block Engine",
-                "component_type": "engine",
+                "component_type": "engine_component",
                 "dimensions_m": {"x": 2.8, "y": 1.5, "z": 1.6},
                 "mass_kg": 980.0,
                 "power_kw": 320.0,
             },
         ]
 
-        self.placed_components = [
-            {
-                "instance_id": "placed_component_001",
-                "catalog_id": "engine_inline_compact",
-                "label": "Inline Engine",
-                "component_type": "engine",
-                "local_rect_m": {
-                    "x": 0.8,
-                    "y": 1.4,
-                    "width": 2.2,
-                    "height": 1.2,
-                },
-            }
-        ]
+    def _load_component_catalog(self, world_model, vehicle_entity):
+        if world_model is None or vehicle_entity is None:
+            return self._default_component_catalog()
 
-        self.next_component_index = 2
+        component_ids = vehicle_entity.get("design_catalog_components", [])
+        catalog = []
 
-        self.hover_component_id = None
-        self.selected_component_id = None
-        self.active_catalog_component_id = None
-        self.hover_catalog_component_id = None
+        for component_id in component_ids:
+            entity = world_model.get_entity(component_id)
+            if entity is None:
+                continue
+            catalog.append(self._build_catalog_entry_from_component_entity(entity))
+
+        return catalog or self._default_component_catalog()
+
+    def _load_placed_components(self, world_model, vehicle_entity):
+        placed = []
+
+        if vehicle_entity is None:
+            return placed
+
+        design_placed_components = vehicle_entity.get("design_placed_components", [])
+        for entry in design_placed_components:
+            if not isinstance(entry, dict):
+                continue
+
+            component_id = entry.get("component_id")
+            component_entity = world_model.get_entity(component_id) if (world_model and component_id) else None
+
+            if component_entity is not None:
+                label = component_entity.get("pretty_name", component_entity.get("name", component_id))
+                component_type = component_entity.get("component_class", "component")
+                width = float(entry.get("width_m", component_entity.get("dimension_x_m", 1.0)))
+                height = float(entry.get("height_m", component_entity.get("dimension_y_m", 1.0)))
+            else:
+                label = entry.get("label", component_id or "component")
+                component_type = entry.get("component_type", "component")
+                width = float(entry.get("width_m", 1.0))
+                height = float(entry.get("height_m", 1.0))
+
+            placed.append(
+                {
+                    "instance_id": entry.get("instance_id", "placed_component_001"),
+                    "catalog_id": component_id,
+                    "label": label,
+                    "component_type": component_type,
+                    "local_rect_m": {
+                        "x": float(entry.get("local_x_m", 0.0)),
+                        "y": float(entry.get("local_y_m", 0.0)),
+                        "width": width,
+                        "height": height,
+                    },
+                }
+            )
+
+        return placed
+
+    def _infer_next_component_index(self):
+        max_index = 0
+        for component in self.placed_components:
+            instance_id = component.get("instance_id", "")
+            if not instance_id.startswith("placed_component_"):
+                continue
+            try:
+                index_value = int(instance_id.split("_")[-1])
+                max_index = max(max_index, index_value)
+            except ValueError:
+                continue
+        return max_index + 1 if max_index > 0 else 1
 
     def get_vehicle_dimensions_m(self):
         return dict(self.vehicle_dimensions_m)

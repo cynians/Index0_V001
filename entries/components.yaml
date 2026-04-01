@@ -45,3 +45,131 @@
   maintenance_notes: Low-complexity installed component for organized storage.
   start_year: 0
   entry_status: draft
+
+- id: comp_engine_inline_compact
+  pretty_name: Inline Engine
+  name: Inline Engine
+  type: component
+  description: Compact inline engine module used as a small vehicle propulsion block for the vehicle design prototype.
+  component_class: engine_component
+  primary_material: mat_stainless_steel
+  secondary_materials:
+    - mat_copper_alloy
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - propulsion
+    - power_generation
+  requires_technology: []
+  descriptive_capabilities:
+    - installable
+    - compact_engine_module
+    - provides_vehicle_propulsion
+  maintenance_notes: Compact engine block intended for light vehicle layouts and simple early design testing.
+  tags:
+    - engine
+    - propulsion
+    - vehicle
+    - compact
+  start_year: 2400
+  entry_status: draft
+
+- id: comp_engine_vblock_heavy
+  pretty_name: V-Block Engine
+  name: V-Block Engine
+  type: component
+  description: Larger heavy engine module used as a high-output propulsion block for the vehicle design prototype.
+  component_class: engine_component
+  primary_material: mat_stainless_steel
+  secondary_materials:
+    - mat_copper_alloy
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - propulsion
+    - power_generation
+    - heavy_vehicle_drive
+  requires_technology: []
+  descriptive_capabilities:
+    - installable
+    - heavy_engine_module
+    - provides_vehicle_propulsion
+  maintenance_notes: Larger engine block requiring more hull volume but providing a heavier propulsion option for design testing.
+  tags:
+    - engine
+    - propulsion
+    - vehicle
+    - heavy
+  start_year: 2400
+  entry_status: draft
+
+- id: comp_engine_inline_compact
+  pretty_name: Inline Engine
+  name: Inline Engine
+  type: component
+  description: Compact inline engine module used as a small vehicle propulsion block for the vehicle design prototype.
+  component_class: engine_component
+  primary_material: mat_stainless_steel
+  secondary_materials:
+    - mat_copper_alloy
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - propulsion
+    - power_generation
+  requires_technology: []
+  descriptive_capabilities:
+    - installable
+    - compact_engine_module
+    - provides_vehicle_propulsion
+  maintenance_notes: Compact engine block intended for light vehicle layouts and simple early design testing.
+  dimension_x_m: 2.2
+  dimension_y_m: 1.2
+  dimension_z_m: 1.4
+  mass_kg: 680.0
+  power_kw: 180.0
+  tags:
+    - engine
+    - propulsion
+    - vehicle
+    - compact
+  start_year: 2400
+  entry_status: draft
+
+- id: comp_engine_vblock_heavy
+  pretty_name: V-Block Engine
+  name: V-Block Engine
+  type: component
+  description: Larger heavy engine module used as a high-output propulsion block for the vehicle design prototype.
+  component_class: engine_component
+  primary_material: mat_stainless_steel
+  secondary_materials:
+    - mat_copper_alloy
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - propulsion
+    - power_generation
+    - heavy_vehicle_drive
+  requires_technology: []
+  descriptive_capabilities:
+    - installable
+    - heavy_engine_module
+    - provides_vehicle_propulsion
+  maintenance_notes: Larger engine block requiring more hull volume but providing a heavier propulsion option for design testing.
+  dimension_x_m: 2.8
+  dimension_y_m: 1.5
+  dimension_z_m: 1.6
+  mass_kg: 980.0
+  power_kw: 320.0
+  tags:
+    - engine
+    - propulsion
+    - vehicle
+    - heavy
+  start_year: 2400
+  entry_status: draft

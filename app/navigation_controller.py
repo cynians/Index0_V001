@@ -108,20 +108,26 @@ class NavigationController:
         self.app.knowledge_layer_active = False
         self.app.camera_controller.setup_for_sim(new_bioregion_sim)
 
-    def launch_vehicle_test_tab(self):
+    def launch_vehicle_tab(self, vehicle_entity_id="veh_test_rig_01"):
         """
-        Open or focus the prototype vehicle simulation tab.
+        Open or focus a repository-backed vehicle simulation tab.
         """
-        tab_key = ("vehicle", "test")
+        tab_key = ("vehicle", vehicle_entity_id)
 
         if self.focus_existing_tab_by_key(tab_key):
             self.app.knowledge_layer_active = False
             return
 
-        new_vehicle_sim = VehicleSimulation()
+        vehicle_entity = self.app.world_model.get_entity(vehicle_entity_id)
+        vehicle_name = vehicle_entity.get("name", vehicle_entity_id) if vehicle_entity else vehicle_entity_id
+
+        new_vehicle_sim = VehicleSimulation(
+            world_model=self.app.world_model,
+            vehicle_entity_id=vehicle_entity_id,
+        )
         new_tab = Tab(
             SimulationInstance(new_vehicle_sim),
-            name="Vehicle: Test",
+            name=f"Vehicle: {vehicle_name}",
             tab_key=tab_key
         )
 
@@ -129,6 +135,12 @@ class NavigationController:
         self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
         self.app.knowledge_layer_active = False
         self.app.camera_controller.setup_for_sim(new_vehicle_sim)
+
+    def launch_vehicle_test_tab(self):
+        """
+        Open or focus the prototype vehicle simulation tab.
+        """
+        self.launch_vehicle_tab("veh_test_rig_01")
 
     def open_region_map_tab(self, entity_id):
         """
@@ -236,6 +248,9 @@ class NavigationController:
 
             return "system_sol"
 
+        if render_mode == "vehicle":
+            return getattr(active_sim, "vehicle_entity_id", None) or self.app.repository_scope_entity_id
+
         return self.app.repository_scope_entity_id
 
     def open_repository_workspace(self, active_sim):
@@ -295,6 +310,10 @@ class NavigationController:
 
             if dataset_name == "locations":
                 self.open_region_map_tab(entity_id)
+                return True
+
+            if dataset_name == "vehicles":
+                self.launch_vehicle_tab(entity_id)
                 return True
 
             if dataset_name == "systems":

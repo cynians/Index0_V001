@@ -15,11 +15,9 @@ class VehicleSimulation:
       - interior
       - operational
     * vehicle design logic split into VehicleDesignController
-    * physical vehicle dimensions stored in SI units
-    * display geometry derived from those SI dimensions
+    * physical vehicle dimensions and catalog loaded from repository entities
     * 100 m x 100 m prototype vehicle map for scale testing
     * basic design-window catalog selection and component placement
-    * placeholder exported render payload variants for other simulation consumers
     """
 
     VIEW_DESIGN = "design"
@@ -29,10 +27,13 @@ class VehicleSimulation:
     TEST_MAP_SIZE_X_M = 100.0
     TEST_MAP_SIZE_Y_M = 100.0
 
-    def __init__(self):
+    def __init__(self, world_model=None, vehicle_entity_id="veh_test_rig_01"):
         class _DummySystem:
             def update(self, dt):
                 pass
+
+        self.world_model = world_model
+        self.vehicle_entity_id = vehicle_entity_id
 
         self.render_mode = "vehicle"
         self.world_units_to_meters = 1.0
@@ -66,56 +67,94 @@ class VehicleSimulation:
             "max_y": self.TEST_MAP_SIZE_Y_M,
         }
 
-        self.design = VehicleDesignController()
-
-        self.vehicle = {
-            "id": "vehicle_test_rig_01",
-            "name": "Vehicle Test Rig 01",
-            "vehicle_class": "prototype utility vehicle",
-            "manufacturer": "Index Test Works",
-            "position": {
-                "x": self.TEST_MAP_SIZE_X_M / 2.0,
-                "y": self.TEST_MAP_SIZE_Y_M / 2.0,
-            },
-            "interior_layout": [
-                {
-                    "id": "driver_station",
-                    "label": "Driver",
-                    "x_fraction": 0.00,
-                    "y_fraction": 0.0,
-                    "width_fraction": 0.20,
-                    "height_fraction": 1.0,
-                },
-                {
-                    "id": "crew_space",
-                    "label": "Crew",
-                    "x_fraction": 0.20,
-                    "y_fraction": 0.0,
-                    "width_fraction": 0.25,
-                    "height_fraction": 1.0,
-                },
-                {
-                    "id": "cargo_bay",
-                    "label": "Cargo",
-                    "x_fraction": 0.45,
-                    "y_fraction": 0.0,
-                    "width_fraction": 0.55,
-                    "height_fraction": 1.0,
-                },
-            ],
-            "operational_state": {
-                "speed_kph": 38,
-                "heading_deg": 90,
-                "power_state": "nominal",
-                "crew_state": "ready",
-                "task_state": "idle test state",
-                "range_km": 420,
-            },
-        }
+        self.vehicle = self._build_vehicle_state_from_entity()
+        self.design = VehicleDesignController(
+            world_model=self.world_model,
+            vehicle_entity=self.vehicle.get("_entity"),
+        )
 
         self.hover_part_id = None
         self.selected_part_id = None
         self.hover_screen_pos = None
+
+    def _get_vehicle_entity(self):
+        if self.world_model is None:
+            return None
+        return self.world_model.get_entity(self.vehicle_entity_id)
+
+    def _build_vehicle_state_from_entity(self):
+        entity = self._get_vehicle_entity()
+
+        if entity is None:
+            return {
+                "id": self.vehicle_entity_id,
+                "name": "Vehicle Test Rig 01",
+                "vehicle_class": "prototype utility vehicle",
+                "manufacturer": "Index Test Works",
+                "position": {
+                    "x": self.TEST_MAP_SIZE_X_M / 2.0,
+                    "y": self.TEST_MAP_SIZE_Y_M / 2.0,
+                },
+                "interior_layout": [
+                    {
+                        "id": "driver_station",
+                        "label": "Driver",
+                        "x_fraction": 0.00,
+                        "y_fraction": 0.0,
+                        "width_fraction": 0.20,
+                        "height_fraction": 1.0,
+                    },
+                    {
+                        "id": "crew_space",
+                        "label": "Crew",
+                        "x_fraction": 0.20,
+                        "y_fraction": 0.0,
+                        "width_fraction": 0.25,
+                        "height_fraction": 1.0,
+                    },
+                    {
+                        "id": "cargo_bay",
+                        "label": "Cargo",
+                        "x_fraction": 0.45,
+                        "y_fraction": 0.0,
+                        "width_fraction": 0.55,
+                        "height_fraction": 1.0,
+                    },
+                ],
+                "operational_state": {
+                    "speed_kph": 38,
+                    "heading_deg": 90,
+                    "power_state": "nominal",
+                    "crew_state": "ready",
+                    "task_state": "idle test state",
+                    "range_km": 420,
+                },
+                "_entity": None,
+            }
+
+        return {
+            "id": entity.get("id", self.vehicle_entity_id),
+            "name": entity.get("name", self.vehicle_entity_id),
+            "vehicle_class": entity.get("vehicle_class", "vehicle"),
+            "manufacturer": entity.get("manufacturer_name", entity.get("manufacturer", "Unknown")),
+            "position": {
+                "x": self.TEST_MAP_SIZE_X_M / 2.0,
+                "y": self.TEST_MAP_SIZE_Y_M / 2.0,
+            },
+            "interior_layout": entity.get("interior_layout", []),
+            "operational_state": entity.get(
+                "operational_state",
+                {
+                    "speed_kph": 38,
+                    "heading_deg": 90,
+                    "power_state": "nominal",
+                    "crew_state": "ready",
+                    "task_state": "idle test state",
+                    "range_km": 420,
+                },
+            ),
+            "_entity": entity,
+        }
 
     @property
     def year(self):
@@ -315,7 +354,7 @@ class VehicleSimulation:
                     "readiness": operational_state.get("crew_state"),
                     "power_state": operational_state.get("power_state"),
                     "range_km": operational_state.get("range_km"),
-                    "role_summary": "prototype utility platform",
+                    "role_summary": self.vehicle.get("vehicle_class", "vehicle"),
                 }
             )
             return base_payload
@@ -326,7 +365,7 @@ class VehicleSimulation:
                     "manufacturer": self.vehicle.get("manufacturer"),
                     "design_component_count": len(self.design.get_placed_components()),
                     "interior_block_count": len(self.vehicle.get("interior_layout", [])),
-                    "production_summary": "prototype shell for later production-detail integration",
+                    "production_summary": "repository-backed prototype shell",
                 }
             )
             return base_payload

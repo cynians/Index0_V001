@@ -28,6 +28,9 @@ class WorldModel:
     def get_dataset(self, dataset_name):
         return self.loader.get_dataset(dataset_name)
 
+    def get_dataset_names(self):
+        return list(self.loader.datasets.keys())
+
     def get_entities_by_dataset(self, dataset_name):
         dataset = self.loader.get_dataset(dataset_name)
 

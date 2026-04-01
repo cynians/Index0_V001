@@ -22,3 +22,36 @@ fields:
     type: entity_list
     target: formation
     optional: true
+
+  manufacturer_name:
+    type: string
+    optional: true
+
+  dimension_x_m:
+    type: number
+    optional: true
+
+  dimension_y_m:
+    type: number
+    optional: true
+
+  dimension_z_m:
+    type: number
+    optional: true
+
+  design_catalog_components:
+    type: entity_list
+    target: components
+    optional: true
+
+  design_placed_components:
+    type: object_list
+    optional: true
+
+  interior_layout:
+    type: object_list
+    optional: true
+
+  operational_state:
+    type: object
+    optional: true

@@ -14,16 +14,17 @@ class SimWindow:
 
         pygame.init()
 
-        self.width = width
-        self.height = height
+        display_info = pygame.display.Info()
+        self.width = display_info.current_w
+        self.height = display_info.current_h
 
-        self.screen = pygame.display.set_mode((width, height))
+        self.screen = pygame.display.set_mode((self.width, self.height), pygame.NOFRAME)
         pygame.display.set_caption(title)
 
         self.clock = pygame.time.Clock()
         self.running = True
 
-        self.camera = Camera(width, height)
+        self.camera = Camera(self.width, self.height)
         self.input_controller = InputController(self.camera, self)
 
         self.show_grid = True
