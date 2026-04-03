@@ -46,6 +46,7 @@ class UIManager:
 
         self.menu_active = False
         self.knowledge_ui = KnowledgeBrowserUI()
+        self.app_font = pygame.font.SysFont("consolas", 16)
 
     def _format_sim_time(self, sim):
         base_year = getattr(sim, "year", 0)
@@ -455,6 +456,7 @@ class UIManager:
                 app_height=app_height,
                 world_model=world_model,
                 repository_scope_entity_id=repository_scope_entity_id,
+                font=self.app_font,
             )
             return
 
@@ -709,6 +711,7 @@ class UIManager:
             screen.blit(text_surface, (draw_x, y))
 
     def draw(self, screen, font):
+        self.app_font = font
         self._draw_tab_strip(screen, font)
 
         if self.menu_active:

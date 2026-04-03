@@ -71,19 +71,25 @@ Description: Separate simulation-specific rendering logic from the central rende
 - Keep engine/renderer.py focused on dispatch/orchestration
 - Move simulation-specific drawing logic into simulation-local renderer modules
 - Current state:
-  - bioregion-specific rendering has been split into a dedicated bioregion renderer module
-  - map and space renderer migration was discussed but not finalized for the whole pipeline
+  - dedicated renderer modules now exist for:
+    - bioregion
+    - map
+    - space
+    - vehicle
+  - engine/renderer.py is now primarily a render-mode dispatcher
+  - app/UI chrome is no longer rendered from the central renderer
+  - remaining work is mainly cleanup/refinement of shared helper boundaries and render-payload conventions rather than the initial split itself
 
 TASK-152
-Status: TODO
-Difficulty: 5
+Status: COMPRESSED
+Difficulty: 4
 Requires: TASK-151
-Description: Complete modular renderer split for all simulation types, including:
+Description: Fold the broad “complete modular renderer split” goal into TASK-151, including:
 - map renderer
 - space renderer
-- future bioregion-specific shared helpers where appropriate
-- Keep only render dispatch and truly shared orchestration in engine/renderer.py
-
+- vehicle renderer
+- bioregion renderer
+- Keep this task only as a narrow follow-up checkpoint if later shared-render-helper cleanup needs to be tracked separately
 ------------------------------------------------
 WORLD / SPATIAL SYSTEM
 ------------------------------------------------
@@ -1302,9 +1308,11 @@ Description: Replace the legacy launch-only start menu with a Knowledge Layer sh
 - Existing simulation launch routing remains available through the new layer
 - Current state:
   - shell exists
-  - basic split layout exists
-  - old launcher buttons removed from the browser pane
-  - further browser interaction improvements remain pending
+  - two-pane layout exists
+  - old launcher buttons are gone from the browser pane
+  - header launch action exists
+  - repository/browser/card behavior now routes through app-level input/navigation flow
+  - broader knowledge-layer refinement remains ongoing
 
 TASK-132
 Status: PARTIAL
@@ -1319,7 +1327,9 @@ Description: Implement repository-driven browser and card seeding for the Knowle
   - real repository entries are shown
   - browser selection exists
   - cards can be spawned from repository entries
-  - scrollability and hierarchical category behavior are still incomplete
+  - card focus/reopen reuse exists
+  - browser scroll works
+  - browser/category interaction still needs refinement beyond the current implementation
 
 TASK-133
 Status: PARTIAL
@@ -1327,10 +1337,11 @@ Difficulty: 6
 Requires: TASK-131, TASK-132, TASK-067, TASK-068
 Description: Formalize repository entry card model for the Knowledge Layer, including:
 - Card represents persistent repository entry rather than session/tab
-- Compact card structure with:
-  - entry identity
-  - entity grouping/type
-  - image area placeholder
+- Card supports:
+  - identity/title
+  - grouping/type subtitle
+  - image/media placeholder area
+  - collapsible content sections
   - bottom timeline strip
   - launch area
 - Card creation from actual entity metadata rather than hardcoded placeholders
@@ -1338,11 +1349,17 @@ Description: Formalize repository entry card model for the Knowledge Layer, incl
   - locations
   - star systems
   - orbital bodies
+  - vehicles
+  - components
+  - other surfaced schema families
 - Current state:
-  - compact cards exist
   - cards use real entities
-  - system/body classification still needs refinement and cleanup
-  - newer schema families such as materials, items, components, and production are not yet surfaced cleanly
+  - cards are draggable/reorderable on the canvas
+  - cards are resizable
+  - collapsible sections exist
+  - timeline strip and launch control exist
+  - further year-aware and relationship-aware card behavior remains pending
+
 TASK-134
 Status: TODO
 Difficulty: 6
@@ -1366,12 +1383,13 @@ Description: Implement Knowledge Layer launch resolution from entity type and co
   - location entities -> map simulation
   - star system entities -> space simulation
   - orbital body entities -> linked location map if available, otherwise appropriate fallback
+  - vehicle entities -> vehicle simulation
 - Reuse/focus already-open logical tabs when launch context matches
 - Current state:
-  - basic card launch routing exists
-  - browser/card actions are now app-routed
-  - year-aware launch and full body/system resolution are not complete yet
-  - non-simulation schema families should remain browseable without forcing simulation launch
+  - card launch routing exists
+  - app-level navigation/input routing exists
+  - vehicle entities can launch repository-backed vehicle tabs
+  - year-aware launch and fuller non-location entity launch policy are not complete yet
 
 TASK-136
 Status: PARTIAL
@@ -1385,8 +1403,10 @@ Description: Expand Knowledge Layer card media model beyond a single flat image 
   - vehicle exterior + cutaway + interior
 - Foundation for later UI switching between stored visual layers
 - Current state:
-  - cards already reserve an image/layered-view placeholder area
-  - no import pipeline or multiple stored media layers exist yet
+  - cards already reserve an image/media area
+  - cards now show dimension-aware suggested canvas sizes
+  - scaler tuning for restrained pixel-art-oriented workflows is still ongoing
+  - no actual media import/storage pipeline exists yet
 
 TASK-137
 Status: TODO
@@ -1897,7 +1917,7 @@ Description: Implement building-to-site aggregation rules across all building de
 - Preservation of site functionality even when some buildings are only represented through placeholders or coarse models
 
 TASK-201
-Status: TODO
+Status: DONE
 Difficulty: 5
 Requires: TASK-131, TASK-132
 Description: Make the Knowledge Layer repository browser properly scrollable, including:
@@ -1907,17 +1927,20 @@ Description: Make the Knowledge Layer repository browser properly scrollable, in
 - Stable scroll clamping and hitbox behavior for browser rows
 
 TASK-202
-Status: TODO
+Status: PARTIAL
 Difficulty: 6
-Requires: TASK-131, TASK-132, TASK-133
+Requires: TASK-201
 Description: Implement collapsible hierarchical categories in the Knowledge Layer repository browser, including:
-- Tree-style display for repository entries instead of only flat sections
+- Tree-style display for repository entries instead of only flat sections where appropriate
 - Separate expand/collapse controls from normal row selection
 - Persisted expanded/collapsed state while the Knowledge Layer remains open
 - Support for nested visual indentation and per-row toggle hitboxes
+- Current state:
+  - orbital/system hierarchy has expand/collapse behavior
+  - generic dataset sections still remain mostly flat outside the current tree-aware cases
 
 TASK-203
-Status: TODO
+Status: DONE
 Difficulty: 6
 Requires: TASK-202
 Description: Implement orbital-body hierarchy display in the Knowledge Layer browser, including:
@@ -1928,10 +1951,10 @@ Description: Implement orbital-body hierarchy display in the Knowledge Layer bro
   - Sol
   - Earth
   - Luna
-- Compatibility with binary stars, artificial light sources, and deeper nested orbital trees
+- Compatibility with deeper nested orbital trees
 
 TASK-204
-Status: TODO
+Status: PARTIAL
 Difficulty: 5
 Requires: TASK-019, TASK-020, TASK-132
 Description: Split location entry storage by system into separate files while preserving one logical locations dataset, including:
@@ -1939,6 +1962,10 @@ Description: Split location entry storage by system into separate files while pr
 - Recursive entity loading from subdirectories
 - Merging of split location files into one logical locations dataset for runtime use
 - Preservation of current world-model queries against locations
+- Current state:
+  - recursive entry loading exists
+  - loader already merges entries/locations/* into one logical locations dataset
+  - authored split location files and generation/writeback workflow are not yet fully established
 
 TASK-205
 Status: TODO
@@ -1951,7 +1978,7 @@ Description: Update space-view-generated location creation to respect the new sp
 - Avoidance of full-file rewrite when appending new generated location entries
 
 TASK-206
-Status: TODO
+Status: DONE
 Difficulty: 4
 Requires: TASK-131, TASK-201
 Description: Prevent simulation background rendering from visually leaking through the Knowledge Layer shell, including:
@@ -1960,17 +1987,21 @@ Description: Prevent simulation background rendering from visually leaking throu
 - Preserving simulation state in the background without drawing its visual layer over the repository shell
 
 TASK-207
-Status: TODO
+Status: PARTIAL
 Difficulty: 5
 Requires: TASK-013
 Description: Formalize repository schema expansion for material, item, component, and production entries, including:
 - Preservation of current loader/runtime compatibility while extending schema coverage
 - Addition of optional but task-relevant fields rather than premature hard requirements
-- Inclusion of commented filled example entries inside schema files
+- Inclusion of commented filled example entries inside schema files where useful
 - Alignment of new schema structure with current task-driven world model direction
+- Current state:
+  - schema files now exist for materials, items, components, and production
+  - runtime loader/world model already sees these datasets
+  - schema cleanup/example harmonization is not finalized
 
 TASK-208
-Status: TODO
+Status: PARTIAL
 Difficulty: 5
 Requires: TASK-207
 Description: Introduce material schema and entry support as the raw material science layer, including:
@@ -1978,9 +2009,13 @@ Description: Introduce material schema and entry support as the raw material sci
 - Descriptive properties, hazards, storage notes, and common uses
 - Support for alloys/composites through base-material references
 - Use as the dependency layer for items, components, and production chains
+- Current state:
+  - schema and entry file exist
+  - first material entries are present
+  - coverage and relationship depth remain early
 
 TASK-209
-Status: TODO
+Status: PARTIAL
 Difficulty: 6
 Requires: TASK-207, TASK-208
 Description: Expand item schema into a unified stored-object representation, including:
@@ -1989,9 +2024,13 @@ Description: Expand item schema into a unified stored-object representation, inc
 - Optional linkage from components to equivalent item entries
 - Descriptive storage modes such as aggregate, stackable, refrigerated, hazardous, palletizable, and containerizable
 - Support for loose, placed, stored, and installable item contexts without hardcoding final runtime container logic
+- Current state:
+  - schema and entry file exist
+  - initial item entries are present
+  - broader consistency and downstream runtime use remain pending
 
 TASK-210
-Status: TODO
+Status: PARTIAL
 Difficulty: 6
 Requires: TASK-207, TASK-208, TASK-209
 Description: Introduce component schema as the functional installed-part layer while preserving item equivalence, including:
@@ -2000,9 +2039,13 @@ Description: Introduce component schema as the functional installed-part layer w
 - Install-context and functional-role description
 - Material dependency support
 - Foundation for later maintenance, replacement, and capability activation logic
+- Current state:
+  - schema and entry file exist
+  - repository-backed vehicle design now already consumes component entries
+  - current component set is still partly prototype-oriented and needs more real repository content
 
 TASK-211
-Status: TODO
+Status: PARTIAL
 Difficulty: 7
 Requires: TASK-035, TASK-103, TASK-207, TASK-208, TASK-209, TASK-210
 Description: Expand production schema into a reusable production-definition and coordination layer, including:
@@ -2011,9 +2054,13 @@ Description: Expand production schema into a reusable production-definition and 
 - Exact throughput fields aligned to output type rather than only abstract scale labels
 - Descriptive production requirements for technologies, roles, tools/components, and site classes
 - Preservation of production_location as the lowest known anchored spatial layer
+- Current state:
+  - schema and entry file exist
+  - production dataset is now loadable/browseable
+  - deeper production/task/runtime integration is not implemented yet
 
 TASK-212
-Status: TODO
+Status: PARTIAL
 Difficulty: 6
 Requires: TASK-208, TASK-209, TASK-210, TASK-211
 Description: Integrate repository cross-references between materials, items, components, and production entries, including:
@@ -2021,6 +2068,10 @@ Description: Integrate repository cross-references between materials, items, com
 - Component references to materials and represented item entries
 - Production references to material, item, and component inputs/outputs
 - Stable dependency chains across the new schema family
+- Current state:
+  - first cross-references are already present in repository entries
+  - loader/reference graph can resolve direct string-id references
+  - richer validation/visualization of these chains is still pending
 
 TASK-213
 Status: TODO
@@ -2043,7 +2094,7 @@ Description: Extend split repository-entry organization beyond locations where u
 - Compatibility with repository-browser and loader expectations
 
 TASK-215
-Status: TODO
+Status: PARTIAL
 Difficulty: 6
 Requires: TASK-131, TASK-132, TASK-207, TASK-212
 Description: Surface new schema-family entries in the Knowledge Layer repository browser and cards, including:
@@ -2051,6 +2102,10 @@ Description: Surface new schema-family entries in the Knowledge Layer repository
 - Card seeding from those entry types
 - Clear grouping/type labeling for the new schema family
 - Foundation for later relationship visualization across production chains
+- Current state:
+  - browser now surfaces dataset families generically
+  - cards can be spawned for the new datasets
+  - ordering/UX and richer relationship-aware presentation are still pending
 
 TASK-216
 Status: TODO
@@ -2271,3 +2326,114 @@ Description: Integrate VehicleSimulation into parent-child simulation workflows,
 - shared authoritative time and world state with parent simulation
 - consumer-specific vehicle information routing based on active simulation context
 - foundation for crew stations, role-specific operation views, and cross-simulation vehicle context export
+
+TASK-234
+Status: TODO
+Difficulty: 5
+Requires: TASK-131, TASK-132, TASK-133, TASK-136
+Description: Refine Knowledge Layer card layout to size dynamically to displayed content, including:
+- Card height derived from actually visible wrapped text and expanded sections
+- Stable placement of timeline strip, launch button, and resize handle below content
+- Prevention of text overlap into lower card controls
+- Preservation of manual resize while enforcing content-based minimum size
+
+TASK-235
+Status: TODO
+Difficulty: 5
+Requires: TASK-136
+Description: Tune Knowledge Layer image/canvas suggestion scaler for restrained pixel-art workflows, including:
+- Smaller default suggested canvas sizes for non-planetary entities
+- Relative-high-PPI pixel-art-oriented stepped canvas suggestions
+- Dimension-aware scaling based on recorded physical size where available
+- Preservation of much larger suggestion ranges for planetary/body-scale entries
+
+TASK-236
+Status: TODO
+Difficulty: 4
+Requires: TASK-207, TASK-210, TASK-215, TASK-230
+Description: Replace placeholder vehicle repository entries with idea-derived real vehicle entries, including:
+- Use actual vehicle concepts from ideas.txt rather than prototype/test placeholders
+- Adapt ideas step-by-step into vehicles.yaml using the current repository schema
+- Keep entries descriptive and repository-safe even when simulation/runtime fields are still incomplete
+- Preserve ability to review and adjust each converted vehicle entry individually before wider batch replacement
+
+TASK-237
+Status: TODO
+Difficulty: 5
+Requires: TASK-236, TASK-038, TASK-210
+Description: Represent vehicle component structure descriptively in repository vehicle entries without flattening final capabilities, including:
+- Vehicle entries storing intended roles, major component groups, and configuration stubs
+- Avoid treating repository vehicle entries as authoritative flat capability stat blocks
+- Preserve future derivation of actual runtime capabilities from installed components and component combinations
+- Keep repository vehicle entries aligned with existing VehicleSimulation component-based direction
+
+TASK-238
+Status: TODO
+Difficulty: 4
+Requires: TASK-132, TASK-133, TASK-136, TASK-215
+Description: Replace remaining non-planetary placeholder repository entities visible in the Knowledge Layer with idea-derived entries where source ideas already exist, including:
+- Prioritize vehicles first
+- Then replace placeholder components/other schema entries where matching or safely derivable ideas exist
+- Keep browser/card presentation grounded in actual repository content rather than test-only entities
+- Avoid inventing unsupported details when ideas are still too thin for full conversion
+
+
+
+TASK-239
+Status: TODO
+Difficulty: 6
+Requires: TASK-131, TASK-132, TASK-133, TASK-207
+Description: Implement runtime card-side repository field editing and field addition in the Knowledge Layer, including:
+- Editing existing surfaced repository fields directly from an entity card
+- Adding new optional fields to an entity from the runtime card view
+- Respect for dataset/schema family context when presenting editable fields
+- Support for lightweight descriptive repository authoring before full dedicated editor workflows exist
+- Clear distinction between:
+  - runtime card inspection
+  - runtime card editing
+  - later fuller schema-aware entry editing tools
+- Foundation for later writeback of edited entity data into the correct repository entry file
+
+
+
+TASK-240
+Status: TODO
+Difficulty: 6
+Requires: TASK-038, TASK-136, TASK-196, TASK-230, TASK-231, TASK-237
+Description: Allow vehicle-design-driven image import and authored exterior view generation, including:
+- Vehicle design workflow exposing arranged components and defined hull as the basis for exterior-art preparation
+- Generation/export of aligned placeholder view canvases for at least:
+  - side view
+  - top view
+  - front view
+- Support for player drawing/painting over those generated vehicle views to create a finished exterior image set
+- Import of the authored resulting images back into the vehicle/media pipeline
+- Preservation of linkage between:
+  - vehicle repository entry
+  - generated base views
+  - imported authored exterior images
+- Foundation for later distinction between:
+  - generated technical/base vehicle views
+  - authored final exterior art
+  - card/media usage of the resulting images
+
+
+
+TASK-241
+Status: TODO
+Difficulty: 5
+Requires: TASK-136, TASK-239, TASK-240
+Description: Implement canonical storage and writeback workflow for imported card and vehicle-view images, including:
+- Copy or move imported runtime-selected image files into the appropriate project asset folders
+- Canonical naming/path rules for vehicle card and view images, including examples such as:
+  - main card image
+  - front view
+  - side view
+  - top view
+- Writeback of the resulting asset paths into the correct repository entity fields
+- Support for replacing previously assigned images without leaving stale paths or orphaned references
+- Preservation of distinction between:
+  - temporary runtime-selected source file
+  - canonical in-project stored asset
+  - repository field pointing to the canonical asset
+- Foundation for later schema-aware media management rather than ad-hoc per-card image assignment

@@ -1,4 +1,10 @@
+import os
+import re
+import shutil
+
 import pygame
+import tkinter as tk
+from tkinter import filedialog
 
 from ui.ui_types import UIButton
 from ui.card import EntityCard
@@ -50,6 +56,8 @@ class KnowledgeBrowserUI:
                 "body_sol": True,
             }
         }
+
+        self.font_for_layout = None
 
     def reset(self):
         """
@@ -284,7 +292,41 @@ class KnowledgeBrowserUI:
             display_group = dataset_name
             subtype = entity.get("type", "entity")
 
-        start_year = entity.get("start_year", 0)
+        start_year = entity.get("start_year")
+        end_year = entity.get("end_year")
+
+        def _coerce_year(value):
+            if value is None:
+                return None
+            if isinstance(value, bool):
+                return None
+            if isinstance(value, int):
+                return value
+            if isinstance(value, float):
+                return int(value)
+            if isinstance(value, str):
+                stripped = value.strip()
+                if not stripped or stripped.lower() in {"none", "null"}:
+                    return None
+                try:
+                    return int(float(stripped))
+                except ValueError:
+                    return None
+            return None
+
+        start_year = _coerce_year(start_year)
+        end_year = _coerce_year(end_year)
+
+        if start_year is not None and end_year is not None and end_year >= start_year and end_year != start_year:
+            years = [start_year, end_year]
+        elif start_year is not None:
+            years = [start_year]
+        elif end_year is not None:
+            years = [end_year]
+        else:
+            years = [0]
+
+        selected_year = years[0]
 
         card_index = len(self.cards)
         spawn_x = 24 + (card_index % 3) * 40
@@ -294,8 +336,8 @@ class KnowledgeBrowserUI:
             "entity_id": entity.get("id"),
             "title": entity.get("name", entity.get("id", "unknown")),
             "subtitle": f"{display_group} | {subtype}",
-            "years": [start_year],
-            "selected_year": start_year,
+            "years": years,
+            "selected_year": selected_year,
             "canvas_x": spawn_x,
             "canvas_y": spawn_y,
             "canvas_w": 420,
@@ -303,58 +345,6 @@ class KnowledgeBrowserUI:
             "card_view": card_view,
         }
         return card
-
-    def _layout_card_interaction(self, card, rect):
-        timeline_y = rect.y + max(170, int(rect.height * 0.62))
-        left_x = rect.x + 20
-        right_x = rect.right - 20
-        center_y = timeline_y + 10
-
-        year_positions = []
-        years = card["years"]
-        for index, year in enumerate(years):
-            if len(years) == 1:
-                frac = 0.5
-            else:
-                frac = index / (len(years) - 1)
-            year_x = int(left_x + (right_x - left_x) * frac)
-            year_positions.append((year, year_x))
-
-        image_rect = pygame.Rect(
-            rect.x + 12,
-            rect.y + 58,
-            rect.width - 24,
-            max(90, int(rect.height * 0.30)),
-        )
-        launch_rect = pygame.Rect(
-            rect.x + 12,
-            rect.bottom - 36,
-            rect.width - 24,
-            24,
-        )
-        header_drag_rect = pygame.Rect(
-            rect.x + 1,
-            rect.y + 1,
-            rect.width - 2,
-            50,
-        )
-        resize_handle_rect = pygame.Rect(
-            rect.right - 18,
-            rect.bottom - 18,
-            14,
-            14,
-        )
-
-        card["rect"] = rect
-        card["image_rect"] = image_rect
-        card["launch_rect"] = launch_rect
-        card["timeline_y"] = timeline_y
-        card["header_drag_rect"] = header_drag_rect
-        card["resize_handle_rect"] = resize_handle_rect
-        card["year_hitboxes"] = [
-            (year, pygame.Rect(year_x - 12, center_y - 12, 24, 48))
-            for year, year_x in year_positions
-        ]
 
     def _layout_all_cards(self):
         if self.layout is None:
@@ -367,19 +357,31 @@ class KnowledgeBrowserUI:
 
         for card in self.cards:
             card_w = max(300, min(900, int(card.get("canvas_w", 420))))
-            card_h = max(260, min(900, int(card.get("canvas_h", 340))))
+
+            card_view = card.get("card_view")
+            requested_h = int(card.get("canvas_h", 340))
+
+            if card_view is not None and self.font_for_layout is not None:
+                minimum_h = card_view.get_minimum_height(card, self.font_for_layout)
+            else:
+                minimum_h = 260
+
+            card_h = max(minimum_h, min(1200, requested_h))
+            card["canvas_h"] = card_h
+            card["layout_font"] = self.font_for_layout
 
             rect_x = right_rect.x + int(card.get("canvas_x", 24)) + self.canvas_offset_x
             rect_y = right_rect.y + int(card.get("canvas_y", 84)) + self.canvas_offset_y
 
             rect = pygame.Rect(rect_x, rect_y, card_w, card_h)
 
-            card_view = card.get("card_view")
             if card_view is not None:
                 card_view.layout_card(card, rect)
 
-            max_right = max(max_right, card.get("canvas_x", 24) + card_w)
-            max_bottom = max(max_bottom, card.get("canvas_y", 84) + card_h)
+            final_rect = card.get("rect", rect)
+
+            max_right = max(max_right, card.get("canvas_x", 24) + final_rect.width)
+            max_bottom = max(max_bottom, card.get("canvas_y", 84) + final_rect.height)
 
         self.canvas_content_width = max(0, max_right + 24)
         self.canvas_content_height = max(0, max_bottom + 24)
@@ -421,6 +423,176 @@ class KnowledgeBrowserUI:
             self._layout_all_cards()
             self._clamp_canvas_offsets()
             self._layout_all_cards()
+
+    def _open_image_file_dialog(self):
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        try:
+            selected = filedialog.askopenfilename(
+                title="Select image",
+                filetypes=[
+                    ("Image files", "*.png *.jpg *.jpeg *.webp *.bmp"),
+                    ("All files", "*.*"),
+                ],
+            )
+        finally:
+            root.destroy()
+        return selected
+
+    def _role_field_name(self, role_name):
+        role_name = (role_name or "card").lower()
+        if role_name == "card":
+            return "card_image"
+        return f"card_image_{role_name}"
+
+    def _dataset_asset_folder(self, dataset_name):
+        if not dataset_name:
+            return "misc"
+        return dataset_name.replace("\\", "_").replace("/", "_")
+
+    def _entry_file_path_for_dataset(self, dataset_name):
+        if not dataset_name:
+            return None
+        return os.path.join(os.getcwd(), "entries", f"{dataset_name}.yaml")
+
+    def _build_canonical_image_path(self, entity_id, dataset_name, role_name, source_path):
+        _, ext = os.path.splitext(source_path)
+        ext = ext.lower() if ext else ".png"
+
+        asset_folder = self._dataset_asset_folder(dataset_name)
+        filename = f"{entity_id}_{role_name}{ext}"
+        rel_path = os.path.join("assets", "cards", asset_folder, filename)
+        return rel_path.replace("\\", "/")
+
+    def _copy_to_canonical_asset(self, entity_id, dataset_name, role_name, source_path):
+        canonical_rel_path = self._build_canonical_image_path(entity_id, dataset_name, role_name, source_path)
+        canonical_abs_path = os.path.normpath(os.path.join(os.getcwd(), canonical_rel_path))
+        os.makedirs(os.path.dirname(canonical_abs_path), exist_ok=True)
+        shutil.copy2(source_path, canonical_abs_path)
+        return canonical_rel_path
+
+    def _upsert_yaml_scalar_in_block(self, block_text, key, value):
+        pattern = rf"(?m)^  {re.escape(key)}:.*$"
+        replacement = f"  {key}: {value}"
+
+        if re.search(pattern, block_text):
+            return re.sub(pattern, replacement, block_text)
+
+        insert_before_keys = [
+            "tags",
+            "start_year",
+            "end_year",
+            "entry_status",
+        ]
+
+        for anchor_key in insert_before_keys:
+            anchor_pattern = rf"(?m)^  {re.escape(anchor_key)}:"
+            match = re.search(anchor_pattern, block_text)
+            if match:
+                return block_text[:match.start()] + replacement + "\n" + block_text[match.start():]
+
+        if not block_text.endswith("\n"):
+            block_text += "\n"
+        return block_text + replacement + "\n"
+
+    def _write_image_fields_to_repository(self, entity_id, dataset_name, canonical_path, role_name):
+        field_name = self._role_field_name(role_name)
+        entry_path = self._entry_file_path_for_dataset(dataset_name)
+
+        if entry_path is None or not os.path.exists(entry_path):
+            return False
+
+        with open(entry_path, "r", encoding="utf-8") as f:
+            text = f.read()
+
+        start_pattern = rf"(?m)^- id: {re.escape(entity_id)}\s*$"
+        start_match = re.search(start_pattern, text)
+        if not start_match:
+            return False
+
+        next_match = re.search(r"(?m)^- id: ", text[start_match.end():])
+        block_start = start_match.start()
+        block_end = start_match.end() + next_match.start() if next_match else len(text)
+
+        block = text[block_start:block_end]
+        updated_block = block
+        updated_block = self._upsert_yaml_scalar_in_block(updated_block, field_name, canonical_path)
+        updated_block = self._upsert_yaml_scalar_in_block(updated_block, "card_image", canonical_path)
+
+        if updated_block == block:
+            return True
+
+        updated_text = text[:block_start] + updated_block + text[block_end:]
+
+        with open(entry_path, "w", encoding="utf-8") as f:
+            f.write(updated_text)
+
+        return True
+
+    def assign_card_image(self, entity_id, image_path, role_name=None):
+        """
+        Assign a card image path to an entity/card currently visible in the
+        Knowledge Layer.
+
+        If role_name is provided, also store the role-specific image field while
+        setting card_image as the active preview.
+        """
+        if not entity_id or not image_path:
+            return False
+
+        updated = False
+        field_name = self._role_field_name(role_name) if role_name else None
+
+        if self.world_model is not None:
+            entity = self.world_model.get_entity(entity_id)
+            if entity is not None:
+                entity["card_image"] = image_path
+                if field_name is not None:
+                    entity[field_name] = image_path
+                updated = True
+
+        for card in self.cards:
+            if card.get("entity_id") != entity_id:
+                continue
+
+            card_view = card.get("card_view")
+            if card_view is not None and getattr(card_view, "entity", None) is not None:
+                card_view.entity["card_image"] = image_path
+                if field_name is not None:
+                    card_view.entity[field_name] = image_path
+                updated = True
+
+        if updated:
+            self._layout_all_cards()
+            self._clamp_canvas_offsets()
+            self._layout_all_cards()
+
+        return updated
+
+    def choose_and_assign_card_image(self, entity_id, role_name=None):
+        image_path = self._open_image_file_dialog()
+        if not image_path:
+            return False
+
+        dataset_name = None
+        if self.world_model is not None:
+            entity = self.world_model.get_entity(entity_id)
+            if entity is not None:
+                dataset_name = entity.get("_dataset", entity.get("type", "entity"))
+
+        canonical_path = image_path
+        if dataset_name is not None and role_name is not None:
+            canonical_path = self._copy_to_canonical_asset(entity_id, dataset_name, role_name, image_path)
+
+        assigned = self.assign_card_image(entity_id, canonical_path, role_name=role_name)
+        if not assigned:
+            return False
+
+        if dataset_name is not None and role_name is not None:
+            self._write_image_fields_to_repository(entity_id, dataset_name, canonical_path, role_name)
+
+        return True
 
     def _rebuild_browser_hitboxes(self):
         self.browser_hitboxes = []
@@ -468,9 +640,10 @@ class KnowledgeBrowserUI:
 
             line_y += self.LINE_HEIGHT
 
-    def rebuild(self, app_width, app_height, world_model, repository_scope_entity_id):
+    def rebuild(self, app_width, app_height, world_model, repository_scope_entity_id, font):
         self.reset()
 
+        self.font_for_layout = font
         self.world_model = world_model
         self.repository_scope_entity_id = repository_scope_entity_id
         self.layout = self._build_layout(app_width, app_height)
@@ -669,10 +842,8 @@ class KnowledgeBrowserUI:
             if self.active_card_drag_id is not None:
                 for card in self.cards:
                     if card.get("entity_id") == self.active_card_drag_id:
-                        card["canvas_x"] = event.pos[0] - self.layout["right_rect"].x - self.canvas_offset_x - \
-                                           self.card_drag_mouse_offset[0]
-                        card["canvas_y"] = event.pos[1] - self.layout["right_rect"].y - self.canvas_offset_y - \
-                                           self.card_drag_mouse_offset[1]
+                        card["canvas_x"] = event.pos[0] - self.layout["right_rect"].x - self.canvas_offset_x - self.card_drag_mouse_offset[0]
+                        card["canvas_y"] = event.pos[1] - self.layout["right_rect"].y - self.canvas_offset_y - self.card_drag_mouse_offset[1]
                         self._layout_all_cards()
                         self._clamp_canvas_offsets()
                         self._layout_all_cards()
@@ -684,7 +855,8 @@ class KnowledgeBrowserUI:
                         dx = event.pos[0] - self.card_resize_start_mouse[0]
                         dy = event.pos[1] - self.card_resize_start_mouse[1]
                         card["canvas_w"] = max(300, self.card_resize_start_size[0] + dx)
-                        card["canvas_h"] = max(260, self.card_resize_start_size[1] + dy)
+                        minimum_h = card.get("card_view").get_minimum_height(card, self.font_for_layout) if card.get("card_view") else 260
+                        card["canvas_h"] = max(minimum_h, self.card_resize_start_size[1] + dy)
                         self._layout_all_cards()
                         self._clamp_canvas_offsets()
                         self._layout_all_cards()
@@ -698,22 +870,26 @@ class KnowledgeBrowserUI:
         if self.header_button is not None and self.header_button.rect.collidepoint(mouse_pos):
             return self.header_button.id
 
-        for entity_id, hitbox in self.browser_toggle_hitboxes:
-            if hitbox.collidepoint(mouse_pos):
-                self._set_expanded(entity_id, not self._is_expanded(entity_id))
-                self.browser_items = self._build_browser_items(self.world_model)
-                self._rebuild_browser_hitboxes()
-                return None
+        if left_rect.collidepoint(mouse_pos):
+            for entity_id, hitbox in self.browser_toggle_hitboxes:
+                if hitbox.collidepoint(mouse_pos):
+                    self._set_expanded(entity_id, not self._is_expanded(entity_id))
+                    self.browser_items = self._build_browser_items(self.world_model)
+                    self._rebuild_browser_hitboxes()
+                    return "__ui_consumed__"
 
-        for entity_id, hitbox in self.browser_hitboxes:
-            if hitbox.collidepoint(mouse_pos):
-                self.selected_entity_id = entity_id
+            for entity_id, hitbox in self.browser_hitboxes:
+                if hitbox.collidepoint(mouse_pos):
+                    self.selected_entity_id = entity_id
 
-                if self.world_model is not None:
-                    entity = self.world_model.get_entity(entity_id)
-                    self._ensure_card(entity)
+                    if self.world_model is not None:
+                        entity = self.world_model.get_entity(entity_id)
+                        self._ensure_card(entity)
 
-                return None
+                    return "__ui_consumed__"
+
+        if not right_rect.collidepoint(mouse_pos):
+            return None
 
         for index in range(len(self.cards) - 1, -1, -1):
             card = self.cards[index]
@@ -741,6 +917,28 @@ class KnowledgeBrowserUI:
                 self._layout_all_cards()
                 return "__ui_consumed__"
 
+            for tab_name, tab_rect in card.get("tab_hitboxes", []):
+                if tab_rect.collidepoint(mouse_pos) and card_view is not None:
+                    self.selected_entity_id = card["entity_id"]
+                    card_obj = self.cards.pop(index)
+                    self.cards.append(card_obj)
+                    card_obj["card_view"].set_active_tab(tab_name)
+                    self._layout_all_cards()
+                    self._clamp_canvas_offsets()
+                    self._layout_all_cards()
+                    return "__ui_consumed__"
+
+            for role_name, button_rect in card.get("media_import_hitboxes", []):
+                if button_rect.collidepoint(mouse_pos):
+                    self.selected_entity_id = card["entity_id"]
+                    card_obj = self.cards.pop(index)
+                    self.cards.append(card_obj)
+                    self.choose_and_assign_card_image(card_obj["entity_id"], role_name=role_name)
+                    self._layout_all_cards()
+                    self._clamp_canvas_offsets()
+                    self._layout_all_cards()
+                    return "__ui_consumed__"
+
             for section_name, section_rect in card.get("section_hitboxes", []):
                 if section_rect.collidepoint(mouse_pos) and card_view is not None:
                     self.selected_entity_id = card["entity_id"]
@@ -759,7 +957,7 @@ class KnowledgeBrowserUI:
                     self.cards.append(card_obj)
                     card_obj["selected_year"] = year
                     self._layout_all_cards()
-                    return None
+                    return "__ui_consumed__"
 
             launch_rect = card.get("launch_rect")
             if launch_rect is not None and launch_rect.collidepoint(mouse_pos):
@@ -780,4 +978,4 @@ class KnowledgeBrowserUI:
                 self._layout_all_cards()
                 return "__ui_consumed__"
 
-        return None
+        return "__ui_consumed__"

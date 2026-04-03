@@ -17,6 +17,8 @@
     value: 6371000
   population:
     y0: 8000000000
+  card_image_map: assets/cards/locations/planet_earth_map.png
+  card_image: assets/cards/locations/planet_earth_map.png
   start_year: 0
 
 # ---------- geo_europe | Europe ----------
@@ -497,3 +499,42 @@
   population:
     y0: 0
   start_year: 0
+
+
+  start_year: 0
+
+# ==================================================
+# SYSTEM: METYAKI
+# ==================================================
+
+# ---------- sys_metyaki | Metyaki System ----------
+- id: sys_metyaki
+  pretty_name: Metyaki System
+  name: Metyaki System
+  type: location
+  location_class: star_system
+  coords:
+    type: point
+    x: 0
+    y: 0
+  start_year: 5240
+
+# ---------- planet_noyanakh | Noyanakh ----------
+- id: planet_noyanakh
+  pretty_name: Noyanakh
+  name: Noyanakh
+  type: location
+  location_class: planet
+  parent_location: sys_metyaki
+  location_role: planetary_root
+  coords:
+    type: point
+    x: 0
+    y: 0
+  bounds:
+    type: radius
+    value: 5400000
+  population:
+    y0: 0
+  notes: Placeholder planetary entry for Bospor-related entity integration. Detailed planetary properties still to be defined.
+  start_year: 5246

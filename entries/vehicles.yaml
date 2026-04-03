@@ -1,55 +1,220 @@
-- id: veh_test_rig_01
-  pretty_name: Vehicle Test Rig 01
-  name: Vehicle Test Rig 01
+- id: veh_taltos_class_mars_cargo_lander
+  pretty_name: Taltos-class Mars Cargo Lander
+  name: Taltos-class Mars Cargo Lander
   type: vehicle
-  description: Prototype utility vehicle rig used as the initial vehicle-design test entity.
-  notes: Repository-backed prototype entity for the vehicle simulation.
-  vehicle_class: prototype_utility_vehicle
-  manufacturer_name: Index Test Works
+  idea_reference: IDEA-502
+  description: Reusable Mars orbit-to-surface cargo lander used during the Race for Sol for freight delivery between orbital logistics hubs and surface landing pads.
+  notes: The class is built around repeated cargo descent and unloading operations on Mars. The design uses detachable modular lifting wings that can be removed and remounted in reversed orientation depending on mission profile and servicing state.
+  vehicle_class: mars_cargo_lander
+
   produced_by: []
   uses_technology: []
   operated_by: []
-  dimension_x_m: 10.0
-  dimension_y_m: 4.0
-  dimension_z_m: 3.0
-  design_catalog_components:
-    - comp_engine_inline_compact
-    - comp_engine_vblock_heavy
-  design_placed_components:
-    - instance_id: placed_component_001
-      component_id: comp_engine_inline_compact
-      local_x_m: 0.8
-      local_y_m: 1.4
-  interior_layout:
-    - id: driver_station
-      label: Driver
-      x_fraction: 0.00
-      y_fraction: 0.0
-      width_fraction: 0.20
-      height_fraction: 1.0
-    - id: crew_space
-      label: Crew
-      x_fraction: 0.20
-      y_fraction: 0.0
-      width_fraction: 0.25
-      height_fraction: 1.0
-    - id: cargo_bay
-      label: Cargo
-      x_fraction: 0.45
-      y_fraction: 0.0
-      width_fraction: 0.55
-      height_fraction: 1.0
-  operational_state:
-    speed_kph: 38
-    heading_deg: 90
-    power_state: nominal
-    crew_state: ready
-    task_state: idle test state
-    range_km: 420
+
+  intended_roles:
+    - mars_orbit_to_surface_cargo_delivery
+    - cargo_landing_pad_servicing
+    - martian_surface_freight_unloading
+
+  supported_infrastructure:
+    - infra_mars_orbital_logistics_hubs
+    - infra_mars_surface_landing_pads
+    - equip_martian_cargo_crane
+
+  descriptive_capabilities:
+    - reusable_freight_landing
+    - heavy_cargo_surface_delivery
+    - modular_aerodynamic_configuration
+
+  component_layout_stub:
+    major_component_groups:
+      - cargo_hold
+      - main_descent_propulsion
+      - reaction_control_system
+      - detachable_lifting_wing_mounts
+      - landing_gear
+      - avionics_and_guidance
+      - power_and_support_systems
+    configurable_groups:
+      - detachable_lifting_wings
+
+  payload_capacity_t: 45
+  service_life_cycles: 50
+
   tags:
     - vehicle
-    - prototype
-    - utility
-    - test_rig
-  start_year: 2400
+    - spacecraft
+    - cargo
+    - mars
+    - reusable
+    - race_for_sol
+
+  start_year: 2180
+  entry_status: draft
+
+
+- id: veh_mdv_3
+  pretty_name: MDV-3
+  name: MDV-3
+  type: vehicle
+  idea_reference: IDEA-496
+  description: Orbital-built Mars cargo transport vehicle used for high-volume freight transfer between Earth orbit and Mars orbit during the Race for Sol.
+  notes: Designed as a larger follow-up to earlier Mars Delivery Vehicle concepts. Unlike earlier atmosphere-capable variants, MDV-3 is a pure space transport and does not perform atmospheric entry. It carries roughly 385 tons of cargo and operates between orbital infrastructure nodes rather than surface delivery points.
+  vehicle_class: interplanetary_cargo_transport
+
+  produced_by: []
+  uses_technology: []
+  operated_by: []
+
+  intended_roles:
+    - earth_orbit_to_mars_orbit_cargo_transfer
+    - orbital_freight_logistics
+    - high_volume_interplanetary_transport
+
+  supported_infrastructure:
+    - infra_earth_orbital_cargo_terminals
+    - infra_mars_orbital_logistics_hubs
+    - infra_orbital_refueling_nodes
+
+  descriptive_capabilities:
+    - high_volume_space_freight_transport
+    - non_atmospheric_interplanetary_operation
+    - orbital_cargo_interface_operation
+
+  component_layout_stub:
+    major_component_groups:
+      - cargo_module_structure
+      - main_transfer_propulsion
+      - reaction_control_system
+      - docking_and_transfer_interface
+      - avionics_and_guidance
+      - power_and_support_systems
+      - structural_truss_or_hull_frame
+    configurable_groups:
+      - cargo_module_variants
+
+  payload_capacity_t: 385
+
+  tags:
+    - vehicle
+    - spacecraft
+    - cargo
+    - interplanetary
+    - orbital
+    - mars
+    - race_for_sol
+
+  start_year: 2158
+  entry_status: draft
+
+- id: veh_bospor_3_regolith
+  pretty_name: Bospor 3 "Regolith"
+  name: Bospor 3 "Regolith"
+  type: vehicle
+  description: Utility SUV entry associated with Bospor Automat on Noyanakh in the Metyaki System during the Planetary Period.
+  notes: Initial descriptive repository entry. Detailed runtime fields, component structure, and exact operational role remain placeholder for later design refinement.
+  vehicle_class: suv
+  manufacturer_name: Bospor Automat
+
+  dimension_x_m: 4.8
+  dimension_y_m: 1.9
+  dimension_z_m: 1.75
+
+  produced_by: []
+  uses_technology: []
+  operated_by: []
+
+  intended_roles:
+    - placeholder_role
+
+  supported_infrastructure: []
+
+  descriptive_capabilities:
+    - placeholder_capability
+
+  component_layout_stub:
+    major_component_groups:
+      - chassis
+      - suspension
+      - drive_system
+      - passenger_compartment
+      - cargo_space
+      - control_interface
+    configurable_groups:
+      - drivetrain_variants
+      - utility_fittings
+
+  card_image: assets/cards/vehicles/veh_bospor_3_regolith_front.png
+
+  card_image_front: assets/cards/vehicles/veh_bospor_3_regolith_front.png
+  tags:
+    - vehicle
+    - ground_vehicle
+    - suv
+    - planetary_period
+    - noyanakh
+    - metyaki
+    - bospor
+
+  start_year: 7142
+  entry_status: draft
+
+
+- id: veh_octa_35p
+  pretty_name: Octa 35P
+  name: Octa 35P
+  type: vehicle
+  idea_reference: IDEA-364
+  description: Ground urban electric taxi used in the sprawling industrial cities around Patina’s orbital shipyard during the Planetary Period.
+  notes: Repository conversion of the Patina Surface Taxi concept. Associated with Stacklinger and the broader Patina shipyard-adjacent urban surface environment. Exact operational variants, trim levels, and later local modifications remain open for later refinement.
+  vehicle_class: urban_taxi
+  manufacturer_name: Stacklingen Consolidated Industries
+
+  dimension_x_m: 4.95
+  dimension_y_m: 1.88
+  dimension_z_m: 1.48
+
+  produced_by:
+    - producer_stacklingen_consolidated_industries
+  uses_technology: []
+  operated_by: []
+
+  associated_locations:
+    - planet_patina
+    - settlement_stacklinger
+
+  intended_roles:
+    - urban_passenger_transport
+    - industrial_city_taxi_service
+
+  supported_infrastructure:
+    - settlement_stacklinger
+
+  descriptive_capabilities:
+    - electric_ground_transport
+    - dense_urban_passenger_service
+    - industrial_frontier_city_operation
+
+  component_layout_stub:
+    major_component_groups:
+      - passenger_compartment
+      - battery_pack
+      - electric_drive_system
+      - suspension
+      - taxi_control_interface
+      - luggage_storage
+    configurable_groups:
+      - body_variants
+      - local_service_fittings
+
+  tags:
+    - vehicle
+    - ground_vehicle
+    - taxi
+    - electric
+    - patina
+    - stacklinger
+    - planetary_period
+
+  start_year: 8130
   entry_status: draft

@@ -1,0 +1,28 @@
+- id: producer_bospor_automat
+  pretty_name: Bospor Automat
+  name: Bospor Automat
+  type: producer
+  institution_class: automobile_producer
+  associated_locations:
+    - planet_noyanakh
+    - sys_metyaki
+  description: Automobile producer of the Planetary Period operating in the Sol-near Metyaki System and associated with vehicle production on Noyanakh.
+  notes: Initial repository entry for Bospor vehicle-line integration. Internal structure, ownership, and production footprint remain placeholder for later refinement.
+  card_image: assets/cards/institutions/bospor_automat.png
+  start_year: 7129
+  end_year: 9216
+  entry_status: draft
+
+
+- id: producer_stacklingen_consolidated_industries
+  pretty_name: Stacklingen Consolidated Industries
+  name: Stacklingen Consolidated Industries
+  type: producer
+  producer_class: urban_vehicle_producer
+  associated_locations:
+    - planet_patina
+    - settlement_stacklinger
+  description: Local producer associated with vehicle manufacturing in the Stacklinger urban-industrial zone on Patina during the Planetary Period.
+  notes: Inferred repository producer entry created to anchor the Octa 35P / Patina Surface Taxi concept. Broader industrial portfolio, ownership structure, and production scale remain open for later refinement.
+  start_year: 8112
+  entry_status: draft
