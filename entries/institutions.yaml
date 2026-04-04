@@ -1,0 +1,17 @@
+- id: inst_ggo_external_production_groups
+  pretty_name: GGO External Production Groups
+  name: GGO External Production Groups
+  type: institution
+  institution_class: external_production_framework
+  associated_cultures: []
+  associated_locations: []
+  description: GGO institution through which selected interest groups are granted leeway to establish producers outside the direct internal GGO production structure.
+  notes: Serves as the framework under which externally structured branded producers can exist while remaining tied to the wider GGO order.
+  tags:
+    - institution
+    - ggo
+    - production
+    - external_production
+    - economic_framework
+  start_year: 3182
+  entry_status: draft

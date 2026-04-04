@@ -1,0 +1,70 @@
+schema: producer
+
+extends: entity_core
+
+fields:
+
+  producer_class:
+    type: string
+    optional: true
+
+  parent_institution:
+    type: entity
+    target: institution
+    optional: true
+
+  controlling_faction:
+    type: entity
+    target: faction
+    optional: true
+
+  associated_cultures:
+    type: entity_list
+    target: culture
+    optional: true
+
+  associated_locations:
+    type: entity_list
+    target: locations
+    optional: true
+
+  produced_vehicles:
+    type: entity_list
+    target: vehicles
+    optional: true
+
+  produced_items:
+    type: entity_list
+    target: item
+    optional: true
+
+  produced_components:
+    type: entity_list
+    target: components
+    optional: true
+
+  design_language:
+    type: string_list
+    optional: true
+
+# --------------------------------------------------
+# COMMENTED EXAMPLE ENTRY
+# --------------------------------------------------
+#
+# - id: producer_example_works
+#   pretty_name: Example Works
+#   name: Example Works
+#   type: producer
+#   producer_class: vehicle_manufacturer
+#   parent_institution: inst_example_group
+#   controlling_faction:
+#   associated_cultures: []
+#   associated_locations: []
+#   produced_vehicles: []
+#   produced_items: []
+#   produced_components: []
+#   design_language:
+#     - functional
+#     - industrial
+#   start_year: 0
+#   entry_status: draft

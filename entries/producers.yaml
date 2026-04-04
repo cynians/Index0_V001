@@ -26,3 +26,34 @@
   notes: Inferred repository producer entry created to anchor the Octa 35P / Patina Surface Taxi concept. Broader industrial portfolio, ownership structure, and production scale remain open for later refinement.
   start_year: 8112
   entry_status: draft
+
+- id: producer_conviction_automobiles
+  pretty_name: Conviction Automobiles
+  name: Conviction Automobiles
+  type: producer
+  producer_class: luxury_vehicle_manufacturer
+  parent_institution: inst_ggo_external_production_groups
+  associated_cultures: []
+  associated_locations: []
+  produced_vehicles:
+    - veh_conviction_c1
+    - veh_conviction_c2
+    - veh_conviction_c4
+    - veh_conviction_c16
+  produced_items: []
+  produced_components: []
+  design_language:
+    - sleek
+    - luxurious
+    - prestige_oriented
+    - streamlined
+  description: External GGO-era automobile producer known for sleek, luxurious road vehicles and a compact alphanumeric naming style such as Conviction C1 and Conviction C2.
+  notes: Established as one of the branded producers permitted under the GGO External Production framework. Intended as a classically styled prestige manufacturer rather than a general industrial mass producer.
+  tags:
+    - producer
+    - automobile_manufacturer
+    - luxury
+    - ggo_hegemony
+    - external_production
+  start_year: 3182
+  entry_status: draft

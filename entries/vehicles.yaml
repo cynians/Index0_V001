@@ -218,3 +218,308 @@
 
   start_year: 8130
   entry_status: draft
+
+
+- id: veh_fletcher_class_destroyer
+  pretty_name: Fletcher-class Destroyer
+  name: Fletcher-class Destroyer
+  type: vehicle
+  description: United States Navy destroyer class built in large numbers during the Second World War for fleet screening, anti-submarine warfare, anti-air warfare, torpedo attack, and general surface combat service.
+  notes: Class-level historical entry. Producer, operator, component, and ship-specific derivative entries can be added later.
+  vehicle_class: fleet_destroyer
+
+  produced_by: []
+  uses_technology: []
+  operated_by: []
+
+  intended_roles:
+    - fleet_screening
+    - convoy_escort
+    - anti_submarine_warfare
+    - anti_air_warfare
+    - torpedo_attack
+    - surface_combat
+    - naval_patrol
+    - shore_bombardment
+
+  descriptive_capabilities:
+    - blue_water_naval_operation
+    - dual_purpose_gun_battery
+    - torpedo_attack_capability
+    - radar_directed_gunnery
+    - depth_charge_and_asw_operation
+    - high_speed_fleet_escort
+
+  component_layout_stub:
+    major_component_groups:
+      - hull_and_superstructure
+      - steam_propulsion_plant
+      - boiler_rooms
+      - geared_turbines
+      - propeller_shafts_and_screws
+      - bridge_and_command_spaces
+      - main_gun_battery
+      - torpedo_battery
+      - anti_aircraft_battery
+      - anti_submarine_weapons
+      - fire_control_and_radar
+      - fuel_and_support_systems
+    configurable_groups:
+      - anti_aircraft_fit
+      - radar_fit
+      - anti_submarine_fit
+      - late_war_refits
+
+  manufacturer_name: Multiple United States shipyards
+
+  dimension_x_m: 114.76
+  dimension_y_m: 12.04
+  dimension_z_m: 5.33
+
+  standard_displacement_long_tons: 2050
+  full_load_displacement_long_tons: 2500
+  max_speed_knots: 36.5
+  range_nmi_at_15kt: 5500
+  crew_complement: 329
+  propulsion_summary: 4 oil-fired boilers, 2 geared steam turbines, 2 screws, 60000 shp
+  main_armament_summary: 5 x single 5in/38 dual-purpose guns
+  torpedo_armament_summary: 10 x 21in torpedo tubes in 2 quintuple mounts
+  asw_armament_summary: depth charge racks and K-gun throwers
+  service_count_built: 175
+
+  tags:
+    - vehicle
+    - naval
+    - warship
+    - destroyer
+    - united_states
+    - world_war_2
+    - historical
+
+  start_year: 1942
+  end_year: 1971
+  entry_status: draft
+
+
+- id: veh_conviction_c1
+  pretty_name: Conviction C1
+  name: Conviction C1
+  type: vehicle
+  description: Compact 2-door convertible grand tourer by Conviction Automobiles, intended for refined private leisure touring with a smooth luxury character and a mild sporting edge.
+  notes: Early Conviction model line centered on open-top prestige touring rather than formal executive transport.
+  vehicle_class: compact_grand_touring_convertible
+
+  produced_by: []
+  uses_technology: []
+  operated_by: []
+
+  manufacturer_name: Conviction Automobiles
+
+  dimension_x_m: 4.42
+  dimension_y_m: 1.82
+  dimension_z_m: 1.31
+
+  design_catalog_components:
+    - comp_conviction_c1_touring_body
+    - comp_conviction_c1_open_roof_assembly
+    - comp_conviction_c1_grand_touring_drive_unit
+
+  intended_roles:
+    - private_leisure_touring
+    - prestige_personal_transport
+    - scenic_intercity_travel
+
+  descriptive_capabilities:
+    - open_top_luxury_touring
+    - compact_prestige_road_travel
+    - smooth_quiet_cruising
+    - refined_touring_performance
+
+  tags:
+    - vehicle
+    - ground_vehicle
+    - automobile
+    - convertible
+    - grand_tourer
+    - luxury
+    - conviction
+    - ggo_hegemony
+
+  start_year: 3184
+  entry_status: draft
+
+
+- id: veh_conviction_c2
+  pretty_name: Conviction C2
+  name: Conviction C2
+  type: vehicle
+  description: Mid-size luxury automobile line produced by Conviction Automobiles during the GGO Hegemony for buyers seeking a more spacious and prestigious road vehicle than the C1.
+  notes: Forms the central executive offering of the Conviction line. Balances sleek styling with comfort-oriented passenger space and a stronger prestige profile.
+  vehicle_class: luxury_executive_automobile
+  manufacturer_name: Conviction Automobiles
+
+  dimension_x_m: 4.86
+  dimension_y_m: 1.88
+  dimension_z_m: 1.41
+
+  produced_by:
+    - producer_conviction_automobiles
+  uses_technology: []
+  operated_by: []
+
+  intended_roles:
+    - private_passenger_transport
+    - executive_transport
+    - intercity_prestige_transport
+
+  supported_infrastructure: []
+
+  descriptive_capabilities:
+    - luxury_ground_transport
+    - executive_passenger_comfort
+    - sleek_streamlined_bodywork
+
+  component_layout_stub:
+    major_component_groups:
+      - passenger_compartment
+      - luggage_compartment
+      - drive_system
+      - suspension
+      - control_interface
+      - comfort_systems
+      - acoustic_insulation
+    configurable_groups:
+      - body_variants
+      - trim_variants
+      - rear_compartment_packages
+
+  tags:
+    - vehicle
+    - ground_vehicle
+    - automobile
+    - luxury
+    - executive
+    - ggo_hegemony
+    - conviction
+
+  start_year: 3187
+  entry_status: draft
+
+
+- id: veh_conviction_c4
+  pretty_name: Conviction C4
+  name: Conviction C4
+  type: vehicle
+  description: Large high-prestige luxury automobile line produced by Conviction Automobiles during the GGO Hegemony, intended for formal transport, elite ownership, and visibly status-oriented travel.
+  notes: Positioned above the C2 as a larger and more ceremonially prestigious offering. Represents the mature Conviction design language in a more imposing format.
+  vehicle_class: full_size_luxury_automobile
+  manufacturer_name: Conviction Automobiles
+
+  dimension_x_m: 5.24
+  dimension_y_m: 1.94
+  dimension_z_m: 1.45
+
+  produced_by:
+    - producer_conviction_automobiles
+  uses_technology: []
+  operated_by: []
+
+  intended_roles:
+    - private_passenger_transport
+    - ceremonial_transport
+    - elite_executive_transport
+
+  supported_infrastructure: []
+
+  descriptive_capabilities:
+    - luxury_ground_transport
+    - high_status_formal_transport
+    - spacious_rear_passenger_accommodation
+
+  component_layout_stub:
+    major_component_groups:
+      - passenger_compartment
+      - enlarged_rear_compartment
+      - luggage_compartment
+      - drive_system
+      - suspension
+      - control_interface
+      - comfort_systems
+      - acoustic_insulation
+    configurable_groups:
+      - body_variants
+      - formal_transport_packages
+      - prestige_trim_variants
+
+  tags:
+    - vehicle
+    - ground_vehicle
+    - automobile
+    - luxury
+    - prestige
+    - ggo_hegemony
+    - conviction
+
+  start_year: 3193
+  entry_status: draft
+
+
+- id: veh_conviction_c16
+  pretty_name: Conviction C16
+  name: Conviction C16
+  type: vehicle
+  description: Flagship ultra-luxury Conviction automobile line produced during the GGO Hegemony as the marque's most prestigious road-going passenger platform.
+  notes: Top-tier Conviction model line. Intended as an imposing flagship for elite owners, ceremonial movement, and highly status-conscious executive transport.
+  vehicle_class: flagship_ultra_luxury_automobile
+  manufacturer_name: Conviction Automobiles
+
+  dimension_x_m: 5.78
+  dimension_y_m: 1.99
+  dimension_z_m: 1.47
+
+  produced_by:
+    - producer_conviction_automobiles
+  uses_technology: []
+  operated_by: []
+
+  intended_roles:
+    - elite_private_transport
+    - ceremonial_transport
+    - diplomatic_transport
+    - flagship_executive_transport
+
+  supported_infrastructure: []
+
+  descriptive_capabilities:
+    - ultra_luxury_ground_transport
+    - flagship_status_vehicle
+    - expansive_passenger_comfort
+    - imposing_streamlined_bodywork
+
+  component_layout_stub:
+    major_component_groups:
+      - passenger_compartment
+      - formal_rear_passenger_suite
+      - luggage_compartment
+      - drive_system
+      - suspension
+      - control_interface
+      - comfort_systems
+      - acoustic_insulation
+      - prestige_features
+    configurable_groups:
+      - body_variants
+      - ceremonial_fittings
+      - flagship_trim_variants
+
+  tags:
+    - vehicle
+    - ground_vehicle
+    - automobile
+    - luxury
+    - flagship
+    - ggo_hegemony
+    - conviction
+
+  start_year: 3204
+  entry_status: draft

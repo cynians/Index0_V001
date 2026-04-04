@@ -501,7 +501,6 @@
   start_year: 0
 
 
-  start_year: 0
 
 # ==================================================
 # SYSTEM: METYAKI
@@ -537,4 +536,137 @@
   population:
     y0: 0
   notes: Placeholder planetary entry for Bospor-related entity integration. Detailed planetary properties still to be defined.
+
   start_year: 5246
+
+
+
+# ---------- geo_kure_atoll | Kure Atoll ----------
+- id: geo_kure_atoll
+  pretty_name: Kure Atoll
+  name: Kure Atoll
+  type: location
+  location_class: atoll
+  parent_location: planet_earth
+  description: Remote coral atoll in the Northwestern Hawaiian Islands.
+  tags:
+    - earth
+    - hawaii
+    - pacific
+    - atoll
+    - island
+    - ecological_placeholder
+  bounds:
+    type: bbox
+    min_x: -4.8
+    max_x: 4.8
+    min_y: -4.8
+    max_y: 4.8
+  climate_tags:
+    - tropical
+    - marine
+    - remote_oceanic
+  environment_summary:
+    status: placeholder
+    tags:
+      - coral_atoll
+      - low_lying_island
+      - protected_ecology
+    notes: Placeholder summary for future card-tab content.
+  geology_summary:
+    status: placeholder
+    tags:
+      - coral_formation
+      - reef_structure
+    notes: Placeholder geology tab content.
+  hydrology_summary:
+    status: placeholder
+    tags:
+      - lagoon
+      - marine_exchange
+    notes: Placeholder hydrology tab content.
+  ecology_summary:
+    status: placeholder
+    tags:
+      - seabird_habitat
+      - marine_ecosystem
+      - conservation_area
+    notes: Placeholder ecology tab content.
+  start_year: 0
+
+# ---------- geo_northwestern_hawaiian_islands | Northwestern Hawaiian Islands ----------
+- id: geo_northwestern_hawaiian_islands
+  pretty_name: Northwestern Hawaiian Islands
+  name: Northwestern Hawaiian Islands
+  type: location
+  location_class: island_chain
+  parent_location: planet_earth
+  bounds:
+    type: bbox
+    min_x: -1200
+    max_x: 1200
+    min_y: -180
+    max_y: 180
+  climate_tags:
+    - tropical
+    - marine
+    - oceanic
+  environment_summary:
+    status: placeholder
+    tags:
+      - island_chain
+      - coral_and_islet_systems
+      - protected_ecology
+    notes: Placeholder summary for future card-tab content.
+  ecology_summary:
+    status: placeholder
+    tags:
+      - seabird_habitat
+      - marine_ecosystem
+      - conservation_area
+    notes: Placeholder ecology tab content.
+  start_year: 0
+
+- id: site_mcas_futenma
+  pretty_name: Marine Corps Air Station Futenma
+  name: Marine Corps Air Station Futenma
+  type: location
+  location_class: site
+  location_role: military_air_station
+  parent_location: planet_earth
+  description: United States Marine Corps air station in Ginowan, Okinawa.
+  notes: Parented directly to planet_earth for now until a Japan/Okinawa location chain is added.
+  coords:
+    type: point
+    x: 0
+    y: 0
+  bounds:
+    type: bbox
+    min_x: -1.1
+    max_x: 1.1
+    min_y: -1.0
+    max_y: 1.0
+  climate_tags:
+    - subtropical
+    - coastal
+    - island
+  environment_summary:
+    status: placeholder
+    tags:
+      - urban_embedded_base
+      - airfield
+      - military_installation
+    notes: Placeholder summary for future card-tab content.
+  hydrology_summary:
+    status: placeholder
+    tags:
+      - island_drainage
+      - coastal_weather_exposure
+    notes: Placeholder hydrology tab content.
+  ecology_summary:
+    status: placeholder
+    tags:
+      - heavily_modified_site
+      - adjacent_urban_ecology
+    notes: Placeholder ecology tab content.
+  start_year: 1946
