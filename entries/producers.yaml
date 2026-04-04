@@ -27,6 +27,12 @@
   start_year: 8112
   entry_status: draft
 
+
+
+
+
+
+
 - id: producer_conviction_automobiles
   pretty_name: Conviction Automobiles
   name: Conviction Automobiles
@@ -37,9 +43,6 @@
   associated_locations: []
   produced_vehicles:
     - veh_conviction_c1
-    - veh_conviction_c2
-    - veh_conviction_c4
-    - veh_conviction_c16
   produced_items: []
   produced_components: []
   design_language:

@@ -186,3 +186,80 @@
 
   derived_from_ideas:
     - IDEA-571
+
+
+- id: aspect_asahachi_kono_photographic_pictorialism
+  name: Asahachi Kōno Photographic Pictorialism
+  type: cultural_aspect
+
+  aspect_class: art_style
+
+  tags:
+    - photography
+    - pictorialism
+    - japanese
+    - interwar
+    - visual_art
+
+  influence_domains:
+    - photography
+    - portraiture
+    - visual_composition
+    - print_culture
+
+  behavioural_modifiers:
+    atmospheric_composition: high
+    tonal_softness: strong
+    formal_staging: moderate
+    romantic_visualization: high
+
+  realizations: []
+
+  description: >
+    Photographic art style derived from the work of Asahachi Kōno,
+    emphasizing pictorialist softness, atmospheric composition,
+    tonal delicacy, and a refined, emotionally shaped image surface
+    over strict documentary sharpness.
+
+  origin: >
+    Rooted in the interwar photographic culture surrounding
+    Asahachi Kōno and related pictorialist circles, including the
+    Japanese Camera Pictorialists of California in Los Angeles.
+
+  historical_examples:
+    - asahachi_kono
+    - japanese_camera_pictorialists_of_california
+
+
+
+
+- id: aspect_lindsdale_fencing
+  name: Lindsdale Fencing
+  type: cultural_aspect
+  aspect_class: sport
+  tags:
+    - sport
+    - martial_sport
+    - eccentric
+    - elite_competition
+    - 42nd_century
+  influence_domains:
+    - sport
+    - martial_training
+    - performance_culture
+  behavioural_modifiers:
+    precision_control: high
+    mobility_emphasis: high
+    feint_complexity: high
+    ritual_formality: moderate
+  realizations: []
+  description: >
+    Fighting sport of the 42nd century centered on the use of a hooked
+    stick or cane. Initially seen as slightly goofy because of its strange
+    movement rules and footwork, it later evolved into an elite and highly
+    technical competitive discipline.
+  origin: >
+    Developed from eccentric early competitive forms into a mature sport
+    rewarding precision disarms, hook control, mobility, feints, and sudden
+    angular changes.
+  historical_examples: []

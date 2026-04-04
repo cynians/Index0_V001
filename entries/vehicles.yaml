@@ -309,7 +309,8 @@
   notes: Early Conviction model line centered on open-top prestige touring rather than formal executive transport.
   vehicle_class: compact_grand_touring_convertible
 
-  produced_by: []
+  produced_by:
+    - producer_conviction_automobiles
   uses_technology: []
   operated_by: []
 
@@ -348,178 +349,340 @@
   start_year: 3184
   entry_status: draft
 
-
-- id: veh_conviction_c2
-  pretty_name: Conviction C2
-  name: Conviction C2
+- id: veh_unicorn_class_communications_cruiser
+  pretty_name: Unicorn Class Communications Cruiser
+  name: Unicorn Class Communications Cruiser
   type: vehicle
-  description: Mid-size luxury automobile line produced by Conviction Automobiles during the GGO Hegemony for buyers seeking a more spacious and prestigious road vehicle than the C1.
-  notes: Forms the central executive offering of the Conviction line. Balances sleek styling with comfort-oriented passenger space and a stronger prestige profile.
-  vehicle_class: luxury_executive_automobile
-  manufacturer_name: Conviction Automobiles
+  description: Planetary Period communications cruiser with a long forward antenna nose used for in-system relay, coordination, and communications support duties.
+  notes: Dual-use specialist ship operating both as semi-static communications infrastructure within systems and as a limited-mobility support craft able to reposition between planets, stations, and fleet formations.
+  vehicle_class: communications_cruiser
 
-  dimension_x_m: 4.86
-  dimension_y_m: 1.88
-  dimension_z_m: 1.41
-
-  produced_by:
-    - producer_conviction_automobiles
+  produced_by: []
   uses_technology: []
   operated_by: []
 
+  manufacturer_name: Unknown
+
+  dimension_x_m: 168.0
+  dimension_y_m: 24.0
+  dimension_z_m: 28.0
+
   intended_roles:
-    - private_passenger_transport
-    - executive_transport
-    - intercity_prestige_transport
+    - in_system_communications_relay
+    - systems_coordination
+    - fleet_communications_support
+    - station_to_station_signal_routing
+    - relay_redeployment
 
   supported_infrastructure: []
 
   descriptive_capabilities:
-    - luxury_ground_transport
-    - executive_passenger_comfort
-    - sleek_streamlined_bodywork
+    - high_gain_signal_handling
+    - in_system_communications_coordination
+    - limited_operational_repositioning
+    - fleet_attached_signal_support
+    - persistent_relay_presence
 
   component_layout_stub:
     major_component_groups:
-      - passenger_compartment
-      - luggage_compartment
-      - drive_system
-      - suspension
-      - control_interface
-      - comfort_systems
-      - acoustic_insulation
+      - forward_antenna_nose
+      - communications_processing_core
+      - signal_distribution_spine
+      - technical_crew_section
+      - propulsion_block
+      - power_generation
+      - thermal_management
+      - docking_and_service_access
     configurable_groups:
-      - body_variants
-      - trim_variants
-      - rear_compartment_packages
+      - antenna_suites
+      - relay_packages
+      - fleet_support_fits
 
   tags:
     - vehicle
-    - ground_vehicle
-    - automobile
-    - luxury
-    - executive
-    - ggo_hegemony
-    - conviction
+    - spacecraft
+    - communications
+    - cruiser
+    - planetary_period
+    - relay_ship
 
-  start_year: 3187
+  start_year: 6441
   entry_status: draft
 
-
-- id: veh_conviction_c4
-  pretty_name: Conviction C4
-  name: Conviction C4
+- id: veh_panamericana_q3n_stormpetrel
+  pretty_name: Panamericana Q3N Stormpetrel
+  name: Panamericana Q3N Stormpetrel
   type: vehicle
-  description: Large high-prestige luxury automobile line produced by Conviction Automobiles during the GGO Hegemony, intended for formal transport, elite ownership, and visibly status-oriented travel.
-  notes: Positioned above the C2 as a larger and more ceremonially prestigious offering. Represents the mature Conviction design language in a more imposing format.
-  vehicle_class: full_size_luxury_automobile
-  manufacturer_name: Conviction Automobiles
+  description: Panamericana naval combat drone boat optimized for littoral surveillance, scouting, targeting, and quick-response combat in coastal waters.
+  notes: Semi-submersible standby posture allows long-term concealment and persistent observation before activation.
+  vehicle_class: naval_combat_drone
 
-  dimension_x_m: 5.24
-  dimension_y_m: 1.94
-  dimension_z_m: 1.45
-
-  produced_by:
-    - producer_conviction_automobiles
+  produced_by: []
   uses_technology: []
   operated_by: []
 
-  intended_roles:
-    - private_passenger_transport
-    - ceremonial_transport
-    - elite_executive_transport
+  manufacturer_name: Unknown
 
-  supported_infrastructure: []
+  intended_roles:
+    - scouting
+    - targeting
+    - long_term_surveillance
+    - littoral_quick_response
+    - coastal_combat_patrol
+
+  supported_infrastructure:
+    - littoral_operations
+    - coastal_basing
+    - concealed_standby_deployment
 
   descriptive_capabilities:
-    - luxury_ground_transport
-    - high_status_formal_transport
-    - spacious_rear_passenger_accommodation
+    - semi_submersible_standby
+    - persistent_surveillance
+    - littoral_ambush
+    - unmanned_naval_operation
 
   component_layout_stub:
     major_component_groups:
-      - passenger_compartment
-      - enlarged_rear_compartment
-      - luggage_compartment
-      - drive_system
-      - suspension
-      - control_interface
-      - comfort_systems
-      - acoustic_insulation
+      - semi_submersible_hull
+      - sensor_and_targeting_suite
+      - command_and_control_module
+      - propulsion_block
+      - limited_missile_fit
+      - 17mm_autocannon_mount
+      - detachable_self_destruct_warhead
     configurable_groups:
-      - body_variants
-      - formal_transport_packages
-      - prestige_trim_variants
+      - surveillance_fits
+      - littoral_attack_fits
+
+  main_armament_summary: 17 mm autocannon, very limited missile armament, detachable self-destruct warhead
 
   tags:
     - vehicle
-    - ground_vehicle
-    - automobile
-    - luxury
-    - prestige
-    - ggo_hegemony
-    - conviction
+    - naval
+    - drone
+    - panamericana
+    - littoral
+    - combat_drone
 
-  start_year: 3193
+  start_year: 0
   entry_status: draft
 
-
-- id: veh_conviction_c16
-  pretty_name: Conviction C16
-  name: Conviction C16
+- id: veh_f22_raptor
+  pretty_name: F-22 Raptor
+  name: F-22 Raptor
   type: vehicle
-  description: Flagship ultra-luxury Conviction automobile line produced during the GGO Hegemony as the marque's most prestigious road-going passenger platform.
-  notes: Top-tier Conviction model line. Intended as an imposing flagship for elite owners, ceremonial movement, and highly status-conscious executive transport.
-  vehicle_class: flagship_ultra_luxury_automobile
-  manufacturer_name: Conviction Automobiles
+  description: United States stealth air-dominance fighter introduced in the late 20th and early 21st century, combining low observability, supercruise, extreme maneuverability, and integrated sensor fusion.
+  notes: Real-world baseline entry for later adaptation into the Superpower Wars context.
+  vehicle_class: stealth_air_dominance_fighter
 
-  dimension_x_m: 5.78
-  dimension_y_m: 1.99
-  dimension_z_m: 1.47
-
-  produced_by:
-    - producer_conviction_automobiles
+  produced_by: []
   uses_technology: []
   operated_by: []
 
-  intended_roles:
-    - elite_private_transport
-    - ceremonial_transport
-    - diplomatic_transport
-    - flagship_executive_transport
+  manufacturer_name: Lockheed Martin
 
-  supported_infrastructure: []
+  dimension_x_m: 18.92
+  dimension_y_m: 13.56
+  dimension_z_m: 5.08
+
+  intended_roles:
+    - air_superiority
+    - interceptor
+    - escort_fighter
+    - precision_strike
+
+  supported_infrastructure:
+    - conventional_airbase
+    - hardened_airbase
+    - military_runway_operations
 
   descriptive_capabilities:
-    - ultra_luxury_ground_transport
-    - flagship_status_vehicle
-    - expansive_passenger_comfort
-    - imposing_streamlined_bodywork
+    - low_observable_air_combat
+    - supercruise
+    - supermaneuverability
+    - integrated_sensor_fusion
+    - beyond_visual_range_engagement
+    - internal_weapons_carriage
 
   component_layout_stub:
     major_component_groups:
-      - passenger_compartment
-      - formal_rear_passenger_suite
-      - luggage_compartment
-      - drive_system
-      - suspension
-      - control_interface
-      - comfort_systems
-      - acoustic_insulation
-      - prestige_features
+      - stealth_airframe
+      - twin_engine_propulsion
+      - cockpit_and_life_support
+      - radar_and_sensor_suite
+      - integrated_avionics
+      - internal_weapons_bays
+      - flight_control_surfaces
+      - landing_gear
     configurable_groups:
-      - body_variants
-      - ceremonial_fittings
-      - flagship_trim_variants
+      - air_to_air_loadouts
+      - strike_loadouts
+      - avionics_upgrades
+
+  crew_complement: 1
+  max_speed_mach: 2.25
+  supercruise_mach: 1.5
+  service_ceiling_m: 19800
+  combat_radius_km: 850
+  ferry_range_km: 2960
+  propulsion_summary: 2 x Pratt & Whitney F119-PW-100 turbofan engines with thrust vectoring
+  main_armament_summary: 1 x 20 mm M61A2 Vulcan cannon, internal air-to-air and limited air-to-ground ordnance
+  service_count_built: 187
+
+  tags:
+    - vehicle
+    - aircraft
+    - fighter
+    - stealth
+    - united_states
+    - modern
+    - superpower_wars_anchor
+
+  start_year: 2005
+  entry_status: draft
+
+- id: veh_luaz_967
+  pretty_name: LuAZ-967
+  name: LuAZ-967
+  type: vehicle
+  description: Soviet light amphibious front-line transport vehicle intended for casualty evacuation, ammunition supply, and light battlefield utility transport in difficult terrain.
+  notes: Real-world baseline entry for the LuAZ-967 vehicle line. The line is most commonly associated with the LuAZ-967M production form, but this entry represents the broader vehicle family.
+  vehicle_class: amphibious_front_line_transport
+
+  produced_by: []
+  uses_technology: []
+  operated_by: []
+
+  manufacturer_name: LuAZ
+
+  dimension_x_m: 3.74
+  dimension_y_m: 1.71
+  dimension_z_m: 1.75
+
+  intended_roles:
+    - casualty_evacuation
+    - light_front_line_transport
+    - ammunition_supply
+    - light_weapon_transport
+    - difficult_terrain_utility
+
+  supported_infrastructure:
+    - rough_ground_operations
+    - military_field_operations
+    - calm_water_crossing
+
+  descriptive_capabilities:
+    - amphibious_operation
+    - low_profile_transport
+    - air_transportable_light_vehicle
+    - difficult_terrain_mobility
+    - fold_down_low_silhouette_configuration
+
+  component_layout_stub:
+    major_component_groups:
+      - steel_hull_body
+      - amphibious_vehicle_hull
+      - central_driver_control_position
+      - fold_down_windscreen_and_controls
+      - light_utility_cargo_section
+      - four_wheel_drive_system
+      - suspension
+      - engine_and_transmission
+    configurable_groups:
+      - evacuation_fittings
+      - cargo_fittings
+      - light_weapon_transport_fittings
+
+  crew_complement: 1
+  payload_kg: 400
+  max_speed_kmh: 75
+  water_speed_kmh: 3
+  towing_capacity_kg: 300
+  propulsion_summary: Air-cooled V4 gasoline engine, mechanical transmission, front-drive layout with selectively engaged rear axle on later cited production configuration
+  main_armament_summary: Unarmed utility transport vehicle
+  service_count_built: null
 
   tags:
     - vehicle
     - ground_vehicle
-    - automobile
-    - luxury
-    - flagship
-    - ggo_hegemony
-    - conviction
+    - amphibious_vehicle
+    - military
+    - soviet
+    - cold_war
+    - utility_transport
 
-  start_year: 3204
+  start_year: 1961
+  entry_status: draft
+
+- id: veh_d48_gun
+  pretty_name: D-48 Gun
+  name: D-48 Gun
+  type: vehicle
+  description: Soviet 85 mm towed anti-tank gun developed in the postwar period for high-velocity direct fire against armored targets, while retaining limited secondary field-gun utility.
+  notes: Real-world baseline entry for the D-48. Stored in vehicles for now because the current repo has no dedicated weapons schema and the gun functions as a crew-served towed battlefield platform.
+  vehicle_class: towed_anti_tank_gun
+
+  produced_by: []
+  uses_technology: []
+  operated_by: []
+
+  manufacturer_name: Unknown
+
+  dimension_x_m: 8.72
+  dimension_y_m: 1.59
+  dimension_z_m: 1.89
+
+  intended_roles:
+    - anti_tank_fire
+    - direct_fire_support
+    - towed_artillery_operation
+    - defensive_gun_position
+
+  supported_infrastructure:
+    - towed_field_deployment
+    - military_road_towing
+    - prepared_fire_positions
+
+  descriptive_capabilities:
+    - high_velocity_anti_tank_fire
+    - split_trail_deployment
+    - crew_served_towed_operation
+    - limited_indirect_fire_capability
+
+  component_layout_stub:
+    major_component_groups:
+      - gun_barrel
+      - muzzle_brake
+      - breech
+      - recoil_system
+      - carriage
+      - split_trail
+      - sighting_system
+      - wheels_and_tow_assembly
+    configurable_groups:
+      - ammunition_types
+      - towing_configurations
+      - sighting_fits
+
+  crew_complement: 6
+  mass_kg: 2350
+  caliber_mm: 85
+  max_rate_of_fire_rpm: 15
+  normal_rate_of_fire_rpm: 8
+  muzzle_velocity_mps: 1040
+  direct_fire_range_m: 1200
+  max_range_m: 18970
+  propulsion_summary: Unpowered towed gun
+  main_armament_summary: 85 mm D-48 anti-tank gun
+  service_count_built: null
+
+  tags:
+    - vehicle
+    - artillery
+    - anti_tank_gun
+    - towed_gun
+    - soviet
+    - cold_war
+
+  start_year: 1955
   entry_status: draft

@@ -1,0 +1,16 @@
+- id: event_panamericana_rockies_f22_discovery
+  pretty_name: Panamericana Rockies F-22 Discovery
+  name: Panamericana Rockies F-22 Discovery
+  type: event
+  description: In 2164, an inland expedition attached to a Panamericana coastal authority discovered a long-obsolete but still functioning F-22 in a deep storage hangar in the Rockies.
+  notes: Remembered mainly as a symbolic rediscovery of a lost military age, with a smaller but real reverse-engineering and reuse dimension.
+  tags:
+    - panamericana
+    - f22
+    - rediscovery
+    - race_for_sol
+    - rockies
+    - military_relic
+  start_year: 2164
+  end_year: 2164
+  entry_status: draft
