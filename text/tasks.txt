@@ -23,6 +23,8 @@ DONE: TASK-033 Tab Routing UI
 DONE: TASK-034 Camera Behavior Profiles
 DONE: TASK-067 Entry Driven SpaceSystem
 DONE: TASK-068 Persistent Planet Map Roots
+DONE: TASK-230 Root VehicleSimulation
+DONE: TASK-231 VehicleSimulation View Modes
 
 ------------------------------------------------
 CORE APPLICATION / ARCHITECTURE
@@ -2280,30 +2282,10 @@ Description: Connect Strand of Action to existing timeline-pressure and task sys
   - strand as contextual temporal thread
 - Support cases where a strand exists as historical/contextual continuity without being reducible to a task tree
 
-TASK-230
-Status: TODO
-Difficulty: 5
-Requires: TASK-033, TASK-151
-Description: Introduce VehicleSimulation as a root simulation type, including:
-- dedicated launch path and tab entry
-- dedicated render_mode = vehicle
-- dedicated vehicle renderer module
-- camera-compatible standalone prototype bounds and center
-- no person/faction/producer coupling yet
 
-TASK-231
-Status: TODO
-Difficulty: 6
-Requires: TASK-230, TASK-066
-Description: Add focused vehicle-tab view modes, including:
-- Vehicle Design mode
-- Interior mode
-- Operational mode
-- mode switching through simulation-aware UI actions
-- simulation-owned selected mode state rather than app-global mode state
 
 TASK-232
-Status: TODO
+Status: IN PROGRESS
 Difficulty: 6
 Requires: TASK-230, TASK-151, TASK-152
 Description: Make VehicleSimulation the canonical source of vehicle display payloads, including:
@@ -2315,6 +2297,31 @@ Description: Make VehicleSimulation the canonical source of vehicle display payl
   - faction-layer vehicle display abstraction
   - producer-layer vehicle display abstraction
 - keep engine/renderer.py limited to active-tab dispatch rather than cross-simulation vehicle presentation logic
+- reduce remaining prototype/default fallback assumptions in favor of repository-derived vehicle state where available
+
+Notes:
+- Current state:
+  - VehicleSimulation already exists as a root simulation type
+  - focused vehicle-tab payload generation already exists
+  - dedicated renderer integration and launch path already exist
+- Remaining work:
+  - cross-simulation export structure
+  - cleaner payload boundaries for non-vehicle parent simulations
+  - further reduction of prototype/default assumptions
+
+TASK-243
+Status: TODO
+Difficulty: 5
+Requires: TASK-231, TASK-232, TASK-237
+Description: Derive operational-mode module visibility and system grouping from repository-backed placed vehicle components, including:
+- Use design_placed_components and related repository-backed component placement state as the basis for operational-mode module presentation
+- Replace empty or placeholder operational module lists with component-derived operational groupings where possible
+- Preserve distinction between:
+  - design placement representation
+  - interior representation
+  - operational/system abstraction
+- Establish a first concrete bridge between vehicle design layout and vehicle operational simulation state without requiring full crew/person integration yet
+
 
 TASK-233
 Status: TODO
@@ -2348,24 +2355,37 @@ Description: Tune Knowledge Layer image/canvas suggestion scaler for restrained 
 - Preservation of much larger suggestion ranges for planetary/body-scale entries
 
 TASK-236
-Status: TODO
+Status: IN PROGRESS
 Difficulty: 4
 Requires: TASK-207, TASK-210, TASK-215, TASK-230
-Description: Replace placeholder vehicle repository entries with idea-derived real vehicle entries, including:
-- Use actual vehicle concepts from ideas.txt rather than prototype/test placeholders
+Description: Refine and expand the existing vehicle repository set using idea-derived real vehicle entries, including:
+- Continue replacing remaining placeholder or weak vehicle entries with repository-safe idea-derived vehicles where needed
+- Refine already-added vehicle entries in vehicles.yaml rather than treating the file as mostly placeholder content
 - Adapt ideas step-by-step into vehicles.yaml using the current repository schema
 - Keep entries descriptive and repository-safe even when simulation/runtime fields are still incomplete
-- Preserve ability to review and adjust each converted vehicle entry individually before wider batch replacement
+- Preserve ability to review and adjust each converted or refined vehicle entry individually before wider batch normalization
+
+Notes:
+- Current repository state already includes multiple real vehicle entries across several eras.
+- Remaining work is now mixed:
+  - cleanup/refinement of existing entries
+  - selective conversion of still-weak entries
+  - consistency alignment with VehicleSimulation and component-structure tasks
 
 TASK-237
-Status: TODO
+Status: IN PROGRESS
 Difficulty: 5
 Requires: TASK-236, TASK-038, TASK-210
 Description: Represent vehicle component structure descriptively in repository vehicle entries without flattening final capabilities, including:
 - Vehicle entries storing intended roles, major component groups, and configuration stubs
 - Avoid treating repository vehicle entries as authoritative flat capability stat blocks
 - Preserve future derivation of actual runtime capabilities from installed components and component combinations
-- Keep repository vehicle entries aligned with existing VehicleSimulation component-based direction
+- Keep repository vehicle entries aligned with the existing VehicleSimulation component-based direction
+- Normalize this structure across the growing mixed-era vehicle repository rather than only introducing it for new entries
+
+Notes:
+- This direction is already partially present in current vehicles.yaml entries through component_layout_stub and related descriptive fields.
+- Remaining work is mainly repository-wide consistency and tighter linkage to simulation usage.
 
 TASK-238
 Status: TODO
@@ -2437,3 +2457,24 @@ Description: Implement canonical storage and writeback workflow for imported car
   - canonical in-project stored asset
   - repository field pointing to the canonical asset
 - Foundation for later schema-aware media management rather than ad-hoc per-card image assignment
+
+
+TASK-242
+Status: TODO
+Difficulty: 4
+Requires: TASK-136, TASK-240, TASK-241
+Description: Normalize repository image-role handling around shared entity image fields and add support for design_image as a preferred fallback image role, including:
+- Keep existing explicit image fields such as card_image and orientation-specific card image fields working
+- Introduce shared support for design_image as a schema-safe image field that can be used across entity types
+- Make card-side image resolution prefer:
+  - card_image
+  - design_image
+  - front/side/top role images
+  - remaining generic image fallbacks
+- Allow vehicle entries to use the normalized shared image-role pattern without making it vehicle-only
+- Preserve compatibility with current repository entries that already use partial ad-hoc image fields
+- Establish a clean bridge between:
+  - authored final card image
+  - unscaled preliminary design image
+  - orientation view images
+  - later canonical asset storage/writeback workflows

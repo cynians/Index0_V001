@@ -61,65 +61,14 @@
   functional_roles:
     - propulsion
     - power_generation
-  requires_technology: []
-  descriptive_capabilities:
-    - installable
-    - compact_engine_module
-    - provides_vehicle_propulsion
-  maintenance_notes: Compact engine block intended for light vehicle layouts and simple early design testing.
-  tags:
-    - engine
-    - propulsion
-    - vehicle
-    - compact
-  start_year: 2400
-  entry_status: draft
-
-- id: comp_engine_vblock_heavy
-  pretty_name: V-Block Engine
-  name: V-Block Engine
-  type: component
-  description: Larger heavy engine module used as a high-output propulsion block for the vehicle design prototype.
-  component_class: engine_component
-  primary_material: mat_stainless_steel
-  secondary_materials:
-    - mat_copper_alloy
-  represented_item: null
-  install_contexts:
-    - vehicle
-  functional_roles:
-    - propulsion
-    - power_generation
-    - heavy_vehicle_drive
-  requires_technology: []
-  descriptive_capabilities:
-    - installable
-    - heavy_engine_module
-    - provides_vehicle_propulsion
-  maintenance_notes: Larger engine block requiring more hull volume but providing a heavier propulsion option for design testing.
-  tags:
-    - engine
-    - propulsion
-    - vehicle
-    - heavy
-  start_year: 2400
-  entry_status: draft
-
-- id: comp_engine_inline_compact
-  pretty_name: Inline Engine
-  name: Inline Engine
-  type: component
-  description: Compact inline engine module used as a small vehicle propulsion block for the vehicle design prototype.
-  component_class: engine_component
-  primary_material: mat_stainless_steel
-  secondary_materials:
-    - mat_copper_alloy
-  represented_item: null
-  install_contexts:
-    - vehicle
-  functional_roles:
-    - propulsion
-    - power_generation
+  satisfies_categories:
+    - propulsion_road
+    - powertrain
+  operational_groups:
+    - Powertrain
+  subsystem_labels:
+    - road propulsion
+    - powertrain core
   requires_technology: []
   descriptive_capabilities:
     - installable
@@ -155,6 +104,14 @@
     - propulsion
     - power_generation
     - heavy_vehicle_drive
+  satisfies_categories:
+    - propulsion_road
+    - powertrain
+  operational_groups:
+    - Powertrain
+  subsystem_labels:
+    - road propulsion
+    - powertrain core
   requires_technology: []
   descriptive_capabilities:
     - installable
@@ -174,11 +131,10 @@
   start_year: 2400
   entry_status: draft
 
-
-- id: comp_conviction_c1_touring_body
+- id: asm_conviction_c1_touring_body
   pretty_name: Conviction C1 Touring Body
   name: Conviction C1 Touring Body
-  type: component
+  type: assembly
   description: Streamlined 2-door convertible body structure for the Conviction C1, shaped for refined leisure touring with a slightly sporty but still elegant exterior profile.
   component_class: vehicle_body_component
   primary_material: null
@@ -190,6 +146,14 @@
     - structural_body
     - passenger_enclosure
     - exterior_styling
+  satisfies_categories:
+    - structure
+    - body
+  operational_groups:
+    - Structure
+  subsystem_labels:
+    - body
+    - core structure
   requires_technology: []
   descriptive_capabilities:
     - installable
@@ -203,7 +167,7 @@
   mass_kg: 420.0
   power_kw: 0.0
   tags:
-    - component
+    - assembly
     - vehicle
     - body
     - convertible
@@ -212,10 +176,10 @@
   start_year: 3184
   entry_status: draft
 
-- id: comp_conviction_c1_open_roof_assembly
+- id: asm_conviction_c1_open_roof_assembly
   pretty_name: Conviction C1 Open Roof Assembly
   name: Conviction C1 Open Roof Assembly
-  type: component
+  type: assembly
   description: Convertible roof assembly for the Conviction C1, intended to preserve the car's refined touring character in both open and closed configurations.
   component_class: roof_system_component
   primary_material: null
@@ -227,6 +191,12 @@
     - weather_protection
     - passenger_comfort
     - convertible_operation
+  satisfies_categories:
+    - body
+  operational_groups:
+    - Structure
+  subsystem_labels:
+    - roof system
   requires_technology: []
   descriptive_capabilities:
     - installable
@@ -240,7 +210,7 @@
   mass_kg: 68.0
   power_kw: 0.0
   tags:
-    - component
+    - assembly
     - vehicle
     - roof_system
     - convertible
@@ -249,10 +219,10 @@
   start_year: 3184
   entry_status: draft
 
-- id: comp_conviction_c1_grand_touring_drive_unit
+- id: asm_conviction_c1_grand_touring_drive_unit
   pretty_name: Conviction C1 Grand Touring Drive Unit
   name: Conviction C1 Grand Touring Drive Unit
-  type: component
+  type: assembly
   description: Refined drive unit for the Conviction C1, tuned for smooth quiet cruising with enough touring performance for relaxed long-distance leisure travel.
   component_class: drive_system_component
   primary_material: null
@@ -264,6 +234,14 @@
     - propulsion
     - road_touring_drive
     - smooth_power_delivery
+  satisfies_categories:
+    - propulsion_road
+    - powertrain
+  operational_groups:
+    - Powertrain
+  subsystem_labels:
+    - road propulsion
+    - powertrain core
   requires_technology: []
   descriptive_capabilities:
     - installable
@@ -277,120 +255,7 @@
   mass_kg: 260.0
   power_kw: 210.0
   tags:
-    - component
-    - vehicle
-    - drive_system
-    - touring
-    - conviction
-    - c1
-  start_year: 3184
-  entry_status: draft
-
-
-
-- id: comp_conviction_c1_touring_body
-  pretty_name: Conviction C1 Touring Body
-  name: Conviction C1 Touring Body
-  type: component
-  description: Streamlined 2-door convertible body structure for the Conviction C1, shaped for refined leisure touring with a slightly sporty but still elegant exterior profile.
-  component_class: vehicle_body_component
-  primary_material: null
-  secondary_materials: []
-  represented_item: null
-  install_contexts:
-    - vehicle
-  functional_roles:
-    - structural_body
-    - passenger_enclosure
-    - exterior_styling
-  requires_technology: []
-  descriptive_capabilities:
-    - installable
-    - open_top_body_structure
-    - luxury_convertible_form
-    - grand_touring_profile
-  maintenance_notes: Exterior finish and body alignment are intended to preserve the sleek design language and refined road presence of the C1 line.
-  dimension_x_m: 4.25
-  dimension_y_m: 1.80
-  dimension_z_m: 1.18
-  mass_kg: 420.0
-  power_kw: 0.0
-  tags:
-    - component
-    - vehicle
-    - body
-    - convertible
-    - conviction
-    - c1
-  start_year: 3184
-  entry_status: draft
-
-- id: comp_conviction_c1_open_roof_assembly
-  pretty_name: Conviction C1 Open Roof Assembly
-  name: Conviction C1 Open Roof Assembly
-  type: component
-  description: Convertible roof assembly for the Conviction C1, intended to preserve the car's refined touring character in both open and closed configurations.
-  component_class: roof_system_component
-  primary_material: null
-  secondary_materials: []
-  represented_item: null
-  install_contexts:
-    - vehicle
-  functional_roles:
-    - weather_protection
-    - passenger_comfort
-    - convertible_operation
-  requires_technology: []
-  descriptive_capabilities:
-    - installable
-    - retractable_or_foldable_roof_system
-    - touring_weather_cover
-    - refined_open_top_operation
-  maintenance_notes: Roof seals, hinge points, and folding mechanisms should be maintained to preserve quiet cruising quality and open-top usability.
-  dimension_x_m: 1.75
-  dimension_y_m: 1.48
-  dimension_z_m: 0.32
-  mass_kg: 68.0
-  power_kw: 0.0
-  tags:
-    - component
-    - vehicle
-    - roof_system
-    - convertible
-    - conviction
-    - c1
-  start_year: 3184
-  entry_status: draft
-
-- id: comp_conviction_c1_grand_touring_drive_unit
-  pretty_name: Conviction C1 Grand Touring Drive Unit
-  name: Conviction C1 Grand Touring Drive Unit
-  type: component
-  description: Refined drive unit for the Conviction C1, tuned for smooth quiet cruising with enough touring performance for relaxed long-distance leisure travel.
-  component_class: drive_system_component
-  primary_material: null
-  secondary_materials: []
-  represented_item: null
-  install_contexts:
-    - vehicle
-  functional_roles:
-    - propulsion
-    - road_touring_drive
-    - smooth_power_delivery
-  requires_technology: []
-  descriptive_capabilities:
-    - installable
-    - refined_powertrain
-    - quiet_cruising_operation
-    - grand_touring_performance
-  maintenance_notes: Service focus is on smoothness, noise suppression, and reliable touring-range operation rather than aggressive maximum-performance tuning.
-  dimension_x_m: 1.55
-  dimension_y_m: 0.95
-  dimension_z_m: 0.88
-  mass_kg: 260.0
-  power_kw: 210.0
-  tags:
-    - component
+    - assembly
     - vehicle
     - drive_system
     - touring

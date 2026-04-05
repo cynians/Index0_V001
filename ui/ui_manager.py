@@ -22,6 +22,7 @@ class UIManager:
         self.buttons = []
         self.scope_label = None
         self.breadcrumb_label = None
+        self.vehicle_requirement_lines = []
         self.hover_tooltip_lines = []
         self.hover_tooltip_pos = None
 
@@ -73,6 +74,7 @@ class UIManager:
         self.buttons = []
         self.scope_label = None
         self.breadcrumb_label = None
+        self.vehicle_requirement_lines = []
         self.hover_tooltip_lines = []
         self.hover_tooltip_pos = None
 
@@ -139,9 +141,9 @@ class UIManager:
 
         if self.simulation_panel_active_tab_id == "catalog":
             self.simulation_bar_hint_lines = [
-                "Click catalog item to arm placement",
-                "Click hull to place",
-                "Click placed component to select, then click hull to move",
+                "Hold catalog item and drag into hull",
+                "Release to place component",
+                "Assemblies are grouped before reusable components",
             ]
         elif self.simulation_panel_active_tab_id == "selection":
             self.simulation_bar_hint_lines = [
@@ -157,7 +159,7 @@ class UIManager:
             self.simulation_bar_hint_lines = []
 
         active_panel_tab_id = self.simulation_panel_active_tab_id
-        catalog_entries = payload.get("component_catalog", [])
+        grouped_catalog = payload.get("grouped_component_catalog", [])
         active_catalog_id = payload.get("active_catalog_component_id")
         self.simulation_bar_active_catalog_id = active_catalog_id
 
@@ -167,57 +169,94 @@ class UIManager:
         if active_panel_tab_id == "catalog":
             entry_x = self.simulation_bar_rect.x + 14
             entry_y = self.simulation_bar_rect.y + 66
-            entry_h = 30
-            entry_gap = 8
-            entry_w = min(360, self.simulation_bar_rect.width - 28)
+            row_h = 22
+            section_gap = 6
+            entry_w = min(430, self.simulation_bar_rect.width - 28)
 
-            self.simulation_bar_catalog_entries = catalog_entries
+            flat_rows = []
+            for section in grouped_catalog:
+                flat_rows.append(
+                    {
+                        "kind": "section",
+                        "label": section.get("title", "Section"),
+                        "catalog_id": None,
+                    }
+                )
+                for entry in section.get("entries", []):
+                    flat_rows.append(
+                        {
+                            "kind": "entry",
+                            "catalog_id": entry.get("id"),
+                            "label": entry.get("label", entry.get("id", "component")),
+                            "entry_type": entry.get("entry_type", "component"),
+                            "group_name": (entry.get("operational_groups", ["General Systems"])[0] if entry.get("operational_groups") else "General Systems"),
+                            "dimensions_m": dict(entry.get("dimensions_m", {})),
+                            "component_type": entry.get("component_type", "component"),
+                        }
+                    )
+                flat_rows.append({"kind": "gap"})
 
-            for index, entry in enumerate(catalog_entries):
-                entry_rect = pygame.Rect(
-                    entry_x,
-                    entry_y + index * (entry_h + entry_gap),
-                    entry_w,
-                    entry_h,
-                )
-                self.simulation_bar_catalog_hitboxes.append(
-                    (entry.get("id"), entry_rect)
-                )
+            if flat_rows and flat_rows[-1].get("kind") == "gap":
+                flat_rows.pop()
+
+            self.simulation_bar_catalog_entries = flat_rows
+
+            current_y = entry_y
+            for row in flat_rows:
+                if row.get("kind") == "gap":
+                    current_y += section_gap
+                    continue
+
+                if row.get("kind") == "section":
+                    row_rect = pygame.Rect(entry_x, current_y, entry_w, row_h - 4)
+                    self.simulation_bar_catalog_hitboxes.append((None, row_rect, row))
+                    current_y += row_h
+                    continue
+
+                row_rect = pygame.Rect(entry_x + 12, current_y, entry_w - 12, row_h)
+                self.simulation_bar_catalog_hitboxes.append((row.get("catalog_id"), row_rect, row))
+                current_y += row_h + 2
 
         mouse_pos = pygame.mouse.get_pos()
         hover_catalog_id = None
-        for catalog_id, hitbox in self.simulation_bar_catalog_hitboxes:
+        hover_row = None
+        for catalog_id, hitbox, row in self.simulation_bar_catalog_hitboxes:
+            if catalog_id is None:
+                continue
             if hitbox.collidepoint(mouse_pos):
                 hover_catalog_id = catalog_id
+                hover_row = row
                 break
 
-        catalog_by_id = {
-            entry.get("id"): entry
-            for entry in catalog_entries
-        }
-
-        if active_panel_tab_id == "catalog" and hover_catalog_id in catalog_by_id:
-            entry = catalog_by_id[hover_catalog_id]
-            dims = entry.get("dimensions_m", {})
+        if active_panel_tab_id == "catalog" and hover_row is not None:
+            dims = hover_row.get("dimensions_m", {})
             self.hover_tooltip_lines = [
                 "Catalog Item",
-                entry.get("label", hover_catalog_id),
-                entry.get("component_type", "component"),
+                hover_row.get("label", hover_catalog_id),
+                hover_row.get("entry_type", "component"),
+                hover_row.get("component_type", "component"),
                 f"{dims.get('x', '?')} x {dims.get('y', '?')} x {dims.get('z', '?')} m",
             ]
             self.hover_tooltip_pos = mouse_pos
 
-        elif active_panel_tab_id == "catalog" and active_catalog_id in catalog_by_id:
-            entry = catalog_by_id[active_catalog_id]
-            dims = entry.get("dimensions_m", {})
-            self.hover_tooltip_lines = [
-                "Catalog Selection",
-                entry.get("label", active_catalog_id),
-                entry.get("component_type", "component"),
-                f"{dims.get('x', '?')} x {dims.get('y', '?')} x {dims.get('z', '?')} m",
-                "click hull to place",
-            ]
-            self.hover_tooltip_pos = (self.simulation_bar_rect.x + 20, self.simulation_bar_rect.y - 6)
+        elif active_panel_tab_id == "catalog" and active_catalog_id:
+            active_row = None
+            for catalog_id, _, row in self.simulation_bar_catalog_hitboxes:
+                if catalog_id == active_catalog_id:
+                    active_row = row
+                    break
+
+            if active_row is not None:
+                dims = active_row.get("dimensions_m", {})
+                self.hover_tooltip_lines = [
+                    "Catalog Selection",
+                    active_row.get("label", active_catalog_id),
+                    active_row.get("entry_type", "component"),
+                    active_row.get("component_type", "component"),
+                    f"{dims.get('x', '?')} x {dims.get('y', '?')} x {dims.get('z', '?')} m",
+                    "drag into hull to place",
+                ]
+                self.hover_tooltip_pos = pygame.mouse.get_pos()
 
         elif focus_part_id in blocks_by_id:
             block = blocks_by_id[focus_part_id]
@@ -225,14 +264,8 @@ class UIManager:
                 "Vehicle Design",
                 block.get("label", focus_part_id),
                 block.get("component_type", "component"),
-                f"{round(block.get('width', 0.0), 2)} x {round(block.get('height', 0.0), 2)} m",
             ]
-            if selected_part_id:
-                self.hover_tooltip_lines.append("selected")
-            elif hover_part_id:
-                self.hover_tooltip_lines.append("hover")
-
-            self.hover_tooltip_pos = getattr(active_sim, "hover_screen_pos", None) or (24, 250)
+            self.hover_tooltip_pos = getattr(active_sim, "hover_screen_pos", None) or pygame.mouse.get_pos()
 
     def _rebuild_active_simulation_ui(self, active_sim, app_width, app_height, camera):
         if active_sim is None:
@@ -268,23 +301,37 @@ class UIManager:
             self.breadcrumb_label = f"class: {active_sim.get_vehicle_class()}"
 
             self.buttons.append(
-                UIButton("open_repository", "Open Repository", pygame.Rect(button_x, button_y, button_width, button_height))
+                UIButton("open_repository", "Open Repository",
+                         pygame.Rect(button_x, button_y, button_width, button_height))
             )
             self.buttons.append(
-                UIButton("vehicle_mode_design", "Vehicle Design", pygame.Rect(button_x, button_y + 40, button_width, button_height), enabled=active_sim.active_view_mode != "design")
+                UIButton("vehicle_mode_design", "Vehicle Design",
+                         pygame.Rect(button_x, button_y + 40, button_width, button_height),
+                         enabled=active_sim.active_view_mode != "design")
             )
             self.buttons.append(
-                UIButton("vehicle_mode_interior", "Interior", pygame.Rect(button_x, button_y + 80, button_width, button_height), enabled=active_sim.active_view_mode != "interior")
+                UIButton("vehicle_mode_interior", "Interior",
+                         pygame.Rect(button_x, button_y + 80, button_width, button_height),
+                         enabled=active_sim.active_view_mode != "interior")
             )
             self.buttons.append(
-                UIButton("vehicle_mode_operational", "Operational", pygame.Rect(button_x, button_y + 120, button_width, button_height), enabled=active_sim.active_view_mode != "operational")
+                UIButton("vehicle_mode_operational", "Operational",
+                         pygame.Rect(button_x, button_y + 120, button_width, button_height),
+                         enabled=active_sim.active_view_mode != "operational")
             )
 
             payload = active_sim.get_focused_render_payload()
 
             if active_sim.active_view_mode == "design":
+                requirement_status = payload.get("requirement_status", [])
+                self.vehicle_requirement_lines = [
+                    f"{'[OK]' if entry.get('is_satisfied') else '[ ]'} {entry.get('category', 'requirement')} ({entry.get('source_class', 'vehicle')})"
+                    for entry in requirement_status
+                ]
                 self._rebuild_vehicle_design_panel(active_sim, payload, app_width, app_height)
                 return
+
+            self.vehicle_requirement_lines = []
 
             if active_sim.active_view_mode == "interior":
                 blocks_by_id = {block.get("id"): block for block in payload.get("blocks", [])}
@@ -327,6 +374,8 @@ class UIManager:
                 self.hover_tooltip_pos = (24, 250)
             return
 
+        self.vehicle_requirement_lines = []
+
         if render_mode == "map":
             root_name = active_sim.get_root_name() if hasattr(active_sim, "get_root_name") else None
             if root_name:
@@ -357,7 +406,8 @@ class UIManager:
                 self.breadcrumb_label = existing_status_line
 
             self.buttons.append(
-                UIButton("open_repository", "Open Repository", pygame.Rect(button_x, button_y, button_width, button_height))
+                UIButton("open_repository", "Open Repository",
+                         pygame.Rect(button_x, button_y, button_width, button_height))
             )
 
             selected_entity_id = getattr(active_sim, "selected_entity_id", None)
@@ -365,13 +415,16 @@ class UIManager:
 
             if selected_entity_id is not None and selected_entity_id != root_entity_id:
                 self.buttons.append(
-                    UIButton("open_region_map", "Open Region Map", pygame.Rect(button_x, button_y + 40, button_width, button_height))
+                    UIButton("open_region_map", "Open Region Map",
+                             pygame.Rect(button_x, button_y + 40, button_width, button_height))
                 )
 
-            parent_root_entity_id = active_sim.get_parent_root_entity_id() if hasattr(active_sim, "get_parent_root_entity_id") else None
+            parent_root_entity_id = active_sim.get_parent_root_entity_id() if hasattr(active_sim,
+                                                                                      "get_parent_root_entity_id") else None
             if parent_root_entity_id is not None:
                 self.buttons.append(
-                    UIButton("open_parent_region_map", "Up To Parent", pygame.Rect(button_x, button_y + 80, button_width, button_height))
+                    UIButton("open_parent_region_map", "Up To Parent",
+                             pygame.Rect(button_x, button_y + 80, button_width, button_height))
                 )
 
             hover_entity_id = getattr(active_sim, "hover_entity_id", None)
@@ -388,10 +441,12 @@ class UIManager:
 
         if render_mode == "space":
             self.buttons.append(
-                UIButton("open_repository", "Open Repository", pygame.Rect(button_x, button_y, button_width, button_height))
+                UIButton("open_repository", "Open Repository",
+                         pygame.Rect(button_x, button_y, button_width, button_height))
             )
 
-            selected_body_entity = active_sim.get_selected_body_entity() if hasattr(active_sim, "get_selected_body_entity") else None
+            selected_body_entity = active_sim.get_selected_body_entity() if hasattr(active_sim,
+                                                                                    "get_selected_body_entity") else None
             if selected_body_entity:
                 body_name = selected_body_entity.get("name", selected_body_entity.get("id"))
                 body_class = selected_body_entity.get("body_class", "body")
@@ -399,7 +454,8 @@ class UIManager:
                 self.breadcrumb_label = f"class: {body_class}"
 
                 self.buttons.append(
-                    UIButton("open_space_body_map", "Open Map", pygame.Rect(button_x, button_y + 40, button_width, button_height))
+                    UIButton("open_space_body_map", "Open Map",
+                             pygame.Rect(button_x, button_y + 40, button_width, button_height))
                 )
 
             hover_body_id = getattr(active_sim, "hover_system_entity_id", None)
@@ -429,7 +485,8 @@ class UIManager:
             )
 
             self.buttons.append(
-                UIButton("open_repository", "Open Repository", pygame.Rect(button_x, button_y, button_width, button_height))
+                UIButton("open_repository", "Open Repository",
+                         pygame.Rect(button_x, button_y, button_width, button_height))
             )
 
     def rebuild_for_state(
@@ -531,24 +588,33 @@ class UIManager:
         )
 
     def _draw_simulation_bar_catalog(self, screen, font):
-        catalog_by_id = {
-            entry.get("id"): entry
-            for entry in self.simulation_bar_catalog_entries
-        }
-
         mouse_pos = pygame.mouse.get_pos()
         hovered_catalog_id = None
-        for catalog_id, hitbox in self.simulation_bar_catalog_hitboxes:
+
+        for catalog_id, hitbox, row in self.simulation_bar_catalog_hitboxes:
+            if catalog_id is None:
+                continue
             if hitbox.collidepoint(mouse_pos):
                 hovered_catalog_id = catalog_id
                 break
 
         active_catalog_id = self.simulation_bar_active_catalog_id
 
-        for catalog_id, hitbox in self.simulation_bar_catalog_hitboxes:
-            entry = catalog_by_id.get(catalog_id, {})
+        for catalog_id, hitbox, row in self.simulation_bar_catalog_hitboxes:
+            kind = row.get("kind")
+
+            if kind == "section":
+                pygame.draw.rect(screen, (40, 44, 54), hitbox)
+                pygame.draw.rect(screen, (130, 130, 140), hitbox, 1)
+                text_surface = font.render(row.get("label", "Section"), True, (220, 220, 220))
+                screen.blit(text_surface, (hitbox.x + 6, hitbox.y + 2))
+                continue
+
             border_color = (170, 170, 170)
             fill_color = (34, 38, 46)
+
+            if row.get("entry_type") == "assembly":
+                fill_color = (46, 40, 58)
 
             if catalog_id == hovered_catalog_id:
                 border_color = (120, 220, 255)
@@ -561,14 +627,14 @@ class UIManager:
             pygame.draw.rect(screen, fill_color, hitbox)
             pygame.draw.rect(screen, border_color, hitbox, 2)
 
-            dims = entry.get("dimensions_m", {})
-            line = (
-                f"{entry.get('label', catalog_id)} | "
-                f"{dims.get('x', '?')} x {dims.get('y', '?')} x {dims.get('z', '?')} m"
-            )
-            text_surface = font.render(line, True, (240, 240, 240))
-            screen.blit(text_surface, (hitbox.x + 8, hitbox.y + 6))
+            line_1 = row.get("label", catalog_id or "component")
+            line_2 = f"{row.get('entry_type', 'component')} | {row.get('group_name', 'General Systems')}"
 
+            text_surface_1 = font.render(line_1, True, (240, 240, 240))
+            text_surface_2 = font.render(line_2, True, (180, 180, 190))
+
+            screen.blit(text_surface_1, (hitbox.x + 8, hitbox.y + 1))
+            screen.blit(text_surface_2, (hitbox.x + 8, hitbox.y + 15))
     def _draw_button(self, screen, font, button):
         fill_color = (55, 55, 55) if button.enabled else (35, 35, 35)
         border_color = (210, 210, 210) if button.enabled else (100, 100, 100)
@@ -619,19 +685,24 @@ class UIManager:
             + padding * 2
         )
 
-        tooltip_x = self.hover_tooltip_pos[0] + 14
-        tooltip_y = self.hover_tooltip_pos[1] + 14
+        anchor_x, anchor_y = self.hover_tooltip_pos
+        tooltip_x = anchor_x + 14
+        tooltip_y = anchor_y + 14
 
         screen_width = screen.get_width()
         screen_height = screen.get_height()
+        margin = 10
 
-        if tooltip_x + panel_width > screen_width - 10:
-            tooltip_x = self.hover_tooltip_pos[0] - panel_width - 14
+        if tooltip_x + panel_width > screen_width - margin:
+            tooltip_x = anchor_x - panel_width - 14
 
-        if tooltip_y + panel_height > screen_height - 10:
-            tooltip_y = self.hover_tooltip_pos[1] - panel_height - 14
+        if tooltip_y + panel_height > screen_height - margin:
+            tooltip_y = anchor_y - panel_height - 14
 
-        tooltip_rect = pygame.Rect(tooltip_x, tooltip_y, panel_width, panel_height)
+        tooltip_x = max(margin, min(tooltip_x, screen_width - panel_width - margin))
+        tooltip_y = max(margin, min(tooltip_y, screen_height - panel_height - margin))
+
+        tooltip_rect = pygame.Rect(int(tooltip_x), int(tooltip_y), int(panel_width), int(panel_height))
         pygame.draw.rect(screen, (24, 24, 28), tooltip_rect)
         pygame.draw.rect(screen, (210, 210, 210), tooltip_rect, 1)
 
@@ -739,12 +810,26 @@ class UIManager:
         if self.breadcrumb_label:
             info_lines.append(self.breadcrumb_label)
 
+        current_info_y = 170
         if info_lines:
-            self._draw_info_panel(screen, font, 20, 170, info_lines)
+            self._draw_info_panel(screen, font, 20, current_info_y, info_lines)
+
+            padding = 8
+            line_gap = 4
+            rendered = [font.render(line, True, (240, 240, 240)) for line in info_lines]
+            panel_height = (
+                sum(text.get_height() for text in rendered)
+                + line_gap * (len(rendered) - 1)
+                + padding * 2
+            )
+            current_info_y += panel_height + 12
+
+        if self.vehicle_requirement_lines:
+            requirement_lines = ["Requirements"] + self.vehicle_requirement_lines
+            self._draw_info_panel(screen, font, 20, current_info_y, requirement_lines)
 
         self._draw_simulation_bar(screen, font)
         self._draw_hover_tooltip(screen, font)
-
     def handle_event(self, event):
         if self.menu_active:
             return self.knowledge_ui.handle_event(event)
@@ -764,7 +849,7 @@ class UIManager:
                     "tab_id": tab_id,
                 }
 
-        for catalog_id, hitbox in self.simulation_bar_catalog_hitboxes:
+        for catalog_id, hitbox, row in self.simulation_bar_catalog_hitboxes:
             if hitbox.collidepoint(mouse_pos):
                 return {
                     "id": "vehicle_catalog_select",

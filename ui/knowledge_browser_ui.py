@@ -444,6 +444,8 @@ class KnowledgeBrowserUI:
         role_name = (role_name or "card").lower()
         if role_name == "card":
             return "card_image"
+        if role_name == "design":
+            return "design_image"
         return f"card_image_{role_name}"
 
     def _dataset_asset_folder(self, dataset_name):
@@ -518,7 +520,14 @@ class KnowledgeBrowserUI:
         block = text[block_start:block_end]
         updated_block = block
         updated_block = self._upsert_yaml_scalar_in_block(updated_block, field_name, canonical_path)
-        updated_block = self._upsert_yaml_scalar_in_block(updated_block, "card_image", canonical_path)
+
+        existing_card_match = re.search(r"(?m)^  card_image:\s*(.+?)\s*$", block)
+        has_card_image = bool(existing_card_match and existing_card_match.group(1).strip())
+
+        if role_name != "design":
+            updated_block = self._upsert_yaml_scalar_in_block(updated_block, "card_image", canonical_path)
+        elif not has_card_image:
+            updated_block = self._upsert_yaml_scalar_in_block(updated_block, "card_image", canonical_path)
 
         if updated_block == block:
             return True
@@ -532,25 +541,42 @@ class KnowledgeBrowserUI:
 
     def assign_card_image(self, entity_id, image_path, role_name=None):
         """
-        Assign a card image path to an entity/card currently visible in the
+        Assign an image path to an entity/card currently visible in the
         Knowledge Layer.
 
-        If role_name is provided, also store the role-specific image field while
-        setting card_image as the active preview.
+        Behavior:
+        * card role updates card_image
+        * design role updates design_image and only fills card_image if empty
+        * all other roles update their role-specific image field and also set
+          card_image as the active preview
         """
         if not entity_id or not image_path:
             return False
 
         updated = False
+        normalized_role = (role_name or "card").lower()
         field_name = self._role_field_name(role_name) if role_name else None
+
+        def _apply_to_entity(entity_obj):
+            nonlocal updated
+            if entity_obj is None:
+                return
+
+            if field_name is not None:
+                entity_obj[field_name] = image_path
+
+            if normalized_role == "design":
+                existing_card = entity_obj.get("card_image")
+                if not (isinstance(existing_card, str) and existing_card.strip()):
+                    entity_obj["card_image"] = image_path
+            else:
+                entity_obj["card_image"] = image_path
+
+            updated = True
 
         if self.world_model is not None:
             entity = self.world_model.get_entity(entity_id)
-            if entity is not None:
-                entity["card_image"] = image_path
-                if field_name is not None:
-                    entity[field_name] = image_path
-                updated = True
+            _apply_to_entity(entity)
 
         for card in self.cards:
             if card.get("entity_id") != entity_id:
@@ -558,10 +584,7 @@ class KnowledgeBrowserUI:
 
             card_view = card.get("card_view")
             if card_view is not None and getattr(card_view, "entity", None) is not None:
-                card_view.entity["card_image"] = image_path
-                if field_name is not None:
-                    card_view.entity[field_name] = image_path
-                updated = True
+                _apply_to_entity(card_view.entity)
 
         if updated:
             self._layout_all_cards()

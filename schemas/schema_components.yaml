@@ -31,6 +31,18 @@ fields:
     type: string_list
     optional: true
 
+  satisfies_categories:
+    type: string_list
+    optional: true
+
+  operational_groups:
+    type: string_list
+    optional: true
+
+  subsystem_labels:
+    type: string_list
+    optional: true
+
   requires_technology:
     type: entity_list
     target: technology
@@ -68,32 +80,38 @@ fields:
 # COMMENTED EXAMPLE ENTRY
 # --------------------------------------------------
 #
-# - id: comp_pump_module
-#   pretty_name: Pump Module
-#   name: Pump Module
+# - id: comp_engine_inline_compact
+#   pretty_name: Inline Engine
+#   name: Inline Engine
 #   type: component
-#   component_class: fluid_system_component
+#   component_class: engine_component
 #   primary_material: mat_stainless_steel
 #   secondary_materials:
 #     - mat_copper_alloy
-#   represented_item: item_pump_module
+#   represented_item: null
 #   install_contexts:
-#     - building
 #     - vehicle
-#     - site
-#     - station
 #   functional_roles:
-#     - fluid_transfer
-#     - circulation
+#     - propulsion
+#     - power_generation
+#   satisfies_categories:
+#     - propulsion_road
+#     - powertrain
+#   operational_groups:
+#     - Powertrain
+#   subsystem_labels:
+#     - road propulsion
+#     - powertrain core
 #   requires_technology: []
 #   descriptive_capabilities:
-#     - replaceable_module
 #     - installable
-#   maintenance_notes: Requires sealing checks and periodic servicing depending on operating context.
-#   dimension_x_m: 1.2
-#   dimension_y_m: 0.6
-#   dimension_z_m: 0.7
-#   mass_kg: 120
-#   power_kw: 15
-#   start_year: 0
+#     - compact_engine_module
+#     - provides_vehicle_propulsion
+#   maintenance_notes: Compact engine block intended for light vehicle layouts and simple early design testing.
+#   dimension_x_m: 2.2
+#   dimension_y_m: 1.2
+#   dimension_z_m: 1.4
+#   mass_kg: 680
+#   power_kw: 180
+#   start_year: 2400
 #   entry_status: draft

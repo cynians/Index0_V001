@@ -1,7 +1,7 @@
 from engine.clock import Clock
 from engine.simulation_manager import SimulationManager
 from simulations.vehicle.vehicle_design import VehicleDesignController
-
+import pygame
 
 class VehicleSimulation:
     """
@@ -229,6 +229,22 @@ class VehicleSimulation:
             return list(self.design_panel_tabs)
         return []
 
+    def begin_design_catalog_drag(self, catalog_id):
+        """
+        Start dragging a catalog component from the vehicle design UI catalog.
+        """
+        if self.active_view_mode != self.VIEW_DESIGN:
+            return False
+
+        started = self.design.begin_catalog_drag(catalog_id)
+        if not started:
+            return False
+
+        self.selected_part_id = None
+        self.design.set_selected_component(None)
+        self.hover_screen_pos = None
+        return True
+
     def get_active_simulation_panel_tab_id(self):
         if self.active_view_mode == self.VIEW_DESIGN:
             return self.active_design_panel_tab_id
@@ -280,11 +296,16 @@ class VehicleSimulation:
         design_payload = self.design.get_design_payload(self.vehicle.get("position", {}))
         payload["base_rect"] = design_payload["base_rect"]
         payload["blocks"] = design_payload["blocks"]
+        payload["drag_preview_block"] = design_payload["drag_preview_block"]
         payload["component_catalog"] = design_payload["component_catalog"]
+        payload["grouped_component_catalog"] = design_payload["grouped_component_catalog"]
         payload["catalog_panel_rect"] = design_payload["catalog_panel_rect"]
         payload["catalog_entry_rects"] = design_payload["catalog_entry_rects"]
         payload["active_catalog_component_id"] = design_payload["active_catalog_component_id"]
         payload["hover_catalog_component_id"] = design_payload["hover_catalog_component_id"]
+        payload["dragging_component_id"] = design_payload["dragging_component_id"]
+        payload["dragging_catalog_component_id"] = design_payload["dragging_catalog_component_id"]
+        payload["requirement_status"] = design_payload["requirement_status"]
         return payload
 
     def _build_interior_payload(self, payload):
@@ -292,10 +313,137 @@ class VehicleSimulation:
         payload["blocks"] = self.get_mode_blocks()
         return payload
 
+    def _infer_operational_group(self, component):
+        text = " ".join(
+            str(component.get(key, ""))
+            for key in ("component_type", "label", "catalog_id")
+        ).lower()
+
+        if any(token in text for token in ("engine", "motor", "reactor", "battery", "power", "fuel")):
+            return "Powertrain"
+
+        if any(token in text for token in ("cockpit", "driver", "crew", "control", "avionics", "bridge")):
+            return "Crew & Control"
+
+        if any(token in text for token in ("cargo", "bay", "storage", "hold", "luggage")):
+            return "Cargo"
+
+        if any(token in text for token in ("wheel", "track", "landing", "gear", "suspension", "drive")):
+            return "Mobility"
+
+        if any(token in text for token in ("sensor", "radar", "antenna", "comm", "target")):
+            return "Sensors & Comms"
+
+        if any(token in text for token in ("gun", "missile", "weapon", "turret", "cannon")):
+            return "Weapons"
+
+        return "General Systems"
+
+    def _operational_status_text_for_group(self, group_name, operational_state):
+        if group_name == "Powertrain":
+            return f"power: {operational_state.get('power_state', 'unknown')}"
+
+        if group_name == "Crew & Control":
+            return f"crew: {operational_state.get('crew_state', 'unknown')}"
+
+        if group_name == "Cargo":
+            return f"task: {operational_state.get('task_state', 'unknown')}"
+
+        if group_name == "Mobility":
+            speed = operational_state.get("speed_kph", "?")
+            return f"speed: {speed} kph"
+
+        if group_name == "Sensors & Comms":
+            heading = operational_state.get("heading_deg", "?")
+            return f"heading: {heading} deg"
+
+        if group_name == "Weapons":
+            return f"task: {operational_state.get('task_state', 'unknown')}"
+
+        return f"power: {operational_state.get('power_state', 'unknown')}"
+
+    def _build_operational_modules(self):
+        base_rect = self.get_mode_base_rect()
+        system_summary = self.design.get_operational_system_summary()
+
+        modules = []
+        if not system_summary:
+            return modules
+
+        hull_width = max(1.0, base_rect["width"])
+        hull_height = max(1.0, base_rect["height"])
+
+        padding_x = max(0.15, hull_width * 0.04)
+        padding_y = max(0.08, hull_height * 0.08)
+        gap_y = max(0.04, hull_height * 0.04)
+
+        usable_width = max(0.2, hull_width - padding_x * 2.0)
+        start_x = base_rect["x"] + padding_x
+        start_y = base_rect["y"] + padding_y
+
+        row_unit = max(0.18, hull_height * 0.09)
+        module_heights = []
+        for summary in system_summary:
+            child_count = max(1, len(summary.get("children", [])))
+            module_heights.append(row_unit * (2 + child_count))
+
+        total_height = sum(module_heights) + gap_y * max(0, len(module_heights) - 1)
+        if total_height > max(0.2, hull_height - padding_y * 2.0):
+            scale = max(0.25, (hull_height - padding_y * 2.0) / total_height)
+            module_heights = [max(0.14, value * scale) for value in module_heights]
+            gap_y = max(0.02, gap_y * scale)
+
+        current_y = start_y
+
+        for summary, module_height in zip(system_summary, module_heights):
+            status = summary.get("status", "missing")
+            component_labels = list(summary.get("component_labels", []))
+
+            if component_labels:
+                component_text = ", ".join(component_labels[:3])
+                if len(component_labels) > 3:
+                    component_text += " ..."
+            else:
+                component_text = "no installed components"
+
+            modules.append(
+                {
+                    "id": f"operational_{summary.get('group', 'system').lower().replace(' ', '_').replace('&', 'and')}",
+                    "label": f"{summary.get('group', 'System')} Module",
+                    "group": summary.get("group", "General Systems"),
+                    "component_label": component_text,
+                    "component_type": "operational_group",
+                    "catalog_id": None,
+                    "status": status,
+                    "status_text": status,
+                    "children": summary.get("children", []),
+                    "x": start_x,
+                    "y": current_y,
+                    "width": usable_width,
+                    "height": module_height,
+                }
+            )
+
+            current_y += module_height + gap_y
+
+        return modules
+
+    def _operational_module_at_world_position(self, world_x, world_y):
+        for module in reversed(self._build_operational_modules()):
+            module_min_x = module["x"]
+            module_max_x = module["x"] + module["width"]
+            module_min_y = module["y"]
+            module_max_y = module["y"] + module["height"]
+
+            if module_min_x <= world_x <= module_max_x and module_min_y <= world_y <= module_max_y:
+                return module
+
+        return None
+
     def _build_operational_payload(self, payload):
         payload["base_rect"] = self.get_mode_base_rect()
         payload["operational_state"] = self.vehicle.get("operational_state", {})
-        payload["operational_modules"] = []
+        payload["operational_modules"] = self._build_operational_modules()
         payload["installed_components"] = self.design.get_placed_components()
         return payload
 
@@ -399,7 +547,16 @@ class VehicleSimulation:
 
     def handle_pointer_motion(self, event, camera, screen_pos):
         if self.active_view_mode == self.VIEW_DESIGN:
+            catalog_id = self.design.get_catalog_entry_at_screen_position(screen_pos)
+            self.design.set_hover_catalog_component(catalog_id)
+
             world_x, world_y = camera.screen_to_world(screen_pos)
+
+            self.design.update_drag(
+                self.vehicle.get("position", {}),
+                world_x,
+                world_y,
+            )
 
             hovered_block = self._design_block_at_world_position(world_x, world_y)
             hovered_id = hovered_block.get("id") if hovered_block else None
@@ -418,34 +575,46 @@ class VehicleSimulation:
 
     def handle_pointer_event(self, event, camera, screen_pos):
         if self.active_view_mode == self.VIEW_DESIGN:
-            world_x, world_y = camera.screen_to_world(screen_pos)
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                catalog_id = self.design.get_catalog_entry_at_screen_position(screen_pos)
+                if catalog_id:
+                    self.design.begin_catalog_drag(catalog_id)
+                    self.selected_part_id = None
+                    self.design.set_selected_component(None)
+                    self.hover_screen_pos = screen_pos
+                    return
 
-            clicked_block = self._design_block_at_world_position(world_x, world_y)
-            if clicked_block:
-                clicked_id = clicked_block.get("id")
-                self.selected_part_id = clicked_id
-                self.design.set_selected_component(clicked_id)
-                self.hover_screen_pos = screen_pos
+                world_x, world_y = camera.screen_to_world(screen_pos)
+                clicked_block = self._design_block_at_world_position(world_x, world_y)
+                if clicked_block:
+                    clicked_id = clicked_block.get("id")
+                    self.selected_part_id = clicked_id
+                    self.design.set_selected_component(clicked_id)
+                    self.design.begin_component_drag(
+                        self.vehicle.get("position", {}),
+                        clicked_id,
+                        world_x,
+                        world_y,
+                    )
+                    self.hover_screen_pos = screen_pos
+                    return
+
+                self.selected_part_id = None
+                self.design.set_selected_component(None)
+                self.design.cancel_drag()
+                self.hover_screen_pos = None
                 return
 
-            placed_id = self.design.place_active_catalog_component_at_world_position(
-                self.vehicle.get("position", {}),
-                world_x,
-                world_y,
-            )
-            if placed_id:
-                self.selected_part_id = placed_id
-                self.design.set_selected_component(placed_id)
-                self.hover_screen_pos = screen_pos
-                return
-
-            moved = self.design.move_selected_component_to_world_position(
-                self.vehicle.get("position", {}),
-                world_x,
-                world_y,
-            )
-            if moved:
-                self.hover_screen_pos = screen_pos
+            if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                world_x, world_y = camera.screen_to_world(screen_pos)
+                ended_id = self.design.end_drag(
+                    self.vehicle.get("position", {}),
+                    world_x,
+                    world_y,
+                )
+                self.selected_part_id = ended_id
+                self.design.set_selected_component(ended_id)
+                self.hover_screen_pos = screen_pos if ended_id else None
                 return
 
             return

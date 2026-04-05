@@ -125,6 +125,7 @@ class EntityCard:
 
         media_keys = {
             "card_image",
+            "design_image",
             "image_path",
             "image",
         }
@@ -231,10 +232,54 @@ class EntityCard:
         return wrapped_lines or [""]
 
     def _resolve_image_reference(self):
-        for key in ("card_image", "image_path", "image"):
+        """
+        Resolve the active preview image using shared fallback order.
+
+        Preferred order:
+        1. card_image
+        2. design_image
+        3. card_image_front
+        4. card_image_side
+        5. card_image_top
+        6. any other role-specific card image fields suggested for the entity
+        7. image_path
+        8. image
+        """
+        explicit_order = [
+            "card_image",
+            "design_image",
+            "card_image_front",
+            "card_image_side",
+            "card_image_top",
+        ]
+
+        seen = set()
+
+        for key in explicit_order:
+            seen.add(key)
             value = self.entity.get(key)
             if isinstance(value, str) and value.strip():
                 return value.strip()
+
+        for role_info in ScaleHelper.suggest_media_canvases(self.entity):
+            role = role_info.get("role")
+            if not role:
+                continue
+
+            field_name = self._role_field_name(role)
+            if field_name in seen:
+                continue
+
+            seen.add(field_name)
+            value = self.entity.get(field_name)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        for key in ("image_path", "image"):
+            value = self.entity.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
         return None
 
     def _load_card_image_surface(self, image_path):

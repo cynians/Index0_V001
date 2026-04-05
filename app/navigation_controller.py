@@ -296,7 +296,7 @@ class NavigationController:
         if action_id == "vehicle_catalog_select" and active_sim is not None:
             catalog_id = action.get("catalog_id")
             return bool(
-                getattr(active_sim, "select_design_catalog_component", lambda _catalog_id: False)(catalog_id)
+                getattr(active_sim, "begin_design_catalog_drag", lambda _catalog_id: False)(catalog_id)
             )
 
         if action_id == "knowledge_launch_entry":

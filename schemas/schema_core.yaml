@@ -28,6 +28,34 @@ fields:
     type: text
     optional: true
 
+  card_image:
+    type: string
+    optional: true
+
+  design_image:
+    type: string
+    optional: true
+
+  card_image_front:
+    type: string
+    optional: true
+
+  card_image_side:
+    type: string
+    optional: true
+
+  card_image_top:
+    type: string
+    optional: true
+
+  image_path:
+    type: string
+    optional: true
+
+  image:
+    type: string
+    optional: true
+
   tags:
     type: string_list
     optional: true
@@ -62,6 +90,9 @@ fields:
 #   name: earth
 #   description: Homeworld of humanity and a persistent anchor entity across many simulations.
 #   notes: Example core entry showing only broadly reusable fields.
+#   card_image: assets/cards/locations/planet_earth_card.png
+#   design_image: assets/cards/locations/planet_earth_design.png
+#   card_image_top: assets/cards/locations/planet_earth_top.png
 #   tags:
 #     - planet
 #     - homeworld

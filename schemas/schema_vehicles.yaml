@@ -8,6 +8,18 @@ fields:
     type: string
     optional: true
 
+  vehicle_class_parents:
+    type: string_list
+    optional: true
+
+  required_categories:
+    type: string_list
+    optional: true
+
+  required_category_overrides:
+    type: string_list
+    optional: true
+
   produced_by:
     type: entity_list
     target: faction
@@ -55,3 +67,38 @@ fields:
   operational_state:
     type: object
     optional: true
+
+# --------------------------------------------------
+# COMMENTED EXAMPLE ENTRY
+# --------------------------------------------------
+#
+# - id: veh_luaz_967
+#   pretty_name: LuAZ-967
+#   name: LuAZ-967
+#   type: vehicle
+#   vehicle_class: amphibious_front_line_transport
+#   vehicle_class_parents:
+#     - utility_vehicle
+#     - road_vehicle
+#     - ground_vehicle
+#     - vehicle
+#   required_categories:
+#     - structure
+#     - control
+#     - locomotion_ground
+#     - wheels
+#     - propulsion_road
+#   required_category_overrides:
+#     - amphibious_hull
+#   manufacturer_name: LuAZ
+#   dimension_x_m: 3.74
+#   dimension_y_m: 1.71
+#   dimension_z_m: 1.75
+#   design_catalog_components:
+#     - comp_engine_inline_compact
+#   tags:
+#     - vehicle
+#     - ground_vehicle
+#     - amphibious_vehicle
+#   start_year: 1961
+#   entry_status: draft

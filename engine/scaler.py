@@ -200,7 +200,7 @@ class ScaleHelper:
         location_class = entity.get("location_class")
 
         if entity_type == "vehicle" or dataset == "vehicles":
-            return ["card", "front", "side", "top"]
+            return ["card", "design", "front", "side", "top"]
 
         if entity_type == "species" or dataset == "species":
             return ["card", "portrait", "diagram"]

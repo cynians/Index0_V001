@@ -1,225 +1,3 @@
-- id: veh_taltos_class_mars_cargo_lander
-  pretty_name: Taltos-class Mars Cargo Lander
-  name: Taltos-class Mars Cargo Lander
-  type: vehicle
-  idea_reference: IDEA-502
-  description: Reusable Mars orbit-to-surface cargo lander used during the Race for Sol for freight delivery between orbital logistics hubs and surface landing pads.
-  notes: The class is built around repeated cargo descent and unloading operations on Mars. The design uses detachable modular lifting wings that can be removed and remounted in reversed orientation depending on mission profile and servicing state.
-  vehicle_class: mars_cargo_lander
-
-  produced_by: []
-  uses_technology: []
-  operated_by: []
-
-  intended_roles:
-    - mars_orbit_to_surface_cargo_delivery
-    - cargo_landing_pad_servicing
-    - martian_surface_freight_unloading
-
-  supported_infrastructure:
-    - infra_mars_orbital_logistics_hubs
-    - infra_mars_surface_landing_pads
-    - equip_martian_cargo_crane
-
-  descriptive_capabilities:
-    - reusable_freight_landing
-    - heavy_cargo_surface_delivery
-    - modular_aerodynamic_configuration
-
-  component_layout_stub:
-    major_component_groups:
-      - cargo_hold
-      - main_descent_propulsion
-      - reaction_control_system
-      - detachable_lifting_wing_mounts
-      - landing_gear
-      - avionics_and_guidance
-      - power_and_support_systems
-    configurable_groups:
-      - detachable_lifting_wings
-
-  payload_capacity_t: 45
-  service_life_cycles: 50
-
-  tags:
-    - vehicle
-    - spacecraft
-    - cargo
-    - mars
-    - reusable
-    - race_for_sol
-
-  start_year: 2180
-  entry_status: draft
-
-
-- id: veh_mdv_3
-  pretty_name: MDV-3
-  name: MDV-3
-  type: vehicle
-  idea_reference: IDEA-496
-  description: Orbital-built Mars cargo transport vehicle used for high-volume freight transfer between Earth orbit and Mars orbit during the Race for Sol.
-  notes: Designed as a larger follow-up to earlier Mars Delivery Vehicle concepts. Unlike earlier atmosphere-capable variants, MDV-3 is a pure space transport and does not perform atmospheric entry. It carries roughly 385 tons of cargo and operates between orbital infrastructure nodes rather than surface delivery points.
-  vehicle_class: interplanetary_cargo_transport
-
-  produced_by: []
-  uses_technology: []
-  operated_by: []
-
-  intended_roles:
-    - earth_orbit_to_mars_orbit_cargo_transfer
-    - orbital_freight_logistics
-    - high_volume_interplanetary_transport
-
-  supported_infrastructure:
-    - infra_earth_orbital_cargo_terminals
-    - infra_mars_orbital_logistics_hubs
-    - infra_orbital_refueling_nodes
-
-  descriptive_capabilities:
-    - high_volume_space_freight_transport
-    - non_atmospheric_interplanetary_operation
-    - orbital_cargo_interface_operation
-
-  component_layout_stub:
-    major_component_groups:
-      - cargo_module_structure
-      - main_transfer_propulsion
-      - reaction_control_system
-      - docking_and_transfer_interface
-      - avionics_and_guidance
-      - power_and_support_systems
-      - structural_truss_or_hull_frame
-    configurable_groups:
-      - cargo_module_variants
-
-  payload_capacity_t: 385
-
-  tags:
-    - vehicle
-    - spacecraft
-    - cargo
-    - interplanetary
-    - orbital
-    - mars
-    - race_for_sol
-
-  start_year: 2158
-  entry_status: draft
-
-- id: veh_bospor_3_regolith
-  pretty_name: Bospor 3 "Regolith"
-  name: Bospor 3 "Regolith"
-  type: vehicle
-  description: Utility SUV entry associated with Bospor Automat on Noyanakh in the Metyaki System during the Planetary Period.
-  notes: Initial descriptive repository entry. Detailed runtime fields, component structure, and exact operational role remain placeholder for later design refinement.
-  vehicle_class: suv
-  manufacturer_name: Bospor Automat
-
-  dimension_x_m: 4.8
-  dimension_y_m: 1.9
-  dimension_z_m: 1.75
-
-  produced_by: []
-  uses_technology: []
-  operated_by: []
-
-  intended_roles:
-    - placeholder_role
-
-  supported_infrastructure: []
-
-  descriptive_capabilities:
-    - placeholder_capability
-
-  component_layout_stub:
-    major_component_groups:
-      - chassis
-      - suspension
-      - drive_system
-      - passenger_compartment
-      - cargo_space
-      - control_interface
-    configurable_groups:
-      - drivetrain_variants
-      - utility_fittings
-
-  card_image: assets/cards/vehicles/veh_bospor_3_regolith_front.png
-
-  card_image_front: assets/cards/vehicles/veh_bospor_3_regolith_front.png
-  tags:
-    - vehicle
-    - ground_vehicle
-    - suv
-    - planetary_period
-    - noyanakh
-    - metyaki
-    - bospor
-
-  start_year: 7142
-  entry_status: draft
-
-
-- id: veh_octa_35p
-  pretty_name: Octa 35P
-  name: Octa 35P
-  type: vehicle
-  idea_reference: IDEA-364
-  description: Ground urban electric taxi used in the sprawling industrial cities around Patina’s orbital shipyard during the Planetary Period.
-  notes: Repository conversion of the Patina Surface Taxi concept. Associated with Stacklinger and the broader Patina shipyard-adjacent urban surface environment. Exact operational variants, trim levels, and later local modifications remain open for later refinement.
-  vehicle_class: urban_taxi
-  manufacturer_name: Stacklingen Consolidated Industries
-
-  dimension_x_m: 4.95
-  dimension_y_m: 1.88
-  dimension_z_m: 1.48
-
-  produced_by:
-    - producer_stacklingen_consolidated_industries
-  uses_technology: []
-  operated_by: []
-
-  associated_locations:
-    - planet_patina
-    - settlement_stacklinger
-
-  intended_roles:
-    - urban_passenger_transport
-    - industrial_city_taxi_service
-
-  supported_infrastructure:
-    - settlement_stacklinger
-
-  descriptive_capabilities:
-    - electric_ground_transport
-    - dense_urban_passenger_service
-    - industrial_frontier_city_operation
-
-  component_layout_stub:
-    major_component_groups:
-      - passenger_compartment
-      - battery_pack
-      - electric_drive_system
-      - suspension
-      - taxi_control_interface
-      - luggage_storage
-    configurable_groups:
-      - body_variants
-      - local_service_fittings
-
-  tags:
-    - vehicle
-    - ground_vehicle
-    - taxi
-    - electric
-    - patina
-    - stacklinger
-    - planetary_period
-
-  start_year: 8130
-  entry_status: draft
-
-
 - id: veh_fletcher_class_destroyer
   pretty_name: Fletcher-class Destroyer
   name: Fletcher-class Destroyer
@@ -300,6 +78,409 @@
   end_year: 1971
   entry_status: draft
 
+- id: veh_d48_gun
+  pretty_name: D-48 Gun
+  name: D-48 Gun
+  type: vehicle
+  description: Soviet 85 mm towed anti-tank gun developed in the postwar period for high-velocity direct fire against armored targets, while retaining limited secondary field-gun utility.
+  notes: Real-world baseline entry for the D-48. Stored in vehicles for now because the current repo has no dedicated weapons schema and the gun functions as a crew-served towed battlefield platform.
+  vehicle_class: towed_anti_tank_gun
+
+  produced_by: []
+  uses_technology: []
+  operated_by: []
+
+  manufacturer_name: Unknown
+
+  dimension_x_m: 8.72
+  dimension_y_m: 1.59
+  dimension_z_m: 1.89
+
+  intended_roles:
+    - anti_tank_fire
+    - direct_fire_support
+    - towed_artillery_operation
+    - defensive_gun_position
+
+  supported_infrastructure:
+    - towed_field_deployment
+    - military_road_towing
+    - prepared_fire_positions
+
+  descriptive_capabilities:
+    - high_velocity_anti_tank_fire
+    - split_trail_deployment
+    - crew_served_towed_operation
+    - limited_indirect_fire_capability
+
+  component_layout_stub:
+    major_component_groups:
+      - gun_barrel
+      - muzzle_brake
+      - breech
+      - recoil_system
+      - carriage
+      - split_trail
+      - sighting_system
+      - wheels_and_tow_assembly
+    configurable_groups:
+      - ammunition_types
+      - towing_configurations
+      - sighting_fits
+
+  crew_complement: 6
+  mass_kg: 2350
+  caliber_mm: 85
+  max_rate_of_fire_rpm: 15
+  normal_rate_of_fire_rpm: 8
+  muzzle_velocity_mps: 1040
+  direct_fire_range_m: 1200
+  max_range_m: 18970
+  propulsion_summary: Unpowered towed gun
+  main_armament_summary: 85 mm D-48 anti-tank gun
+  service_count_built: null
+
+  tags:
+    - vehicle
+    - artillery
+    - anti_tank_gun
+    - towed_gun
+    - soviet
+    - cold_war
+
+  start_year: 1955
+  entry_status: draft
+
+- id: veh_luaz_967
+  pretty_name: LuAZ-967
+  name: LuAZ-967
+  type: vehicle
+  description: Soviet light amphibious front-line transport vehicle intended for casualty evacuation, ammunition supply, and light battlefield utility transport in difficult terrain.
+  notes: Real-world baseline entry for the LuAZ-967 vehicle line. The line is most commonly associated with the LuAZ-967M production form, but this entry represents the broader vehicle family.
+  vehicle_class: amphibious_front_line_transport
+  vehicle_class_parents:
+    - utility_vehicle
+    - road_vehicle
+    - ground_vehicle
+    - vehicle
+  required_categories:
+    - structure
+    - control
+    - locomotion_ground
+    - wheels
+    - propulsion_road
+  required_category_overrides:
+    - amphibious_hull
+
+  produced_by: []
+  uses_technology: []
+  operated_by: []
+
+  manufacturer_name: LuAZ
+
+  dimension_x_m: 3.74
+  dimension_y_m: 1.71
+  dimension_z_m: 1.75
+
+  design_catalog_components:
+    - comp_engine_inline_compact
+    - comp_engine_vblock_heavy
+
+  intended_roles:
+    - casualty_evacuation
+    - light_front_line_transport
+    - ammunition_supply
+    - light_weapon_transport
+    - difficult_terrain_utility
+
+  supported_infrastructure:
+    - rough_ground_operations
+    - military_field_operations
+    - calm_water_crossing
+
+  descriptive_capabilities:
+    - amphibious_operation
+    - low_profile_transport
+    - air_transportable_light_vehicle
+    - difficult_terrain_mobility
+    - fold_down_low_silhouette_configuration
+
+  component_layout_stub:
+    major_component_groups:
+      - steel_hull_body
+      - amphibious_vehicle_hull
+      - central_driver_control_position
+      - fold_down_windscreen_and_controls
+      - light_utility_cargo_section
+      - four_wheel_drive_system
+      - suspension
+      - engine_and_transmission
+    configurable_groups:
+      - evacuation_fittings
+      - cargo_fittings
+      - light_weapon_transport_fittings
+
+  crew_complement: 1
+  payload_kg: 400
+  max_speed_kmh: 75
+  water_speed_kmh: 3
+  towing_capacity_kg: 300
+  propulsion_summary: Air-cooled V4 gasoline engine, mechanical transmission, front-drive layout with selectively engaged rear axle on later cited production configuration
+  main_armament_summary: Unarmed utility transport vehicle
+  service_count_built: null
+
+  tags:
+    - vehicle
+    - ground_vehicle
+    - amphibious_vehicle
+    - military
+    - soviet
+    - cold_war
+    - utility_transport
+
+  start_year: 1961
+  entry_status: draft
+
+- id: veh_f22_raptor
+  pretty_name: F-22 Raptor
+  name: F-22 Raptor
+  type: vehicle
+  description: United States stealth air-dominance fighter introduced in the late 20th and early 21st century, combining low observability, supercruise, extreme maneuverability, and integrated sensor fusion.
+  notes: Real-world baseline entry for later adaptation into the Superpower Wars context.
+  vehicle_class: stealth_air_dominance_fighter
+
+  produced_by: []
+  uses_technology: []
+  operated_by: []
+
+  manufacturer_name: Lockheed Martin
+
+  dimension_x_m: 18.92
+  dimension_y_m: 13.56
+  dimension_z_m: 5.08
+
+  intended_roles:
+    - air_superiority
+    - interceptor
+    - escort_fighter
+    - precision_strike
+
+  supported_infrastructure:
+    - conventional_airbase
+    - hardened_airbase
+    - military_runway_operations
+
+  descriptive_capabilities:
+    - low_observable_air_combat
+    - supercruise
+    - supermaneuverability
+    - integrated_sensor_fusion
+    - beyond_visual_range_engagement
+    - internal_weapons_carriage
+
+  component_layout_stub:
+    major_component_groups:
+      - stealth_airframe
+      - twin_engine_propulsion
+      - cockpit_and_life_support
+      - radar_and_sensor_suite
+      - integrated_avionics
+      - internal_weapons_bays
+      - flight_control_surfaces
+      - landing_gear
+    configurable_groups:
+      - air_to_air_loadouts
+      - strike_loadouts
+      - avionics_upgrades
+
+  crew_complement: 1
+  max_speed_mach: 2.25
+  supercruise_mach: 1.5
+  service_ceiling_m: 19800
+  combat_radius_km: 850
+  ferry_range_km: 2960
+  propulsion_summary: 2 x Pratt & Whitney F119-PW-100 turbofan engines with thrust vectoring
+  main_armament_summary: 1 x 20 mm M61A2 Vulcan cannon, internal air-to-air and limited air-to-ground ordnance
+  service_count_built: 187
+
+  tags:
+    - vehicle
+    - aircraft
+    - fighter
+    - stealth
+    - united_states
+    - modern
+    - superpower_wars_anchor
+
+  start_year: 2005
+  entry_status: draft
+
+- id: veh_panamericana_q3n_stormpetrel
+  pretty_name: Panamericana Q3N Stormpetrel
+  name: Panamericana Q3N Stormpetrel
+  type: vehicle
+  description: Panamericana naval combat drone boat optimized for littoral surveillance, scouting, targeting, and quick-response combat in coastal waters.
+  notes: Semi-submersible standby posture allows long-term concealment and persistent observation before activation.
+  vehicle_class: naval_combat_drone
+
+  produced_by: []
+  uses_technology: []
+  operated_by: []
+
+  manufacturer_name: Unknown
+
+  intended_roles:
+    - scouting
+    - targeting
+    - long_term_surveillance
+    - littoral_quick_response
+    - coastal_combat_patrol
+
+  supported_infrastructure:
+    - littoral_operations
+    - coastal_basing
+    - concealed_standby_deployment
+
+  descriptive_capabilities:
+    - semi_submersible_standby
+    - persistent_surveillance
+    - littoral_ambush
+    - unmanned_naval_operation
+
+  component_layout_stub:
+    major_component_groups:
+      - semi_submersible_hull
+      - sensor_and_targeting_suite
+      - command_and_control_module
+      - propulsion_block
+      - limited_missile_fit
+      - 17mm_autocannon_mount
+      - detachable_self_destruct_warhead
+    configurable_groups:
+      - surveillance_fits
+      - littoral_attack_fits
+
+  main_armament_summary: 17 mm autocannon, very limited missile armament, detachable self-destruct warhead
+
+  tags:
+    - vehicle
+    - naval
+    - drone
+    - panamericana
+    - littoral
+    - combat_drone
+    - race_for_sol
+
+  start_year: 2115
+  entry_status: draft
+
+- id: veh_mdv_3
+  pretty_name: MDV-3
+  name: MDV-3
+  type: vehicle
+  idea_reference: IDEA-496
+  description: Orbital-built Mars cargo transport vehicle used for high-volume freight transfer between Earth orbit and Mars orbit during the Race for Sol.
+  notes: Designed as a larger follow-up to earlier Mars Delivery Vehicle concepts. Unlike earlier atmosphere-capable variants, MDV-3 is a pure space transport and does not perform atmospheric entry. It carries roughly 385 tons of cargo and operates between orbital infrastructure nodes rather than surface delivery points.
+  vehicle_class: interplanetary_cargo_transport
+
+  produced_by: []
+  uses_technology: []
+  operated_by: []
+
+  intended_roles:
+    - earth_orbit_to_mars_orbit_cargo_transfer
+    - orbital_freight_logistics
+    - high_volume_interplanetary_transport
+
+  supported_infrastructure:
+    - infra_earth_orbital_cargo_terminals
+    - infra_mars_orbital_logistics_hubs
+    - infra_orbital_refueling_nodes
+
+  descriptive_capabilities:
+    - high_volume_space_freight_transport
+    - non_atmospheric_interplanetary_operation
+    - orbital_cargo_interface_operation
+
+  component_layout_stub:
+    major_component_groups:
+      - cargo_module_structure
+      - main_transfer_propulsion
+      - reaction_control_system
+      - docking_and_transfer_interface
+      - avionics_and_guidance
+      - power_and_support_systems
+      - structural_truss_or_hull_frame
+    configurable_groups:
+      - cargo_module_variants
+
+  payload_capacity_t: 385
+
+  tags:
+    - vehicle
+    - spacecraft
+    - cargo
+    - interplanetary
+    - orbital
+    - mars
+    - race_for_sol
+
+  start_year: 2158
+  entry_status: draft
+
+- id: veh_taltos_class_mars_cargo_lander
+  pretty_name: Taltos-class Mars Cargo Lander
+  name: Taltos-class Mars Cargo Lander
+  type: vehicle
+  idea_reference: IDEA-502
+  description: Reusable Mars orbit-to-surface cargo lander used during the Race for Sol for freight delivery between orbital logistics hubs and surface landing pads.
+  notes: The class is built around repeated cargo descent and unloading operations on Mars. The design uses detachable modular lifting wings that can be removed and remounted in reversed orientation depending on mission profile and servicing state.
+  vehicle_class: mars_cargo_lander
+
+  produced_by: []
+  uses_technology: []
+  operated_by: []
+
+  intended_roles:
+    - mars_orbit_to_surface_cargo_delivery
+    - cargo_landing_pad_servicing
+    - martian_surface_freight_unloading
+
+  supported_infrastructure:
+    - infra_mars_orbital_logistics_hubs
+    - infra_mars_surface_landing_pads
+    - equip_martian_cargo_crane
+
+  descriptive_capabilities:
+    - reusable_freight_landing
+    - heavy_cargo_surface_delivery
+    - modular_aerodynamic_configuration
+
+  component_layout_stub:
+    major_component_groups:
+      - cargo_hold
+      - main_descent_propulsion
+      - reaction_control_system
+      - detachable_lifting_wing_mounts
+      - landing_gear
+      - avionics_and_guidance
+      - power_and_support_systems
+    configurable_groups:
+      - detachable_lifting_wings
+
+  payload_capacity_t: 45
+  service_life_cycles: 50
+
+  tags:
+    - vehicle
+    - spacecraft
+    - cargo
+    - mars
+    - reusable
+    - race_for_sol
+
+  start_year: 2180
+  entry_status: draft
 
 - id: veh_conviction_c1
   pretty_name: Conviction C1
@@ -308,6 +489,17 @@
   description: Compact 2-door convertible grand tourer by Conviction Automobiles, intended for refined private leisure touring with a smooth luxury character and a mild sporting edge.
   notes: Early Conviction model line centered on open-top prestige touring rather than formal executive transport.
   vehicle_class: compact_grand_touring_convertible
+  vehicle_class_parents:
+    - car
+    - road_vehicle
+    - ground_vehicle
+    - vehicle
+  required_categories:
+    - structure
+    - control
+    - locomotion_ground
+    - wheels
+    - propulsion_road
 
   produced_by:
     - producer_conviction_automobiles
@@ -321,9 +513,9 @@
   dimension_z_m: 1.31
 
   design_catalog_components:
-    - comp_conviction_c1_touring_body
-    - comp_conviction_c1_open_roof_assembly
-    - comp_conviction_c1_grand_touring_drive_unit
+    - asm_conviction_c1_touring_body
+    - asm_conviction_c1_open_roof_assembly
+    - asm_conviction_c1_grand_touring_drive_unit
 
   intended_roles:
     - private_leisure_touring
@@ -409,280 +601,134 @@
   start_year: 6441
   entry_status: draft
 
-- id: veh_panamericana_q3n_stormpetrel
-  pretty_name: Panamericana Q3N Stormpetrel
-  name: Panamericana Q3N Stormpetrel
+- id: veh_bospor_3_regolith
+  pretty_name: Bospor 3 "Regolith"
+  name: Bospor 3 "Regolith"
   type: vehicle
-  description: Panamericana naval combat drone boat optimized for littoral surveillance, scouting, targeting, and quick-response combat in coastal waters.
-  notes: Semi-submersible standby posture allows long-term concealment and persistent observation before activation.
-  vehicle_class: naval_combat_drone
+  description: Mid-size utility SUV produced by Bospor Automat for everyday transport and light-duty work on Noyanakh in the Metyaki System during the Planetary Period.
+  notes: Civilian frontier vehicle intended to bridge personal mobility and practical utility use in settlement and rough-surface conditions.
+  vehicle_class: suv
+  manufacturer_name: Bospor Automat
 
-  produced_by: []
-  uses_technology: []
-  operated_by: []
-
-  manufacturer_name: Unknown
-
-  intended_roles:
-    - scouting
-    - targeting
-    - long_term_surveillance
-    - littoral_quick_response
-    - coastal_combat_patrol
-
-  supported_infrastructure:
-    - littoral_operations
-    - coastal_basing
-    - concealed_standby_deployment
-
-  descriptive_capabilities:
-    - semi_submersible_standby
-    - persistent_surveillance
-    - littoral_ambush
-    - unmanned_naval_operation
-
-  component_layout_stub:
-    major_component_groups:
-      - semi_submersible_hull
-      - sensor_and_targeting_suite
-      - command_and_control_module
-      - propulsion_block
-      - limited_missile_fit
-      - 17mm_autocannon_mount
-      - detachable_self_destruct_warhead
-    configurable_groups:
-      - surveillance_fits
-      - littoral_attack_fits
-
-  main_armament_summary: 17 mm autocannon, very limited missile armament, detachable self-destruct warhead
-
-  tags:
-    - vehicle
-    - naval
-    - drone
-    - panamericana
-    - littoral
-    - combat_drone
-
-  start_year: 0
-  entry_status: draft
-
-- id: veh_f22_raptor
-  pretty_name: F-22 Raptor
-  name: F-22 Raptor
-  type: vehicle
-  description: United States stealth air-dominance fighter introduced in the late 20th and early 21st century, combining low observability, supercruise, extreme maneuverability, and integrated sensor fusion.
-  notes: Real-world baseline entry for later adaptation into the Superpower Wars context.
-  vehicle_class: stealth_air_dominance_fighter
-
-  produced_by: []
-  uses_technology: []
-  operated_by: []
-
-  manufacturer_name: Lockheed Martin
-
-  dimension_x_m: 18.92
-  dimension_y_m: 13.56
-  dimension_z_m: 5.08
-
-  intended_roles:
-    - air_superiority
-    - interceptor
-    - escort_fighter
-    - precision_strike
-
-  supported_infrastructure:
-    - conventional_airbase
-    - hardened_airbase
-    - military_runway_operations
-
-  descriptive_capabilities:
-    - low_observable_air_combat
-    - supercruise
-    - supermaneuverability
-    - integrated_sensor_fusion
-    - beyond_visual_range_engagement
-    - internal_weapons_carriage
-
-  component_layout_stub:
-    major_component_groups:
-      - stealth_airframe
-      - twin_engine_propulsion
-      - cockpit_and_life_support
-      - radar_and_sensor_suite
-      - integrated_avionics
-      - internal_weapons_bays
-      - flight_control_surfaces
-      - landing_gear
-    configurable_groups:
-      - air_to_air_loadouts
-      - strike_loadouts
-      - avionics_upgrades
-
-  crew_complement: 1
-  max_speed_mach: 2.25
-  supercruise_mach: 1.5
-  service_ceiling_m: 19800
-  combat_radius_km: 850
-  ferry_range_km: 2960
-  propulsion_summary: 2 x Pratt & Whitney F119-PW-100 turbofan engines with thrust vectoring
-  main_armament_summary: 1 x 20 mm M61A2 Vulcan cannon, internal air-to-air and limited air-to-ground ordnance
-  service_count_built: 187
-
-  tags:
-    - vehicle
-    - aircraft
-    - fighter
-    - stealth
-    - united_states
-    - modern
-    - superpower_wars_anchor
-
-  start_year: 2005
-  entry_status: draft
-
-- id: veh_luaz_967
-  pretty_name: LuAZ-967
-  name: LuAZ-967
-  type: vehicle
-  description: Soviet light amphibious front-line transport vehicle intended for casualty evacuation, ammunition supply, and light battlefield utility transport in difficult terrain.
-  notes: Real-world baseline entry for the LuAZ-967 vehicle line. The line is most commonly associated with the LuAZ-967M production form, but this entry represents the broader vehicle family.
-  vehicle_class: amphibious_front_line_transport
-
-  produced_by: []
-  uses_technology: []
-  operated_by: []
-
-  manufacturer_name: LuAZ
-
-  dimension_x_m: 3.74
-  dimension_y_m: 1.71
+  dimension_x_m: 4.8
+  dimension_y_m: 1.9
   dimension_z_m: 1.75
 
+  produced_by: []
+  uses_technology: []
+  operated_by: []
+
   intended_roles:
-    - casualty_evacuation
-    - light_front_line_transport
-    - ammunition_supply
-    - light_weapon_transport
-    - difficult_terrain_utility
+    - personal_transport
+    - light_utility_transport
+    - settlement_to_settlement_travel
+    - rough_surface_driving
 
   supported_infrastructure:
-    - rough_ground_operations
-    - military_field_operations
-    - calm_water_crossing
+    - settlement_road_networks
+    - rough_surface_tracks
+    - local_service_garages
 
   descriptive_capabilities:
-    - amphibious_operation
-    - low_profile_transport
-    - air_transportable_light_vehicle
-    - difficult_terrain_mobility
-    - fold_down_low_silhouette_configuration
+    - enclosed_passenger_transport
+    - light_cargo_utility
+    - rough_surface_mobility
+    - civilian_frontier_serviceability
 
   component_layout_stub:
     major_component_groups:
-      - steel_hull_body
-      - amphibious_vehicle_hull
-      - central_driver_control_position
-      - fold_down_windscreen_and_controls
-      - light_utility_cargo_section
-      - four_wheel_drive_system
+      - chassis
       - suspension
-      - engine_and_transmission
+      - drive_system
+      - passenger_compartment
+      - cargo_space
+      - control_interface
     configurable_groups:
-      - evacuation_fittings
-      - cargo_fittings
-      - light_weapon_transport_fittings
+      - drivetrain_variants
+      - utility_fittings
 
-  crew_complement: 1
-  payload_kg: 400
-  max_speed_kmh: 75
-  water_speed_kmh: 3
-  towing_capacity_kg: 300
-  propulsion_summary: Air-cooled V4 gasoline engine, mechanical transmission, front-drive layout with selectively engaged rear axle on later cited production configuration
-  main_armament_summary: Unarmed utility transport vehicle
-  service_count_built: null
+  card_image: assets/cards/vehicles/veh_bospor_3_regolith_front.png
+  card_image_front: assets/cards/vehicles/veh_bospor_3_regolith_front.png
 
   tags:
     - vehicle
     - ground_vehicle
-    - amphibious_vehicle
-    - military
-    - soviet
-    - cold_war
-    - utility_transport
+    - suv
+    - planetary_period
+    - noyanakh
+    - metyaki
+    - bospor
 
-  start_year: 1961
+  start_year: 7142
   entry_status: draft
 
-- id: veh_d48_gun
-  pretty_name: D-48 Gun
-  name: D-48 Gun
+- id: veh_octa_35p
+  pretty_name: Octa 35P
+  name: Octa 35P
   type: vehicle
-  description: Soviet 85 mm towed anti-tank gun developed in the postwar period for high-velocity direct fire against armored targets, while retaining limited secondary field-gun utility.
-  notes: Real-world baseline entry for the D-48. Stored in vehicles for now because the current repo has no dedicated weapons schema and the gun functions as a crew-served towed battlefield platform.
-  vehicle_class: towed_anti_tank_gun
+  idea_reference: IDEA-364
+  description: Ground urban electric taxi used in the sprawling industrial cities around Patina’s orbital shipyard during the Planetary Period.
+  notes: Repository conversion of the Patina Surface Taxi concept. Associated with Stacklinger and the broader Patina shipyard-adjacent urban surface environment. Exact operational variants, trim levels, and later local modifications remain open for later refinement.
+  vehicle_class: urban_taxi
+  vehicle_class_parents:
+    - car
+    - road_vehicle
+    - ground_vehicle
+    - vehicle
+  required_categories:
+    - structure
+    - control
+    - locomotion_ground
+    - wheels
+    - propulsion_road
 
-  produced_by: []
+  manufacturer_name: Stacklingen Consolidated Industries
+
+  dimension_x_m: 4.95
+  dimension_y_m: 1.88
+  dimension_z_m: 1.48
+
+  produced_by:
+    - producer_stacklingen_consolidated_industries
   uses_technology: []
   operated_by: []
 
-  manufacturer_name: Unknown
-
-  dimension_x_m: 8.72
-  dimension_y_m: 1.59
-  dimension_z_m: 1.89
+  associated_locations:
+    - planet_patina
+    - settlement_stacklinger
 
   intended_roles:
-    - anti_tank_fire
-    - direct_fire_support
-    - towed_artillery_operation
-    - defensive_gun_position
+    - urban_passenger_transport
+    - industrial_city_taxi_service
 
   supported_infrastructure:
-    - towed_field_deployment
-    - military_road_towing
-    - prepared_fire_positions
+    - settlement_stacklinger
 
   descriptive_capabilities:
-    - high_velocity_anti_tank_fire
-    - split_trail_deployment
-    - crew_served_towed_operation
-    - limited_indirect_fire_capability
+    - electric_ground_transport
+    - dense_urban_passenger_service
+    - industrial_frontier_city_operation
 
   component_layout_stub:
     major_component_groups:
-      - gun_barrel
-      - muzzle_brake
-      - breech
-      - recoil_system
-      - carriage
-      - split_trail
-      - sighting_system
-      - wheels_and_tow_assembly
+      - passenger_compartment
+      - battery_pack
+      - electric_drive_system
+      - suspension
+      - taxi_control_interface
+      - luggage_storage
     configurable_groups:
-      - ammunition_types
-      - towing_configurations
-      - sighting_fits
-
-  crew_complement: 6
-  mass_kg: 2350
-  caliber_mm: 85
-  max_rate_of_fire_rpm: 15
-  normal_rate_of_fire_rpm: 8
-  muzzle_velocity_mps: 1040
-  direct_fire_range_m: 1200
-  max_range_m: 18970
-  propulsion_summary: Unpowered towed gun
-  main_armament_summary: 85 mm D-48 anti-tank gun
-  service_count_built: null
+      - body_variants
+      - local_service_fittings
 
   tags:
     - vehicle
-    - artillery
-    - anti_tank_gun
-    - towed_gun
-    - soviet
-    - cold_war
+    - ground_vehicle
+    - taxi
+    - electric
+    - patina
+    - stacklinger
+    - planetary_period
 
-  start_year: 1955
+  start_year: 8130
   entry_status: draft
