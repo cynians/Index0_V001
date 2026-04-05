@@ -1,0 +1,67 @@
+- id: psittacoraptor_versatilis
+  pretty_name: Versatile Parrot Raptor - Psittacoraptor versatilis
+  name: Psittacoraptor versatilis
+  type: species
+  description: Bioengineered parrot-derived theropod lineage created by the Terran BDP during the Planetary Period as an omnivorous generalist. On at least one seeded Earth-like world with reduced biodiversity, later exposure to CEAG drove rapid diversification into predator and generalist branches across nearly all major ecosystems.
+  species_class: engineered_vertebrate
+  parent_clade: psittacoraptorinae
+  clade_class: bird
+  origin_type: bioengineered
+  created_by:
+    - faction_terran_bdp
+  uses_technology:
+    - tech_ceag
+  base_stock_species: []
+  native_locations: []
+  seeded_locations: []
+  related_species: []
+  descendant_species: []
+  habitats:
+    - forest
+    - wetland
+    - open_woodland
+    - rocky_scrubland
+    - lowland_generalist
+  ecological_roles:
+    - omnivorous_generalist
+    - mesopredator
+  locomotion_types:
+    - gliding
+    - climbing
+    - ground_running
+  diet:
+    - fruit
+    - large_insects
+    - eggs
+    - small_vertebrates
+    - carrion
+  primary_prey_species: []
+  predator_species: []
+  representative_body_length_m: 1.15
+  representative_body_mass_kg: 9.5
+  reproduction_type: egg_laying
+  metabolism_class: endothermic
+  lifecycle_notes: The original release form was a microraptor-like gliding omnivore somewhat larger than a turkey, equipped with enlarged grasping claws and a modified beak suited to broad opportunistic feeding. Later CEAG-guided divergence produced both more specialized predator branches and highly adaptable generalist branches.
+  behavioural_traits:
+    - intelligent
+    - opportunistic
+    - manipulative
+    - exploratory
+  morphological_traits:
+    - parrot_derived_beak
+    - enlarged_grasping_claws
+    - microraptor_like_gliding_planform
+    - turkey_plus_body_size
+  simulation_tier_default: species_population
+  population_notes: Particularly successful on lower-diversity Earth-like seeded worlds, where it expanded into many available niches and became one of the dominant engineered vertebrate lineages.
+  tags:
+    - species
+    - bioengineered
+    - bird
+    - theropod_like
+    - gliding
+    - planetary_period
+    - terran_bdp
+    - ceag
+  start_year: 0
+  entry_status: draft

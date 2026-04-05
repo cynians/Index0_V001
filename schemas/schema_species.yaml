@@ -8,7 +8,39 @@ fields:
     type: string
     optional: true
 
+  parent_clade:
+    type: string
+    optional: true
+
+  clade_class:
+    type: string
+    optional: true
+
+  origin_type:
+    type: string
+    optional: true
+
+  created_by:
+    type: entity_list
+    target: faction
+    optional: true
+
+  uses_technology:
+    type: entity_list
+    target: technology
+    optional: true
+
+  base_stock_species:
+    type: entity_list
+    target: species
+    optional: true
+
   native_locations:
+    type: entity_list
+    target: locations
+    optional: true
+
+  seeded_locations:
     type: entity_list
     target: locations
     optional: true
@@ -17,3 +49,128 @@ fields:
     type: entity_list
     target: species
     optional: true
+
+  descendant_species:
+    type: entity_list
+    target: species
+    optional: true
+
+  habitats:
+    type: string_list
+    optional: true
+
+  ecological_roles:
+    type: string_list
+    optional: true
+
+  locomotion_types:
+    type: string_list
+    optional: true
+
+  diet:
+    type: string_list
+    optional: true
+
+  primary_prey_species:
+    type: entity_list
+    target: species
+    optional: true
+
+  predator_species:
+    type: entity_list
+    target: species
+    optional: true
+
+  representative_body_length_m:
+    type: number
+    optional: true
+
+  representative_body_mass_kg:
+    type: number
+    optional: true
+
+  reproduction_type:
+    type: string
+    optional: true
+
+  metabolism_class:
+    type: string
+    optional: true
+
+  lifecycle_notes:
+    type: text
+    optional: true
+
+  behavioural_traits:
+    type: string_list
+    optional: true
+
+  morphological_traits:
+    type: string_list
+    optional: true
+
+  simulation_tier_default:
+    type: string
+    optional: true
+
+  population_notes:
+    type: text
+    optional: true
+
+# --------------------------------------------------
+# COMMENTED EXAMPLE ENTRY
+# --------------------------------------------------
+#
+# - id: psittacoraptor_versatilis
+#   pretty_name: Versatile Parrot Raptor - Psittacoraptor versatilis
+#   name: Psittacoraptor versatilis
+#   type: species
+#   description: Bioengineered parrot-derived theropod lineage created by the Terran BDP during the Planetary Period as an omnivorous generalist and later diversified through CEAG-assisted accelerated evolution on one seeded Earth-like world.
+#   species_class: engineered_vertebrate
+#   parent_clade: psittacoraptorinae
+#   clade_class: bird
+#   origin_type: bioengineered
+#   created_by:
+#     - faction_terran_bdp
+#   uses_technology:
+#     - tech_ceag
+#   base_stock_species: []
+#   native_locations: []
+#   seeded_locations: []
+#   related_species: []
+#   descendant_species: []
+#   habitats:
+#     - forest
+#     - wetland
+#     - open_woodland
+#   ecological_roles:
+#     - omnivorous_generalist
+#     - mesopredator
+#   locomotion_types:
+#     - gliding
+#     - climbing
+#     - ground_running
+#   diet:
+#     - fruit
+#     - large_insects
+#     - eggs
+#     - small_vertebrates
+#   primary_prey_species: []
+#   predator_species: []
+#   representative_body_length_m: 1.15
+#   representative_body_mass_kg: 9.5
+#   reproduction_type: egg_laying
+#   metabolism_class: endothermic
+#   lifecycle_notes: Originally released as a microraptor-like gliding omnivore; later diversified into both predator and generalist branches on CEAG-affected seeded worlds.
+#   behavioural_traits:
+#     - intelligent
+#     - opportunistic
+#     - manipulative
+#   morphological_traits:
+#     - parrot_derived_beak
+#     - enlarged_grasping_claws
+#     - microraptor_like_gliding_planform
+#   simulation_tier_default: species_population
+#   population_notes: Particularly successful on lower-diversity Earth-like worlds where it radiated into many ecological niches.
+#   start_year: 0
+#   entry_status: draft

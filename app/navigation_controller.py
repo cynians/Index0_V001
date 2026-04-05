@@ -341,6 +341,9 @@ class NavigationController:
         """
         Route simple string-based UI action ids.
         """
+        if action_id == "ui_consumed":
+            return True
+
         if action_id == "launch_space_root":
             self.launch_space_root_tab()
             return True

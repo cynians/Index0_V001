@@ -263,3 +263,774 @@
     - c1
   start_year: 3184
   entry_status: draft
+
+- id: asm_luaz_967_watertight_hull_tub
+  pretty_name: LuAZ-967 Watertight Hull Tub
+  name: LuAZ-967 Watertight Hull Tub
+  type: assembly
+  description: Welded watertight lower hull/body tub forming the main amphibious structural shell of the LuAZ-967 family.
+  component_class: hull_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - structural_body
+    - amphibious_hull
+    - lower_vehicle_shell
+  satisfies_categories:
+    - structure
+    - hull
+  operational_groups:
+    - Structure
+    - Structure
+  subsystem_labels:
+    - core structure
+    - hull
+  requires_technology: []
+  descriptive_capabilities:
+    - installable
+    - watertight_lower_hull
+    - welded_steel_tub_construction
+    - amphibious_vehicle_base_structure
+  maintenance_notes: Hull seams, drain points, and structural corrosion areas must be inspected to preserve amphibious integrity and field durability.
+  dimension_x_m: 3.10
+  dimension_y_m: 1.50
+  dimension_z_m: 0.62
+  mass_kg: 240.0
+  power_kw: 0.0
+  tags:
+    - assembly
+    - vehicle
+    - luaz
+    - hull
+    - amphibious
+    - military
+  start_year: 1961
+  entry_status: draft
+
+- id: comp_light_vehicle_floor_tub_shell
+  pretty_name: Light Vehicle Floor Tub Shell
+  name: Light Vehicle Floor Tub Shell
+  type: component
+  description: Pressed and welded lower floor-basin shell used as the core tub section in small light-vehicle and amphibious utility hulls.
+  component_class: body_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - structural_body
+    - lower_shell
+  satisfies_categories:
+    - structure
+    - body
+  operational_groups:
+    - Structure
+  subsystem_labels:
+    - core structure
+  requires_technology: []
+  descriptive_capabilities:
+    - installable
+    - pressed_shell_section
+    - weldable_body_basis
+  maintenance_notes: Inspect floor shell for deformation, weld fatigue, and corrosion in wet-service environments.
+  dimension_x_m: 2.60
+  dimension_y_m: 1.45
+  dimension_z_m: 0.32
+  mass_kg: 92.0
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - structure
+    - floor_tub
+  start_year: 0
+  entry_status: draft
+
+- id: comp_light_vehicle_bow_nose_panel_set
+  pretty_name: Light Vehicle Bow Nose Panel Set
+  name: Light Vehicle Bow Nose Panel Set
+  type: component
+  description: Front closure panel set forming the bow or nose structure of a light utility vehicle hull.
+  component_class: body_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - frontal_body_closure
+    - hull_shaping
+  satisfies_categories:
+    - structure
+    - body
+  operational_groups:
+    - Structure
+  subsystem_labels:
+    - body
+  requires_technology: []
+  descriptive_capabilities:
+    - installable
+    - shaped_front_closure
+    - weldable_panel_set
+  maintenance_notes: Check frontal panels for impact damage and seam integrity.
+  dimension_x_m: 0.72
+  dimension_y_m: 1.42
+  dimension_z_m: 0.46
+  mass_kg: 26.0
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - body
+    - bow
+    - nose
+  start_year: 0
+  entry_status: draft
+
+- id: comp_light_vehicle_rear_body_closure_set
+  pretty_name: Light Vehicle Rear Body Closure Set
+  name: Light Vehicle Rear Body Closure Set
+  type: component
+  description: Rear closure panel set for a light vehicle body, providing structural termination and mounting edges for rear fittings.
+  component_class: body_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - rear_body_closure
+    - structural_termination
+  satisfies_categories:
+    - structure
+    - body
+  operational_groups:
+    - Structure
+  subsystem_labels:
+    - body
+  requires_technology: []
+  descriptive_capabilities:
+    - installable
+    - weldable_rear_panel_set
+  maintenance_notes: Inspect rear closure surfaces and bracket mounts for cracking and deformation under cargo/towing use.
+  dimension_x_m: 0.40
+  dimension_y_m: 1.42
+  dimension_z_m: 0.42
+  mass_kg: 18.0
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - body
+    - rear_closure
+  start_year: 0
+  entry_status: draft
+
+- id: comp_light_vehicle_structural_reinforcement_set
+  pretty_name: Light Vehicle Structural Reinforcement Set
+  name: Light Vehicle Structural Reinforcement Set
+  type: component
+  description: Reinforcement plates and local support members for suspension, towing, seat, and load-bearing points in a light vehicle hull.
+  component_class: frame_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - structural_reinforcement
+    - mount_support
+  satisfies_categories:
+    - structure
+  operational_groups:
+    - Structure
+  subsystem_labels:
+    - core structure
+  requires_technology: []
+  descriptive_capabilities:
+    - installable
+    - local_load_reinforcement
+    - mount_hardpoint_support
+  maintenance_notes: Check reinforcement members for cracking around axle, tow, and seat mount areas.
+  dimension_x_m: 1.80
+  dimension_y_m: 1.20
+  dimension_z_m: 0.18
+  mass_kg: 34.0
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - reinforcement
+    - structure
+  start_year: 0
+  entry_status: draft
+
+- id: comp_light_vehicle_access_cover_frame_set
+  pretty_name: Light Vehicle Access Cover Frame Set
+  name: Light Vehicle Access Cover Frame Set
+  type: component
+  description: Frame and flange set for service openings, covers, and sealing edges in a light vehicle hull or body shell.
+  component_class: body_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - service_access_support
+    - cover_mounting
+  satisfies_categories:
+    - body
+  operational_groups:
+    - Structure
+  subsystem_labels:
+    - body
+  requires_technology: []
+  descriptive_capabilities:
+    - installable
+    - cover_frame_support
+    - sealing_edge_support
+  maintenance_notes: Keep frame edges and hinges aligned to preserve access cover fit and sealing quality.
+  dimension_x_m: 1.10
+  dimension_y_m: 0.90
+  dimension_z_m: 0.08
+  mass_kg: 12.0
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - access_frame
+    - service_cover
+  start_year: 0
+  entry_status: draft
+
+- id: comp_pressed_steel_floor_pan
+  pretty_name: Pressed Steel Floor Pan
+  name: Pressed Steel Floor Pan
+  type: component
+  component_class: body_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - structural_panel
+    - lower_body_surface
+  requires_technology: []
+  descriptive_capabilities:
+    - pressed_sheet_part
+    - weldable
+  maintenance_notes: Inspect for corrosion and impact deformation.
+  dimension_x_m: 2.20
+  dimension_y_m: 1.10
+  dimension_z_m: 0.06
+  mass_kg: 24.0
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - pressed_panel
+    - floor
+  start_year: 0
+  entry_status: draft
+
+- id: comp_pressed_steel_sidewall_panel
+  pretty_name: Pressed Steel Sidewall Panel
+  name: Pressed Steel Sidewall Panel
+  type: component
+  component_class: body_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - structural_panel
+    - side_body_surface
+  requires_technology: []
+  descriptive_capabilities:
+    - pressed_sheet_part
+    - weldable
+  maintenance_notes: Inspect for seam cracking and corrosion along lower edges.
+  dimension_x_m: 2.00
+  dimension_y_m: 0.34
+  dimension_z_m: 0.05
+  mass_kg: 11.0
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - pressed_panel
+    - sidewall
+  start_year: 0
+  entry_status: draft
+
+- id: comp_pressed_steel_wheelhouse_inner_panel
+  pretty_name: Pressed Steel Wheelhouse Inner Panel
+  name: Pressed Steel Wheelhouse Inner Panel
+  type: component
+  component_class: body_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - wheelhouse_forming
+    - structural_panel
+  requires_technology: []
+  descriptive_capabilities:
+    - pressed_sheet_part
+    - weldable
+  maintenance_notes: Check for cracking and local deformation around suspension loads.
+  dimension_x_m: 0.52
+  dimension_y_m: 0.44
+  dimension_z_m: 0.05
+  mass_kg: 5.0
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - wheelhouse
+    - pressed_panel
+  start_year: 0
+  entry_status: draft
+
+- id: comp_hull_corner_closing_plate
+  pretty_name: Hull Corner Closing Plate
+  name: Hull Corner Closing Plate
+  type: component
+  component_class: body_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - seam_closure
+    - hull_corner_completion
+  requires_technology: []
+  descriptive_capabilities:
+    - weldable
+    - closing_plate
+  maintenance_notes: Inspect weld lines and corrosion concentration points.
+  dimension_x_m: 0.26
+  dimension_y_m: 0.18
+  dimension_z_m: 0.03
+  mass_kg: 1.5
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - closing_plate
+    - hull
+  start_year: 0
+  entry_status: draft
+
+- id: comp_pressed_steel_bow_plate
+  pretty_name: Pressed Steel Bow Plate
+  name: Pressed Steel Bow Plate
+  type: component
+  component_class: body_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - frontal_surface
+    - bow_shaping
+  requires_technology: []
+  descriptive_capabilities:
+    - pressed_sheet_part
+    - weldable
+  maintenance_notes: Inspect for frontal impact deformation and seam opening.
+  dimension_x_m: 0.68
+  dimension_y_m: 1.12
+  dimension_z_m: 0.05
+  mass_kg: 8.0
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - bow_plate
+    - pressed_panel
+  start_year: 0
+  entry_status: draft
+
+- id: comp_pressed_steel_front_side_panel
+  pretty_name: Pressed Steel Front Side Panel
+  name: Pressed Steel Front Side Panel
+  type: component
+  component_class: body_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - frontal_side_surface
+    - body_shaping
+  requires_technology: []
+  descriptive_capabilities:
+    - pressed_sheet_part
+    - weldable
+  maintenance_notes: Check for cracking at joining seams and edge distortion.
+  dimension_x_m: 0.62
+  dimension_y_m: 0.32
+  dimension_z_m: 0.05
+  mass_kg: 4.0
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - front_side_panel
+    - pressed_panel
+  start_year: 0
+  entry_status: draft
+
+- id: comp_light_bracket_set
+  pretty_name: Light Bracket Set
+  name: Light Bracket Set
+  type: component
+  component_class: frame_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - light_mount_support
+    - small_fitting_attachment
+  requires_technology: []
+  descriptive_capabilities:
+    - installable
+    - simple_mounting_support
+  maintenance_notes: Inspect bracket holes and bends for fatigue or elongation.
+  dimension_x_m: 0.24
+  dimension_y_m: 0.16
+  dimension_z_m: 0.04
+  mass_kg: 1.8
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - bracket
+    - support
+  start_year: 0
+  entry_status: draft
+
+- id: comp_pressed_steel_rear_panel
+  pretty_name: Pressed Steel Rear Panel
+  name: Pressed Steel Rear Panel
+  type: component
+  component_class: body_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - rear_surface
+    - structural_panel
+  requires_technology: []
+  descriptive_capabilities:
+    - pressed_sheet_part
+    - weldable
+  maintenance_notes: Inspect for cargo-edge damage and seam separation.
+  dimension_x_m: 0.40
+  dimension_y_m: 1.08
+  dimension_z_m: 0.05
+  mass_kg: 6.5
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - rear_panel
+    - pressed_panel
+  start_year: 0
+  entry_status: draft
+
+- id: comp_pressed_steel_upper_rear_edge_panel
+  pretty_name: Pressed Steel Upper Rear Edge Panel
+  name: Pressed Steel Upper Rear Edge Panel
+  type: component
+  component_class: body_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - upper_rear_edge_support
+    - structural_panel
+  requires_technology: []
+  descriptive_capabilities:
+    - pressed_sheet_part
+    - weldable
+  maintenance_notes: Inspect edge straightness and bracket mounting integrity.
+  dimension_x_m: 0.40
+  dimension_y_m: 0.18
+  dimension_z_m: 0.04
+  mass_kg: 2.2
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - rear_edge
+    - pressed_panel
+  start_year: 0
+  entry_status: draft
+
+- id: comp_mounting_bracket_set
+  pretty_name: Mounting Bracket Set
+  name: Mounting Bracket Set
+  type: component
+  component_class: frame_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - fitting_mount_support
+    - local_attachment
+  requires_technology: []
+  descriptive_capabilities:
+    - installable
+    - mounting_support_set
+  maintenance_notes: Inspect holes, bends, and attachment faces for wear and cracking.
+  dimension_x_m: 0.26
+  dimension_y_m: 0.18
+  dimension_z_m: 0.04
+  mass_kg: 2.4
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - bracket
+    - mounting
+  start_year: 0
+  entry_status: draft
+
+- id: comp_suspension_mount_reinforcement_plate
+  pretty_name: Suspension Mount Reinforcement Plate
+  name: Suspension Mount Reinforcement Plate
+  type: component
+  component_class: frame_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - suspension_hardpoint_support
+    - structural_reinforcement
+  requires_technology: []
+  descriptive_capabilities:
+    - weldable
+    - hardpoint_reinforcement
+  maintenance_notes: Inspect cracks around suspension bolt patterns and weld lines.
+  dimension_x_m: 0.30
+  dimension_y_m: 0.24
+  dimension_z_m: 0.03
+  mass_kg: 2.1
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - reinforcement
+    - suspension
+  start_year: 0
+  entry_status: draft
+
+- id: comp_crossmember_section
+  pretty_name: Crossmember Section
+  name: Crossmember Section
+  type: component
+  component_class: frame_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - cross_structural_support
+    - load_distribution
+  requires_technology: []
+  descriptive_capabilities:
+    - installable
+    - structural_member
+  maintenance_notes: Check for bending, corrosion, and cracking at junctions.
+  dimension_x_m: 1.22
+  dimension_y_m: 0.10
+  dimension_z_m: 0.10
+  mass_kg: 7.5
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - crossmember
+    - structure
+  start_year: 0
+  entry_status: draft
+
+- id: comp_tow_point_reinforcement_block
+  pretty_name: Tow Point Reinforcement Block
+  name: Tow Point Reinforcement Block
+  type: component
+  component_class: frame_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - towing_load_support
+    - structural_reinforcement
+  requires_technology: []
+  descriptive_capabilities:
+    - installable
+    - local_heavy_load_support
+  maintenance_notes: Inspect for cracking, elongation, and deformation under towing stress.
+  dimension_x_m: 0.18
+  dimension_y_m: 0.14
+  dimension_z_m: 0.08
+  mass_kg: 2.8
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - tow_point
+    - reinforcement
+  start_year: 0
+  entry_status: draft
+
+- id: comp_seat_and_load_mount_plate
+  pretty_name: Seat and Load Mount Plate
+  name: Seat and Load Mount Plate
+  type: component
+  component_class: frame_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - seat_mount_support
+    - load_mount_support
+  requires_technology: []
+  descriptive_capabilities:
+    - installable
+    - local_mount_support
+  maintenance_notes: Inspect mounting holes and local material fatigue around attachment points.
+  dimension_x_m: 0.32
+  dimension_y_m: 0.24
+  dimension_z_m: 0.03
+  mass_kg: 2.0
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - seat_mount
+    - load_mount
+  start_year: 0
+  entry_status: draft
+
+- id: comp_hatch_frame_ring
+  pretty_name: Hatch Frame Ring
+  name: Hatch Frame Ring
+  type: component
+  component_class: body_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - access_frame
+    - cover_support
+  requires_technology: []
+  descriptive_capabilities:
+    - installable
+    - frame_ring
+  maintenance_notes: Check sealing surfaces and local edge corrosion.
+  dimension_x_m: 0.62
+  dimension_y_m: 0.48
+  dimension_z_m: 0.04
+  mass_kg: 3.2
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - hatch_frame
+    - access
+  start_year: 0
+  entry_status: draft
+
+- id: comp_cover_hinge_bracket
+  pretty_name: Cover Hinge Bracket
+  name: Cover Hinge Bracket
+  type: component
+  component_class: frame_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - hinge_mount_support
+    - access_cover_attachment
+  requires_technology: []
+  descriptive_capabilities:
+    - installable
+    - hinge_support
+  maintenance_notes: Inspect hinge holes and bends for wear and cracking.
+  dimension_x_m: 0.10
+  dimension_y_m: 0.06
+  dimension_z_m: 0.03
+  mass_kg: 0.4
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - hinge_bracket
+    - access_cover
+  start_year: 0
+  entry_status: draft
+
+- id: comp_sealing_flange_strip
+  pretty_name: Sealing Flange Strip
+  name: Sealing Flange Strip
+  type: component
+  component_class: body_component
+  primary_material: mat_stainless_steel
+  secondary_materials: []
+  represented_item: null
+  install_contexts:
+    - vehicle
+  functional_roles:
+    - sealing_edge_support
+    - flange_surface
+  requires_technology: []
+  descriptive_capabilities:
+    - installable
+    - edge_flange
+  maintenance_notes: Inspect sealing surface straightness and corrosion along the strip.
+  dimension_x_m: 0.80
+  dimension_y_m: 0.04
+  dimension_z_m: 0.02
+  mass_kg: 0.9
+  power_kw: 0.0
+  tags:
+    - component
+    - vehicle
+    - flange
+    - sealing
+  start_year: 0
+  entry_status: draft

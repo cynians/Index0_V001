@@ -1,0 +1,17 @@
+- id: faction_terran_bdp
+  pretty_name: Terran BDP
+  name: Terran BDP
+  type: faction
+  description: Terran bioengineering organization active during the Planetary Period and associated with the design, release, and directed ecological shaping of engineered organisms.
+  faction_class: bioengineering_program
+  parent_faction: null
+  associated_cultures: []
+  associated_locations: []
+  associated_institutions: []
+  tags:
+    - faction
+    - terran
+    - bioengineering
+    - planetary_period
+  start_year: 0
+  entry_status: draft

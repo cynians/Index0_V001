@@ -2478,3 +2478,10 @@ Description: Normalize repository image-role handling around shared entity image
   - unscaled preliminary design image
   - orientation view images
   - later canonical asset storage/writeback workflows
+
+TASK-243
+Status: TODO
+Difficulty: 3
+Requires: TASK-243
+Description: Rework the vehicle design catalog and component repository workflow. First, make the lower Vehicle Design panel vertically resizable by dragging its upper border, similar to an IDE/log panel. Then replace the flat catalog list with a grouped card-based inventory view where card footprint reflects the placed top-down size of the component or assembly. Keep the lower panel as the canonical catalog UI layer and avoid duplicate renderer-side catalog drawing. For repository scaling, keep a single shared component schema but split component data into a small number of broad functional files rather than one giant YAML or many tiny per-vehicle files.
+Use broad buckets such as structural, running gear, powertrain, control/crew, cargo/support, sensors/weapons, and vehicle-specific assemblies. Continue LuAZ-967 component development using a two-phase workflow: first collect candidate components/assemblies and classify them into generic reusable parts versus vehicle-specific assemblies, then produce replacement diffs for the appropriate component data files.

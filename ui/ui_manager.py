@@ -32,6 +32,13 @@ class UIManager:
         self.simulation_bar_catalog_entries = []
         self.simulation_bar_catalog_hitboxes = []
         self.simulation_bar_active_catalog_id = None
+        self.simulation_bar_resize_hitbox = None
+        self.simulation_bar_height = 180
+        self.simulation_bar_min_height = 120
+        self.simulation_bar_max_height = 420
+        self.simulation_bar_is_resizing = False
+        self.simulation_bar_resize_start_y = 0
+        self.simulation_bar_resize_start_height = 180
 
         self.simulation_panel_tabs = []
         self.simulation_panel_active_tab_id = None
@@ -84,6 +91,7 @@ class UIManager:
         self.simulation_bar_catalog_entries = []
         self.simulation_bar_catalog_hitboxes = []
         self.simulation_bar_active_catalog_id = None
+        self.simulation_bar_resize_hitbox = None
 
         self.simulation_panel_tabs = []
         self.simulation_panel_active_tab_id = None
@@ -127,13 +135,22 @@ class UIManager:
         focus_part_id = selected_part_id or hover_part_id
 
         bar_margin = 20
-        bar_height = 138
+        bar_height = max(self.simulation_bar_min_height, min(self.simulation_bar_height, self.simulation_bar_max_height))
+        self.simulation_bar_height = bar_height
+
         self.simulation_bar_rect = pygame.Rect(
             bar_margin,
             app_height - bar_height - 20,
             app_width - bar_margin * 2,
             bar_height,
         )
+        self.simulation_bar_resize_hitbox = pygame.Rect(
+            self.simulation_bar_rect.x,
+            self.simulation_bar_rect.y - 4,
+            self.simulation_bar_rect.width,
+            8,
+        )
+
         self.simulation_bar_title = "Vehicle Design"
         self.simulation_panel_tabs = active_sim.get_simulation_panel_tabs()
         self.simulation_panel_active_tab_id = active_sim.get_active_simulation_panel_tab_id()
@@ -141,9 +158,9 @@ class UIManager:
 
         if self.simulation_panel_active_tab_id == "catalog":
             self.simulation_bar_hint_lines = [
-                "Hold catalog item and drag into hull",
-                "Release to place component",
-                "Assemblies are grouped before reusable components",
+                "Drag top border to resize panel",
+                "Hold a card and drag into hull",
+                "Card footprint scales by placed size",
             ]
         elif self.simulation_panel_active_tab_id == "selection":
             self.simulation_bar_hint_lines = [
@@ -167,55 +184,83 @@ class UIManager:
         self.simulation_bar_catalog_hitboxes = []
 
         if active_panel_tab_id == "catalog":
-            entry_x = self.simulation_bar_rect.x + 14
-            entry_y = self.simulation_bar_rect.y + 66
-            row_h = 22
-            section_gap = 6
-            entry_w = min(430, self.simulation_bar_rect.width - 28)
+            content_x = self.simulation_bar_rect.x + 14
+            content_y = self.simulation_bar_rect.y + 64
+            content_w = int(self.simulation_bar_rect.width * 0.62)
+            section_gap_y = 10
+            section_header_h = 22
+            card_gap_x = 10
+            card_gap_y = 10
+            text_band_h = 26
 
-            flat_rows = []
+            all_entries = []
             for section in grouped_catalog:
-                flat_rows.append(
-                    {
-                        "kind": "section",
-                        "label": section.get("title", "Section"),
-                        "catalog_id": None,
-                    }
-                )
+                all_entries.extend(section.get("entries", []))
+
+            max_dim_x = 1.0
+            max_dim_y = 1.0
+            for entry in all_entries:
+                dims = dict(entry.get("dimensions_m", {}))
+                max_dim_x = max(max_dim_x, float(dims.get("x", 1.0) or 1.0))
+                max_dim_y = max(max_dim_y, float(dims.get("y", 1.0) or 1.0))
+
+            def _card_size(entry):
+                dims = dict(entry.get("dimensions_m", {}))
+                dim_x = float(dims.get("x", 1.0) or 1.0)
+                dim_y = float(dims.get("y", 1.0) or 1.0)
+
+                usable_max_w = 180
+                usable_max_h = 90
+
+                body_w = max(26, int((dim_x / max_dim_x) * usable_max_w))
+                body_h = max(20, int((dim_y / max_dim_y) * usable_max_h))
+
+                card_w = body_w
+                card_h = body_h + text_band_h
+                return card_w, card_h
+
+            current_y = content_y
+
+            for section in grouped_catalog:
+                section_row = {
+                    "kind": "section",
+                    "label": section.get("title", "Section"),
+                }
+                section_rect = pygame.Rect(content_x, current_y, content_w, section_header_h)
+                self.simulation_bar_catalog_entries.append(section_row)
+                self.simulation_bar_catalog_hitboxes.append((None, section_rect, section_row))
+                current_y += section_header_h + 6
+
+                cursor_x = content_x
+                row_max_h = 0
+
                 for entry in section.get("entries", []):
-                    flat_rows.append(
-                        {
-                            "kind": "entry",
-                            "catalog_id": entry.get("id"),
-                            "label": entry.get("label", entry.get("id", "component")),
-                            "entry_type": entry.get("entry_type", "component"),
-                            "group_name": (entry.get("operational_groups", ["General Systems"])[0] if entry.get("operational_groups") else "General Systems"),
-                            "dimensions_m": dict(entry.get("dimensions_m", {})),
-                            "component_type": entry.get("component_type", "component"),
-                        }
-                    )
-                flat_rows.append({"kind": "gap"})
+                    card_w, card_h = _card_size(entry)
 
-            if flat_rows and flat_rows[-1].get("kind") == "gap":
-                flat_rows.pop()
+                    if cursor_x + card_w > content_x + content_w:
+                        cursor_x = content_x
+                        current_y += row_max_h + card_gap_y
+                        row_max_h = 0
 
-            self.simulation_bar_catalog_entries = flat_rows
+                    row = {
+                        "kind": "entry_card",
+                        "catalog_id": entry.get("id"),
+                        "label": entry.get("label", entry.get("id", "component")),
+                        "entry_type": entry.get("entry_type", "component"),
+                        "group_name": (entry.get("operational_groups", ["General Systems"])[0] if entry.get("operational_groups") else "General Systems"),
+                        "dimensions_m": dict(entry.get("dimensions_m", {})),
+                        "component_type": entry.get("component_type", "component"),
+                        "body_height": card_h - text_band_h,
+                    }
 
-            current_y = entry_y
-            for row in flat_rows:
-                if row.get("kind") == "gap":
-                    current_y += section_gap
-                    continue
+                    card_rect = pygame.Rect(cursor_x, current_y, card_w, card_h)
+                    self.simulation_bar_catalog_entries.append(row)
+                    self.simulation_bar_catalog_hitboxes.append((row.get("catalog_id"), card_rect, row))
 
-                if row.get("kind") == "section":
-                    row_rect = pygame.Rect(entry_x, current_y, entry_w, row_h - 4)
-                    self.simulation_bar_catalog_hitboxes.append((None, row_rect, row))
-                    current_y += row_h
-                    continue
+                    cursor_x += card_w + card_gap_x
+                    row_max_h = max(row_max_h, card_h)
 
-                row_rect = pygame.Rect(entry_x + 12, current_y, entry_w - 12, row_h)
-                self.simulation_bar_catalog_hitboxes.append((row.get("catalog_id"), row_rect, row))
-                current_y += row_h + 2
+                current_y += row_max_h + section_gap_y
 
         mouse_pos = pygame.mouse.get_pos()
         hover_catalog_id = None
@@ -526,6 +571,16 @@ class UIManager:
         pygame.draw.rect(screen, (22, 24, 30), self.simulation_bar_rect)
         pygame.draw.rect(screen, (200, 200, 200), self.simulation_bar_rect, 1)
 
+        if self.simulation_bar_resize_hitbox is not None:
+            line_y = self.simulation_bar_rect.y
+            pygame.draw.line(
+                screen,
+                (150, 150, 160),
+                (self.simulation_bar_rect.x + 2, line_y),
+                (self.simulation_bar_rect.right - 2, line_y),
+                2,
+            )
+
         if self.simulation_bar_title:
             title_surface = font.render(self.simulation_bar_title, True, (240, 240, 240))
             screen.blit(title_surface, (self.simulation_bar_rect.x + 12, self.simulation_bar_rect.y + 10))
@@ -541,8 +596,8 @@ class UIManager:
         elif self.simulation_bar_catalog_entries:
             self._draw_simulation_bar_catalog(screen, font)
 
-        hint_x = self.simulation_bar_rect.x + 400
-        hint_y = self.simulation_bar_rect.y + 40
+        hint_x = self.simulation_bar_rect.x + int(self.simulation_bar_rect.width * 0.66)
+        hint_y = self.simulation_bar_rect.y + 42
         for line in self.simulation_bar_hint_lines:
             text_surface = font.render(line, True, (185, 185, 185))
             screen.blit(text_surface, (hint_x, hint_y))
@@ -627,14 +682,24 @@ class UIManager:
             pygame.draw.rect(screen, fill_color, hitbox)
             pygame.draw.rect(screen, border_color, hitbox, 2)
 
+            body_height = int(row.get("body_height", max(20, hitbox.height - 26)))
+            body_rect = pygame.Rect(hitbox.x + 4, hitbox.y + 4, max(8, hitbox.width - 8), max(8, body_height - 4))
+            pygame.draw.rect(screen, (70, 74, 86), body_rect, 1)
+
+            dims = row.get("dimensions_m", {})
             line_1 = row.get("label", catalog_id or "component")
-            line_2 = f"{row.get('entry_type', 'component')} | {row.get('group_name', 'General Systems')}"
+            line_2 = row.get("entry_type", "component")
+            line_3 = f"{dims.get('x', '?')} x {dims.get('y', '?')}"
 
             text_surface_1 = font.render(line_1, True, (240, 240, 240))
-            text_surface_2 = font.render(line_2, True, (180, 180, 190))
+            text_surface_2 = font.render(line_2, True, (185, 185, 195))
+            text_surface_3 = font.render(line_3, True, (165, 165, 175))
 
-            screen.blit(text_surface_1, (hitbox.x + 8, hitbox.y + 1))
-            screen.blit(text_surface_2, (hitbox.x + 8, hitbox.y + 15))
+            text_y = hitbox.bottom - 34
+            screen.blit(text_surface_1, (hitbox.x + 6, text_y))
+            screen.blit(text_surface_2, (hitbox.x + 6, text_y + 14))
+            screen.blit(text_surface_3, (hitbox.x + 6, text_y + 28))
+
     def _draw_button(self, screen, font, button):
         fill_color = (55, 55, 55) if button.enabled else (35, 35, 35)
         border_color = (210, 210, 210) if button.enabled else (100, 100, 100)
@@ -830,44 +895,64 @@ class UIManager:
 
         self._draw_simulation_bar(screen, font)
         self._draw_hover_tooltip(screen, font)
+
+
     def handle_event(self, event):
         if self.menu_active:
             return self.knowledge_ui.handle_event(event)
 
-        if event.type != pygame.MOUSEBUTTONDOWN:
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mouse_pos = event.pos
+
+            if self.simulation_bar_resize_hitbox and self.simulation_bar_resize_hitbox.collidepoint(mouse_pos):
+                self.simulation_bar_is_resizing = True
+                self.simulation_bar_resize_start_y = mouse_pos[1]
+                self.simulation_bar_resize_start_height = self.simulation_bar_height
+                return "ui_consumed"
+
+            for tab_id, hitbox in self.simulation_panel_tab_hitboxes:
+                if hitbox.collidepoint(mouse_pos):
+                    return {
+                        "id": "simulation_panel_tab_select",
+                        "tab_id": tab_id,
+                    }
+
+            for catalog_id, hitbox, row in self.simulation_bar_catalog_hitboxes:
+                if catalog_id is None:
+                    continue
+                if hitbox.collidepoint(mouse_pos):
+                    return {
+                        "id": "vehicle_catalog_select",
+                        "catalog_id": catalog_id,
+                    }
+
+            for tab_index, hitbox in self.tab_hitboxes:
+                if hitbox.collidepoint(mouse_pos):
+                    return {
+                        "id": "activate_tab",
+                        "tab_index": tab_index,
+                    }
+
+            for button in self.buttons:
+                if not button.visible or not button.enabled:
+                    continue
+
+                if button.rect.collidepoint(mouse_pos):
+                    return button.id
+
             return None
 
-        if event.button != 1:
-            return None
+        if event.type == pygame.MOUSEMOTION and self.simulation_bar_is_resizing:
+            delta_y = self.simulation_bar_resize_start_y - event.pos[1]
+            new_height = self.simulation_bar_resize_start_height + delta_y
+            self.simulation_bar_height = max(
+                self.simulation_bar_min_height,
+                min(self.simulation_bar_max_height, new_height),
+            )
+            return "ui_consumed"
 
-        mouse_pos = event.pos
-
-        for tab_id, hitbox in self.simulation_panel_tab_hitboxes:
-            if hitbox.collidepoint(mouse_pos):
-                return {
-                    "id": "simulation_panel_tab_select",
-                    "tab_id": tab_id,
-                }
-
-        for catalog_id, hitbox, row in self.simulation_bar_catalog_hitboxes:
-            if hitbox.collidepoint(mouse_pos):
-                return {
-                    "id": "vehicle_catalog_select",
-                    "catalog_id": catalog_id,
-                }
-
-        for tab_index, hitbox in self.tab_hitboxes:
-            if hitbox.collidepoint(mouse_pos):
-                return {
-                    "id": "activate_tab",
-                    "tab_index": tab_index,
-                }
-
-        for button in self.buttons:
-            if not button.visible or not button.enabled:
-                continue
-
-            if button.rect.collidepoint(mouse_pos):
-                return button.id
+        if event.type == pygame.MOUSEBUTTONUP and event.button == 1 and self.simulation_bar_is_resizing:
+            self.simulation_bar_is_resizing = False
+            return "ui_consumed"
 
         return None
