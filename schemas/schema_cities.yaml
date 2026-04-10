@@ -1,0 +1,97 @@
+# ==================================================
+# FULL DIFF
+# Gathered collected changes from this chat
+# ==================================================
+
+
+# --------------------------------------------------
+# NEW FILE: schemas/schema_cities.yaml
+# --------------------------------------------------
+
+schema: cities.yaml
+
+extends: entity_core
+
+fields:
+
+  city_class:
+    type: string
+    optional: true
+
+  city_role:
+    type: string_list
+    optional: true
+
+  location_entity:
+    type: entity
+    target: locations
+
+  parent_location:
+    type: entity
+    target: locations
+    optional: true
+
+  controlling_factions:
+    type: entity_list
+    target: factions
+    optional: true
+
+  associated_cultures:
+    type: entity_list
+    target: cultures
+    optional: true
+
+  associated_institutions:
+    type: entity_list
+    target: institutions
+    optional: true
+
+  population:
+    type: dict
+    optional: true
+
+  derived_from_ideas:
+    type: string_list
+    optional: true
+
+  tags:
+    type: string_list
+    optional: true
+
+  urban_structure:
+    type: dict
+    optional: true
+
+  city_systems:
+    type: dict
+    optional: true
+
+  cultural_features:
+    type: string_list
+    optional: true
+
+  embedded_sites:
+    type: string_list
+    optional: true
+
+  related_vehicles:
+    type: string_list
+    optional: true
+
+# --------------------------------------------------
+# COMMENTED EXAMPLE ENTRY
+# --------------------------------------------------
+#
+# - id: city_example
+#   pretty_name: Example City
+#   name: Example City
+#   type: city
+#   location_entity: loc_example
+#   parent_location: planet_earth
+#   city_class: planned_city
+#   city_role:
+#     - administrative_center
+#   population:
+#     y2100: 500000
+#   start_year: 2090
+#   entry_status: stub

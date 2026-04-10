@@ -2485,3 +2485,79 @@ Difficulty: 3
 Requires: TASK-243
 Description: Rework the vehicle design catalog and component repository workflow. First, make the lower Vehicle Design panel vertically resizable by dragging its upper border, similar to an IDE/log panel. Then replace the flat catalog list with a grouped card-based inventory view where card footprint reflects the placed top-down size of the component or assembly. Keep the lower panel as the canonical catalog UI layer and avoid duplicate renderer-side catalog drawing. For repository scaling, keep a single shared component schema but split component data into a small number of broad functional files rather than one giant YAML or many tiny per-vehicle files.
 Use broad buckets such as structural, running gear, powertrain, control/crew, cargo/support, sensors/weapons, and vehicle-specific assemblies. Continue LuAZ-967 component development using a two-phase workflow: first collect candidate components/assemblies and classify them into generic reusable parts versus vehicle-specific assemblies, then produce replacement diffs for the appropriate component data files.
+
+
+TASK-244
+Status: TODO
+Difficulty: 4
+Requires: TASK-183, TASK-186, TASK-189
+Description: Split cities from locations at the repository/schema level, including:
+- A dedicated cities schema and entry file
+- Retention of locations as physical/map anchors
+- City entities linking outward through a single location reference
+- Support for city-wide systems, structural zones, embedded sites, and aggregated population at the city layer
+- Foundation for later quarter and site aggregation into city truth
+
+TASK-245
+Status: TODO
+Difficulty: 3
+Requires: TASK-244
+Description: Add the Center of Gravity as the first dedicated city-layer repository entry, including:
+- A geographic anchor location for the Central Asian Steppe CoG Site
+- A city_cog aggregate entry for the megastructure itself
+- Representation of CoG ring structure, infrastructure belts, utility systems, and orbital interface systems
+- Linkage to existing CoG ideas and later quarter/site concretization
+
+TASK-246
+Status: TODO
+Difficulty: 4
+Requires: TASK-244
+Description: Split the current broad location layer into simulation-scoped spatial brackets so entities can be represented at the correct simulation scale. Introduce and standardize at least:
+- area
+- biosphere
+- city
+- quarter
+
+This includes:
+- defining the intended role and scope of each bracket
+- deciding which brackets remain in locations versus move into dedicated datasets
+- clarifying parent/child relationships between planetary, regional, urban, and sub-urban layers
+- preparing schema and loader support so simulation views can query by spatial bracket rather than by mixed location entries
+- identifying existing entries that should later migrate into the new bracket structure
+
+TASK-247
+Status: TODO
+Difficulty: 3
+Requires: TASK-244
+Description: Add a document system for in-world written and recorded materials. This should support entities such as:
+- subjective reports
+- in-world notes
+- letters
+- memos
+- diaries
+- testimonies
+- police fragments
+- archival excerpts
+
+This includes:
+- defining a dedicated schema and dataset for documents
+- supporting author, origin, date, perspective, authenticity, and linked entities/events
+- allowing both official and unofficial records
+- enabling use as worldbuilding evidence for events, places, factions, and persons
+- preparing later UI support so documents can be opened as attached contextual material from entity cards and simulation views
+
+TASK-248
+Status: TODO
+Difficulty: 4
+Requires: TASK-183
+Description: Rework the timeline feature so it also functions as an editing tool. Entities loaded onto the timeline canvas should also be added to a central register displayed at the top of the register window. When an entity is in edit mode, its temporal bounds should be directly adjustable on the timeline by click-dragging its start and end date handles.
+
+This includes:
+- treating the timeline as both a visualization and editing surface
+- adding loaded timeline entities to a shared top-of-window register view
+- indicating which entity is currently selected or being edited
+- allowing direct click-drag adjustment of start_year and end_year on the timeline
+- updating the underlying entity data when temporal handles are moved
+- supporting entities with open-ended or missing end dates
+- keeping timeline edits consistent with existing entity loading and canvas behavior
+- preparing the feature so later edits can be saved back into repository-backed entries

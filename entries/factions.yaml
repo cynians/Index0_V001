@@ -15,3 +15,26 @@
     - planetary_period
   start_year: 0
   entry_status: draft
+
+# --------------------------------------------------
+# APPEND TO: entries/factions.yaml
+# or FUTURE DEDICATED GANGS DATASET
+# --------------------------------------------------
+
+# ---------- gang_cog_breach_route_crew | CoG Breach Route Crew ----------
+- id: gang_cog_breach_route_crew
+  pretty_name: CoG Breach Route Crew
+  name: CoG Breach Route Crew
+  type: faction
+  faction_class: street_gang
+  description: Mixed late-CoG underclass gang rooted in one quarter but active as a smuggling and scavenging crew across sealed sectors. A member using inherited maintenance-line lore helped uncover the cracked vent route later used as a clandestine exit.
+  notes: Historically important but mostly erased from official memory.
+  tags:
+    - cog
+    - gang
+    - smugglers
+    - scavengers
+    - underclass
+    - erased_history
+  start_year: 5742
+  entry_status: stub

@@ -667,7 +667,7 @@
   name: Octa 35P
   type: vehicle
   idea_reference: IDEA-364
-  description: Ground urban electric taxi used in the sprawling industrial cities around Patina’s orbital shipyard during the Planetary Period.
+  description: Ground urban electric taxi used in the sprawling industrial cities.yaml around Patina’s orbital shipyard during the Planetary Period.
   notes: Repository conversion of the Patina Surface Taxi concept. Associated with Stacklinger and the broader Patina shipyard-adjacent urban surface environment. Exact operational variants, trim levels, and later local modifications remain open for later refinement.
   vehicle_class: urban_taxi
   vehicle_class_parents:

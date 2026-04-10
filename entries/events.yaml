@@ -14,3 +14,29 @@
   start_year: 2164
   end_year: 2164
   entry_status: draft
+
+
+# --------------------------------------------------
+# APPEND TO: entries/events.yaml
+# --------------------------------------------------
+
+# ---------- event_cog_quarantine_breach_and_crackdown_5742 | CoG Quarantine Breach and Crackdown ----------
+- id: event_cog_quarantine_breach_and_crackdown_5742
+  pretty_name: CoG Quarantine Breach and Crackdown
+  name: CoG Quarantine Breach and Crackdown
+  type: event
+  description: In 5742, a late-CoG underclass gang exploited a cracked ventilation shaft to escape the quarantined megastructure. The route was first used for gang escape, then for selected family extractions, later for paid passage, before discovery triggered a major GGO police purge, disappearances into a sealed sector, and later covert regime reuse of the breach route.
+  notes: Historical importance was later largely erased from official memory and survived mostly through rumor, fragmentary reports, and local recollection.
+  associated_locations:
+    - loc_central_asian_steppe_cog
+    - loc_cog_breach_vent_tunnel
+  tags:
+    - cog
+    - decline
+    - quarantine
+    - gang
+    - purge
+    - disappearance
+    - breach
+  start_year: 5742
+  entry_status: stub

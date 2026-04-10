@@ -670,3 +670,147 @@
       - adjacent_urban_ecology
     notes: Placeholder ecology tab content.
   start_year: 1946
+
+
+# --------------------------------------------------
+# APPEND TO: entries/locations.yaml
+# --------------------------------------------------
+
+# ---------- loc_central_asian_steppe_cog | Central Asian Steppe CoG Site ----------
+- id: loc_central_asian_steppe_cog
+  pretty_name: Central Asian Steppe CoG Site
+  name: Central Asian Steppe CoG Site
+  type: location
+  location_class: macro_site
+  location_role: megastructure_foundation_region
+  parent_location: planet_earth
+  description: Physical siting region of the Center of Gravity megastructure in the Central Asian steppes.
+  notes: Geographic anchor for the CoG urban aggregate. City-scale social, infrastructural, and internal structural content should be represented on city_cog rather than here.
+  climate_tags:
+    - continental
+    - steppe
+    - inland
+  environment_summary:
+    status: placeholder
+    tags:
+      - open_steppe
+      - engineered_groundworks
+      - megastructure_host_region
+    notes: Placeholder summary for future location card content.
+  start_year: 2884
+  entry_status: stub
+
+# ---------- loc_cog_breach_vent_tunnel | CoG Breach Vent Tunnel ----------
+- id: loc_cog_breach_vent_tunnel
+  pretty_name: CoG Breach Vent Tunnel
+  name: CoG Breach Vent Tunnel
+  type: location
+  location_class: internal_passage
+  location_role: clandestine_exit_route
+  parent_location: loc_central_asian_steppe_cog
+  description: Old ventilation shaft segment within the declining Center of Gravity whose structure cracked open at an opportune point, creating a clandestine physical exit from the quarantined megastructure.
+  notes: Initially exploited by a late-CoG gang as a real escape route, later used for selected extractions, paid passage, police crackdown operations, and covert regime reuse.
+  start_year: 5742
+  entry_status: stub
+
+# ---------- geo_spain | Spain ----------
+- id: geo_spain
+  pretty_name: Spain
+  name: Spain
+  type: location
+  location_class: country
+  parent_location: geo_europe
+  bounds:
+    type: bbox
+    min_x: -170
+    max_x: -40
+    min_y: -110
+    max_y: -10
+  population:
+    y0: 48000000
+  start_year: 0
+  entry_status: stub
+
+# ---------- city_madrid | Madrid ----------
+- id: city_madrid
+  pretty_name: Madrid
+  name: Madrid
+  type: location
+  location_class: city
+  parent_location: geo_spain
+  coords:
+    type: point
+    x: -105
+    y: -55
+  population:
+    y0: 3300000
+  start_year: 0
+  entry_status: stub
+
+# ---------- geo_italy | Italy ----------
+- id: geo_italy
+  pretty_name: Italy
+  name: Italy
+  type: location
+  location_class: country
+  parent_location: geo_europe
+  bounds:
+    type: bbox
+    min_x: 30
+    max_x: 130
+    min_y: -90
+    max_y: 20
+  population:
+    y0: 59000000
+  start_year: 0
+  entry_status: stub
+
+# ---------- city_rome | Rome ----------
+- id: city_rome
+  pretty_name: Rome
+  name: Rome
+  type: location
+  location_class: city
+  parent_location: geo_italy
+  coords:
+    type: point
+    x: 75
+    y: -35
+  population:
+    y0: 2800000
+  start_year: 0
+  entry_status: stub
+
+# ---------- geo_sweden | Sweden ----------
+- id: geo_sweden
+  pretty_name: Sweden
+  name: Sweden
+  type: location
+  location_class: country
+  parent_location: geo_europe
+  bounds:
+    type: bbox
+    min_x: 70
+    max_x: 180
+    min_y: 120
+    max_y: 280
+  population:
+    y0: 10500000
+  start_year: 0
+  entry_status: stub
+
+# ---------- city_stockholm | Stockholm ----------
+- id: city_stockholm
+  pretty_name: Stockholm
+  name: Stockholm
+  type: location
+  location_class: city
+  parent_location: geo_sweden
+  coords:
+    type: point
+    x: 135
+    y: 215
+  population:
+    y0: 980000
+  start_year: 0
+  entry_status: stub
