@@ -65,3 +65,133 @@
     - ceag
   start_year: 0
   entry_status: draft
+
+
+# ---------- ailurus_fulgens | Red Panda - Ailurus fulgens ----------
+- id: ailurus_fulgens
+  pretty_name: Red Panda - Ailurus fulgens
+  name: Ailurus fulgens
+  type: species
+  description: Small arboreal mammal native to the temperate montane forests of the eastern Himalayas and southwestern China. Red pandas are specialized climbers and foragers that spend much of their time in trees, feeding primarily on bamboo alongside fruits, eggs, and small animals.
+  species_class: natural_vertebrate
+  parent_clade: ailuridae
+  clade_class: mammal
+  origin_type: natural
+  created_by: []
+  uses_technology: []
+  base_stock_species: []
+  native_locations: []
+  seeded_locations: []
+  related_species: []
+  descendant_species: []
+  habitats:
+    - temperate_montane_forest
+    - bamboo_forest
+    - mixed_conifer_broadleaf_forest
+  ecological_roles:
+    - arboreal_herbivore
+    - omnivorous_forager
+  locomotion_types:
+    - climbing
+    - quadrupedal_walking
+  diet:
+    - bamboo
+    - fruit
+    - roots
+    - eggs
+    - insects
+    - small_vertebrates
+  primary_prey_species: []
+  predator_species: []
+  representative_body_length_m: 0.6
+  representative_body_mass_kg: 5.5
+  reproduction_type: live_birth
+  metabolism_class: endothermic
+  lifecycle_notes: Solitary and mostly crepuscular mammal with low-energy feeding behavior centered on bamboo-rich upland forests.
+  behavioural_traits:
+    - solitary
+    - arboreal
+    - crepuscular
+    - cautious
+  morphological_traits:
+    - ringed_tail
+    - reddish_fur
+    - masked_face
+    - semi_retractile_claws
+    - false_thumb
+  simulation_tier_default: species_population
+  population_notes: Best modeled as a low-density forest specialist vulnerable to habitat fragmentation and environmental disruption.
+  tags:
+    - species
+    - mammal
+    - arboreal
+    - asia
+    - bamboo_forest
+    - natural
+  start_year: 0
+  entry_status: draft
+
+# ---------- rheithrosciurus_macrotis | Tufted Ground Squirrel - Rheithrosciurus macrotis ----------
+- id: rheithrosciurus_macrotis
+  pretty_name: Tufted Ground Squirrel - Rheithrosciurus macrotis
+  name: Rheithrosciurus macrotis
+  type: species
+  description: Large terrestrial squirrel native to the lowland forests of Borneo, known for its extremely bushy tail and powerful jaws. Despite its common name, it is primarily a forest-floor rodent that forages among dense vegetation and fallen material for hard seeds, nuts, and other food items.
+  species_class: natural_vertebrate
+  parent_clade: sciuridae
+  clade_class: mammal
+  origin_type: natural
+  created_by: []
+  uses_technology: []
+  base_stock_species: []
+  native_locations: []
+  seeded_locations: []
+  related_species: []
+  descendant_species: []
+  habitats:
+    - tropical_lowland_forest
+    - dense_rainforest
+    - forest_floor
+  ecological_roles:
+    - terrestrial_forager
+    - seed_predator
+    - omnivorous_forest_floor_consumer
+  locomotion_types:
+    - ground_running
+    - climbing
+    - jumping
+  diet:
+    - hard_seeds
+    - nuts
+    - fruit
+    - insects
+    - small_invertebrates
+  primary_prey_species: []
+  predator_species: []
+  representative_body_length_m: 0.35
+  representative_body_mass_kg: 1.8
+  reproduction_type: live_birth
+  metabolism_class: endothermic
+  lifecycle_notes: Solitary forest mammal spending much of its active time on the ground in dense tropical forest, using powerful dentition to process very hard food items and retreating into cover when disturbed.
+  behavioural_traits:
+    - solitary
+    - cautious
+    - terrestrial_foraging
+    - cover_seeking
+  morphological_traits:
+    - extremely_bushy_tail
+    - powerful_jaws
+    - robust_incisors
+    - dense_dark_fur
+  simulation_tier_default: species_population
+  population_notes: Best represented as a low-density tropical forest specialist dependent on intact rainforest structure and vulnerable to habitat fragmentation.
+  tags:
+    - species
+    - mammal
+    - squirrel
+    - rainforest
+    - borneo
+    - terrestrial
+    - natural
+  start_year: 0
+  entry_status: draft

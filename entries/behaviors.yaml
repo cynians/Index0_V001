@@ -1,0 +1,69 @@
+
+# ---------- beh_arboreal_solitary_foraging | Arboreal Solitary Foraging ----------
+- id: beh_arboreal_solitary_foraging
+  pretty_name: Arboreal Solitary Foraging
+  name: Arboreal Solitary Foraging
+  type: behavior
+  behavior_class: foraging_profile
+  activity_cycle:
+    - crepuscular
+    - nocturnal_bias
+  social_structure:
+    - solitary
+  movement_modes:
+    - climbing
+    - branch_traversal
+    - cautious_ground_movement
+  feeding_strategy:
+    - selective_foraging
+    - opportunistic_supplemental_feeding
+  habitat_use:
+    - arboreal
+    - forest_edge_use
+    - shelter_tree_preference
+  trigger_conditions:
+    - low_disturbance
+    - canopy_access
+    - nearby_food_patch
+  response_patterns:
+    - retreat_to_trees
+    - avoid_open_ground
+    - low_energy_patch_feeding
+  simulation_notes: Reusable behavior profile for mostly solitary tree-based foragers that move cautiously, feed selectively, and prefer retreat into arboreal cover when disturbed.
+  start_year: 0
+  entry_status: draft
+
+# ---------- beh_solitary_forest_floor_hard_seed_foraging | Solitary Forest-Floor Hard-Seed Foraging ----------
+- id: beh_solitary_forest_floor_hard_seed_foraging
+  pretty_name: Solitary Forest-Floor Hard-Seed Foraging
+  name: Solitary Forest-Floor Hard-Seed Foraging
+  type: behavior
+  behavior_class: foraging_profile
+  activity_cycle:
+    - diurnal
+    - crepuscular_bias
+  social_structure:
+    - solitary
+  movement_modes:
+    - ground_running
+    - short_climbing
+    - short_burst_escape
+  feeding_strategy:
+    - hard_seed_processing
+    - selective_nut_foraging
+    - opportunistic_invertebrate_feeding
+  habitat_use:
+    - forest_floor
+    - dense_undergrowth
+    - fallen_log_zones
+  trigger_conditions:
+    - nearby_seed_fall
+    - dense_cover_availability
+    - low_disturbance
+  response_patterns:
+    - retreat_into_undergrowth
+    - freeze_then_dash
+    - cover_bound_foraging
+  simulation_notes: Reusable behavior profile for mostly solitary rainforest floor foragers that search dense ground cover for hard seeds and nuts, occasionally supplement diet opportunistically, and rely on rapid retreat into vegetation when threatened.
+  start_year: 0
+  entry_status: draft
