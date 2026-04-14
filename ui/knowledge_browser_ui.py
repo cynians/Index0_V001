@@ -8,6 +8,7 @@ from tkinter import filedialog
 
 from ui.ui_types import UIButton
 from ui.card import EntityCard
+from ui.timeline_ui import TimelineUI
 
 
 class KnowledgeBrowserUI:
@@ -24,6 +25,15 @@ class KnowledgeBrowserUI:
     """
 
     LINE_HEIGHT = 20
+    OUTER_MARGIN = 16
+    HEADER_H = 54
+    TIMELINE_DEFAULT_H = 132
+    TIMELINE_GAP = 10
+    TIMELINE_SPLITTER_H = 8
+    INNER_GAP = 14
+    LEFT_RATIO = 0.30
+    MIN_TIMELINE_PANEL_H = 96
+    MIN_CONTENT_H = 180
 
     def __init__(self):
         self.layout = None
@@ -58,6 +68,14 @@ class KnowledgeBrowserUI:
         }
 
         self.font_for_layout = None
+        self.timeline_ui = TimelineUI()
+        self.timeline_panel_height = self.TIMELINE_DEFAULT_H
+        self.timeline_splitter_rect = pygame.Rect(0, 0, 0, 0)
+        self.active_timeline_resize = False
+        self.timeline_resize_start_mouse_y = None
+        self.timeline_resize_start_height = None
+        self.app_width = 0
+        self.app_height = 0
 
     def reset(self):
         """
@@ -72,25 +90,69 @@ class KnowledgeBrowserUI:
         self.repository_scope_label = None
         self.header_button = None
 
+    def _clamp_timeline_panel_height(self, app_height, timeline_h=None):
+        if timeline_h is None:
+            timeline_h = self.timeline_panel_height
+
+        max_timeline_h = max(
+            self.MIN_TIMELINE_PANEL_H,
+            app_height - self.OUTER_MARGIN * 2 - self.HEADER_H - self.MIN_CONTENT_H,
+        )
+        return max(self.MIN_TIMELINE_PANEL_H, min(max_timeline_h, int(timeline_h)))
+
+    def _refresh_layout_geometry(self):
+        if self.app_width <= 0 or self.app_height <= 0:
+            return
+
+        self.layout = self._build_layout(self.app_width, self.app_height)
+        self._build_header_button()
+        self._rebuild_browser_hitboxes()
+
+        timeline_rect = self.layout["timeline_rect"]
+        self.timeline_ui.set_rect(timeline_rect)
+        self.timeline_ui.set_font(self.font_for_layout)
+        timeline_items = self.world_model.get_timeline_items() if self.world_model is not None else []
+        self.timeline_ui.set_items(timeline_items)
+        self.timeline_ui.rebuild_layout()
+
+        self._layout_all_cards()
+        self._clamp_canvas_offsets()
+        self._layout_all_cards()
+
     def _build_layout(self, app_width, app_height):
-        outer_margin = 16
-        header_h = 54
-        inner_gap = 14
-        left_ratio = 0.30
+        timeline_h = self._clamp_timeline_panel_height(app_height)
+        self.timeline_panel_height = timeline_h
 
-        content_x = outer_margin
-        content_y = outer_margin + header_h
-        content_w = app_width - outer_margin * 2
-        content_h = app_height - content_y - outer_margin
+        content_x = self.OUTER_MARGIN
+        content_y = self.OUTER_MARGIN + self.HEADER_H + timeline_h
+        content_w = app_width - self.OUTER_MARGIN * 2
+        content_h = app_height - content_y - self.OUTER_MARGIN
 
-        left_w = int(content_w * left_ratio)
-        right_w = content_w - left_w - inner_gap
+        left_w = int(content_w * self.LEFT_RATIO)
+        right_w = content_w - left_w - self.INNER_GAP
 
         left_rect = pygame.Rect(content_x, content_y, left_w, content_h)
-        right_rect = pygame.Rect(content_x + left_w + inner_gap, content_y, right_w, content_h)
+        right_rect = pygame.Rect(content_x + left_w + self.INNER_GAP, content_y, right_w, content_h)
+
+        timeline_rect = pygame.Rect(
+            self.OUTER_MARGIN,
+            self.OUTER_MARGIN + self.HEADER_H,
+            content_w,
+            max(1, timeline_h - self.TIMELINE_GAP),
+        )
+
+        splitter_y = timeline_rect.bottom + max(1, (self.TIMELINE_GAP - self.TIMELINE_SPLITTER_H) // 2)
+        self.timeline_splitter_rect = pygame.Rect(
+            self.OUTER_MARGIN,
+            splitter_y,
+            content_w,
+            self.TIMELINE_SPLITTER_H,
+        )
 
         return {
-            "header_rect": pygame.Rect(outer_margin, outer_margin, content_w, header_h),
+            "header_rect": pygame.Rect(self.OUTER_MARGIN, self.OUTER_MARGIN, content_w, self.HEADER_H),
+            "timeline_rect": timeline_rect,
+            "timeline_splitter_rect": self.timeline_splitter_rect,
             "left_rect": left_rect,
             "right_rect": right_rect,
         }
@@ -343,8 +405,13 @@ class KnowledgeBrowserUI:
             "canvas_w": 420,
             "canvas_h": 340,
             "card_view": card_view,
+            "is_edit_mode": False,
+            "active_edit_field": None,
+            "edit_buffer": "",
+            "edit_original_value": None,
         }
         return card
+
 
     def _layout_all_cards(self):
         if self.layout is None:
@@ -666,13 +733,13 @@ class KnowledgeBrowserUI:
     def rebuild(self, app_width, app_height, world_model, repository_scope_entity_id, font):
         self.reset()
 
+        self.app_width = app_width
+        self.app_height = app_height
         self.font_for_layout = font
         self.world_model = world_model
         self.repository_scope_entity_id = repository_scope_entity_id
-        self.layout = self._build_layout(app_width, app_height)
         self.browser_items = self._build_browser_items(world_model)
-        self._build_header_button()
-        self._rebuild_browser_hitboxes()
+        self._refresh_layout_geometry()
 
         scope_entity = None
         if world_model is not None and repository_scope_entity_id:
@@ -708,6 +775,8 @@ class KnowledgeBrowserUI:
             return
 
         header_rect = self.layout["header_rect"]
+        timeline_rect = self.layout["timeline_rect"]
+        timeline_splitter_rect = self.layout["timeline_splitter_rect"]
         left_rect = self.layout["left_rect"]
         right_rect = self.layout["right_rect"]
 
@@ -724,6 +793,30 @@ class KnowledgeBrowserUI:
 
         if self.header_button is not None:
             draw_button_fn(screen, font, self.header_button)
+
+        self.timeline_ui.set_rect(timeline_rect)
+        self.timeline_ui.set_font(font)
+        self.timeline_ui.draw(screen, font)
+
+        pygame.draw.rect(screen, (28, 32, 46), timeline_splitter_rect)
+        pygame.draw.line(
+            screen,
+            (118, 126, 150),
+            (timeline_splitter_rect.x, timeline_splitter_rect.centery),
+            (timeline_splitter_rect.right, timeline_splitter_rect.centery),
+            1,
+        )
+
+        grip_half_w = 26
+        grip_center_x = timeline_splitter_rect.centerx
+        for offset in (-3, 0, 3):
+            pygame.draw.line(
+                screen,
+                (170, 176, 196),
+                (grip_center_x - grip_half_w, timeline_splitter_rect.centery + offset),
+                (grip_center_x + grip_half_w, timeline_splitter_rect.centery + offset),
+                1,
+            )
 
         pygame.draw.rect(screen, (12, 12, 20), left_rect)
         pygame.draw.rect(screen, (200, 200, 200), left_rect, 1)
@@ -834,11 +927,34 @@ class KnowledgeBrowserUI:
         if self.layout is None:
             return None
 
+        timeline_rect = self.layout["timeline_rect"]
+        timeline_splitter_rect = self.layout["timeline_splitter_rect"]
         left_rect = self.layout["left_rect"]
         right_rect = self.layout["right_rect"]
 
+        if event.type == pygame.KEYDOWN:
+            for index in range(len(self.cards) - 1, -1, -1):
+                card = self.cards[index]
+                card_view = card.get("card_view")
+                if card_view is None:
+                    continue
+
+                if card.get("is_edit_mode", False) and card.get("active_edit_field"):
+                    if card_view.handle_keydown(card, event):
+                        self.selected_entity_id = card["entity_id"]
+                        card_obj = self.cards.pop(index)
+                        self.cards.append(card_obj)
+                        self._layout_all_cards()
+                        self._clamp_canvas_offsets()
+                        self._layout_all_cards()
+                        return "__ui_consumed__"
+
         if event.type == pygame.MOUSEWHEEL:
             mouse_pos = pygame.mouse.get_pos()
+
+            if timeline_rect.collidepoint(mouse_pos):
+                if self.timeline_ui.handle_event(event):
+                    return "__ui_consumed__"
 
             if left_rect.collidepoint(mouse_pos):
                 line_step = 24
@@ -854,6 +970,9 @@ class KnowledgeBrowserUI:
                 return "__ui_consumed__"
 
         if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self.active_timeline_resize = False
+            self.timeline_resize_start_mouse_y = None
+            self.timeline_resize_start_height = None
             self.active_card_drag_id = None
             self.active_card_resize_id = None
             self.card_drag_mouse_offset = (0, 0)
@@ -862,11 +981,22 @@ class KnowledgeBrowserUI:
             return "__ui_consumed__"
 
         if event.type == pygame.MOUSEMOTION:
+            if self.active_timeline_resize:
+                dy = event.pos[1] - self.timeline_resize_start_mouse_y
+                self.timeline_panel_height = self._clamp_timeline_panel_height(
+                    self.app_height,
+                    self.timeline_resize_start_height + dy,
+                )
+                self._refresh_layout_geometry()
+                return "__ui_consumed__"
+
             if self.active_card_drag_id is not None:
                 for card in self.cards:
                     if card.get("entity_id") == self.active_card_drag_id:
-                        card["canvas_x"] = event.pos[0] - self.layout["right_rect"].x - self.canvas_offset_x - self.card_drag_mouse_offset[0]
-                        card["canvas_y"] = event.pos[1] - self.layout["right_rect"].y - self.canvas_offset_y - self.card_drag_mouse_offset[1]
+                        card["canvas_x"] = event.pos[0] - self.layout["right_rect"].x - self.canvas_offset_x - \
+                                           self.card_drag_mouse_offset[0]
+                        card["canvas_y"] = event.pos[1] - self.layout["right_rect"].y - self.canvas_offset_y - \
+                                           self.card_drag_mouse_offset[1]
                         self._layout_all_cards()
                         self._clamp_canvas_offsets()
                         self._layout_all_cards()
@@ -878,7 +1008,8 @@ class KnowledgeBrowserUI:
                         dx = event.pos[0] - self.card_resize_start_mouse[0]
                         dy = event.pos[1] - self.card_resize_start_mouse[1]
                         card["canvas_w"] = max(300, self.card_resize_start_size[0] + dx)
-                        minimum_h = card.get("card_view").get_minimum_height(card, self.font_for_layout) if card.get("card_view") else 260
+                        minimum_h = card.get("card_view").get_minimum_height(card, self.font_for_layout) if card.get(
+                            "card_view") else 260
                         card["canvas_h"] = max(minimum_h, self.card_resize_start_size[1] + dy)
                         self._layout_all_cards()
                         self._clamp_canvas_offsets()
@@ -892,6 +1023,12 @@ class KnowledgeBrowserUI:
 
         if self.header_button is not None and self.header_button.rect.collidepoint(mouse_pos):
             return self.header_button.id
+
+        if timeline_splitter_rect.collidepoint(mouse_pos):
+            self.active_timeline_resize = True
+            self.timeline_resize_start_mouse_y = mouse_pos[1]
+            self.timeline_resize_start_height = self.timeline_panel_height
+            return "__ui_consumed__"
 
         if left_rect.collidepoint(mouse_pos):
             for entity_id, hitbox in self.browser_toggle_hitboxes:
@@ -917,6 +1054,28 @@ class KnowledgeBrowserUI:
         for index in range(len(self.cards) - 1, -1, -1):
             card = self.cards[index]
             card_view = card.get("card_view")
+
+            edit_toggle_rect = card.get("edit_toggle_rect")
+            if edit_toggle_rect is not None and edit_toggle_rect.collidepoint(mouse_pos) and card_view is not None:
+                self.selected_entity_id = card["entity_id"]
+                card_obj = self.cards.pop(index)
+                self.cards.append(card_obj)
+                card_obj["card_view"].toggle_edit_mode(card_obj)
+                self._layout_all_cards()
+                self._clamp_canvas_offsets()
+                self._layout_all_cards()
+                return "__ui_consumed__"
+
+            for field_key, field_rect in card.get("editable_field_hitboxes", []):
+                if field_rect.collidepoint(mouse_pos) and card_view is not None:
+                    self.selected_entity_id = card["entity_id"]
+                    card_obj = self.cards.pop(index)
+                    self.cards.append(card_obj)
+                    card_obj["card_view"].begin_edit_field(card_obj, field_key)
+                    self._layout_all_cards()
+                    self._clamp_canvas_offsets()
+                    self._layout_all_cards()
+                    return "__ui_consumed__"
 
             if card["resize_handle_rect"].collidepoint(mouse_pos):
                 self.selected_entity_id = card["entity_id"]

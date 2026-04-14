@@ -182,6 +182,118 @@ class EntityCard:
             return "\n".join(f"- {item}" for item in value) if value else "[]"
         return str(value)
 
+    def _is_scalar_editable_value(self, value):
+        return value is None or isinstance(value, (str, int, float))
+
+    def _serialize_edit_value(self, value):
+        if value is None:
+            return ""
+        return str(value)
+
+    def _coerce_edit_buffer(self, original_value, buffer_text):
+        text = str(buffer_text or "")
+
+        if isinstance(original_value, int) and not isinstance(original_value, bool):
+            try:
+                return int(text)
+            except ValueError:
+                return original_value
+
+        if isinstance(original_value, float):
+            try:
+                return float(text)
+            except ValueError:
+                return original_value
+
+        lowered = text.strip().lower()
+        if original_value is None:
+            if lowered in {"", "none", "null"}:
+                return None
+            try:
+                if "." in text:
+                    return float(text)
+                return int(text)
+            except ValueError:
+                return text
+
+        return text
+
+    def toggle_edit_mode(self, card):
+        currently_enabled = bool(card.get("is_edit_mode", False))
+        card["is_edit_mode"] = not currently_enabled
+
+        if not card["is_edit_mode"]:
+            card["active_edit_field"] = None
+            card["edit_buffer"] = ""
+            card["edit_original_value"] = None
+
+    def begin_edit_field(self, card, field_key):
+        if not card.get("is_edit_mode", False):
+            return False
+
+        if field_key not in self.entity:
+            return False
+
+        value = self.entity.get(field_key)
+        if not self._is_scalar_editable_value(value):
+            return False
+
+        card["active_edit_field"] = field_key
+        card["edit_original_value"] = value
+        card["edit_buffer"] = self._serialize_edit_value(value)
+        return True
+
+    def commit_edit_field(self, card):
+        field_key = card.get("active_edit_field")
+        if not field_key:
+            return False
+
+        original_value = card.get("edit_original_value", self.entity.get(field_key))
+        new_value = self._coerce_edit_buffer(original_value, card.get("edit_buffer", ""))
+        self.entity[field_key] = new_value
+
+        card["active_edit_field"] = None
+        card["edit_buffer"] = ""
+        card["edit_original_value"] = None
+        return True
+
+    def cancel_edit_field(self, card):
+        if not card.get("active_edit_field"):
+            return False
+
+        card["active_edit_field"] = None
+        card["edit_buffer"] = ""
+        card["edit_original_value"] = None
+        return True
+
+    def handle_keydown(self, card, event):
+        if not card.get("is_edit_mode", False):
+            return False
+
+        active_field = card.get("active_edit_field")
+        if not active_field:
+            return False
+
+        if event.key == pygame.K_RETURN:
+            return self.commit_edit_field(card)
+
+        if event.key == pygame.K_ESCAPE:
+            return self.cancel_edit_field(card)
+
+        if event.key == pygame.K_BACKSPACE:
+            card["edit_buffer"] = card.get("edit_buffer", "")[:-1]
+            return True
+
+        if event.key == pygame.K_TAB:
+            return True
+
+        text = getattr(event, "unicode", "")
+        if text and text.isprintable():
+            card["edit_buffer"] = card.get("edit_buffer", "") + text
+            return True
+
+        return False
+
     def _wrap_text_lines(self, text, font, max_width):
         """
         Wrap text into multiple rendered lines that fit the given width.
@@ -306,6 +418,7 @@ class EntityCard:
         section_hitboxes = []
         tab_hitboxes = []
         media_import_hitboxes = []
+        editable_field_hitboxes = []
 
         tab_y = rect.y + self.HEADER_H + 6
         tab_x = rect.x + 12
@@ -321,6 +434,8 @@ class EntityCard:
             tab_rect = pygame.Rect(tab_x, tab_y, tab_widths[tab_name], self.TAB_H)
             tab_hitboxes.append((tab_name, tab_rect))
             tab_x = tab_rect.right + tab_gap
+
+        edit_toggle_rect = pygame.Rect(rect.right - 34, rect.y + 12, 20, 20)
 
         image_rect = pygame.Rect(
             rect.x + 12,
@@ -358,11 +473,17 @@ class EntityCard:
                 value_column_x = content_left + 120
                 value_column_w = max(80, rect.right - value_column_x - 12)
 
-                for _, value in section_map.get(section_name, []):
+                for key, value in section_map.get(section_name, []):
                     rendered_value = self._format_value(value)
                     wrapped_lines = self._wrap_text_lines(rendered_value, card["layout_font"], value_column_w)
                     line_count = max(1, len(wrapped_lines))
-                    current_y += line_count * self.TEXT_LINE_H + self.SECTION_GAP
+                    row_h = line_count * self.TEXT_LINE_H
+
+                    if card.get("is_edit_mode", False) and self._is_scalar_editable_value(value):
+                        row_rect = pygame.Rect(content_left + 2, current_y - 1, text_width - 4, row_h + 2)
+                        editable_field_hitboxes.append((key, row_rect))
+
+                    current_y += row_h + self.SECTION_GAP
 
                 current_y += self.SECTION_GAP
 
@@ -407,6 +528,8 @@ class EntityCard:
         card["resize_handle_rect"] = resize_handle_rect
         card["section_hitboxes"] = section_hitboxes
         card["media_import_hitboxes"] = media_import_hitboxes
+        card["editable_field_hitboxes"] = editable_field_hitboxes
+        card["edit_toggle_rect"] = edit_toggle_rect
         card["year_hitboxes"] = [
             (year, pygame.Rect(year_x - 12, center_y - 12, 24, 48))
             for year, year_x in year_positions
@@ -464,6 +587,19 @@ class EntityCard:
         subtitle_surface = font.render(card["subtitle"], True, (170, 170, 170))
         screen.blit(title_surface, (rect.x + 12, rect.y + 10))
         screen.blit(subtitle_surface, (rect.x + 12, rect.y + 30))
+
+        edit_toggle_rect = card.get("edit_toggle_rect")
+        if edit_toggle_rect is not None:
+            edit_enabled = bool(card.get("is_edit_mode", False))
+            edit_fill = (70, 96, 140) if edit_enabled else (46, 50, 60)
+            edit_border = (210, 220, 240) if edit_enabled else (140, 140, 150)
+            edit_text_color = (245, 245, 245) if edit_enabled else (210, 210, 210)
+
+            pygame.draw.rect(screen, edit_fill, edit_toggle_rect)
+            pygame.draw.rect(screen, edit_border, edit_toggle_rect, 1)
+            edit_text = font.render("E", True, edit_text_color)
+            edit_text_rect = edit_text.get_rect(center=edit_toggle_rect.center)
+            screen.blit(edit_text, edit_text_rect)
 
         self._draw_tabs(screen, font, card)
         self._draw_image_block(screen, font, card)
@@ -652,6 +788,11 @@ class EntityCard:
         value_column_x = content_left + 120
         value_column_w = max(80, card["rect"].right - value_column_x - 12)
 
+        editable_hitboxes = {
+            field_key: field_rect
+            for field_key, field_rect in card.get("editable_field_hitboxes", [])
+        }
+
         for section_name in self._visible_sections():
             header_rect = next((rect for name, rect in card["section_hitboxes"] if name == section_name), None)
             if header_rect is None:
@@ -671,15 +812,31 @@ class EntityCard:
                 continue
 
             for key, value in section_map.get(section_name, []):
+                row_rect = editable_hitboxes.get(key)
+                is_active_field = key == card.get("active_edit_field")
+                is_editable = row_rect is not None
+
+                if row_rect is not None:
+                    row_fill = (50, 56, 68) if is_active_field else (34, 38, 48)
+                    row_border = (180, 200, 240) if is_active_field else (82, 88, 102)
+                    pygame.draw.rect(screen, row_fill, row_rect)
+                    pygame.draw.rect(screen, row_border, row_rect, 1)
+
                 key_surface = font.render(f"{key}:", True, (210, 210, 210))
                 screen.blit(key_surface, (content_left + 6, current_y))
 
-                rendered_value = self._format_value(value)
-                wrapped_lines = self._wrap_text_lines(rendered_value, font, value_column_w)
+                if is_active_field and card.get("is_edit_mode", False):
+                    rendered_value = card.get("edit_buffer", "")
+                    wrapped_lines = self._wrap_text_lines(rendered_value, font, value_column_w)
+                    value_color = (245, 245, 245)
+                else:
+                    rendered_value = self._format_value(value)
+                    wrapped_lines = self._wrap_text_lines(rendered_value, font, value_column_w)
+                    value_color = (215, 225, 245) if is_editable else (180, 180, 180)
 
                 line_y = current_y
                 for line in wrapped_lines:
-                    val_surface = font.render(line, True, (180, 180, 180))
+                    val_surface = font.render(line, True, value_color)
                     screen.blit(val_surface, (value_column_x, line_y))
                     line_y += self.TEXT_LINE_H
 

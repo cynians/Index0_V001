@@ -15,6 +15,62 @@ class WorldModel:
     * year-based entity filtering
     """
 
+    # Canonical macro-era bounds are deduced from the lore references in
+    # text/ideas.txt. Some older notes in text/timeline.txt still use
+    # superseded boundaries (for example 6013 vs 6034 for the start of the
+    # Planetary Period), so the ideas reference is treated as the stronger
+    # source here.
+    MAJOR_PERIODS = [
+        {
+            "entity_id": "period_postmodernist",
+            "label": "Postmodernist Period",
+            "start_year": 2024,
+            "end_year": 2090,
+        },
+        {
+            "entity_id": "period_superpower_wars",
+            "label": "Superpower Wars",
+            "start_year": 2024,
+            "end_year": 2090,
+        },
+        {
+            "entity_id": "period_race_for_sol",
+            "label": "Race for Sol",
+            "start_year": 2090,
+            "end_year": 2440,
+        },
+        {
+            "entity_id": "period_ggo_hegemony",
+            "label": "GGO Hegemony Period",
+            "start_year": 2440,
+            "end_year": 5954,
+        },
+        {
+            "entity_id": "period_second_modernity_earth",
+            "label": "Second Modernity (Earth)",
+            "start_year": 5954,
+            "end_year": 6034,
+        },
+        {
+            "entity_id": "period_planetary",
+            "label": "Planetary Period",
+            "start_year": 6034,
+            "end_year": 14195,
+        },
+        {
+            "entity_id": "period_trifecta_dominion",
+            "label": "Trifecta Dominion Period",
+            "start_year": 14195,
+            "end_year": 20219,
+        },
+        {
+            "entity_id": "period_intersector_assembly",
+            "label": "Intersector Assembly Period",
+            "start_year": 20219,
+            "end_year": 35101,
+        },
+    ]
+
     def __init__(self):
         self.loader = EntityLoader()
         self.schemas = SchemaLoader()
@@ -112,6 +168,69 @@ class WorldModel:
             dataset_name="locations",
             entity_type="location"
         )
+
+    def _get_major_period_timeline_items(self):
+        items = []
+
+        for period in self.MAJOR_PERIODS:
+            items.append(
+                {
+                    "entity_id": period["entity_id"],
+                    "label": period["label"],
+                    "dataset": "timeline_periods",
+                    "entity_type": "major_period",
+                    "timeline_kind": "major_period",
+                    "start_year": period["start_year"],
+                    "end_year": period["end_year"],
+                    "is_point": False,
+                }
+            )
+
+        return items
+
+    def get_timeline_items(self):
+        """
+        Collect repository entities that define temporal information.
+
+        Returns a list of timeline-ready dictionaries with normalized years.
+        Minimal prototype rules:
+        * include any entity with start_year and/or end_year
+        * if only one side exists, treat it as a point entry
+        * keep output flat and UI-friendly
+        """
+        items = self._get_major_period_timeline_items()
+
+        for entity_id, entity in self.loader.entities.items():
+            start_year = self.yearer.normalize_year(entity.get("start_year"))
+            end_year = self.yearer.normalize_year(entity.get("end_year"))
+
+            if start_year is None and end_year is None:
+                continue
+
+            if start_year is None:
+                start_year = end_year
+            if end_year is None:
+                end_year = start_year
+
+            if start_year is None and end_year is None:
+                continue
+
+            dataset_name = entity.get("_dataset", entity.get("type", "entity"))
+            label = entity.get("pretty_name") or entity.get("name") or entity_id
+
+            items.append(
+                {
+                    "entity_id": entity_id,
+                    "label": str(label),
+                    "dataset": dataset_name,
+                    "entity_type": entity.get("type", "entity"),
+                    "start_year": start_year,
+                    "end_year": end_year,
+                    "is_point": start_year == end_year,
+                }
+            )
+
+        return items
 
     def refresh(self):
         self.loader.refresh()
