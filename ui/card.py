@@ -3,6 +3,8 @@ import os
 import pygame
 
 from engine.scaler import ScaleHelper
+from ui.card_wiki import CardWikiRenderer
+from world.schema_loader import SchemaLoader
 
 
 class EntityCard:
@@ -18,9 +20,14 @@ class EntityCard:
     MEDIA_IMAGE_H = 176
     LAUNCH_H = 24
     RESIZE_HANDLE = 14
+    RESIZE_BORDER = 6
     TEXT_LINE_H = 16
     IMAGE_TEXT_LINE_H = 18
     SECTION_GAP = 4
+    TABLE_ROW_PAD_Y = 3
+    TABLE_COLUMN_GAP = 14
+    TABLE_MIN_KEY_W = 96
+    TABLE_MAX_KEY_W = 168
 
     SECTION_ORDER = [
         "Identity",
@@ -31,24 +38,29 @@ class EntityCard:
         "Metadata",
     ]
 
-    TAB_ORDER = ["overview", "relations", "state", "media"]
+    TAB_ORDER = ["general", "overview", "relations", "state", "media"]
     TAB_LABELS = {
+        "general": "General",
         "overview": "Overview",
         "relations": "Relations",
         "state": "State",
         "media": "Media",
     }
     TAB_SECTIONS = {
+        "general": [],
         "overview": ["Identity", "Classification", "Dimensions / Scale", "Metadata"],
         "relations": ["Relations"],
         "state": ["State / Layout"],
         "media": [],
     }
+    TEMPORAL_FIELDS = {"year", "start_year", "end_year"}
+    SCHEMA_LOADER = SchemaLoader()
 
-    def __init__(self, entity, dataset_name=None):
+    def __init__(self, entity, dataset_name=None, world_model=None):
         self.entity = entity or {}
         self.dataset_name = dataset_name or self.entity.get("_dataset", self.entity.get("type", "entity"))
-        self.active_tab = "overview"
+        self.world_model = world_model
+        self.active_tab = "general"
         self.collapsed_sections = {
             "Identity": False,
             "Classification": False,
@@ -67,10 +79,13 @@ class EntityCard:
             self.active_tab = tab_name
 
     def _visible_sections(self):
-        return self.TAB_SECTIONS.get(self.active_tab, self.TAB_SECTIONS["overview"])
+        return self.TAB_SECTIONS.get(self.active_tab, self.TAB_SECTIONS["general"])
 
     def _is_media_mode(self):
         return self.active_tab == "media"
+
+    def _is_general_mode(self):
+        return self.active_tab == "general"
 
     def _image_block_height(self):
         if self._is_media_mode():
@@ -90,8 +105,112 @@ class EntityCard:
             return value.strip()
         return None
 
+    def _get_general_wiki_text(self, card=None):
+        if card is not None and card.get("is_edit_mode", False) and card.get("active_edit_field") == "wiki_entry":
+            return card.get("edit_buffer", "")
+
+        wiki_text = self.entity.get("wiki_entry")
+        if isinstance(wiki_text, str) and wiki_text.strip():
+            return wiki_text
+
+        fallback_parts = []
+        description = self.entity.get("description")
+        notes = self.entity.get("notes")
+        image_ref = self._resolve_image_reference()
+
+        if description:
+            fallback_parts.append(str(description).strip())
+        if image_ref:
+            fallback_parts.append(f"![Primary image]({image_ref})")
+        if notes:
+            fallback_parts.append(str(notes).strip())
+
+        return "\n\n".join(part for part in fallback_parts if part)
+
+    def _resolve_wiki_link_label(self, entity_ref):
+        if self.world_model is None:
+            return entity_ref
+
+        entity = self.world_model.get_entity(entity_ref)
+        if entity is None:
+            return entity_ref
+
+        return entity.get("pretty_name") or entity.get("name") or entity_ref
+
+    def _schema_name_candidates(self):
+        candidates = []
+        entity_type = self.entity.get("type")
+        dataset_name = self.dataset_name
+
+        for name in (entity_type, dataset_name):
+            if not name:
+                continue
+            normalized = str(name).strip().lower()
+            if normalized and normalized not in candidates:
+                candidates.append(normalized)
+            if normalized.endswith("s"):
+                singular = normalized[:-1]
+                if singular and singular not in candidates:
+                    candidates.append(singular)
+            else:
+                plural = f"{normalized}s"
+                if plural not in candidates:
+                    candidates.append(plural)
+
+        return candidates
+
+    def _resolve_schema(self):
+        for schema_name in self._schema_name_candidates():
+            schema = self.SCHEMA_LOADER.get_schema(schema_name)
+            if schema:
+                return schema
+        return None
+
+    def _collect_schema_fields(self, schema, seen=None):
+        if not schema:
+            return {}
+
+        if seen is None:
+            seen = set()
+
+        schema_name = schema.get("schema")
+        if schema_name in seen:
+            return {}
+        if schema_name:
+            seen.add(schema_name)
+
+        combined = {}
+        extends_name = schema.get("extends")
+        if extends_name:
+            parent_schema = self.SCHEMA_LOADER.get_schema(extends_name)
+            combined.update(self._collect_schema_fields(parent_schema, seen=seen))
+
+        combined.update(schema.get("fields", {}))
+        return combined
+
+    def _get_schema_field_specs(self):
+        schema = self._resolve_schema()
+        return self._collect_schema_fields(schema)
+
+    def _is_scalar_schema_type(self, field_type):
+        return field_type in {None, "string", "number", "text"}
+
+    def _is_field_editable(self, field_key, value, schema_field_specs):
+        spec = schema_field_specs.get(field_key, {})
+        field_type = spec.get("type")
+
+        if value is None:
+            return self._is_scalar_schema_type(field_type)
+
+        if field_type is not None and not self._is_scalar_schema_type(field_type):
+            return False
+
+        return isinstance(value, (str, int, float)) and not isinstance(value, bool)
+
     def _sectioned_fields(self):
         entity = self.entity
+        schema_field_specs = self._get_schema_field_specs()
+        schema_field_order = list(schema_field_specs.keys())
 
         identity = [
             ("id", entity.get("id")),
@@ -109,7 +228,10 @@ class EntityCard:
             "system_class",
             "body_class",
         ]
-        classification = [(key, entity.get(key)) for key in classification_keys if key in entity]
+        classification = []
+        for key in classification_keys:
+            if key in entity or key in schema_field_specs:
+                classification.append((key, entity.get(key)))
 
         dims = [
             ("dimension_x_m", entity.get("dimension_x_m")),
@@ -118,6 +240,7 @@ class EntityCard:
             ("mass_kg", entity.get("mass_kg")),
             ("power_kw", entity.get("power_kw")),
         ]
+        dims = [(key, value) for key, value in dims if key in entity or key in schema_field_specs]
 
         relation_values = []
         state_values = []
@@ -135,7 +258,27 @@ class EntityCard:
             if role:
                 media_keys.add(self._role_field_name(role))
 
-        for key, value in entity.items():
+        handled_keys = {
+            "id", "pretty_name", "name", "type", "_dataset",
+            "vehicle_class", "component_class", "location_class",
+            "system_role", "system_class", "body_class",
+            "dimension_x_m", "dimension_y_m", "dimension_z_m",
+            "mass_kg", "power_kw",
+        }
+
+        ordered_keys = []
+        for key in schema_field_order:
+            if key not in handled_keys:
+                ordered_keys.append(key)
+
+        for key in entity.keys():
+            if key in handled_keys or key in ordered_keys:
+                continue
+            ordered_keys.append(key)
+
+        for key in ordered_keys:
+            value = entity.get(key)
+
             if key in {
                 "id", "pretty_name", "name", "type", "_dataset",
                 "vehicle_class", "component_class", "location_class",
@@ -164,18 +307,31 @@ class EntityCard:
                 state_values.append((key, value))
                 continue
 
+            spec = schema_field_specs.get(key, {})
+            field_type = spec.get("type")
+
+            if field_type in {"entity", "entity_list"}:
+                relation_values.append((key, value))
+                continue
+
+            if field_type in {"dict", "object", "object_list"}:
+                state_values.append((key, value))
+                continue
+
             metadata_values.append((key, value))
 
         return {
-            "Identity": [(k, v) for k, v in identity if v is not None],
-            "Classification": [(k, v) for k, v in classification if v is not None],
-            "Dimensions / Scale": [(k, v) for k, v in dims if v is not None],
+            "Identity": identity,
+            "Classification": classification,
+            "Dimensions / Scale": dims,
             "Relations": relation_values,
             "State / Layout": state_values,
             "Metadata": metadata_values,
         }
 
     def _format_value(self, value):
+        if value is None:
+            return ""
         if isinstance(value, dict):
             return "\n".join(f"{k}: {v}" for k, v in value.items())
         if isinstance(value, list):
@@ -227,16 +383,37 @@ class EntityCard:
             card["edit_buffer"] = ""
             card["edit_original_value"] = None
 
+    def _editable_field_order(self, card):
+        return [field_key for field_key, _ in card.get("editable_field_hitboxes", [])]
+
+    def _cycle_edit_field(self, card, direction=1):
+        field_order = self._editable_field_order(card)
+        if not field_order:
+            return False
+
+        active_field = card.get("active_edit_field")
+        if active_field not in field_order:
+            target_index = 0 if direction >= 0 else len(field_order) - 1
+        else:
+            current_index = field_order.index(active_field)
+            target_index = (current_index + direction) % len(field_order)
+
+        return self.begin_edit_field(card, field_order[target_index])
+
     def begin_edit_field(self, card, field_key):
         if not card.get("is_edit_mode", False):
             return False
 
-        if field_key not in self.entity:
+        value = self.entity.get(field_key)
+        schema_field_specs = self._get_schema_field_specs()
+        if not self._is_field_editable(field_key, value, schema_field_specs):
             return False
 
-        value = self.entity.get(field_key)
-        if not self._is_scalar_editable_value(value):
-            return False
+        active_field = card.get("active_edit_field")
+        if active_field and active_field != field_key:
+            self.commit_edit_field(card)
+        elif active_field == field_key:
+            return True
 
         card["active_edit_field"] = field_key
         card["edit_original_value"] = value
@@ -272,19 +449,33 @@ class EntityCard:
 
         active_field = card.get("active_edit_field")
         if not active_field:
+            if event.key == pygame.K_TAB:
+                direction = -1 if (event.mod & pygame.KMOD_SHIFT) else 1
+                return self._cycle_edit_field(card, direction=direction)
+            if event.key == pygame.K_ESCAPE:
+                card["is_edit_mode"] = False
+                return True
             return False
 
-        if event.key == pygame.K_RETURN:
+        if active_field == "wiki_entry" and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            if event.mod & (pygame.KMOD_CTRL | pygame.KMOD_SHIFT):
+                card["edit_buffer"] = card.get("edit_buffer", "") + "\n"
+                return True
+            return self.commit_edit_field(card)
+
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             return self.commit_edit_field(card)
 
         if event.key == pygame.K_ESCAPE:
             return self.cancel_edit_field(card)
 
+        if event.key == pygame.K_TAB:
+            direction = -1 if (event.mod & pygame.KMOD_SHIFT) else 1
+            self.commit_edit_field(card)
+            return self._cycle_edit_field(card, direction=direction)
+
         if event.key == pygame.K_BACKSPACE:
             card["edit_buffer"] = card.get("edit_buffer", "")[:-1]
-            return True
-
-        if event.key == pygame.K_TAB:
             return True
 
         text = getattr(event, "unicode", "")
@@ -414,17 +605,41 @@ class EntityCard:
 
         return None
 
+    def _get_table_column_widths(self, font, rect, section_map):
+        available_w = max(180, rect.width - 24)
+        max_key_w = self.TABLE_MIN_KEY_W
+
+        if font is not None:
+            for section_name in self._visible_sections():
+                for key, _ in section_map.get(section_name, []):
+                    max_key_w = max(max_key_w, font.size(f"{key}:")[0] + 14)
+
+        key_w = max(self.TABLE_MIN_KEY_W, min(self.TABLE_MAX_KEY_W, max_key_w))
+        value_w = max(120, available_w - key_w - self.TABLE_COLUMN_GAP)
+        return key_w, value_w
+
+    def _measure_table_row(self, font, value, value_column_w):
+        rendered_value = self._format_value(value)
+        wrapped_lines = self._wrap_text_lines(rendered_value, font, value_column_w)
+        content_h = max(1, len(wrapped_lines)) * self.TEXT_LINE_H
+        row_h = content_h + self.TABLE_ROW_PAD_Y * 2
+        return wrapped_lines, row_h
+
     def layout_card(self, card, rect):
         section_hitboxes = []
         tab_hitboxes = []
         media_import_hitboxes = []
         editable_field_hitboxes = []
+        field_rows = []
+        general_content_rect = None
+        schema_field_specs = self._get_schema_field_specs()
 
         tab_y = rect.y + self.HEADER_H + 6
         tab_x = rect.x + 12
         tab_gap = 6
         tab_widths = {
-            "overview": 82,
+            "general": 82,
+            "overview": 88,
             "relations": 82,
             "state": 62,
             "media": 62,
@@ -461,37 +676,90 @@ class EntityCard:
         content_left = rect.x + 12
         content_right = rect.right - 12
         text_width = content_right - content_left
+        top_content_y = tab_y + self.TAB_H + 10
 
         section_map = self._sectioned_fields()
+        key_column_w, value_column_w = self._get_table_column_widths(card["layout_font"], rect, section_map)
+        value_column_x = content_left + key_column_w + self.TABLE_COLUMN_GAP
 
-        for section_name in self._visible_sections():
-            section_rect = pygame.Rect(content_left, current_y, text_width, self.SECTION_HEADER_H)
-            section_hitboxes.append((section_name, section_rect))
-            current_y += self.SECTION_HEADER_H + self.SECTION_GAP
+        if self._is_general_mode():
+            image_rect = None
+            handle_bottom = rect.bottom - 8
+            resize_handle_rect = pygame.Rect(
+                rect.right - 18,
+                handle_bottom - self.RESIZE_HANDLE,
+                self.RESIZE_HANDLE,
+                self.RESIZE_HANDLE,
+            )
+            launch_rect = pygame.Rect(
+                rect.x + 12,
+                resize_handle_rect.y - 8 - self.LAUNCH_H,
+                rect.width - 24,
+                self.LAUNCH_H,
+            )
+            center_y = launch_rect.y - 14
+            left_x = rect.x + 20
+            right_x = rect.right - 20
+            timeline_y = center_y - 10
+            timeline_label_y = max(top_content_y + 8, timeline_y - 18)
+            general_bottom = timeline_label_y - 10
+            general_height = max(140, general_bottom - top_content_y)
+            general_content_rect = pygame.Rect(content_left, top_content_y, text_width, general_height)
+            if card.get("is_edit_mode", False):
+                editable_field_hitboxes.append(("wiki_entry", general_content_rect))
+            content_end_y = general_content_rect.bottom
+        else:
+            content_end_y = current_y
 
-            if not self.collapsed_sections.get(section_name, False):
-                value_column_x = content_left + 120
-                value_column_w = max(80, rect.right - value_column_x - 12)
+            for section_name in self._visible_sections():
+                section_rect = pygame.Rect(content_left, current_y, text_width, self.SECTION_HEADER_H)
+                section_hitboxes.append((section_name, section_rect))
+                current_y += self.SECTION_HEADER_H + self.SECTION_GAP
 
-                for key, value in section_map.get(section_name, []):
-                    rendered_value = self._format_value(value)
-                    wrapped_lines = self._wrap_text_lines(rendered_value, card["layout_font"], value_column_w)
-                    line_count = max(1, len(wrapped_lines))
-                    row_h = line_count * self.TEXT_LINE_H
+                if not self.collapsed_sections.get(section_name, False):
+                    for key, value in section_map.get(section_name, []):
+                        wrapped_lines, row_h = self._measure_table_row(card["layout_font"], value, value_column_w)
+                        row_rect = pygame.Rect(content_left, current_y, text_width, row_h)
+                        key_rect = pygame.Rect(content_left, current_y, key_column_w, row_h)
+                        value_rect = pygame.Rect(value_column_x, current_y, value_column_w, row_h)
 
-                    if card.get("is_edit_mode", False) and self._is_scalar_editable_value(value):
-                        row_rect = pygame.Rect(content_left + 2, current_y - 1, text_width - 4, row_h + 2)
-                        editable_field_hitboxes.append((key, row_rect))
+                        if card.get("is_edit_mode", False) and self._is_field_editable(key, value, schema_field_specs):
+                            editable_field_hitboxes.append((key, row_rect))
 
-                    current_y += row_h + self.SECTION_GAP
+                        field_rows.append(
+                            {
+                                "section": section_name,
+                                "key": key,
+                                "row_rect": row_rect,
+                                "key_rect": key_rect,
+                                "value_rect": value_rect,
+                                "wrapped_lines": wrapped_lines,
+                            }
+                        )
 
-                current_y += self.SECTION_GAP
+                        current_y = row_rect.bottom + self.SECTION_GAP
 
-        timeline_label_y = current_y + 8
-        timeline_y = timeline_label_y + 18
-        left_x = rect.x + 20
-        right_x = rect.right - 20
-        center_y = timeline_y + 10
+                    current_y += self.SECTION_GAP
+
+            content_end_y = current_y
+            handle_bottom = rect.bottom - 8
+            resize_handle_rect = pygame.Rect(
+                rect.right - 18,
+                handle_bottom - self.RESIZE_HANDLE,
+                self.RESIZE_HANDLE,
+                self.RESIZE_HANDLE,
+            )
+            launch_rect = pygame.Rect(
+                rect.x + 12,
+                resize_handle_rect.y - 8 - self.LAUNCH_H,
+                rect.width - 24,
+                self.LAUNCH_H,
+            )
+            center_y = launch_rect.y - 14
+            left_x = rect.x + 20
+            right_x = rect.right - 20
+            timeline_y = center_y - 10
+            timeline_label_y = max(content_end_y + 8, timeline_y - 18)
 
         year_positions = []
         years = card["years"]
@@ -500,27 +768,24 @@ class EntityCard:
             year_x = int(left_x + (right_x - left_x) * frac)
             year_positions.append((year, year_x))
 
-        launch_rect = pygame.Rect(
-            rect.x + 12,
-            center_y + 24,
-            rect.width - 24,
-            self.LAUNCH_H,
-        )
-
         header_drag_rect = pygame.Rect(rect.x + 1, rect.y + 1, rect.width - 2, self.HEADER_H)
-        resize_handle_rect = pygame.Rect(
-            rect.right - 18,
-            launch_rect.bottom + 8,
-            self.RESIZE_HANDLE,
-            self.RESIZE_HANDLE,
-        )
+        resize_hitboxes = [
+            ("left", pygame.Rect(rect.x - self.RESIZE_BORDER, rect.y + self.HEADER_H, self.RESIZE_BORDER * 2, rect.height - self.HEADER_H)),
+            ("right", pygame.Rect(rect.right - self.RESIZE_BORDER, rect.y + self.HEADER_H, self.RESIZE_BORDER * 2, rect.height - self.HEADER_H)),
+            ("top", pygame.Rect(rect.x, rect.y - self.RESIZE_BORDER, rect.width, self.RESIZE_BORDER * 2)),
+            ("bottom", pygame.Rect(rect.x, rect.bottom - self.RESIZE_BORDER, rect.width, self.RESIZE_BORDER * 2)),
+            ("top_left", pygame.Rect(rect.x - self.RESIZE_BORDER, rect.y - self.RESIZE_BORDER, self.RESIZE_BORDER * 3, self.RESIZE_BORDER * 3)),
+            ("top_right", pygame.Rect(rect.right - self.RESIZE_BORDER * 2, rect.y - self.RESIZE_BORDER, self.RESIZE_BORDER * 3, self.RESIZE_BORDER * 3)),
+            ("bottom_left", pygame.Rect(rect.x - self.RESIZE_BORDER, rect.bottom - self.RESIZE_BORDER * 2, self.RESIZE_BORDER * 3, self.RESIZE_BORDER * 3)),
+            ("bottom_right", pygame.Rect(rect.right - self.RESIZE_BORDER * 2, rect.bottom - self.RESIZE_BORDER * 2, self.RESIZE_BORDER * 3, self.RESIZE_BORDER * 3)),
+        ]
 
-        final_bottom = resize_handle_rect.bottom + 4
-        final_rect = pygame.Rect(rect.x, rect.y, rect.width, final_bottom - rect.y)
+        final_rect = pygame.Rect(rect.x, rect.y, rect.width, rect.height)
 
         card["rect"] = final_rect
         card["tab_hitboxes"] = tab_hitboxes
         card["image_rect"] = image_rect
+        card["general_content_rect"] = general_content_rect
         card["timeline_label_y"] = timeline_label_y
         card["timeline_y"] = timeline_y
         card["launch_rect"] = launch_rect
@@ -529,6 +794,8 @@ class EntityCard:
         card["section_hitboxes"] = section_hitboxes
         card["media_import_hitboxes"] = media_import_hitboxes
         card["editable_field_hitboxes"] = editable_field_hitboxes
+        card["field_rows"] = field_rows
+        card["resize_hitboxes"] = resize_hitboxes
         card["edit_toggle_rect"] = edit_toggle_rect
         card["year_hitboxes"] = [
             (year, pygame.Rect(year_x - 12, center_y - 12, 24, 48))
@@ -542,20 +809,32 @@ class EntityCard:
         """
         section_map = self._sectioned_fields()
 
+        if self._is_general_mode():
+            content_rect = pygame.Rect(0, 0, int(card.get("canvas_w", 420)) - 24, 0)
+            general_h = CardWikiRenderer.measure_content(
+                self._get_general_wiki_text(card),
+                font,
+                content_rect,
+                resolve_link_label=self._resolve_wiki_link_label,
+            )
+            timeline_label_y = self.HEADER_H + self.TAB_H + 20 + general_h + 8
+            timeline_y = timeline_label_y + 18
+            center_y = timeline_y + 10
+            launch_top = center_y + 24
+            resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
+            return max(320, resize_bottom + 8)
+
         current_y = self.IMAGE_TOP + self._image_block_height() + 12
-        content_left = 12
-        value_column_x = content_left + 120
-        value_column_w = max(80, int(card.get("canvas_w", 420)) - value_column_x - 12)
+        probe_rect = pygame.Rect(0, 0, int(card.get("canvas_w", 420)), 0)
+        _, value_column_w = self._get_table_column_widths(font, probe_rect, section_map)
 
         for section_name in self._visible_sections():
             current_y += self.SECTION_HEADER_H + self.SECTION_GAP
 
             if not self.collapsed_sections.get(section_name, False):
                 for _, value in section_map.get(section_name, []):
-                    rendered_value = self._format_value(value)
-                    wrapped_lines = self._wrap_text_lines(rendered_value, font, value_column_w)
-                    line_count = max(1, len(wrapped_lines))
-                    current_y += line_count * self.TEXT_LINE_H + self.SECTION_GAP
+                    _, row_h = self._measure_table_row(font, value, value_column_w)
+                    current_y += row_h + self.SECTION_GAP
 
                 current_y += self.SECTION_GAP
 
@@ -601,9 +880,28 @@ class EntityCard:
             edit_text_rect = edit_text.get_rect(center=edit_toggle_rect.center)
             screen.blit(edit_text, edit_text_rect)
 
+        if card.get("is_edit_mode", False):
+            active_field = card.get("active_edit_field")
+            if active_field:
+                if active_field in self.TEMPORAL_FIELDS:
+                    edit_status = f"Editing {active_field} | Click timeline to set | Enter save | Esc cancel"
+                elif active_field == "wiki_entry":
+                    edit_status = "Editing wiki_entry | Ctrl+L link | Ctrl+Enter newline | Enter save"
+                else:
+                    edit_status = f"Editing {active_field} | Enter save | Esc cancel | Tab next"
+            else:
+                edit_status = "Edit mode | Click a highlighted row or press Tab to begin"
+            status_surface = font.render(edit_status, True, (190, 205, 230))
+            status_x = rect.right - 44 - status_surface.get_width()
+            status_x = max(rect.x + 150, status_x)
+            screen.blit(status_surface, (status_x, rect.y + 30))
+
         self._draw_tabs(screen, font, card)
-        self._draw_image_block(screen, font, card)
-        self._draw_sections(screen, font, card)
+        if self._is_general_mode():
+            self._draw_general_content(screen, font, card)
+        else:
+            self._draw_image_block(screen, font, card)
+            self._draw_sections(screen, font, card)
 
         timeline_label_y = card.get("timeline_label_y", card["timeline_y"] - 18)
         timeline_y = card["timeline_y"]
@@ -725,6 +1023,9 @@ class EntityCard:
             row_y += 20
 
     def _draw_image_block(self, screen, font, card):
+        if self._is_general_mode():
+            return
+
         image_rect = card["image_rect"]
         pygame.draw.rect(screen, (40, 42, 52), image_rect)
         pygame.draw.rect(screen, (120, 120, 120), image_rect, 1)
@@ -783,15 +1084,16 @@ class EntityCard:
             current_y += self.IMAGE_TEXT_LINE_H
 
     def _draw_sections(self, screen, font, card):
-        section_map = self._sectioned_fields()
-        content_left = card["rect"].x + 12
-        value_column_x = content_left + 120
-        value_column_w = max(80, card["rect"].right - value_column_x - 12)
+        if self._is_general_mode():
+            return
 
         editable_hitboxes = {
             field_key: field_rect
             for field_key, field_rect in card.get("editable_field_hitboxes", [])
         }
+        rows_by_section = {}
+        for row in card.get("field_rows", []):
+            rows_by_section.setdefault(row["section"], []).append(row)
 
         for section_name in self._visible_sections():
             header_rect = next((rect for name, rect in card["section_hitboxes"] if name == section_name), None)
@@ -811,33 +1113,116 @@ class EntityCard:
             if not expanded:
                 continue
 
-            for key, value in section_map.get(section_name, []):
-                row_rect = editable_hitboxes.get(key)
+            for row_index, row in enumerate(rows_by_section.get(section_name, [])):
+                key = row["key"]
+                row_rect = row["row_rect"]
                 is_active_field = key == card.get("active_edit_field")
-                is_editable = row_rect is not None
+                is_editable = key in editable_hitboxes
 
-                if row_rect is not None:
-                    row_fill = (50, 56, 68) if is_active_field else (34, 38, 48)
-                    row_border = (180, 200, 240) if is_active_field else (82, 88, 102)
-                    pygame.draw.rect(screen, row_fill, row_rect)
-                    pygame.draw.rect(screen, row_border, row_rect, 1)
+                row_fill = (33, 36, 46) if row_index % 2 == 0 else (29, 32, 42)
+                row_border = (78, 84, 100)
+                if is_editable:
+                    row_fill = (42, 47, 58)
+                if is_active_field:
+                    row_fill = (54, 62, 76)
+                    row_border = (180, 200, 240)
+
+                pygame.draw.rect(screen, row_fill, row_rect)
+                pygame.draw.rect(screen, row_border, row_rect, 1)
+                pygame.draw.line(
+                    screen,
+                    (88, 94, 112),
+                    (row["key_rect"].right + self.TABLE_COLUMN_GAP // 2, row_rect.y + 1),
+                    (row["key_rect"].right + self.TABLE_COLUMN_GAP // 2, row_rect.bottom - 1),
+                    1,
+                )
 
                 key_surface = font.render(f"{key}:", True, (210, 210, 210))
-                screen.blit(key_surface, (content_left + 6, current_y))
+                key_y = row_rect.y + self.TABLE_ROW_PAD_Y
+                screen.blit(key_surface, (row["key_rect"].x + 6, key_y))
+
+                if is_editable and not is_active_field:
+                    hint_label = "timeline" if key in self.TEMPORAL_FIELDS else "editable"
+                    hint_surface = font.render(hint_label, True, (130, 150, 185))
+                    hint_x = row["key_rect"].right - hint_surface.get_width() - 6
+                    if hint_x > row["key_rect"].x + 12:
+                        screen.blit(hint_surface, (hint_x, key_y))
 
                 if is_active_field and card.get("is_edit_mode", False):
-                    rendered_value = card.get("edit_buffer", "")
-                    wrapped_lines = self._wrap_text_lines(rendered_value, font, value_column_w)
+                    wrapped_lines = self._wrap_text_lines(
+                        card.get("edit_buffer", ""),
+                        font,
+                        row["value_rect"].width,
+                    )
                     value_color = (245, 245, 245)
                 else:
-                    rendered_value = self._format_value(value)
-                    wrapped_lines = self._wrap_text_lines(rendered_value, font, value_column_w)
                     value_color = (215, 225, 245) if is_editable else (180, 180, 180)
+                    wrapped_lines = row["wrapped_lines"]
 
-                line_y = current_y
+                line_y = row_rect.y + self.TABLE_ROW_PAD_Y
                 for line in wrapped_lines:
                     val_surface = font.render(line, True, value_color)
-                    screen.blit(val_surface, (value_column_x, line_y))
+                    screen.blit(val_surface, (row["value_rect"].x + 2, line_y))
                     line_y += self.TEXT_LINE_H
 
-                current_y = line_y + self.SECTION_GAP
+    def _draw_general_content(self, screen, font, card):
+        general_rect = card.get("general_content_rect")
+        if general_rect is None:
+            return
+
+        is_editing = card.get("is_edit_mode", False) and card.get("active_edit_field") == "wiki_entry"
+        wiki_text = self._get_general_wiki_text(card)
+        CardWikiRenderer.draw_content(
+            screen,
+            font,
+            general_rect,
+            wiki_text,
+            is_editing=is_editing,
+            resolve_link_label=self._resolve_wiki_link_label,
+        )
+
+        if card.get("wiki_link_picker_open", False):
+            self._draw_wiki_link_picker(screen, font, card, general_rect)
+
+    def _draw_wiki_link_picker(self, screen, font, card, general_rect):
+        matches = card.get("wiki_link_matches", [])
+        picker_w = min(360, general_rect.width - 16)
+        picker_h = 66 + min(6, len(matches)) * 42
+        picker_rect = pygame.Rect(
+            general_rect.x + 12,
+            general_rect.y + 12,
+            picker_w,
+            picker_h,
+        )
+        pygame.draw.rect(screen, (22, 26, 36), picker_rect)
+        pygame.draw.rect(screen, (186, 194, 210), picker_rect, 1)
+
+        title_surface = font.render("Insert Entry Link", True, (244, 244, 244))
+        screen.blit(title_surface, (picker_rect.x + 10, picker_rect.y + 8))
+
+        query_rect = pygame.Rect(picker_rect.x + 10, picker_rect.y + 28, picker_rect.width - 20, 24)
+        pygame.draw.rect(screen, (36, 42, 56), query_rect)
+        pygame.draw.rect(screen, (126, 136, 154), query_rect, 1)
+        query_text = card.get("wiki_link_query", "")
+        query_surface = font.render(query_text or "Search entries...", True, (232, 232, 232) if query_text else (156, 164, 178))
+        screen.blit(query_surface, (query_rect.x + 8, query_rect.y + 4))
+
+        selected_index = card.get("wiki_link_selected_index", 0)
+        row_y = query_rect.bottom + 8
+        for index, match in enumerate(matches[:6]):
+            row_rect = pygame.Rect(picker_rect.x + 10, row_y, picker_rect.width - 20, 36)
+            fill = (54, 64, 82) if index == selected_index else (30, 34, 44)
+            border = (194, 206, 228) if index == selected_index else (88, 96, 112)
+            pygame.draw.rect(screen, fill, row_rect)
+            pygame.draw.rect(screen, border, row_rect, 1)
+
+            primary = f"{match['pretty_name']} | {match['id']}"
+            start_text = "" if match["start_year"] is None else str(match["start_year"])
+            end_text = "" if match["end_year"] is None else str(match["end_year"])
+            secondary = f"{start_text} | {end_text}"
+
+            primary_surface = font.render(primary, True, (242, 242, 242))
+            secondary_surface = font.render(secondary, True, (186, 194, 208))
+            screen.blit(primary_surface, (row_rect.x + 8, row_rect.y + 3))
+            screen.blit(secondary_surface, (row_rect.x + 8, row_rect.y + 18))
+            row_y += 40

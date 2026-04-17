@@ -28,6 +28,10 @@ fields:
     type: text
     optional: true
 
+  wiki_entry:
+    type: text
+    optional: true
+
   card_image:
     type: string
     optional: true

@@ -15,6 +15,8 @@ class TimelineUI:
 
     HEADER_H = 24
     AXIS_H = 22
+    COVERAGE_H = 8
+    COVERAGE_GAP = 8
     PERIOD_H = 12
     PERIOD_GAP = 4
     ITEM_H = 14
@@ -35,7 +37,13 @@ class TimelineUI:
         self.items = []
         self.period_layout_items = []
         self.layout_items = []
+        self.coverage_segments = []
+        self.coverage_max_density = 0
         self.layout_font = None
+        self.active_category_filter = "all"
+        self.filter_hitboxes = []
+        self.picker_target_label = None
+        self.picker_preview_year = None
 
         self.full_min_year = 0
         self.full_max_year = 1
@@ -56,6 +64,59 @@ class TimelineUI:
 
     def set_items(self, items):
         self.items = list(items or [])
+        if self.active_category_filter not in self.get_filter_categories():
+            self.active_category_filter = "all"
+
+    def set_active_category_filter(self, category_name):
+        category_name = category_name or "all"
+        if category_name not in self.get_filter_categories():
+            category_name = "all"
+        changed = category_name != self.active_category_filter
+        self.active_category_filter = category_name
+        if changed:
+            self.rebuild_layout()
+        return changed
+
+    def get_filter_categories(self):
+        categories = {"all"}
+        for item in self.items:
+            if item.get("timeline_kind") == "major_period":
+                continue
+            dataset_name = item.get("dataset")
+            if dataset_name:
+                categories.add(str(dataset_name))
+
+        preferred_order = ["all", "locations", "systems", "vehicles", "components", "events"]
+        ordered = [name for name in preferred_order if name in categories]
+        ordered.extend(sorted(name for name in categories if name not in ordered))
+        return ordered
+
+    def set_picker_target(self, field_label=None, preview_year=None):
+        self.picker_target_label = field_label
+        self.picker_preview_year = preview_year
+
+    def clear_picker_target(self):
+        self.picker_target_label = None
+        self.picker_preview_year = None
+
+    def _format_filter_label(self, category_name):
+        if category_name == "all":
+            return "All"
+        return str(category_name).replace("_", " ").title()
+
+    def _filtered_visible_items(self):
+        visible_items = self._visible_items()
+        if self.active_category_filter == "all":
+            return visible_items
+
+        filtered = []
+        for item in visible_items:
+            if item.get("timeline_kind") == "major_period":
+                filtered.append(item)
+                continue
+            if item.get("dataset") == self.active_category_filter:
+                filtered.append(item)
+        return filtered
 
     def _compute_full_range(self):
         if not self.items:
@@ -279,7 +340,7 @@ class TimelineUI:
     def _assign_period_lanes(self):
         period_items = [
             item
-            for item in self._visible_items()
+            for item in self._filtered_visible_items()
             if item.get("timeline_kind") == "major_period"
         ]
         self.period_layout_items, self.period_lane_count = self._assign_items_to_lanes(
@@ -290,11 +351,52 @@ class TimelineUI:
     def _assign_lanes(self):
         timeline_items = [
             item
-            for item in self._visible_items()
+            for item in self._filtered_visible_items()
             if item.get("timeline_kind") != "major_period"
         ]
         self.layout_items, lane_count = self._assign_items_to_lanes(timeline_items)
         self.lane_count = max(1, lane_count)
+
+    def _build_coverage_segments(self):
+        delta_by_year = {}
+
+        for item in self._filtered_visible_items():
+            if item.get("timeline_kind") == "major_period":
+                continue
+
+            start_year = item["start_year"]
+            end_year = item["end_year"]
+            if end_year < start_year:
+                start_year, end_year = end_year, start_year
+
+            delta_by_year[start_year] = delta_by_year.get(start_year, 0) + 1
+            delta_by_year[end_year + 1] = delta_by_year.get(end_year + 1, 0) - 1
+
+        self.coverage_segments = []
+        self.coverage_max_density = 0
+
+        if not delta_by_year:
+            return
+
+        running_density = 0
+        sorted_years = sorted(delta_by_year.keys())
+
+        for index, year in enumerate(sorted_years[:-1]):
+            running_density += delta_by_year[year]
+            next_year = sorted_years[index + 1]
+            segment_end = next_year - 1
+
+            if running_density <= 0 or segment_end < year:
+                continue
+
+            self.coverage_segments.append(
+                {
+                    "start_year": year,
+                    "end_year": segment_end,
+                    "density": running_density,
+                }
+            )
+            self.coverage_max_density = max(self.coverage_max_density, running_density)
 
     def rebuild_layout(self):
         self.content_rect = pygame.Rect(
@@ -306,8 +408,29 @@ class TimelineUI:
         self.axis_y = self.content_rect.y + self.AXIS_H
         self._compute_full_range()
         self._ensure_view_range_initialized()
+        self._build_coverage_segments()
         self._assign_period_lanes()
         self._assign_lanes()
+
+    def _rebuild_filter_hitboxes(self):
+        self.filter_hitboxes = []
+        if self.layout_font is None:
+            return
+
+        x = self.rect.x + 180
+        y = self.rect.y + 6
+        chip_h = 20
+        gap = 6
+        max_right = self.rect.right - 10
+
+        for category_name in self.get_filter_categories():
+            label = self._format_filter_label(category_name)
+            chip_w = self.layout_font.size(label)[0] + 16
+            chip_rect = pygame.Rect(x, y, chip_w, chip_h)
+            if chip_rect.right > max_right:
+                break
+            self.filter_hitboxes.append((category_name, label, chip_rect))
+            x = chip_rect.right + gap
 
     def zoom_at(self, screen_x, factor):
         if factor <= 0:
@@ -347,23 +470,73 @@ class TimelineUI:
         self.rebuild_layout()
         return (self.view_min_year != old_min) or (self.view_max_year != old_max)
 
+    def focus_year(self, year, target_span_years=None):
+        if year is None:
+            return False
+
+        try:
+            year = int(year)
+        except (TypeError, ValueError):
+            return False
+
+        full_span = self.full_max_year - self.full_min_year
+        if full_span <= 0:
+            return False
+
+        current_span = max(self.MIN_VIEW_SPAN_YEARS, self.view_max_year - self.view_min_year)
+        if target_span_years is None:
+            target_span_years = max(
+                self.MIN_VIEW_SPAN_YEARS,
+                min(current_span, max(120, int(full_span * 0.05)), 1200),
+            )
+
+        new_span = max(self.MIN_VIEW_SPAN_YEARS, min(full_span, int(target_span_years)))
+        half_span = new_span / 2.0
+
+        old_min = self.view_min_year
+        old_max = self.view_max_year
+
+        self.view_min_year = int(round(year - half_span))
+        self.view_max_year = self.view_min_year + new_span
+        self._clamp_view_to_full()
+        self.rebuild_layout()
+        return (self.view_min_year != old_min) or (self.view_max_year != old_max)
+
     def handle_event(self, event):
-        if event.type != pygame.MOUSEWHEEL:
-            return False
+        if event.type == pygame.MOUSEWHEEL:
+            mouse_pos = pygame.mouse.get_pos()
+            if not self.rect.collidepoint(mouse_pos):
+                return False
 
-        mouse_pos = pygame.mouse.get_pos()
-        if not self.rect.collidepoint(mouse_pos):
-            return False
+            if event.y > 0:
+                return self.zoom_at(mouse_pos[0], self.ZOOM_IN_FACTOR)
 
-        if event.y > 0:
-            return self.zoom_at(mouse_pos[0], self.ZOOM_IN_FACTOR)
-
-        if event.y < 0:
-            return self.zoom_at(mouse_pos[0], self.ZOOM_OUT_FACTOR)
+            if event.y < 0:
+                return self.zoom_at(mouse_pos[0], self.ZOOM_OUT_FACTOR)
 
         return False
 
+    def handle_click(self, mouse_pos):
+        for category_name, _, hitbox in self.filter_hitboxes:
+            if hitbox.collidepoint(mouse_pos):
+                changed = self.set_active_category_filter(category_name)
+                return {"kind": "filter_changed", "category": category_name, "changed": changed}
+        return None
+
+    def pick_year_from_pos(self, mouse_pos):
+        if not self.rect.collidepoint(mouse_pos):
+            return None
+
+        if mouse_pos[0] < self.content_rect.x or mouse_pos[0] > self.content_rect.right:
+            return None
+
+        if mouse_pos[1] < self.content_rect.y or mouse_pos[1] > self.rect.bottom:
+            return None
+
+        return int(round(self._x_to_year(mouse_pos[0])))
+
     def get_minimum_height(self):
+        coverage_h = self.COVERAGE_H + self.COVERAGE_GAP
         period_h = 0
         if self.period_lane_count > 0:
             period_h = (
@@ -373,7 +546,7 @@ class TimelineUI:
             )
 
         lanes_h = self.lane_count * self.ITEM_H + max(0, self.lane_count - 1) * self.LANE_GAP
-        total = self.TOP_PAD + self.HEADER_H + self.AXIS_H + 10 + period_h + lanes_h + self.BOTTOM_PAD
+        total = self.TOP_PAD + self.HEADER_H + self.AXIS_H + 10 + coverage_h + period_h + lanes_h + self.BOTTOM_PAD
         return max(70, total)
 
     def draw(self, screen, font):
@@ -384,8 +557,28 @@ class TimelineUI:
         screen.set_clip(self.rect.inflate(-2, -2))
 
         try:
+            self._rebuild_filter_hitboxes()
             title = font.render("Repository Timeline", True, (240, 240, 240))
             screen.blit(title, (self.rect.x + 12, self.rect.y + 8))
+
+            for category_name, label, chip_rect in self.filter_hitboxes:
+                selected = category_name == self.active_category_filter
+                fill = (64, 84, 122) if selected else (33, 39, 54)
+                border = (210, 220, 240) if selected else (92, 102, 124)
+                text_color = (245, 245, 245) if selected else (190, 198, 214)
+                pygame.draw.rect(screen, fill, chip_rect)
+                pygame.draw.rect(screen, border, chip_rect, 1)
+                chip_text = font.render(label, True, text_color)
+                chip_text_rect = chip_text.get_rect(center=chip_rect.center)
+                screen.blit(chip_text, chip_text_rect)
+
+            if self.picker_target_label:
+                picker_text = f"Pick year for {self.picker_target_label}"
+                if self.picker_preview_year is not None:
+                    picker_text += f" ({self.picker_preview_year})"
+                picker_surface = font.render(picker_text, True, (232, 210, 148))
+                picker_x = self.rect.right - picker_surface.get_width() - 12
+                screen.blit(picker_surface, (picker_x, self.rect.y + 8))
 
             axis_left = self.content_rect.x
             axis_right = self.content_rect.right
@@ -410,7 +603,33 @@ class TimelineUI:
                 tick_x = self._year_to_x(year)
                 pygame.draw.line(screen, (120, 120, 140), (tick_x, self.axis_y - 6), (tick_x, self.axis_y + 6), 1)
 
-            period_base_y = self.axis_y + 10
+            if self.picker_target_label and self.picker_preview_year is not None:
+                picker_x = self._year_to_x(self.picker_preview_year)
+                pygame.draw.line(screen, (232, 210, 148), (picker_x, self.content_rect.y), (picker_x, self.rect.bottom - 10), 1)
+
+            coverage_y = self.axis_y + 10
+            coverage_label = font.render("Coverage", True, (166, 174, 190))
+            screen.blit(coverage_label, (axis_left, coverage_y - 16))
+
+            coverage_rect = pygame.Rect(axis_left, coverage_y, self.content_rect.width, self.COVERAGE_H)
+            pygame.draw.rect(screen, (26, 30, 42), coverage_rect)
+            pygame.draw.rect(screen, (72, 78, 96), coverage_rect, 1)
+
+            if self.coverage_max_density > 0:
+                for segment in self.coverage_segments:
+                    x1 = self._year_to_x(segment["start_year"])
+                    x2 = self._year_to_x(segment["end_year"])
+                    bar_w = max(2, x2 - x1 + 1)
+                    density_ratio = segment["density"] / float(self.coverage_max_density)
+                    fill_color = (
+                        int(60 + 70 * density_ratio),
+                        int(92 + 78 * density_ratio),
+                        int(118 + 90 * density_ratio),
+                    )
+                    segment_rect = pygame.Rect(x1, coverage_y + 1, bar_w, max(1, self.COVERAGE_H - 2))
+                    pygame.draw.rect(screen, fill_color, segment_rect)
+
+            period_base_y = coverage_rect.bottom + self.COVERAGE_GAP
 
             for item in self.period_layout_items:
                 lane = item["lane"]
