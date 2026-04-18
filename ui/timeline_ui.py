@@ -502,6 +502,23 @@ class TimelineUI:
         self.rebuild_layout()
         return (self.view_min_year != old_min) or (self.view_max_year != old_max)
 
+    def pan_by_pixels(self, delta_px):
+        if self.content_rect.width <= 1:
+            return False
+
+        old_min = self.view_min_year
+        old_max = self.view_max_year
+        span = max(1, self.view_max_year - self.view_min_year)
+        year_delta = int(round((delta_px / float(self.content_rect.width)) * span))
+        if year_delta == 0:
+            year_delta = 1 if delta_px > 0 else -1
+
+        self.view_min_year += year_delta
+        self.view_max_year += year_delta
+        self._clamp_view_to_full()
+        self.rebuild_layout()
+        return (self.view_min_year != old_min) or (self.view_max_year != old_max)
+
     def handle_event(self, event):
         if event.type == pygame.MOUSEWHEEL:
             mouse_pos = pygame.mouse.get_pos()

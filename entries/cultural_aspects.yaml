@@ -274,13 +274,15 @@
   pretty_name: Late CoG Quarantine Regime
   name: Late CoG Quarantine Regime
   type: cultural_aspect
-  description: Late-decline social and administrative regime within the Center of Gravity characterized by sealed sectors, movement restriction, contamination fear, checkpointing, infrastructural isolation, and coercive inward control.
+  description: 'Late-decline social and administrative regime within the Center of Gravity characterized by sealed sectors, movement restriction, contamination fear, checkpointing, infrastructural isolation, and coercive inward control.'
   notes: Represents the lived quarantine culture of the declining CoG rather than only a formal administrative policy.
   tags:
-    - cog
-    - decline
-    - quarantine
-    - sealed_sectors
-    - movement_control
-  start_year: 5742
+  - cog
+  - decline
+  - quarantine
+  - sealed_sectors
+  - movement_control
+  start_year: 5714
   entry_status: stub
+  wiki_entry: 'Late-decline social and administrative regime within the Center of Gravity characterized by sealed sectors, movement restriction, contamination fear, checkpointing, infrastructural isolation, and coercive inward control.'
+  end_year: 5785

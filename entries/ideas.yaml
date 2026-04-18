@@ -1,0 +1,6 @@
+- id: idea_new_001
+  pretty_name: New Idea
+  name: New Idea
+  type: idea
+  wiki_entry: Starter idea.
+  idea_class: note

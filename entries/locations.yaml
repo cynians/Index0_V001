@@ -814,3 +814,11 @@
     y0: 980000
   start_year: 0
   entry_status: stub
+- id: loc_new_001
+  pretty_name: New Location
+  name: Hamburg
+  type: location
+  wiki_entry: ''
+  parent_location: geo_alps
+  associated_cultures: []
+  derived_from_system_body: null

@@ -1,0 +1,51 @@
+schema: idea
+
+extends: entity_core
+
+fields:
+
+  idea_class:
+    type: string
+    optional: true
+
+  related_entities:
+    type: entity_list
+    optional: true
+
+  parent_entity:
+    type: entity
+    optional: true
+
+  parent_ideas:
+    type: entity_list
+    target: ideas
+    optional: true
+
+  child_ideas:
+    type: entity_list
+    target: ideas
+    optional: true
+
+  source:
+    type: text
+    optional: true
+
+  decision_status:
+    type: string
+    optional: true
+
+# --------------------------------------------------
+# COMMENTED EXAMPLE ENTRY
+# --------------------------------------------------
+#
+# - id: idea_orbital_habitat_market
+#   pretty_name: Orbital Habitat Market
+#   name: Orbital Habitat Market
+#   type: idea
+#   idea_class: design_note
+#   wiki_entry: Early note for how habitat markets might emerge around transit chokepoints.
+#   related_entities:
+#     - loc_earth_orbit
+#   parent_ideas: []
+#   child_ideas: []
+#   decision_status: draft

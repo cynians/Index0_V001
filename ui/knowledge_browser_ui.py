@@ -2,6 +2,7 @@ import os
 import random
 import re
 import shutil
+from pathlib import Path
 
 import pygame
 import tkinter as tk
@@ -40,12 +41,14 @@ class KnowledgeBrowserUI:
     BROWSER_FILTER_H = 20
     BROWSER_CONTROL_GAP = 6
     NEW_ENTRY_TEMPLATES = [
+        ("ideas", "Idea"),
         ("locations", "Location"),
         ("systems", "System"),
         ("vehicles", "Vehicle"),
         ("components", "Component"),
         ("events", "Event"),
     ]
+    PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
     def __init__(self):
         self.layout = None
@@ -76,12 +79,20 @@ class KnowledgeBrowserUI:
         self.canvas_offset_y = 0
         self.canvas_content_width = 0
         self.canvas_content_height = 0
+        self.canvas_zoom = 1.0
+        self.canvas_min_zoom = 0.35
+        self.canvas_max_zoom = 2.5
+        self.active_canvas_pan = False
+        self.canvas_pan_start_mouse = None
+        self.canvas_pan_start_offset = None
 
         self.active_card_drag_id = None
         self.active_card_resize_id = None
         self.card_drag_mouse_offset = (0, 0)
         self.card_resize_start_mouse = None
         self.card_resize_start_size = None
+        self.card_resize_start_position = None
+        self.card_resize_edges = None
 
         self.browser_tree_state = {
             "systems": {
@@ -97,6 +108,9 @@ class KnowledgeBrowserUI:
         self.active_timeline_resize = False
         self.timeline_resize_start_mouse_y = None
         self.timeline_resize_start_height = None
+        self.timeline_edit_target = None
+        self.active_timeline_pan = False
+        self.timeline_pan_last_mouse_x = None
         self.app_width = 0
         self.app_height = 0
         self.schema_loader = SchemaLoader()
@@ -179,6 +193,8 @@ class KnowledgeBrowserUI:
                 {
                     "id": entity_id,
                     "pretty_name": str(pretty_name),
+                    "dataset": entity.get("_dataset", ""),
+                    "entity_type": entity.get("type", "entity"),
                     "start_year": self._coerce_card_year(entity.get("start_year") if entity.get("start_year") is not None else entity.get("year")),
                     "end_year": self._coerce_card_year(entity.get("end_year")),
                 }
@@ -186,6 +202,85 @@ class KnowledgeBrowserUI:
 
         matches.sort(key=lambda item: (item["pretty_name"].lower(), item["id"]))
         return matches[:12]
+
+    def _close_relation_picker(self, card):
+        card["relation_picker_open"] = False
+        card["relation_picker_query"] = ""
+        card["relation_picker_matches"] = []
+        card["relation_picker_selected_index"] = 0
+        card["relation_picker_hitboxes"] = []
+
+    def _open_relation_picker(self, card):
+        card["relation_picker_open"] = True
+        card["relation_picker_query"] = ""
+        card["relation_picker_matches"] = self._build_wiki_link_matches("")
+        card["relation_picker_selected_index"] = 0
+        card["relation_picker_hitboxes"] = []
+
+    def _insert_relation_from_picker(self, card, match_index=None):
+        matches = card.get("relation_picker_matches", [])
+        if not matches:
+            return False
+
+        if match_index is None:
+            match_index = card.get("relation_picker_selected_index", 0)
+        match_index = max(0, min(match_index, len(matches) - 1))
+
+        card_view = card.get("card_view")
+        if card_view is None:
+            return False
+
+        inserted = card_view.insert_relation_reference(card, matches[match_index]["id"])
+        if inserted:
+            card["relation_picker_query"] = ""
+            card["relation_picker_matches"] = self._build_wiki_link_matches("")
+            card["relation_picker_selected_index"] = 0
+        return inserted
+
+    def _handle_relation_picker_keydown(self, card, event):
+        if not card.get("relation_picker_open", False):
+            return False
+
+        card_view = card.get("card_view")
+        active_field = card.get("active_edit_field")
+        if card_view is None or not card_view.is_relation_edit_field(active_field):
+            self._close_relation_picker(card)
+            return False
+
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER) and (event.mod & (pygame.KMOD_CTRL | pygame.KMOD_SHIFT)):
+            self._close_relation_picker(card)
+            return card_view.commit_edit_field(card)
+
+        if event.key == pygame.K_ESCAPE:
+            self._close_relation_picker(card)
+            return True
+
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            return self._insert_relation_from_picker(card)
+
+        matches = card.get("relation_picker_matches", [])
+        if event.key == pygame.K_UP and matches:
+            card["relation_picker_selected_index"] = max(0, card.get("relation_picker_selected_index", 0) - 1)
+            return True
+
+        if event.key == pygame.K_DOWN and matches:
+            card["relation_picker_selected_index"] = min(len(matches) - 1, card.get("relation_picker_selected_index", 0) + 1)
+            return True
+
+        if event.key == pygame.K_BACKSPACE:
+            card["relation_picker_query"] = card.get("relation_picker_query", "")[:-1]
+            card["relation_picker_matches"] = self._build_wiki_link_matches(card["relation_picker_query"])
+            card["relation_picker_selected_index"] = 0
+            return True
+
+        text = getattr(event, "unicode", "")
+        if text and text.isprintable():
+            card["relation_picker_query"] = card.get("relation_picker_query", "") + text
+            card["relation_picker_matches"] = self._build_wiki_link_matches(card["relation_picker_query"])
+            card["relation_picker_selected_index"] = 0
+            return True
+
+        return False
 
     def _open_wiki_link_picker(self, card):
         card["wiki_link_picker_open"] = True
@@ -543,6 +638,8 @@ class KnowledgeBrowserUI:
             return entity.get("vehicle_class", entity.get("type", "entity"))
         if dataset_name == "components":
             return entity.get("component_class", entity.get("type", "entity"))
+        if dataset_name == "ideas":
+            return entity.get("idea_class", entity.get("type", "entity"))
         if dataset_name == "systems":
             if entity.get("system_role") == "star_system":
                 return entity.get("system_class", entity.get("type", "entity"))
@@ -562,6 +659,7 @@ class KnowledgeBrowserUI:
         dataset_names = sorted(world_model.get_dataset_names())
 
         preferred_order = [
+            "ideas",
             "locations",
             "vehicles",
             "components",
@@ -618,6 +716,9 @@ class KnowledgeBrowserUI:
         if dataset_name == "locations":
             display_group = "location"
             subtype = entity.get("location_class", entity.get("type", "entity"))
+        elif dataset_name == "ideas":
+            display_group = "idea"
+            subtype = entity.get("idea_class", entity.get("type", "entity"))
         elif dataset_name == "systems":
             system_role = entity.get("system_role")
             if system_role == "star_system":
@@ -692,6 +793,11 @@ class KnowledgeBrowserUI:
             "wiki_link_query": "",
             "wiki_link_matches": [],
             "wiki_link_selected_index": 0,
+            "relation_picker_open": False,
+            "relation_picker_query": "",
+            "relation_picker_matches": [],
+            "relation_picker_selected_index": 0,
+            "relation_picker_hitboxes": [],
         }
         return card
 
@@ -720,8 +826,8 @@ class KnowledgeBrowserUI:
             card["canvas_h"] = card_h
             card["layout_font"] = self.font_for_layout
 
-            rect_x = right_rect.x + int(card.get("canvas_x", 24)) + self.canvas_offset_x
-            rect_y = right_rect.y + int(card.get("canvas_y", 84)) + self.canvas_offset_y
+            rect_x = right_rect.x + self.canvas_offset_x + int(card.get("canvas_x", 24) * self.canvas_zoom)
+            rect_y = right_rect.y + self.canvas_offset_y + int(card.get("canvas_y", 84) * self.canvas_zoom)
 
             rect = pygame.Rect(rect_x, rect_y, card_w, card_h)
 
@@ -730,29 +836,44 @@ class KnowledgeBrowserUI:
 
             final_rect = card.get("rect", rect)
 
-            max_right = max(max_right, card.get("canvas_x", 24) + final_rect.width)
-            max_bottom = max(max_bottom, card.get("canvas_y", 84) + final_rect.height)
+            max_right = max(max_right, card.get("canvas_x", 24) + final_rect.width / self.canvas_zoom)
+            max_bottom = max(max_bottom, card.get("canvas_y", 84) + final_rect.height / self.canvas_zoom)
 
         self.canvas_content_width = max(0, max_right + 24)
         self.canvas_content_height = max(0, max_bottom + 24)
 
     def _clamp_canvas_offsets(self):
+        # The card canvas is intentionally unbounded. Offsets are allowed to
+        # move freely so cards dragged into negative space remain recoverable by panning.
+        return
+
+    def _relayout_cards(self):
+        self._layout_all_cards()
+
+    def _screen_to_canvas_pos(self, mouse_pos):
+        if self.layout is None:
+            return (0, 0)
+
+        right_rect = self.layout["right_rect"]
+        zoom = max(0.001, self.canvas_zoom)
+        return (
+            (mouse_pos[0] - right_rect.x - self.canvas_offset_x) / zoom,
+            (mouse_pos[1] - right_rect.y - self.canvas_offset_y) / zoom,
+        )
+
+    def _set_canvas_zoom_at(self, mouse_pos, zoom_factor):
         if self.layout is None:
             return
 
         right_rect = self.layout["right_rect"]
-        visible_width = max(1, right_rect.width - 48)
-        visible_height = max(1, right_rect.height - 108)
+        before_x, before_y = self._screen_to_canvas_pos(mouse_pos)
+        new_zoom = max(self.canvas_min_zoom, min(self.canvas_max_zoom, self.canvas_zoom * zoom_factor))
+        if abs(new_zoom - self.canvas_zoom) < 0.001:
+            return
 
-        min_x = min(0, visible_width - self.canvas_content_width)
-        min_y = min(0, visible_height - self.canvas_content_height)
-
-        self.canvas_offset_x = max(min_x, min(0, self.canvas_offset_x))
-        self.canvas_offset_y = max(min_y, min(0, self.canvas_offset_y))
-
-    def _relayout_cards(self):
-        self._layout_all_cards()
-        self._clamp_canvas_offsets()
+        self.canvas_zoom = new_zoom
+        self.canvas_offset_x = mouse_pos[0] - right_rect.x - before_x * self.canvas_zoom
+        self.canvas_offset_y = mouse_pos[1] - right_rect.y - before_y * self.canvas_zoom
         self._layout_all_cards()
 
     def _bring_card_to_front(self, index):
@@ -776,6 +897,20 @@ class KnowledgeBrowserUI:
             return None
         return random.choice(list(self.world_model.loader.entities.values()))
 
+    def _startup_entity(self):
+        if self.world_model is None:
+            return None
+
+        entities = [
+            entity
+            for entity in self.world_model.loader.entities.values()
+            if isinstance(entity, dict) and entity.get("id")
+        ]
+        if not entities:
+            return None
+
+        return random.choice(entities)
+
     def _create_random_entry_card(self):
         entity = self._random_entity()
         if entity is None:
@@ -790,6 +925,7 @@ class KnowledgeBrowserUI:
             "vehicles": "vehicle",
             "components": "component",
             "events": "event",
+            "ideas": "idea",
         }
         return mapping.get(dataset_name, dataset_name[:-1] if dataset_name.endswith("s") else dataset_name)
 
@@ -800,6 +936,7 @@ class KnowledgeBrowserUI:
             "vehicles": "veh",
             "components": "comp",
             "events": "evt",
+            "ideas": "idea",
         }
         return mapping.get(dataset_name, dataset_name[:4])
 
@@ -839,11 +976,45 @@ class KnowledgeBrowserUI:
         if entity is None:
             return False
 
+        self._persist_entity_to_repository(entity)
         self.browser_items = self._build_browser_items(self.world_model)
         self._rebuild_browser_hitboxes()
         self.show_template_picker = False
         self._build_template_picker_hitboxes()
         self._ensure_card(entity)
+        return True
+
+    def _create_idea_from_parent_card(self, parent_card):
+        if self.world_model is None or parent_card is None:
+            return False
+
+        parent_entity_id = parent_card.get("entity_id")
+        if not parent_entity_id:
+            return False
+
+        parent_entity = self.world_model.get_entity(parent_entity_id)
+        parent_label = parent_card.get("title") or parent_entity_id
+        if parent_entity is not None:
+            parent_label = parent_entity.get("pretty_name") or parent_entity.get("name") or parent_label
+
+        idea = self._create_template_entity("ideas")
+        if idea is None:
+            return False
+
+        label = f"Idea from {parent_label}"
+        idea["pretty_name"] = label
+        idea["name"] = label
+        idea["idea_class"] = "note"
+        idea["parent_entity"] = parent_entity_id
+        idea["related_entities"] = [parent_entity_id]
+
+        if parent_entity is not None and parent_entity.get("_dataset") == "ideas":
+            idea["parent_ideas"] = [parent_entity_id]
+
+        self._persist_entity_to_repository(idea)
+        self.browser_items = self._build_browser_items(self.world_model)
+        self._rebuild_browser_hitboxes()
+        self._ensure_card(idea)
         return True
 
     def _is_temporal_field(self, field_key):
@@ -931,6 +1102,7 @@ class KnowledgeBrowserUI:
             card_view.begin_edit_field(card_obj, field_key)
             card_obj["edit_buffer"] = str(int(year))
             card_view.commit_edit_field(card_obj)
+            self._persist_card_entity(card_obj)
             self._sync_card_years_from_entity(card_obj)
             self._focus_timeline_year(year)
             self._clear_timeline_edit_target()
@@ -994,7 +1166,129 @@ class KnowledgeBrowserUI:
     def _entry_file_path_for_dataset(self, dataset_name):
         if not dataset_name:
             return None
-        return os.path.join(os.getcwd(), "entries", f"{dataset_name}.yaml")
+        return str(self.PROJECT_ROOT / "entries" / f"{dataset_name}.yaml")
+
+    def _format_yaml_scalar(self, value):
+        if value is None:
+            return "null"
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, (int, float)):
+            return str(value)
+
+        text = str(value)
+        if "\n" in text:
+            lines = text.splitlines()
+            if not lines:
+                return "''"
+            return "|\n" + "\n".join(f"    {line}" for line in lines)
+
+        if text == "":
+            return "''"
+
+        needs_quote = (
+            text.strip() != text
+            or text.lower() in {"null", "none", "true", "false", "yes", "no"}
+            or any(ch in text for ch in [":", "#", "{", "}", "[", "]", ","])
+        )
+        if needs_quote:
+            return "'" + text.replace("'", "''") + "'"
+        return text
+
+    def _format_yaml_entity_block(self, entity):
+        ordered_keys = ["id", "pretty_name", "name", "type"]
+        keys = [key for key in ordered_keys if key in entity]
+        keys.extend(key for key in entity.keys() if key not in keys and not key.startswith("_"))
+
+        lines = []
+        for index, key in enumerate(keys):
+            value = entity.get(key)
+            prefix = "- " if index == 0 else "  "
+
+            if isinstance(value, list):
+                lines.append(f"{prefix}{key}:")
+                if value:
+                    for item in value:
+                        lines.append(f"  - {self._format_yaml_scalar(item)}")
+                else:
+                    lines[-1] = f"{prefix}{key}: []"
+                continue
+
+            if isinstance(value, dict):
+                lines.append(f"{prefix}{key}:")
+                if value:
+                    for child_key, child_value in value.items():
+                        lines.append(f"    {child_key}: {self._format_yaml_scalar(child_value)}")
+                else:
+                    lines[-1] = f"{prefix}{key}: {{}}"
+                continue
+
+            scalar = self._format_yaml_scalar(value)
+            if scalar.startswith("|\n"):
+                lines.append(f"{prefix}{key}: {scalar}")
+            else:
+                lines.append(f"{prefix}{key}: {scalar}")
+
+        return "\n".join(lines).rstrip() + "\n"
+
+    def _find_yaml_entity_block(self, text, entity_id):
+        start_pattern = rf"(?m)^- id: {re.escape(str(entity_id))}\s*$"
+        start_match = re.search(start_pattern, text)
+        if not start_match:
+            return None
+
+        next_match = re.search(r"(?m)^- id: ", text[start_match.end():])
+        block_start = start_match.start()
+        block_end = start_match.end() + next_match.start() if next_match else len(text)
+        return block_start, block_end
+
+    def _persist_entity_to_repository(self, entity):
+        if not isinstance(entity, dict):
+            return False
+
+        entity_id = entity.get("id")
+        dataset_name = entity.get("_dataset", entity.get("type"))
+        entry_path = self._entry_file_path_for_dataset(dataset_name)
+        if not entity_id or entry_path is None:
+            return False
+
+        os.makedirs(os.path.dirname(entry_path), exist_ok=True)
+        if os.path.exists(entry_path):
+            with open(entry_path, "r", encoding="utf-8") as f:
+                text = f.read()
+        else:
+            text = ""
+
+        if text.strip() == "[]":
+            text = ""
+
+        block = self._format_yaml_entity_block(entity)
+        found = self._find_yaml_entity_block(text, entity_id)
+        if found is None:
+            separator = "" if not text.strip() else "\n"
+            updated_text = text.rstrip() + separator + block
+        else:
+            block_start, block_end = found
+            updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
+
+        with open(entry_path, "w", encoding="utf-8") as f:
+            f.write(updated_text)
+
+        return True
+
+    def _persist_card_entity(self, card):
+        if card is None:
+            return False
+
+        entity = None
+        card_view = card.get("card_view")
+        if card_view is not None:
+            entity = getattr(card_view, "entity", None)
+
+        if entity is None and self.world_model is not None:
+            entity = self.world_model.get_entity(card.get("entity_id"))
+
+        return self._persist_entity_to_repository(entity)
 
     def _build_canonical_image_path(self, entity_id, dataset_name, role_name, source_path):
         _, ext = os.path.splitext(source_path)
@@ -1007,7 +1301,7 @@ class KnowledgeBrowserUI:
 
     def _copy_to_canonical_asset(self, entity_id, dataset_name, role_name, source_path):
         canonical_rel_path = self._build_canonical_image_path(entity_id, dataset_name, role_name, source_path)
-        canonical_abs_path = os.path.normpath(os.path.join(os.getcwd(), canonical_rel_path))
+        canonical_abs_path = os.path.normpath(str(self.PROJECT_ROOT / canonical_rel_path))
         os.makedirs(os.path.dirname(canonical_abs_path), exist_ok=True)
         shutil.copy2(source_path, canonical_abs_path)
         return canonical_rel_path
@@ -1246,8 +1540,9 @@ class KnowledgeBrowserUI:
             self.selected_entity_id = scope_entity.get("id")
 
         elif not self.cards and world_model is not None:
-            self._ensure_card(world_model.get_entity("planet_earth"))
-            self._ensure_card(world_model.get_entity("system_sol"))
+            self._ensure_card(self._startup_entity())
+            self.browser_items = self._build_browser_items(world_model)
+            self._rebuild_browser_hitboxes()
 
         self._relayout_cards()
 
@@ -1256,7 +1551,14 @@ class KnowledgeBrowserUI:
         if card_view is None:
             return
 
-        card_view.draw_card(screen, font, card)
+        previous_clip = screen.get_clip()
+        card_rect = card.get("rect")
+        if card_rect is not None:
+            screen.set_clip(previous_clip.clip(card_rect))
+        try:
+            card_view.draw_card(screen, font, card)
+        finally:
+            screen.set_clip(previous_clip)
 
     def _handle_keydown_event(self, event):
         if self.browser_search_active:
@@ -1299,8 +1601,19 @@ class KnowledgeBrowserUI:
                     self._relayout_cards()
                     return "__ui_consumed__"
 
+                if self._handle_relation_picker_keydown(card, event):
+                    self._bring_card_to_front(index)
+                    self._persist_card_entity(card)
+                    self._sync_card_years_from_entity(card)
+                    self._refresh_timeline_items()
+                    self._relayout_cards()
+                    return "__ui_consumed__"
+
                 if card_view.handle_keydown(card, event):
                     self._bring_card_to_front(index)
+                    if not card_view.is_relation_edit_field(card.get("active_edit_field")):
+                        self._close_relation_picker(card)
+                    self._persist_card_entity(card)
                     self._sync_card_years_from_entity(card)
                     self._refresh_timeline_items()
                     self._relayout_cards()
@@ -1322,9 +1635,17 @@ class KnowledgeBrowserUI:
             return "__ui_consumed__"
 
         if right_rect.collidepoint(mouse_pos):
-            canvas_step = 48
-            self.canvas_offset_y += event.y * canvas_step
-            self._clamp_canvas_offsets()
+            key_mods = pygame.key.get_mods()
+            if key_mods & pygame.KMOD_CTRL:
+                zoom_factor = 1.12 if event.y > 0 else 1 / 1.12
+                self._set_canvas_zoom_at(mouse_pos, zoom_factor)
+                return "__ui_consumed__"
+
+            canvas_step = 64
+            if key_mods & pygame.KMOD_SHIFT:
+                self.canvas_offset_x += event.y * canvas_step
+            else:
+                self.canvas_offset_y += event.y * canvas_step
             self._layout_all_cards()
             return "__ui_consumed__"
 
@@ -1335,15 +1656,20 @@ class KnowledgeBrowserUI:
             return None
 
         self.active_timeline_resize = False
+        self.active_timeline_pan = False
         self.timeline_resize_start_mouse_y = None
         self.timeline_resize_start_height = None
+        self.timeline_pan_last_mouse_x = None
         self.active_card_drag_id = None
         self.active_card_resize_id = None
+        self.active_canvas_pan = False
         self.card_drag_mouse_offset = (0, 0)
         self.card_resize_start_mouse = None
         self.card_resize_start_size = None
         self.card_resize_start_position = None
         self.card_resize_edges = None
+        self.canvas_pan_start_mouse = None
+        self.canvas_pan_start_offset = None
         return "__ui_consumed__"
 
     def _handle_mousemotion_event(self, event):
@@ -1356,21 +1682,23 @@ class KnowledgeBrowserUI:
             self._refresh_layout_geometry()
             return "__ui_consumed__"
 
+        if self.active_timeline_pan:
+            if self.timeline_pan_last_mouse_x is None:
+                self.timeline_pan_last_mouse_x = event.pos[0]
+                return "__ui_consumed__"
+
+            dx = event.pos[0] - self.timeline_pan_last_mouse_x
+            self.timeline_pan_last_mouse_x = event.pos[0]
+            if dx:
+                self.timeline_ui.pan_by_pixels(-dx)
+            return "__ui_consumed__"
+
         if self.active_card_drag_id is not None:
             for card in self.cards:
                 if card.get("entity_id") == self.active_card_drag_id:
-                    card["canvas_x"] = (
-                        event.pos[0]
-                        - self.layout["right_rect"].x
-                        - self.canvas_offset_x
-                        - self.card_drag_mouse_offset[0]
-                    )
-                    card["canvas_y"] = (
-                        event.pos[1]
-                        - self.layout["right_rect"].y
-                        - self.canvas_offset_y
-                        - self.card_drag_mouse_offset[1]
-                    )
+                    canvas_x, canvas_y = self._screen_to_canvas_pos(event.pos)
+                    card["canvas_x"] = canvas_x - self.card_drag_mouse_offset[0]
+                    card["canvas_y"] = canvas_y - self.card_drag_mouse_offset[1]
                     self._relayout_cards()
                     return "__ui_consumed__"
 
@@ -1395,20 +1723,20 @@ class KnowledgeBrowserUI:
                     new_h = start_h
 
                     if "left" in resize_edges:
-                        new_x = start_x + dx
+                        new_x = start_x + dx / max(0.001, self.canvas_zoom)
                         new_w = start_w - dx
                         if new_w < min_w:
-                            new_x = start_x + (start_w - min_w)
+                            new_x = start_x + (start_w - min_w) / max(0.001, self.canvas_zoom)
                             new_w = min_w
 
                     if "right" in resize_edges:
                         new_w = max(min_w, start_w + dx)
 
                     if "top" in resize_edges:
-                        new_y = start_y + dy
+                        new_y = start_y + dy / max(0.001, self.canvas_zoom)
                         new_h = start_h - dy
                         if new_h < minimum_h:
-                            new_y = start_y + (start_h - minimum_h)
+                            new_y = start_y + (start_h - minimum_h) / max(0.001, self.canvas_zoom)
                             new_h = minimum_h
 
                     if "bottom" in resize_edges:
@@ -1420,6 +1748,17 @@ class KnowledgeBrowserUI:
                     card["canvas_h"] = int(new_h)
                     self._relayout_cards()
                     return "__ui_consumed__"
+
+        if self.active_canvas_pan:
+            if self.canvas_pan_start_mouse is None or self.canvas_pan_start_offset is None:
+                return None
+
+            dx = event.pos[0] - self.canvas_pan_start_mouse[0]
+            dy = event.pos[1] - self.canvas_pan_start_mouse[1]
+            self.canvas_offset_x = self.canvas_pan_start_offset[0] + dx
+            self.canvas_offset_y = self.canvas_pan_start_offset[1] + dy
+            self._layout_all_cards()
+            return "__ui_consumed__"
 
         return None
 
@@ -1469,6 +1808,13 @@ class KnowledgeBrowserUI:
             card = self.cards[index]
             card_view = card.get("card_view")
 
+            idea_button_rect = card.get("idea_button_rect")
+            if idea_button_rect is not None and idea_button_rect.collidepoint(mouse_pos) and card_view is not None:
+                card_obj = self._bring_card_to_front(index)
+                self._create_idea_from_parent_card(card_obj)
+                self._relayout_cards()
+                return "__ui_consumed__"
+
             edit_toggle_rect = card.get("edit_toggle_rect")
             if edit_toggle_rect is not None and edit_toggle_rect.collidepoint(mouse_pos) and card_view is not None:
                 card_obj = self._bring_card_to_front(index)
@@ -1476,19 +1822,33 @@ class KnowledgeBrowserUI:
                 if not card_obj.get("is_edit_mode", False):
                     self._clear_timeline_edit_target()
                     self._close_wiki_link_picker(card_obj)
+                    self._close_relation_picker(card_obj)
                 self._relayout_cards()
                 return "__ui_consumed__"
+
+            for match_index, match_rect in card.get("relation_picker_hitboxes", []):
+                if match_rect.collidepoint(mouse_pos) and card_view is not None:
+                    card_obj = self._bring_card_to_front(index)
+                    self._insert_relation_from_picker(card_obj, match_index=match_index)
+                    self._relayout_cards()
+                    return "__ui_consumed__"
 
             for field_key, field_rect in card.get("editable_field_hitboxes", []):
                 if field_rect.collidepoint(mouse_pos) and card_view is not None:
                     card_obj = self._bring_card_to_front(index)
                     card_obj["card_view"].begin_edit_field(card_obj, field_key)
+                    if field_key == "wiki_entry":
+                        card_obj["card_view"].set_edit_cursor_from_pos(card_obj, field_key, mouse_pos, self.font_for_layout)
                     if self._is_temporal_field(field_key):
                         self._set_timeline_edit_target(card_obj, field_key)
                     else:
                         self._clear_timeline_edit_target()
                     if field_key != "wiki_entry":
                         self._close_wiki_link_picker(card_obj)
+                    if card_obj["card_view"].is_relation_edit_field(field_key):
+                        self._open_relation_picker(card_obj)
+                    else:
+                        self._close_relation_picker(card_obj)
                     self._relayout_cards()
                     return "__ui_consumed__"
 
@@ -1508,9 +1868,10 @@ class KnowledgeBrowserUI:
             if card["header_drag_rect"].collidepoint(mouse_pos):
                 card_obj = self._bring_card_to_front(index)
                 self.active_card_drag_id = card_obj["entity_id"]
+                canvas_x, canvas_y = self._screen_to_canvas_pos(mouse_pos)
                 self.card_drag_mouse_offset = (
-                    mouse_pos[0] - card_obj["rect"].x,
-                    mouse_pos[1] - card_obj["rect"].y,
+                    canvas_x - card_obj.get("canvas_x", 24),
+                    canvas_y - card_obj.get("canvas_y", 84),
                 )
                 self._layout_all_cards()
                 return "__ui_consumed__"
@@ -1559,6 +1920,9 @@ class KnowledgeBrowserUI:
                 self._layout_all_cards()
                 return "__ui_consumed__"
 
+        self.active_canvas_pan = True
+        self.canvas_pan_start_mouse = mouse_pos
+        self.canvas_pan_start_offset = (self.canvas_offset_x, self.canvas_offset_y)
         return "__ui_consumed__"
 
     def draw(self, screen, font, draw_button_fn):
@@ -1619,6 +1983,8 @@ class KnowledgeBrowserUI:
         right_title = font.render("Card Canvas", True, (240, 240, 240))
         screen.blit(left_title, (left_rect.x + 12, left_rect.y + 10))
         screen.blit(right_title, (right_rect.x + 12, right_rect.y + 10))
+        zoom_label = font.render(f"{int(self.canvas_zoom * 100)}%", True, (170, 180, 200))
+        screen.blit(zoom_label, (right_rect.x + 118, right_rect.y + 10))
 
         if self.browser_search_rect is not None:
             search_fill = (38, 44, 58) if self.browser_search_active else (28, 32, 42)
@@ -1811,6 +2177,10 @@ class KnowledgeBrowserUI:
                 if picked_year is not None:
                     self._apply_timeline_year_pick(picked_year)
                     return "__ui_consumed__"
+
+            self.active_timeline_pan = True
+            self.timeline_pan_last_mouse_x = mouse_pos[0]
+            return "__ui_consumed__"
 
         if self.header_button is not None and self.header_button.rect.collidepoint(mouse_pos):
             return self.header_button.id
