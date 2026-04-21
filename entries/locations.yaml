@@ -30,10 +30,10 @@
   parent_location: planet_earth
   bounds:
     type: bbox
-    min_x: -250
-    max_x: 420
-    min_y: -120
-    max_y: 320
+    min_x: -25
+    max_x: 45
+    min_y: -72
+    max_y: -34
   population:
     y0: 450000000
   start_year: 0
@@ -47,10 +47,10 @@
   parent_location: geo_europe
   bounds:
     type: bbox
-    min_x: -40
-    max_x: 220
-    min_y: -40
-    max_y: 180
+    min_x: 5
+    max_x: 25
+    min_y: -55
+    max_y: -45
   population:
     y0: 180000000
   start_year: 0
@@ -64,10 +64,10 @@
   parent_location: geo_central_europe
   bounds:
     type: bbox
-    min_x: 10
-    max_x: 130
-    min_y: 10
-    max_y: 120
+    min_x: 5.5
+    max_x: 15.5
+    min_y: -55.1
+    max_y: -47.2
   population:
     y0: 83000000
   start_year: 0
@@ -81,8 +81,8 @@
   parent_location: geo_germany
   coords:
     type: point
-    x: 95
-    y: 95
+    x: 13.405
+    y: -52.52
   population:
     y0: 3800000
   start_year: 0
@@ -96,10 +96,10 @@
   parent_location: geo_central_europe
   bounds:
     type: bbox
-    min_x: 40
-    max_x: 180
-    min_y: -10
-    max_y: 50
+    min_x: 5
+    max_x: 17
+    min_y: -48
+    max_y: -44
   population:
     y0: 14000000
   start_year: 0
@@ -113,10 +113,10 @@
   parent_location: geo_europe
   bounds:
     type: bbox
-    min_x: -120
-    max_x: 20
-    min_y: -10
-    max_y: 120
+    min_x: -5.5
+    max_x: 8.5
+    min_y: -51.2
+    max_y: -41
   population:
     y0: 68000000
   start_year: 0
@@ -130,8 +130,8 @@
   parent_location: geo_france
   coords:
     type: point
-    x: -35
-    y: 70
+    x: 2.352
+    y: -48.857
   population:
     y0: 2100000
   start_year: 0
@@ -558,10 +558,10 @@
     - ecological_placeholder
   bounds:
     type: bbox
-    min_x: -4.8
-    max_x: 4.8
-    min_y: -4.8
-    max_y: 4.8
+    min_x: -178.45
+    max_x: -178.15
+    min_y: -28.55
+    max_y: -28.25
   climate_tags:
     - tropical
     - marine
@@ -603,10 +603,10 @@
   parent_location: planet_earth
   bounds:
     type: bbox
-    min_x: -1200
-    max_x: 1200
-    min_y: -180
-    max_y: 180
+    min_x: -180
+    max_x: -160
+    min_y: -30
+    max_y: -20
   climate_tags:
     - tropical
     - marine
@@ -638,14 +638,14 @@
   notes: Parented directly to planet_earth for now until a Japan/Okinawa location chain is added.
   coords:
     type: point
-    x: 0
-    y: 0
+    x: 127.761
+    y: -26.275
   bounds:
     type: bbox
-    min_x: -1.1
-    max_x: 1.1
-    min_y: -1.0
-    max_y: 1.0
+    min_x: 127.75
+    max_x: 127.77
+    min_y: -26.285
+    max_y: -26.265
   climate_tags:
     - subtropical
     - coastal
@@ -722,10 +722,10 @@
   parent_location: geo_europe
   bounds:
     type: bbox
-    min_x: -170
-    max_x: -40
-    min_y: -110
-    max_y: -10
+    min_x: -9.5
+    max_x: 4.5
+    min_y: -43.8
+    max_y: -35.8
   population:
     y0: 48000000
   start_year: 0
@@ -740,8 +740,8 @@
   parent_location: geo_spain
   coords:
     type: point
-    x: -105
-    y: -55
+    x: -3.704
+    y: -40.417
   population:
     y0: 3300000
   start_year: 0
@@ -756,10 +756,10 @@
   parent_location: geo_europe
   bounds:
     type: bbox
-    min_x: 30
-    max_x: 130
-    min_y: -90
-    max_y: 20
+    min_x: 6.6
+    max_x: 18.8
+    min_y: -47.1
+    max_y: -35.5
   population:
     y0: 59000000
   start_year: 0
@@ -774,8 +774,8 @@
   parent_location: geo_italy
   coords:
     type: point
-    x: 75
-    y: -35
+    x: 12.496
+    y: -41.903
   population:
     y0: 2800000
   start_year: 0
@@ -790,10 +790,10 @@
   parent_location: geo_europe
   bounds:
     type: bbox
-    min_x: 70
-    max_x: 180
-    min_y: 120
-    max_y: 280
+    min_x: 11
+    max_x: 24.2
+    min_y: -69.1
+    max_y: -55
   population:
     y0: 10500000
   start_year: 0
@@ -808,8 +808,8 @@
   parent_location: geo_sweden
   coords:
     type: point
-    x: 135
-    y: 215
+    x: 18.069
+    y: -59.329
   population:
     y0: 980000
   start_year: 0
@@ -822,3 +822,37 @@
   parent_location: geo_alps
   associated_cultures: []
   derived_from_system_body: null
+
+# ---------- loc_draft_geo_europe_001 | Draft Map Area 001 ----------
+- id: loc_draft_geo_europe_001
+  pretty_name: 'Draft Map Area 001'
+  name: 'Draft Map Area 001'
+  type: location
+  location_class: region
+  parent_location: geo_europe
+  notes: 'Draft square map area created under Europe.'
+  bounds:
+    type: bbox
+    min_x: -16.868
+    max_x: -4.158
+    min_y: -64.869
+    max_y: -52.159
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_draft_geo_spain_001 | Draft Map Area 001 ----------
+- id: loc_draft_geo_spain_001
+  pretty_name: 'Draft Map Area 001'
+  name: 'Draft Map Area 001'
+  type: location
+  location_class: region
+  parent_location: geo_spain
+  notes: 'Draft rectangle map area created under Spain.'
+  bounds:
+    type: bbox
+    min_x: -2.282
+    max_x: 2.286
+    min_y: -41.758
+    max_y: -38.37
+  start_year: 2400
+  entry_status: draft

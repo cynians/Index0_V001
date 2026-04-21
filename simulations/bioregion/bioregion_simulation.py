@@ -3,6 +3,7 @@ from engine.simulation_manager import SimulationManager
 from engine.logger import logger
 from simulations.bioregion.bioregion_grid import BioregionGrid
 from simulations.bioregion.geology import GeologyGenerator
+from simulations.bioregion.vegetation import VegetationController
 from simulations.bioregion.water_cycle import WaterCycle
 from simulations.bioregion.weather import WeatherController
 
@@ -25,6 +26,7 @@ class BioregionSimulation:
       - grid state
       - weather
       - water cycle
+      - vegetation
     """
 
     MAP_SIZE_M = 10000.0
@@ -86,6 +88,9 @@ class BioregionSimulation:
             deep_background_loss_rate=0.000003
         )
 
+        self.vegetation = VegetationController()
+        self.vegetation.seed_grid(self.grid)
+
         self.hover_cell = None
         self.selected_cell = None
         self.hover_screen_pos = None
@@ -114,6 +119,10 @@ class BioregionSimulation:
             dt=dt,
             rain_input_rate=self.weather.get_rain_input_rate(),
         )
+        self.vegetation.update_grid(
+            grid=self.grid,
+            dt=dt,
+        )
         self._log_environment_summary()
 
     def get_center(self):
@@ -129,13 +138,17 @@ class BioregionSimulation:
         avg_surface = self.get_average_surface_water()
         avg_top = self.get_average_top_moisture()
         avg_deep = self.get_average_deep_moisture()
+        avg_biomass = self.get_average_plant_biomass()
+        avg_health = self.get_average_plant_health()
 
         logger.debug(
             f"[BioregionSimulation] Moisture summary | "
             f"rain={self.weather.is_raining} | "
             f"avg_surface={avg_surface:.3f} | "
             f"avg_top={avg_top:.3f} | "
-            f"avg_deep={avg_deep:.3f}",
+            f"avg_deep={avg_deep:.3f} | "
+            f"avg_biomass={avg_biomass:.3f} | "
+            f"avg_health={avg_health:.3f}",
             key="bioregion_moisture_summary",
             interval=1.5
         )
@@ -249,6 +262,12 @@ class BioregionSimulation:
     def get_average_deep_moisture(self):
         return self.grid.get_average_deep_moisture()
 
+    def get_average_plant_biomass(self):
+        return self.grid.get_average_plant_biomass()
+
+    def get_average_plant_health(self):
+        return self.grid.get_average_plant_health()
+
     @property
     def is_raining(self):
         return self.weather.is_raining
@@ -272,7 +291,10 @@ class BioregionSimulation:
                 f"altitude={selected_grid_cell['altitude']:.3f} | "
                 f"surface={selected_grid_cell['surface_water']:.3f} | "
                 f"top={selected_grid_cell['top_moisture']:.3f} | "
-                f"deep={selected_grid_cell['deep_moisture']:.3f}",
+                f"deep={selected_grid_cell['deep_moisture']:.3f} | "
+                f"biomass={selected_grid_cell['plant_biomass']:.3f} | "
+                f"health={selected_grid_cell['plant_health']:.3f} | "
+                f"habitat={selected_grid_cell['habitat_type']}",
                 key="bioregion_cell_selection",
                 interval=0.1
             )

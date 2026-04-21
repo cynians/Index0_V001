@@ -293,6 +293,37 @@ class NavigationController:
                 getattr(active_sim, "set_active_simulation_panel_tab", lambda _tab_id: False)(tab_id)
             )
 
+        if action_id == "selection_inspector_save" and active_sim is not None:
+            return bool(
+                getattr(active_sim, "save_selection_inspector_updates", lambda *_args: False)(
+                    action.get("target_kind"),
+                    action.get("target_id"),
+                    action.get("updates", {}),
+                )
+            )
+
+        if action_id == "selection_inspector_edit_polygon" and active_sim is not None:
+            return bool(
+                getattr(active_sim, "begin_spatial_feature_polygon_edit", lambda *_args: False)(
+                    action.get("target_kind"),
+                    action.get("target_id"),
+                )
+            )
+
+        if (
+            action_id in {
+                "selection_inspector_edit_rectangle",
+                "selection_inspector_edit_square",
+            }
+            and active_sim is not None
+        ):
+            return bool(
+                getattr(active_sim, "begin_location_square_edit", lambda *_args: False)(
+                    action.get("target_kind"),
+                    action.get("target_id"),
+                )
+            )
+
         if action_id == "vehicle_catalog_select" and active_sim is not None:
             catalog_id = action.get("catalog_id")
             return bool(
@@ -377,6 +408,21 @@ class NavigationController:
             self.open_region_map_tab(selected_entity_id)
             return True
 
+        if action_id == "cycle_map_layer" and active_sim is not None:
+            return bool(getattr(active_sim, "cycle_active_layer_kind", lambda: False)())
+
+        if action_id == "new_map_selection" and active_sim is not None:
+            return bool(getattr(active_sim, "begin_spatial_feature_draft", lambda: False)())
+
+        if action_id in {"new_map_rectangle", "new_map_square"} and active_sim is not None:
+            return bool(getattr(active_sim, "begin_map_square_draft", lambda: False)())
+
+        if action_id == "finish_map_selection" and active_sim is not None:
+            return bool(getattr(active_sim, "finish_map_editor", lambda: False)())
+
+        if action_id == "cancel_map_selection" and active_sim is not None:
+            return bool(getattr(active_sim, "cancel_map_editor", lambda: False)())
+
         if action_id == "open_parent_region_map" and active_sim is not None:
             self.open_parent_region_map_tab(active_sim)
             return True
@@ -400,6 +446,9 @@ class NavigationController:
         """
         Handle application-level keyboard controls.
         """
+        if getattr(self.app.ui_manager, "is_text_input_active", lambda: False)():
+            return
+
         if self.app.knowledge_layer_active:
             return
 

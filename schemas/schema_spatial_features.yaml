@@ -1,0 +1,63 @@
+schema: spatial_features
+
+extends: entity_core
+
+fields:
+
+  name:
+    type: string
+    optional: true
+
+  notes:
+    type: text
+    optional: true
+
+  layer_kind:
+    type: string
+
+  owner_entity:
+    type: entity
+    optional: true
+
+  parent_entity:
+    type: entity
+    optional: true
+
+  geometry:
+    type: dict
+
+  resolution_m_per_pixel:
+    type: number
+    optional: true
+
+  coverage_mode:
+    type: string
+    optional: true
+
+  draw_order:
+    type: number
+    optional: true
+
+# --------------------------------------------------
+# COMMENTED EXAMPLE ENTRY
+# --------------------------------------------------
+#
+# - id: sf_draft_central_germany_001
+#   pretty_name: Central Germany Draft Ecoregion
+#   name: Central Germany Draft Ecoregion
+#   type: spatial_feature
+#   notes: Rough planning polygon for later entity attachment.
+#   layer_kind: ecoregions
+#   parent_entity: geo_germany
+#   geometry:
+#     type: polygon
+#     coordinate_space: map_world
+#     points:
+#       - [7.2, -49.2]
+#       - [13.8, -49.4]
+#       - [13.4, -52.8]
+#       - [10.3, -53.2]
+#   resolution_m_per_pixel: 100
+#   coverage_mode: replaces_parent
+#   start_year: 0
+#   entry_status: draft

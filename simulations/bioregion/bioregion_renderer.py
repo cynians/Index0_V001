@@ -49,6 +49,109 @@ class BioregionRenderer:
 
             pygame.draw.line(screen, outline_color, p1, p2, 2)
 
+    def _draw_bioregion_ecosystem_cells(self, screen, sim, camera):
+        """
+        Draw the cell substrate and aggregate vegetation cover.
+        """
+        grid = getattr(sim, "grid", None)
+        if grid is None:
+            return
+
+        for cell in grid.iter_cells():
+            top_left = camera.world_to_screen((cell["min_x"], cell["min_y"]))
+            bottom_right = camera.world_to_screen((cell["max_x"], cell["max_y"]))
+
+            if top_left is None or bottom_right is None:
+                continue
+
+            left = min(top_left[0], bottom_right[0])
+            right = max(top_left[0], bottom_right[0])
+            top = min(top_left[1], bottom_right[1])
+            bottom = max(top_left[1], bottom_right[1])
+
+            if right < 0 or bottom < 0:
+                continue
+
+            if left > screen.get_width() or top > screen.get_height():
+                continue
+
+            width = max(1, int(right - left) + 1)
+            height = max(1, int(bottom - top) + 1)
+            rect = pygame.Rect(int(left), int(top), width, height)
+
+            pygame.draw.rect(screen, self._get_ecosystem_cell_color(cell), rect)
+
+    def _get_ecosystem_cell_color(self, cell):
+        """
+        Build a display color from altitude, moisture, and vegetation state.
+        """
+        altitude = cell["altitude"]
+        biomass = cell["plant_biomass"]
+        health = cell["plant_health"]
+        surface_water = cell["surface_water"]
+        habitat_type = cell["habitat_type"]
+
+        bare = self._get_bare_ground_color(cell)
+        vegetation = self._get_vegetation_color(habitat_type, health)
+
+        plant_mix = max(0.0, min(0.90, biomass * 0.95))
+        color = self._mix_color(bare, vegetation, plant_mix)
+
+        if altitude > 0.78:
+            highland_tint = (170, 172, 150)
+            color = self._mix_color(color, highland_tint, min(0.35, (altitude - 0.78) * 1.4))
+
+        if surface_water > 0.05:
+            water_tint = (42, 92, 130)
+            color = self._mix_color(color, water_tint, min(0.62, surface_water * 1.7))
+
+        return color
+
+    def _get_bare_ground_color(self, cell):
+        soil_type = cell["soil_type"]
+        altitude = cell["altitude"]
+
+        soil_colors = {
+            "very_sandy": (128, 118, 80),
+            "sandy_loam": (111, 104, 72),
+            "loam": (86, 86, 63),
+            "clay_loam": (78, 76, 66),
+            "heavy_clay": (70, 69, 70),
+        }
+        base = soil_colors.get(soil_type, (86, 86, 63))
+
+        shade = 0.82 + (altitude * 0.28)
+        return (
+            max(0, min(255, int(base[0] * shade))),
+            max(0, min(255, int(base[1] * shade))),
+            max(0, min(255, int(base[2] * shade))),
+        )
+
+    def _get_vegetation_color(self, habitat_type, health):
+        habitat_colors = {
+            "bare": (88, 91, 66),
+            "dry_scrub": (101, 122, 63),
+            "grassland": (66, 139, 68),
+            "woodland": (38, 111, 57),
+            "wetland": (45, 124, 86),
+            "upland_scrub": (81, 121, 72),
+            "high_barren": (116, 122, 101),
+        }
+
+        color = habitat_colors.get(habitat_type, (66, 139, 68))
+        stress_tint = (98, 92, 62)
+        return self._mix_color(stress_tint, color, max(0.0, min(1.0, health)))
+
+    def _mix_color(self, a, b, amount):
+        amount = max(0.0, min(1.0, amount))
+        inverse = 1.0 - amount
+
+        return (
+            int((a[0] * inverse) + (b[0] * amount)),
+            int((a[1] * inverse) + (b[1] * amount)),
+            int((a[2] * inverse) + (b[2] * amount)),
+        )
+
     def draw(self, screen, sim):
         """
         Draw the prototype bioregion test grid.
@@ -69,11 +172,13 @@ class BioregionRenderer:
             background_rect = pygame.Rect(left, top, right - left, bottom - top)
             pygame.draw.rect(screen, (20, 26, 20), background_rect)
 
+        self._draw_bioregion_ecosystem_cells(screen, sim, camera)
+
         subsection_size = sim.get_subsection_size()
         section_size = sim.get_section_size()
         map_size = sim.get_map_size()
 
-        subsection_color = (52, 72, 52)
+        subsection_color = (46, 64, 48)
         section_color = (165, 185, 165)
 
         subsection_steps = int(map_size // subsection_size)

@@ -1,6 +1,7 @@
 import pygame
 
 from ui.knowledge_browser_ui import KnowledgeBrowserUI
+from ui.selection_inspector_ui import SelectionInspectorUI
 from ui.ui_types import UIButton
 
 
@@ -54,7 +55,11 @@ class UIManager:
 
         self.menu_active = False
         self.knowledge_ui = KnowledgeBrowserUI()
+        self.selection_inspector = SelectionInspectorUI()
         self.app_font = pygame.font.SysFont("consolas", 16)
+
+    def is_text_input_active(self):
+        return self.selection_inspector.is_text_input_active()
 
     def _format_sim_time(self, sim):
         base_year = getattr(sim, "year", 0)
@@ -325,18 +330,21 @@ class UIManager:
             f"Time Scale x{active_sim.sim_clock.time_scale:.2f}",
         ]
 
+        render_mode = getattr(active_sim, "render_mode", None)
+
         if camera is not None:
             mouse_x, mouse_y = pygame.mouse.get_pos()
-            world_x = int((mouse_x - app_width / 2) / camera.zoom + camera.x)
-            world_y = int((mouse_y - app_height / 2) / camera.zoom + camera.y)
-            self.mouse_world_label = f"Mouse World: {world_x} , {world_y}"
+            world_x = (mouse_x - app_width / 2) / camera.zoom + camera.x
+            world_y = (mouse_y - app_height / 2) / camera.zoom + camera.y
+            if render_mode == "map":
+                self.mouse_world_label = f"Mouse Lon/Lat: {world_x:.3f} , {-world_y:.3f}"
+            else:
+                self.mouse_world_label = f"Mouse World: {int(world_x)} , {int(world_y)}"
 
         button_width = 180
         button_height = 32
         button_x = app_width - button_width - 20
         button_y = 42
-
-        render_mode = getattr(active_sim, "render_mode", None)
 
         if render_mode == "vehicle":
             self.scope_label = (
@@ -440,6 +448,20 @@ class UIManager:
                     if map_status:
                         existing_status_line = f"Status: {map_status}"
 
+            if hasattr(active_sim, "get_active_layer_label"):
+                layer_label = active_sim.get_active_layer_label()
+                if self.scope_label:
+                    self.scope_label = f"{self.scope_label} | Layer: {layer_label}"
+
+            if hasattr(active_sim, "is_map_editor_active"):
+                is_editing_map_selection = bool(active_sim.is_map_editor_active())
+            elif hasattr(active_sim, "is_polygon_editor_active"):
+                is_editing_map_selection = bool(active_sim.is_polygon_editor_active())
+            else:
+                is_editing_map_selection = bool(
+                    getattr(active_sim, "is_creating_spatial_feature", False)
+                )
+
             if hasattr(active_sim, "get_scope_breadcrumb"):
                 breadcrumb_parts = active_sim.get_scope_breadcrumb()
                 if breadcrumb_parts:
@@ -450,10 +472,75 @@ class UIManager:
             elif existing_status_line:
                 self.breadcrumb_label = existing_status_line
 
+            if is_editing_map_selection:
+                if hasattr(active_sim, "get_map_editor_status_label"):
+                    draft_status_line = active_sim.get_map_editor_status_label()
+                else:
+                    point_count = len(getattr(active_sim, "draft_spatial_feature_points", []))
+                    draft_status_line = f"Draft selection: {point_count} points"
+
+                if self.breadcrumb_label:
+                    self.breadcrumb_label = f"{self.breadcrumb_label} | {draft_status_line}"
+                else:
+                    self.breadcrumb_label = draft_status_line
+
+            next_button_y = button_y
             self.buttons.append(
                 UIButton("open_repository", "Open Repository",
-                         pygame.Rect(button_x, button_y, button_width, button_height))
+                         pygame.Rect(button_x, next_button_y, button_width, button_height))
             )
+            next_button_y += 40
+
+            if hasattr(active_sim, "get_active_layer_label"):
+                available_layer_count = len(active_sim.get_available_layer_kinds())
+                layer_button_label = f"Layer: {active_sim.get_active_layer_label()}"
+                self.buttons.append(
+                    UIButton("cycle_map_layer", layer_button_label,
+                             pygame.Rect(button_x, next_button_y, button_width, button_height),
+                             enabled=available_layer_count > 1)
+                )
+                next_button_y += 40
+
+            if is_editing_map_selection:
+                can_finish = bool(
+                    getattr(active_sim, "can_finish_map_editor", lambda: False)()
+                )
+                self.buttons.append(
+                    UIButton("finish_map_selection", "Finish Selection",
+                             pygame.Rect(button_x, next_button_y, button_width, button_height),
+                             enabled=can_finish)
+                )
+                next_button_y += 40
+                self.buttons.append(
+                    UIButton("cancel_map_selection", "Cancel Selection",
+                    pygame.Rect(button_x, next_button_y, button_width, button_height))
+                )
+                next_button_y += 40
+            else:
+                active_layer_kind = getattr(
+                    active_sim,
+                    "get_active_layer_kind",
+                    lambda: None,
+                )()
+                can_create_square = bool(
+                    getattr(active_sim, "can_create_map_square_draft", lambda: False)()
+                )
+                if active_layer_kind == "locations" and can_create_square:
+                    self.buttons.append(
+                        UIButton("new_map_rectangle", "New Map Rectangle",
+                                 pygame.Rect(button_x, next_button_y, button_width, button_height))
+                    )
+                    next_button_y += 40
+                else:
+                    can_create_selection = bool(
+                        getattr(active_sim, "can_create_spatial_feature_draft", lambda: False)()
+                    )
+                    if can_create_selection:
+                        self.buttons.append(
+                            UIButton("new_map_selection", "New Selection",
+                                     pygame.Rect(button_x, next_button_y, button_width, button_height))
+                        )
+                        next_button_y += 40
 
             selected_entity_id = getattr(active_sim, "selected_entity_id", None)
             root_entity_id = getattr(active_sim.context, "root_entity_id", None)
@@ -461,20 +548,50 @@ class UIManager:
             if selected_entity_id is not None and selected_entity_id != root_entity_id:
                 self.buttons.append(
                     UIButton("open_region_map", "Open Region Map",
-                             pygame.Rect(button_x, button_y + 40, button_width, button_height))
+                             pygame.Rect(button_x, next_button_y, button_width, button_height))
                 )
+                next_button_y += 40
 
             parent_root_entity_id = active_sim.get_parent_root_entity_id() if hasattr(active_sim,
                                                                                       "get_parent_root_entity_id") else None
             if parent_root_entity_id is not None:
                 self.buttons.append(
                     UIButton("open_parent_region_map", "Up To Parent",
-                             pygame.Rect(button_x, button_y + 80, button_width, button_height))
+                             pygame.Rect(button_x, next_button_y, button_width, button_height))
                 )
+                next_button_y += 40
 
+            hover_spatial_feature_id = getattr(active_sim, "hover_spatial_feature_id", None)
             hover_entity_id = getattr(active_sim, "hover_entity_id", None)
             hover_screen_pos = getattr(active_sim, "hover_screen_pos", None)
-            if hover_entity_id and hover_screen_pos:
+
+            if hover_spatial_feature_id and hover_screen_pos:
+                feature = active_sim.get_spatial_feature(hover_spatial_feature_id) if hasattr(active_sim, "get_spatial_feature") else None
+                feature_layer = None
+                if feature is None and hasattr(active_sim, "get_layers"):
+                    for layer in active_sim.get_layers():
+                        if layer.get("spatial_feature_id") == hover_spatial_feature_id:
+                            feature_layer = layer
+                            break
+
+                if feature is not None:
+                    owner_entity_id = feature.get("owner_entity")
+                    owner_text = f"owner: {owner_entity_id}" if owner_entity_id else "draft spatial feature"
+                    self.hover_tooltip_lines = [
+                        feature.get("name", hover_spatial_feature_id),
+                        f"layer: {feature.get('layer_kind', 'spatial')}",
+                        owner_text,
+                    ]
+                    self.hover_tooltip_pos = hover_screen_pos
+                elif feature_layer is not None:
+                    self.hover_tooltip_lines = [
+                        feature_layer.get("name", hover_spatial_feature_id),
+                        f"layer: {feature_layer.get('layer_kind', 'spatial')}",
+                        "virtual aggregate",
+                    ]
+                    self.hover_tooltip_pos = hover_screen_pos
+
+            elif hover_entity_id and hover_screen_pos:
                 entity = active_sim.world_model.get_entity(hover_entity_id)
                 if entity:
                     self.hover_tooltip_lines = [
@@ -548,6 +665,8 @@ class UIManager:
         self._reset_shared_state()
         self.menu_active = menu_active
 
+        self._rebuild_selection_inspector(active_sim, app_width, app_height)
+
         if tab_manager is not None:
             self.tab_labels = [tab.name for tab in tab_manager.tabs]
             self.active_tab_index = tab_manager.active_index
@@ -563,6 +682,28 @@ class UIManager:
             return
 
         self._rebuild_active_simulation_ui(active_sim, app_width, app_height, camera)
+
+    def _rebuild_selection_inspector(self, active_sim, app_width, app_height):
+        if active_sim is not None and hasattr(active_sim, "consume_pending_inspector_target"):
+            target = active_sim.consume_pending_inspector_target()
+            if target:
+                target_kind = target.get("kind")
+                target_id = target.get("id")
+                record = None
+
+                if target_kind == "spatial_feature" and hasattr(active_sim, "get_spatial_feature"):
+                    record = active_sim.get_spatial_feature(target_id)
+                elif target_kind == "location" and hasattr(active_sim, "get_location"):
+                    record = active_sim.get_location(target_id)
+
+                if record is not None:
+                    self.selection_inspector.open(
+                        target_kind=target_kind,
+                        target_id=target_id,
+                        record=record,
+                    )
+
+        self.selection_inspector.rebuild(app_width, app_height)
 
     def _draw_simulation_bar(self, screen, font):
         if self.simulation_bar_rect is None:
@@ -894,12 +1035,17 @@ class UIManager:
             self._draw_info_panel(screen, font, 20, current_info_y, requirement_lines)
 
         self._draw_simulation_bar(screen, font)
+        self.selection_inspector.draw(screen, font)
         self._draw_hover_tooltip(screen, font)
 
 
     def handle_event(self, event):
         if self.menu_active:
             return self.knowledge_ui.handle_event(event)
+
+        inspector_action = self.selection_inspector.handle_event(event)
+        if inspector_action is not None:
+            return inspector_action
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             mouse_pos = event.pos

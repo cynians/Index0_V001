@@ -12,6 +12,10 @@ class BioregionGrid:
       - surface_water
       - top_moisture
       - deep_moisture
+    * living-layer fields
+      - plant_biomass
+      - plant_health
+      - habitat_type
     """
 
     SOIL_PRESETS = {
@@ -110,6 +114,9 @@ class BioregionGrid:
                         "surface_water": 0.0,
                         "top_moisture": 0.266,
                         "deep_moisture": 0.426,
+                        "plant_biomass": 0.0,
+                        "plant_health": 0.0,
+                        "habitat_type": "bare",
                     }
                 )
 
@@ -184,6 +191,32 @@ class BioregionGrid:
 
         for cell in self.iter_cells():
             total += cell["deep_moisture"]
+            count += 1
+
+        if count == 0:
+            return 0.0
+
+        return total / count
+
+    def get_average_plant_biomass(self):
+        total = 0.0
+        count = 0
+
+        for cell in self.iter_cells():
+            total += cell["plant_biomass"]
+            count += 1
+
+        if count == 0:
+            return 0.0
+
+        return total / count
+
+    def get_average_plant_health(self):
+        total = 0.0
+        count = 0
+
+        for cell in self.iter_cells():
+            total += cell["plant_health"]
             count += 1
 
         if count == 0:

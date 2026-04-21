@@ -71,7 +71,7 @@ class InputRouter:
 
     def _handle_simulation_pointer_input(self, event, active_sim):
         """
-        Forward pointer motion and primary-button pointer events to the active simulation.
+        Forward pointer motion and map-edit pointer events to the active simulation.
         """
         if active_sim and hasattr(active_sim, "handle_pointer_motion"):
             if event.type == pygame.MOUSEMOTION:
@@ -82,13 +82,13 @@ class InputRouter:
                 )
 
         if active_sim and hasattr(active_sim, "handle_pointer_event"):
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button in (1, 3):
                 active_sim.handle_pointer_event(
                     event=event,
                     camera=self.app.camera,
                     screen_pos=event.pos,
                 )
-            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            elif event.type == pygame.MOUSEBUTTONUP and event.button in (1, 3):
                 active_sim.handle_pointer_event(
                     event=event,
                     camera=self.app.camera,

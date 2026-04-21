@@ -1,0 +1,138 @@
+# ==================================================
+# SPATIAL FEATURES
+# ==================================================
+
+# ---------- sf_eco_europe_aggregate | Europe Ecological Aggregate ----------
+- id: sf_eco_europe_aggregate
+  pretty_name: Europe Ecological Aggregate
+  name: Europe Ecological Aggregate
+  type: spatial_feature
+  notes: Broad authored ecoregion coverage for the Europe map layer. More detailed child polygons refine this coverage where they exist.
+  layer_kind: ecoregions
+  owner_entity: geo_europe
+  parent_entity: planet_earth
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-25, -34]
+      - [45, -34]
+      - [45, -72]
+      - [-25, -72]
+  resolution_m_per_pixel: 1000
+  coverage_mode: replaces_parent
+  start_year: 0
+  entry_status: draft
+
+# ---------- sf_eco_central_germany_draft | Central Germany Draft Ecoregion ----------
+- id: sf_eco_central_germany_draft
+  pretty_name: Central Germany Draft Ecoregion
+  name: Central Germany Draft Ecoregion
+  type: spatial_feature
+  notes: Draft planning polygon for a future central German ecoregion entity.
+  layer_kind: ecoregions
+  parent_entity: geo_germany
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [7.2, -49.2]
+      - [13.8, -49.4]
+      - [13.4, -52.8]
+      - [10.3, -53.2]
+      - [7.4, -51.5]
+  resolution_m_per_pixel: 100
+  coverage_mode: replaces_parent
+  start_year: 0
+  entry_status: draft
+
+# ---------- sf_eco_sicily_draft | Sicily Draft Ecoregion ----------
+- id: sf_eco_sicily_draft
+  pretty_name: Sicily Draft Ecoregion
+  name: Sicily Draft Ecoregion
+  type: spatial_feature
+  notes: Draft planning polygon for a future Sicilian ecoregion entity. Parent remains Italy until a dedicated Sicily location exists.
+  layer_kind: ecoregions
+  parent_entity: geo_italy
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [12.0, -36.7]
+      - [15.5, -36.8]
+      - [15.4, -38.1]
+      - [13.5, -38.4]
+      - [12.4, -37.6]
+  resolution_m_per_pixel: 100
+  coverage_mode: replaces_parent
+  start_year: 0
+  entry_status: draft
+
+# ---------- sf_draft_ecoregions_geo_central_europe_001 | Draft Ecoregions Selection 001 ----------
+- id: sf_draft_ecoregions_geo_central_europe_001
+  pretty_name: 'France Ecoregion'
+  name: 'France Ecoregion'
+  type: spatial_feature
+  notes: 'Draft polygon created from the Ecoregions map layer under Central Europe.'
+  layer_kind: ecoregions
+  parent_entity: geo_central_europe
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [13.18, -46.53]
+      - [14.26, -51.98]
+      - [18.43, -55.62]
+      - [23.56, -54.95]
+      - [23.41, -48.00]
+      - [23.91, -44.53]
+      - [21.91, -42.57]
+      - [17.42, -42.69]
+      - [13.31, -43.76]
+      - [10.62, -45.30]
+      - [10.91, -46.39]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- sf_draft_ecoregions_geo_europe_001 | Draft Ecoregions Selection 001 ----------
+- id: sf_draft_ecoregions_geo_europe_001
+  pretty_name: 'Draft Ecoregions Selection 001'
+  name: 'Draft Ecoregions Selection 001'
+  type: spatial_feature
+  notes: 'Draft polygon created from the Ecoregions map layer under Europe.'
+  layer_kind: ecoregions
+  parent_entity: geo_europe
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [3.42, -52.33]
+      - [9.53, -54.49]
+      - [10.94, -60.97]
+      - [0.38, -58.75]
+      - [-0.51, -53.97]
+      - [1.61, -52.76]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- sf_draft_ecoregions_geo_europe_002 | Draft Ecoregions Selection 002 ----------
+- id: sf_draft_ecoregions_geo_europe_002
+  pretty_name: 'Draft Ecoregions Selection 002'
+  name: 'Draft Ecoregions Selection 002'
+  type: spatial_feature
+  notes: 'Draft polygon created from the Ecoregions map layer under Europe.'
+  layer_kind: ecoregions
+  parent_entity: geo_europe
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [14.22, -52.70]
+      - [18.93, -56.61]
+      - [12.94, -60.50]
+      - [11.45, -60.91]
+      - [9.80, -54.71]
+      - [13.87, -52.41]
+      - [15.67, -54.78]
+  start_year: 2400
+  entry_status: draft
