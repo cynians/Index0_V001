@@ -6,19 +6,37 @@
   material_form: engineering_material
   base_materials: []
   descriptive_properties:
-    - corrosion_resistant
-    - structural
-    - heat_tolerant
+  - corrosion_resistant
+  - structural
+  - heat_tolerant
   hazard_tags: []
-  storage_notes: Usually stored as stock, plates, bars, or prefabricated forms rather than as loose bulk.
+  storage_notes: Usually stored as stock, plates, bars, or prefabricated forms rather
+    than as loose bulk.
   common_uses:
-    - construction
-    - machinery
-    - containers
+  - construction
+  - machinery
+  - containers
   processed_by_technology: []
   start_year: 0
   entry_status: draft
-
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  media_layers: {}
 - id: mat_copper_alloy
   pretty_name: Copper Alloy
   name: Copper Alloy
@@ -27,15 +45,34 @@
   material_form: engineering_material
   base_materials: []
   descriptive_properties:
-    - workable
-    - conductive
-    - corrosion_resistant
+  - workable
+  - conductive
+  - corrosion_resistant
   hazard_tags: []
-  storage_notes: Can appear as cast, rolled, or machined stock depending on later production context.
+  storage_notes: Can appear as cast, rolled, or machined stock depending on later
+    production context.
   common_uses:
-    - fittings
-    - caskets
-    - electrical_parts
+  - fittings
+  - caskets
+  - electrical_parts
   processed_by_technology: []
   start_year: 0
   entry_status: draft
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  media_layers: {}

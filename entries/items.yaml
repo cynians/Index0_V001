@@ -9,21 +9,39 @@
   produced_by: []
   uses_technology: []
   storage_modes:
-    - stackable
-    - palletizable
-    - containerizable
-  handling_notes: Commonly stored in stacks or on pallets; exact containerization depends on later logistics systems.
+  - stackable
+  - palletizable
+  - containerizable
+  handling_notes: Commonly stored in stacks or on pallets; exact containerization
+    depends on later logistics systems.
   default_state: loose
   portable: limited
   placeable: true
   installable: false
   install_contexts: []
   descriptive_capabilities:
-    - structural_input
-    - construction_material
+  - structural_input
+  - construction_material
   start_year: 1850
   entry_status: draft
-
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  media_layers: {}
 - id: item_pump_module
   pretty_name: Pump Module
   name: Pump Module
@@ -31,30 +49,47 @@
   item_class: machinery_module
   primary_material: mat_stainless_steel
   secondary_materials:
-    - mat_copper_alloy
+  - mat_copper_alloy
   component_equivalent: comp_pump_module
   produced_by:
-    - faction_ironclad_shipyard_republic
+  - faction_ironclad_shipyard_republic
   uses_technology: []
   storage_modes:
-    - stackable
-    - containerizable
+  - stackable
+  - containerizable
   handling_notes: Can exist as cargo, spare part, or installed machinery module.
   default_state: loose
   portable: limited
   placeable: true
   installable: true
   install_contexts:
-    - building
-    - vehicle
-    - site
-    - station
+  - building
+  - vehicle
+  - site
+  - station
   descriptive_capabilities:
-    - fluid_transfer
-    - maintenance_replaceable
+  - fluid_transfer
+  - maintenance_replaceable
   start_year: 6034
   entry_status: draft
-
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  media_layers: {}
 - id: item_storage_rack
   pretty_name: Storage Rack
   name: Storage Rack
@@ -66,20 +101,39 @@
   produced_by: []
   uses_technology: []
   storage_modes:
-    - stackable
-    - containerizable
-  handling_notes: Can be stored as cargo, placed in interiors, or installed as a storage-support fixture.
+  - stackable
+  - containerizable
+  handling_notes: Can be stored as cargo, placed in interiors, or installed as a storage-support
+    fixture.
   default_state: loose
   portable: limited
   placeable: true
   installable: true
   install_contexts:
-    - building
-    - vehicle
-    - site
-    - station
+  - building
+  - vehicle
+  - site
+  - station
   descriptive_capabilities:
-    - supports_storage
-    - installable_fixture
+  - supports_storage
+  - installable_fixture
   start_year: 1900
   entry_status: draft
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  media_layers: {}

@@ -28,6 +28,7 @@ class SchemaLoader:
         self.schema_directory = Path(schema_directory)
 
         self.schemas = {}
+        self._resolved_schemas = {}
 
         self.load_schemas()
 
@@ -36,6 +37,7 @@ class SchemaLoader:
     def load_schemas(self):
 
         self.schemas = {}
+        self._resolved_schemas = {}
 
         files = list(self.schema_directory.glob("*.yaml"))
         files += list(self.schema_directory.glob("*.yml"))
@@ -68,12 +70,51 @@ class SchemaLoader:
 
     # --------------------------------------------------
 
+    def _resolve_schema(self, schema_name, seen=None):
+        if schema_name in self._resolved_schemas:
+            return self._resolved_schemas[schema_name]
+
+        schema = self.schemas.get(schema_name)
+        if not schema:
+            return None
+
+        seen = set(seen or [])
+        if schema_name in seen:
+            return schema
+        seen.add(schema_name)
+
+        resolved = dict(schema)
+        fields = {}
+
+        core_schema = None
+        if schema_name != "entity_core":
+            core_schema = self._resolve_schema("entity_core", seen=seen)
+
+        if core_schema:
+            fields.update(core_schema.get("fields", {}))
+
+        extends_name = schema.get("extends")
+        if extends_name and extends_name != "entity_core":
+            parent_schema = self._resolve_schema(extends_name, seen=seen)
+            if parent_schema:
+                fields.update(parent_schema.get("fields", {}))
+
+        fields.update(schema.get("fields", {}))
+        resolved["fields"] = fields
+        self._resolved_schemas[schema_name] = resolved
+        return resolved
+
+    # --------------------------------------------------
+
     def get_schema(self, schema_name):
 
-        return self.schemas.get(schema_name)
+        return self._resolve_schema(schema_name)
 
     # --------------------------------------------------
 
     def get_all_schemas(self):
 
-        return self.schemas
+        return {
+            schema_name: self._resolve_schema(schema_name)
+            for schema_name in self.schemas
+        }

@@ -19,11 +19,7 @@ fields:
   parent_ideas:
     type: entity_list
     target: ideas
-    optional: true
-
-  child_ideas:
-    type: entity_list
-    target: ideas
+    section: Relations
     optional: true
 
   source:
@@ -47,5 +43,5 @@ fields:
 #   related_entities:
 #     - loc_earth_orbit
 #   parent_ideas: []
-#   child_ideas: []
+#   offspring: []
 #   decision_status: draft

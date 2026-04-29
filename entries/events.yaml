@@ -2,41 +2,71 @@
   pretty_name: Panamericana Rockies F-22 Discovery
   name: Panamericana Rockies F-22 Discovery
   type: event
-  description: In 2164, an inland expedition attached to a Panamericana coastal authority discovered a long-obsolete but still functioning F-22 in a deep storage hangar in the Rockies.
-  notes: Remembered mainly as a symbolic rediscovery of a lost military age, with a smaller but real reverse-engineering and reuse dimension.
+  description: In 2164, an inland expedition attached to a Panamericana coastal authority
+    discovered a long-obsolete but still functioning F-22 in a deep storage hangar
+    in the Rockies.
+  notes: Remembered mainly as a symbolic rediscovery of a lost military age, with
+    a smaller but real reverse-engineering and reuse dimension.
   tags:
-    - panamericana
-    - f22
-    - rediscovery
-    - race_for_sol
-    - rockies
-    - military_relic
+  - panamericana
+  - f22
+  - rediscovery
+  - race_for_sol
+  - rockies
+  - military_relic
   start_year: 2164
   end_year: 2164
   entry_status: draft
-
-
-# --------------------------------------------------
-# APPEND TO: entries/events.yaml
-# --------------------------------------------------
-
-# ---------- event_cog_quarantine_breach_and_crackdown_5742 | CoG Quarantine Breach and Crackdown ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  derived_from_ideas: []
+  media_layers: {}
 - id: event_cog_quarantine_breach_and_crackdown_5742
   pretty_name: CoG Quarantine Breach and Crackdown
   name: CoG Quarantine Breach and Crackdown
   type: event
-  description: In 5742, a late-CoG underclass gang exploited a cracked ventilation shaft to escape the quarantined megastructure. The route was first used for gang escape, then for selected family extractions, later for paid passage, before discovery triggered a major GGO police purge, disappearances into a sealed sector, and later covert regime reuse of the breach route.
-  notes: Historical importance was later largely erased from official memory and survived mostly through rumor, fragmentary reports, and local recollection.
+  description: In 5742, a late-CoG underclass gang exploited a cracked ventilation
+    shaft to escape the quarantined megastructure. The route was first used for gang
+    escape, then for selected family extractions, later for paid passage, before discovery
+    triggered a major GGO police purge, disappearances into a sealed sector, and later
+    covert regime reuse of the breach route.
+  notes: Historical importance was later largely erased from official memory and survived
+    mostly through rumor, fragmentary reports, and local recollection.
   associated_locations:
-    - loc_central_asian_steppe_cog
-    - loc_cog_breach_vent_tunnel
+  - loc_central_asian_steppe_cog
+  - loc_cog_breach_vent_tunnel
   tags:
-    - cog
-    - decline
-    - quarantine
-    - gang
-    - purge
-    - disappearance
-    - breach
+  - cog
+  - decline
+  - quarantine
+  - gang
+  - purge
+  - disappearance
+  - breach
   start_year: 5742
   entry_status: stub
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  end_year: null
+  derived_from_ideas: []
+  media_layers: {}

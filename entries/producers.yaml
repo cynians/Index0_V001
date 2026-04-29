@@ -4,35 +4,61 @@
   type: producer
   institution_class: automobile_producer
   associated_locations:
-    - planet_noyanakh
-    - sys_metyaki
-  description: Automobile producer of the Planetary Period operating in the Sol-near Metyaki System and associated with vehicle production on Noyanakh.
-  notes: Initial repository entry for Bospor vehicle-line integration. Internal structure, ownership, and production footprint remain placeholder for later refinement.
+  - planet_noyanakh
+  - sys_metyaki
+  description: Automobile producer of the Planetary Period operating in the Sol-near
+    Metyaki System and associated with vehicle production on Noyanakh.
+  notes: Initial repository entry for Bospor vehicle-line integration. Internal structure,
+    ownership, and production footprint remain placeholder for later refinement.
   card_image: assets/cards/institutions/bospor_automat.png
   start_year: 7129
   end_year: 9216
   entry_status: draft
-
-
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  wiki_entry: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  derived_from_ideas: []
+  media_layers: {}
 - id: producer_stacklingen_consolidated_industries
   pretty_name: Stacklingen Consolidated Industries
   name: Stacklingen Consolidated Industries
   type: producer
   producer_class: urban_vehicle_producer
   associated_locations:
-    - planet_patina
-    - settlement_stacklinger
-  description: Local producer associated with vehicle manufacturing in the Stacklinger urban-industrial zone on Patina during the Planetary Period.
-  notes: Inferred repository producer entry created to anchor the Octa 35P / Patina Surface Taxi concept. Broader industrial portfolio, ownership structure, and production scale remain open for later refinement.
+  - planet_patina
+  - settlement_stacklinger
+  description: Local producer associated with vehicle manufacturing in the Stacklinger
+    urban-industrial zone on Patina during the Planetary Period.
+  notes: Inferred repository producer entry created to anchor the Octa 35P / Patina
+    Surface Taxi concept. Broader industrial portfolio, ownership structure, and production
+    scale remain open for later refinement.
   start_year: 8112
   entry_status: draft
-
-
-
-
-
-
-
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  media_layers: {}
 - id: producer_conviction_automobiles
   pretty_name: Conviction Automobiles
   name: Conviction Automobiles
@@ -42,21 +68,40 @@
   associated_cultures: []
   associated_locations: []
   produced_vehicles:
-    - veh_conviction_c1
+  - veh_conviction_c1
   produced_items: []
   produced_components: []
   design_language:
-    - sleek
-    - luxurious
-    - prestige_oriented
-    - streamlined
-  description: External GGO-era automobile producer known for sleek, luxurious road vehicles and a compact alphanumeric naming style such as Conviction C1 and Conviction C2.
-  notes: Established as one of the branded producers permitted under the GGO External Production framework. Intended as a classically styled prestige manufacturer rather than a general industrial mass producer.
+  - sleek
+  - luxurious
+  - prestige_oriented
+  - streamlined
+  description: External GGO-era automobile producer known for sleek, luxurious road
+    vehicles and a compact alphanumeric naming style such as Conviction C1 and Conviction
+    C2.
+  notes: Established as one of the branded producers permitted under the GGO External
+    Production framework. Intended as a classically styled prestige manufacturer rather
+    than a general industrial mass producer.
   tags:
-    - producer
-    - automobile_manufacturer
-    - luxury
-    - ggo_hegemony
-    - external_production
+  - producer
+  - automobile_manufacturer
+  - luxury
+  - ggo_hegemony
+  - external_production
   start_year: 3182
   entry_status: draft
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  end_year: null
+  derived_from_ideas: []
+  media_layers: {}

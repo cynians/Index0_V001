@@ -4,14 +4,6 @@ extends: entity_core
 
 fields:
 
-  name:
-    type: string
-    optional: true
-
-  notes:
-    type: text
-    optional: true
-
   layer_kind:
     type: string
 

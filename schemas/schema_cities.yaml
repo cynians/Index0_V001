@@ -54,10 +54,6 @@ fields:
     type: string_list
     optional: true
 
-  tags:
-    type: string_list
-    optional: true
-
   urban_structure:
     type: dict
     optional: true

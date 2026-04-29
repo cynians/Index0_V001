@@ -4,6 +4,26 @@
   system_role: star_system
   system_class: stellar_system
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Sol System
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_sol
   name: Sol
   type: system
@@ -25,6 +45,26 @@
   - 220
   - 120
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Sol
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_mercury
   name: Mercury
   type: system
@@ -46,6 +86,26 @@
   - 165
   - 160
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Mercury
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_venus
   name: Venus
   type: system
@@ -67,6 +127,26 @@
   - 190
   - 140
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Venus
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_earth
   name: Earth
   type: system
@@ -88,6 +168,26 @@
   - 140
   - 255
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Earth
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_luna
   name: Luna
   type: system
@@ -109,6 +209,26 @@
   - 200
   - 210
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Luna
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_mars
   name: Mars
   type: system
@@ -130,6 +250,26 @@
   - 120
   - 90
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Mars
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_phobos
   name: Phobos
   type: system
@@ -151,6 +291,26 @@
   - 140
   - 135
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Phobos
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_deimos
   name: Deimos
   type: system
@@ -172,6 +332,26 @@
   - 125
   - 120
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Deimos
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_ceres
   name: Ceres
   type: system
@@ -193,6 +373,26 @@
   - 175
   - 165
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Ceres
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_vesta
   name: Vesta
   type: system
@@ -214,6 +414,26 @@
   - 160
   - 155
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Vesta
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_pallas
   name: Pallas
   type: system
@@ -235,6 +455,26 @@
   - 155
   - 150
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Pallas
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_hygiea
   name: Hygiea
   type: system
@@ -256,6 +496,26 @@
   - 145
   - 135
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Hygiea
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_jupiter
   name: Jupiter
   type: system
@@ -277,6 +537,26 @@
   - 175
   - 130
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Jupiter
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_io
   name: Io
   type: system
@@ -298,6 +578,26 @@
   - 220
   - 140
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Io
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_europa
   name: Europa
   type: system
@@ -319,6 +619,26 @@
   - 215
   - 200
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Europa
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_ganymede
   name: Ganymede
   type: system
@@ -340,6 +660,26 @@
   - 165
   - 160
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Ganymede
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_callisto
   name: Callisto
   type: system
@@ -361,6 +701,26 @@
   - 145
   - 140
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Callisto
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_amalthea
   name: Amalthea
   type: system
@@ -382,6 +742,26 @@
   - 120
   - 110
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Amalthea
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_himalia
   name: Himalia
   type: system
@@ -403,6 +783,26 @@
   - 120
   - 115
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Himalia
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_saturn
   name: Saturn
   type: system
@@ -424,6 +824,26 @@
   - 205
   - 150
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Saturn
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_mimas
   name: Mimas
   type: system
@@ -445,6 +865,26 @@
   - 180
   - 175
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Mimas
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_enceladus
   name: Enceladus
   type: system
@@ -466,6 +906,26 @@
   - 235
   - 240
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Enceladus
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_tethys
   name: Tethys
   type: system
@@ -487,6 +947,26 @@
   - 210
   - 205
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Tethys
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_dione
   name: Dione
   type: system
@@ -508,6 +988,26 @@
   - 195
   - 195
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Dione
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_rhea
   name: Rhea
   type: system
@@ -529,6 +1029,26 @@
   - 185
   - 182
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Rhea
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_titan
   name: Titan
   type: system
@@ -550,6 +1070,26 @@
   - 170
   - 110
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Titan
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_iapetus
   name: Iapetus
   type: system
@@ -571,6 +1111,26 @@
   - 155
   - 135
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Iapetus
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_phoebe
   name: Phoebe
   type: system
@@ -592,6 +1152,26 @@
   - 100
   - 105
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Phoebe
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_uranus
   name: Uranus
   type: system
@@ -613,6 +1193,26 @@
   - 225
   - 230
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Uranus
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_miranda
   name: Miranda
   type: system
@@ -634,6 +1234,26 @@
   - 185
   - 180
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Miranda
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_ariel
   name: Ariel
   type: system
@@ -655,6 +1275,26 @@
   - 215
   - 220
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Ariel
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_umbriel
   name: Umbriel
   type: system
@@ -676,6 +1316,26 @@
   - 120
   - 125
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Umbriel
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_titania
   name: Titania
   type: system
@@ -697,6 +1357,26 @@
   - 190
   - 200
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Titania
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_oberon
   name: Oberon
   type: system
@@ -718,6 +1398,26 @@
   - 165
   - 170
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Oberon
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_neptune
   name: Neptune
   type: system
@@ -739,6 +1439,26 @@
   - 130
   - 230
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Neptune
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_triton
   name: Triton
   type: system
@@ -760,6 +1480,26 @@
   - 195
   - 210
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Triton
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_nereid
   name: Nereid
   type: system
@@ -781,6 +1521,26 @@
   - 150
   - 160
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Nereid
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_proteus
   name: Proteus
   type: system
@@ -802,6 +1562,26 @@
   - 110
   - 120
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Proteus
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_pluto
   name: Pluto
   type: system
@@ -823,6 +1603,26 @@
   - 145
   - 130
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Pluto
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_charon
   name: Charon
   type: system
@@ -844,6 +1644,26 @@
   - 175
   - 170
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Charon
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_nix
   name: Nix
   type: system
@@ -865,6 +1685,26 @@
   - 185
   - 180
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Nix
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_hydra
   name: Hydra
   type: system
@@ -886,6 +1726,26 @@
   - 190
   - 190
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Hydra
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_kerberos
   name: Kerberos
   type: system
@@ -907,6 +1767,26 @@
   - 120
   - 125
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Kerberos
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_styx
   name: Styx
   type: system
@@ -928,6 +1808,26 @@
   - 100
   - 105
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Styx
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_haumea
   name: Haumea
   type: system
@@ -949,6 +1849,26 @@
   - 210
   - 220
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Haumea
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_hiiaka
   name: Hiʻiaka
   type: system
@@ -970,6 +1890,26 @@
   - 185
   - 195
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Hiʻiaka
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_namaka
   name: Namaka
   type: system
@@ -991,6 +1931,26 @@
   - 150
   - 160
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Namaka
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_makemake
   name: Makemake
   type: system
@@ -1012,6 +1972,26 @@
   - 170
   - 150
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Makemake
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_mk2
   name: MK2
   type: system
@@ -1033,6 +2013,26 @@
   - 140
   - 145
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: MK2
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_eris
   name: Eris
   type: system
@@ -1054,6 +2054,26 @@
   - 210
   - 215
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Eris
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: body_dysnomia
   name: Dysnomia
   type: system
@@ -1075,8 +2095,47 @@
   - 165
   - 175
   start_year: 0
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  pretty_name: Dysnomia
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: sys_new_001
   pretty_name: New System
   name: Aramite
   type: system
   wiki_entry: ''
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}

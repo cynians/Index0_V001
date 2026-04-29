@@ -2,18 +2,36 @@
   pretty_name: CEAG
   name: CEAG
   type: technology
-  description: CEAG is a Terran BDP-developed biotechnology used to accelerate evolutionary processes in a semi-guided manner, increasing the speed of adaptive divergence in seeded organisms under controlled or partially controlled ecological conditions.
+  description: CEAG is a Terran BDP-developed biotechnology used to accelerate evolutionary
+    processes in a semi-guided manner, increasing the speed of adaptive divergence
+    in seeded organisms under controlled or partially controlled ecological conditions.
   technology_class: directed_evolution_biotechnology
   developed_by:
-    - faction_terran_bdp
+  - faction_terran_bdp
   used_by:
-    - faction_terran_bdp
+  - faction_terran_bdp
   related_technologies: []
   associated_locations: []
   tags:
-    - technology
-    - bioengineering
-    - directed_evolution
-    - planetary_period
+  - technology
+  - bioengineering
+  - directed_evolution
+  - planetary_period
   start_year: 0
   entry_status: draft
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  end_year: null
+  derived_from_ideas: []
+  media_layers: {}

@@ -4,30 +4,126 @@
   type: idea
   wiki_entry: Starter idea.
   idea_class: note
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: idea_new_002
   pretty_name: New Idea
   name: Gold Sector Pseudoreligious Schism
   type: idea
   wiki_entry: Schism of the Col
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: idea_new_003
   pretty_name: New Idea
   name: Trifecta Dominion Deep Rust Sector
   type: idea
   wiki_entry: ''
   start_year: 15303
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: idea_new_005
   pretty_name: Idea from Venus
   name: Terraformed Venus
   type: idea
-  wiki_entry: |
-    Venus is a much better candidate for terraforming when compared to Mars. 
-    
-    The thick atmosphere shields from radiation. The terraforming problem is more about changing and capturing atmosphere, rather than adding onto it.
-    
-    Another important point is Gravity. On [[planet_mars]], it is only 43%. On Venus it is 90%. 
+  wiki_entry: "Venus is a much better candidate for terraforming when compared to\
+    \ Mars. \n\nThe thick atmosphere shields from radiation. The terraforming problem\
+    \ is more about changing and capturing atmosphere, rather than adding onto it.\n\
+    \nAnother important point is Gravity. On [[planet_mars]], it is only 43%. On Venus\
+    \ it is 90%. \n"
   idea_class: note
   parent_entity: planet_venus
   related_entities:
   - planet_venus
   start_year: 6224
   parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
+- id: idea_new_006
+  pretty_name: New Idea
+  name: Atmospheric Sputtering
+  type: idea
+  wiki_entry: ''
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}

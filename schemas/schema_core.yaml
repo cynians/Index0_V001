@@ -76,6 +76,29 @@ fields:
 
   derived_from_ideas:
     type: idea_list
+    section: Relations
+    optional: true
+
+  parent_ideas:
+    type: entity_list
+    target: ideas
+    section: Relations
+    optional: true
+
+  related_ideas:
+    type: entity_list
+    target: ideas
+    section: Relations
+    optional: true
+
+  offspring:
+    type: object_list
+    section: Relations
+    optional: true
+
+  placeholders:
+    type: string_list
+    section: Relations
     optional: true
 
   entry_status:

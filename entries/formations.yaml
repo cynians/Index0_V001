@@ -9,14 +9,32 @@
   vehicles: []
   pops: []
   commanding_officers: []
-  description: Panamericana land formation derived from naval infantry and specialized in cliff and mountain fighting.
-  notes: Known for mobile alpine reconnaissance and strike operations, difficult-terrain recovery and expedition escort, and mountain-border guarding in regions such as the Rockies and Andes.
+  description: Panamericana land formation derived from naval infantry and specialized
+    in cliff and mountain fighting.
+  notes: Known for mobile alpine reconnaissance and strike operations, difficult-terrain
+    recovery and expedition escort, and mountain-border guarding in regions such as
+    the Rockies and Andes.
   tags:
-    - formation
-    - panamericana
-    - mountain
-    - alpine
-    - border_guard
-    - expedition
+  - formation
+  - panamericana
+  - mountain
+  - alpine
+  - border_guard
+  - expedition
   start_year: 0
   entry_status: draft
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  end_year: null
+  derived_from_ideas: []
+  media_layers: {}

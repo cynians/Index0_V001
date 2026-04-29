@@ -1005,6 +1005,7 @@ class KnowledgeBrowserUI:
             "canvas_y": spawn_y,
             "canvas_w": 420,
             "canvas_h": 340,
+            "auto_canvas_h": True,
             "card_view": card_view,
             "is_edit_mode": False,
             "active_edit_field": None,
@@ -1033,6 +1034,8 @@ class KnowledgeBrowserUI:
             return
 
         right_rect = self.layout["right_rect"]
+        zoom = max(0.001, self.canvas_zoom)
+        card_font = self._card_font_for_zoom()
 
         max_right = 0
         max_bottom = 0
@@ -1042,28 +1045,35 @@ class KnowledgeBrowserUI:
 
             card_view = card.get("card_view")
             requested_h = int(card.get("canvas_h", 340))
+            auto_canvas_h = bool(card.get("auto_canvas_h", True))
 
             if card_view is not None and self.font_for_layout is not None:
                 minimum_h = card_view.get_minimum_height(card, self.font_for_layout)
             else:
                 minimum_h = 260
 
-            card_h = max(minimum_h, min(1200, requested_h))
+            if auto_canvas_h:
+                card_h = max(260, min(1200, minimum_h))
+            else:
+                card_h = max(minimum_h, min(1200, requested_h))
             card["canvas_h"] = card_h
-            card["layout_font"] = self.font_for_layout
+            card["layout_font"] = card_font
 
-            rect_x = right_rect.x + self.canvas_offset_x + int(card.get("canvas_x", 24) * self.canvas_zoom)
-            rect_y = right_rect.y + self.canvas_offset_y + int(card.get("canvas_y", 84) * self.canvas_zoom)
+            screen_card_w = max(120, int(round(card_w * zoom)))
+            screen_card_h = max(120, int(round(card_h * zoom)))
 
-            rect = pygame.Rect(rect_x, rect_y, card_w, card_h)
+            rect_x = right_rect.x + self.canvas_offset_x + int(card.get("canvas_x", 24) * zoom)
+            rect_y = right_rect.y + self.canvas_offset_y + int(card.get("canvas_y", 84) * zoom)
+
+            rect = pygame.Rect(rect_x, rect_y, screen_card_w, screen_card_h)
 
             if card_view is not None:
                 card_view.layout_card(card, rect)
 
             final_rect = card.get("rect", rect)
 
-            max_right = max(max_right, card.get("canvas_x", 24) + final_rect.width / self.canvas_zoom)
-            max_bottom = max(max_bottom, card.get("canvas_y", 84) + final_rect.height / self.canvas_zoom)
+            max_right = max(max_right, card.get("canvas_x", 24) + final_rect.width / zoom)
+            max_bottom = max(max_bottom, card.get("canvas_y", 84) + final_rect.height / zoom)
 
         self.canvas_content_width = max(0, max_right + 24)
         self.canvas_content_height = max(0, max_bottom + 24)
@@ -1075,6 +1085,14 @@ class KnowledgeBrowserUI:
 
     def _relayout_cards(self):
         self._layout_all_cards()
+
+    def _card_font_for_zoom(self):
+        base_size = 16
+        if self.font_for_layout is not None:
+            base_size = max(8, int(round(self.font_for_layout.get_linesize() * 0.84)))
+
+        scaled_size = max(8, min(32, int(round(base_size * self.canvas_zoom))))
+        return pygame.font.SysFont("consolas", scaled_size)
 
     def _screen_to_canvas_pos(self, mouse_pos):
         if self.layout is None:
@@ -1108,8 +1126,27 @@ class KnowledgeBrowserUI:
         self.selected_entity_id = card_obj.get("entity_id")
         return card_obj
 
+    def _close_card_at_index(self, index):
+        if index < 0 or index >= len(self.cards):
+            return False
+
+        closing_card = self.cards.pop(index)
+        closing_entity_id = closing_card.get("entity_id")
+
+        if self.selected_entity_id == closing_entity_id:
+            self.selected_entity_id = self.cards[-1].get("entity_id") if self.cards else None
+
+        self._clear_timeline_edit_target()
+        self._close_wiki_link_picker(closing_card)
+        self._close_relation_picker(closing_card)
+        self.active_card_drag_id = None
+        self.active_card_resize_id = None
+        self._relayout_cards()
+        return True
+
     def _begin_card_resize(self, card_obj, mouse_pos, resize_edges):
         self.active_card_resize_id = card_obj["entity_id"]
+        card_obj["auto_canvas_h"] = False
         self.card_resize_start_mouse = mouse_pos
         self.card_resize_start_size = (card_obj.get("canvas_w", 420), card_obj.get("canvas_h", 340))
         self.card_resize_start_position = (card_obj.get("canvas_x", 24), card_obj.get("canvas_y", 84))
@@ -1607,11 +1644,12 @@ class KnowledgeBrowserUI:
         block_end = start_match.end() + next_match.start() if next_match else len(text)
         return block_start, block_end
 
-    def _persist_entity_to_repository(self, entity):
+    def _persist_entity_to_repository(self, entity, previous_entity_id=None):
         if not isinstance(entity, dict):
             return False
 
         entity_id = entity.get("id")
+        lookup_entity_id = previous_entity_id or entity_id
         dataset_name = entity.get("_dataset", entity.get("type"))
         entry_path = self._entry_file_path_for_dataset(dataset_name)
         if not entity_id or entry_path is None:
@@ -1628,7 +1666,7 @@ class KnowledgeBrowserUI:
             text = ""
 
         block = self._format_yaml_entity_block(entity)
-        found = self._find_yaml_entity_block(text, entity_id)
+        found = self._find_yaml_entity_block(text, lookup_entity_id)
         if found is None:
             separator = "" if not text.strip() else "\n"
             updated_text = text.rstrip() + separator + block
@@ -1646,8 +1684,28 @@ class KnowledgeBrowserUI:
             return False
 
         entity = self._entity_for_card(card)
-        persisted = self._persist_entity_to_repository(entity)
+        id_change = card.get("pending_entity_id_change")
+        previous_entity_id = None
+        if isinstance(id_change, dict):
+            previous_entity_id = id_change.get("old") or None
+
+        persisted = self._persist_entity_to_repository(entity, previous_entity_id=previous_entity_id)
         if persisted and isinstance(entity, dict):
+            new_entity_id = str(entity.get("id"))
+            old_entity_id = previous_entity_id
+
+            if old_entity_id and old_entity_id != new_entity_id:
+                if self.world_model is not None:
+                    self.world_model.loader.entities.pop(old_entity_id, None)
+                    self.world_model.loader.entities[new_entity_id] = entity
+
+                card["entity_id"] = new_entity_id
+                self.selected_entity_id = new_entity_id
+                self.active_card_drag_id = new_entity_id if self.active_card_drag_id == old_entity_id else self.active_card_drag_id
+                self.active_card_resize_id = new_entity_id if self.active_card_resize_id == old_entity_id else self.active_card_resize_id
+                self._remove_card_draft(old_entity_id)
+
+            card.pop("pending_entity_id_change", None)
             card["is_draft_entity"] = False
             remaining_buffers = card.get("draft_edit_buffers", {})
             if isinstance(remaining_buffers, dict) and remaining_buffers:
@@ -1932,7 +1990,7 @@ class KnowledgeBrowserUI:
         if card_rect is not None:
             screen.set_clip(previous_clip.clip(card_rect))
         try:
-            card_view.draw_card(screen, font, card)
+            card_view.draw_card(screen, card.get("layout_font", font), card)
         finally:
             screen.set_clip(previous_clip)
 
@@ -2030,18 +2088,8 @@ class KnowledgeBrowserUI:
             return "__ui_consumed__"
 
         if right_rect.collidepoint(mouse_pos):
-            key_mods = pygame.key.get_mods()
-            if key_mods & pygame.KMOD_CTRL:
-                zoom_factor = 1.12 if event.y > 0 else 1 / 1.12
-                self._set_canvas_zoom_at(mouse_pos, zoom_factor)
-                return "__ui_consumed__"
-
-            canvas_step = 64
-            if key_mods & pygame.KMOD_SHIFT:
-                self.canvas_offset_x += event.y * canvas_step
-            else:
-                self.canvas_offset_y += event.y * canvas_step
-            self._layout_all_cards()
+            zoom_factor = 1.12 if event.y > 0 else 1 / 1.12
+            self._set_canvas_zoom_at(mouse_pos, zoom_factor)
             return "__ui_consumed__"
 
         return None
@@ -2100,8 +2148,9 @@ class KnowledgeBrowserUI:
         if self.active_card_resize_id is not None:
             for card in self.cards:
                 if card.get("entity_id") == self.active_card_resize_id:
-                    dx = event.pos[0] - self.card_resize_start_mouse[0]
-                    dy = event.pos[1] - self.card_resize_start_mouse[1]
+                    zoom = max(0.001, self.canvas_zoom)
+                    dx = (event.pos[0] - self.card_resize_start_mouse[0]) / zoom
+                    dy = (event.pos[1] - self.card_resize_start_mouse[1]) / zoom
                     minimum_h = (
                         card.get("card_view").get_minimum_height(card, self.font_for_layout)
                         if card.get("card_view")
@@ -2118,20 +2167,20 @@ class KnowledgeBrowserUI:
                     new_h = start_h
 
                     if "left" in resize_edges:
-                        new_x = start_x + dx / max(0.001, self.canvas_zoom)
+                        new_x = start_x + dx
                         new_w = start_w - dx
                         if new_w < min_w:
-                            new_x = start_x + (start_w - min_w) / max(0.001, self.canvas_zoom)
+                            new_x = start_x + (start_w - min_w)
                             new_w = min_w
 
                     if "right" in resize_edges:
                         new_w = max(min_w, start_w + dx)
 
                     if "top" in resize_edges:
-                        new_y = start_y + dy / max(0.001, self.canvas_zoom)
+                        new_y = start_y + dy
                         new_h = start_h - dy
                         if new_h < minimum_h:
-                            new_y = start_y + (start_h - minimum_h) / max(0.001, self.canvas_zoom)
+                            new_y = start_y + (start_h - minimum_h)
                             new_h = minimum_h
 
                     if "bottom" in resize_edges:
@@ -2202,6 +2251,11 @@ class KnowledgeBrowserUI:
         for index in range(len(self.cards) - 1, -1, -1):
             card = self.cards[index]
             card_view = card.get("card_view")
+
+            close_rect = card.get("close_rect")
+            if close_rect is not None and close_rect.collidepoint(mouse_pos):
+                self._close_card_at_index(index)
+                return "__ui_consumed__"
 
             idea_button_rect = card.get("idea_button_rect")
             if idea_button_rect is not None and idea_button_rect.collidepoint(mouse_pos) and card_view is not None:
@@ -2325,6 +2379,47 @@ class KnowledgeBrowserUI:
         self.canvas_pan_start_offset = (self.canvas_offset_x, self.canvas_offset_y)
         return "__ui_consumed__"
 
+    def _draw_template_picker(self, screen, font):
+        if not self.show_template_picker or self.template_picker_rect is None:
+            return
+
+        pygame.draw.rect(screen, (24, 28, 40), self.template_picker_rect)
+        pygame.draw.rect(screen, (160, 168, 186), self.template_picker_rect, 1)
+        picker_title = font.render("Create New Entry From Schema", True, (236, 236, 236))
+        title_y = self.template_picker_rect.y + max(
+            6,
+            (self._template_picker_header_height() - font.get_linesize()) // 2,
+        )
+        screen.blit(picker_title, (self.template_picker_rect.x + 12, title_y))
+
+        for template, label, button_rect in self.template_button_hitboxes:
+            pygame.draw.rect(screen, (44, 50, 64), button_rect)
+            pygame.draw.rect(screen, (132, 142, 160), button_rect, 1)
+            detail = template.get("dataset_name", "")
+            button_text = font.render(label, True, (242, 242, 242))
+            detail_text = font.render(detail, True, (166, 174, 190))
+            line_h = font.get_linesize()
+            text_block_h = line_h * 2
+            text_y = button_rect.y + max(3, (button_rect.height - text_block_h) // 2)
+            screen.blit(button_text, (button_rect.x + 8, text_y))
+            screen.blit(detail_text, (button_rect.x + 8, text_y + line_h))
+
+        if len(self.schema_entry_templates) > len(self.template_button_hitboxes):
+            visible_count = max(1, len(self.template_button_hitboxes))
+            scroll_label = (
+                f"{self.template_picker_scroll + 1}-"
+                f"{self.template_picker_scroll + visible_count} / "
+                f"{len(self.schema_entry_templates)}"
+            )
+            scroll_surface = font.render(scroll_label, True, (166, 174, 190))
+            screen.blit(
+                scroll_surface,
+                (
+                    self.template_picker_rect.right - scroll_surface.get_width() - 10,
+                    title_y,
+                ),
+            )
+
     def draw(self, screen, font, draw_button_fn):
         if self.layout is None:
             return
@@ -2416,37 +2511,6 @@ class KnowledgeBrowserUI:
             draw_button_fn(screen, font, self.random_entry_button)
         if self.new_entry_button is not None:
             draw_button_fn(screen, font, self.new_entry_button)
-
-        if self.show_template_picker and self.template_picker_rect is not None:
-            pygame.draw.rect(screen, (24, 28, 40), self.template_picker_rect)
-            pygame.draw.rect(screen, (160, 168, 186), self.template_picker_rect, 1)
-            picker_title = font.render("Create New Entry From Schema", True, (236, 236, 236))
-            title_y = self.template_picker_rect.y + max(6, (self._template_picker_header_height() - font.get_linesize()) // 2)
-            screen.blit(picker_title, (self.template_picker_rect.x + 12, title_y))
-
-            for template, label, button_rect in self.template_button_hitboxes:
-                pygame.draw.rect(screen, (44, 50, 64), button_rect)
-                pygame.draw.rect(screen, (132, 142, 160), button_rect, 1)
-                detail = template.get("dataset_name", "")
-                button_text = font.render(label, True, (242, 242, 242))
-                detail_text = font.render(detail, True, (166, 174, 190))
-                line_h = font.get_linesize()
-                text_block_h = line_h * 2
-                text_y = button_rect.y + max(3, (button_rect.height - text_block_h) // 2)
-                screen.blit(button_text, (button_rect.x + 8, text_y))
-                screen.blit(detail_text, (button_rect.x + 8, text_y + line_h))
-
-            if len(self.schema_entry_templates) > len(self.template_button_hitboxes):
-                visible_count = max(1, len(self.template_button_hitboxes))
-                scroll_label = f"{self.template_picker_scroll + 1}-{self.template_picker_scroll + visible_count} / {len(self.schema_entry_templates)}"
-                scroll_surface = font.render(scroll_label, True, (166, 174, 190))
-                screen.blit(
-                    scroll_surface,
-                    (
-                        self.template_picker_rect.right - scroll_surface.get_width() - 10,
-                        title_y,
-                    ),
-                )
 
         content_top = (
             self.browser_search_rect.bottom
@@ -2560,6 +2624,7 @@ class KnowledgeBrowserUI:
         for card in self.cards:
             self._draw_card(screen, font, card)
         screen.set_clip(previous_clip)
+        self._draw_template_picker(screen, font)
 
     def handle_event(self, event):
         if self.layout is None:

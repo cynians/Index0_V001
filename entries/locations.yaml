@@ -1,8 +1,3 @@
-# ==================================================
-# SYSTEM: SOL
-# ==================================================
-
-# ---------- planet_earth | Earth ----------
 - id: planet_earth
   pretty_name: Earth
   name: Earth
@@ -20,8 +15,24 @@
   card_image_map: assets/cards/locations/planet_earth_map.png
   card_image: assets/cards/locations/planet_earth_map.png
   start_year: 0
-
-# ---------- geo_europe | Europe ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: geo_europe
   pretty_name: Europe
   name: Europe
@@ -37,8 +48,25 @@
   population:
     y0: 450000000
   start_year: 0
-
-# ---------- geo_central_europe | Central Europe ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: geo_central_europe
   pretty_name: Central Europe
   name: Central Europe
@@ -54,8 +82,25 @@
   population:
     y0: 180000000
   start_year: 0
-
-# ---------- geo_germany | Germany ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: geo_germany
   pretty_name: Germany
   name: Germany
@@ -71,8 +116,25 @@
   population:
     y0: 83000000
   start_year: 0
-
-# ---------- city_berlin | Berlin ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: city_berlin
   pretty_name: Berlin
   name: Berlin
@@ -86,8 +148,25 @@
   population:
     y0: 3800000
   start_year: 0
-
-# ---------- geo_alps | Alps ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: geo_alps
   pretty_name: Alps
   name: Alps
@@ -103,8 +182,25 @@
   population:
     y0: 14000000
   start_year: 0
-
-# ---------- geo_france | France ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: geo_france
   pretty_name: France
   name: France
@@ -120,8 +216,25 @@
   population:
     y0: 68000000
   start_year: 0
-
-# ---------- city_paris | Paris ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: city_paris
   pretty_name: Paris
   name: Paris
@@ -135,8 +248,25 @@
   population:
     y0: 2100000
   start_year: 0
-
-# ---------- planet_mercury | Mercury ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: planet_mercury
   pretty_name: Mercury
   name: Mercury
@@ -161,8 +291,25 @@
   population:
     y0: 0
   start_year: 0
-
-# ---------- planet_venus | Venus ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: planet_venus
   pretty_name: Venus
   name: Venus
@@ -187,8 +334,26 @@
   population:
     y0: 0
   start_year: 0
-
-# ---------- planet_mars | Mars ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring:
+  - id: idea_new_005
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: planet_mars
   pretty_name: Mars
   name: Mars
@@ -213,8 +378,25 @@
   population:
     y0: 0
   start_year: 0
-
-# ---------- planet_vesta | Vesta ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: planet_vesta
   pretty_name: Vesta
   name: Vesta
@@ -239,8 +421,25 @@
   population:
     y0: 0
   start_year: 0
-
-# ---------- planet_jupiter | Jupiter ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: planet_jupiter
   pretty_name: Jupiter
   name: Jupiter
@@ -265,8 +464,25 @@
   population:
     y0: 0
   start_year: 0
-
-# ---------- planet_titan | Titan ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: planet_titan
   pretty_name: Titan
   name: Titan
@@ -291,8 +507,25 @@
   population:
     y0: 0
   start_year: 0
-
-# ---------- planet_enceladus | Enceladus ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: planet_enceladus
   pretty_name: Enceladus
   name: Enceladus
@@ -317,12 +550,25 @@
   population:
     y0: 0
   start_year: 0
-
-# ==================================================
-# SYSTEM: NANHAI SYSTEM
-# ==================================================
-
-# ---------- planet_nanhai | Nanhai ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: planet_nanhai
   pretty_name: Nanhai
   name: Nanhai
@@ -334,9 +580,24 @@
   start_year: 6034
   entry_status: draft
   derived_from_ideas:
-    - IDEA-492
-
-# ---------- city_pontiferrum_harbor | Pontiferrum Harbor ----------
+  - IDEA-492
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  media_layers: {}
 - id: city_pontiferrum_harbor
   pretty_name: Pontiferrum Harbor
   name: Pontiferrum Harbor
@@ -344,56 +605,74 @@
   location_class: city
   parent_location: planet_nanhai
   controlling_factions:
-    - faction_ironclad_shipyard_republic
+  - faction_ironclad_shipyard_republic
   start_year: 6034
   climate_tags:
-    - maritime
-    - volcanic
-    - industrialized
+  - maritime
+  - volcanic
+  - industrialized
   population:
     y6034: 40000
     y6038: 45000
-  notes: Main industrial port of the Ironclad Shipyard Republic on Nanhai. The city is built around an artificial harbor in a volcanic island chain rich in metallic resources and later contains multiple industrial and shipbuilding sites within its quarters.
+  notes: Main industrial port of the Ironclad Shipyard Republic on Nanhai. The city
+    is built around an artificial harbor in a volcanic island chain rich in metallic
+    resources and later contains multiple industrial and shipbuilding sites within
+    its quarters.
   environment_summary:
     status: lore_defined
     tags:
-      - maritime
-      - volcanic_island_chain
-      - metallic_resource_rich
+    - maritime
+    - volcanic_island_chain
+    - metallic_resource_rich
     sources:
-      - IDEA-492
+    - IDEA-492
     notes: High-level environmental exposure only.
     data:
       setting:
-        - artificial_harbor
-        - volcanic_island_chain
+      - artificial_harbor
+      - volcanic_island_chain
       resource_profile:
-        - metallic_resources
+      - metallic_resources
   geology_summary:
     status: lore_defined
     tags:
-      - volcanic
-      - island_chain
+    - volcanic
+    - island_chain
     sources:
-      - IDEA-492
+    - IDEA-492
     notes: Exposed geology summary for the location entry.
     data:
       major_features:
-        - volcanic_island_chain
+      - volcanic_island_chain
   ecology_summary:
     status: minimal
     tags:
-      - heavily_transformed
-      - port_city
+    - heavily_transformed
+    - port_city
     sources:
-      - IDEA-492
-    notes: City-scale location with strong industrial transformation; deeper ecological detail not yet defined.
+    - IDEA-492
+    notes: City-scale location with strong industrial transformation; deeper ecological
+      detail not yet defined.
     data: {}
   derived_from_ideas:
-    - IDEA-492
+  - IDEA-492
   entry_status: draft
-
-#----------planet_pluto----Pluto-----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  media_layers: {}
 - id: planet_pluto
   pretty_name: Pluto
   name: Pluto
@@ -418,9 +697,25 @@
   population:
     y0: 0
   start_year: 0
-
-
-#----------planet_nereid----Nereid-----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: planet_nereid
   pretty_name: Nereid
   name: Nereid
@@ -445,9 +740,25 @@
   population:
     y0: 0
   start_year: 0
-
-
-#----------planet_europa----Europa-----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: planet_europa
   pretty_name: Europa
   name: Europa
@@ -472,9 +783,25 @@
   population:
     y0: 0
   start_year: 0
-
-
-#----------planet_io----Io-----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: planet_io
   pretty_name: Io
   name: Io
@@ -499,14 +826,25 @@
   population:
     y0: 0
   start_year: 0
-
-
-
-# ==================================================
-# SYSTEM: METYAKI
-# ==================================================
-
-# ---------- sys_metyaki | Metyaki System ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: sys_metyaki
   pretty_name: Metyaki System
   name: Metyaki System
@@ -517,8 +855,25 @@
     x: 0
     y: 0
   start_year: 5240
-
-# ---------- planet_noyanakh | Noyanakh ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: planet_noyanakh
   pretty_name: Noyanakh
   name: Noyanakh
@@ -535,13 +890,27 @@
     value: 5400000
   population:
     y0: 0
-  notes: Placeholder planetary entry for Bospor-related entity integration. Detailed planetary properties still to be defined.
-
+  notes: Placeholder planetary entry for Bospor-related entity integration. Detailed
+    planetary properties still to be defined.
   start_year: 5246
-
-
-
-# ---------- geo_kure_atoll | Kure Atoll ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: geo_kure_atoll
   pretty_name: Kure Atoll
   name: Kure Atoll
@@ -550,12 +919,12 @@
   parent_location: planet_earth
   description: Remote coral atoll in the Northwestern Hawaiian Islands.
   tags:
-    - earth
-    - hawaii
-    - pacific
-    - atoll
-    - island
-    - ecological_placeholder
+  - earth
+  - hawaii
+  - pacific
+  - atoll
+  - island
+  - ecological_placeholder
   bounds:
     type: bbox
     min_x: -178.45
@@ -563,38 +932,53 @@
     min_y: -28.55
     max_y: -28.25
   climate_tags:
-    - tropical
-    - marine
-    - remote_oceanic
+  - tropical
+  - marine
+  - remote_oceanic
   environment_summary:
     status: placeholder
     tags:
-      - coral_atoll
-      - low_lying_island
-      - protected_ecology
+    - coral_atoll
+    - low_lying_island
+    - protected_ecology
     notes: Placeholder summary for future card-tab content.
   geology_summary:
     status: placeholder
     tags:
-      - coral_formation
-      - reef_structure
+    - coral_formation
+    - reef_structure
     notes: Placeholder geology tab content.
   hydrology_summary:
     status: placeholder
     tags:
-      - lagoon
-      - marine_exchange
+    - lagoon
+    - marine_exchange
     notes: Placeholder hydrology tab content.
   ecology_summary:
     status: placeholder
     tags:
-      - seabird_habitat
-      - marine_ecosystem
-      - conservation_area
+    - seabird_habitat
+    - marine_ecosystem
+    - conservation_area
     notes: Placeholder ecology tab content.
   start_year: 0
-
-# ---------- geo_northwestern_hawaiian_islands | Northwestern Hawaiian Islands ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: geo_northwestern_hawaiian_islands
   pretty_name: Northwestern Hawaiian Islands
   name: Northwestern Hawaiian Islands
@@ -608,25 +992,43 @@
     min_y: -30
     max_y: -20
   climate_tags:
-    - tropical
-    - marine
-    - oceanic
+  - tropical
+  - marine
+  - oceanic
   environment_summary:
     status: placeholder
     tags:
-      - island_chain
-      - coral_and_islet_systems
-      - protected_ecology
+    - island_chain
+    - coral_and_islet_systems
+    - protected_ecology
     notes: Placeholder summary for future card-tab content.
   ecology_summary:
     status: placeholder
     tags:
-      - seabird_habitat
-      - marine_ecosystem
-      - conservation_area
+    - seabird_habitat
+    - marine_ecosystem
+    - conservation_area
     notes: Placeholder ecology tab content.
   start_year: 0
-
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: site_mcas_futenma
   pretty_name: Marine Corps Air Station Futenma
   name: Marine Corps Air Station Futenma
@@ -635,7 +1037,8 @@
   location_role: military_air_station
   parent_location: planet_earth
   description: United States Marine Corps air station in Ginowan, Okinawa.
-  notes: Parented directly to planet_earth for now until a Japan/Okinawa location chain is added.
+  notes: Parented directly to planet_earth for now until a Japan/Okinawa location
+    chain is added.
   coords:
     type: point
     x: 127.761
@@ -647,36 +1050,46 @@
     min_y: -26.285
     max_y: -26.265
   climate_tags:
-    - subtropical
-    - coastal
-    - island
+  - subtropical
+  - coastal
+  - island
   environment_summary:
     status: placeholder
     tags:
-      - urban_embedded_base
-      - airfield
-      - military_installation
+    - urban_embedded_base
+    - airfield
+    - military_installation
     notes: Placeholder summary for future card-tab content.
   hydrology_summary:
     status: placeholder
     tags:
-      - island_drainage
-      - coastal_weather_exposure
+    - island_drainage
+    - coastal_weather_exposure
     notes: Placeholder hydrology tab content.
   ecology_summary:
     status: placeholder
     tags:
-      - heavily_modified_site
-      - adjacent_urban_ecology
+    - heavily_modified_site
+    - adjacent_urban_ecology
     notes: Placeholder ecology tab content.
   start_year: 1946
-
-
-# --------------------------------------------------
-# APPEND TO: entries/locations.yaml
-# --------------------------------------------------
-
-# ---------- loc_central_asian_steppe_cog | Central Asian Steppe CoG Site ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: loc_central_asian_steppe_cog
   pretty_name: Central Asian Steppe CoG Site
   name: Central Asian Steppe CoG Site
@@ -684,23 +1097,40 @@
   location_class: macro_site
   location_role: megastructure_foundation_region
   parent_location: planet_earth
-  description: Physical siting region of the Center of Gravity megastructure in the Central Asian steppes.
-  notes: Geographic anchor for the CoG urban aggregate. City-scale social, infrastructural, and internal structural content should be represented on city_cog rather than here.
+  description: Physical siting region of the Center of Gravity megastructure in the
+    Central Asian steppes.
+  notes: Geographic anchor for the CoG urban aggregate. City-scale social, infrastructural,
+    and internal structural content should be represented on city_cog rather than
+    here.
   climate_tags:
-    - continental
-    - steppe
-    - inland
+  - continental
+  - steppe
+  - inland
   environment_summary:
     status: placeholder
     tags:
-      - open_steppe
-      - engineered_groundworks
-      - megastructure_host_region
+    - open_steppe
+    - engineered_groundworks
+    - megastructure_host_region
     notes: Placeholder summary for future location card content.
   start_year: 2884
   entry_status: stub
-
-# ---------- loc_cog_breach_vent_tunnel | CoG Breach Vent Tunnel ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  media_layers: {}
 - id: loc_cog_breach_vent_tunnel
   pretty_name: CoG Breach Vent Tunnel
   name: CoG Breach Vent Tunnel
@@ -708,12 +1138,30 @@
   location_class: internal_passage
   location_role: clandestine_exit_route
   parent_location: loc_central_asian_steppe_cog
-  description: Old ventilation shaft segment within the declining Center of Gravity whose structure cracked open at an opportune point, creating a clandestine physical exit from the quarantined megastructure.
-  notes: Initially exploited by a late-CoG gang as a real escape route, later used for selected extractions, paid passage, police crackdown operations, and covert regime reuse.
+  description: Old ventilation shaft segment within the declining Center of Gravity
+    whose structure cracked open at an opportune point, creating a clandestine physical
+    exit from the quarantined megastructure.
+  notes: Initially exploited by a late-CoG gang as a real escape route, later used
+    for selected extractions, paid passage, police crackdown operations, and covert
+    regime reuse.
   start_year: 5742
   entry_status: stub
-
-# ---------- geo_spain | Spain ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  media_layers: {}
 - id: geo_spain
   pretty_name: Spain
   name: Spain
@@ -730,8 +1178,24 @@
     y0: 48000000
   start_year: 0
   entry_status: stub
-
-# ---------- city_madrid | Madrid ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  media_layers: {}
 - id: city_madrid
   pretty_name: Madrid
   name: Madrid
@@ -746,8 +1210,24 @@
     y0: 3300000
   start_year: 0
   entry_status: stub
-
-# ---------- geo_italy | Italy ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  media_layers: {}
 - id: geo_italy
   pretty_name: Italy
   name: Italy
@@ -764,8 +1244,24 @@
     y0: 59000000
   start_year: 0
   entry_status: stub
-
-# ---------- city_rome | Rome ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  media_layers: {}
 - id: city_rome
   pretty_name: Rome
   name: Rome
@@ -780,8 +1276,24 @@
     y0: 2800000
   start_year: 0
   entry_status: stub
-
-# ---------- geo_sweden | Sweden ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  media_layers: {}
 - id: geo_sweden
   pretty_name: Sweden
   name: Sweden
@@ -798,8 +1310,24 @@
     y0: 10500000
   start_year: 0
   entry_status: stub
-
-# ---------- city_stockholm | Stockholm ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  media_layers: {}
 - id: city_stockholm
   pretty_name: Stockholm
   name: Stockholm
@@ -814,6 +1342,24 @@
     y0: 980000
   start_year: 0
   entry_status: stub
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  media_layers: {}
 - id: loc_new_001
   pretty_name: New Location
   name: Hamburg
@@ -822,15 +1368,32 @@
   parent_location: geo_alps
   associated_cultures: []
   derived_from_system_body: null
-
-# ---------- loc_draft_geo_europe_001 | Draft Map Area 001 ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from_ideas: []
+  entry_status: ''
+  media_layers: {}
 - id: loc_draft_geo_europe_001
-  pretty_name: 'Draft Map Area 001'
-  name: 'Draft Map Area 001'
+  pretty_name: Draft Map Area 001
+  name: Draft Map Area 001
   type: location
   location_class: region
   parent_location: geo_europe
-  notes: 'Draft square map area created under Europe.'
+  notes: Draft square map area created under Europe.
   bounds:
     type: bbox
     min_x: -16.868
@@ -839,15 +1402,30 @@
     max_y: -52.159
   start_year: 2400
   entry_status: draft
-
-# ---------- loc_draft_geo_spain_001 | Draft Map Area 001 ----------
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  media_layers: {}
 - id: loc_draft_geo_spain_001
-  pretty_name: 'Draft Map Area 001'
-  name: 'Draft Map Area 001'
+  pretty_name: Draft Map Area 001
+  name: Draft Map Area 001
   type: location
   location_class: region
   parent_location: geo_spain
-  notes: 'Draft rectangle map area created under Spain.'
+  notes: Draft rectangle map area created under Spain.
   bounds:
     type: bbox
     min_x: -2.282
@@ -856,3 +1434,20 @@
     max_y: -38.37
   start_year: 2400
   entry_status: draft
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  description: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from_ideas: []
+  media_layers: {}

@@ -29,6 +29,12 @@ class EntityCard:
     TABLE_MIN_KEY_W = 96
     TABLE_MAX_KEY_W = 260
     TABLE_MIN_VALUE_W = 120
+    STANDARD_RELATION_FIELDS = [
+        "parent_ideas",
+        "related_ideas",
+        "offspring",
+        "placeholders",
+    ]
 
     SECTION_ORDER = [
         "Identity",
@@ -42,7 +48,7 @@ class EntityCard:
 
     TAB_ORDER = ["general", "overview", "temporal", "relations", "state", "media"]
     DATASET_TAB_ORDER = {
-        "ideas": ["general", "temporal", "relations"],
+        "ideas": ["general", "overview", "temporal", "relations"],
         "components": ["general", "overview", "temporal", "relations", "operational", "media"],
     }
     TAB_LABELS = {
@@ -388,6 +394,10 @@ class EntityCard:
             if key not in handled_keys:
                 ordered_keys.append(key)
 
+        for key in self.STANDARD_RELATION_FIELDS:
+            if key not in handled_keys and key not in ordered_keys:
+                ordered_keys.append(key)
+
         for key in entity.keys():
             if key in handled_keys or key in ordered_keys:
                 continue
@@ -406,9 +416,14 @@ class EntityCard:
                 continue
 
             spec = self._normalize_field_spec(schema_field_specs.get(key, {}))
+            section_name = str(spec.get("section", "")).lower()
 
             if self._is_temporal_field(key, spec):
                 temporal_values.append((key, value))
+                continue
+
+            if section_name == "relations" or key in self.STANDARD_RELATION_FIELDS:
+                relation_values.append((key, value))
                 continue
 
             if self._is_component_card() and key in component_operational_keys:
@@ -466,8 +481,23 @@ class EntityCard:
         if isinstance(value, dict):
             return "\n".join(f"{k}: {v}" for k, v in value.items())
         if isinstance(value, list):
+            if value and all(isinstance(item, dict) and "id" in item for item in value):
+                return "\n".join(self._format_offspring_node(item) for item in value)
             return "\n".join(f"- {item}" for item in value) if value else "[]"
         return str(value)
+
+    def _format_offspring_node(self, node, depth=0):
+        node_id = str(node.get("id", ""))
+        indent = "  " * depth
+        lines = [f"{indent}- {node_id}"]
+
+        for child in node.get("offspring", []) or []:
+            if isinstance(child, dict):
+                lines.append(self._format_offspring_node(child, depth=depth + 1))
+            else:
+                lines.append(f"{'  ' * (depth + 1)}- {child}")
+
+        return "\n".join(lines)
 
     def _is_scalar_editable_value(self, value):
         return value is None or isinstance(value, (str, int, float))
@@ -696,7 +726,13 @@ class EntityCard:
         original_value = card.get("edit_original_value", self.entity.get(field_key))
         new_value = self._coerce_edit_buffer(field_key, original_value, card.get("edit_buffer", ""))
         self.entity[field_key] = new_value
-        if field_key == "name":
+        if field_key == "id":
+            card["pending_entity_id_change"] = {
+                "old": str(original_value or ""),
+                "new": str(new_value or ""),
+            }
+
+        if field_key in {"name", "pretty_name", "id"}:
             card["title"] = str(new_value or self.entity.get("id", "unknown"))
 
         draft_buffers = card.get("draft_edit_buffers")
@@ -1059,9 +1095,10 @@ class EntityCard:
             tab_hitboxes.append((tab_name, tab_rect))
             tab_x = tab_rect.right + tab_gap
 
-        idea_button_rect = pygame.Rect(rect.right - 58, rect.y + 12, 20, 20)
-        edit_toggle_rect = pygame.Rect(rect.right - 34, rect.y + 12, 20, 20)
-        title_edit_rect = pygame.Rect(rect.x + 10, rect.y + 7, max(40, rect.width - 82), 20)
+        close_rect = pygame.Rect(rect.right - 24, rect.y + 12, 18, 18)
+        edit_toggle_rect = pygame.Rect(rect.right - 48, rect.y + 12, 20, 20)
+        idea_button_rect = pygame.Rect(rect.right - 72, rect.y + 12, 20, 20)
+        title_edit_rect = pygame.Rect(rect.x + 10, rect.y + 7, max(40, rect.width - 120), 20)
         if card.get("is_edit_mode", False):
             editable_field_hitboxes.append(("name", title_edit_rect))
 
@@ -1221,6 +1258,7 @@ class EntityCard:
         card["resize_hitboxes"] = resize_hitboxes
         card["edit_toggle_rect"] = edit_toggle_rect
         card["idea_button_rect"] = idea_button_rect
+        card["close_rect"] = close_rect
         card["title_edit_rect"] = title_edit_rect
         card["year_hitboxes"] = [
             (year, pygame.Rect(year_x - 12, center_y - 12, 24, 48))
@@ -1308,6 +1346,7 @@ class EntityCard:
 
         edit_toggle_rect = card.get("edit_toggle_rect")
         idea_button_rect = card.get("idea_button_rect")
+        close_rect = card.get("close_rect")
         if idea_button_rect is not None:
             pygame.draw.rect(screen, (52, 60, 48), idea_button_rect)
             pygame.draw.rect(screen, (150, 176, 132), idea_button_rect, 1)
@@ -1326,6 +1365,13 @@ class EntityCard:
             edit_text = font.render("E", True, edit_text_color)
             edit_text_rect = edit_text.get_rect(center=edit_toggle_rect.center)
             screen.blit(edit_text, edit_text_rect)
+
+        if close_rect is not None:
+            pygame.draw.rect(screen, (58, 44, 48), close_rect)
+            pygame.draw.rect(screen, (178, 132, 140), close_rect, 1)
+            close_text = font.render("X", True, (244, 218, 222))
+            close_text_rect = close_text.get_rect(center=close_rect.center)
+            screen.blit(close_text, close_text_rect)
 
         if card.get("is_edit_mode", False):
             active_field = card.get("active_edit_field")

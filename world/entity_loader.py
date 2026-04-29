@@ -23,6 +23,29 @@ class EntityLoader:
       type: ...
     """
 
+    CORE_DEFAULTS = {
+        "description": "",
+        "notes": "",
+        "wiki_entry": "",
+        "card_image": "",
+        "design_image": "",
+        "card_image_front": "",
+        "card_image_side": "",
+        "card_image_top": "",
+        "image_path": "",
+        "image": "",
+        "tags": [],
+        "start_year": None,
+        "end_year": None,
+        "derived_from_ideas": [],
+        "parent_ideas": [],
+        "related_ideas": [],
+        "offspring": [],
+        "placeholders": [],
+        "entry_status": "",
+        "media_layers": {},
+    }
+
     def __init__(self, entries_directory=None):
 
         if entries_directory is None:
@@ -34,10 +57,66 @@ class EntityLoader:
         self.datasets = {}
         self.entities = {}
         self.edges = {}
+        self._dataset_file_records = []
 
         self.refresh()
 
     # --------------------------------------------------
+
+    def _ensure_standard_relations(self, entity):
+        changed = False
+
+        if "pretty_name" not in entity:
+            entity["pretty_name"] = entity.get("name") or entity.get("id") or ""
+            changed = True
+
+        if "name" not in entity:
+            entity["name"] = entity.get("pretty_name") or entity.get("id") or ""
+            changed = True
+
+        for field, default_value in self.CORE_DEFAULTS.items():
+            if field not in entity:
+                if isinstance(default_value, list):
+                    entity[field] = list(default_value)
+                elif isinstance(default_value, dict):
+                    entity[field] = dict(default_value)
+                else:
+                    entity[field] = default_value
+                changed = True
+
+        if "child_ideas" in entity:
+            entity.pop("child_ideas", None)
+            changed = True
+
+        return changed
+
+    def _serializable_data(self, data):
+        cleaned = []
+
+        for entity in data:
+            if not isinstance(entity, dict):
+                cleaned.append(entity)
+                continue
+
+            cleaned.append({
+                key: value
+                for key, value in entity.items()
+                if not str(key).startswith("_")
+            })
+
+        return cleaned
+
+    def _save_dataset_file(self, file, data):
+        data = self._serializable_data(data)
+
+        if file.suffix.lower() in (".yaml", ".yml"):
+            with file.open("w", encoding="utf-8") as f:
+                yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
+            return
+
+        with file.open("w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.write("\n")
 
     def load_datasets(self):
         """
@@ -52,6 +131,7 @@ class EntityLoader:
           without breaking existing world queries
         """
         self.datasets = {}
+        self._dataset_file_records = []
 
         if not self.entries_directory.exists():
             logger.warning("Entries path does not exist: %s", self.entries_directory)
@@ -86,6 +166,17 @@ class EntityLoader:
                     logger.warning("Dataset file is not a list: %s", file)
                     continue
 
+                changed = False
+                for entity in data:
+                    if isinstance(entity, dict):
+                        changed = self._ensure_standard_relations(entity) or changed
+
+                self._dataset_file_records.append({
+                    "file": file,
+                    "data": data,
+                    "changed": changed,
+                })
+
                 if dataset_name not in self.datasets:
                     self.datasets[dataset_name] = []
 
@@ -103,6 +194,89 @@ class EntityLoader:
 
             except Exception as exc:
                 logger.exception("Failed to load dataset from %s: %s", file, exc)
+
+    # --------------------------------------------------
+
+    def _normalize_parent_ideas(self, entity):
+        parent_ideas = entity.get("parent_ideas", [])
+        parent_ids = []
+
+        if isinstance(parent_ideas, str):
+            parent_ids.append(parent_ideas)
+        elif isinstance(parent_ideas, list):
+            parent_ids.extend(
+                parent_id
+                for parent_id in parent_ideas
+                if isinstance(parent_id, str)
+            )
+
+        parent_entity = entity.get("parent_entity")
+        if isinstance(parent_entity, str):
+            if entity.get("type") == "idea":
+                parent_ids.append(parent_entity)
+
+        normalized = []
+        for parent_id in parent_ids:
+            if parent_id in self.entities and parent_id not in normalized:
+                normalized.append(parent_id)
+
+        return normalized
+
+    def _build_offspring_tree(self, entity_id, children_by_parent, ancestry=None):
+        ancestry = set(ancestry or [])
+        if entity_id in ancestry:
+            return []
+
+        next_ancestry = set(ancestry)
+        next_ancestry.add(entity_id)
+        nodes = []
+
+        for child_id in children_by_parent.get(entity_id, []):
+            node = {"id": child_id}
+            child_offspring = self._build_offspring_tree(
+                child_id,
+                children_by_parent,
+                ancestry=next_ancestry,
+            )
+            if child_offspring:
+                node["offspring"] = child_offspring
+            nodes.append(node)
+
+        return nodes
+
+    def populate_offspring(self):
+        children_by_parent = {}
+
+        for entity_id, entity in self.entities.items():
+            for parent_id in self._normalize_parent_ideas(entity):
+                children_by_parent.setdefault(parent_id, [])
+                if entity_id not in children_by_parent[parent_id]:
+                    children_by_parent[parent_id].append(entity_id)
+
+        changed_entities = set()
+
+        for entity_id, entity in self.entities.items():
+            offspring = self._build_offspring_tree(entity_id, children_by_parent)
+            if entity.get("offspring") != offspring:
+                entity["offspring"] = offspring
+                changed_entities.add(entity_id)
+
+        return changed_entities
+
+    def save_changed_dataset_files(self, changed_entity_ids=None):
+        changed_entity_ids = set(changed_entity_ids or [])
+
+        for record in self._dataset_file_records:
+            changed = record.get("changed", False)
+
+            if not changed:
+                for entity in record["data"]:
+                    if isinstance(entity, dict) and entity.get("id") in changed_entity_ids:
+                        changed = True
+                        break
+
+            if changed:
+                self._save_dataset_file(record["file"], record["data"])
 
     # --------------------------------------------------
 
@@ -153,6 +327,8 @@ class EntityLoader:
 
         self.load_datasets()
         self.build_entity_index()
+        changed_entity_ids = self.populate_offspring()
+        self.save_changed_dataset_files(changed_entity_ids)
         self.build_reference_graph()
 
     # --------------------------------------------------

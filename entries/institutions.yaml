@@ -18,27 +18,43 @@
   territorial_rule: null
   territorial_radius_km: null
   institution_mechanisms:
-    - delegated production rights
-    - controlled externalization
-    - economic dependency
+  - delegated production rights
+  - controlled externalization
+  - economic dependency
   signatories: []
   ratifiers: []
   treaty_domains: []
   predecessor_institutions: []
   successor_institutions: []
-  description: GGO institution through which selected interest groups are granted leeway to establish producers outside the direct internal GGO production structure.
-  notes: Serves as the framework under which externally structured branded producers can exist while remaining tied to the wider GGO order.
+  description: GGO institution through which selected interest groups are granted
+    leeway to establish producers outside the direct internal GGO production structure.
+  notes: Serves as the framework under which externally structured branded producers
+    can exist while remaining tied to the wider GGO order.
   tags:
-    - institution
-    - ggo
-    - production
-    - external_production
-    - economic_framework
+  - institution
+  - ggo
+  - production
+  - external_production
+  - economic_framework
   start_year: 3182
   effective_year: 3182
   end_condition: null
   entry_status: draft
-
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  end_year: null
+  derived_from_ideas: []
+  media_layers: {}
 - id: inst_race_for_sol_outer_space_treaty_adaptation
   pretty_name: Race for Sol Outer Space Treaty Adaptation
   name: Race for Sol Outer Space Treaty Adaptation
@@ -55,37 +71,60 @@
   associated_locations: []
   governed_locations: []
   governed_bodies: []
-  legal_scope: Exploration, colonization, and sovereignty rules for celestial bodies and off-world settlements during the Race for Sol.
+  legal_scope: Exploration, colonization, and sovereignty rules for celestial bodies
+    and off-world settlements during the Race for Sol.
   jurisdiction_model: interplanetary treaty framework
-  sovereignty_model: States may exercise bounded sovereignty around established off-world colonies rather than claiming unlimited sovereignty over entire celestial bodies.
-  territorial_rule: Sovereignty extends over a limited radius around an established colony, analogous to territorial waters or a controlled coastal zone.
+  sovereignty_model: States may exercise bounded sovereignty around established off-world
+    colonies rather than claiming unlimited sovereignty over entire celestial bodies.
+  territorial_rule: Sovereignty extends over a limited radius around an established
+    colony, analogous to territorial waters or a controlled coastal zone.
   territorial_radius_km: null
   institution_mechanisms:
-    - treaty obligation
-    - diplomatic recognition
-    - negotiated sovereignty claims
-    - inter-state enforcement
+  - treaty obligation
+  - diplomatic recognition
+  - negotiated sovereignty claims
+  - inter-state enforcement
   signatories: []
   ratifiers: []
   treaty_domains:
-    - colonization
-    - orbital_law
-    - celestial_sovereignty
-    - settlement_jurisdiction
+  - colonization
+  - orbital_law
+  - celestial_sovereignty
+  - settlement_jurisdiction
   predecessor_institutions: []
   successor_institutions: []
-  description: Race for Sol adaptation of the Outer Space Treaty framework for an era of permanent off-world colonies. The treaty largely preserves the original baseline principles of non-total appropriation, but allows states to hold sovereignty within a bounded radius around established colonies.
-  notes: Intended to regulate the transition from exploration to sustained colonization after 2090. The main adaptation is the recognition of limited territorial sovereignty around colonies, treated analogously to territorial waters rather than full ownership of whole planets or moons.
+  description: Race for Sol adaptation of the Outer Space Treaty framework for an
+    era of permanent off-world colonies. The treaty largely preserves the original
+    baseline principles of non-total appropriation, but allows states to hold sovereignty
+    within a bounded radius around established colonies.
+  notes: Intended to regulate the transition from exploration to sustained colonization
+    after 2090. The main adaptation is the recognition of limited territorial sovereignty
+    around colonies, treated analogously to territorial waters rather than full ownership
+    of whole planets or moons.
   tags:
-    - institution
-    - treaty
-    - race_for_sol
-    - outer_space
-    - colonization
-    - sovereignty
-    - interplanetary_law
+  - institution
+  - treaty
+  - race_for_sol
+  - outer_space
+  - colonization
+  - sovereignty
+  - interplanetary_law
   start_year: 2090
   effective_year: 2090
   end_year: null
   end_condition: null
   entry_status: draft
+  parent_ideas: []
+  related_ideas: []
+  placeholders: []
+  offspring: []
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  derived_from_ideas: []
+  media_layers: {}
