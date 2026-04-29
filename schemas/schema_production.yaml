@@ -102,46 +102,57 @@ fields:
 
   units_per_hour:
     type: number
+    section: Temporal
     optional: true
 
   units_per_day:
     type: number
+    section: Temporal
     optional: true
 
   kg_per_hour:
     type: number
+    section: Temporal
     optional: true
 
   kg_per_day:
     type: number
+    section: Temporal
     optional: true
 
   liters_per_hour:
     type: number
+    section: Temporal
     optional: true
 
   liters_per_day:
     type: number
+    section: Temporal
     optional: true
 
   m2_per_day:
     type: number
+    section: Temporal
     optional: true
 
   m3_per_day:
     type: number
+    section: Temporal
     optional: true
 
   components_per_day:
     type: number
+    section: Temporal
     optional: true
 
   vehicles_per_year:
     type: number
+    section: Temporal
     optional: true
 
   buildings_per_year:
     type: number
+    section: Temporal
     optional: true
 
 # --------------------------------------------------

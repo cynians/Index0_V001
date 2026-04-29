@@ -16,9 +16,11 @@ fields:
 
   start_event:
     type: entity|null
+    section: Temporal
 
   end_event:
     type: entity|null
+    section: Temporal
 
   outcome:
     type: string

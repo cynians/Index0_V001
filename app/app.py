@@ -41,6 +41,8 @@ class App(SimWindow):
         self.input_router = InputRouter(self)
 
         self.knowledge_layer_active = True
+        self.system_menu_active = False
+        self.system_settings_active = False
         self.repository_scope_entity_id = None
 
     def get_active_simulation(self):
@@ -66,6 +68,9 @@ class App(SimWindow):
         return getattr(active_sim, "world_units_to_meters", 1.0)
 
     def update(self, dt):
+        if self.system_menu_active:
+            return
+
         if self.knowledge_layer_active:
             return
 
@@ -89,6 +94,8 @@ class App(SimWindow):
             tab_manager=self.tab_manager,
             camera=self.camera,
             menu_active=self.knowledge_layer_active,
+            system_menu_active=self.system_menu_active,
+            system_settings_active=self.system_settings_active,
             world_model=self.world_model,
             repository_scope_entity_id=self.repository_scope_entity_id,
         )

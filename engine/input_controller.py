@@ -33,7 +33,7 @@ class InputController:
             elif event.type == 768:  # pygame.KEYDOWN
 
                 if event.key == 27:  # ESC
-                    self.running = False
+                    pass
 
                 elif event.key == 103:  # G
                     self.show_grid = not self.show_grid

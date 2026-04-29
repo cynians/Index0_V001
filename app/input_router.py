@@ -29,6 +29,8 @@ class InputRouter:
             tab_manager=self.app.tab_manager,
             camera=self.app.camera,
             menu_active=self.app.knowledge_layer_active,
+            system_menu_active=self.app.system_menu_active,
+            system_settings_active=self.app.system_settings_active,
             world_model=self.app.world_model,
             repository_scope_entity_id=self.app.repository_scope_entity_id,
         )
@@ -38,7 +40,19 @@ class InputRouter:
         Route global keydown events into navigation.
         """
         if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                if self.app.system_menu_active and self.app.system_settings_active:
+                    self.app.system_settings_active = False
+                else:
+                    self.app.system_menu_active = not self.app.system_menu_active
+                    self.app.system_settings_active = False
+                return True
+
+            if self.app.system_menu_active:
+                return True
+
             self.app.navigation.handle_keydown(event)
+        return False
 
     def _handle_ui_action(self, event, active_sim):
         """
@@ -107,12 +121,16 @@ class InputRouter:
         * middle-click reset
         * simulation pointer forwarding
         """
-        self._handle_keydown_navigation(event)
+        if self._handle_keydown_navigation(event):
+            return True
 
         active_sim = self.app.get_active_simulation()
         self._rebuild_ui_for_event(active_sim)
 
         if self._handle_ui_action(event, active_sim):
+            return True
+
+        if self.app.system_menu_active:
             return True
 
         if self.app.knowledge_layer_active:

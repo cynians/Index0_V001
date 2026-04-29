@@ -395,41 +395,40 @@
   pretty_name: Light Vehicle Rear Body Closure Set
   name: Light Vehicle Rear Body Closure Set
   type: component
-  description: Rear closure panel set for a light vehicle body, providing structural termination and mounting edges for rear fittings.
+  description: 'Rear closure panel set for a light vehicle body, providing structural termination and mounting edges for rear fittings.'
   component_class: body_component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
   install_contexts:
-    - vehicle
+  - vehicle
   functional_roles:
-    - rear_body_closure
-    - structural_termination
+  - rear_body_closure
+  - structural_termination
   satisfies_categories:
-    - structure
-    - body
+  - structure
+  - body
   operational_groups:
-    - Structure
+  - Structure
   subsystem_labels:
-    - body
+  - body
   requires_technology: []
   descriptive_capabilities:
-    - installable
-    - weldable_rear_panel_set
+  - installable
+  - weldable_rear_panel_set
   maintenance_notes: Inspect rear closure surfaces and bracket mounts for cracking and deformation under cargo/towing use.
-  dimension_x_m: 0.40
+  dimension_x_m: 0.4
   dimension_y_m: 1.42
   dimension_z_m: 0.42
   mass_kg: 18.0
   power_kw: 0.0
   tags:
-    - component
-    - vehicle
-    - body
-    - rear_closure
-  start_year: 0
+  - component
+  - vehicle
+  - body
+  - rear_closure
+  start_year: 6373
   entry_status: draft
-
 - id: comp_light_vehicle_structural_reinforcement_set
   pretty_name: Light Vehicle Structural Reinforcement Set
   name: Light Vehicle Structural Reinforcement Set

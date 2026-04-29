@@ -1075,3 +1075,8 @@
   - 165
   - 175
   start_year: 0
+- id: sys_new_001
+  pretty_name: New System
+  name: Aramite
+  type: system
+  wiki_entry: ''

@@ -403,6 +403,34 @@ class NavigationController:
         if action_id == "open_repository":
             return self.open_repository_workspace(active_sim)
 
+        if action_id == "system_menu_continue":
+            self.app.system_menu_active = False
+            self.app.system_settings_active = False
+            return True
+
+        if action_id == "system_menu_settings":
+            self.app.system_settings_active = True
+            return True
+
+        if action_id == "system_menu_back":
+            self.app.system_settings_active = False
+            return True
+
+        if action_id == "system_toggle_grid":
+            self.app.show_grid = not self.app.show_grid
+            self.app.input_controller.show_grid = self.app.show_grid
+            return True
+
+        if action_id == "system_toggle_fps":
+            self.app.show_fps = not self.app.show_fps
+            self.app.input_controller.show_fps = self.app.show_fps
+            return True
+
+        if action_id == "system_menu_quit":
+            self.app.running = False
+            self.app.input_controller.running = False
+            return True
+
         if action_id == "open_region_map" and active_sim is not None:
             selected_entity_id = getattr(active_sim, "selected_entity_id", None)
             self.open_region_map_tab(selected_entity_id)

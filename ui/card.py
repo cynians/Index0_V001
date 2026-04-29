@@ -27,25 +27,28 @@ class EntityCard:
     TABLE_ROW_PAD_Y = 3
     TABLE_COLUMN_GAP = 14
     TABLE_MIN_KEY_W = 96
-    TABLE_MAX_KEY_W = 168
+    TABLE_MAX_KEY_W = 260
+    TABLE_MIN_VALUE_W = 120
 
     SECTION_ORDER = [
         "Identity",
         "Classification",
         "Dimensions / Scale",
+        "Temporal",
         "Relations",
         "State / Layout",
         "Metadata",
     ]
 
-    TAB_ORDER = ["general", "overview", "relations", "state", "media"]
+    TAB_ORDER = ["general", "overview", "temporal", "relations", "state", "media"]
     DATASET_TAB_ORDER = {
-        "ideas": ["general", "relations"],
-        "components": ["general", "overview", "relations", "operational", "media"],
+        "ideas": ["general", "temporal", "relations"],
+        "components": ["general", "overview", "temporal", "relations", "operational", "media"],
     }
     TAB_LABELS = {
         "general": "General",
         "overview": "Overview",
+        "temporal": "Temporal",
         "relations": "Relations",
         "state": "State",
         "operational": "Operational",
@@ -54,12 +57,24 @@ class EntityCard:
     TAB_SECTIONS = {
         "general": [],
         "overview": ["Identity", "Classification", "Dimensions / Scale", "Metadata"],
+        "temporal": ["Temporal"],
         "relations": ["Relations"],
         "state": ["State / Layout"],
         "operational": ["Operational"],
         "media": [],
     }
-    TEMPORAL_FIELDS = {"year", "start_year", "end_year"}
+    TEMPORAL_FIELDS = {
+        "year",
+        "year_number",
+        "start_year",
+        "end_year",
+        "effective_year",
+        "start_event",
+        "end_event",
+        "end_condition",
+        "era",
+        "mean_anomaly_deg_at_epoch",
+    }
     SCHEMA_LOADER = SchemaLoader()
 
     def __init__(self, entity, dataset_name=None, world_model=None):
@@ -71,6 +86,7 @@ class EntityCard:
             "Identity": False,
             "Classification": False,
             "Dimensions / Scale": False,
+            "Temporal": False,
             "Relations": not self._is_idea_card(),
             "State / Layout": True,
             "Metadata": False,
@@ -110,7 +126,14 @@ class EntityCard:
         return not self._is_general_mode() and not self._is_idea_card()
 
     def _field_spec(self, field_key):
-        return self._get_schema_field_specs().get(field_key, {})
+        return self._normalize_field_spec(self._get_schema_field_specs().get(field_key, {}))
+
+    def _normalize_field_spec(self, spec):
+        if isinstance(spec, dict):
+            return spec
+        if isinstance(spec, str):
+            return {"type": spec}
+        return {}
 
     def is_relation_edit_field(self, field_key):
         field_type = self._field_spec(field_key).get("type")
@@ -155,6 +178,11 @@ class EntityCard:
     def _get_general_wiki_text(self, card=None):
         if card is not None and card.get("is_edit_mode", False) and card.get("active_edit_field") == "wiki_entry":
             return card.get("edit_buffer", "")
+
+        if card is not None:
+            draft_buffer = card.get("draft_edit_buffers", {}).get("wiki_entry")
+            if isinstance(draft_buffer, dict) and "text" in draft_buffer:
+                return str(draft_buffer.get("text", ""))
 
         wiki_text = self.entity.get("wiki_entry")
         if isinstance(wiki_text, str) and wiki_text.strip():
@@ -242,11 +270,38 @@ class EntityCard:
     def _is_scalar_schema_type(self, field_type):
         return field_type in {None, "string", "number", "text"}
 
+    def _is_temporal_field(self, field_key, spec=None):
+        if field_key in self.TEMPORAL_FIELDS:
+            return True
+
+        if isinstance(spec, dict) and str(spec.get("section", "")).lower() == "temporal":
+            return True
+
+        key = str(field_key or "").lower()
+        temporal_suffixes = (
+            "_year",
+            "_years",
+            "_time",
+            "_date",
+            "_duration",
+            "_period",
+            "_era",
+            "_epoch",
+        )
+        temporal_prefixes = ("year_", "era_")
+        temporal_rate_suffixes = ("_per_hour", "_per_day", "_per_year")
+
+        if key.endswith(temporal_suffixes) or key.startswith(temporal_prefixes):
+            return True
+        if key.endswith(temporal_rate_suffixes) or "_at_epoch" in key:
+            return True
+        return False
+
     def _is_field_editable(self, field_key, value, schema_field_specs):
         if field_key == "name":
             return True
 
-        spec = schema_field_specs.get(field_key, {})
+        spec = self._normalize_field_spec(schema_field_specs.get(field_key, {}))
         field_type = spec.get("type")
 
         if field_type in {"entity", "entity_list"}:
@@ -301,6 +356,7 @@ class EntityCard:
         state_values = []
         metadata_values = []
         operational_values = []
+        temporal_values = []
 
         media_keys = self._media_field_keys()
 
@@ -349,6 +405,12 @@ class EntityCard:
             }:
                 continue
 
+            spec = self._normalize_field_spec(schema_field_specs.get(key, {}))
+
+            if self._is_temporal_field(key, spec):
+                temporal_values.append((key, value))
+                continue
+
             if self._is_component_card() and key in component_operational_keys:
                 operational_values.append((key, value))
                 continue
@@ -356,7 +418,7 @@ class EntityCard:
             if self._is_component_card() and (key in media_keys or key == "derived_from_ideas"):
                 continue
 
-            if key in {"description", "notes", "tags", "start_year", "end_year", "entry_status"}:
+            if key in {"description", "notes", "tags", "entry_status"}:
                 metadata_values.append((key, value))
                 continue
 
@@ -375,7 +437,6 @@ class EntityCard:
                 state_values.append((key, value))
                 continue
 
-            spec = schema_field_specs.get(key, {})
             field_type = spec.get("type")
 
             if field_type in {"entity", "entity_list"}:
@@ -392,6 +453,7 @@ class EntityCard:
             "Identity": identity,
             "Classification": classification,
             "Dimensions / Scale": overview_dims,
+            "Temporal": temporal_values,
             "Relations": relation_values,
             "State / Layout": state_values,
             "Metadata": metadata_values,
@@ -466,6 +528,49 @@ class EntityCard:
         card["edit_cursor"] = cursor
         return True
 
+    def _word_start_before_cursor(self, buffer_text, cursor):
+        cursor = max(0, min(len(buffer_text), int(cursor)))
+        index = cursor
+        while index > 0 and buffer_text[index - 1].isspace():
+            index -= 1
+        while index > 0 and (buffer_text[index - 1].isalnum() or buffer_text[index - 1] in {"_", "-"}):
+            index -= 1
+        return index
+
+    def _word_end_after_cursor(self, buffer_text, cursor):
+        cursor = max(0, min(len(buffer_text), int(cursor)))
+        index = cursor
+        while index < len(buffer_text) and buffer_text[index].isspace():
+            index += 1
+        while index < len(buffer_text) and (buffer_text[index].isalnum() or buffer_text[index] in {"_", "-"}):
+            index += 1
+        return index
+
+    def _delete_word_before_cursor(self, card):
+        buffer_text = card.get("edit_buffer", "")
+        cursor = self._clamp_edit_cursor(card)
+        start = self._word_start_before_cursor(buffer_text, cursor)
+        card["edit_buffer"] = buffer_text[:start] + buffer_text[cursor:]
+        card["edit_cursor"] = start
+        return True
+
+    def _delete_word_after_cursor(self, card):
+        buffer_text = card.get("edit_buffer", "")
+        cursor = self._clamp_edit_cursor(card)
+        end = self._word_end_after_cursor(buffer_text, cursor)
+        card["edit_buffer"] = buffer_text[:cursor] + buffer_text[end:]
+        card["edit_cursor"] = cursor
+        return True
+
+    def _line_start_before_cursor(self, buffer_text, cursor):
+        cursor = max(0, min(len(buffer_text), int(cursor)))
+        return buffer_text.rfind("\n", 0, cursor) + 1
+
+    def _line_end_after_cursor(self, buffer_text, cursor):
+        cursor = max(0, min(len(buffer_text), int(cursor)))
+        line_end = buffer_text.find("\n", cursor)
+        return len(buffer_text) if line_end == -1 else line_end
+
     def _parse_edit_lines(self, buffer_text):
         lines = []
         for raw_line in str(buffer_text or "").splitlines():
@@ -514,6 +619,15 @@ class EntityCard:
 
     def toggle_edit_mode(self, card):
         currently_enabled = bool(card.get("is_edit_mode", False))
+        if currently_enabled and card.get("active_edit_field"):
+            field_key = card.get("active_edit_field")
+            draft_buffers = card.setdefault("draft_edit_buffers", {})
+            draft_buffers[field_key] = {
+                "text": card.get("edit_buffer", ""),
+                "cursor": int(card.get("edit_cursor", 0)),
+            }
+            card["last_edit_action"] = "draft"
+
         card["is_edit_mode"] = not currently_enabled
 
         if not card["is_edit_mode"]:
@@ -563,6 +677,13 @@ class EntityCard:
 
         card["active_edit_field"] = field_key
         card["edit_original_value"] = value
+        draft_buffer = card.get("draft_edit_buffers", {}).get(field_key)
+        if isinstance(draft_buffer, dict) and "text" in draft_buffer:
+            card["edit_buffer"] = str(draft_buffer.get("text", ""))
+            card["edit_cursor"] = int(draft_buffer.get("cursor", len(card["edit_buffer"])))
+            self._clamp_edit_cursor(card)
+            return True
+
         card["edit_buffer"] = self._initial_edit_buffer(field_key, value)
         card["edit_cursor"] = len(card["edit_buffer"])
         return True
@@ -578,16 +699,21 @@ class EntityCard:
         if field_key == "name":
             card["title"] = str(new_value or self.entity.get("id", "unknown"))
 
+        draft_buffers = card.get("draft_edit_buffers")
+        if isinstance(draft_buffers, dict):
+            draft_buffers.pop(field_key, None)
         card["active_edit_field"] = None
         card["edit_buffer"] = ""
         card["edit_original_value"] = None
         card["edit_cursor"] = 0
+        card["last_edit_action"] = "commit"
         return True
 
     def cancel_edit_field(self, card):
         if not card.get("active_edit_field"):
             return False
 
+        card["last_edit_action"] = "cancel"
         card["active_edit_field"] = None
         card["edit_buffer"] = ""
         card["edit_original_value"] = None
@@ -604,15 +730,21 @@ class EntityCard:
                 direction = -1 if (event.mod & pygame.KMOD_SHIFT) else 1
                 return self._cycle_edit_field(card, direction=direction)
             if event.key == pygame.K_ESCAPE:
+                card["last_edit_action"] = "cancel"
                 card["is_edit_mode"] = False
                 return True
             return False
 
-        if active_field == "wiki_entry" and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-            if event.mod & (pygame.KMOD_CTRL | pygame.KMOD_SHIFT):
+        if active_field == "wiki_entry":
+            if event.key == pygame.K_s and (event.mod & pygame.KMOD_CTRL):
+                return self.commit_edit_field(card)
+
+            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                if event.mod & (pygame.KMOD_CTRL | pygame.KMOD_SHIFT):
+                    return self.commit_edit_field(card)
                 self._insert_edit_text(card, "\n")
+                card["last_edit_action"] = "draft"
                 return True
-            return self.commit_edit_field(card)
 
         if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             return self.commit_edit_field(card)
@@ -626,32 +758,59 @@ class EntityCard:
             return self._cycle_edit_field(card, direction=direction)
 
         if event.key == pygame.K_LEFT:
-            self._set_edit_cursor(card, self._clamp_edit_cursor(card) - 1)
+            cursor = self._clamp_edit_cursor(card)
+            if event.mod & pygame.KMOD_CTRL:
+                self._set_edit_cursor(card, self._word_start_before_cursor(card.get("edit_buffer", ""), cursor))
+            else:
+                self._set_edit_cursor(card, cursor - 1)
+            card["last_edit_action"] = "draft"
             return True
 
         if event.key == pygame.K_RIGHT:
-            self._set_edit_cursor(card, self._clamp_edit_cursor(card) + 1)
+            cursor = self._clamp_edit_cursor(card)
+            if event.mod & pygame.KMOD_CTRL:
+                self._set_edit_cursor(card, self._word_end_after_cursor(card.get("edit_buffer", ""), cursor))
+            else:
+                self._set_edit_cursor(card, cursor + 1)
+            card["last_edit_action"] = "draft"
             return True
 
         if event.key == pygame.K_HOME:
-            self._set_edit_cursor(card, 0)
+            if active_field == "wiki_entry" and not (event.mod & pygame.KMOD_CTRL):
+                self._set_edit_cursor(card, self._line_start_before_cursor(card.get("edit_buffer", ""), self._clamp_edit_cursor(card)))
+            else:
+                self._set_edit_cursor(card, 0)
+            card["last_edit_action"] = "draft"
             return True
 
         if event.key == pygame.K_END:
-            self._set_edit_cursor(card, len(card.get("edit_buffer", "")))
+            if active_field == "wiki_entry" and not (event.mod & pygame.KMOD_CTRL):
+                self._set_edit_cursor(card, self._line_end_after_cursor(card.get("edit_buffer", ""), self._clamp_edit_cursor(card)))
+            else:
+                self._set_edit_cursor(card, len(card.get("edit_buffer", "")))
+            card["last_edit_action"] = "draft"
             return True
 
         if event.key == pygame.K_BACKSPACE:
-            self._delete_before_cursor(card)
+            if event.mod & pygame.KMOD_CTRL:
+                self._delete_word_before_cursor(card)
+            else:
+                self._delete_before_cursor(card)
+            card["last_edit_action"] = "draft"
             return True
 
         if event.key == pygame.K_DELETE:
-            self._delete_after_cursor(card)
+            if event.mod & pygame.KMOD_CTRL:
+                self._delete_word_after_cursor(card)
+            else:
+                self._delete_after_cursor(card)
+            card["last_edit_action"] = "draft"
             return True
 
         text = getattr(event, "unicode", "")
         if text and text.isprintable():
             self._insert_edit_text(card, text)
+            card["last_edit_action"] = "draft"
             return True
 
         return False
@@ -841,16 +1000,27 @@ class EntityCard:
                 for key, _ in section_map.get(section_name, []):
                     max_key_w = max(max_key_w, font.size(f"{key}:")[0] + 14)
 
-        key_w = max(self.TABLE_MIN_KEY_W, min(self.TABLE_MAX_KEY_W, max_key_w))
-        value_w = max(120, available_w - key_w - self.TABLE_COLUMN_GAP)
+        max_key_for_card = max(
+            self.TABLE_MIN_KEY_W,
+            min(self.TABLE_MAX_KEY_W, int(available_w * 0.58), available_w - self.TABLE_MIN_VALUE_W - self.TABLE_COLUMN_GAP),
+        )
+        key_w = max(self.TABLE_MIN_KEY_W, min(max_key_for_card, max_key_w))
+        value_w = max(self.TABLE_MIN_VALUE_W, available_w - key_w - self.TABLE_COLUMN_GAP)
         return key_w, value_w
 
-    def _measure_table_row(self, font, value, value_column_w):
+    def _table_line_height(self, font):
+        if font is None:
+            return self.TEXT_LINE_H
+        return max(self.TEXT_LINE_H, int(font.get_linesize()))
+
+    def _measure_table_row(self, font, key, value, key_column_w, value_column_w):
+        rendered_key = f"{key}:"
+        key_lines = self._wrap_text_lines(rendered_key, font, max(20, key_column_w - 12))
         rendered_value = self._format_value(value)
         wrapped_lines = self._wrap_text_lines(rendered_value, font, value_column_w)
-        content_h = max(1, len(wrapped_lines)) * self.TEXT_LINE_H
+        content_h = max(1, len(key_lines), len(wrapped_lines)) * self._table_line_height(font)
         row_h = content_h + self.TABLE_ROW_PAD_Y * 2
-        return wrapped_lines, row_h
+        return key_lines, wrapped_lines, row_h
 
     def layout_card(self, card, rect):
         section_hitboxes = []
@@ -865,15 +1035,26 @@ class EntityCard:
         tab_x = rect.x + 12
         tab_gap = 6
         tab_widths = {
-            "general": 82,
-            "overview": 88,
-            "relations": 82,
-            "state": 62,
-            "operational": 100,
-            "media": 62,
+            "general": 70,
+            "overview": 78,
+            "temporal": 82,
+            "relations": 76,
+            "state": 54,
+            "operational": 92,
+            "media": 54,
         }
+        tab_order = self._tab_order()
+        available_tab_w = max(120, rect.width - 24)
+        total_tab_w = sum(tab_widths[name] for name in tab_order) + tab_gap * max(0, len(tab_order) - 1)
+        if total_tab_w > available_tab_w:
+            tab_gap = 4
+            available_for_tabs = available_tab_w - tab_gap * max(0, len(tab_order) - 1)
+            base_total = sum(tab_widths[name] for name in tab_order)
+            scale = max(0.55, available_for_tabs / max(1, base_total))
+            for tab_name in tab_order:
+                tab_widths[tab_name] = max(44, int(tab_widths[tab_name] * scale))
 
-        for tab_name in self._tab_order():
+        for tab_name in tab_order:
             tab_rect = pygame.Rect(tab_x, tab_y, tab_widths[tab_name], self.TAB_H)
             tab_hitboxes.append((tab_name, tab_rect))
             tab_x = tab_rect.right + tab_gap
@@ -952,7 +1133,14 @@ class EntityCard:
 
                 if not self.collapsed_sections.get(section_name, False):
                     for key, value in section_map.get(section_name, []):
-                        wrapped_lines, row_h = self._measure_table_row(card["layout_font"], value, value_column_w)
+                        measure_value = card.get("edit_buffer", "") if card.get("active_edit_field") == key else value
+                        key_lines, wrapped_lines, row_h = self._measure_table_row(
+                            card["layout_font"],
+                            key,
+                            measure_value,
+                            key_column_w,
+                            value_column_w,
+                        )
                         row_rect = pygame.Rect(content_left, current_y, text_width, row_h)
                         key_rect = pygame.Rect(content_left, current_y, key_column_w, row_h)
                         value_rect = pygame.Rect(value_column_x, current_y, value_column_w, row_h)
@@ -967,6 +1155,7 @@ class EntityCard:
                                 "row_rect": row_rect,
                                 "key_rect": key_rect,
                                 "value_rect": value_rect,
+                                "key_lines": key_lines,
                                 "wrapped_lines": wrapped_lines,
                             }
                         )
@@ -1064,14 +1253,14 @@ class EntityCard:
         if not self._uses_image_block():
             current_y = self.HEADER_H + self.TAB_H + 20
         probe_rect = pygame.Rect(0, 0, int(card.get("canvas_w", 420)), 0)
-        _, value_column_w = self._get_table_column_widths(font, probe_rect, section_map)
+        key_column_w, value_column_w = self._get_table_column_widths(font, probe_rect, section_map)
 
         for section_name in self._visible_sections():
             current_y += self.SECTION_HEADER_H + self.SECTION_GAP
 
             if not self.collapsed_sections.get(section_name, False):
-                for _, value in section_map.get(section_name, []):
-                    _, row_h = self._measure_table_row(font, value, value_column_w)
+                for key, value in section_map.get(section_name, []):
+                    _, _, row_h = self._measure_table_row(font, key, value, key_column_w, value_column_w)
                     current_y += row_h + self.SECTION_GAP
 
                 current_y += self.SECTION_GAP
@@ -1144,7 +1333,7 @@ class EntityCard:
                 if active_field in self.TEMPORAL_FIELDS:
                     edit_status = f"Editing {active_field} | Click timeline to set | Enter save | Esc cancel"
                 elif active_field == "wiki_entry":
-                    edit_status = "Editing wiki_entry | Ctrl+L link | Ctrl+Enter newline | Enter save"
+                    edit_status = "Editing wiki_entry | Enter newline | Ctrl+Enter save | Ctrl+L link"
                 elif self.is_relation_edit_field(active_field):
                     edit_status = f"Editing {active_field} | Search relations | Enter insert | Ctrl+Enter save"
                 else:
@@ -1218,6 +1407,17 @@ class EntityCard:
             pygame.draw.rect(screen, border, tab_rect, 1)
 
             label = self.TAB_LABELS.get(tab_name, tab_name.title())
+            abbreviations = {
+                "general": "Gen",
+                "overview": "Over",
+                "temporal": "Temp",
+                "relations": "Rel",
+                "state": "State",
+                "operational": "Ops",
+                "media": "Media",
+            }
+            if font.size(label)[0] > tab_rect.width - 8:
+                label = abbreviations.get(tab_name, label[:4])
             text_surface = font.render(label, True, text_color)
             text_rect = text_surface.get_rect(center=tab_rect.center)
             screen.blit(text_surface, text_rect)
@@ -1398,16 +1598,23 @@ class EntityCard:
                     1,
                 )
 
-                key_surface = font.render(f"{key}:", True, (210, 210, 210))
+                key_lines = row.get("key_lines") or [f"{key}:"]
                 key_y = row_rect.y + self.TABLE_ROW_PAD_Y
-                screen.blit(key_surface, (row["key_rect"].x + 6, key_y))
+                line_h = self._table_line_height(font)
+                key_text_max_w = 0
+                for key_line in key_lines:
+                    key_surface = font.render(key_line, True, (210, 210, 210))
+                    key_text_max_w = max(key_text_max_w, key_surface.get_width())
+                    screen.blit(key_surface, (row["key_rect"].x + 6, key_y))
+                    key_y += line_h
 
                 if is_editable and not is_active_field:
                     hint_label = "timeline" if key in self.TEMPORAL_FIELDS else "editable"
                     hint_surface = font.render(hint_label, True, (130, 150, 185))
                     hint_x = row["key_rect"].right - hint_surface.get_width() - 6
-                    if hint_x > row["key_rect"].x + 12:
-                        screen.blit(hint_surface, (hint_x, key_y))
+                    key_text_right = row["key_rect"].x + 6 + key_text_max_w
+                    if len(key_lines) == 1 and hint_x > key_text_right + 8:
+                        screen.blit(hint_surface, (hint_x, row_rect.y + self.TABLE_ROW_PAD_Y))
 
                 if is_active_field and card.get("is_edit_mode", False):
                     wrapped_lines = self._wrap_text_lines(
@@ -1424,7 +1631,7 @@ class EntityCard:
                 for line in wrapped_lines:
                     val_surface = font.render(line, True, value_color)
                     screen.blit(val_surface, (row["value_rect"].x + 2, line_y))
-                    line_y += self.TEXT_LINE_H
+                    line_y += line_h
 
                 if is_active_field and card.get("relation_picker_open", False):
                     active_relation_anchor = row["value_rect"]

@@ -1,3 +1,4 @@
+import json
 import os
 import random
 import re
@@ -6,6 +7,7 @@ from pathlib import Path
 
 import pygame
 import tkinter as tk
+import yaml
 from tkinter import filedialog
 
 from ui.ui_types import UIButton
@@ -40,15 +42,10 @@ class KnowledgeBrowserUI:
     BROWSER_SEARCH_H = 24
     BROWSER_FILTER_H = 20
     BROWSER_CONTROL_GAP = 6
-    NEW_ENTRY_TEMPLATES = [
-        ("ideas", "Idea"),
-        ("locations", "Location"),
-        ("systems", "System"),
-        ("vehicles", "Vehicle"),
-        ("components", "Component"),
-        ("events", "Event"),
-    ]
     PROJECT_ROOT = Path(__file__).resolve().parents[1]
+    DRAFT_CACHE_PATH = PROJECT_ROOT / ".cache" / "card_drafts.json"
+    ABSTRACT_SCHEMA_NAMES = {"entity_core", "entity_base", "core", "base"}
+    TEMPLATE_PICKER_ROW_H = 34
 
     def __init__(self):
         self.layout = None
@@ -69,6 +66,8 @@ class KnowledgeBrowserUI:
         self.template_picker_rect = None
         self.template_button_hitboxes = []
         self.show_template_picker = False
+        self.template_picker_scroll = 0
+        self.schema_entry_templates = self._load_schema_entry_templates()
         self.browser_scroll = 0
         self.browser_search_query = ""
         self.browser_search_active = False
@@ -114,6 +113,7 @@ class KnowledgeBrowserUI:
         self.app_width = 0
         self.app_height = 0
         self.schema_loader = SchemaLoader()
+        self.card_drafts = self._load_card_drafts()
 
     def reset(self):
         """
@@ -171,6 +171,7 @@ class KnowledgeBrowserUI:
         card["wiki_link_query"] = ""
         card["wiki_link_matches"] = []
         card["wiki_link_selected_index"] = 0
+        card["wiki_link_replace_range"] = None
 
     def _build_wiki_link_matches(self, query_text):
         if self.world_model is None:
@@ -283,10 +284,28 @@ class KnowledgeBrowserUI:
         return False
 
     def _open_wiki_link_picker(self, card):
+        query_text, replace_start, replace_end = self._wiki_link_seed_from_cursor(card)
         card["wiki_link_picker_open"] = True
-        card["wiki_link_query"] = ""
-        card["wiki_link_matches"] = self._build_wiki_link_matches("")
+        card["wiki_link_query"] = query_text
+        card["wiki_link_replace_range"] = (replace_start, replace_end)
+        card["wiki_link_matches"] = self._build_wiki_link_matches(query_text)
         card["wiki_link_selected_index"] = 0
+
+    def _wiki_link_seed_from_cursor(self, card):
+        buffer_text = str(card.get("edit_buffer", ""))
+        cursor = max(0, min(len(buffer_text), int(card.get("edit_cursor", len(buffer_text)))))
+        start = cursor
+        while start > 0 and (buffer_text[start - 1].isalnum() or buffer_text[start - 1] in {"_", "-"}):
+            start -= 1
+        end = cursor
+        while end < len(buffer_text) and (buffer_text[end].isalnum() or buffer_text[end] in {"_", "-"}):
+            end += 1
+
+        query = buffer_text[start:end].strip()
+        if not query:
+            start = cursor
+            end = cursor
+        return query, start, end
 
     def _insert_wiki_link_from_picker(self, card):
         matches = card.get("wiki_link_matches", [])
@@ -296,11 +315,24 @@ class KnowledgeBrowserUI:
         selected_index = max(0, min(card.get("wiki_link_selected_index", 0), len(matches) - 1))
         entity_id = matches[selected_index]["id"]
         insertion = f"[[{entity_id}]]"
-        current_buffer = card.get("edit_buffer", "")
-        separator = ""
-        if current_buffer and not current_buffer.endswith((" ", "\n")):
-            separator = " "
-        card["edit_buffer"] = f"{current_buffer}{separator}{insertion}"
+        current_buffer = str(card.get("edit_buffer", ""))
+        cursor = max(0, min(len(current_buffer), int(card.get("edit_cursor", len(current_buffer)))))
+        replace_range = card.get("wiki_link_replace_range", (cursor, cursor))
+        try:
+            replace_start, replace_end = replace_range
+        except (TypeError, ValueError):
+            replace_start, replace_end = cursor, cursor
+        replace_start = max(0, min(len(current_buffer), int(replace_start)))
+        replace_end = max(replace_start, min(len(current_buffer), int(replace_end)))
+
+        before = current_buffer[:replace_start]
+        after = current_buffer[replace_end:]
+        leading_space = " " if before and not before.endswith((" ", "\n")) else ""
+        trailing_space = " " if after and not after.startswith((" ", "\n", ".", ",", ";", ":", ")", "]")) else ""
+        card["edit_buffer"] = f"{before}{leading_space}{insertion}{trailing_space}{after}"
+        card["edit_cursor"] = len(before) + len(leading_space) + len(insertion) + len(trailing_space)
+        card["last_edit_action"] = "draft"
+        self._save_card_draft(card)
         self._close_wiki_link_picker(card)
         return True
 
@@ -411,6 +443,184 @@ class KnowledgeBrowserUI:
         )
         self._build_template_picker_hitboxes()
 
+    def _font_line_height(self, font=None):
+        font = font or self.font_for_layout
+        if font is None:
+            return self.LINE_HEIGHT
+        return max(self.LINE_HEIGHT, int(font.get_linesize()) + 4)
+
+    def _template_picker_row_height(self):
+        line_h = self._font_line_height()
+        return max(self.TEMPLATE_PICKER_ROW_H, line_h * 2 + 8)
+
+    def _template_picker_header_height(self):
+        return max(42, self._font_line_height() + 22)
+
+    def _schema_display_label(self, name):
+        text = str(name or "entry").replace(".yaml", "")
+        text = text.replace("_", " ").strip()
+        return text.title() if text else "Entry"
+
+    def _normalize_schema_name(self, name):
+        text = str(name or "").strip().lower()
+        if text.endswith(".yaml") or text.endswith(".yml"):
+            text = os.path.splitext(text)[0]
+        text = text.replace("-", "_").replace(" ", "_")
+        if text.startswith("index0_"):
+            text = text[len("index0_"):]
+        if text.endswith("_schema"):
+            text = text[:-len("_schema")]
+        return text
+
+    def _schema_file_base(self, schema_path):
+        stem = Path(schema_path).stem
+        if stem.startswith("schema_"):
+            stem = stem[len("schema_"):]
+        return self._normalize_schema_name(stem)
+
+    def _singularize_name(self, name):
+        text = self._normalize_schema_name(name)
+        if text in {"species", "logistics", "production"}:
+            return text
+        if text.endswith("ies") and len(text) > 3:
+            return f"{text[:-3]}y"
+        if text.endswith("s") and not text.endswith("ss"):
+            return text[:-1]
+        return text
+
+    def _pluralize_name(self, name):
+        text = self._normalize_schema_name(name)
+        if text in {"species", "logistics", "production"}:
+            return text
+        if text.endswith("y") and len(text) > 1:
+            return f"{text[:-1]}ies"
+        if text.endswith("s"):
+            return text
+        return f"{text}s"
+
+    def _entry_dataset_names(self):
+        entry_dir = self.PROJECT_ROOT / "entries"
+        if not entry_dir.exists():
+            return set()
+        return {
+            path.stem
+            for path in entry_dir.glob("*.yml")
+        } | {
+            path.stem
+            for path in entry_dir.glob("*.yaml")
+        }
+
+    def _dataset_name_for_schema(self, schema_name, file_base, existing_datasets):
+        candidates = []
+        for name in (schema_name, file_base):
+            normalized = self._normalize_schema_name(name)
+            if not normalized:
+                continue
+            for candidate in (
+                normalized,
+                self._pluralize_name(normalized),
+                self._singularize_name(normalized),
+            ):
+                if candidate and candidate not in candidates:
+                    candidates.append(candidate)
+
+        for candidate in candidates:
+            if candidate in existing_datasets:
+                return candidate
+
+        return file_base or self._pluralize_name(schema_name)
+
+    def _entity_type_for_schema(self, schema_name, dataset_name):
+        schema_type = self._normalize_schema_name(schema_name)
+        dataset_type = self._singularize_name(dataset_name)
+        if schema_type and schema_type not in self.ABSTRACT_SCHEMA_NAMES:
+            if schema_type in {"behaviors", "cities", "components", "locations", "materials", "systems", "vehicles"}:
+                return self._singularize_name(schema_type)
+            return schema_type
+        return dataset_type
+
+    def _template_id_prefix(self, dataset_name, entity_type=None):
+        mapping = {
+            "behaviors": "beh",
+            "cities": "city",
+            "components": "comp",
+            "conflicts": "conf",
+            "cultural_aspects": "cultasp",
+            "cultures": "cult",
+            "events": "evt",
+            "factions": "fac",
+            "formations": "form",
+            "ideas": "idea",
+            "institutions": "inst",
+            "items": "item",
+            "locations": "loc",
+            "logistics": "log",
+            "markets": "mkt",
+            "materials": "mat",
+            "people": "person",
+            "pops": "pop",
+            "producers": "prod",
+            "production": "prod",
+            "spatial_features": "spat",
+            "species": "sp",
+            "systems": "sys",
+            "technologies": "tech",
+            "vehicles": "veh",
+            "years": "year",
+        }
+        if dataset_name in mapping:
+            return mapping[dataset_name]
+        source = self._normalize_schema_name(entity_type or dataset_name)
+        parts = [part for part in source.split("_") if part]
+        if len(parts) > 1:
+            return "".join(part[:3] for part in parts)[:10]
+        return source[:6] or "entry"
+
+    def _load_schema_entry_templates(self):
+        schema_dir = self.PROJECT_ROOT / "schemas"
+        if not schema_dir.exists():
+            return []
+
+        existing_datasets = self._entry_dataset_names()
+        templates = []
+        for schema_path in sorted(schema_dir.glob("*.y*ml")):
+            try:
+                with open(schema_path, "r", encoding="utf-8") as f:
+                    schema = yaml.safe_load(f) or {}
+            except (OSError, yaml.YAMLError):
+                continue
+
+            file_base = self._schema_file_base(schema_path)
+            metadata_name = (schema.get("metadata") or {}).get("name")
+            raw_schema_name = schema.get("schema") or metadata_name or file_base
+            schema_name = self._normalize_schema_name(raw_schema_name)
+            if schema_name in self.ABSTRACT_SCHEMA_NAMES or file_base == "core":
+                continue
+
+            dataset_name = self._dataset_name_for_schema(schema_name, file_base, existing_datasets)
+            entity_type = self._entity_type_for_schema(schema_name, dataset_name)
+            label = self._schema_display_label(entity_type)
+            templates.append(
+                {
+                    "schema_name": schema_name,
+                    "schema_path": str(schema_path),
+                    "schema": schema,
+                    "dataset_name": dataset_name,
+                    "entity_type": entity_type,
+                    "label": label,
+                    "id_prefix": self._template_id_prefix(dataset_name, entity_type=entity_type),
+                }
+            )
+
+        templates.sort(key=lambda item: (item["label"].lower(), item["dataset_name"]))
+        return templates
+
+    def _template_by_dataset(self, dataset_name):
+        for template in self.schema_entry_templates:
+            if template.get("dataset_name") == dataset_name:
+                return template
+        return None
+
     def _build_template_picker_hitboxes(self):
         self.template_button_hitboxes = []
         self.template_picker_rect = None
@@ -420,16 +630,27 @@ class KnowledgeBrowserUI:
 
         right_rect = self.layout["right_rect"]
         picker_w = min(360, right_rect.width - 24)
-        picker_h = 40 + len(self.NEW_ENTRY_TEMPLATES) * 32
+        template_count = len(self.schema_entry_templates)
+        max_picker_h = max(96, right_rect.height - 70)
+        header_h = self._template_picker_header_height()
+        row_h = self._template_picker_row_height()
+        picker_h = min(max_picker_h, header_h + template_count * row_h + 8)
         picker_x = right_rect.right - picker_w - 12
         picker_y = right_rect.y + 44
         self.template_picker_rect = pygame.Rect(picker_x, picker_y, picker_w, picker_h)
 
-        button_y = picker_y + 30
-        for dataset_name, label in self.NEW_ENTRY_TEMPLATES:
-            button_rect = pygame.Rect(picker_x + 12, button_y, picker_w - 24, 24)
-            self.template_button_hitboxes.append((dataset_name, label, button_rect))
-            button_y += 30
+        visible_rows = max(1, (picker_h - header_h - 8) // row_h)
+        max_scroll = max(0, template_count - visible_rows)
+        self.template_picker_scroll = max(0, min(max_scroll, self.template_picker_scroll))
+
+        button_y = picker_y + header_h
+        visible_templates = self.schema_entry_templates[
+            self.template_picker_scroll:self.template_picker_scroll + visible_rows
+        ]
+        for template in visible_templates:
+            button_rect = pygame.Rect(picker_x + 12, button_y, picker_w - 24, row_h - 6)
+            self.template_button_hitboxes.append((template, template["label"], button_rect))
+            button_y += row_h
 
     def _is_expanded(self, entity_id):
         return self.browser_tree_state["systems"].get(entity_id, False)
@@ -793,12 +1014,17 @@ class KnowledgeBrowserUI:
             "wiki_link_query": "",
             "wiki_link_matches": [],
             "wiki_link_selected_index": 0,
+            "wiki_link_replace_range": None,
             "relation_picker_open": False,
             "relation_picker_query": "",
             "relation_picker_matches": [],
             "relation_picker_selected_index": 0,
             "relation_picker_hitboxes": [],
+            "draft_edit_buffers": {},
+            "is_draft_entity": False,
+            "last_edit_action": None,
         }
+        self._apply_cached_draft_to_card(card)
         return card
 
 
@@ -918,31 +1144,22 @@ class KnowledgeBrowserUI:
         self._ensure_card(entity)
         return True
 
-    def _template_entity_type(self, dataset_name):
-        mapping = {
-            "locations": "location",
-            "systems": "system",
-            "vehicles": "vehicle",
-            "components": "component",
-            "events": "event",
-            "ideas": "idea",
-        }
-        return mapping.get(dataset_name, dataset_name[:-1] if dataset_name.endswith("s") else dataset_name)
+    def _template_entity_type(self, dataset_name, template=None):
+        if isinstance(template, dict) and template.get("entity_type"):
+            return template["entity_type"]
+        template = self._template_by_dataset(dataset_name)
+        if template is not None:
+            return template.get("entity_type", self._singularize_name(dataset_name))
+        return self._singularize_name(dataset_name)
 
-    def _template_id_prefix(self, dataset_name):
-        mapping = {
-            "locations": "loc",
-            "systems": "sys",
-            "vehicles": "veh",
-            "components": "comp",
-            "events": "evt",
-            "ideas": "idea",
-        }
-        return mapping.get(dataset_name, dataset_name[:4])
-
-    def _next_template_entity_id(self, dataset_name):
-        prefix = self._template_id_prefix(dataset_name)
+    def _next_template_entity_id(self, dataset_name, template=None):
+        prefix = (
+            template.get("id_prefix")
+            if isinstance(template, dict) and template.get("id_prefix")
+            else self._template_id_prefix(dataset_name, entity_type=self._template_entity_type(dataset_name, template))
+        )
         existing_ids = set(self.world_model.loader.entities.keys()) if self.world_model is not None else set()
+        existing_ids.update(self.card_drafts.keys())
         index = 1
         while True:
             candidate = f"{prefix}_new_{index:03d}"
@@ -950,12 +1167,54 @@ class KnowledgeBrowserUI:
                 return candidate
             index += 1
 
-    def _create_template_entity(self, dataset_name):
+    def _default_value_for_schema_field(self, field_type):
+        field_type = str(field_type or "").lower()
+        if "list" in field_type:
+            return []
+        if field_type in {"dict", "object"} or "object" in field_type:
+            return {}
+        if "entity" in field_type or "null" in field_type:
+            return None
+        if "number" in field_type or "int" in field_type or "float" in field_type:
+            return None
+        if "bool" in field_type:
+            return False
+        return ""
+
+    def _normalize_schema_field_spec(self, spec):
+        if isinstance(spec, dict):
+            return spec
+        if isinstance(spec, str):
+            return {"type": spec}
+        return {}
+
+    def _populate_required_schema_fields(self, entity, template):
+        if not isinstance(template, dict):
+            return
+        schema = template.get("schema") or {}
+        field_specs = self._collect_schema_fields(schema)
+        for field_key, raw_spec in field_specs.items():
+            if field_key in entity or field_key in {"id", "pretty_name", "name", "type", "wiki_entry"}:
+                continue
+            spec = self._normalize_schema_field_spec(raw_spec)
+            if spec.get("optional", False):
+                continue
+            entity[field_key] = self._default_value_for_schema_field(spec.get("type"))
+
+    def _create_template_entity(self, template):
         if self.world_model is None:
             return None
 
-        entity_type = self._template_entity_type(dataset_name)
-        entity_id = self._next_template_entity_id(dataset_name)
+        if isinstance(template, str):
+            template = self._template_by_dataset(template) or {
+                "dataset_name": template,
+                "entity_type": self._template_entity_type(template),
+                "label": self._schema_display_label(self._template_entity_type(template)),
+            }
+
+        dataset_name = template.get("dataset_name")
+        entity_type = template.get("entity_type") or self._template_entity_type(dataset_name, template)
+        entity_id = self._next_template_entity_id(dataset_name, template=template)
         label = f"New {entity_type.replace('_', ' ').title()}"
 
         entity = {
@@ -966,22 +1225,25 @@ class KnowledgeBrowserUI:
             "_dataset": dataset_name,
             "wiki_entry": "",
         }
+        self._populate_required_schema_fields(entity, template)
 
         self.world_model.loader.datasets.setdefault(dataset_name, []).append(entity)
         self.world_model.loader.entities[entity_id] = entity
         return entity
 
-    def _create_new_entry_from_template(self, dataset_name):
-        entity = self._create_template_entity(dataset_name)
+    def _create_new_entry_from_template(self, template):
+        entity = self._create_template_entity(template)
         if entity is None:
             return False
 
-        self._persist_entity_to_repository(entity)
         self.browser_items = self._build_browser_items(self.world_model)
         self._rebuild_browser_hitboxes()
         self.show_template_picker = False
         self._build_template_picker_hitboxes()
-        self._ensure_card(entity)
+        card = self._ensure_card(entity)
+        if card is not None:
+            card["is_draft_entity"] = True
+            self._save_card_draft(card)
         return True
 
     def _create_idea_from_parent_card(self, parent_card):
@@ -1011,14 +1273,16 @@ class KnowledgeBrowserUI:
         if parent_entity is not None and parent_entity.get("_dataset") == "ideas":
             idea["parent_ideas"] = [parent_entity_id]
 
-        self._persist_entity_to_repository(idea)
         self.browser_items = self._build_browser_items(self.world_model)
         self._rebuild_browser_hitboxes()
-        self._ensure_card(idea)
+        card = self._ensure_card(idea)
+        if card is not None:
+            card["is_draft_entity"] = True
+            self._save_card_draft(card)
         return True
 
     def _is_temporal_field(self, field_key):
-        return field_key in {"year", "start_year", "end_year"}
+        return field_key in {"year", "year_number", "start_year", "end_year", "effective_year"}
 
     def _coerce_card_year(self, value):
         if value is None or isinstance(value, bool):
@@ -1115,24 +1379,26 @@ class KnowledgeBrowserUI:
 
     def _ensure_card(self, entity):
         if entity is None:
-            return
+            return None
 
         entity_id = entity.get("id")
         if entity_id is None:
-            return
+            return None
 
         for index, card in enumerate(self.cards):
             if card.get("entity_id") == entity_id:
                 self.selected_entity_id = entity_id
-                self._bring_card_to_front(index)
+                card_obj = self._bring_card_to_front(index)
                 self._layout_all_cards()
-                return
+                return card_obj
 
         new_card = self._build_card_from_entity(entity)
         if new_card is not None:
             self.cards.append(new_card)
             self.selected_entity_id = entity_id
             self._relayout_cards()
+            return new_card
+        return None
 
     def _open_image_file_dialog(self):
         root = tk.Tk()
@@ -1167,6 +1433,105 @@ class KnowledgeBrowserUI:
         if not dataset_name:
             return None
         return str(self.PROJECT_ROOT / "entries" / f"{dataset_name}.yaml")
+
+    def _load_card_drafts(self):
+        try:
+            with open(self.DRAFT_CACHE_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+        if not isinstance(data, dict):
+            return {}
+        drafts = data.get("drafts", data)
+        return drafts if isinstance(drafts, dict) else {}
+
+    def _write_card_drafts(self):
+        os.makedirs(os.path.dirname(str(self.DRAFT_CACHE_PATH)), exist_ok=True)
+        payload = {"drafts": self.card_drafts}
+        with open(self.DRAFT_CACHE_PATH, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, sort_keys=True)
+
+    def _entity_for_card(self, card):
+        if card is None:
+            return None
+
+        card_view = card.get("card_view")
+        if card_view is not None:
+            entity = getattr(card_view, "entity", None)
+            if entity is not None:
+                return entity
+
+        if self.world_model is not None:
+            return self.world_model.get_entity(card.get("entity_id"))
+        return None
+
+    def _draft_entity_snapshot(self, entity):
+        if not isinstance(entity, dict):
+            return {}
+        return {key: value for key, value in entity.items() if not key.startswith("_")}
+
+    def _save_card_draft(self, card):
+        entity = self._entity_for_card(card)
+        if not isinstance(entity, dict) or not entity.get("id"):
+            return False
+
+        entity_id = str(entity["id"])
+        active_field = card.get("active_edit_field")
+        draft = dict(self.card_drafts.get(entity_id, {}))
+        draft["entity"] = self._draft_entity_snapshot(entity)
+        draft["dataset"] = entity.get("_dataset", entity.get("type", ""))
+        draft["is_new_entry"] = bool(card.get("is_draft_entity", False) or draft.get("is_new_entry", False))
+
+        edit_buffers = dict(draft.get("edit_buffers", {}))
+        if active_field:
+            edit_buffers[active_field] = {
+                "text": card.get("edit_buffer", ""),
+                "cursor": int(card.get("edit_cursor", 0)),
+            }
+        card["draft_edit_buffers"] = edit_buffers
+        draft["edit_buffers"] = edit_buffers
+        self.card_drafts[entity_id] = draft
+        self._write_card_drafts()
+        return True
+
+    def _remove_card_draft(self, entity_id):
+        if not entity_id or entity_id not in self.card_drafts:
+            return False
+        del self.card_drafts[entity_id]
+        self._write_card_drafts()
+        return True
+
+    def _apply_cached_draft_to_card(self, card):
+        entity_id = card.get("entity_id")
+        draft = self.card_drafts.get(entity_id)
+        if not isinstance(draft, dict):
+            return False
+
+        edit_buffers = draft.get("edit_buffers", {})
+        card["draft_edit_buffers"] = edit_buffers if isinstance(edit_buffers, dict) else {}
+        card["is_draft_entity"] = bool(draft.get("is_new_entry", False))
+        return True
+
+    def _hydrate_draft_entities(self, world_model):
+        if world_model is None:
+            return
+
+        for entity_id, draft in self.card_drafts.items():
+            if not isinstance(draft, dict) or not draft.get("is_new_entry", False):
+                continue
+            if world_model.get_entity(entity_id) is not None:
+                continue
+
+            entity = dict(draft.get("entity", {}))
+            if not entity:
+                continue
+            entity["id"] = entity_id
+            dataset_name = draft.get("dataset") or entity.get("type")
+            if dataset_name:
+                entity["_dataset"] = dataset_name
+                world_model.loader.datasets.setdefault(dataset_name, []).append(entity)
+            world_model.loader.entities[entity_id] = entity
 
     def _format_yaml_scalar(self, value):
         if value is None:
@@ -1280,15 +1645,24 @@ class KnowledgeBrowserUI:
         if card is None:
             return False
 
-        entity = None
-        card_view = card.get("card_view")
-        if card_view is not None:
-            entity = getattr(card_view, "entity", None)
-
-        if entity is None and self.world_model is not None:
-            entity = self.world_model.get_entity(card.get("entity_id"))
-
-        return self._persist_entity_to_repository(entity)
+        entity = self._entity_for_card(card)
+        persisted = self._persist_entity_to_repository(entity)
+        if persisted and isinstance(entity, dict):
+            card["is_draft_entity"] = False
+            remaining_buffers = card.get("draft_edit_buffers", {})
+            if isinstance(remaining_buffers, dict) and remaining_buffers:
+                entity_id = str(entity.get("id"))
+                draft = dict(self.card_drafts.get(entity_id, {}))
+                draft["entity"] = self._draft_entity_snapshot(entity)
+                draft["dataset"] = entity.get("_dataset", entity.get("type", ""))
+                draft["is_new_entry"] = False
+                draft["edit_buffers"] = remaining_buffers
+                self.card_drafts[entity_id] = draft
+                self._write_card_drafts()
+            else:
+                card["draft_edit_buffers"] = {}
+                self._remove_card_draft(entity.get("id"))
+        return persisted
 
     def _build_canonical_image_path(self, entity_id, dataset_name, role_name, source_path):
         _, ext = os.path.splitext(source_path)
@@ -1480,7 +1854,8 @@ class KnowledgeBrowserUI:
         content_bottom = left_rect.bottom - 10
         visible_h = content_bottom - content_top
 
-        total_h = len(self.browser_items) * self.LINE_HEIGHT
+        line_height = self._font_line_height()
+        total_h = len(self.browser_items) * line_height
         max_scroll = max(0, total_h - visible_h)
         self.browser_scroll = max(0, min(self.browser_scroll, max_scroll))
 
@@ -1488,31 +1863,31 @@ class KnowledgeBrowserUI:
 
         for item in self.browser_items:
             row_top = line_y
-            row_bottom = line_y + self.LINE_HEIGHT
+            row_bottom = line_y + line_height
 
             if item["kind"] == "spacer":
-                line_y += self.LINE_HEIGHT
+                line_y += line_height
                 continue
 
             if row_bottom < content_top:
-                line_y += self.LINE_HEIGHT
+                line_y += line_height
                 continue
 
             if row_top > content_bottom:
                 break
 
             if item["kind"] in ("entity", "tree_entity"):
-                row_rect = pygame.Rect(left_rect.x + 10, line_y - 1, left_rect.width - 20, self.LINE_HEIGHT)
+                row_rect = pygame.Rect(left_rect.x + 10, line_y - 1, left_rect.width - 20, line_height)
                 self.browser_hitboxes.append((item["entity_id"], row_rect))
 
                 if item["kind"] == "tree_entity" and item.get("expandable", False):
                     depth = item.get("depth", 0)
                     indent_px = depth * 18
                     base_x = left_rect.x + 12 + indent_px
-                    caret_rect = pygame.Rect(base_x, line_y + 2, 14, 14)
+                    caret_rect = pygame.Rect(base_x, line_y + max(2, (line_height - 14) // 2), 14, 14)
                     self.browser_toggle_hitboxes.append((item["entity_id"], caret_rect))
 
-            line_y += self.LINE_HEIGHT
+            line_y += line_height
 
     def rebuild(self, app_width, app_height, world_model, repository_scope_entity_id, font):
         self.reset()
@@ -1521,6 +1896,7 @@ class KnowledgeBrowserUI:
         self.app_height = app_height
         self.font_for_layout = font
         self.world_model = world_model
+        self._hydrate_draft_entities(world_model)
         self.repository_scope_entity_id = repository_scope_entity_id
         self.browser_items = self._build_browser_items(world_model)
         self._refresh_layout_geometry()
@@ -1603,7 +1979,11 @@ class KnowledgeBrowserUI:
 
                 if self._handle_relation_picker_keydown(card, event):
                     self._bring_card_to_front(index)
-                    self._persist_card_entity(card)
+                    if card.get("last_edit_action") == "commit":
+                        self._persist_card_entity(card)
+                    else:
+                        self._save_card_draft(card)
+                    card["last_edit_action"] = None
                     self._sync_card_years_from_entity(card)
                     self._refresh_timeline_items()
                     self._relayout_cards()
@@ -1613,7 +1993,13 @@ class KnowledgeBrowserUI:
                     self._bring_card_to_front(index)
                     if not card_view.is_relation_edit_field(card.get("active_edit_field")):
                         self._close_relation_picker(card)
-                    self._persist_card_entity(card)
+                    if card.get("last_edit_action") == "commit":
+                        self._persist_card_entity(card)
+                    elif card.get("last_edit_action") == "cancel":
+                        card["last_edit_action"] = None
+                    else:
+                        self._save_card_draft(card)
+                    card["last_edit_action"] = None
                     self._sync_card_years_from_entity(card)
                     self._refresh_timeline_items()
                     self._relayout_cards()
@@ -1629,9 +2015,18 @@ class KnowledgeBrowserUI:
                 return "__ui_consumed__"
 
         if left_rect.collidepoint(mouse_pos):
-            line_step = 24
+            line_step = self._font_line_height()
             self.browser_scroll = max(0, self.browser_scroll - event.y * line_step)
             self._rebuild_browser_hitboxes()
+            return "__ui_consumed__"
+
+        if (
+            self.show_template_picker
+            and self.template_picker_rect is not None
+            and self.template_picker_rect.collidepoint(mouse_pos)
+        ):
+            self.template_picker_scroll = max(0, self.template_picker_scroll - event.y)
+            self._build_template_picker_hitboxes()
             return "__ui_consumed__"
 
         if right_rect.collidepoint(mouse_pos):
@@ -1818,6 +2213,8 @@ class KnowledgeBrowserUI:
             edit_toggle_rect = card.get("edit_toggle_rect")
             if edit_toggle_rect is not None and edit_toggle_rect.collidepoint(mouse_pos) and card_view is not None:
                 card_obj = self._bring_card_to_front(index)
+                if card_obj.get("is_edit_mode", False) and card_obj.get("active_edit_field"):
+                    self._save_card_draft(card_obj)
                 card_obj["card_view"].toggle_edit_mode(card_obj)
                 if not card_obj.get("is_edit_mode", False):
                     self._clear_timeline_edit_target()
@@ -1837,6 +2234,9 @@ class KnowledgeBrowserUI:
                 if field_rect.collidepoint(mouse_pos) and card_view is not None:
                     card_obj = self._bring_card_to_front(index)
                     card_obj["card_view"].begin_edit_field(card_obj, field_key)
+                    if card_obj.get("last_edit_action") == "commit":
+                        self._persist_card_entity(card_obj)
+                        card_obj["last_edit_action"] = None
                     if field_key == "wiki_entry":
                         card_obj["card_view"].set_edit_cursor_from_pos(card_obj, field_key, mouse_pos, self.font_for_layout)
                     if self._is_temporal_field(field_key):
@@ -2020,15 +2420,33 @@ class KnowledgeBrowserUI:
         if self.show_template_picker and self.template_picker_rect is not None:
             pygame.draw.rect(screen, (24, 28, 40), self.template_picker_rect)
             pygame.draw.rect(screen, (160, 168, 186), self.template_picker_rect, 1)
-            picker_title = font.render("Create New Entry From Template", True, (236, 236, 236))
-            screen.blit(picker_title, (self.template_picker_rect.x + 12, self.template_picker_rect.y + 8))
+            picker_title = font.render("Create New Entry From Schema", True, (236, 236, 236))
+            title_y = self.template_picker_rect.y + max(6, (self._template_picker_header_height() - font.get_linesize()) // 2)
+            screen.blit(picker_title, (self.template_picker_rect.x + 12, title_y))
 
-            for dataset_name, label, button_rect in self.template_button_hitboxes:
+            for template, label, button_rect in self.template_button_hitboxes:
                 pygame.draw.rect(screen, (44, 50, 64), button_rect)
                 pygame.draw.rect(screen, (132, 142, 160), button_rect, 1)
+                detail = template.get("dataset_name", "")
                 button_text = font.render(label, True, (242, 242, 242))
-                button_text_rect = button_text.get_rect(center=button_rect.center)
-                screen.blit(button_text, button_text_rect)
+                detail_text = font.render(detail, True, (166, 174, 190))
+                line_h = font.get_linesize()
+                text_block_h = line_h * 2
+                text_y = button_rect.y + max(3, (button_rect.height - text_block_h) // 2)
+                screen.blit(button_text, (button_rect.x + 8, text_y))
+                screen.blit(detail_text, (button_rect.x + 8, text_y + line_h))
+
+            if len(self.schema_entry_templates) > len(self.template_button_hitboxes):
+                visible_count = max(1, len(self.template_button_hitboxes))
+                scroll_label = f"{self.template_picker_scroll + 1}-{self.template_picker_scroll + visible_count} / {len(self.schema_entry_templates)}"
+                scroll_surface = font.render(scroll_label, True, (166, 174, 190))
+                screen.blit(
+                    scroll_surface,
+                    (
+                        self.template_picker_rect.right - scroll_surface.get_width() - 10,
+                        title_y,
+                    ),
+                )
 
         content_top = (
             self.browser_search_rect.bottom
@@ -2041,18 +2459,20 @@ class KnowledgeBrowserUI:
         row_hitboxes = {entity_id: rect for entity_id, rect in self.browser_hitboxes}
         toggle_hitboxes = {entity_id: rect for entity_id, rect in self.browser_toggle_hitboxes}
 
+        line_height = self._font_line_height(font)
+        text_offset_y = max(0, (line_height - font.get_linesize()) // 2)
         line_y = content_top - self.browser_scroll
 
         for item in self.browser_items:
             row_top = line_y
-            row_bottom = line_y + self.LINE_HEIGHT
+            row_bottom = line_y + line_height
 
             if item["kind"] == "spacer":
-                line_y += self.LINE_HEIGHT
+                line_y += line_height
                 continue
 
             if row_bottom < content_top:
-                line_y += self.LINE_HEIGHT
+                line_y += line_height
                 continue
 
             if row_top > content_bottom:
@@ -2061,12 +2481,12 @@ class KnowledgeBrowserUI:
             if item["kind"] == "section":
                 color = (235, 235, 235)
                 text_surface = font.render(item["text"], True, color)
-                screen.blit(text_surface, (left_rect.x + 12, line_y))
+                screen.blit(text_surface, (left_rect.x + 12, line_y + text_offset_y))
 
             elif item["kind"] == "label":
                 color = (220, 220, 220)
                 text_surface = font.render(item["text"], True, color)
-                screen.blit(text_surface, (left_rect.x + 12, line_y))
+                screen.blit(text_surface, (left_rect.x + 12, line_y + text_offset_y))
 
             else:
                 entity_id = item["entity_id"]
@@ -2115,25 +2535,25 @@ class KnowledgeBrowserUI:
                         text_x = base_x + 20
 
                     text_surface = font.render(item["text"], True, color)
-                    screen.blit(text_surface, (text_x, line_y))
+                    screen.blit(text_surface, (text_x, line_y + text_offset_y))
 
                     meta_text = item.get("meta_text")
                     if meta_text:
                         meta_surface = font.render(meta_text, True, (170, 170, 170))
-                        screen.blit(meta_surface, (text_x + text_surface.get_width() + 8, line_y))
+                        screen.blit(meta_surface, (text_x + text_surface.get_width() + 8, line_y + text_offset_y))
                     missing_count = item.get("missing_count", 0)
                     if missing_count:
                         missing_surface = font.render(f"missing:{missing_count}", True, (220, 182, 132))
-                        screen.blit(missing_surface, (left_rect.right - missing_surface.get_width() - 14, line_y))
+                        screen.blit(missing_surface, (left_rect.right - missing_surface.get_width() - 14, line_y + text_offset_y))
                 else:
                     text_surface = font.render(item["text"], True, color)
-                    screen.blit(text_surface, (left_rect.x + 12, line_y))
+                    screen.blit(text_surface, (left_rect.x + 12, line_y + text_offset_y))
                     missing_count = item.get("missing_count", 0)
                     if missing_count:
                         missing_surface = font.render(f"missing:{missing_count}", True, (220, 182, 132))
-                        screen.blit(missing_surface, (left_rect.right - missing_surface.get_width() - 14, line_y))
+                        screen.blit(missing_surface, (left_rect.right - missing_surface.get_width() - 14, line_y + text_offset_y))
 
-            line_y += self.LINE_HEIGHT
+            line_y += line_height
 
         previous_clip = screen.get_clip()
         screen.set_clip(right_rect.inflate(-8, -8))
@@ -2190,15 +2610,17 @@ class KnowledgeBrowserUI:
             return "__ui_consumed__"
 
         if self.new_entry_button is not None and self.new_entry_button.rect.collidepoint(mouse_pos):
+            self.schema_entry_templates = self._load_schema_entry_templates()
             self.show_template_picker = not self.show_template_picker
+            self.template_picker_scroll = 0
             self._build_template_picker_hitboxes()
             return "__ui_consumed__"
 
         if self.show_template_picker:
             if self.template_picker_rect is not None and self.template_picker_rect.collidepoint(mouse_pos):
-                for dataset_name, _, button_rect in self.template_button_hitboxes:
+                for template, _, button_rect in self.template_button_hitboxes:
                     if button_rect.collidepoint(mouse_pos):
-                        self._create_new_entry_from_template(dataset_name)
+                        self._create_new_entry_from_template(template)
                         return "__ui_consumed__"
             else:
                 self.show_template_picker = False

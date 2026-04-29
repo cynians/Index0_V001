@@ -54,6 +54,10 @@ class UIManager:
         self.mouse_world_label = None
 
         self.menu_active = False
+        self.system_menu_active = False
+        self.system_settings_active = False
+        self.system_menu_buttons = []
+        self.system_menu_rect = None
         self.knowledge_ui = KnowledgeBrowserUI()
         self.selection_inspector = SelectionInspectorUI()
         self.app_font = pygame.font.SysFont("consolas", 16)
@@ -659,11 +663,16 @@ class UIManager:
             tab_manager=None,
             camera=None,
             menu_active=False,
+            system_menu_active=False,
+            system_settings_active=False,
             world_model=None,
             repository_scope_entity_id=None
     ):
         self._reset_shared_state()
         self.menu_active = menu_active
+        self.system_menu_active = system_menu_active
+        self.system_settings_active = system_settings_active
+        self._rebuild_system_menu(app_width, app_height)
 
         self._rebuild_selection_inspector(active_sim, app_width, app_height)
 
@@ -682,6 +691,39 @@ class UIManager:
             return
 
         self._rebuild_active_simulation_ui(active_sim, app_width, app_height, camera)
+
+    def _rebuild_system_menu(self, app_width, app_height):
+        self.system_menu_buttons = []
+        self.system_menu_rect = None
+
+        if not self.system_menu_active:
+            return
+
+        panel_w = 320
+        panel_h = 268 if self.system_settings_active else 236
+        panel_x = (app_width - panel_w) // 2
+        panel_y = (app_height - panel_h) // 2
+        self.system_menu_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+
+        button_w = 220
+        button_h = 34
+        button_x = panel_x + (panel_w - button_w) // 2
+        button_y = panel_y + 78
+        gap = 14
+
+        if self.system_settings_active:
+            self.system_menu_buttons.extend([
+                UIButton("system_toggle_grid", "Toggle Grid", pygame.Rect(button_x, button_y, button_w, button_h)),
+                UIButton("system_toggle_fps", "Toggle FPS", pygame.Rect(button_x, button_y + (button_h + gap), button_w, button_h)),
+                UIButton("system_menu_back", "Back", pygame.Rect(button_x, button_y + (button_h + gap) * 2, button_w, button_h)),
+            ])
+            return
+
+        self.system_menu_buttons.extend([
+            UIButton("system_menu_continue", "Continue", pygame.Rect(button_x, button_y, button_w, button_h)),
+            UIButton("system_menu_settings", "Settings", pygame.Rect(button_x, button_y + (button_h + gap), button_w, button_h)),
+            UIButton("system_menu_quit", "Quit", pygame.Rect(button_x, button_y + (button_h + gap) * 2, button_w, button_h)),
+        ])
 
     def _rebuild_selection_inspector(self, active_sim, app_width, app_height):
         if active_sim is not None and hasattr(active_sim, "consume_pending_inspector_target"):
@@ -957,6 +999,27 @@ class UIManager:
 
         self._draw_info_panel(screen, font, 20, 40, lines)
 
+    def _draw_system_menu(self, screen, font):
+        if not self.system_menu_active or self.system_menu_rect is None:
+            return
+
+        overlay = pygame.Surface((screen.get_width(), screen.get_height()), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 150))
+        screen.blit(overlay, (0, 0))
+
+        pygame.draw.rect(screen, (24, 26, 32), self.system_menu_rect)
+        pygame.draw.rect(screen, (210, 210, 210), self.system_menu_rect, 1)
+
+        title = "Settings" if self.system_settings_active else "Menu"
+        subtitle = "Display options" if self.system_settings_active else "Simulation paused"
+        title_surface = font.render(title, True, (245, 245, 245))
+        subtitle_surface = font.render(subtitle, True, (175, 175, 180))
+        screen.blit(title_surface, (self.system_menu_rect.x + 22, self.system_menu_rect.y + 20))
+        screen.blit(subtitle_surface, (self.system_menu_rect.x + 22, self.system_menu_rect.y + 42))
+
+        for button in self.system_menu_buttons:
+            self._draw_button(screen, font, button)
+
     def _draw_timeline_bar(self, screen, x, y, w, h):
         pygame.draw.rect(screen, (30, 30, 34), (x, y, w, h))
         pygame.draw.rect(screen, (200, 200, 200), (x, y, w, h), 1)
@@ -993,6 +1056,7 @@ class UIManager:
 
         if self.menu_active:
             self.knowledge_ui.draw(screen, font, self._draw_button)
+            self._draw_system_menu(screen, font)
             return
 
         self._draw_time_panel(screen, font)
@@ -1037,9 +1101,26 @@ class UIManager:
         self._draw_simulation_bar(screen, font)
         self.selection_inspector.draw(screen, font)
         self._draw_hover_tooltip(screen, font)
+        self._draw_system_menu(screen, font)
 
 
     def handle_event(self, event):
+        if self.system_menu_active:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                mouse_pos = event.pos
+
+                for button in self.system_menu_buttons:
+                    if not button.visible or not button.enabled:
+                        continue
+
+                    if button.rect.collidepoint(mouse_pos):
+                        return button.id
+
+                return "__ui_consumed__"
+
+            if event.type in (pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL, pygame.KEYDOWN):
+                return "__ui_consumed__"
+
         if self.menu_active:
             return self.knowledge_ui.handle_event(event)
 

@@ -60,6 +60,7 @@ fields:
 
   mean_anomaly_deg_at_epoch:
     type: number
+    section: Temporal
     optional: true
 
   display_color:

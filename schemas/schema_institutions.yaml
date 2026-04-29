@@ -111,10 +111,12 @@ fields:
 
   effective_year:
     type: number
+    section: Temporal
     optional: true
 
   end_condition:
     type: string
+    section: Temporal
     optional: true
 
 

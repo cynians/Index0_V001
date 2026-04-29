@@ -66,10 +66,12 @@ fields:
 
   start_year:
     type: number
+    section: Temporal
     optional: true
 
   end_year:
     type: number
+    section: Temporal
     optional: true
 
   derived_from_ideas:

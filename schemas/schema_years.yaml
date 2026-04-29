@@ -6,9 +6,11 @@ fields:
 
   year_number:
     type: number
+    section: Temporal
 
   era:
     type: string
+    section: Temporal
     optional: true
 
   canonical_events:
