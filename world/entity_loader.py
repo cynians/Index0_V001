@@ -45,14 +45,44 @@ class EntityLoader:
         "entry_status": "",
         "media_layers": {},
     }
+    IDEA_DEFAULTS = {
+        "description": "",
+        "notes": "",
+        "wiki_entry": "",
+        "tags": [],
+        "start_year": None,
+        "end_year": None,
+        "parent_ideas": [],
+        "related_ideas": [],
+        "offspring": [],
+        "placeholders": [],
+        "entry_status": "",
+    }
+    LEGACY_IDEA_FIELDS = {
+        "idea_class",
+        "related_entities",
+        "parent_entity",
+        "source",
+        "decision_status",
+        "card_image",
+        "design_image",
+        "card_image_front",
+        "card_image_side",
+        "card_image_top",
+        "image_path",
+        "image",
+        "derived_from_ideas",
+        "media_layers",
+    }
 
-    def __init__(self, entries_directory=None):
+    def __init__(self, entries_directory=None, auto_save_normalized=False):
 
         if entries_directory is None:
             project_root = Path(__file__).resolve().parents[1]
             entries_directory = project_root / "entries"
 
         self.entries_directory = Path(entries_directory)
+        self.auto_save_normalized = auto_save_normalized
 
         self.datasets = {}
         self.entities = {}
@@ -63,7 +93,7 @@ class EntityLoader:
 
     # --------------------------------------------------
 
-    def _ensure_standard_relations(self, entity):
+    def _ensure_standard_relations(self, entity, dataset_name=None):
         changed = False
 
         if "pretty_name" not in entity:
@@ -74,7 +104,10 @@ class EntityLoader:
             entity["name"] = entity.get("pretty_name") or entity.get("id") or ""
             changed = True
 
-        for field, default_value in self.CORE_DEFAULTS.items():
+        is_idea = dataset_name == "ideas" or entity.get("type") == "idea"
+        defaults = self.IDEA_DEFAULTS if is_idea else self.CORE_DEFAULTS
+
+        for field, default_value in defaults.items():
             if field not in entity:
                 if isinstance(default_value, list):
                     entity[field] = list(default_value)
@@ -87,6 +120,12 @@ class EntityLoader:
         if "child_ideas" in entity:
             entity.pop("child_ideas", None)
             changed = True
+
+        if is_idea:
+            for field in self.LEGACY_IDEA_FIELDS:
+                if field in entity:
+                    entity.pop(field, None)
+                    changed = True
 
         return changed
 
@@ -169,7 +208,7 @@ class EntityLoader:
                 changed = False
                 for entity in data:
                     if isinstance(entity, dict):
-                        changed = self._ensure_standard_relations(entity) or changed
+                        changed = self._ensure_standard_relations(entity, dataset_name=dataset_name) or changed
 
                 self._dataset_file_records.append({
                     "file": file,
@@ -323,12 +362,23 @@ class EntityLoader:
 
     # --------------------------------------------------
 
-    def refresh(self):
+    def refresh(self, auto_save_normalized=None):
+        """
+        Reload repository entities and rebuild runtime indexes.
+
+        Normalization still happens in memory so UI/runtime code can rely on
+        standard fields. Writing those normalization changes back to disk is
+        opt-in, because constructing or refreshing a world model should not
+        mutate repository files by surprise.
+        """
+        if auto_save_normalized is None:
+            auto_save_normalized = self.auto_save_normalized
 
         self.load_datasets()
         self.build_entity_index()
         changed_entity_ids = self.populate_offspring()
-        self.save_changed_dataset_files(changed_entity_ids)
+        if auto_save_normalized:
+            self.save_changed_dataset_files(changed_entity_ids)
         self.build_reference_graph()
 
     # --------------------------------------------------

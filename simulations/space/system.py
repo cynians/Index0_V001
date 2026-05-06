@@ -110,41 +110,7 @@ class CelestialSystem:
 
     def _append_generated_location_entry(self, path, entry):
         """
-        Append one generated location entry to locations.yaml with readable spacing
-        and a visual header, instead of rewriting the whole file.
-
-        Format:
-        * two leading newlines before the block
-        * one header comment with id and pretty name
-        * YAML block for a single list item
-        """
-        entry_id = entry.get("id", "unknown_location")
-        entry_name = entry.get("pretty_name") or entry.get("name") or entry_id
-        header = f"#----------{entry_id}----{entry_name}-----------"
-
-        yaml_block = yaml.safe_dump(
-            [entry],
-            sort_keys=False,
-            allow_unicode=True,
-            default_flow_style=False,
-        ).rstrip()
-
-        with path.open("a", encoding="utf-8") as f:
-            f.write("\n\n")
-            f.write(header)
-            f.write("\n")
-            f.write(yaml_block)
-            f.write("\n")
-
-    def _append_generated_location_entry(self, path, entry):
-        """
-        Append one generated location entry to locations.yaml while preserving
-        existing file layout better than rewriting the full YAML list.
-
-        Format:
-        * one blank line before the generated block
-        * one header comment containing id and name
-        * the generated YAML entry block
+        Append one generated location entry without rewriting locations.yaml.
         """
         entry_id = entry.get("id", "unknown_location")
         entry_name = entry.get("name") or entry.get("pretty_name") or entry_id

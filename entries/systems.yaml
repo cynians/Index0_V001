@@ -1624,6 +1624,7 @@
   entry_status: ''
   media_layers: {}
 - id: body_charon
+  pretty_name: Charon
   name: Charon
   type: system
   system_role: orbital_body
@@ -1648,10 +1649,10 @@
   related_ideas: []
   placeholders: []
   offspring: []
-  pretty_name: Charon
   description: ''
   notes: ''
-  wiki_entry: ''
+  wiki_entry: |
+    Testholder Charon
   card_image: ''
   design_image: ''
   card_image_front: ''

@@ -28,6 +28,7 @@ class SchemaLoader:
         self.schema_directory = Path(schema_directory)
 
         self.schemas = {}
+        self.schema_files = {}
         self._resolved_schemas = {}
 
         self.load_schemas()
@@ -37,6 +38,7 @@ class SchemaLoader:
     def load_schemas(self):
 
         self.schemas = {}
+        self.schema_files = {}
         self._resolved_schemas = {}
 
         files = list(self.schema_directory.glob("*.yaml"))
@@ -67,6 +69,7 @@ class SchemaLoader:
                 schema_name = file.stem
 
             self.schemas[schema_name] = schema
+            self.schema_files[schema_name] = file
 
     # --------------------------------------------------
 
@@ -109,6 +112,9 @@ class SchemaLoader:
     def get_schema(self, schema_name):
 
         return self._resolve_schema(schema_name)
+
+    def get_schema_file(self, schema_name):
+        return self.schema_files.get(schema_name)
 
     # --------------------------------------------------
 

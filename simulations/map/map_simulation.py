@@ -35,6 +35,7 @@ class MapSimulation:
     DRAFT_DOUBLE_CLICK_DISTANCE_PX = 10.0
     POLYGON_POINT_HIT_RADIUS_PX = 10.0
     SQUARE_HANDLE_HIT_RADIUS_PX = 10.0
+    CAMERA_DRAG_THRESHOLD_PX = 4.0
     MIN_SQUARE_SIDE_WORLD = 0.001
 
     DEFAULT_PLANET_WORLD_WIDTH = 4000.0
@@ -122,6 +123,10 @@ class MapSimulation:
         self._selection_last_click_screen_pos = None
         self._selection_last_click_target = None
         self._pending_inspector_target = None
+        self.is_camera_dragging = False
+        self.camera_drag_start_screen_pos = None
+        self.camera_drag_start_camera_pos = None
+        self.camera_drag_has_moved = False
         self.last_saved_spatial_feature_id = None
 
         self.bounds = self._resolve_root_bounds()
@@ -1591,6 +1596,48 @@ class MapSimulation:
         self._selection_last_click_screen_pos = screen_pos
         self._selection_last_click_target = target
 
+    def _begin_camera_drag(self, screen_pos, camera):
+        self.is_camera_dragging = True
+        self.camera_drag_start_screen_pos = screen_pos
+        self.camera_drag_start_camera_pos = (camera.x, camera.y)
+        self.camera_drag_has_moved = False
+
+    def _reset_camera_drag(self):
+        self.is_camera_dragging = False
+        self.camera_drag_start_screen_pos = None
+        self.camera_drag_start_camera_pos = None
+        self.camera_drag_has_moved = False
+
+    def _update_camera_drag(self, screen_pos, camera):
+        if not self.is_camera_dragging:
+            return False
+
+        if self.camera_drag_start_screen_pos is None:
+            return False
+
+        if self.camera_drag_start_camera_pos is None:
+            return False
+
+        dx = float(screen_pos[0]) - float(self.camera_drag_start_screen_pos[0])
+        dy = float(screen_pos[1]) - float(self.camera_drag_start_screen_pos[1])
+
+        if not self.camera_drag_has_moved:
+            distance_sq = dx * dx + dy * dy
+            if distance_sq < self.CAMERA_DRAG_THRESHOLD_PX ** 2:
+                return False
+
+            self.camera_drag_has_moved = True
+
+        start_camera_x, start_camera_y = self.camera_drag_start_camera_pos
+        zoom = max(float(camera.zoom), 1e-9)
+        camera.x = start_camera_x - (dx / zoom)
+        camera.y = start_camera_y - (dy / zoom)
+
+        self.hover_entity_id = None
+        self.hover_spatial_feature_id = None
+        self.hover_screen_pos = None
+        return True
+
     def _entity_id_is_in_root_scope(self, entity_id):
         if not entity_id:
             return False
@@ -2115,6 +2162,45 @@ class MapSimulation:
 
         return None
 
+    def _select_picked_layer(self, picked_layer, screen_pos, record_click=False):
+        self.hover_screen_pos = screen_pos
+        self.hover_entity_id = picked_layer.get("entity_id") if picked_layer else None
+        self.hover_spatial_feature_id = picked_layer.get("spatial_feature_id") if picked_layer else None
+
+        if picked_layer is None:
+            self.selected_entity_id = None
+            self.selected_spatial_feature_id = None
+            return
+
+        self.selected_entity_id = picked_layer.get("entity_id")
+        self.selected_spatial_feature_id = picked_layer.get("spatial_feature_id")
+
+        if record_click:
+            target = None
+            if (
+                self.active_layer_kind == self.LOCATION_LAYER_KIND
+                and self._can_inspect_location(self.selected_entity_id)
+            ):
+                target = ("location", self.selected_entity_id)
+            elif self._is_real_spatial_feature_id(self.selected_spatial_feature_id):
+                target = ("spatial_feature", self.selected_spatial_feature_id)
+
+            if target is not None and self._is_selection_double_click(target, screen_pos):
+                self._pending_inspector_target = {
+                    "kind": target[0],
+                    "id": target[1],
+                }
+                self._record_selection_click(None, None)
+            else:
+                self._record_selection_click(target, screen_pos)
+
+        logger.debug(
+            f"[MapSimulation] Selected entity={self.selected_entity_id} "
+            f"spatial_feature={self.selected_spatial_feature_id}",
+            key="map_selection",
+            interval=0.1
+        )
+
     def _set_polygon_editor_hover_point(self, map_point):
         if self.is_editing_spatial_feature_polygon:
             self.editing_hover_map_pos = map_point
@@ -2360,6 +2446,9 @@ class MapSimulation:
         """
         Update hover state from pointer motion.
         """
+        if self._update_camera_drag(screen_pos, camera):
+            return
+
         world_x, world_y = self._screen_to_world(camera, screen_pos)
 
         if self.is_square_editor_active():
@@ -2397,6 +2486,7 @@ class MapSimulation:
         picking in world/map coordinates.
         """
         world_x, world_y = self._screen_to_world(camera, screen_pos)
+        button = getattr(event, "button", None)
 
         if self.is_square_editor_active():
             self._handle_square_editor_pointer_event(
@@ -2420,46 +2510,28 @@ class MapSimulation:
 
         picked_layer = self._pick_layer_at_world(world_x, world_y, camera, screen_pos)
 
-        self.hover_screen_pos = screen_pos
-        self.hover_entity_id = picked_layer.get("entity_id") if picked_layer else None
-        self.hover_spatial_feature_id = picked_layer.get("spatial_feature_id") if picked_layer else None
-
-        if picked_layer is None:
-            self.selected_entity_id = None
-            self.selected_spatial_feature_id = None
+        if event.type == self.MOUSEBUTTONDOWN_EVENT_TYPE and button == 1:
+            self._begin_camera_drag(screen_pos, camera)
+            self.hover_screen_pos = screen_pos
+            self.hover_entity_id = picked_layer.get("entity_id") if picked_layer else None
+            self.hover_spatial_feature_id = picked_layer.get("spatial_feature_id") if picked_layer else None
             return
 
-        self.selected_entity_id = picked_layer.get("entity_id")
-        self.selected_spatial_feature_id = picked_layer.get("spatial_feature_id")
+        if event.type == self.MOUSEBUTTONUP_EVENT_TYPE and button == 1:
+            was_camera_dragging = self.is_camera_dragging
+            was_camera_pan = self.camera_drag_has_moved
+            self._reset_camera_drag()
 
-        if (
-            event.type == self.MOUSEBUTTONDOWN_EVENT_TYPE
-            and getattr(event, "button", None) == 1
-        ):
-            target = None
-            if (
-                self.active_layer_kind == self.LOCATION_LAYER_KIND
-                and self._can_inspect_location(self.selected_entity_id)
-            ):
-                target = ("location", self.selected_entity_id)
-            elif self._is_real_spatial_feature_id(self.selected_spatial_feature_id):
-                target = ("spatial_feature", self.selected_spatial_feature_id)
+            if not was_camera_dragging:
+                return
 
-            if target is not None and self._is_selection_double_click(target, screen_pos):
-                self._pending_inspector_target = {
-                    "kind": target[0],
-                    "id": target[1],
-                }
-                self._record_selection_click(None, None)
-            else:
-                self._record_selection_click(target, screen_pos)
+            if was_camera_dragging and was_camera_pan:
+                return
 
-        logger.debug(
-            f"[MapSimulation] Selected entity={self.selected_entity_id} "
-            f"spatial_feature={self.selected_spatial_feature_id}",
-            key="map_selection",
-            interval=0.1
-        )
+            self._select_picked_layer(picked_layer, screen_pos, record_click=True)
+            return
+
+        self._select_picked_layer(picked_layer, screen_pos, record_click=False)
 
     def get_center(self):
         return (

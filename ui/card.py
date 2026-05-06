@@ -35,6 +35,23 @@ class EntityCard:
         "offspring",
         "placeholders",
     ]
+    IDEA_GENERIC_FIELDS = {
+        "id",
+        "pretty_name",
+        "name",
+        "type",
+        "description",
+        "notes",
+        "wiki_entry",
+        "tags",
+        "start_year",
+        "end_year",
+        "parent_ideas",
+        "related_ideas",
+        "offspring",
+        "placeholders",
+        "entry_status",
+    }
 
     SECTION_ORDER = [
         "Identity",
@@ -271,7 +288,14 @@ class EntityCard:
 
     def _get_schema_field_specs(self):
         schema = self._resolve_schema()
-        return self._collect_schema_fields(schema)
+        field_specs = self._collect_schema_fields(schema)
+        if self._is_idea_card():
+            return {
+                key: value
+                for key, value in field_specs.items()
+                if key in self.IDEA_GENERIC_FIELDS
+            }
+        return field_specs
 
     def _is_scalar_schema_type(self, field_type):
         return field_type in {None, "string", "number", "text"}
@@ -1099,6 +1123,7 @@ class EntityCard:
         edit_toggle_rect = pygame.Rect(rect.right - 48, rect.y + 12, 20, 20)
         idea_button_rect = pygame.Rect(rect.right - 72, rect.y + 12, 20, 20)
         title_edit_rect = pygame.Rect(rect.x + 10, rect.y + 7, max(40, rect.width - 120), 20)
+        type_label_rect = pygame.Rect(rect.x + 10, rect.y + 28, max(40, rect.width - 120), 18)
         if card.get("is_edit_mode", False):
             editable_field_hitboxes.append(("name", title_edit_rect))
 
@@ -1260,6 +1285,7 @@ class EntityCard:
         card["idea_button_rect"] = idea_button_rect
         card["close_rect"] = close_rect
         card["title_edit_rect"] = title_edit_rect
+        card["type_label_rect"] = type_label_rect
         card["year_hitboxes"] = [
             (year, pygame.Rect(year_x - 12, center_y - 12, 24, 48))
             for year, year_x in year_positions
@@ -1342,6 +1368,12 @@ class EntityCard:
         title_surface = font.render(title_text, True, (245, 245, 245))
         subtitle_surface = font.render(card["subtitle"], True, (170, 170, 170))
         screen.blit(title_surface, (rect.x + 12, rect.y + 10))
+        type_label_rect = card.get("type_label_rect")
+        if type_label_rect is not None and self._is_idea_card():
+            hover_pos = pygame.mouse.get_pos()
+            if type_label_rect.collidepoint(hover_pos):
+                pygame.draw.rect(screen, (42, 48, 62), type_label_rect)
+                pygame.draw.rect(screen, (130, 150, 190), type_label_rect, 1)
         screen.blit(subtitle_surface, (rect.x + 12, rect.y + 30))
 
         edit_toggle_rect = card.get("edit_toggle_rect")
