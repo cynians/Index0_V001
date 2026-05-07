@@ -74,8 +74,8 @@
   - ceag
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   notes: ''
@@ -88,7 +88,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: ailurus_fulgens
   pretty_name: Red Panda - Ailurus fulgens
@@ -157,8 +157,8 @@
   - natural
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   notes: ''
@@ -171,7 +171,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: rheithrosciurus_macrotis
   pretty_name: Tufted Ground Squirrel - Rheithrosciurus macrotis
@@ -242,8 +242,8 @@
   - natural
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   notes: ''
@@ -256,7 +256,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: sp_new_001
   pretty_name: New Species
@@ -275,10 +275,17 @@
   tags: []
   start_year: null
   end_year: null
-  derived_from_ideas: []
-  parent_ideas: []
-  related_ideas: []
+  derived_from: []
+  parents: []
+  related: []
   offspring: []
   placeholders: []
   entry_status: ''
   media_layers: {}
+- id: sp_new_003
+  pretty_name: New Species
+  name: ''
+  type: species
+  wiki_entry: ''
+  representative_body_length_m: null
+  simulation_tier_default: null

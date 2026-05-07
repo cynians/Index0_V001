@@ -17,8 +17,8 @@
   start_year: 2164
   end_year: 2164
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -29,7 +29,7 @@
   card_image_top: ''
   image_path: ''
   image: ''
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: event_cog_quarantine_breach_and_crackdown_5742
   pretty_name: CoG Quarantine Breach and Crackdown
@@ -55,8 +55,8 @@
   - breach
   start_year: 5742
   entry_status: stub
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -68,5 +68,5 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}

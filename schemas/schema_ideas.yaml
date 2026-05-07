@@ -2,13 +2,7 @@ schema: idea
 
 extends: entity_core
 
-fields:
-
-  parent_ideas:
-    type: entity_list
-    target: ideas
-    section: Relations
-    optional: true
+fields: {}
 
 # --------------------------------------------------
 # COMMENTED EXAMPLE ENTRY
@@ -19,6 +13,6 @@ fields:
 #   name: Orbital Habitat Market
 #   type: idea
 #   wiki_entry: Early note for how habitat markets might emerge around transit chokepoints.
-#   parent_ideas: []
+#   parents: []
 #   offspring: []
 #   entry_status: draft

@@ -37,8 +37,8 @@
   start_year: 1850
   entry_status: draft
   card_image: assets/cards/production/prod_steel_plate_rolling_card.png
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -52,7 +52,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: prod_pump_module_assembly
   pretty_name: Pump Module Assembly
@@ -95,8 +95,8 @@
   components_per_day: 12
   start_year: 6034
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -111,5 +111,5 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}

@@ -19,8 +19,8 @@
   - planetary_period
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   notes: ''
@@ -33,5 +33,5 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}

@@ -15,8 +15,8 @@
   card_image_map: assets/cards/locations/planet_earth_map.png
   card_image: assets/cards/locations/planet_earth_map.png
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -30,7 +30,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: geo_europe
@@ -48,8 +48,8 @@
   population:
     y0: 450000000
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -64,7 +64,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: geo_central_europe
@@ -82,8 +82,8 @@
   population:
     y0: 180000000
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -98,7 +98,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: geo_germany
@@ -116,8 +116,8 @@
   population:
     y0: 83000000
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -132,7 +132,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: city_berlin
@@ -148,8 +148,8 @@
   population:
     y0: 3800000
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -164,7 +164,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: geo_alps
@@ -182,8 +182,8 @@
   population:
     y0: 14000000
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -198,7 +198,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: geo_france
@@ -216,8 +216,8 @@
   population:
     y0: 68000000
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -232,7 +232,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: city_paris
@@ -248,8 +248,8 @@
   population:
     y0: 2100000
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -264,7 +264,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: planet_mercury
@@ -291,8 +291,8 @@
   population:
     y0: 0
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -307,7 +307,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: planet_venus
@@ -334,8 +334,8 @@
   population:
     y0: 0
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring:
   - id: idea_new_005
@@ -351,7 +351,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: planet_mars
@@ -378,8 +378,9 @@
   population:
     y0: 0
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents:
+  - idea_new_007
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -394,9 +395,11 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
+  controlling_factions:
+  - fac_new_001
 - id: planet_vesta
   pretty_name: Vesta
   name: Vesta
@@ -421,8 +424,8 @@
   population:
     y0: 0
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -437,7 +440,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: planet_jupiter
@@ -464,8 +467,8 @@
   population:
     y0: 0
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -480,7 +483,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: planet_titan
@@ -507,8 +510,8 @@
   population:
     y0: 0
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -523,7 +526,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: planet_enceladus
@@ -550,8 +553,8 @@
   population:
     y0: 0
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -566,7 +569,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: planet_nanhai
@@ -579,10 +582,10 @@
     y6034: 0
   start_year: 6034
   entry_status: draft
-  derived_from_ideas:
+  derived_from:
   - IDEA-492
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -654,11 +657,11 @@
     notes: City-scale location with strong industrial transformation; deeper ecological
       detail not yet defined.
     data: {}
-  derived_from_ideas:
+  derived_from:
   - IDEA-492
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -697,8 +700,8 @@
   population:
     y0: 0
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -713,7 +716,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: planet_nereid
@@ -740,8 +743,8 @@
   population:
     y0: 0
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -756,7 +759,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: planet_europa
@@ -783,8 +786,8 @@
   population:
     y0: 0
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -799,7 +802,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: planet_io
@@ -826,8 +829,8 @@
   population:
     y0: 0
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -842,7 +845,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: sys_metyaki
@@ -855,8 +858,8 @@
     x: 0
     y: 0
   start_year: 5240
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -871,7 +874,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: planet_noyanakh
@@ -893,8 +896,8 @@
   notes: Placeholder planetary entry for Bospor-related entity integration. Detailed
     planetary properties still to be defined.
   start_year: 5246
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -908,7 +911,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: geo_kure_atoll
@@ -962,8 +965,8 @@
     - conservation_area
     notes: Placeholder ecology tab content.
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   notes: ''
@@ -976,7 +979,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: geo_northwestern_hawaiian_islands
@@ -1010,8 +1013,8 @@
     - conservation_area
     notes: Placeholder ecology tab content.
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1026,7 +1029,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: site_mcas_futenma
@@ -1073,8 +1076,8 @@
     - adjacent_urban_ecology
     notes: Placeholder ecology tab content.
   start_year: 1946
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -1087,7 +1090,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: loc_central_asian_steppe_cog
@@ -1115,8 +1118,8 @@
     notes: Placeholder summary for future location card content.
   start_year: 2884
   entry_status: stub
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -1129,7 +1132,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: loc_cog_breach_vent_tunnel
   pretty_name: CoG Breach Vent Tunnel
@@ -1146,8 +1149,8 @@
     regime reuse.
   start_year: 5742
   entry_status: stub
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -1160,7 +1163,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: geo_spain
   pretty_name: Spain
@@ -1178,8 +1181,8 @@
     y0: 48000000
   start_year: 0
   entry_status: stub
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1194,7 +1197,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: city_madrid
   pretty_name: Madrid
@@ -1210,8 +1213,8 @@
     y0: 3300000
   start_year: 0
   entry_status: stub
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1226,7 +1229,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: geo_italy
   pretty_name: Italy
@@ -1244,8 +1247,8 @@
     y0: 59000000
   start_year: 0
   entry_status: stub
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1260,7 +1263,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: city_rome
   pretty_name: Rome
@@ -1276,8 +1279,8 @@
     y0: 2800000
   start_year: 0
   entry_status: stub
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1292,7 +1295,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: geo_sweden
   pretty_name: Sweden
@@ -1310,8 +1313,8 @@
     y0: 10500000
   start_year: 0
   entry_status: stub
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1326,7 +1329,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: city_stockholm
   pretty_name: Stockholm
@@ -1342,8 +1345,8 @@
     y0: 980000
   start_year: 0
   entry_status: stub
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1358,7 +1361,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: loc_new_001
   pretty_name: New Location
@@ -1368,8 +1371,8 @@
   parent_location: geo_alps
   associated_cultures: []
   derived_from_system_body: null
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1384,7 +1387,7 @@
   tags: []
   start_year: null
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: loc_draft_geo_europe_001
@@ -1402,8 +1405,8 @@
     max_y: -52.159
   start_year: 2400
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1417,7 +1420,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: loc_draft_geo_spain_001
   pretty_name: Draft Map Area 001
@@ -1434,8 +1437,8 @@
     max_y: -38.37
   start_year: 2400
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1449,5 +1452,11 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
+- id: loc_state_bihar
+  pretty_name: 'Bihar State, India'
+  name: 'Bihar State, India'
+  type: location
+  wiki_entry: Second Largest State in India
+  location_class: state

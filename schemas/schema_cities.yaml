@@ -50,10 +50,6 @@ fields:
     type: dict
     optional: true
 
-  derived_from_ideas:
-    type: string_list
-    optional: true
-
   urban_structure:
     type: dict
     optional: true

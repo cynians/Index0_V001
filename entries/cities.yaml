@@ -27,7 +27,7 @@
   - faction_global_government_organization
   associated_institutions:
   - institution_engineering_group_0
-  derived_from_ideas:
+  derived_from:
   - IDEA-452
   - IDEA-453
   - IDEA-454
@@ -92,8 +92,8 @@
   - loc_cog_breach_vent_tunnel
   start_year: 2884
   entry_status: stub
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   wiki_entry: ''

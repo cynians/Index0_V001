@@ -74,20 +74,21 @@ fields:
     section: Temporal
     optional: true
 
-  derived_from_ideas:
-    type: idea_list
+  derived_from:
+    type: entity_list
+    target: entity_core
     section: Relations
     optional: true
 
-  parent_ideas:
+  parents:
     type: entity_list
-    target: ideas
+    target: entity_core
     section: Relations
     optional: true
 
-  related_ideas:
+  related:
     type: entity_list
-    target: ideas
+    target: entity_core
     section: Relations
     optional: true
 
@@ -127,7 +128,7 @@ fields:
 #     - homeworld
 #     - sol
 #   start_year: 0
-#   derived_from_ideas:
+#   derived_from:
 #     - IDEA-001
 #   entry_status: canon
 #   media_layers:

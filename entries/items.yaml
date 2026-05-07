@@ -24,8 +24,8 @@
   - construction_material
   start_year: 1850
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -40,7 +40,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: item_pump_module
   pretty_name: Pump Module
@@ -72,8 +72,8 @@
   - maintenance_replaceable
   start_year: 6034
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -88,7 +88,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: item_storage_rack
   pretty_name: Storage Rack
@@ -119,8 +119,8 @@
   - installable_fixture
   start_year: 1900
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -135,5 +135,5 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}

@@ -23,8 +23,8 @@
   coverage_mode: replaces_parent
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -38,7 +38,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: sf_eco_central_germany_draft
   pretty_name: Central Germany Draft Ecoregion
@@ -65,8 +65,8 @@
   coverage_mode: replaces_parent
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -80,7 +80,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: sf_eco_sicily_draft
   pretty_name: Sicily Draft Ecoregion
@@ -108,8 +108,8 @@
   coverage_mode: replaces_parent
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -123,7 +123,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: sf_draft_ecoregions_geo_central_europe_001
   pretty_name: France Ecoregion
@@ -160,8 +160,8 @@
       - -46.39
   start_year: 2400
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -175,7 +175,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: sf_draft_ecoregions_geo_europe_001
   pretty_name: Draft Ecoregions Selection 001
@@ -202,8 +202,8 @@
       - -52.76
   start_year: 2400
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -217,7 +217,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: sf_draft_ecoregions_geo_europe_002
   pretty_name: Draft Ecoregions Selection 002
@@ -246,8 +246,8 @@
       - -54.78
   start_year: 2400
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -261,5 +261,5 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}

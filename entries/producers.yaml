@@ -14,8 +14,8 @@
   start_year: 7129
   end_year: 9216
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -26,7 +26,7 @@
   image_path: ''
   image: ''
   tags: []
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: producer_stacklingen_consolidated_industries
   pretty_name: Stacklingen Consolidated Industries
@@ -43,8 +43,8 @@
     scale remain open for later refinement.
   start_year: 8112
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -57,7 +57,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: producer_conviction_automobiles
   pretty_name: Conviction Automobiles
@@ -90,8 +90,8 @@
   - external_production
   start_year: 3182
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -103,5 +103,5 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}

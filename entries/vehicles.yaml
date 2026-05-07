@@ -72,8 +72,8 @@
   start_year: 1942
   end_year: 1971
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -84,7 +84,7 @@
   card_image_top: ''
   image_path: ''
   image: ''
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: veh_d48_gun
   pretty_name: D-48 Gun
@@ -152,8 +152,8 @@
   - cold_war
   start_year: 1955
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -165,18 +165,14 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: veh_luaz_967
   pretty_name: LuAZ-967
   name: LuAZ-967
   type: vehicle
-  description: Soviet light amphibious front-line transport vehicle intended for casualty
-    evacuation, ammunition supply, and light battlefield utility transport in difficult
-    terrain.
-  notes: Real-world baseline entry for the LuAZ-967 vehicle line. The line is most
-    commonly associated with the LuAZ-967M production form, but this entry represents
-    the broader vehicle family.
+  description: 'Soviet light amphibious front-line transport vehicle intended for casualty evacuation, ammunition supply, and light battlefield utility transport in difficult terrain.'
+  notes: 'Real-world baseline entry for the LuAZ-967 vehicle line. The line is most commonly associated with the LuAZ-967M production form, but this entry represents the broader vehicle family.'
   vehicle_class: amphibious_front_line_transport
   vehicle_class_parents:
   - utility_vehicle
@@ -218,26 +214,14 @@
   - difficult_terrain_mobility
   - fold_down_low_silhouette_configuration
   component_layout_stub:
-    major_component_groups:
-    - steel_hull_body
-    - amphibious_vehicle_hull
-    - central_driver_control_position
-    - fold_down_windscreen_and_controls
-    - light_utility_cargo_section
-    - four_wheel_drive_system
-    - suspension
-    - engine_and_transmission
-    configurable_groups:
-    - evacuation_fittings
-    - cargo_fittings
-    - light_weapon_transport_fittings
+    major_component_groups: '[''steel_hull_body'', ''amphibious_vehicle_hull'', ''central_driver_control_position'', ''fold_down_windscreen_and_controls'', ''light_utility_cargo_section'', ''four_wheel_drive_system'', ''suspension'', ''engine_and_transmission'']'
+    configurable_groups: '[''evacuation_fittings'', ''cargo_fittings'', ''light_weapon_transport_fittings'']'
   crew_complement: 1
   payload_kg: 400
   max_speed_kmh: 75
   water_speed_kmh: 3
   towing_capacity_kg: 300
-  propulsion_summary: Air-cooled V4 gasoline engine, mechanical transmission, front-drive
-    layout with selectively engaged rear axle on later cited production configuration
+  propulsion_summary: 'Air-cooled V4 gasoline engine, mechanical transmission, front-drive layout with selectively engaged rear axle on later cited production configuration'
   main_armament_summary: Unarmed utility transport vehicle
   service_count_built: null
   tags:
@@ -250,8 +234,9 @@
   - utility_transport
   start_year: 1961
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related:
+  - idea_new_011
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -263,7 +248,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: veh_f22_raptor
   pretty_name: F-22 Raptor
@@ -332,8 +317,8 @@
   - superpower_wars_anchor
   start_year: 2005
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -345,7 +330,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: veh_panamericana_q3n_stormpetrel
   pretty_name: Panamericana Q3N Stormpetrel
@@ -399,8 +384,8 @@
   - race_for_sol
   start_year: 2115
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -412,19 +397,15 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: veh_mdv_3
   pretty_name: MDV-3
   name: MDV-3
   type: vehicle
   idea_reference: IDEA-496
-  description: Orbital-built Mars cargo transport vehicle used for high-volume freight
-    transfer between Earth orbit and Mars orbit during the Race for Sol.
-  notes: Designed as a larger follow-up to earlier Mars Delivery Vehicle concepts.
-    Unlike earlier atmosphere-capable variants, MDV-3 is a pure space transport and
-    does not perform atmospheric entry. It carries roughly 385 tons of cargo and operates
-    between orbital infrastructure nodes rather than surface delivery points.
+  description: Orbital-built Mars cargo transport vehicle used for high-volume freight transfer between Earth orbit and Mars orbit during the Race for Sol.
+  notes: 'Designed as a larger follow-up to earlier Mars Delivery Vehicle concepts. Unlike earlier atmosphere-capable variants, MDV-3 is a pure space transport and does not perform atmospheric entry. It carries roughly 385 tons of cargo and operates between orbital infrastructure nodes rather than surface delivery points.'
   vehicle_class: interplanetary_cargo_transport
   produced_by: []
   uses_technology: []
@@ -442,16 +423,8 @@
   - non_atmospheric_interplanetary_operation
   - orbital_cargo_interface_operation
   component_layout_stub:
-    major_component_groups:
-    - cargo_module_structure
-    - main_transfer_propulsion
-    - reaction_control_system
-    - docking_and_transfer_interface
-    - avionics_and_guidance
-    - power_and_support_systems
-    - structural_truss_or_hull_frame
-    configurable_groups:
-    - cargo_module_variants
+    major_component_groups: '[''cargo_module_structure'', ''main_transfer_propulsion'', ''reaction_control_system'', ''docking_and_transfer_interface'', ''avionics_and_guidance'', ''power_and_support_systems'', ''structural_truss_or_hull_frame'']'
+    configurable_groups: '[''cargo_module_variants'']'
   payload_capacity_t: 385
   tags:
   - vehicle
@@ -463,8 +436,9 @@
   - race_for_sol
   start_year: 2158
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related:
+  - idea_new_009
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -476,7 +450,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: veh_taltos_class_mars_cargo_lander
   pretty_name: Taltos-class Mars Cargo Lander
@@ -527,8 +501,8 @@
   - race_for_sol
   start_year: 2180
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -540,7 +514,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: veh_conviction_c1
   pretty_name: Conviction C1
@@ -595,8 +569,8 @@
   - ggo_hegemony
   start_year: 3184
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -608,7 +582,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: veh_unicorn_class_communications_cruiser
   pretty_name: Unicorn Class Communications Cruiser
@@ -663,8 +637,8 @@
   - relay_ship
   start_year: 6441
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -676,7 +650,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: veh_bospor_3_regolith
   pretty_name: Bospor 3 "Regolith"
@@ -731,8 +705,8 @@
   - bospor
   start_year: 7142
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -742,7 +716,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: veh_octa_35p
   pretty_name: Octa 35P
@@ -808,8 +782,8 @@
   - planetary_period
   start_year: 8130
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -821,5 +795,5 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}

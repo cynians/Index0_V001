@@ -40,8 +40,8 @@
   effective_year: 3182
   end_condition: null
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -53,7 +53,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: inst_race_for_sol_outer_space_treaty_adaptation
   pretty_name: Race for Sol Outer Space Treaty Adaptation
@@ -114,8 +114,8 @@
   end_year: null
   end_condition: null
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -126,5 +126,5 @@
   card_image_top: ''
   image_path: ''
   image: ''
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}

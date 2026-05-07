@@ -30,11 +30,13 @@ class EntityCard:
     TABLE_MAX_KEY_W = 260
     TABLE_MIN_VALUE_W = 120
     STANDARD_RELATION_FIELDS = [
-        "parent_ideas",
-        "related_ideas",
+        "derived_from",
+        "parents",
+        "related",
         "offspring",
         "placeholders",
     ]
+    CORE_RELATION_FIELDS = set(STANDARD_RELATION_FIELDS)
     IDEA_GENERIC_FIELDS = {
         "id",
         "pretty_name",
@@ -46,8 +48,9 @@ class EntityCard:
         "tags",
         "start_year",
         "end_year",
-        "parent_ideas",
-        "related_ideas",
+        "derived_from",
+        "parents",
+        "related",
         "offspring",
         "placeholders",
         "entry_status",
@@ -159,11 +162,157 @@ class EntityCard:
         return {}
 
     def is_relation_edit_field(self, field_key):
-        field_type = self._field_spec(field_key).get("type")
-        return field_type in {"entity", "entity_list"}
+        spec = self._field_spec(field_key)
+        field_type = str(spec.get("type", "")).lower()
+        target = str(spec.get("target", "")).strip()
+        if target:
+            return True
+        return "entity" in field_type or field_type in {"idea", "idea_list"}
 
     def _relation_field_allows_many(self, field_key):
-        return self._field_spec(field_key).get("type") == "entity_list"
+        field_type = str(self._field_spec(field_key).get("type", "")).lower()
+        return "list" in field_type
+
+    def _relation_field_target(self, field_key):
+        spec = self._field_spec(field_key)
+        target = str(spec.get("target", "")).strip()
+        if target:
+            return target
+
+        field_type = str(spec.get("type", "")).strip().lower()
+        if field_type.endswith("_list"):
+            inferred = field_type[:-len("_list")]
+            if inferred and inferred not in {"string", "number", "object", "dict"}:
+                return inferred
+        if field_type in {"idea", "ideas"}:
+            return "ideas"
+        return ""
+
+    def _relation_reference_values(self, value):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            stripped = value.strip()
+            return [stripped] if stripped else []
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return [str(value)]
+        if isinstance(value, list):
+            refs = []
+            for item in value:
+                if isinstance(item, str):
+                    stripped = item.strip()
+                    if stripped:
+                        refs.append(stripped)
+                elif isinstance(item, (int, float)) and not isinstance(item, bool):
+                    refs.append(str(item))
+                elif isinstance(item, dict) and item.get("id"):
+                    refs.append(str(item["id"]).strip())
+            return [ref for ref in refs if ref]
+        return []
+
+    def _relation_entity_exists(self, entity_id):
+        if not entity_id or self.world_model is None:
+            return False
+        return self.world_model.get_entity(entity_id) is not None
+
+    def _relation_chip_label(self, item):
+        prefix = ""
+        if item.get("kind") == "missing":
+            prefix = "? "
+        elif item.get("kind") == "create":
+            prefix = "+ "
+        return f"{prefix}{item.get('label', '')}".strip()
+
+    def _relation_target_label(self, target):
+        normalized = str(target or "").strip().lower()
+        if not normalized or normalized in {"entity", "entity_core", "core", "any"}:
+            return "Entry"
+        return normalized.replace("_", " ")
+
+    def _ellipsize_text(self, text, font, max_width):
+        text = str(text or "")
+        if font is None or font.size(text)[0] <= max_width:
+            return text
+
+        suffix = "..."
+        suffix_w = font.size(suffix)[0]
+        available_w = max(0, max_width - suffix_w)
+        trimmed = text
+        while trimmed and font.size(trimmed)[0] > available_w:
+            trimmed = trimmed[:-1]
+        return f"{trimmed}{suffix}" if trimmed else suffix
+
+    def _relation_chip_items(self, field_key, value):
+        target = self._relation_field_target(field_key)
+        refs = self._relation_reference_values(value)
+        if refs:
+            items = [
+                {
+                    "kind": "existing" if self._relation_entity_exists(ref) else "missing",
+                    "field_key": field_key,
+                    "entity_id": ref,
+                    "target": target,
+                    "label": ref,
+                }
+                for ref in refs
+            ]
+            items.append(
+                {
+                    "kind": "link_existing",
+                    "field_key": field_key,
+                    "entity_id": "",
+                    "target": target,
+                    "label": "Link existing",
+                }
+            )
+            return items
+
+        return [
+            {
+                "kind": "create",
+                "field_key": field_key,
+                "entity_id": "",
+                "target": target,
+                "label": f"Create {self._relation_target_label(target)}",
+            },
+            {
+                "kind": "link_existing",
+                "field_key": field_key,
+                "entity_id": "",
+                "target": target,
+                "label": "Link existing",
+            },
+        ]
+
+    def _layout_relation_chips(self, field_key, value, font, value_x, value_y, value_w):
+        items = self._relation_chip_items(field_key, value)
+        if not items:
+            return [], 0
+
+        line_h = self._table_line_height(font)
+        chip_h = max(18, line_h + 4)
+        chip_gap = 5
+        x = value_x + 2
+        y = value_y + self.TABLE_ROW_PAD_Y
+        max_right = value_x + max(24, value_w) - 2
+        chips = []
+
+        for item in items:
+            label = self._relation_chip_label(item)
+            chip_w = min(max(46, font.size(label)[0] + 16), max(46, value_w - 4))
+            if x > value_x + 2 and x + chip_w > max_right:
+                x = value_x + 2
+                y += chip_h + chip_gap
+
+            rect = pygame.Rect(x, y, chip_w, chip_h)
+            chip = dict(item)
+            chip["rect"] = rect
+            chip["display_label"] = label
+            chips.append(chip)
+            x = rect.right + chip_gap
+
+        content_h = chips[-1]["rect"].bottom - value_y + self.TABLE_ROW_PAD_Y if chips else 0
+        return chips, content_h
 
     def _image_block_height(self):
         if self._is_media_mode():
@@ -454,7 +603,7 @@ class EntityCard:
                 operational_values.append((key, value))
                 continue
 
-            if self._is_component_card() and (key in media_keys or key == "derived_from_ideas"):
+            if self._is_component_card() and key in media_keys:
                 continue
 
             if key in {"description", "notes", "tags", "entry_status"}:
@@ -466,10 +615,7 @@ class EntityCard:
                 continue
 
             if isinstance(value, list):
-                if value and all(not isinstance(item, dict) for item in value):
-                    relation_values.append((key, value))
-                else:
-                    state_values.append((key, value))
+                state_values.append((key, value))
                 continue
 
             if isinstance(value, dict):
@@ -479,7 +625,7 @@ class EntityCard:
             field_type = spec.get("type")
 
             if field_type in {"entity", "entity_list"}:
-                relation_values.append((key, value))
+                state_values.append((key, value))
                 continue
 
             if field_type in {"dict", "object", "object_list"}:
@@ -913,7 +1059,8 @@ class EntityCard:
             self._set_edit_cursor(card, 0)
             return True
 
-        line_index = int((mouse_pos[1] - inner_rect.y) // max(1, font.get_linesize()))
+        scroll_y = max(0, int(card.get("scroll_y", 0) or 0))
+        line_index = int((mouse_pos[1] - inner_rect.y + scroll_y) // max(1, font.get_linesize()))
         line_index = max(0, min(len(lines) - 1, line_index))
         line_info = lines[line_index]
         line_text = line_info["text"]
@@ -1087,6 +1234,8 @@ class EntityCard:
         tab_hitboxes = []
         media_import_hitboxes = []
         editable_field_hitboxes = []
+        content_editable_field_hitboxes = []
+        relation_hitboxes = []
         field_rows = []
         general_content_rect = None
         schema_field_specs = self._get_schema_field_specs()
@@ -1155,36 +1304,56 @@ class EntityCard:
         if not self._uses_image_block():
             current_y = top_content_y
 
+        handle_bottom = rect.bottom - 8
+        resize_handle_rect = pygame.Rect(
+            rect.right - 18,
+            handle_bottom - self.RESIZE_HANDLE,
+            self.RESIZE_HANDLE,
+            self.RESIZE_HANDLE,
+        )
+        launch_rect = pygame.Rect(
+            rect.x + 12,
+            resize_handle_rect.y - 8 - self.LAUNCH_H,
+            rect.width - 24,
+            self.LAUNCH_H,
+        )
+        center_y = launch_rect.y - 14
+        left_x = rect.x + 20
+        right_x = rect.right - 20
+        timeline_y = center_y - 10
+        timeline_label_y = max(top_content_y + 8, timeline_y - 18)
+        content_viewport_top = image_rect.y if self._uses_image_block() else top_content_y
+        content_viewport_bottom = max(content_viewport_top + 40, timeline_label_y - 10)
+        content_viewport_rect = pygame.Rect(
+            content_left,
+            content_viewport_top,
+            text_width,
+            max(24, content_viewport_bottom - content_viewport_top),
+        )
+
         section_map = self._sectioned_fields()
         key_column_w, value_column_w = self._get_table_column_widths(card["layout_font"], rect, section_map)
         value_column_x = content_left + key_column_w + self.TABLE_COLUMN_GAP
 
         if self._is_general_mode():
             image_rect = None
-            handle_bottom = rect.bottom - 8
-            resize_handle_rect = pygame.Rect(
-                rect.right - 18,
-                handle_bottom - self.RESIZE_HANDLE,
-                self.RESIZE_HANDLE,
-                self.RESIZE_HANDLE,
-            )
-            launch_rect = pygame.Rect(
-                rect.x + 12,
-                resize_handle_rect.y - 8 - self.LAUNCH_H,
-                rect.width - 24,
-                self.LAUNCH_H,
-            )
-            center_y = launch_rect.y - 14
-            left_x = rect.x + 20
-            right_x = rect.right - 20
-            timeline_y = center_y - 10
-            timeline_label_y = max(top_content_y + 8, timeline_y - 18)
             general_bottom = timeline_label_y - 10
-            general_height = max(140, general_bottom - top_content_y)
+            general_height = max(40, general_bottom - top_content_y)
             general_content_rect = pygame.Rect(content_left, top_content_y, text_width, general_height)
             if card.get("is_edit_mode", False):
                 editable_field_hitboxes.append(("wiki_entry", general_content_rect))
-            content_end_y = general_content_rect.bottom
+            wiki_text = self._get_general_wiki_text(card)
+            if card.get("is_edit_mode", False) and card.get("active_edit_field") == "wiki_entry":
+                inner_w = max(20, general_content_rect.width - 20)
+                content_h = len(CardWikiRenderer.wrap_edit_lines(wiki_text, card["layout_font"], inner_w)) * self._table_line_height(card["layout_font"]) + 20
+            else:
+                content_h = CardWikiRenderer.measure_content(
+                    wiki_text,
+                    card["layout_font"],
+                    general_content_rect,
+                    resolve_link_label=self._resolve_wiki_link_label,
+                )
+            content_end_y = general_content_rect.y + content_h
         else:
             content_end_y = current_y
 
@@ -1203,12 +1372,24 @@ class EntityCard:
                             key_column_w,
                             value_column_w,
                         )
+                        relation_chips = []
+                        if self.is_relation_edit_field(key) and not card.get("is_edit_mode", False):
+                            relation_chips, relation_content_h = self._layout_relation_chips(
+                                key,
+                                value,
+                                card["layout_font"],
+                                value_column_x,
+                                current_y,
+                                value_column_w,
+                            )
+                            row_h = max(row_h, relation_content_h)
+
                         row_rect = pygame.Rect(content_left, current_y, text_width, row_h)
                         key_rect = pygame.Rect(content_left, current_y, key_column_w, row_h)
                         value_rect = pygame.Rect(value_column_x, current_y, value_column_w, row_h)
 
                         if card.get("is_edit_mode", False) and self._is_field_editable(key, value, schema_field_specs):
-                            editable_field_hitboxes.append((key, row_rect))
+                            content_editable_field_hitboxes.append((key, row_rect))
 
                         field_rows.append(
                             {
@@ -1219,6 +1400,7 @@ class EntityCard:
                                 "value_rect": value_rect,
                                 "key_lines": key_lines,
                                 "wrapped_lines": wrapped_lines,
+                                "relation_chips": relation_chips,
                             }
                         )
 
@@ -1227,24 +1409,68 @@ class EntityCard:
                     current_y += self.SECTION_GAP
 
             content_end_y = current_y
-            handle_bottom = rect.bottom - 8
-            resize_handle_rect = pygame.Rect(
-                rect.right - 18,
-                handle_bottom - self.RESIZE_HANDLE,
-                self.RESIZE_HANDLE,
-                self.RESIZE_HANDLE,
-            )
-            launch_rect = pygame.Rect(
-                rect.x + 12,
-                resize_handle_rect.y - 8 - self.LAUNCH_H,
-                rect.width - 24,
-                self.LAUNCH_H,
-            )
-            center_y = launch_rect.y - 14
-            left_x = rect.x + 20
-            right_x = rect.right - 20
-            timeline_y = center_y - 10
-            timeline_label_y = max(content_end_y + 8, timeline_y - 18)
+
+        scroll_max_y = max(0, int(content_end_y - content_viewport_rect.bottom))
+        scroll_y = max(0, min(scroll_max_y, int(card.get("scroll_y", 0) or 0)))
+        card["scroll_y"] = scroll_y
+        card["scroll_max_y"] = scroll_max_y
+        card["content_viewport_rect"] = content_viewport_rect
+
+        section_draw_rects = []
+        if not self._is_general_mode() and scroll_y:
+            if image_rect is not None:
+                image_rect = image_rect.move(0, -scroll_y)
+
+            media_import_hitboxes = [
+                (role_name, button_rect.move(0, -scroll_y).clip(content_viewport_rect))
+                for role_name, button_rect in media_import_hitboxes
+                if button_rect.move(0, -scroll_y).colliderect(content_viewport_rect)
+            ]
+
+            shifted_section_hitboxes = []
+            for section_name, section_rect in section_hitboxes:
+                shifted_rect = section_rect.move(0, -scroll_y)
+                section_draw_rects.append((section_name, shifted_rect))
+                clipped_rect = shifted_rect.clip(content_viewport_rect)
+                if clipped_rect.height > 0:
+                    shifted_section_hitboxes.append((section_name, clipped_rect))
+            section_hitboxes = shifted_section_hitboxes
+
+            for row in field_rows:
+                for rect_key in ("row_rect", "key_rect", "value_rect"):
+                    row[rect_key] = row[rect_key].move(0, -scroll_y)
+                for chip in row.get("relation_chips", []):
+                    chip["rect"] = chip["rect"].move(0, -scroll_y)
+
+            for field_key, field_rect in content_editable_field_hitboxes:
+                shifted_rect = field_rect.move(0, -scroll_y)
+                clipped_rect = shifted_rect.clip(content_viewport_rect)
+                if clipped_rect.height > 0:
+                    editable_field_hitboxes.append((field_key, clipped_rect))
+        elif not self._is_general_mode():
+            section_draw_rects = list(section_hitboxes)
+            media_import_hitboxes = [
+                (role_name, button_rect.clip(content_viewport_rect))
+                for role_name, button_rect in media_import_hitboxes
+                if button_rect.colliderect(content_viewport_rect)
+            ]
+            section_hitboxes = [
+                (section_name, section_rect.clip(content_viewport_rect))
+                for section_name, section_rect in section_hitboxes
+                if section_rect.colliderect(content_viewport_rect)
+            ]
+            for field_key, field_rect in content_editable_field_hitboxes:
+                clipped_rect = field_rect.clip(content_viewport_rect)
+                if clipped_rect.height > 0:
+                    editable_field_hitboxes.append((field_key, clipped_rect))
+
+        if not self._is_general_mode():
+            for row in field_rows:
+                for chip in row.get("relation_chips", []):
+                    chip_rect = chip.get("rect")
+                    if chip_rect is None or not chip_rect.colliderect(content_viewport_rect):
+                        continue
+                    relation_hitboxes.append((chip, chip_rect.clip(content_viewport_rect)))
 
         year_positions = []
         years = card["years"]
@@ -1277,8 +1503,10 @@ class EntityCard:
         card["header_drag_rect"] = header_drag_rect
         card["resize_handle_rect"] = resize_handle_rect
         card["section_hitboxes"] = section_hitboxes
+        card["section_draw_rects"] = section_draw_rects
         card["media_import_hitboxes"] = media_import_hitboxes
         card["editable_field_hitboxes"] = editable_field_hitboxes
+        card["relation_hitboxes"] = relation_hitboxes
         card["field_rows"] = field_rows
         card["resize_hitboxes"] = resize_hitboxes
         card["edit_toggle_rect"] = edit_toggle_rect
@@ -1427,9 +1655,16 @@ class EntityCard:
         if self._is_general_mode():
             self._draw_general_content(screen, font, card)
         else:
-            if self._uses_image_block():
-                self._draw_image_block(screen, font, card)
-            self._draw_sections(screen, font, card)
+            content_clip = card.get("content_viewport_rect")
+            previous_clip = screen.get_clip()
+            if content_clip is not None:
+                screen.set_clip(previous_clip.clip(content_clip))
+            try:
+                if self._uses_image_block():
+                    self._draw_image_block(screen, font, card)
+                self._draw_sections(screen, font, card)
+            finally:
+                screen.set_clip(previous_clip)
 
         timeline_label_y = card.get("timeline_label_y", card["timeline_y"] - 18)
         timeline_y = card["timeline_y"]
@@ -1633,9 +1868,10 @@ class EntityCard:
         for row in card.get("field_rows", []):
             rows_by_section.setdefault(row["section"], []).append(row)
         active_relation_anchor = None
+        section_draw_rects = card.get("section_draw_rects", card.get("section_hitboxes", []))
 
         for section_name in self._visible_sections():
-            header_rect = next((rect for name, rect in card["section_hitboxes"] if name == section_name), None)
+            header_rect = next((rect for name, rect in section_draw_rects if name == section_name), None)
             if header_rect is None:
                 continue
 
@@ -1656,12 +1892,16 @@ class EntityCard:
                 key = row["key"]
                 row_rect = row["row_rect"]
                 is_active_field = key == card.get("active_edit_field")
+                is_relation_link_target = key == card.get("active_relation_link_field")
                 is_editable = key in editable_hitboxes
 
                 row_fill = (33, 36, 46) if row_index % 2 == 0 else (29, 32, 42)
                 row_border = (78, 84, 100)
                 if is_editable:
                     row_fill = (42, 47, 58)
+                if is_relation_link_target:
+                    row_fill = (36, 50, 70)
+                    row_border = (126, 166, 224)
                 if is_active_field:
                     row_fill = (54, 62, 76)
                     row_border = (180, 200, 240)
@@ -1705,11 +1945,43 @@ class EntityCard:
                     value_color = (215, 225, 245) if is_editable else (180, 180, 180)
                     wrapped_lines = row["wrapped_lines"]
 
-                line_y = row_rect.y + self.TABLE_ROW_PAD_Y
-                for line in wrapped_lines:
-                    val_surface = font.render(line, True, value_color)
-                    screen.blit(val_surface, (row["value_rect"].x + 2, line_y))
-                    line_y += line_h
+                relation_chips = row.get("relation_chips", [])
+                if relation_chips and not is_active_field:
+                    for chip in relation_chips:
+                        chip_rect = chip["rect"]
+                        kind = chip.get("kind")
+                        if kind == "existing":
+                            chip_fill = (38, 58, 54)
+                            chip_border = (122, 190, 170)
+                            chip_text_color = (222, 244, 236)
+                        elif kind == "missing":
+                            chip_fill = (64, 48, 38)
+                            chip_border = (218, 152, 104)
+                            chip_text_color = (250, 222, 190)
+                        elif kind == "link_existing":
+                            chip_fill = (42, 62, 92) if is_relation_link_target else (34, 44, 64)
+                            chip_border = (178, 206, 244) if is_relation_link_target else (124, 154, 210)
+                            chip_text_color = (218, 230, 250)
+                        else:
+                            chip_fill = (44, 48, 56)
+                            chip_border = (132, 142, 160)
+                            chip_text_color = (204, 214, 228)
+
+                        pygame.draw.rect(screen, chip_fill, chip_rect)
+                        pygame.draw.rect(screen, chip_border, chip_rect, 1)
+                        label = self._ellipsize_text(
+                            chip.get("display_label", ""),
+                            font,
+                            chip_rect.width - 10,
+                        )
+                        chip_surface = font.render(label, True, chip_text_color)
+                        screen.blit(chip_surface, (chip_rect.x + 6, chip_rect.y + max(2, (chip_rect.height - line_h) // 2)))
+                else:
+                    line_y = row_rect.y + self.TABLE_ROW_PAD_Y
+                    for line in wrapped_lines:
+                        val_surface = font.render(line, True, value_color)
+                        screen.blit(val_surface, (row["value_rect"].x + 2, line_y))
+                        line_y += line_h
 
                 if is_active_field and card.get("relation_picker_open", False):
                     active_relation_anchor = row["value_rect"]
@@ -1732,6 +2004,7 @@ class EntityCard:
             is_editing=is_editing,
             resolve_link_label=self._resolve_wiki_link_label,
             cursor_index=card.get("edit_cursor", 0),
+            scroll_y=card.get("scroll_y", 0),
         )
 
         if card.get("wiki_link_picker_open", False):

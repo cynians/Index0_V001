@@ -209,6 +209,14 @@ class SchemaCard:
         header_row = pygame.Rect(content_left, current_y, content_right - content_left, line_h + 8)
         card["schema_header_row_rect"] = header_row
         current_y = header_row.bottom + self.ROW_GAP
+        content_start_y = current_y
+        footer_top = rect.bottom - self.FOOTER_H
+        content_viewport_rect = pygame.Rect(
+            content_left,
+            content_start_y,
+            content_right - content_left,
+            max(24, footer_top - content_start_y),
+        )
 
         for field_name, spec in fields.items():
             active = field_name == card.get("schema_active_field")
@@ -238,6 +246,22 @@ class SchemaCard:
             )
             current_y = row_rect.bottom + self.ROW_GAP
 
+        content_end_y = current_y
+        scroll_max_y = max(0, int(content_end_y - content_viewport_rect.bottom))
+        scroll_y = max(0, min(scroll_max_y, int(card.get("scroll_y", 0) or 0)))
+        card["scroll_y"] = scroll_y
+        card["scroll_max_y"] = scroll_max_y
+        card["content_viewport_rect"] = content_viewport_rect
+
+        field_hitboxes = []
+        for row in rows:
+            for rect_key in ("row_rect", "field_rect", "value_rect", "usage_rect"):
+                row[rect_key] = row[rect_key].move(0, -scroll_y)
+
+            clipped_rect = row["row_rect"].clip(content_viewport_rect)
+            if clipped_rect.height > 0:
+                field_hitboxes.append((row["field_name"], clipped_rect))
+
         save_rect = pygame.Rect(rect.right - 92, rect.bottom - 32, 68, 22)
         resize_handle_rect = pygame.Rect(
             rect.right - 18,
@@ -260,7 +284,7 @@ class SchemaCard:
         card["close_rect"] = close_rect
         card["header_drag_rect"] = header_drag_rect
         card["schema_field_rows"] = rows
-        card["schema_field_hitboxes"] = [(row["field_name"], row["row_rect"]) for row in rows]
+        card["schema_field_hitboxes"] = field_hitboxes
         card["schema_save_rect"] = save_rect
         card["resize_handle_rect"] = resize_handle_rect
         card["resize_hitboxes"] = resize_hitboxes
@@ -328,37 +352,44 @@ class SchemaCard:
             for label, x in labels:
                 screen.blit(font.render(label, True, (232, 236, 244)), (x, header_row.y + 4))
 
-        for index, row in enumerate(card.get("schema_field_rows", [])):
-            row_rect = row["row_rect"]
-            fill = (32, 36, 46) if index % 2 == 0 else (28, 32, 42)
-            border = (78, 88, 106)
+        previous_clip = screen.get_clip()
+        content_viewport_rect = card.get("content_viewport_rect")
+        if content_viewport_rect is not None:
+            screen.set_clip(previous_clip.clip(content_viewport_rect))
+        try:
+            for index, row in enumerate(card.get("schema_field_rows", [])):
+                row_rect = row["row_rect"]
+                fill = (32, 36, 46) if index % 2 == 0 else (28, 32, 42)
+                border = (78, 88, 106)
 
-            if row.get("active"):
-                fill = (54, 62, 78)
-                border = (184, 204, 238)
-            elif row_rect.collidepoint(pygame.mouse.get_pos()):
-                fill = (42, 48, 62)
+                if row.get("active"):
+                    fill = (54, 62, 78)
+                    border = (184, 204, 238)
+                elif row_rect.collidepoint(pygame.mouse.get_pos()):
+                    fill = (42, 48, 62)
 
-            pygame.draw.rect(screen, fill, row_rect)
-            pygame.draw.rect(screen, border, row_rect, 1)
-            for divider_x in (row["field_rect"].right + 4, row["value_rect"].right + 4):
-                pygame.draw.line(screen, (86, 96, 116), (divider_x, row_rect.y + 1), (divider_x, row_rect.bottom - 1), 1)
+                pygame.draw.rect(screen, fill, row_rect)
+                pygame.draw.rect(screen, border, row_rect, 1)
+                for divider_x in (row["field_rect"].right + 4, row["value_rect"].right + 4):
+                    pygame.draw.line(screen, (86, 96, 116), (divider_x, row_rect.y + 1), (divider_x, row_rect.bottom - 1), 1)
 
-            line_y = row_rect.y + self.ROW_PAD_Y
-            for line in row["field_lines"]:
-                screen.blit(font.render(line, True, (226, 226, 226)), (row["field_rect"].x + 6, line_y))
-                line_y += line_h
+                line_y = row_rect.y + self.ROW_PAD_Y
+                for line in row["field_lines"]:
+                    screen.blit(font.render(line, True, (226, 226, 226)), (row["field_rect"].x + 6, line_y))
+                    line_y += line_h
 
-            line_y = row_rect.y + self.ROW_PAD_Y
-            value_color = (246, 246, 246) if row.get("active") else (206, 218, 236)
-            for line in row["value_lines"]:
-                screen.blit(font.render(line, True, value_color), (row["value_rect"].x + 2, line_y))
-                line_y += line_h
+                line_y = row_rect.y + self.ROW_PAD_Y
+                value_color = (246, 246, 246) if row.get("active") else (206, 218, 236)
+                for line in row["value_lines"]:
+                    screen.blit(font.render(line, True, value_color), (row["value_rect"].x + 2, line_y))
+                    line_y += line_h
 
-            usage_text = f"({row['usage_count']})"
-            usage_color = (232, 210, 148) if row["usage_count"] else (142, 150, 164)
-            usage_surface = font.render(usage_text, True, usage_color)
-            screen.blit(usage_surface, usage_surface.get_rect(center=row["usage_rect"].center))
+                usage_text = f"({row['usage_count']})"
+                usage_color = (232, 210, 148) if row["usage_count"] else (142, 150, 164)
+                usage_surface = font.render(usage_text, True, usage_color)
+                screen.blit(usage_surface, usage_surface.get_rect(center=row["usage_rect"].center))
+        finally:
+            screen.set_clip(previous_clip)
 
         status = card.get("schema_status", "Click a field row to edit")
         status_color = (232, 210, 148) if card.get("schema_dirty") else (160, 168, 182)

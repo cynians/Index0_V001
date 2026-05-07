@@ -206,19 +206,36 @@ class CardWikiRenderer:
         return total_height + 20
 
     @classmethod
-    def draw_content(cls, screen, font, rect, wiki_text, is_editing=False, resolve_link_label=None, cursor_index=None):
+    def draw_content(
+        cls,
+        screen,
+        font,
+        rect,
+        wiki_text,
+        is_editing=False,
+        resolve_link_label=None,
+        cursor_index=None,
+        scroll_y=0,
+    ):
         pygame.draw.rect(screen, (34, 38, 48), rect)
         pygame.draw.rect(screen, (104, 110, 124), rect, 1)
 
         inner_rect = rect.inflate(-10, -10)
-        y = inner_rect.y
+        scroll_y = max(0, int(scroll_y or 0))
+        y = inner_rect.y - scroll_y
         clip_before = screen.get_clip()
         screen.set_clip(inner_rect.clip(clip_before))
 
         try:
             if is_editing:
                 show_cursor = (pygame.time.get_ticks() // 500) % 2 == 0
-                cls._draw_edit_text(screen, font, inner_rect, wiki_text, cursor_index=cursor_index, show_cursor=show_cursor)
+                edit_rect = pygame.Rect(
+                    inner_rect.x,
+                    inner_rect.y - scroll_y,
+                    inner_rect.width,
+                    inner_rect.height + scroll_y,
+                )
+                cls._draw_edit_text(screen, font, edit_rect, wiki_text, cursor_index=cursor_index, show_cursor=show_cursor)
                 return
 
             blocks = cls._parse_blocks(wiki_text)

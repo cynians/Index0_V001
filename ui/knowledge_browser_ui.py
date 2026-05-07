@@ -58,8 +58,9 @@ class KnowledgeBrowserUI:
         "tags",
         "start_year",
         "end_year",
-        "parent_ideas",
-        "related_ideas",
+        "derived_from",
+        "parents",
+        "related",
         "offspring",
         "placeholders",
         "entry_status",
@@ -78,6 +79,8 @@ class KnowledgeBrowserUI:
         "image_path",
         "image",
         "derived_from_ideas",
+        "parent_ideas",
+        "related_ideas",
         "media_layers",
     }
 
@@ -107,6 +110,8 @@ class KnowledgeBrowserUI:
         self.browser_search_active = False
         self.browser_filter_dataset = "all"
         self.browser_filter_incomplete_only = False
+        self.relation_link_target = None
+        self.relation_link_status = ""
 
         self.canvas_offset_x = 0
         self.canvas_offset_y = 0
@@ -168,6 +173,8 @@ class KnowledgeBrowserUI:
         self.new_entry_button = None
         self.template_picker_rect = None
         self.template_button_hitboxes = []
+        self.relation_link_target = None
+        self.relation_link_status = ""
 
     def _clamp_timeline_panel_height(self, app_height, timeline_h=None):
         if timeline_h is None:
@@ -708,6 +715,108 @@ class KnowledgeBrowserUI:
                 return template
         return None
 
+    def _template_for_relation_target(self, target):
+        normalized = self._normalize_schema_name(target)
+        if not normalized:
+            return None
+
+        if normalized in {"entity", "entity_core", "core", "any"}:
+            normalized = "ideas"
+
+        candidates = []
+        for candidate in (
+            normalized,
+            self._pluralize_name(normalized),
+            self._singularize_name(normalized),
+        ):
+            if candidate and candidate not in candidates:
+                candidates.append(candidate)
+
+        for template in self.schema_entry_templates:
+            template_names = {
+                self._normalize_schema_name(template.get("dataset_name")),
+                self._normalize_schema_name(template.get("entity_type")),
+                self._normalize_schema_name(template.get("schema_name")),
+            }
+            template_names.update(self._pluralize_name(name) for name in list(template_names) if name)
+            template_names.update(self._singularize_name(name) for name in list(template_names) if name)
+            if any(candidate in template_names for candidate in candidates):
+                return template
+
+        return self._template_by_dataset(self._pluralize_name(normalized)) or self._template_by_dataset(normalized)
+
+    def _browser_header_extra_height(self):
+        return 24 if self.relation_link_target is not None else 0
+
+    def _relation_target_dataset_filter(self, target):
+        if self.world_model is None:
+            return "all"
+
+        candidates = self._relation_target_candidates(target)
+        if not candidates:
+            return "all"
+
+        dataset_names = set(self.world_model.get_dataset_names())
+        for candidate in candidates:
+            if candidate in dataset_names:
+                return candidate
+        return "all"
+
+    def _relation_target_label(self, target):
+        normalized = self._normalize_schema_name(target)
+        if not normalized or normalized in {"entity", "entity_core", "core", "any"}:
+            return "entry"
+        return normalized.replace("_", " ")
+
+    def _relation_target_candidates(self, target):
+        normalized = self._normalize_schema_name(target)
+        if not normalized or normalized in {"entity", "entity_core", "core", "any"}:
+            return set()
+
+        candidates = set()
+        for candidate in (
+            normalized,
+            self._pluralize_name(normalized),
+            self._singularize_name(normalized),
+        ):
+            if candidate:
+                candidates.add(candidate)
+        return candidates
+
+    def _entity_matches_relation_target(self, entity, target):
+        if not isinstance(entity, dict):
+            return False
+
+        candidates = self._relation_target_candidates(target)
+        if not candidates:
+            return True
+
+        entity_names = set()
+        for value in (
+            entity.get("_dataset"),
+            entity.get("type"),
+            entity.get("system_role"),
+            entity.get("body_class"),
+            entity.get("location_class"),
+            entity.get("vehicle_class"),
+        ):
+            normalized = self._normalize_schema_name(value)
+            if not normalized:
+                continue
+            entity_names.add(normalized)
+            entity_names.add(self._pluralize_name(normalized))
+            entity_names.add(self._singularize_name(normalized))
+
+        return bool(candidates & entity_names)
+
+    def _browser_item_matches_relation_target(self, item):
+        if self.relation_link_target is None or item.get("kind") not in {"entity", "tree_entity"}:
+            return False
+        if self.world_model is None:
+            return False
+        entity = self.world_model.get_entity(item.get("entity_id"))
+        return self._entity_matches_relation_target(entity, self.relation_link_target.get("target"))
+
     def _conversion_templates(self):
         templates = [
             template
@@ -966,6 +1075,7 @@ class KnowledgeBrowserUI:
                 {
                     "kind": "tree_entity",
                     "entity_id": body_id,
+                    "dataset_name": "systems",
                     "text": body_name,
                     "meta_text": f"[{body_class}]",
                     "missing_count": self._entity_missing_scalar_count(body_entity, "systems"),
@@ -993,6 +1103,7 @@ class KnowledgeBrowserUI:
                 {
                     "kind": "tree_entity",
                     "entity_id": system_id,
+                    "dataset_name": "systems",
                     "text": system_name,
                     "meta_text": f"[{system_class}]",
                     "missing_count": self._entity_missing_scalar_count(system_entity, "systems"),
@@ -1086,6 +1197,7 @@ class KnowledgeBrowserUI:
                     {
                         "kind": "entity",
                         "entity_id": entity.get("id"),
+                        "dataset_name": dataset_name,
                         "text": f"  {label} [{entity_class}]",
                         "missing_count": missing_count,
                         "is_incomplete": missing_count > 0,
@@ -1175,6 +1287,7 @@ class KnowledgeBrowserUI:
             "canvas_w": 420,
             "canvas_h": 340,
             "auto_canvas_h": True,
+            "scroll_y": 0,
             "card_view": card_view,
             "is_edit_mode": False,
             "active_edit_field": None,
@@ -1224,6 +1337,7 @@ class KnowledgeBrowserUI:
             "canvas_w": 560,
             "canvas_h": 520,
             "auto_canvas_h": True,
+            "scroll_y": 0,
             "card_view": SchemaCard(
                 schema_name=schema_name,
                 schema=schema,
@@ -1283,7 +1397,7 @@ class KnowledgeBrowserUI:
             if auto_canvas_h:
                 card_h = max(260, min(1200, minimum_h))
             else:
-                card_h = max(minimum_h, min(1200, requested_h))
+                card_h = max(260, min(1200, requested_h))
             card["canvas_h"] = card_h
             card["layout_font"] = card_font
 
@@ -1348,6 +1462,27 @@ class KnowledgeBrowserUI:
         self.canvas_offset_y = mouse_pos[1] - right_rect.y - before_y * self.canvas_zoom
         self._layout_all_cards()
 
+    def _scroll_card_at(self, mouse_pos, wheel_y):
+        for index in range(len(self.cards) - 1, -1, -1):
+            card = self.cards[index]
+            card_rect = card.get("rect")
+            if card_rect is None or not card_rect.collidepoint(mouse_pos):
+                continue
+
+            max_scroll = max(0, int(card.get("scroll_max_y", 0) or 0))
+            if max_scroll <= 0:
+                return True
+
+            line_step = max(24, self._font_line_height() * 2)
+            old_scroll = max(0, min(max_scroll, int(card.get("scroll_y", 0) or 0)))
+            new_scroll = max(0, min(max_scroll, old_scroll - int(wheel_y) * line_step))
+            if new_scroll != old_scroll:
+                card["scroll_y"] = new_scroll
+                self._relayout_cards()
+            return True
+
+        return False
+
     def _bring_card_to_front(self, index):
         card_obj = self.cards.pop(index)
         self.cards.append(card_obj)
@@ -1363,6 +1498,13 @@ class KnowledgeBrowserUI:
 
         if self.selected_entity_id == closing_entity_id:
             self.selected_entity_id = self.cards[-1].get("entity_id") if self.cards else None
+
+        if (
+            self.relation_link_target is not None
+            and self.relation_link_target.get("source_entity_id") == closing_entity_id
+        ):
+            self.relation_link_target = None
+            self.relation_link_status = ""
 
         self._clear_timeline_edit_target()
         self._close_wiki_link_picker(closing_card)
@@ -1466,7 +1608,18 @@ class KnowledgeBrowserUI:
                 continue
             entity[field_key] = self._default_value_for_schema_field(spec.get("type"))
 
-    def _create_template_entity(self, template):
+    def _label_from_requested_entity_id(self, entity_id, entity_type=None):
+        text = str(entity_id or "").strip()
+        if not text:
+            return f"New {str(entity_type or 'Entry').replace('_', ' ').title()}"
+
+        parts = [part for part in text.replace("-", "_").split("_") if part]
+        if len(parts) > 1 and entity_type and parts[0] == str(entity_type).lower():
+            parts = parts[1:]
+        label = " ".join(parts).strip()
+        return label.title() if label else text
+
+    def _create_template_entity(self, template, requested_id=None, initial_fields=None, label=None):
         if self.world_model is None:
             return None
 
@@ -1479,8 +1632,16 @@ class KnowledgeBrowserUI:
 
         dataset_name = template.get("dataset_name")
         entity_type = template.get("entity_type") or self._template_entity_type(dataset_name, template)
-        entity_id = self._next_template_entity_id(dataset_name, template=template)
-        label = f"New {entity_type.replace('_', ' ').title()}"
+        requested_id = str(requested_id or "").strip()
+        requested_id = requested_id.replace(" ", "_")
+        existing_ids = set(self.world_model.loader.entities.keys()) if self.world_model is not None else set()
+        existing_ids.update(self.card_drafts.keys())
+        entity_id = requested_id if requested_id and requested_id not in existing_ids else self._next_template_entity_id(dataset_name, template=template)
+        label = label or (
+            self._label_from_requested_entity_id(entity_id, entity_type=entity_type)
+            if requested_id
+            else f"New {entity_type.replace('_', ' ').title()}"
+        )
 
         entity = {
             "id": entity_id,
@@ -1491,24 +1652,40 @@ class KnowledgeBrowserUI:
             "wiki_entry": "",
         }
         self._populate_required_schema_fields(entity, template)
+        if isinstance(initial_fields, dict):
+            for field_key, value in initial_fields.items():
+                if field_key not in {"id", "_dataset"}:
+                    entity[field_key] = value
 
         self.world_model.loader.datasets.setdefault(dataset_name, []).append(entity)
         self.world_model.loader.entities[entity_id] = entity
         return entity
 
-    def _create_new_entry_from_template(self, template):
-        entity = self._create_template_entity(template)
+    def _create_and_open_template_entity(self, template, requested_id=None, initial_fields=None, label=None):
+        entity = self._create_template_entity(
+            template,
+            requested_id=requested_id,
+            initial_fields=initial_fields,
+            label=label,
+        )
         if entity is None:
-            return False
+            return None
 
         self.browser_items = self._build_browser_items(self.world_model)
         self._rebuild_browser_hitboxes()
-        self.show_template_picker = False
-        self._build_template_picker_hitboxes()
         card = self._ensure_card(entity)
         if card is not None:
             card["is_draft_entity"] = True
             self._save_card_draft(card)
+        return entity
+
+    def _create_new_entry_from_template(self, template):
+        entity = self._create_and_open_template_entity(template)
+        if entity is None:
+            return False
+
+        self.show_template_picker = False
+        self._build_template_picker_hitboxes()
         return True
 
     def _create_idea_from_parent_card(self, parent_card):
@@ -1532,10 +1709,10 @@ class KnowledgeBrowserUI:
         idea["pretty_name"] = label
         idea["name"] = label
 
-        if parent_entity is not None and parent_entity.get("_dataset") == "ideas":
-            idea["parent_ideas"] = [parent_entity_id]
+        if parent_entity is not None:
+            idea["parents"] = [parent_entity_id]
         else:
-            idea["related_ideas"] = []
+            idea["related"] = []
 
         self.browser_items = self._build_browser_items(self.world_model)
         self._rebuild_browser_hitboxes()
@@ -1631,12 +1808,12 @@ class KnowledgeBrowserUI:
             if field_key in entity:
                 converted[field_key] = entity[field_key]
 
-        derived_from = converted.get("derived_from_ideas")
+        derived_from = converted.get("derived_from")
         if not isinstance(derived_from, list):
             derived_from = []
         if old_id not in derived_from:
             derived_from.append(old_id)
-        converted["derived_from_ideas"] = derived_from
+        converted["derived_from"] = derived_from
 
         self._populate_required_schema_fields(converted, template)
 
@@ -2405,7 +2582,7 @@ class KnowledgeBrowserUI:
             return
 
         left_rect = self.layout["left_rect"]
-        search_y = left_rect.y + 38
+        search_y = left_rect.y + 38 + self._browser_header_extra_height()
         self.browser_search_rect = pygame.Rect(left_rect.x + 12, search_y, left_rect.width - 24, self.BROWSER_SEARCH_H)
 
         chip_y = self.browser_search_rect.bottom + self.BROWSER_CONTROL_GAP
@@ -2576,6 +2753,17 @@ class KnowledgeBrowserUI:
                 self._rebuild_browser_hitboxes()
                 return "__ui_consumed__"
 
+        if event.key == pygame.K_ESCAPE and self.relation_link_target is not None:
+            source_card = self.relation_link_target.get("source_card")
+            if isinstance(source_card, dict):
+                source_card.pop("active_relation_link_field", None)
+                source_card.pop("relation_link_status", None)
+            self.relation_link_target = None
+            self.relation_link_status = ""
+            self._rebuild_browser_hitboxes()
+            self._relayout_cards()
+            return "__ui_consumed__"
+
         for index in range(len(self.cards) - 1, -1, -1):
             card = self.cards[index]
             card_view = card.get("card_view")
@@ -2658,6 +2846,8 @@ class KnowledgeBrowserUI:
             return "__ui_consumed__"
 
         if right_rect.collidepoint(mouse_pos):
+            if self._scroll_card_at(mouse_pos, event.y):
+                return "__ui_consumed__"
             zoom_factor = 1.12 if event.y > 0 else 1 / 1.12
             self._set_canvas_zoom_at(mouse_pos, zoom_factor)
             return "__ui_consumed__"
@@ -2721,12 +2911,8 @@ class KnowledgeBrowserUI:
                     zoom = max(0.001, self.canvas_zoom)
                     dx = (event.pos[0] - self.card_resize_start_mouse[0]) / zoom
                     dy = (event.pos[1] - self.card_resize_start_mouse[1]) / zoom
-                    minimum_h = (
-                        card.get("card_view").get_minimum_height(card, self.font_for_layout)
-                        if card.get("card_view")
-                        else 260
-                    )
                     min_w = 300
+                    min_h = 260
                     start_x, start_y = self.card_resize_start_position
                     start_w, start_h = self.card_resize_start_size
                     resize_edges = self.card_resize_edges or "bottom_right"
@@ -2749,12 +2935,12 @@ class KnowledgeBrowserUI:
                     if "top" in resize_edges:
                         new_y = start_y + dy
                         new_h = start_h - dy
-                        if new_h < minimum_h:
-                            new_y = start_y + (start_h - minimum_h)
-                            new_h = minimum_h
+                        if new_h < min_h:
+                            new_y = start_y + (start_h - min_h)
+                            new_h = min_h
 
                     if "bottom" in resize_edges:
-                        new_h = max(minimum_h, start_h + dy)
+                        new_h = max(min_h, start_h + dy)
 
                     card["canvas_x"] = int(new_x)
                     card["canvas_y"] = int(new_y)
@@ -2804,6 +2990,18 @@ class KnowledgeBrowserUI:
 
         for entity_id, hitbox in self.browser_hitboxes:
             if hitbox.collidepoint(mouse_pos):
+                if self.relation_link_target is not None:
+                    schema_name = self._schema_name_from_card_id(entity_id)
+                    if schema_name is not None:
+                        self.relation_link_status = "Pick an entry, not a schema"
+                        self._rebuild_browser_hitboxes()
+                        return "__ui_consumed__"
+                    linked = self._link_relation_from_browser_entity(entity_id)
+                    if not linked:
+                        self._rebuild_browser_hitboxes()
+                        self._relayout_cards()
+                    return "__ui_consumed__"
+
                 self.selected_entity_id = entity_id
 
                 schema_name = self._schema_name_from_card_id(entity_id)
@@ -2818,6 +3016,161 @@ class KnowledgeBrowserUI:
                 return "__ui_consumed__"
 
         return None
+
+    def _insert_relation_reference_into_card(self, card, field_key, entity_id):
+        entity = self._entity_for_card(card)
+        card_view = card.get("card_view") if card is not None else None
+        if not isinstance(entity, dict) or not field_key or not entity_id or card_view is None:
+            return False
+
+        allows_many = (
+            card_view._relation_field_allows_many(field_key)
+            if hasattr(card_view, "_relation_field_allows_many")
+            else isinstance(entity.get(field_key), list)
+        )
+
+        if allows_many:
+            current_value = entity.get(field_key)
+            if isinstance(current_value, list):
+                values = list(current_value)
+            elif current_value in (None, ""):
+                values = []
+            else:
+                values = [current_value]
+
+            if entity_id not in [str(value) for value in values]:
+                values.append(entity_id)
+            entity[field_key] = values
+        else:
+            entity[field_key] = entity_id
+
+        if card.get("is_draft_entity", False):
+            self._save_card_draft(card)
+        else:
+            self._persist_card_entity(card)
+        return True
+
+    def _find_card_by_entity_id(self, entity_id):
+        for card in self.cards:
+            if card.get("entity_id") == entity_id:
+                return card
+        return None
+
+    def _clear_relation_browser_link(self):
+        target = self.relation_link_target or {}
+        source_card = target.get("source_card")
+        if isinstance(source_card, dict):
+            source_card.pop("active_relation_link_field", None)
+            source_card.pop("relation_link_status", None)
+
+        self.relation_link_target = None
+        self.relation_link_status = ""
+
+    def _begin_relation_browser_link(self, card, relation_info):
+        if card is None or not isinstance(relation_info, dict):
+            return False
+
+        field_key = relation_info.get("field_key")
+        if not field_key:
+            return False
+
+        self.relation_link_target = {
+            "source_card": card,
+            "source_entity_id": card.get("entity_id"),
+            "field_key": field_key,
+            "target": relation_info.get("target", ""),
+        }
+        target_label = self._relation_target_label(relation_info.get("target"))
+        status = f"Choose an existing {target_label} in the repository"
+        card["active_relation_link_field"] = field_key
+        card["relation_link_status"] = status
+        self.relation_link_status = status
+        self.browser_filter_dataset = self._relation_target_dataset_filter(relation_info.get("target", ""))
+        self.browser_filter_incomplete_only = False
+        self.browser_search_active = False
+        self.browser_search_query = ""
+        self.browser_scroll = 0
+        self.browser_items = self._build_browser_items(self.world_model)
+        self.show_template_picker = False
+        self._build_template_picker_hitboxes()
+        self._rebuild_browser_hitboxes()
+        self._relayout_cards()
+        return True
+
+    def _link_relation_from_browser_entity(self, entity_id):
+        if self.relation_link_target is None or self.world_model is None:
+            return False
+
+        entity = self.world_model.get_entity(entity_id)
+        if entity is None:
+            self.relation_link_status = "That repository row is not an entry"
+            return False
+
+        source_card = self.relation_link_target.get("source_card")
+        if not isinstance(source_card, dict):
+            source_card = self._find_card_by_entity_id(self.relation_link_target.get("source_entity_id"))
+        if source_card is None:
+            self.relation_link_status = "The source card is no longer open"
+            return False
+
+        linked = self._insert_relation_reference_into_card(
+            source_card,
+            self.relation_link_target.get("field_key"),
+            entity_id,
+        )
+        if not linked:
+            self.relation_link_status = "Could not link that entry"
+            return False
+
+        source_card.pop("active_relation_link_field", None)
+        source_card.pop("relation_link_status", None)
+        self._clear_relation_browser_link()
+        self.selected_entity_id = entity_id
+        self._ensure_card(entity)
+        self.browser_items = self._build_browser_items(self.world_model)
+        self._rebuild_browser_hitboxes()
+        self._relayout_cards()
+        return True
+
+    def _create_relation_target_entity(self, relation_info):
+        target = relation_info.get("target")
+        template = self._template_for_relation_target(target)
+        if template is None:
+            template = self._template_by_dataset("ideas")
+        if template is None:
+            return None
+
+        requested_id = relation_info.get("entity_id") if relation_info.get("kind") == "missing" else None
+        return self._create_and_open_template_entity(template, requested_id=requested_id)
+
+    def _handle_relation_chip_click(self, card, relation_info):
+        if self.world_model is None or card is None or not isinstance(relation_info, dict):
+            return False
+
+        kind = relation_info.get("kind")
+        entity_id = str(relation_info.get("entity_id") or "").strip()
+
+        if kind == "link_existing":
+            return self._begin_relation_browser_link(card, relation_info)
+
+        if kind == "existing" and entity_id:
+            entity = self.world_model.get_entity(entity_id)
+            if entity is not None:
+                self._ensure_card(entity)
+                return True
+
+        created_entity = self._create_relation_target_entity(relation_info)
+        if created_entity is None:
+            return False
+
+        created_entity_id = str(created_entity.get("id", "")).strip()
+        if kind == "create" and created_entity_id:
+            self._insert_relation_reference_into_card(card, relation_info.get("field_key"), created_entity_id)
+            self.browser_items = self._build_browser_items(self.world_model)
+            self._rebuild_browser_hitboxes()
+
+        self._relayout_cards()
+        return True
 
     def _handle_schema_card_click(self, card, index, mouse_pos):
         card_view = card.get("card_view")
@@ -2899,6 +3252,12 @@ class KnowledgeBrowserUI:
                     self._insert_relation_from_picker(card_obj, match_index=match_index)
                     self._relayout_cards()
                     return "__ui_consumed__"
+
+            for relation_info, relation_rect in card.get("relation_hitboxes", []):
+                if relation_rect.collidepoint(mouse_pos) and card_view is not None:
+                    card_obj = self._bring_card_to_front(index)
+                    if self._handle_relation_chip_click(card_obj, relation_info):
+                        return "__ui_consumed__"
 
             for field_key, field_rect in card.get("editable_field_hitboxes", []):
                 if field_rect.collidepoint(mouse_pos) and card_view is not None:
@@ -3099,6 +3458,23 @@ class KnowledgeBrowserUI:
         right_title = font.render("Card Canvas", True, (240, 240, 240))
         screen.blit(left_title, (left_rect.x + 12, left_rect.y + 10))
         screen.blit(right_title, (right_rect.x + 12, right_rect.y + 10))
+        if self.relation_link_target is not None:
+            target_label = self._relation_target_label(self.relation_link_target.get("target"))
+            field_label = self.relation_link_target.get("field_key") or "relation"
+            banner_rect = pygame.Rect(left_rect.x + 10, left_rect.y + 32, left_rect.width - 20, 22)
+            pygame.draw.rect(screen, (26, 44, 62), banner_rect)
+            pygame.draw.rect(screen, (112, 166, 224), banner_rect, 1)
+            status_text = self.relation_link_status or f"Choose an existing {target_label}"
+            link_surface = font.render(
+                f"Link {field_label}: {status_text}",
+                True,
+                (166, 204, 236),
+            )
+            max_text_w = banner_rect.width - 12
+            if link_surface.get_width() > max_text_w:
+                label = f"Link {field_label}: {target_label}"
+                link_surface = font.render(label, True, (166, 204, 236))
+            screen.blit(link_surface, (banner_rect.x + 6, banner_rect.y + 3))
         zoom_label = font.render(f"{int(self.canvas_zoom * 100)}%", True, (170, 180, 200))
         screen.blit(zoom_label, (right_rect.x + 118, right_rect.y + 10))
 
@@ -3177,13 +3553,26 @@ class KnowledgeBrowserUI:
                 entity_id = item["entity_id"]
                 row_rect = row_hitboxes.get(entity_id)
                 is_selected = entity_id == self.selected_entity_id
-                color = (245, 245, 245) if is_selected else (220, 220, 220)
+                relation_linking = self.relation_link_target is not None
+                relation_pickable = item.get("kind") in {"entity", "tree_entity"}
+                relation_match = self._browser_item_matches_relation_target(item) if relation_linking else False
+                if relation_linking and not relation_match:
+                    color = (128, 136, 150)
+                else:
+                    color = (245, 245, 245) if is_selected or relation_match else (220, 220, 220)
 
                 if row_rect is not None:
-                    if item.get("is_incomplete", False):
+                    if relation_linking:
+                        if relation_match:
+                            pygame.draw.rect(screen, (30, 52, 54), row_rect)
+                            pygame.draw.rect(screen, (116, 188, 178), row_rect, 1)
+                        elif relation_pickable:
+                            pygame.draw.rect(screen, (22, 24, 32), row_rect)
+                            pygame.draw.rect(screen, (58, 62, 76), row_rect, 1)
+                    elif item.get("is_incomplete", False):
                         pygame.draw.rect(screen, (58, 46, 38), row_rect)
                         pygame.draw.rect(screen, (166, 126, 88), row_rect, 1)
-                    if is_selected:
+                    if is_selected and not relation_linking:
                         pygame.draw.rect(screen, (42, 46, 62), row_rect)
                         pygame.draw.rect(screen, (150, 150, 170), row_rect, 1)
 

@@ -32,8 +32,8 @@
     when disturbed.
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -48,7 +48,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: beh_solitary_forest_floor_hard_seed_foraging
   pretty_name: Solitary Forest-Floor Hard-Seed Foraging
@@ -86,8 +86,8 @@
     threatened.
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -102,5 +102,5 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}

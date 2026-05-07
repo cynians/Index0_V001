@@ -37,9 +37,9 @@ class EntityLoader:
         "tags": [],
         "start_year": None,
         "end_year": None,
-        "derived_from_ideas": [],
-        "parent_ideas": [],
-        "related_ideas": [],
+        "derived_from": [],
+        "parents": [],
+        "related": [],
         "offspring": [],
         "placeholders": [],
         "entry_status": "",
@@ -52,8 +52,9 @@ class EntityLoader:
         "tags": [],
         "start_year": None,
         "end_year": None,
-        "parent_ideas": [],
-        "related_ideas": [],
+        "derived_from": [],
+        "parents": [],
+        "related": [],
         "offspring": [],
         "placeholders": [],
         "entry_status": "",
@@ -72,7 +73,14 @@ class EntityLoader:
         "image_path",
         "image",
         "derived_from_ideas",
+        "parent_ideas",
+        "related_ideas",
         "media_layers",
+    }
+    CORE_RELATION_RENAMES = {
+        "derived_from_ideas": "derived_from",
+        "parent_ideas": "parents",
+        "related_ideas": "related",
     }
 
     def __init__(self, entries_directory=None, auto_save_normalized=False):
@@ -102,6 +110,20 @@ class EntityLoader:
 
         if "name" not in entity:
             entity["name"] = entity.get("pretty_name") or entity.get("id") or ""
+            changed = True
+
+        for old_field, new_field in self.CORE_RELATION_RENAMES.items():
+            if old_field not in entity:
+                continue
+            old_value = entity.get(old_field)
+            new_value = entity.get(new_field)
+            if new_value in (None, "", []):
+                entity[new_field] = old_value
+            elif isinstance(new_value, list) and isinstance(old_value, list):
+                for item in old_value:
+                    if item not in new_value:
+                        new_value.append(item)
+            entity.pop(old_field, None)
             changed = True
 
         is_idea = dataset_name == "ideas" or entity.get("type") == "idea"
@@ -236,8 +258,8 @@ class EntityLoader:
 
     # --------------------------------------------------
 
-    def _normalize_parent_ideas(self, entity):
-        parent_ideas = entity.get("parent_ideas", [])
+    def _normalize_parent_relations(self, entity):
+        parent_ideas = entity.get("parents", entity.get("parent_ideas", []))
         parent_ids = []
 
         if isinstance(parent_ideas, str):
@@ -287,7 +309,7 @@ class EntityLoader:
         children_by_parent = {}
 
         for entity_id, entity in self.entities.items():
-            for parent_id in self._normalize_parent_ideas(entity):
+            for parent_id in self._normalize_parent_relations(entity):
                 children_by_parent.setdefault(parent_id, [])
                 if entity_id not in children_by_parent[parent_id]:
                     children_by_parent[parent_id].append(entity_id)

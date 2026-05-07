@@ -4,8 +4,8 @@
   system_role: star_system
   system_class: stellar_system
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Sol System
@@ -21,7 +21,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_sol
@@ -45,8 +45,8 @@
   - 220
   - 120
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Sol
@@ -62,7 +62,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_mercury
@@ -86,8 +86,8 @@
   - 165
   - 160
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Mercury
@@ -103,7 +103,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_venus
@@ -127,8 +127,8 @@
   - 190
   - 140
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Venus
@@ -144,7 +144,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_earth
@@ -168,8 +168,8 @@
   - 140
   - 255
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Earth
@@ -185,7 +185,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_luna
@@ -209,8 +209,8 @@
   - 200
   - 210
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Luna
@@ -226,7 +226,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_mars
@@ -250,8 +250,8 @@
   - 120
   - 90
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Mars
@@ -267,7 +267,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_phobos
@@ -291,8 +291,8 @@
   - 140
   - 135
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Phobos
@@ -308,7 +308,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_deimos
@@ -332,8 +332,8 @@
   - 125
   - 120
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Deimos
@@ -349,7 +349,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_ceres
@@ -373,8 +373,8 @@
   - 175
   - 165
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Ceres
@@ -390,7 +390,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_vesta
@@ -414,8 +414,8 @@
   - 160
   - 155
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Vesta
@@ -431,7 +431,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_pallas
@@ -455,8 +455,8 @@
   - 155
   - 150
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Pallas
@@ -472,7 +472,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_hygiea
@@ -496,8 +496,8 @@
   - 145
   - 135
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Hygiea
@@ -513,7 +513,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_jupiter
@@ -537,8 +537,8 @@
   - 175
   - 130
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Jupiter
@@ -554,7 +554,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_io
@@ -578,8 +578,8 @@
   - 220
   - 140
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Io
@@ -595,7 +595,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_europa
@@ -619,8 +619,8 @@
   - 215
   - 200
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Europa
@@ -636,7 +636,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_ganymede
@@ -660,8 +660,8 @@
   - 165
   - 160
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Ganymede
@@ -677,7 +677,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_callisto
@@ -701,8 +701,8 @@
   - 145
   - 140
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Callisto
@@ -718,7 +718,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_amalthea
@@ -742,8 +742,8 @@
   - 120
   - 110
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Amalthea
@@ -759,7 +759,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_himalia
@@ -783,8 +783,8 @@
   - 120
   - 115
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Himalia
@@ -800,7 +800,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_saturn
@@ -824,8 +824,8 @@
   - 205
   - 150
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Saturn
@@ -841,7 +841,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_mimas
@@ -865,8 +865,8 @@
   - 180
   - 175
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Mimas
@@ -882,7 +882,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_enceladus
@@ -906,8 +906,8 @@
   - 235
   - 240
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Enceladus
@@ -923,7 +923,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_tethys
@@ -947,8 +947,8 @@
   - 210
   - 205
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Tethys
@@ -964,7 +964,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_dione
@@ -988,8 +988,8 @@
   - 195
   - 195
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Dione
@@ -1005,7 +1005,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_rhea
@@ -1029,8 +1029,8 @@
   - 185
   - 182
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Rhea
@@ -1046,7 +1046,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_titan
@@ -1070,8 +1070,8 @@
   - 170
   - 110
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Titan
@@ -1087,7 +1087,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_iapetus
@@ -1111,8 +1111,8 @@
   - 155
   - 135
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Iapetus
@@ -1128,7 +1128,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_phoebe
@@ -1152,8 +1152,8 @@
   - 100
   - 105
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Phoebe
@@ -1169,7 +1169,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_uranus
@@ -1193,8 +1193,8 @@
   - 225
   - 230
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Uranus
@@ -1210,7 +1210,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_miranda
@@ -1234,8 +1234,8 @@
   - 185
   - 180
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Miranda
@@ -1251,7 +1251,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_ariel
@@ -1275,8 +1275,8 @@
   - 215
   - 220
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Ariel
@@ -1292,7 +1292,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_umbriel
@@ -1316,8 +1316,8 @@
   - 120
   - 125
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Umbriel
@@ -1333,7 +1333,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_titania
@@ -1357,8 +1357,8 @@
   - 190
   - 200
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Titania
@@ -1374,7 +1374,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_oberon
@@ -1398,8 +1398,8 @@
   - 165
   - 170
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Oberon
@@ -1415,7 +1415,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_neptune
@@ -1439,8 +1439,8 @@
   - 130
   - 230
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Neptune
@@ -1456,7 +1456,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_triton
@@ -1480,8 +1480,8 @@
   - 195
   - 210
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Triton
@@ -1497,7 +1497,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_nereid
@@ -1521,8 +1521,8 @@
   - 150
   - 160
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Nereid
@@ -1538,7 +1538,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_proteus
@@ -1562,8 +1562,8 @@
   - 110
   - 120
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Proteus
@@ -1579,7 +1579,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_pluto
@@ -1603,8 +1603,8 @@
   - 145
   - 130
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Pluto
@@ -1620,7 +1620,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_charon
@@ -1645,8 +1645,8 @@
   - 175
   - 170
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1662,7 +1662,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_nix
@@ -1686,8 +1686,8 @@
   - 185
   - 180
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Nix
@@ -1703,7 +1703,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_hydra
@@ -1727,8 +1727,8 @@
   - 190
   - 190
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Hydra
@@ -1744,7 +1744,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_kerberos
@@ -1768,8 +1768,8 @@
   - 120
   - 125
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Kerberos
@@ -1785,7 +1785,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_styx
@@ -1809,8 +1809,8 @@
   - 100
   - 105
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Styx
@@ -1826,7 +1826,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_haumea
@@ -1850,8 +1850,8 @@
   - 210
   - 220
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Haumea
@@ -1867,7 +1867,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_hiiaka
@@ -1891,8 +1891,8 @@
   - 185
   - 195
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Hiʻiaka
@@ -1908,7 +1908,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_namaka
@@ -1932,8 +1932,8 @@
   - 150
   - 160
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Namaka
@@ -1949,7 +1949,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_makemake
@@ -1973,8 +1973,8 @@
   - 170
   - 150
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Makemake
@@ -1990,7 +1990,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_mk2
@@ -2014,8 +2014,8 @@
   - 140
   - 145
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: MK2
@@ -2031,7 +2031,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_eris
@@ -2055,8 +2055,8 @@
   - 210
   - 215
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Eris
@@ -2072,7 +2072,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: body_dysnomia
@@ -2096,8 +2096,8 @@
   - 165
   - 175
   start_year: 0
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Dysnomia
@@ -2113,7 +2113,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: sys_new_001
@@ -2121,8 +2121,8 @@
   name: Aramite
   type: system
   wiki_entry: ''
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -2137,6 +2137,6 @@
   tags: []
   start_year: null
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}

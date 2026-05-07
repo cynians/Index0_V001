@@ -17,8 +17,8 @@
   - planetary_period
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   notes: ''
@@ -31,7 +31,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: gang_cog_breach_route_crew
   pretty_name: CoG Breach Route Crew
@@ -52,8 +52,8 @@
   - erased_history
   start_year: 5742
   entry_status: stub
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -65,5 +65,30 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
+  media_layers: {}
+- id: fac_sov_union
+  pretty_name: Soviet Union
+  name: Soviet Union
+  type: faction
+  wiki_entry: ''
+  derived_from:
+  - idea_new_011
+  start_year: 1918
+  end_year: 1989
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  parents: []
+  related: []
+  offspring: []
+  placeholders: []
+  entry_status: ''
   media_layers: {}

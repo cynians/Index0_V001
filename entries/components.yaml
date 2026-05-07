@@ -23,8 +23,8 @@
     context.
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -39,7 +39,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_storage_rack
   pretty_name: Storage Rack
@@ -63,8 +63,8 @@
   maintenance_notes: Low-complexity installed component for organized storage.
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -79,7 +79,7 @@
   image: ''
   tags: []
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_engine_inline_compact
   pretty_name: Inline Engine
@@ -124,8 +124,8 @@
   - compact
   start_year: 2400
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   notes: ''
@@ -138,7 +138,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_engine_vblock_heavy
   pretty_name: V-Block Engine
@@ -184,8 +184,8 @@
   - heavy
   start_year: 2400
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   notes: ''
@@ -198,7 +198,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: asm_conviction_c1_touring_body
   pretty_name: Conviction C1 Touring Body
@@ -247,8 +247,8 @@
   - c1
   start_year: 3184
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   notes: ''
@@ -261,7 +261,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: asm_conviction_c1_open_roof_assembly
   pretty_name: Conviction C1 Open Roof Assembly
@@ -307,8 +307,8 @@
   - c1
   start_year: 3184
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   notes: ''
@@ -321,7 +321,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: asm_conviction_c1_grand_touring_drive_unit
   pretty_name: Conviction C1 Grand Touring Drive Unit
@@ -369,8 +369,8 @@
   - c1
   start_year: 3184
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   notes: ''
@@ -383,7 +383,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: asm_luaz_967_watertight_hull_tub
   pretty_name: LuAZ-967 Watertight Hull Tub
@@ -432,8 +432,8 @@
   - military
   start_year: 1961
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   notes: ''
@@ -446,7 +446,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_light_vehicle_floor_tub_shell
   pretty_name: Light Vehicle Floor Tub Shell
@@ -489,8 +489,8 @@
   - floor_tub
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   notes: ''
@@ -503,7 +503,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_light_vehicle_bow_nose_panel_set
   pretty_name: Light Vehicle Bow Nose Panel Set
@@ -546,8 +546,8 @@
   - nose
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   notes: ''
@@ -560,7 +560,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_light_vehicle_rear_body_closure_set
   pretty_name: Light Vehicle Rear Body Closure Set
@@ -602,8 +602,8 @@
   - rear_closure
   start_year: 6373
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   notes: ''
@@ -616,7 +616,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_light_vehicle_structural_reinforcement_set
   pretty_name: Light Vehicle Structural Reinforcement Set
@@ -658,8 +658,8 @@
   - structure
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   notes: ''
@@ -672,7 +672,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_light_vehicle_access_cover_frame_set
   pretty_name: Light Vehicle Access Cover Frame Set
@@ -714,8 +714,8 @@
   - service_cover
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   notes: ''
@@ -728,7 +728,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_pressed_steel_floor_pan
   pretty_name: Pressed Steel Floor Pan
@@ -760,8 +760,8 @@
   - floor
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -775,7 +775,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_pressed_steel_sidewall_panel
   pretty_name: Pressed Steel Sidewall Panel
@@ -807,8 +807,8 @@
   - sidewall
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -822,7 +822,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_pressed_steel_wheelhouse_inner_panel
   pretty_name: Pressed Steel Wheelhouse Inner Panel
@@ -854,8 +854,8 @@
   - pressed_panel
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -869,7 +869,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_hull_corner_closing_plate
   pretty_name: Hull Corner Closing Plate
@@ -901,8 +901,8 @@
   - hull
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -916,7 +916,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_pressed_steel_bow_plate
   pretty_name: Pressed Steel Bow Plate
@@ -948,8 +948,8 @@
   - pressed_panel
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -963,7 +963,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_pressed_steel_front_side_panel
   pretty_name: Pressed Steel Front Side Panel
@@ -995,8 +995,8 @@
   - pressed_panel
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1010,7 +1010,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_light_bracket_set
   pretty_name: Light Bracket Set
@@ -1042,8 +1042,8 @@
   - support
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1057,7 +1057,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_pressed_steel_rear_panel
   pretty_name: Pressed Steel Rear Panel
@@ -1089,8 +1089,8 @@
   - pressed_panel
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1104,7 +1104,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_pressed_steel_upper_rear_edge_panel
   pretty_name: Pressed Steel Upper Rear Edge Panel
@@ -1136,8 +1136,8 @@
   - pressed_panel
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1151,7 +1151,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_mounting_bracket_set
   pretty_name: Mounting Bracket Set
@@ -1183,8 +1183,8 @@
   - mounting
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1198,7 +1198,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_suspension_mount_reinforcement_plate
   pretty_name: Suspension Mount Reinforcement Plate
@@ -1230,8 +1230,8 @@
   - suspension
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1245,7 +1245,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_crossmember_section
   pretty_name: Crossmember Section
@@ -1277,8 +1277,8 @@
   - structure
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1292,7 +1292,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_tow_point_reinforcement_block
   pretty_name: Tow Point Reinforcement Block
@@ -1325,8 +1325,8 @@
   - reinforcement
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1340,7 +1340,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_seat_and_load_mount_plate
   pretty_name: Seat and Load Mount Plate
@@ -1373,8 +1373,8 @@
   - load_mount
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1388,7 +1388,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_hatch_frame_ring
   pretty_name: Hatch Frame Ring
@@ -1420,8 +1420,8 @@
   - access
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1435,7 +1435,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_cover_hinge_bracket
   pretty_name: Cover Hinge Bracket
@@ -1467,8 +1467,8 @@
   - access_cover
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1482,7 +1482,7 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
 - id: comp_sealing_flange_strip
   pretty_name: Sealing Flange Strip
@@ -1515,8 +1515,8 @@
   - sealing
   start_year: 0
   entry_status: draft
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   description: ''
@@ -1530,5 +1530,5 @@
   image_path: ''
   image: ''
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}

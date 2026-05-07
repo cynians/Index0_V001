@@ -17,8 +17,8 @@
   - civic
   start_year: 2062
   end_year: '2158'
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Pan-African Union Urban Culture
@@ -32,7 +32,7 @@
   card_image_top: ''
   image_path: ''
   image: ''
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: culture_transfer_hansa_frontier
@@ -54,8 +54,8 @@
   - interstellar
   start_year: 2390
   end_year: 'null'
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Transfer Hansa Frontier Culture
@@ -69,7 +69,7 @@
   card_image_top: ''
   image_path: ''
   image: ''
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: culture_csg_crusader_reconstruction
@@ -91,8 +91,8 @@
   - experimental_society
   start_year: 2700
   end_year: 'null'
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: CSG Crusader Reconstruction Culture
@@ -106,6 +106,6 @@
   card_image_top: ''
   image_path: ''
   image: ''
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}

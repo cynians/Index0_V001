@@ -8,8 +8,8 @@
   tags: []
   start_year: null
   end_year: null
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   offspring: []
   placeholders: []
   entry_status: ''
@@ -23,8 +23,8 @@
   tags: []
   start_year: null
   end_year: null
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   offspring: []
   placeholders: []
   entry_status: ''
@@ -38,8 +38,8 @@
   tags: []
   start_year: 15303
   end_year: null
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   offspring: []
   placeholders: []
   entry_status: ''
@@ -47,18 +47,20 @@
   pretty_name: Idea from Venus
   name: Terraformed Venus
   type: idea
-  wiki_entry: "Venus is a much better candidate for terraforming when compared to\
-    \ Mars. \n\nThe thick atmosphere shields from radiation. The terraforming problem\
-    \ is more about changing and capturing atmosphere, rather than adding onto it.\n\
-    \nAnother important point is Gravity. On [[planet_mars]], it is only 43%. On Venus\
-    \ it is 90%. \n"
+  wiki_entry: |
+    Venus is a much better candidate for terraforming when compared to Mars. 
+    
+    The thick atmosphere shields from radiation. The terraforming problem is more about changing and capturing atmosphere, rather than adding onto it.
+    
+    Another important point is Gravity. On [[planet_mars]], it is only 43%. On Venus it is 90%. 
   description: ''
   notes: ''
   tags: []
   start_year: 6224
   end_year: null
-  parent_ideas: []
-  related_ideas: []
+  parents:
+  - idea_new_008
+  related: []
   offspring: []
   placeholders: []
   entry_status: ''
@@ -72,8 +74,8 @@
   tags: []
   start_year: null
   end_year: null
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   offspring: []
   placeholders: []
   entry_status: ''

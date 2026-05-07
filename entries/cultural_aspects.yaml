@@ -21,10 +21,10 @@
     '
   historical_examples:
   - pan_african_congress_movements
-  derived_from_ideas:
+  derived_from:
   - IDEA-???
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Pan-African Identity
@@ -62,10 +62,10 @@
     models.
 
     '
-  derived_from_ideas:
+  derived_from:
   - IDEA-???
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Urban Cooperative Economy
@@ -106,10 +106,10 @@
   historical_examples:
   - medieval_merchant_guilds
   - hanseatic_trade_network
-  derived_from_ideas:
+  derived_from:
   - IDEA-403
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Contract Honor Norm
@@ -147,10 +147,10 @@
     were essential.
 
     '
-  derived_from_ideas:
+  derived_from:
   - IDEA-401
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Mobile Frontier Ethos
@@ -188,10 +188,10 @@
     Seeding Group experimental societies.
 
     '
-  derived_from_ideas:
+  derived_from:
   - IDEA-571
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Crusader Zeal
@@ -242,8 +242,8 @@
   historical_examples:
   - asahachi_kono
   - japanese_camera_pictorialists_of_california
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Asahachi Kōno Photographic Pictorialism
@@ -258,7 +258,7 @@
   image: ''
   start_year: null
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: aspect_lindsdale_fencing
@@ -292,8 +292,8 @@
 
     '
   historical_examples: []
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   pretty_name: Lindsdale Fencing
@@ -308,7 +308,7 @@
   image: ''
   start_year: null
   end_year: null
-  derived_from_ideas: []
+  derived_from: []
   entry_status: ''
   media_layers: {}
 - id: aspect_late_cog_quarantine_regime
@@ -332,8 +332,8 @@
     characterized by sealed sectors, movement restriction, contamination fear, checkpointing,
     infrastructural isolation, and coercive inward control.
   end_year: 5785
-  parent_ideas: []
-  related_ideas: []
+  parents: []
+  related: []
   placeholders: []
   offspring: []
   card_image: ''
@@ -343,5 +343,5 @@
   card_image_top: ''
   image_path: ''
   image: ''
-  derived_from_ideas: []
+  derived_from: []
   media_layers: {}
