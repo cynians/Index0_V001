@@ -242,7 +242,7 @@ class EntityCard:
             trimmed = trimmed[:-1]
         return f"{trimmed}{suffix}" if trimmed else suffix
 
-    def _relation_chip_items(self, field_key, value):
+    def _relation_chip_items(self, field_key, value, edit_mode=False):
         target = self._relation_field_target(field_key)
         refs = self._relation_reference_values(value)
         if refs:
@@ -256,16 +256,20 @@ class EntityCard:
                 }
                 for ref in refs
             ]
-            items.append(
-                {
-                    "kind": "link_existing",
-                    "field_key": field_key,
-                    "entity_id": "",
-                    "target": target,
-                    "label": "Link existing",
-                }
-            )
+            if edit_mode:
+                items.append(
+                    {
+                        "kind": "link_existing",
+                        "field_key": field_key,
+                        "entity_id": "",
+                        "target": target,
+                        "label": "Link existing",
+                    }
+                )
             return items
+
+        if not edit_mode:
+            return []
 
         return [
             {
@@ -284,8 +288,8 @@ class EntityCard:
             },
         ]
 
-    def _layout_relation_chips(self, field_key, value, font, value_x, value_y, value_w):
-        items = self._relation_chip_items(field_key, value)
+    def _layout_relation_chips(self, field_key, value, font, value_x, value_y, value_w, edit_mode=False):
+        items = self._relation_chip_items(field_key, value, edit_mode=edit_mode)
         if not items:
             return [], 0
 
@@ -299,7 +303,9 @@ class EntityCard:
 
         for item in items:
             label = self._relation_chip_label(item)
-            chip_w = min(max(46, font.size(label)[0] + 16), max(46, value_w - 4))
+            has_remove_button = edit_mode and item.get("kind") in {"existing", "missing"}
+            remove_w = 18 if has_remove_button else 0
+            chip_w = min(max(46, font.size(label)[0] + 16 + remove_w), max(46, value_w - 4))
             if x > value_x + 2 and x + chip_w > max_right:
                 x = value_x + 2
                 y += chip_h + chip_gap
@@ -308,6 +314,14 @@ class EntityCard:
             chip = dict(item)
             chip["rect"] = rect
             chip["display_label"] = label
+            if has_remove_button:
+                remove_size = max(12, min(16, chip_h - 4))
+                chip["remove_rect"] = pygame.Rect(
+                    rect.right - remove_size - 3,
+                    rect.y + (rect.height - remove_size) // 2,
+                    remove_size,
+                    remove_size,
+                )
             chips.append(chip)
             x = rect.right + chip_gap
 
@@ -1373,7 +1387,7 @@ class EntityCard:
                             value_column_w,
                         )
                         relation_chips = []
-                        if self.is_relation_edit_field(key) and not card.get("is_edit_mode", False):
+                        if self.is_relation_edit_field(key) and card.get("active_edit_field") != key:
                             relation_chips, relation_content_h = self._layout_relation_chips(
                                 key,
                                 value,
@@ -1381,6 +1395,7 @@ class EntityCard:
                                 value_column_x,
                                 current_y,
                                 value_column_w,
+                                edit_mode=bool(card.get("is_edit_mode", False)),
                             )
                             row_h = max(row_h, relation_content_h)
 
@@ -1441,6 +1456,8 @@ class EntityCard:
                     row[rect_key] = row[rect_key].move(0, -scroll_y)
                 for chip in row.get("relation_chips", []):
                     chip["rect"] = chip["rect"].move(0, -scroll_y)
+                    if chip.get("remove_rect") is not None:
+                        chip["remove_rect"] = chip["remove_rect"].move(0, -scroll_y)
 
             for field_key, field_rect in content_editable_field_hitboxes:
                 shifted_rect = field_rect.move(0, -scroll_y)
@@ -1480,15 +1497,25 @@ class EntityCard:
             year_positions.append((year, year_x))
 
         header_drag_rect = pygame.Rect(rect.x + 1, rect.y + 1, rect.width - 2, self.HEADER_H)
-        resize_hitboxes = [
-            ("left", pygame.Rect(rect.x - self.RESIZE_BORDER, rect.y + self.HEADER_H, self.RESIZE_BORDER * 2, rect.height - self.HEADER_H)),
-            ("right", pygame.Rect(rect.right - self.RESIZE_BORDER, rect.y + self.HEADER_H, self.RESIZE_BORDER * 2, rect.height - self.HEADER_H)),
-            ("top", pygame.Rect(rect.x, rect.y - self.RESIZE_BORDER, rect.width, self.RESIZE_BORDER * 2)),
-            ("bottom", pygame.Rect(rect.x, rect.bottom - self.RESIZE_BORDER, rect.width, self.RESIZE_BORDER * 2)),
+        corner_resize_hitboxes = [
             ("top_left", pygame.Rect(rect.x - self.RESIZE_BORDER, rect.y - self.RESIZE_BORDER, self.RESIZE_BORDER * 3, self.RESIZE_BORDER * 3)),
             ("top_right", pygame.Rect(rect.right - self.RESIZE_BORDER * 2, rect.y - self.RESIZE_BORDER, self.RESIZE_BORDER * 3, self.RESIZE_BORDER * 3)),
             ("bottom_left", pygame.Rect(rect.x - self.RESIZE_BORDER, rect.bottom - self.RESIZE_BORDER * 2, self.RESIZE_BORDER * 3, self.RESIZE_BORDER * 3)),
             ("bottom_right", pygame.Rect(rect.right - self.RESIZE_BORDER * 2, rect.bottom - self.RESIZE_BORDER * 2, self.RESIZE_BORDER * 3, self.RESIZE_BORDER * 3)),
+        ]
+        edge_resize_hitboxes = [
+            ("left", pygame.Rect(rect.x - self.RESIZE_BORDER, rect.y + self.HEADER_H, self.RESIZE_BORDER * 2, rect.height - self.HEADER_H)),
+            ("right", pygame.Rect(rect.right - self.RESIZE_BORDER, rect.y + self.HEADER_H, self.RESIZE_BORDER * 2, rect.height - self.HEADER_H)),
+            ("top", pygame.Rect(rect.x, rect.y - self.RESIZE_BORDER, rect.width, self.RESIZE_BORDER * 2)),
+            ("bottom", pygame.Rect(rect.x, rect.bottom - self.RESIZE_BORDER, rect.width, self.RESIZE_BORDER * 2)),
+        ]
+        resize_hitboxes = corner_resize_hitboxes + edge_resize_hitboxes
+        corner_handle_size = max(8, min(12, self.RESIZE_HANDLE))
+        corner_handle_rects = [
+            pygame.Rect(rect.x, rect.y, corner_handle_size, corner_handle_size),
+            pygame.Rect(rect.right - corner_handle_size, rect.y, corner_handle_size, corner_handle_size),
+            pygame.Rect(rect.x, rect.bottom - corner_handle_size, corner_handle_size, corner_handle_size),
+            pygame.Rect(rect.right - corner_handle_size, rect.bottom - corner_handle_size, corner_handle_size, corner_handle_size),
         ]
 
         final_rect = pygame.Rect(rect.x, rect.y, rect.width, rect.height)
@@ -1502,6 +1529,7 @@ class EntityCard:
         card["launch_rect"] = launch_rect
         card["header_drag_rect"] = header_drag_rect
         card["resize_handle_rect"] = resize_handle_rect
+        card["corner_handle_rects"] = corner_handle_rects
         card["section_hitboxes"] = section_hitboxes
         card["section_draw_rects"] = section_draw_rects
         card["media_import_hitboxes"] = media_import_hitboxes
@@ -1704,6 +1732,10 @@ class EntityCard:
         launch_text = font.render(f"Launch [{card['selected_year']}]", True, (245, 245, 245))
         launch_text_rect = launch_text.get_rect(center=launch_rect.center)
         screen.blit(launch_text, launch_text_rect)
+
+        for handle_rect in card.get("corner_handle_rects", []):
+            pygame.draw.rect(screen, (105, 112, 126), handle_rect)
+            pygame.draw.rect(screen, (220, 224, 232), handle_rect, 1)
 
         handle_rect = card["resize_handle_rect"]
         pygame.draw.rect(screen, (120, 120, 120), handle_rect)
@@ -1969,13 +2001,22 @@ class EntityCard:
 
                         pygame.draw.rect(screen, chip_fill, chip_rect)
                         pygame.draw.rect(screen, chip_border, chip_rect, 1)
+                        remove_rect = chip.get("remove_rect")
+                        text_max_w = chip_rect.width - 10
+                        if remove_rect is not None:
+                            text_max_w = max(12, remove_rect.x - chip_rect.x - 10)
                         label = self._ellipsize_text(
                             chip.get("display_label", ""),
                             font,
-                            chip_rect.width - 10,
+                            text_max_w,
                         )
                         chip_surface = font.render(label, True, chip_text_color)
                         screen.blit(chip_surface, (chip_rect.x + 6, chip_rect.y + max(2, (chip_rect.height - line_h) // 2)))
+                        if remove_rect is not None:
+                            pygame.draw.rect(screen, chip_border, remove_rect, 1)
+                            remove_surface = font.render("x", True, chip_text_color)
+                            remove_text_rect = remove_surface.get_rect(center=remove_rect.center)
+                            screen.blit(remove_surface, remove_text_rect)
                 else:
                     line_y = row_rect.y + self.TABLE_ROW_PAD_Y
                     for line in wrapped_lines:

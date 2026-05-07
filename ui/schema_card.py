@@ -269,15 +269,25 @@ class SchemaCard:
             self.RESIZE_HANDLE,
             self.RESIZE_HANDLE,
         )
-        resize_hitboxes = [
-            ("left", pygame.Rect(rect.x - self.RESIZE_BORDER, rect.y + self.HEADER_H, self.RESIZE_BORDER * 2, rect.height - self.HEADER_H)),
-            ("right", pygame.Rect(rect.right - self.RESIZE_BORDER, rect.y + self.HEADER_H, self.RESIZE_BORDER * 2, rect.height - self.HEADER_H)),
-            ("top", pygame.Rect(rect.x, rect.y - self.RESIZE_BORDER, rect.width, self.RESIZE_BORDER * 2)),
-            ("bottom", pygame.Rect(rect.x, rect.bottom - self.RESIZE_BORDER, rect.width, self.RESIZE_BORDER * 2)),
+        corner_resize_hitboxes = [
             ("top_left", pygame.Rect(rect.x - self.RESIZE_BORDER, rect.y - self.RESIZE_BORDER, self.RESIZE_BORDER * 3, self.RESIZE_BORDER * 3)),
             ("top_right", pygame.Rect(rect.right - self.RESIZE_BORDER * 2, rect.y - self.RESIZE_BORDER, self.RESIZE_BORDER * 3, self.RESIZE_BORDER * 3)),
             ("bottom_left", pygame.Rect(rect.x - self.RESIZE_BORDER, rect.bottom - self.RESIZE_BORDER * 2, self.RESIZE_BORDER * 3, self.RESIZE_BORDER * 3)),
             ("bottom_right", pygame.Rect(rect.right - self.RESIZE_BORDER * 2, rect.bottom - self.RESIZE_BORDER * 2, self.RESIZE_BORDER * 3, self.RESIZE_BORDER * 3)),
+        ]
+        edge_resize_hitboxes = [
+            ("left", pygame.Rect(rect.x - self.RESIZE_BORDER, rect.y + self.HEADER_H, self.RESIZE_BORDER * 2, rect.height - self.HEADER_H)),
+            ("right", pygame.Rect(rect.right - self.RESIZE_BORDER, rect.y + self.HEADER_H, self.RESIZE_BORDER * 2, rect.height - self.HEADER_H)),
+            ("top", pygame.Rect(rect.x, rect.y - self.RESIZE_BORDER, rect.width, self.RESIZE_BORDER * 2)),
+            ("bottom", pygame.Rect(rect.x, rect.bottom - self.RESIZE_BORDER, rect.width, self.RESIZE_BORDER * 2)),
+        ]
+        resize_hitboxes = corner_resize_hitboxes + edge_resize_hitboxes
+        corner_handle_size = max(8, min(12, self.RESIZE_HANDLE))
+        corner_handle_rects = [
+            pygame.Rect(rect.x, rect.y, corner_handle_size, corner_handle_size),
+            pygame.Rect(rect.right - corner_handle_size, rect.y, corner_handle_size, corner_handle_size),
+            pygame.Rect(rect.x, rect.bottom - corner_handle_size, corner_handle_size, corner_handle_size),
+            pygame.Rect(rect.right - corner_handle_size, rect.bottom - corner_handle_size, corner_handle_size, corner_handle_size),
         ]
 
         card["rect"] = pygame.Rect(rect.x, rect.y, rect.width, rect.height)
@@ -287,6 +297,7 @@ class SchemaCard:
         card["schema_field_hitboxes"] = field_hitboxes
         card["schema_save_rect"] = save_rect
         card["resize_handle_rect"] = resize_handle_rect
+        card["corner_handle_rects"] = corner_handle_rects
         card["resize_hitboxes"] = resize_hitboxes
         card["tab_hitboxes"] = []
         card["year_hitboxes"] = []
@@ -404,6 +415,10 @@ class SchemaCard:
             pygame.draw.rect(screen, border, save_rect, 1)
             save_surface = font.render("Save", True, (244, 248, 244))
             screen.blit(save_surface, save_surface.get_rect(center=save_rect.center))
+
+        for handle_rect in card.get("corner_handle_rects", []):
+            pygame.draw.rect(screen, (105, 112, 126), handle_rect)
+            pygame.draw.rect(screen, (220, 224, 232), handle_rect, 1)
 
         handle_rect = card.get("resize_handle_rect")
         if handle_rect is not None:

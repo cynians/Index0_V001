@@ -173,8 +173,6 @@ class KnowledgeBrowserUI:
         self.new_entry_button = None
         self.template_picker_rect = None
         self.template_button_hitboxes = []
-        self.relation_link_target = None
-        self.relation_link_status = ""
 
     def _clamp_timeline_panel_height(self, app_height, timeline_h=None):
         if timeline_h is None:
@@ -2641,6 +2639,51 @@ class KnowledgeBrowserUI:
 
             line_y += line_height
 
+    def _browser_content_bounds(self, left_rect):
+        if self.browser_search_rect is not None:
+            content_top = (
+                self.browser_search_rect.bottom
+                + self.BROWSER_CONTROL_GAP
+                + self.BROWSER_FILTER_H
+                + 8
+            )
+        else:
+            content_top = left_rect.y + 48
+        return content_top, left_rect.bottom - 10
+
+    def _browser_item_at_pos(self, mouse_pos, left_rect):
+        content_top, content_bottom = self._browser_content_bounds(left_rect)
+        if mouse_pos[1] < content_top or mouse_pos[1] > content_bottom:
+            return None
+
+        line_height = self._font_line_height()
+        if line_height <= 0:
+            return None
+
+        line_y = content_top - self.browser_scroll
+        for item in self.browser_items:
+            row_top = line_y
+            row_bottom = line_y + line_height
+
+            if item.get("kind") == "spacer":
+                line_y += line_height
+                continue
+
+            if row_bottom < content_top:
+                line_y += line_height
+                continue
+
+            if row_top > content_bottom:
+                break
+
+            row_rect = pygame.Rect(left_rect.x + 10, line_y - 1, left_rect.width - 20, line_height)
+            if row_rect.collidepoint(mouse_pos):
+                return item
+
+            line_y += line_height
+
+        return None
+
     def rebuild(self, app_width, app_height, world_model, repository_scope_entity_id, font):
         self.reset()
 
@@ -2735,6 +2778,15 @@ class KnowledgeBrowserUI:
             row_y += self.CARD_TYPE_PICKER_ROW_H
 
     def _handle_keydown_event(self, event):
+        if self.relation_link_target is not None:
+            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                self._finish_relation_browser_link()
+                return "__ui_consumed__"
+
+            if event.key == pygame.K_ESCAPE:
+                self._finish_relation_browser_link()
+                return "__ui_consumed__"
+
         if self.browser_search_active:
             if event.key == pygame.K_ESCAPE:
                 self.browser_search_active = False
@@ -2752,17 +2804,6 @@ class KnowledgeBrowserUI:
                 self.browser_items = self._build_browser_items(self.world_model)
                 self._rebuild_browser_hitboxes()
                 return "__ui_consumed__"
-
-        if event.key == pygame.K_ESCAPE and self.relation_link_target is not None:
-            source_card = self.relation_link_target.get("source_card")
-            if isinstance(source_card, dict):
-                source_card.pop("active_relation_link_field", None)
-                source_card.pop("relation_link_status", None)
-            self.relation_link_target = None
-            self.relation_link_status = ""
-            self._rebuild_browser_hitboxes()
-            self._relayout_cards()
-            return "__ui_consumed__"
 
         for index in range(len(self.cards) - 1, -1, -1):
             card = self.cards[index]
@@ -2988,20 +3029,11 @@ class KnowledgeBrowserUI:
                 self._rebuild_browser_hitboxes()
                 return "__ui_consumed__"
 
+        if self.relation_link_target is not None:
+            return self._handle_relation_link_mode_click(mouse_pos, left_rect)
+
         for entity_id, hitbox in self.browser_hitboxes:
             if hitbox.collidepoint(mouse_pos):
-                if self.relation_link_target is not None:
-                    schema_name = self._schema_name_from_card_id(entity_id)
-                    if schema_name is not None:
-                        self.relation_link_status = "Pick an entry, not a schema"
-                        self._rebuild_browser_hitboxes()
-                        return "__ui_consumed__"
-                    linked = self._link_relation_from_browser_entity(entity_id)
-                    if not linked:
-                        self._rebuild_browser_hitboxes()
-                        self._relayout_cards()
-                    return "__ui_consumed__"
-
                 self.selected_entity_id = entity_id
 
                 schema_name = self._schema_name_from_card_id(entity_id)
@@ -3050,6 +3082,43 @@ class KnowledgeBrowserUI:
             self._persist_card_entity(card)
         return True
 
+    def _remove_relation_reference_from_card(self, card, field_key, entity_id):
+        entity = self._entity_for_card(card)
+        card_view = card.get("card_view") if card is not None else None
+        entity_id = str(entity_id or "").strip()
+        if not isinstance(entity, dict) or not field_key or not entity_id or card_view is None:
+            return False
+
+        allows_many = (
+            card_view._relation_field_allows_many(field_key)
+            if hasattr(card_view, "_relation_field_allows_many")
+            else isinstance(entity.get(field_key), list)
+        )
+
+        current_value = entity.get(field_key)
+        if allows_many:
+            if isinstance(current_value, list):
+                values = [value for value in current_value if str(value).strip() != entity_id]
+                if len(values) == len(current_value):
+                    return False
+            elif current_value in (None, ""):
+                return False
+            elif str(current_value).strip() == entity_id:
+                values = []
+            else:
+                return False
+            entity[field_key] = values
+        else:
+            if str(current_value or "").strip() != entity_id:
+                return False
+            entity[field_key] = ""
+
+        if card.get("is_draft_entity", False):
+            self._save_card_draft(card)
+        else:
+            self._persist_card_entity(card)
+        return True
+
     def _find_card_by_entity_id(self, entity_id):
         for card in self.cards:
             if card.get("entity_id") == entity_id:
@@ -3065,6 +3134,46 @@ class KnowledgeBrowserUI:
 
         self.relation_link_target = None
         self.relation_link_status = ""
+
+    def _finish_relation_browser_link(self):
+        if self.relation_link_target is None:
+            return False
+
+        self._clear_relation_browser_link()
+        self._rebuild_browser_hitboxes()
+        self._relayout_cards()
+        return True
+
+    def _handle_relation_link_mode_click(self, mouse_pos, left_rect):
+        if self.relation_link_target is None:
+            return None
+
+        if not left_rect.collidepoint(mouse_pos):
+            self._finish_relation_browser_link()
+            return "__ui_consumed__"
+
+        item = self._browser_item_at_pos(mouse_pos, left_rect)
+        if item is None:
+            return "__ui_consumed__"
+
+        entity_id = item.get("entity_id")
+        if item.get("kind") == "schema" or self._schema_name_from_card_id(entity_id) is not None:
+            self.relation_link_status = "Pick an entry, not a schema"
+            source_card = self.relation_link_target.get("source_card")
+            if isinstance(source_card, dict):
+                source_card["relation_link_status"] = self.relation_link_status
+            self._rebuild_browser_hitboxes()
+            self._relayout_cards()
+            return "__ui_consumed__"
+
+        if item.get("kind") not in {"entity", "tree_entity"}:
+            return "__ui_consumed__"
+
+        linked = self._link_relation_from_browser_entity(entity_id)
+        if not linked:
+            self._rebuild_browser_hitboxes()
+            self._relayout_cards()
+        return "__ui_consumed__"
 
     def _begin_relation_browser_link(self, card, relation_info):
         if card is None or not isinstance(relation_info, dict):
@@ -3122,11 +3231,9 @@ class KnowledgeBrowserUI:
             self.relation_link_status = "Could not link that entry"
             return False
 
-        source_card.pop("active_relation_link_field", None)
-        source_card.pop("relation_link_status", None)
-        self._clear_relation_browser_link()
-        self.selected_entity_id = entity_id
-        self._ensure_card(entity)
+        label = entity.get("pretty_name") or entity.get("name") or entity_id
+        self.relation_link_status = f"Added {label}; Enter or click away to finish"
+        source_card["relation_link_status"] = self.relation_link_status
         self.browser_items = self._build_browser_items(self.world_model)
         self._rebuild_browser_hitboxes()
         self._relayout_cards()
@@ -3143,15 +3250,40 @@ class KnowledgeBrowserUI:
         requested_id = relation_info.get("entity_id") if relation_info.get("kind") == "missing" else None
         return self._create_and_open_template_entity(template, requested_id=requested_id)
 
-    def _handle_relation_chip_click(self, card, relation_info):
+    def _handle_relation_chip_click(self, card, relation_info, mouse_pos=None):
         if self.world_model is None or card is None or not isinstance(relation_info, dict):
             return False
 
         kind = relation_info.get("kind")
         entity_id = str(relation_info.get("entity_id") or "").strip()
 
+        if not card.get("is_edit_mode", False):
+            if kind == "existing" and entity_id:
+                entity = self.world_model.get_entity(entity_id)
+                if entity is not None:
+                    self._ensure_card(entity)
+                    return True
+            return False
+
         if kind == "link_existing":
             return self._begin_relation_browser_link(card, relation_info)
+
+        remove_rect = relation_info.get("remove_rect")
+        if (
+            kind in {"existing", "missing"}
+            and entity_id
+            and mouse_pos is not None
+            and remove_rect is not None
+            and remove_rect.collidepoint(mouse_pos)
+        ):
+            removed = self._remove_relation_reference_from_card(
+                card,
+                relation_info.get("field_key"),
+                entity_id,
+            )
+            if removed:
+                self._relayout_cards()
+            return removed
 
         if kind == "existing" and entity_id:
             entity = self.world_model.get_entity(entity_id)
@@ -3256,7 +3388,7 @@ class KnowledgeBrowserUI:
             for relation_info, relation_rect in card.get("relation_hitboxes", []):
                 if relation_rect.collidepoint(mouse_pos) and card_view is not None:
                     card_obj = self._bring_card_to_front(index)
-                    if self._handle_relation_chip_click(card_obj, relation_info):
+                    if self._handle_relation_chip_click(card_obj, relation_info, mouse_pos=mouse_pos):
                         return "__ui_consumed__"
 
             for field_key, field_rect in card.get("editable_field_hitboxes", []):
@@ -3661,6 +3793,11 @@ class KnowledgeBrowserUI:
             return None
 
         mouse_pos = event.pos
+
+        if self.relation_link_target is not None:
+            if not left_rect.collidepoint(mouse_pos):
+                self._finish_relation_browser_link()
+                return "__ui_consumed__"
 
         if timeline_rect.collidepoint(mouse_pos):
             timeline_action = self.timeline_ui.handle_click(mouse_pos)

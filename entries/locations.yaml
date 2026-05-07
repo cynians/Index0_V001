@@ -1181,7 +1181,8 @@
     y0: 48000000
   start_year: 0
   entry_status: stub
-  parents: []
+  parents:
+  - geo_europe
   related: []
   placeholders: []
   offspring: []

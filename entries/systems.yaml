@@ -722,6 +722,7 @@
   entry_status: ''
   media_layers: {}
 - id: body_amalthea
+  pretty_name: Amalthea
   name: Amalthea
   type: system
   system_role: orbital_body
@@ -742,11 +743,11 @@
   - 120
   - 110
   start_year: 0
-  parents: []
+  parents:
+  - planet_jupiter
   related: []
   placeholders: []
   offspring: []
-  pretty_name: Amalthea
   description: ''
   notes: ''
   wiki_entry: ''
