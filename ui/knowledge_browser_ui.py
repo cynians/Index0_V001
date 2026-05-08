@@ -225,8 +225,16 @@ class KnowledgeBrowserUI:
             if not entity_id:
                 continue
 
-            pretty_name = entity.get("pretty_name") or entity.get("name") or entity_id
-            haystack = " ".join([str(pretty_name), str(entity_id), str(entity.get("name", ""))]).lower()
+            pretty_name = self._entity_display_label(entity, fallback=entity_id)
+            haystack = " ".join(
+                [
+                    str(pretty_name),
+                    str(entity_id),
+                    str(entity.get("common_name", "")),
+                    str(entity.get("binomial_name", "")),
+                    str(entity.get("name", "")),
+                ]
+            ).lower()
             if normalized_query and normalized_query not in haystack:
                 continue
 
@@ -250,6 +258,116 @@ class KnowledgeBrowserUI:
         card["relation_picker_matches"] = []
         card["relation_picker_selected_index"] = 0
         card["relation_picker_hitboxes"] = []
+
+    def _is_species_entity(self, entity, dataset_name=None):
+        if not isinstance(entity, dict):
+            return False
+        dataset = dataset_name or entity.get("_dataset")
+        return dataset == "species" or entity.get("type") == "species"
+
+    def _species_name_parts(self, entity):
+        common_name = str(entity.get("common_name") or "").strip()
+        binomial_name = str(entity.get("binomial_name") or "").strip()
+
+        if not common_name:
+            pretty_name = str(entity.get("pretty_name") or "").strip()
+            if " - " in pretty_name:
+                common_name = pretty_name.split(" - ", 1)[0].strip()
+            elif pretty_name and pretty_name != entity.get("id"):
+                common_name = pretty_name
+
+        if not binomial_name:
+            legacy_name = str(entity.get("name") or "").strip()
+            if legacy_name and legacy_name != common_name:
+                binomial_name = legacy_name
+            else:
+                pretty_name = str(entity.get("pretty_name") or "").strip()
+                if " - " in pretty_name:
+                    binomial_name = pretty_name.split(" - ", 1)[1].strip()
+
+        return common_name, binomial_name
+
+    def _species_display_label(self, entity):
+        common_name, binomial_name = self._species_name_parts(entity)
+        if common_name and binomial_name:
+            return f"{common_name} - {binomial_name}"
+        if common_name:
+            return common_name
+        if binomial_name:
+            return binomial_name
+        return str(entity.get("id") or "Unknown Species")
+
+    def _entity_display_label(self, entity, fallback=None):
+        if self._is_species_entity(entity):
+            return self._species_display_label(entity)
+        return str(
+            entity.get("pretty_name")
+            or entity.get("name")
+            or fallback
+            or entity.get("id")
+            or "unknown"
+        )
+
+    def _species_id_from_binomial(self, binomial_name):
+        slug_source = str(binomial_name or "").strip().lower()
+        slug = re.sub(r"[^a-z0-9]+", "_", slug_source).strip("_")
+        return f"spec_{slug}" if slug else ""
+
+    def _unique_entity_id(self, requested_id, current_id=None):
+        requested_id = str(requested_id or "").strip()
+        if not requested_id:
+            return ""
+
+        existing_ids = set(self.world_model.loader.entities.keys()) if self.world_model is not None else set()
+        existing_ids.update(self.card_drafts.keys())
+        if current_id:
+            existing_ids.discard(str(current_id))
+
+        if requested_id not in existing_ids:
+            return requested_id
+
+        index = 2
+        while True:
+            candidate = f"{requested_id}_{index}"
+            if candidate not in existing_ids:
+                return candidate
+            index += 1
+
+    def _normalize_species_entity(self, entity):
+        if not self._is_species_entity(entity):
+            return "", ""
+        common_name, binomial_name = self._species_name_parts(entity)
+        entity["common_name"] = common_name
+        entity["binomial_name"] = binomial_name
+        entity["type"] = "species"
+        entity["_dataset"] = "species"
+        entity.pop("pretty_name", None)
+        entity.pop("name", None)
+        return common_name, binomial_name
+
+    def _sync_species_identity(self, card):
+        entity = self._entity_for_card(card)
+        if not self._is_species_entity(entity):
+            return False
+
+        common_name, binomial_name = self._normalize_species_entity(entity)
+
+        old_id = str(entity.get("id") or card.get("entity_id") or "")
+        generated_id = self._species_id_from_binomial(binomial_name)
+        if generated_id:
+            new_id = self._unique_entity_id(generated_id, current_id=old_id)
+            if new_id and new_id != old_id:
+                pending = card.get("pending_entity_id_change")
+                previous_id = pending.get("old") if isinstance(pending, dict) else old_id
+                card["pending_entity_id_change"] = {
+                    "old": previous_id,
+                    "new": new_id,
+                }
+                entity["id"] = new_id
+
+        card["title"] = common_name or binomial_name or entity.get("id", "Unknown Species")
+        card["subtitle"] = self._card_subtitle_for_entity(entity)
+        return True
 
     def _open_relation_picker(self, card):
         card["relation_picker_open"] = True
@@ -654,7 +772,7 @@ class KnowledgeBrowserUI:
             "producers": "prod",
             "production": "prod",
             "spatial_features": "spat",
-            "species": "sp",
+            "species": "spec",
             "systems": "sys",
             "technologies": "tech",
             "vehicles": "veh",
@@ -907,6 +1025,9 @@ class KnowledgeBrowserUI:
         if query:
             haystack = " ".join(
                 [
+                    self._entity_display_label(entity),
+                    str(entity.get("common_name", "")),
+                    str(entity.get("binomial_name", "")),
                     str(entity.get("pretty_name", "")),
                     str(entity.get("name", "")),
                     str(entity.get("id", "")),
@@ -1007,6 +1128,12 @@ class KnowledgeBrowserUI:
                 key: value
                 for key, value in field_specs.items()
                 if key in self.IDEA_GENERIC_FIELDS or key in {"id", "type"}
+            }
+        if dataset_name == "species":
+            field_specs = {
+                key: value
+                for key, value in field_specs.items()
+                if key not in {"pretty_name", "name"}
             }
         missing = 0
         for field_key, spec in field_specs.items():
@@ -1130,6 +1257,8 @@ class KnowledgeBrowserUI:
             return entity.get("component_class", entity.get("type", "entity"))
         if dataset_name == "ideas":
             return entity.get("idea_class", entity.get("type", "entity"))
+        if dataset_name == "species":
+            return entity.get("species_class", entity.get("type", "entity"))
         if dataset_name == "systems":
             if entity.get("system_role") == "star_system":
                 return entity.get("system_class", entity.get("type", "entity"))
@@ -1180,14 +1309,14 @@ class KnowledgeBrowserUI:
 
             entities = sorted(
                 world_model.get_entities_by_dataset(dataset_name),
-                key=lambda entity: entity.get("name", entity.get("id", ""))
+                key=lambda entity: self._entity_display_label(entity, fallback=entity.get("id", "")).lower()
             )
 
             for entity in entities:
                 if not self._matches_browser_filters(entity, dataset_name):
                     continue
 
-                label = entity.get("name", entity.get("id", "unknown"))
+                label = self._entity_display_label(entity, fallback=entity.get("id", "unknown"))
                 entity_class = self._entity_class_label(dataset_name, entity)
                 missing_count = self._entity_missing_scalar_count(entity, dataset_name)
 
@@ -1230,6 +1359,9 @@ class KnowledgeBrowserUI:
             else:
                 display_group = "system"
                 subtype = entity.get("type", "entity")
+        elif dataset_name == "species":
+            display_group = "species"
+            subtype = entity.get("species_class", entity.get("type", "entity"))
         else:
             display_group = dataset_name
             subtype = entity.get("type", "entity")
@@ -1274,10 +1406,15 @@ class KnowledgeBrowserUI:
         spawn_x = 24 + (card_index % 3) * 40
         spawn_y = 84 + (card_index % 5) * 32
 
+        card_title = self._entity_display_label(entity, fallback=entity.get("id", "unknown"))
+        if dataset_name == "species":
+            common_name, binomial_name = self._species_name_parts(entity)
+            card_title = common_name or binomial_name or entity.get("id", "Unknown Species")
+
         card = {
             "entity_id": entity.get("id"),
-            "title": entity.get("name", entity.get("id", "unknown")),
-            "subtitle": f"{display_group} | {subtype}",
+            "title": card_title,
+            "subtitle": self._card_subtitle_for_entity(entity) if dataset_name == "species" else f"{display_group} | {subtype}",
             "years": years,
             "selected_year": selected_year,
             "canvas_x": spawn_x,
@@ -1634,6 +1771,13 @@ class KnowledgeBrowserUI:
         requested_id = requested_id.replace(" ", "_")
         existing_ids = set(self.world_model.loader.entities.keys()) if self.world_model is not None else set()
         existing_ids.update(self.card_drafts.keys())
+        species_binomial = ""
+        if dataset_name == "species" and isinstance(initial_fields, dict):
+            species_binomial = str(initial_fields.get("binomial_name") or "").strip()
+        species_requested_id = self._species_id_from_binomial(species_binomial) if dataset_name == "species" else ""
+        if species_requested_id:
+            requested_id = self._unique_entity_id(species_requested_id)
+
         entity_id = requested_id if requested_id and requested_id not in existing_ids else self._next_template_entity_id(dataset_name, template=template)
         label = label or (
             self._label_from_requested_entity_id(entity_id, entity_type=entity_type)
@@ -1641,19 +1785,35 @@ class KnowledgeBrowserUI:
             else f"New {entity_type.replace('_', ' ').title()}"
         )
 
-        entity = {
-            "id": entity_id,
-            "pretty_name": label,
-            "name": label,
-            "type": entity_type,
-            "_dataset": dataset_name,
-            "wiki_entry": "",
-        }
+        if dataset_name == "species":
+            entity = {
+                "id": entity_id,
+                "common_name": label,
+                "binomial_name": species_binomial,
+                "type": "species",
+                "_dataset": dataset_name,
+                "wiki_entry": "",
+            }
+        else:
+            entity = {
+                "id": entity_id,
+                "pretty_name": label,
+                "name": label,
+                "type": entity_type,
+                "_dataset": dataset_name,
+                "wiki_entry": "",
+            }
         self._populate_required_schema_fields(entity, template)
         if isinstance(initial_fields, dict):
             for field_key, value in initial_fields.items():
                 if field_key not in {"id", "_dataset"}:
                     entity[field_key] = value
+        if dataset_name == "species":
+            common_name, binomial_name = self._normalize_species_entity(entity)
+            generated_id = self._species_id_from_binomial(binomial_name)
+            if generated_id and not requested_id:
+                entity["id"] = self._unique_entity_id(generated_id, current_id=entity_id)
+                entity_id = entity["id"]
 
         self.world_model.loader.datasets.setdefault(dataset_name, []).append(entity)
         self.world_model.loader.entities[entity_id] = entity
@@ -1697,7 +1857,7 @@ class KnowledgeBrowserUI:
         parent_entity = self.world_model.get_entity(parent_entity_id)
         parent_label = parent_card.get("title") or parent_entity_id
         if parent_entity is not None:
-            parent_label = parent_entity.get("pretty_name") or parent_entity.get("name") or parent_label
+            parent_label = self._entity_display_label(parent_entity, fallback=parent_label)
 
         idea = self._create_template_entity("ideas")
         if idea is None:
@@ -1729,6 +1889,11 @@ class KnowledgeBrowserUI:
             return f"location | {entity.get('location_class', entity.get('type', 'entity'))}"
         if dataset_name == "ideas":
             return f"idea | {entity.get('entry_status') or 'generic'}"
+        if dataset_name == "species":
+            common_name, binomial_name = self._species_name_parts(entity)
+            if binomial_name:
+                return f"species | {binomial_name}"
+            return f"species | {entity.get('species_class') or 'unclassified'}"
         if dataset_name == "systems":
             system_role = entity.get("system_role")
             if system_role == "star_system":
@@ -1795,14 +1960,25 @@ class KnowledgeBrowserUI:
             return False
 
         new_id = self._next_template_entity_id(new_dataset, template=template)
-        converted = {
-            "id": new_id,
-            "pretty_name": entity.get("pretty_name") or entity.get("name") or new_id,
-            "name": entity.get("name") or entity.get("pretty_name") or new_id,
-            "type": new_type,
-            "_dataset": new_dataset,
-        }
+        if new_dataset == "species":
+            converted = {
+                "id": new_id,
+                "common_name": entity.get("pretty_name") or entity.get("name") or "New Species",
+                "binomial_name": "",
+                "type": "species",
+                "_dataset": new_dataset,
+            }
+        else:
+            converted = {
+                "id": new_id,
+                "pretty_name": entity.get("pretty_name") or entity.get("name") or new_id,
+                "name": entity.get("name") or entity.get("pretty_name") or new_id,
+                "type": new_type,
+                "_dataset": new_dataset,
+            }
         for field_key in self.IDEA_GENERIC_FIELDS:
+            if new_dataset == "species" and field_key in {"pretty_name", "name"}:
+                continue
             if field_key in entity:
                 converted[field_key] = entity[field_key]
 
@@ -1824,7 +2000,11 @@ class KnowledgeBrowserUI:
 
         old_draft = self.card_drafts.pop(old_id, None)
         card["entity_id"] = new_id
-        card["title"] = converted.get("name", new_id)
+        if new_dataset == "species":
+            self._normalize_species_entity(converted)
+            card["title"] = converted.get("common_name") or converted.get("binomial_name") or new_id
+        else:
+            card["title"] = converted.get("name", new_id)
         card["subtitle"] = self._card_subtitle_for_entity(converted)
         card["is_draft_entity"] = bool(card.get("is_draft_entity", False) or (isinstance(old_draft, dict) and old_draft.get("is_new_entry", False)))
         card.pop("pending_entity_id_change", None)
@@ -2198,11 +2378,23 @@ class KnowledgeBrowserUI:
         return {key: value for key, value in entity.items() if not key.startswith("_")}
 
     def _save_card_draft(self, card):
+        self._sync_species_identity(card)
         entity = self._entity_for_card(card)
         if not isinstance(entity, dict) or not entity.get("id"):
             return False
 
         entity_id = str(entity["id"])
+        id_change = card.get("pending_entity_id_change")
+        if isinstance(id_change, dict):
+            old_entity_id = id_change.get("old")
+            if old_entity_id and old_entity_id != entity_id:
+                self.card_drafts.pop(old_entity_id, None)
+                if self.world_model is not None:
+                    self.world_model.loader.entities.pop(old_entity_id, None)
+                    self.world_model.loader.entities[entity_id] = entity
+                card["entity_id"] = entity_id
+                card.pop("pending_entity_id_change", None)
+
         active_field = card.get("active_edit_field")
         draft = dict(self.card_drafts.get(entity_id, {}))
         draft["entity"] = self._draft_entity_snapshot(entity)
@@ -2290,7 +2482,11 @@ class KnowledgeBrowserUI:
         return text
 
     def _format_yaml_entity_block(self, entity):
-        ordered_keys = ["id", "pretty_name", "name", "type"]
+        if self._is_species_entity(entity):
+            self._normalize_species_entity(entity)
+            ordered_keys = ["id", "common_name", "binomial_name", "type"]
+        else:
+            ordered_keys = ["id", "pretty_name", "name", "type"]
         keys = [key for key in ordered_keys if key in entity]
         keys.extend(key for key in entity.keys() if key not in keys and not key.startswith("_"))
 
@@ -2375,6 +2571,7 @@ class KnowledgeBrowserUI:
         if card is None:
             return False
 
+        self._sync_species_identity(card)
         entity = self._entity_for_card(card)
         id_change = card.get("pending_entity_id_change")
         previous_entity_id = None
@@ -3231,7 +3428,7 @@ class KnowledgeBrowserUI:
             self.relation_link_status = "Could not link that entry"
             return False
 
-        label = entity.get("pretty_name") or entity.get("name") or entity_id
+        label = self._entity_display_label(entity, fallback=entity_id)
         self.relation_link_status = f"Added {label}; Enter or click away to finish"
         source_card["relation_link_status"] = self.relation_link_status
         self.browser_items = self._build_browser_items(self.world_model)
@@ -3615,7 +3812,7 @@ class KnowledgeBrowserUI:
             search_border = (186, 198, 220) if self.browser_search_active else (102, 110, 126)
             pygame.draw.rect(screen, search_fill, self.browser_search_rect)
             pygame.draw.rect(screen, search_border, self.browser_search_rect, 1)
-            search_text = self.browser_search_query if self.browser_search_query else "Search by pretty name, id, or type"
+            search_text = self.browser_search_query if self.browser_search_query else "Search by name, id, or type"
             search_color = (238, 238, 238) if self.browser_search_query else (150, 158, 174)
             search_surface = font.render(search_text, True, search_color)
             screen.blit(search_surface, (self.browser_search_rect.x + 8, self.browser_search_rect.y + 4))

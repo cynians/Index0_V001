@@ -1,6 +1,6 @@
-- id: psittacoraptor_versatilis
-  pretty_name: Versatile Parrot Raptor - Psittacoraptor versatilis
-  name: Psittacoraptor versatilis
+- id: spec_psittacoraptor_versatilis
+  common_name: Versatile Parrot Raptor
+  binomial_name: Psittacoraptor versatilis
   type: species
   description: Bioengineered parrot-derived theropod lineage created by the Terran
     BDP during the Planetary Period as an omnivorous generalist. On at least one seeded
@@ -90,9 +90,9 @@
   end_year: null
   derived_from: []
   media_layers: {}
-- id: ailurus_fulgens
-  pretty_name: Red Panda - Ailurus fulgens
-  name: Ailurus fulgens
+- id: spec_ailurus_fulgens
+  common_name: Red Panda
+  binomial_name: Ailurus fulgens
   type: species
   description: Small arboreal mammal native to the temperate montane forests of the
     eastern Himalayas and southwestern China. Red pandas are specialized climbers
@@ -173,9 +173,9 @@
   end_year: null
   derived_from: []
   media_layers: {}
-- id: rheithrosciurus_macrotis
-  pretty_name: Tufted Ground Squirrel - Rheithrosciurus macrotis
-  name: Rheithrosciurus macrotis
+- id: spec_rheithrosciurus_macrotis
+  common_name: Tufted Ground Squirrel
+  binomial_name: Rheithrosciurus macrotis
   type: species
   description: Large terrestrial squirrel native to the lowland forests of Borneo,
     known for its extremely bushy tail and powerful jaws. Despite its common name,
@@ -258,9 +258,9 @@
   end_year: null
   derived_from: []
   media_layers: {}
-- id: sp_new_001
-  pretty_name: New Species
-  name: Atopodentatus
+- id: spec_atopodentatus
+  common_name: New Species
+  binomial_name: Atopodentatus
   type: species
   wiki_entry: ''
   description: ''
@@ -282,9 +282,9 @@
   placeholders: []
   entry_status: ''
   media_layers: {}
-- id: sp_new_003
-  pretty_name: New Species
-  name: ''
+- id: spec_new_003
+  common_name: New Species
+  binomial_name: ''
   type: species
   wiki_entry: ''
   representative_body_length_m: null

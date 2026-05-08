@@ -4,6 +4,12 @@ extends: entity_core
 
 fields:
 
+  common_name:
+    type: string
+
+  binomial_name:
+    type: string
+
   species_class:
     type: string
     optional: true
@@ -121,9 +127,9 @@ fields:
 # COMMENTED EXAMPLE ENTRY
 # --------------------------------------------------
 #
-# - id: psittacoraptor_versatilis
-#   pretty_name: Versatile Parrot Raptor - Psittacoraptor versatilis
-#   name: Psittacoraptor versatilis
+# - id: spec_psittacoraptor_versatilis
+#   common_name: Versatile Parrot Raptor
+#   binomial_name: Psittacoraptor versatilis
 #   type: species
 #   description: Bioengineered parrot-derived theropod lineage created by the Terran BDP during the Planetary Period as an omnivorous generalist and later diversified through CEAG-assisted accelerated evolution on one seeded Earth-like world.
 #   species_class: engineered_vertebrate

@@ -124,6 +124,34 @@ class EntityCard:
     def _is_component_card(self):
         return self.dataset_name == "components" or self.entity.get("type") in {"component", "assembly"}
 
+    def _is_species_card(self):
+        return self.dataset_name == "species" or self.entity.get("type") == "species"
+
+    def _species_name_parts(self):
+        common_name = str(self.entity.get("common_name") or "").strip()
+        binomial_name = str(self.entity.get("binomial_name") or "").strip()
+
+        if not common_name:
+            pretty_name = str(self.entity.get("pretty_name") or "").strip()
+            if " - " in pretty_name:
+                common_name = pretty_name.split(" - ", 1)[0].strip()
+            elif pretty_name and pretty_name != self.entity.get("id"):
+                common_name = pretty_name
+
+        if not binomial_name:
+            legacy_name = str(self.entity.get("name") or "").strip()
+            if legacy_name and legacy_name != common_name:
+                binomial_name = legacy_name
+            else:
+                pretty_name = str(self.entity.get("pretty_name") or "").strip()
+                if " - " in pretty_name:
+                    binomial_name = pretty_name.split(" - ", 1)[1].strip()
+
+        return common_name, binomial_name
+
+    def _title_edit_field(self):
+        return "common_name" if self._is_species_card() else "name"
+
     def _tab_order(self):
         if self._is_idea_card():
             return self.DATASET_TAB_ORDER["ideas"]
@@ -396,6 +424,26 @@ class EntityCard:
         if entity is None:
             return entity_ref
 
+        if entity.get("_dataset") == "species" or entity.get("type") == "species":
+            common_name = str(entity.get("common_name") or "").strip()
+            binomial_name = str(entity.get("binomial_name") or "").strip()
+            pretty_name = str(entity.get("pretty_name") or "").strip()
+            legacy_name = str(entity.get("name") or "").strip()
+            if not common_name and " - " in pretty_name:
+                common_name = pretty_name.split(" - ", 1)[0].strip()
+            elif not common_name and pretty_name:
+                common_name = pretty_name
+            if not binomial_name and legacy_name:
+                binomial_name = legacy_name
+            elif not binomial_name and " - " in pretty_name:
+                binomial_name = pretty_name.split(" - ", 1)[1].strip()
+            if common_name and binomial_name:
+                return f"{common_name} - {binomial_name}"
+            if common_name:
+                return common_name
+            if binomial_name:
+                return binomial_name
+
         return entity.get("pretty_name") or entity.get("name") or entity_ref
 
     def _schema_name_candidates(self):
@@ -491,7 +539,7 @@ class EntityCard:
         return False
 
     def _is_field_editable(self, field_key, value, schema_field_specs):
-        if field_key == "name":
+        if field_key in {"name", "common_name"}:
             return True
 
         spec = self._normalize_field_spec(schema_field_specs.get(field_key, {}))
@@ -513,13 +561,23 @@ class EntityCard:
         schema_field_specs = self._get_schema_field_specs()
         schema_field_order = list(schema_field_specs.keys())
 
-        identity = [
-            ("id", entity.get("id")),
-            ("pretty_name", entity.get("pretty_name")),
-            ("name", entity.get("name")),
-            ("type", entity.get("type")),
-            ("dataset", entity.get("_dataset")),
-        ]
+        if self._is_species_card():
+            common_name, binomial_name = self._species_name_parts()
+            identity = [
+                ("common_name", common_name),
+                ("binomial_name", binomial_name),
+                ("id", entity.get("id")),
+                ("type", entity.get("type")),
+                ("dataset", entity.get("_dataset")),
+            ]
+        else:
+            identity = [
+                ("id", entity.get("id")),
+                ("pretty_name", entity.get("pretty_name")),
+                ("name", entity.get("name")),
+                ("type", entity.get("type")),
+                ("dataset", entity.get("_dataset")),
+            ]
 
         classification_keys = [
             "vehicle_class",
@@ -569,7 +627,7 @@ class EntityCard:
         }
 
         handled_keys = {
-            "id", "pretty_name", "name", "type", "_dataset",
+            "id", "pretty_name", "name", "common_name", "binomial_name", "type", "_dataset",
             "vehicle_class", "component_class", "idea_class", "location_class",
             "system_role", "system_class", "body_class",
             "dimension_x_m", "dimension_y_m", "dimension_z_m",
@@ -594,7 +652,7 @@ class EntityCard:
             value = entity.get(key)
 
             if key in {
-                "id", "pretty_name", "name", "type", "_dataset",
+                "id", "pretty_name", "name", "common_name", "binomial_name", "type", "_dataset",
                 "vehicle_class", "component_class", "idea_class", "location_class",
                 "system_role", "system_class", "body_class",
                 "dimension_x_m", "dimension_y_m", "dimension_z_m",
@@ -916,7 +974,10 @@ class EntityCard:
                 "new": str(new_value or ""),
             }
 
-        if field_key in {"name", "pretty_name", "id"}:
+        if self._is_species_card() and field_key in {"common_name", "binomial_name", "id"}:
+            common_name, binomial_name = self._species_name_parts()
+            card["title"] = common_name or binomial_name or self.entity.get("id", "Unknown Species")
+        elif field_key in {"name", "pretty_name", "id"}:
             card["title"] = str(new_value or self.entity.get("id", "unknown"))
 
         draft_buffers = card.get("draft_edit_buffers")
@@ -1288,7 +1349,7 @@ class EntityCard:
         title_edit_rect = pygame.Rect(rect.x + 10, rect.y + 7, max(40, rect.width - 120), 20)
         type_label_rect = pygame.Rect(rect.x + 10, rect.y + 28, max(40, rect.width - 120), 18)
         if card.get("is_edit_mode", False):
-            editable_field_hitboxes.append(("name", title_edit_rect))
+            editable_field_hitboxes.append((self._title_edit_field(), title_edit_rect))
 
         image_rect = pygame.Rect(
             rect.x + 12,
@@ -1612,7 +1673,7 @@ class EntityCard:
         title_text = card.get("title", "")
         if card.get("is_edit_mode", False):
             title_edit_rect = card.get("title_edit_rect")
-            title_active = card.get("active_edit_field") == "name"
+            title_active = card.get("active_edit_field") == self._title_edit_field()
             if title_edit_rect is not None:
                 title_fill = (48, 54, 68) if title_active else (38, 43, 56)
                 title_border = (182, 202, 236) if title_active else (92, 104, 128)

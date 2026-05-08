@@ -104,11 +104,34 @@ class EntityLoader:
     def _ensure_standard_relations(self, entity, dataset_name=None):
         changed = False
 
-        if "pretty_name" not in entity:
+        is_species = dataset_name == "species" or entity.get("type") == "species"
+        if is_species:
+            pretty_name = str(entity.get("pretty_name") or "").strip()
+            legacy_name = str(entity.get("name") or "").strip()
+
+            if "common_name" not in entity:
+                if " - " in pretty_name:
+                    entity["common_name"] = pretty_name.split(" - ", 1)[0].strip()
+                elif pretty_name and pretty_name != entity.get("id"):
+                    entity["common_name"] = pretty_name
+                else:
+                    entity["common_name"] = ""
+                changed = True
+
+            if "binomial_name" not in entity:
+                if legacy_name:
+                    entity["binomial_name"] = legacy_name
+                elif " - " in pretty_name:
+                    entity["binomial_name"] = pretty_name.split(" - ", 1)[1].strip()
+                else:
+                    entity["binomial_name"] = ""
+                changed = True
+
+        if not is_species and "pretty_name" not in entity:
             entity["pretty_name"] = entity.get("name") or entity.get("id") or ""
             changed = True
 
-        if "name" not in entity:
+        if not is_species and "name" not in entity:
             entity["name"] = entity.get("pretty_name") or entity.get("id") or ""
             changed = True
 
