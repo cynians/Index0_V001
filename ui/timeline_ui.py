@@ -34,6 +34,7 @@ class TimelineUI:
 
     def __init__(self):
         self.rect = pygame.Rect(0, 0, 0, 0)
+        self.title = "Repository Timeline"
         self.items = []
         self.period_layout_items = []
         self.layout_items = []
@@ -44,6 +45,9 @@ class TimelineUI:
         self.filter_hitboxes = []
         self.picker_target_label = None
         self.picker_preview_year = None
+        self.year_selection_enabled = False
+        self.selected_year = None
+        self.selected_year_context_label = None
 
         self.full_min_year = 0
         self.full_max_year = 1
@@ -62,10 +66,39 @@ class TimelineUI:
     def set_font(self, font):
         self.layout_font = font
 
+    def set_title(self, title):
+        self.title = str(title or "Timeline")
+
     def set_items(self, items):
         self.items = list(items or [])
         if self.active_category_filter not in self.get_filter_categories():
             self.active_category_filter = "all"
+
+    def set_year_selection_enabled(self, enabled):
+        self.year_selection_enabled = bool(enabled)
+
+    def set_selected_year(self, year, context_label=None, focus=False):
+        if year is None:
+            self.selected_year = None
+            self.selected_year_context_label = None
+            return False
+
+        try:
+            year = int(year)
+        except (TypeError, ValueError):
+            return False
+
+        changed = year != self.selected_year
+        self.selected_year = year
+        self.selected_year_context_label = context_label
+
+        if focus:
+            self.focus_year(year)
+
+        return changed
+
+    def get_selected_year(self):
+        return self.selected_year
 
     def set_active_category_filter(self, category_name):
         category_name = category_name or "all"
@@ -104,6 +137,37 @@ class TimelineUI:
             return "All"
         return str(category_name).replace("_", " ").title()
 
+    def _format_selected_year_label(self):
+        if self.selected_year is None:
+            return None
+
+        if self.selected_year_context_label:
+            return str(self.selected_year_context_label)
+
+        return f"Selected {self.selected_year}"
+
+    def _draw_selected_year_marker(self, screen):
+        if self.selected_year is None or not self._year_is_in_view(self.selected_year):
+            return
+
+        selected_x = self._year_to_x(self.selected_year)
+        pygame.draw.line(
+            screen,
+            (255, 220, 112),
+            (selected_x, self.content_rect.y),
+            (selected_x, self.rect.bottom - 10),
+            2,
+        )
+        pygame.draw.polygon(
+            screen,
+            (255, 220, 112),
+            [
+                (selected_x, self.axis_y + 8),
+                (selected_x - 5, self.axis_y + 16),
+                (selected_x + 5, self.axis_y + 16),
+            ],
+        )
+
     def _filtered_visible_items(self):
         visible_items = self._visible_items()
         if self.active_category_filter == "all":
@@ -125,6 +189,9 @@ class TimelineUI:
             return
 
         years = []
+        if self.selected_year is not None:
+            years.append(self.selected_year)
+
         for item in self.items:
             start = item.get("start_year")
             end = item.get("end_year")
@@ -219,6 +286,28 @@ class TimelineUI:
         t = (year - self.view_min_year) / span
         t = max(0.0, min(1.0, t))
         return self.content_rect.x + int(t * self.content_rect.width)
+
+    def _year_is_in_view(self, year):
+        if year is None:
+            return False
+
+        return self.view_min_year <= year <= self.view_max_year
+
+    def is_selected_year_marker_hit(self, mouse_pos, tolerance_px=8):
+        if self.selected_year is None:
+            return False
+
+        if not self._year_is_in_view(self.selected_year):
+            return False
+
+        if not self.rect.collidepoint(mouse_pos):
+            return False
+
+        if mouse_pos[1] < self.content_rect.y or mouse_pos[1] > self.rect.bottom:
+            return False
+
+        selected_x = self._year_to_x(self.selected_year)
+        return abs(int(mouse_pos[0]) - selected_x) <= int(tolerance_px)
 
     def _x_to_year(self, screen_x):
         if self.content_rect.width <= 1:
@@ -534,11 +623,46 @@ class TimelineUI:
         return False
 
     def handle_click(self, mouse_pos):
+        filter_action = self.handle_filter_click(mouse_pos)
+        if filter_action is not None:
+            return filter_action
+
+        if self.year_selection_enabled:
+            return self.select_year_from_pos(mouse_pos)
+
+        return None
+
+    def handle_filter_click(self, mouse_pos):
         for category_name, _, hitbox in self.filter_hitboxes:
             if hitbox.collidepoint(mouse_pos):
                 changed = self.set_active_category_filter(category_name)
                 return {"kind": "filter_changed", "category": category_name, "changed": changed}
+
         return None
+
+    def select_year_from_pos(self, mouse_pos):
+        picked_year = self.pick_year_from_pos(mouse_pos)
+        if picked_year is None:
+            return None
+
+        changed = self.set_selected_year(picked_year)
+        return {
+            "kind": "selected_year_changed",
+            "year": picked_year,
+            "changed": changed,
+        }
+
+    def select_year_from_drag_pos(self, mouse_pos):
+        if not self.year_selection_enabled:
+            return None
+
+        picked_year = int(round(self._x_to_year(mouse_pos[0])))
+        changed = self.set_selected_year(picked_year)
+        return {
+            "kind": "selected_year_changed",
+            "year": picked_year,
+            "changed": changed,
+        }
 
     def pick_year_from_pos(self, mouse_pos):
         if not self.rect.collidepoint(mouse_pos):
@@ -575,7 +699,7 @@ class TimelineUI:
 
         try:
             self._rebuild_filter_hitboxes()
-            title = font.render("Repository Timeline", True, (240, 240, 240))
+            title = font.render(self.title, True, (240, 240, 240))
             screen.blit(title, (self.rect.x + 12, self.rect.y + 8))
 
             for category_name, label, chip_rect in self.filter_hitboxes:
@@ -596,6 +720,12 @@ class TimelineUI:
                 picker_surface = font.render(picker_text, True, (232, 210, 148))
                 picker_x = self.rect.right - picker_surface.get_width() - 12
                 screen.blit(picker_surface, (picker_x, self.rect.y + 8))
+            elif self.selected_year is not None:
+                selected_label = self._format_selected_year_label()
+                selected_surface = font.render(selected_label, True, (232, 210, 148))
+                selected_x = self.rect.right - selected_surface.get_width() - 12
+                if selected_x > self.rect.x + 12 + title.get_width() + 12:
+                    screen.blit(selected_surface, (selected_x, self.rect.y + 8))
 
             axis_left = self.content_rect.x
             axis_right = self.content_rect.right
@@ -700,5 +830,7 @@ class TimelineUI:
                         label_surface = font.render(label, True, (230, 230, 230))
                         label_x = self._get_duration_label_x(x1, x2, label_surface.get_width())
                         screen.blit(label_surface, (label_x, y - 1))
+
+            self._draw_selected_year_marker(screen)
         finally:
             screen.set_clip(previous_clip)

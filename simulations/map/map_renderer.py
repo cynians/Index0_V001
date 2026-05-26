@@ -73,6 +73,7 @@ class MapRenderer:
 
     def _draw_spatial_feature_draft_preview(self, screen, preview, camera):
         points = preview.get("points", [])
+        previous_points = preview.get("previous_points") or []
         hover_point = preview.get("hover_point")
         area_label = preview.get("area_label")
 
@@ -91,6 +92,30 @@ class MapRenderer:
                     int(hover_screen_point[0]),
                     int(hover_screen_point[1]),
                 )
+
+        previous_screen_points = []
+        for point in previous_points:
+            screen_point = camera.world_to_screen(point)
+            if screen_point is None:
+                previous_screen_points = []
+                break
+            previous_screen_points.append((int(screen_point[0]), int(screen_point[1])))
+
+        if len(previous_screen_points) >= 3:
+            ghost_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+            pygame.draw.polygon(
+                ghost_surface,
+                (245, 245, 255, 18),
+                previous_screen_points,
+            )
+            pygame.draw.lines(
+                ghost_surface,
+                (245, 245, 255, 96),
+                True,
+                previous_screen_points,
+                2,
+            )
+            screen.blit(ghost_surface, (0, 0))
 
         if len(screen_points) >= 2:
             pygame.draw.lines(screen, (255, 230, 120), False, screen_points, 2)

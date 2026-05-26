@@ -1368,6 +1368,9 @@ class KnowledgeBrowserUI:
 
         start_year = entity.get("start_year")
         end_year = entity.get("end_year")
+        point_year = entity.get("year")
+        if point_year is None:
+            point_year = entity.get("year_number")
 
         def _coerce_year(value):
             if value is None:
@@ -1390,6 +1393,7 @@ class KnowledgeBrowserUI:
 
         start_year = _coerce_year(start_year)
         end_year = _coerce_year(end_year)
+        point_year = _coerce_year(point_year)
 
         if start_year is not None and end_year is not None and end_year >= start_year and end_year != start_year:
             years = [start_year, end_year]
@@ -1397,6 +1401,8 @@ class KnowledgeBrowserUI:
             years = [start_year]
         elif end_year is not None:
             years = [end_year]
+        elif point_year is not None:
+            years = [point_year]
         else:
             years = [0]
 
@@ -2054,6 +2060,10 @@ class KnowledgeBrowserUI:
         start_year = self._coerce_card_year(entity.get("start_year"))
         end_year = self._coerce_card_year(entity.get("end_year"))
         point_year = self._coerce_card_year(entity.get("year"))
+        if point_year is None:
+            point_year = self._coerce_card_year(entity.get("year_number"))
+        if point_year is None:
+            point_year = self._coerce_card_year(entity.get("effective_year"))
 
         if start_year is not None and end_year is not None and end_year >= start_year and end_year != start_year:
             years = [start_year, end_year]
@@ -2079,12 +2089,91 @@ class KnowledgeBrowserUI:
         self.timeline_edit_target = {
             "entity_id": card_obj.get("entity_id"),
             "field_key": field_key,
+            "mode": "field",
         }
+        for card in self.cards:
+            card.pop("timeline_reanchor_active", None)
         self.timeline_ui.set_picker_target(field_key, preview_year=preview_year)
+
+    def _card_anchor_preview_year(self, card):
+        entity = self._entity_for_card(card)
+        if isinstance(entity, dict):
+            for key in ("year", "year_number", "start_year", "effective_year", "end_year"):
+                year = self._coerce_card_year(entity.get(key))
+                if year is not None:
+                    return year
+
+        selected_year = self._coerce_card_year(card.get("selected_year"))
+        if selected_year is not None:
+            return selected_year
+
+        years = card.get("years", [])
+        if years:
+            return self._coerce_card_year(years[0])
+
+        return None
+
+    def _set_timeline_reanchor_target(self, card_obj):
+        preview_year = self._card_anchor_preview_year(card_obj)
+        self.timeline_edit_target = {
+            "entity_id": card_obj.get("entity_id"),
+            "field_key": None,
+            "mode": "reanchor",
+        }
+        for card in self.cards:
+            card["timeline_reanchor_active"] = card is card_obj
+        self.timeline_ui.set_picker_target("card anchor", preview_year=preview_year)
 
     def _clear_timeline_edit_target(self):
         self.timeline_edit_target = None
+        for card in self.cards:
+            card.pop("timeline_reanchor_active", None)
         self.timeline_ui.clear_picker_target()
+
+    def _reanchor_card_entity(self, card, year):
+        entity = self._entity_for_card(card)
+        if not isinstance(entity, dict):
+            return False
+
+        try:
+            year = int(year)
+        except (TypeError, ValueError):
+            return False
+
+        old_start_year = self._coerce_card_year(entity.get("start_year"))
+        old_end_year = self._coerce_card_year(entity.get("end_year"))
+
+        if "year" in entity:
+            old_anchor_year = self._coerce_card_year(entity.get("year"))
+            entity["year"] = year
+        elif "year_number" in entity:
+            old_anchor_year = self._coerce_card_year(entity.get("year_number"))
+            entity["year_number"] = year
+        elif "start_year" in entity:
+            old_anchor_year = old_start_year
+            entity["start_year"] = year
+
+            if old_start_year is not None and old_end_year is not None:
+                if old_end_year >= old_start_year and old_end_year != old_start_year:
+                    entity["end_year"] = old_end_year + (year - old_start_year)
+                elif old_end_year == old_start_year:
+                    entity["end_year"] = year
+        elif "effective_year" in entity:
+            old_anchor_year = self._coerce_card_year(entity.get("effective_year"))
+            entity["effective_year"] = year
+        elif "end_year" in entity:
+            old_anchor_year = old_end_year
+            entity["end_year"] = year
+        else:
+            old_anchor_year = None
+            entity["start_year"] = year
+
+        if "effective_year" in entity:
+            old_effective_year = self._coerce_card_year(entity.get("effective_year"))
+            if old_effective_year is None or old_effective_year == old_anchor_year:
+                entity["effective_year"] = year
+
+        return True
 
     def _apply_timeline_year_pick(self, year):
         if self.timeline_edit_target is None:
@@ -2092,7 +2181,8 @@ class KnowledgeBrowserUI:
 
         entity_id = self.timeline_edit_target.get("entity_id")
         field_key = self.timeline_edit_target.get("field_key")
-        if entity_id is None or field_key is None:
+        mode = self.timeline_edit_target.get("mode", "field")
+        if entity_id is None or (mode == "field" and field_key is None):
             self._clear_timeline_edit_target()
             return False
 
@@ -2107,11 +2197,18 @@ class KnowledgeBrowserUI:
                 self._clear_timeline_edit_target()
                 return False
 
-            card_view.begin_edit_field(card_obj, field_key)
-            card_obj["edit_buffer"] = str(int(year))
-            card_view.commit_edit_field(card_obj)
+            if mode == "reanchor":
+                if not self._reanchor_card_entity(card_obj, year):
+                    self._clear_timeline_edit_target()
+                    return False
+            else:
+                card_view.begin_edit_field(card_obj, field_key)
+                card_obj["edit_buffer"] = str(int(year))
+                card_view.commit_edit_field(card_obj)
+
             self._persist_card_entity(card_obj)
             self._sync_card_years_from_entity(card_obj)
+            card_obj["selected_year"] = int(year)
             self._focus_timeline_year(year)
             self._clear_timeline_edit_target()
             self._refresh_timeline_items()
@@ -2984,6 +3081,15 @@ class KnowledgeBrowserUI:
                 self._finish_relation_browser_link()
                 return "__ui_consumed__"
 
+        if (
+            self.timeline_edit_target is not None
+            and self.timeline_edit_target.get("mode") == "reanchor"
+            and event.key == pygame.K_ESCAPE
+        ):
+            self._clear_timeline_edit_target()
+            self._relayout_cards()
+            return "__ui_consumed__"
+
         if self.browser_search_active:
             if event.key == pygame.K_ESCAPE:
                 self.browser_search_active = False
@@ -3561,6 +3667,28 @@ class KnowledgeBrowserUI:
                 if self._toggle_type_picker(card_obj):
                     self._relayout_cards()
                     return "__ui_consumed__"
+
+            time_anchor_rect = card.get("time_anchor_rect")
+            if (
+                time_anchor_rect is not None
+                and time_anchor_rect.collidepoint(mouse_pos)
+                and card.get("is_edit_mode", False)
+                and card_view is not None
+            ):
+                card_obj = self._bring_card_to_front(index)
+                if card_obj.get("active_edit_field"):
+                    card_obj["card_view"].commit_edit_field(card_obj)
+                    if card_obj.get("last_edit_action") == "commit":
+                        self._persist_card_entity(card_obj)
+                    else:
+                        self._save_card_draft(card_obj)
+                    card_obj["last_edit_action"] = None
+
+                self._close_wiki_link_picker(card_obj)
+                self._close_relation_picker(card_obj)
+                self._set_timeline_reanchor_target(card_obj)
+                self._relayout_cards()
+                return "__ui_consumed__"
 
             edit_toggle_rect = card.get("edit_toggle_rect")
             if edit_toggle_rect is not None and edit_toggle_rect.collidepoint(mouse_pos) and card_view is not None:

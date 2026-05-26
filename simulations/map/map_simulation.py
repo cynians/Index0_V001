@@ -53,6 +53,10 @@ class MapSimulation:
         "locations": "Locations",
         "ecoregions": "Ecoregions",
         "faction_borders": "Faction Borders",
+        "political_control": "Political Control",
+        "settlement_extent": "Settlement Extent",
+        "resource_claims": "Resource Claims",
+        "infrastructure_corridors": "Infrastructure Corridors",
         "city_margins": "City Margins",
         "sites": "Sites",
     }
@@ -60,9 +64,20 @@ class MapSimulation:
     SPATIAL_LAYER_COLORS = {
         "ecoregions": (74, 132, 82),
         "faction_borders": (150, 82, 82),
+        "political_control": (150, 82, 82),
+        "settlement_extent": (92, 132, 184),
+        "resource_claims": (158, 128, 72),
+        "infrastructure_corridors": (138, 118, 170),
         "city_margins": (160, 142, 78),
         "sites": (86, 118, 158),
     }
+
+    AUTHORABLE_HISTORY_LAYER_KINDS = [
+        "settlement_extent",
+        "political_control",
+        "resource_claims",
+        "infrastructure_corridors",
+    ]
 
     def __init__(self, simulation_context):
         from engine.clock import Clock
@@ -106,6 +121,8 @@ class MapSimulation:
         self.editing_spatial_feature_id = None
         self.editing_spatial_feature_points = []
         self.editing_hover_map_pos = None
+        self.is_evolving_spatial_feature_polygon = False
+        self.evolving_source_spatial_feature_id = None
         self.is_creating_map_square = False
         self.map_square_anchor = None
         self.map_square_hover_pos = None
@@ -134,6 +151,118 @@ class MapSimulation:
     @property
     def year(self):
         return getattr(self.context, "year", 0)
+
+    def set_year(self, year):
+        try:
+            year = int(year)
+        except (TypeError, ValueError):
+            return False
+
+        if self.is_map_editor_active():
+            return False
+
+        if year == self.year:
+            return False
+
+        self.context.year = year
+        self.sim_clock.time = 0.0
+        self.sim_clock.tick = 0
+        self.sim_clock._accumulator = 0.0
+
+        self.selected_entity_id = None
+        self.hover_entity_id = None
+        self.selected_spatial_feature_id = None
+        self.hover_spatial_feature_id = None
+        self.hover_screen_pos = None
+        self._pending_inspector_target = None
+        self._selection_last_click_time = None
+        self._selection_last_click_screen_pos = None
+        self._selection_last_click_target = None
+        self._invalidate_layer_cache()
+
+        logger.info(f"[MapSimulation] Selected history year {year}")
+        return True
+
+    def get_year_context_label(self):
+        year = int(self.year)
+        root_entity = self.get_root_entity() or {}
+        relative_context = self._get_relative_year_context(root_entity)
+
+        if relative_context is None:
+            return f"Year {year}"
+
+        epoch_year = relative_context["epoch_year"]
+        label = relative_context["label"]
+        delta = year - epoch_year
+
+        if delta == 0:
+            return f"Year {year} | {label} +0"
+
+        if delta > 0:
+            return f"Year {year} | {delta} years since {label}"
+
+        return f"Year {year} | {abs(delta)} years before {label}"
+
+    def _get_relative_year_context(self, root_entity):
+        if not root_entity:
+            return None
+
+        context_candidates = []
+        for key in ("relative_year_context", "relative_time_context", "history_epoch"):
+            value = root_entity.get(key)
+            if isinstance(value, list):
+                context_candidates.extend(value)
+            elif isinstance(value, dict):
+                context_candidates.append(value)
+
+        for context in context_candidates:
+            epoch_year = None
+            for key in ("epoch_year", "start_year", "year"):
+                epoch_year = self._normalize_year_value(context.get(key))
+                if epoch_year is not None:
+                    break
+
+            if epoch_year is None:
+                continue
+
+            label = (
+                context.get("label")
+                or context.get("name")
+                or context.get("description")
+                or f"arrival on {self.get_root_name()}"
+            )
+            return {"epoch_year": epoch_year, "label": str(label)}
+
+        epoch_year = None
+        for key in (
+            "history_epoch_year",
+            "arrival_year",
+            "settlement_start_year",
+            "relative_year_start",
+        ):
+            epoch_year = self._normalize_year_value(root_entity.get(key))
+            if epoch_year is not None:
+                break
+
+        if epoch_year is None:
+            return None
+
+        label = (
+            root_entity.get("history_epoch_label")
+            or root_entity.get("arrival_label")
+            or f"arrival on {self.get_root_name()}"
+        )
+        return {"epoch_year": epoch_year, "label": str(label)}
+
+    def _normalize_year_value(self, value):
+        yearer = getattr(self.world_model, "yearer", None)
+        if yearer is not None and hasattr(yearer, "normalize_year"):
+            return yearer.normalize_year(value)
+
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
 
     def get_root_entity(self):
         return self.world_model.get_entity(self.context.root_entity_id)
@@ -401,6 +530,10 @@ class MapSimulation:
     def get_available_layer_kinds(self):
         layer_kinds = [self.LOCATION_LAYER_KIND]
 
+        for layer_kind in self.AUTHORABLE_HISTORY_LAYER_KINDS:
+            if layer_kind not in layer_kinds:
+                layer_kinds.append(layer_kind)
+
         for feature in self._get_scoped_spatial_features():
             layer_kind = feature.get("layer_kind")
             if layer_kind and layer_kind not in layer_kinds:
@@ -473,7 +606,7 @@ class MapSimulation:
             "max_y": float(bounds.get("max_y", 0.0)),
         }
 
-    def _can_inspect_location(self, location_id):
+    def _can_open_location_inspector(self, location_id):
         if not location_id:
             return False
 
@@ -493,7 +626,17 @@ class MapSimulation:
         if entity.get("location_class") == "planet":
             return False
 
+        return True
+
+    def _can_edit_location_bounds(self, location_id):
+        if not self._can_open_location_inspector(location_id):
+            return False
+
+        entity = self.get_location(location_id)
         return self._get_entity_bbox_bounds(entity) is not None
+
+    def _can_inspect_location(self, location_id):
+        return self._can_edit_location_bounds(location_id)
 
     def consume_pending_inspector_target(self):
         target = self._pending_inspector_target
@@ -526,6 +669,8 @@ class MapSimulation:
         self.editing_spatial_feature_id = None
         self.editing_spatial_feature_points = []
         self.editing_hover_map_pos = None
+        self.is_evolving_spatial_feature_polygon = False
+        self.evolving_source_spatial_feature_id = None
         self.is_creating_map_square = False
         self.map_square_anchor = None
         self.map_square_hover_pos = None
@@ -583,16 +728,23 @@ class MapSimulation:
         return (
             self.is_creating_spatial_feature
             or self.is_editing_spatial_feature_polygon
+            or self.is_evolving_spatial_feature_polygon
         )
 
     def get_polygon_editor_points(self):
-        if self.is_editing_spatial_feature_polygon:
+        if (
+            self.is_editing_spatial_feature_polygon
+            or self.is_evolving_spatial_feature_polygon
+        ):
             return self.editing_spatial_feature_points
 
         return self.draft_spatial_feature_points
 
     def get_polygon_editor_hover_point(self):
-        if self.is_editing_spatial_feature_polygon:
+        if (
+            self.is_editing_spatial_feature_polygon
+            or self.is_evolving_spatial_feature_polygon
+        ):
             return self.editing_hover_map_pos
 
         return self.draft_hover_map_pos
@@ -601,6 +753,9 @@ class MapSimulation:
         return len(self.get_polygon_editor_points())
 
     def get_polygon_editor_mode_label(self):
+        if self.is_evolving_spatial_feature_polygon:
+            return "Evolve region"
+
         if self.is_editing_spatial_feature_polygon:
             return "Edit polygon"
 
@@ -690,7 +845,7 @@ class MapSimulation:
         if target_kind != "location":
             return False
 
-        if not self._can_inspect_location(target_id):
+        if not self._can_edit_location_bounds(target_id):
             return False
 
         entity = self.get_location(target_id)
@@ -782,6 +937,8 @@ class MapSimulation:
         self.is_creating_spatial_feature = False
         self.draft_spatial_feature_points = []
         self.draft_hover_map_pos = None
+        self.is_evolving_spatial_feature_polygon = False
+        self.evolving_source_spatial_feature_id = None
         self.is_editing_spatial_feature_polygon = True
         self.editing_spatial_feature_id = target_id
         self.editing_spatial_feature_points = list(points)
@@ -798,12 +955,71 @@ class MapSimulation:
         logger.info(f"[MapSimulation] Started polygon edit {target_id}")
         return True
 
+    def begin_spatial_feature_evolution(self, target_kind, target_id):
+        if target_kind != "spatial_feature":
+            return False
+
+        if not self._is_real_spatial_feature_id(target_id):
+            return False
+
+        feature = self.get_spatial_feature(target_id)
+        if feature is None:
+            return False
+
+        source_start_year = self._normalize_year_value(feature.get("start_year"))
+        source_end_year = self._normalize_year_value(feature.get("end_year"))
+        selected_year = int(self.year)
+
+        if source_start_year is not None and selected_year <= source_start_year:
+            return False
+
+        if source_end_year is not None and selected_year > source_end_year:
+            return False
+
+        points = self._get_geometry_points(feature.get("geometry") or {})
+        if len(points) < 3:
+            return False
+
+        layer_kind = feature.get("layer_kind")
+        if layer_kind:
+            self.active_layer_kind = layer_kind
+
+        self.is_creating_spatial_feature = False
+        self.draft_spatial_feature_points = []
+        self.draft_hover_map_pos = None
+        self.is_editing_spatial_feature_polygon = False
+        self.is_evolving_spatial_feature_polygon = True
+        self.evolving_source_spatial_feature_id = target_id
+        self.editing_spatial_feature_id = target_id
+        self.editing_spatial_feature_points = list(points)
+        self.editing_hover_map_pos = None
+        self._draft_last_click_time = None
+        self._draft_last_click_screen_pos = None
+        self.selected_entity_id = None
+        self.hover_entity_id = None
+        self.selected_spatial_feature_id = target_id
+        self.hover_spatial_feature_id = None
+        self.hover_screen_pos = None
+        self._invalidate_layer_cache()
+
+        logger.info(
+            f"[MapSimulation] Started spatial feature evolution "
+            f"{target_id} year={selected_year}"
+        )
+        return True
+
     def cancel_spatial_feature_polygon_edit(self):
-        if not self.is_editing_spatial_feature_polygon:
+        if not (
+            self.is_editing_spatial_feature_polygon
+            or self.is_evolving_spatial_feature_polygon
+        ):
             return False
 
         target_id = self.editing_spatial_feature_id
+        was_evolving = self.is_evolving_spatial_feature_polygon
         self.is_editing_spatial_feature_polygon = False
+        self.is_evolving_spatial_feature_polygon = False
+        self.evolving_source_spatial_feature_id = None
         self.editing_spatial_feature_id = None
         self.editing_spatial_feature_points = []
         self.editing_hover_map_pos = None
@@ -812,10 +1028,14 @@ class MapSimulation:
         self.selected_spatial_feature_id = target_id
         self._invalidate_layer_cache()
 
-        logger.info(f"[MapSimulation] Cancelled polygon edit {target_id}")
+        action_label = "evolution" if was_evolving else "edit"
+        logger.info(f"[MapSimulation] Cancelled polygon {action_label} {target_id}")
         return True
 
     def finish_spatial_feature_polygon_edit(self):
+        if self.is_evolving_spatial_feature_polygon:
+            return self.finish_spatial_feature_evolution()
+
         if not self.is_editing_spatial_feature_polygon:
             return False
 
@@ -849,14 +1069,78 @@ class MapSimulation:
         logger.info(f"[MapSimulation] Saved polygon edit {target_id}")
         return True
 
+    def finish_spatial_feature_evolution(self):
+        if not self.is_evolving_spatial_feature_polygon:
+            return False
+
+        if len(self.editing_spatial_feature_points) < 3:
+            return False
+
+        source_id = self.evolving_source_spatial_feature_id
+        source_feature = self.get_spatial_feature(source_id)
+        if source_feature is None:
+            return False
+
+        selected_year = int(self.year)
+        source_start_year = self._normalize_year_value(source_feature.get("start_year"))
+        if source_start_year is not None and selected_year <= source_start_year:
+            return False
+
+        evolved_feature = self._build_evolved_spatial_feature_record(
+            source_feature,
+            self.editing_spatial_feature_points,
+        )
+        source_end_year = selected_year - 1
+
+        try:
+            if not self._update_spatial_feature_end_year(source_id, source_end_year):
+                return False
+            self._append_spatial_feature_record(evolved_feature)
+        except OSError as exc:
+            logger.error(
+                f"[MapSimulation] Failed to save spatial feature evolution: {exc}"
+            )
+            return False
+
+        self.is_editing_spatial_feature_polygon = False
+        self.is_evolving_spatial_feature_polygon = False
+        self.evolving_source_spatial_feature_id = None
+        self.editing_spatial_feature_id = None
+        self.editing_spatial_feature_points = []
+        self.editing_hover_map_pos = None
+        self._draft_last_click_time = None
+        self._draft_last_click_screen_pos = None
+        self.selected_entity_id = None
+        self.hover_entity_id = None
+        self.selected_spatial_feature_id = evolved_feature["id"]
+        self.hover_spatial_feature_id = None
+        self.hover_screen_pos = None
+
+        if hasattr(self.world_model, "refresh"):
+            self.world_model.refresh()
+
+        self._invalidate_layer_cache()
+
+        logger.info(
+            f"[MapSimulation] Saved spatial feature evolution "
+            f"{source_id} -> {evolved_feature['id']}"
+        )
+        return True
+
     def finish_polygon_editor(self):
-        if self.is_editing_spatial_feature_polygon:
+        if (
+            self.is_editing_spatial_feature_polygon
+            or self.is_evolving_spatial_feature_polygon
+        ):
             return self.finish_spatial_feature_polygon_edit()
 
         return self.finish_spatial_feature_draft()
 
     def cancel_polygon_editor(self):
-        if self.is_editing_spatial_feature_polygon:
+        if (
+            self.is_editing_spatial_feature_polygon
+            or self.is_evolving_spatial_feature_polygon
+        ):
             return self.cancel_spatial_feature_polygon_edit()
 
         return self.cancel_spatial_feature_draft()
@@ -950,14 +1234,36 @@ class MapSimulation:
                 editor_hover_point[1],
             )
 
-        return {
+        previous_points = None
+        if self.is_evolving_spatial_feature_polygon:
+            source_feature = self.get_spatial_feature(self.evolving_source_spatial_feature_id)
+            if source_feature is not None:
+                source_points = self._get_geometry_points(source_feature.get("geometry") or {})
+                if len(source_points) >= 3:
+                    previous_points = [
+                        self._map_point_to_world(x, y)
+                        for x, y in source_points
+                    ]
+
+        mode = "draft"
+        if self.is_evolving_spatial_feature_polygon:
+            mode = "evolve"
+        elif self.is_editing_spatial_feature_polygon:
+            mode = "edit"
+
+        preview = {
             "points": preview_points,
             "hover_point": preview_hover_point,
             "layer_kind": self.active_layer_kind,
             "can_finish": self.can_finish_polygon_editor(),
             "area_label": self.get_draft_area_label(),
-            "mode": "edit" if self.is_editing_spatial_feature_polygon else "draft",
+            "mode": mode,
         }
+
+        if previous_points is not None:
+            preview["previous_points"] = previous_points
+
+        return preview
 
     def get_draft_area_label(self):
         editor_points = self.get_polygon_editor_points()
@@ -1144,6 +1450,18 @@ class MapSimulation:
                 return feature_id, index
             index += 1
 
+    def _allocate_spatial_feature_evolution_id(self, source_feature, year):
+        existing_ids = self._get_existing_entity_ids()
+        source_id = self._sanitize_identifier_part(source_feature.get("id", "feature"))
+        year_part = self._sanitize_identifier_part(str(year))
+
+        index = 1
+        while True:
+            feature_id = f"sf_hist_{source_id}_y{year_part}_{index:03d}"
+            if feature_id not in existing_ids:
+                return feature_id, index
+            index += 1
+
     def _allocate_location_draft_id(self):
         existing_ids = self._get_existing_entity_ids()
         root_id = self._sanitize_identifier_part(self.context.root_entity_id)
@@ -1178,6 +1496,62 @@ class MapSimulation:
             "start_year": self.year,
             "entry_status": "draft",
         }
+
+    def _build_evolved_spatial_feature_record(self, source_feature, points):
+        selected_year = int(self.year)
+        feature_id, _index = self._allocate_spatial_feature_evolution_id(
+            source_feature,
+            selected_year,
+        )
+        source_id = source_feature.get("id")
+        source_name = (
+            source_feature.get("name")
+            or source_feature.get("pretty_name")
+            or source_id
+        )
+        name = f"{source_name} ({selected_year})"
+        notes = (
+            f"Historical slice evolved from {source_id} at "
+            f"{self.get_year_context_label()}."
+        )
+
+        related = list(source_feature.get("related") or [])
+        if source_id and source_id not in related:
+            related.append(source_id)
+
+        evolved = {
+            "id": feature_id,
+            "pretty_name": name,
+            "name": name,
+            "type": "spatial_feature",
+            "notes": notes,
+            "layer_kind": source_feature.get("layer_kind", self.active_layer_kind),
+            "parent_entity": (
+                source_feature.get("parent_entity")
+                or self.context.root_entity_id
+            ),
+            "owner_entity": source_feature.get("owner_entity"),
+            "geometry": {
+                "type": "polygon",
+                "coordinate_space": "map_world",
+                "points": list(points),
+            },
+            "start_year": selected_year,
+            "end_year": self._normalize_year_value(source_feature.get("end_year")),
+            "entry_status": "draft",
+            "derived_from": [source_id] if source_id else [],
+            "related": related,
+        }
+
+        for key in (
+            "resolution_m_per_pixel",
+            "coverage_mode",
+            "draw_order",
+        ):
+            if source_feature.get(key) is not None:
+                evolved[key] = source_feature.get(key)
+
+        return evolved
 
     def _build_draft_map_square_location_record(self):
         location_id, index = self._allocate_location_draft_id()
@@ -1222,6 +1596,19 @@ class MapSimulation:
 
         return [f"  {key}: {scalar}"]
 
+    def _format_yaml_list_field_lines(self, key, values):
+        values = [
+            value for value in list(values or [])
+            if value not in (None, "")
+        ]
+        if not values:
+            return [f"  {key}: []"]
+
+        lines = [f"  {key}:"]
+        for value in values:
+            lines.append(f"    - {value}")
+        return lines
+
     def _format_yaml_number(self, value):
         number = float(value)
         text = f"{number:.3f}".rstrip("0").rstrip(".")
@@ -1241,7 +1628,13 @@ class MapSimulation:
         lines.extend(self._format_yaml_field_lines("notes", feature["notes"]))
         lines.extend([
             f"  layer_kind: {feature['layer_kind']}",
-            f"  parent_entity: {feature['parent_entity']}",
+        ])
+        if feature.get("owner_entity"):
+            lines.append(f"  owner_entity: {feature['owner_entity']}")
+        if feature.get("parent_entity"):
+            lines.append(f"  parent_entity: {feature['parent_entity']}")
+
+        lines.extend([
             "  geometry:",
             "    type: polygon",
             "    coordinate_space: map_world",
@@ -1258,9 +1651,38 @@ class MapSimulation:
         lines.extend(
             [
                 f"  start_year: {feature['start_year']}",
-                "  entry_status: draft",
             ]
         )
+        if feature.get("end_year") is not None:
+            lines.append(f"  end_year: {feature['end_year']}")
+        if feature.get("resolution_m_per_pixel") is not None:
+            lines.append(
+                f"  resolution_m_per_pixel: {feature['resolution_m_per_pixel']}"
+            )
+        if feature.get("coverage_mode") is not None:
+            lines.extend(
+                self._format_yaml_field_lines(
+                    "coverage_mode",
+                    feature.get("coverage_mode"),
+                )
+            )
+        if feature.get("draw_order") is not None:
+            lines.append(f"  draw_order: {feature['draw_order']}")
+        if feature.get("derived_from"):
+            lines.extend(
+                self._format_yaml_list_field_lines(
+                    "derived_from",
+                    feature.get("derived_from"),
+                )
+            )
+        if feature.get("related"):
+            lines.extend(
+                self._format_yaml_list_field_lines(
+                    "related",
+                    feature.get("related"),
+                )
+            )
+        lines.append("  entry_status: draft")
 
         return "\n".join(lines) + "\n"
 
@@ -1340,7 +1762,7 @@ class MapSimulation:
 
             updated = self._update_spatial_feature_text_fields(target_id, name, notes)
         else:
-            if not self._can_inspect_location(target_id):
+            if not self._can_open_location_inspector(target_id):
                 return False
 
             updated = self._update_location_text_fields(target_id, name, notes)
@@ -1354,6 +1776,104 @@ class MapSimulation:
         self._invalidate_layer_cache()
         logger.info(f"[MapSimulation] Updated inspector fields {target_kind}:{target_id}")
         return True
+
+    def reanchor_selection_time(self, target_kind, target_id, year):
+        if target_kind not in {"spatial_feature", "location"}:
+            return False
+
+        try:
+            year = int(year)
+        except (TypeError, ValueError):
+            return False
+
+        if target_kind == "spatial_feature":
+            if not self._is_real_spatial_feature_id(target_id):
+                return False
+            entity = self.get_spatial_feature(target_id)
+            entry_path = self.SPATIAL_FEATURES_ENTRY_PATH
+        else:
+            if not self._can_open_location_inspector(target_id):
+                return False
+            entity = self.get_location(target_id)
+            entry_path = self.LOCATIONS_ENTRY_PATH
+
+        if not isinstance(entity, dict):
+            return False
+
+        updates = self._build_time_reanchor_updates(entity, year)
+        if not updates:
+            return False
+
+        try:
+            if not self._update_entity_temporal_fields(entry_path, target_id, updates):
+                return False
+        except OSError as exc:
+            logger.error(f"[MapSimulation] Failed to reanchor {target_kind}:{target_id}: {exc}")
+            return False
+
+        if hasattr(self.world_model, "refresh"):
+            self.world_model.refresh()
+
+        self.context.year = year
+        self.sim_clock.time = 0.0
+        self.sim_clock.tick = 0
+        self.sim_clock._accumulator = 0.0
+        if target_kind == "spatial_feature":
+            self.selected_entity_id = None
+            self.selected_spatial_feature_id = target_id
+        else:
+            self.selected_entity_id = target_id
+            self.selected_spatial_feature_id = None
+        self.hover_entity_id = None
+        self.hover_spatial_feature_id = None
+        self.hover_screen_pos = None
+        self._pending_inspector_target = {
+            "kind": target_kind,
+            "id": target_id,
+        }
+        self._invalidate_layer_cache()
+
+        logger.info(
+            f"[MapSimulation] Reanchored {target_kind}:{target_id} to year {year}"
+        )
+        return True
+
+    def _build_time_reanchor_updates(self, entity, year):
+        old_start_year = self._normalize_year_value(entity.get("start_year"))
+        old_end_year = self._normalize_year_value(entity.get("end_year"))
+        updates = {}
+
+        if "year" in entity:
+            old_anchor_year = self._normalize_year_value(entity.get("year"))
+            updates["year"] = year
+        elif "year_number" in entity:
+            old_anchor_year = self._normalize_year_value(entity.get("year_number"))
+            updates["year_number"] = year
+        elif "start_year" in entity:
+            old_anchor_year = old_start_year
+            updates["start_year"] = year
+
+            if old_start_year is not None and old_end_year is not None:
+                if old_end_year >= old_start_year and old_end_year != old_start_year:
+                    updates["end_year"] = old_end_year + (year - old_start_year)
+                elif old_end_year == old_start_year:
+                    updates["end_year"] = year
+        elif "effective_year" in entity:
+            old_anchor_year = self._normalize_year_value(entity.get("effective_year"))
+            updates["effective_year"] = year
+        elif "end_year" in entity:
+            old_anchor_year = old_end_year
+            updates["end_year"] = year
+        else:
+            old_anchor_year = None
+            updates["start_year"] = year
+
+        if "effective_year" in entity:
+            old_effective_year = self._normalize_year_value(entity.get("effective_year"))
+            if old_effective_year is None or old_effective_year == old_anchor_year:
+                updates["effective_year"] = year
+
+        return updates
 
     def _is_real_spatial_feature_id(self, spatial_feature_id):
         if not spatial_feature_id:
@@ -1396,6 +1916,55 @@ class MapSimulation:
 
         insert_index = 1 if lines and lines[0].startswith("- id: ") else len(lines)
         return "\n".join(lines[:insert_index] + new_field_lines + lines[insert_index:]) + "\n"
+
+    def _replace_yaml_plain_field_in_block(self, block_text, key, value):
+        lines = block_text.rstrip("\n").splitlines()
+        value_text = "null" if value is None else str(value)
+        new_field_lines = [f"  {key}: {value_text}"]
+
+        target_prefix = f"  {key}:"
+        index = 0
+        while index < len(lines):
+            if not lines[index].startswith(target_prefix):
+                index += 1
+                continue
+
+            end_index = index + 1
+            while end_index < len(lines):
+                line = lines[end_index]
+                if line.startswith("  ") and not line.startswith("    "):
+                    break
+                if line.startswith("- id: "):
+                    break
+                end_index += 1
+
+            return "\n".join(lines[:index] + new_field_lines + lines[end_index:]) + "\n"
+
+        insert_index = len(lines)
+        for index, line in enumerate(lines):
+            if line.startswith("  entry_status:"):
+                insert_index = index
+                break
+
+        return "\n".join(lines[:insert_index] + new_field_lines + lines[insert_index:]) + "\n"
+
+    def _update_entity_temporal_fields(self, entry_path, entity_id, field_values):
+        if not entry_path.exists():
+            return False
+
+        text = entry_path.read_text(encoding="utf-8")
+        found = self._find_yaml_entity_block(text, entity_id)
+        if found is None:
+            return False
+
+        block_start, block_end = found
+        block = text[block_start:block_end]
+        for key, value in field_values.items():
+            block = self._replace_yaml_plain_field_in_block(block, key, value)
+
+        updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
+        entry_path.write_text(updated_text, encoding="utf-8")
+        return True
 
     def _format_spatial_feature_geometry_lines(self, points):
         lines = [
@@ -1543,6 +2112,24 @@ class MapSimulation:
         block_start, block_end = found
         block = text[block_start:block_end]
         block = self._replace_yaml_bounds_in_block(block, bounds)
+
+        updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
+        entry_path.write_text(updated_text, encoding="utf-8")
+        return True
+
+    def _update_spatial_feature_end_year(self, spatial_feature_id, end_year):
+        entry_path = self.SPATIAL_FEATURES_ENTRY_PATH
+        if not entry_path.exists():
+            return False
+
+        text = entry_path.read_text(encoding="utf-8")
+        found = self._find_yaml_entity_block(text, spatial_feature_id)
+        if found is None:
+            return False
+
+        block_start, block_end = found
+        block = text[block_start:block_end]
+        block = self._replace_yaml_plain_field_in_block(block, "end_year", end_year)
 
         updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
         entry_path.write_text(updated_text, encoding="utf-8")
@@ -1795,7 +2382,10 @@ class MapSimulation:
 
     def _build_spatial_feature_layer(self, feature):
         if (
-            self.is_editing_spatial_feature_polygon
+            (
+                self.is_editing_spatial_feature_polygon
+                or self.is_evolving_spatial_feature_polygon
+            )
             and feature.get("id") == self.editing_spatial_feature_id
         ):
             return None
@@ -2006,6 +2596,64 @@ class MapSimulation:
 
         return entries
 
+    def get_history_timeline_items(self):
+        if not hasattr(self.world_model, "get_timeline_items"):
+            return []
+
+        items = []
+        for item in self.world_model.get_timeline_items():
+            if item.get("timeline_kind") == "major_period":
+                items.append(item)
+                continue
+
+            entity = self.world_model.get_entity(item.get("entity_id"))
+            if self._entity_is_history_timeline_relevant(entity):
+                items.append(item)
+
+        return items
+
+    def _entity_is_history_timeline_relevant(self, entity):
+        if not entity:
+            return False
+
+        entity_id = entity.get("id")
+        if entity_id == self.context.root_entity_id:
+            return True
+
+        if entity.get("_dataset") == "locations" or entity.get("type") == "location":
+            return self.context._is_in_root_subtree(entity)
+
+        if entity.get("_dataset") == "spatial_features" or entity.get("type") == "spatial_feature":
+            return self._spatial_feature_is_in_scope(entity)
+
+        referenced_ids = self._collect_history_reference_ids(entity)
+        return any(self._entity_id_is_in_root_scope(ref_id) for ref_id in referenced_ids)
+
+    def _collect_history_reference_ids(self, entity):
+        reference_keys = (
+            "parent_location",
+            "parent_entity",
+            "owner_entity",
+            "associated_locations",
+            "locations",
+            "related",
+            "parents",
+            "derived_from",
+        )
+        references = []
+
+        for key in reference_keys:
+            value = entity.get(key)
+            if isinstance(value, str):
+                references.append(value)
+            elif isinstance(value, (list, tuple)):
+                references.extend(
+                    item for item in value
+                    if isinstance(item, str)
+                )
+
+        return references
+
     def _screen_to_world(self, camera, screen_pos):
         sx, sy = screen_pos
 
@@ -2179,7 +2827,7 @@ class MapSimulation:
             target = None
             if (
                 self.active_layer_kind == self.LOCATION_LAYER_KIND
-                and self._can_inspect_location(self.selected_entity_id)
+                and self._can_open_location_inspector(self.selected_entity_id)
             ):
                 target = ("location", self.selected_entity_id)
             elif self._is_real_spatial_feature_id(self.selected_spatial_feature_id):
@@ -2202,13 +2850,19 @@ class MapSimulation:
         )
 
     def _set_polygon_editor_hover_point(self, map_point):
-        if self.is_editing_spatial_feature_polygon:
+        if (
+            self.is_editing_spatial_feature_polygon
+            or self.is_evolving_spatial_feature_polygon
+        ):
             self.editing_hover_map_pos = map_point
         elif self.is_creating_spatial_feature:
             self.draft_hover_map_pos = map_point
 
     def _append_polygon_editor_point(self, map_point):
-        if self.is_editing_spatial_feature_polygon:
+        if (
+            self.is_editing_spatial_feature_polygon
+            or self.is_evolving_spatial_feature_polygon
+        ):
             self.editing_spatial_feature_points.append(map_point)
             return len(self.editing_spatial_feature_points)
 

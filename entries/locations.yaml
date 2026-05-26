@@ -215,7 +215,7 @@
     max_y: -41
   population:
     y0: 68000000
-  start_year: 0
+  start_year: 1070
   parents: []
   related: []
   placeholders: []
@@ -1461,3 +1461,42 @@
   type: location
   wiki_entry: Second Largest State in India
   location_class: state
+
+# ---------- loc_draft_loc_central_asian_steppe_cog_001 | Draft Map Area 001 ----------
+- id: loc_draft_loc_central_asian_steppe_cog_001
+  pretty_name: 'Original CoG Site'
+  name: 'Original CoG Site'
+  type: location
+  location_class: region
+  parent_location: loc_central_asian_steppe_cog
+  notes: 'Draft rectangle map area created under Central Asian Steppe CoG Site.'
+  bounds:
+    type: bbox
+    min_x: -12.42
+    max_x: 12.477
+    min_y: -7.627
+    max_y: 7.635
+  start_year: 2400
+  entry_status: draft
+- id: loc_new_002
+  pretty_name: New Location
+  name: Test Map
+  type: location
+  wiki_entry: ''
+
+# ---------- loc_draft_loc_new_002_001 | Draft Map Area 001 ----------
+- id: loc_draft_loc_new_002_001
+  pretty_name: 'Test Map Base'
+  name: 'Test Map Base'
+  type: location
+  location_class: region
+  parent_location: loc_new_002
+  notes: 'Draft rectangle map area created under Test Map.'
+  bounds:
+    type: bbox
+    min_x: -2762.8
+    max_x: 4526.997
+    min_y: -2070.435
+    max_y: 1517.876
+  start_year: 2400
+  entry_status: draft

@@ -6,6 +6,7 @@ from simulations.space.space_simulation import SpaceSimulation
 from simulations.map.map_simulation import MapSimulation
 from simulations.bioregion.bioregion_simulation import BioregionSimulation
 from simulations.vehicle.vehicle_simulation import VehicleSimulation
+from simulations.person.person_simulation import PersonSimulation
 
 
 class NavigationController:
@@ -142,6 +143,43 @@ class NavigationController:
         """
         self.launch_vehicle_tab("veh_test_rig_01")
 
+    def launch_person_tab(self, person_entity_id):
+        """
+        Open or focus a repository-backed person dossier simulation tab.
+        """
+        if not person_entity_id:
+            return
+
+        tab_key = ("person", person_entity_id)
+
+        if self.focus_existing_tab_by_key(tab_key):
+            self.app.knowledge_layer_active = False
+            return
+
+        person_entity = self.app.world_model.get_entity(person_entity_id)
+        if not person_entity:
+            return
+
+        active_sim = self.app.get_active_simulation()
+        year = getattr(active_sim, "year", 2400) if active_sim is not None else 2400
+        person_name = person_entity.get("name", person_entity_id)
+
+        new_person_sim = PersonSimulation(
+            world_model=self.app.world_model,
+            person_entity_id=person_entity_id,
+            year=year,
+        )
+        new_tab = Tab(
+            SimulationInstance(new_person_sim),
+            name=f"Person: {person_name}",
+            tab_key=tab_key
+        )
+
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+        self.app.camera_controller.setup_for_sim(new_person_sim)
+
     def open_region_map_tab(self, entity_id):
         """
         Open a new map simulation tab rooted at the selected entity,
@@ -251,6 +289,9 @@ class NavigationController:
         if render_mode == "vehicle":
             return getattr(active_sim, "vehicle_entity_id", None) or self.app.repository_scope_entity_id
 
+        if render_mode == "person":
+            return getattr(active_sim, "person_entity_id", None) or self.app.repository_scope_entity_id
+
         return self.app.repository_scope_entity_id
 
     def open_repository_workspace(self, active_sim):
@@ -293,6 +334,21 @@ class NavigationController:
                 getattr(active_sim, "set_active_simulation_panel_tab", lambda _tab_id: False)(tab_id)
             )
 
+        if action_id == "map_history_year_select" and active_sim is not None:
+            set_year = getattr(active_sim, "set_year", None)
+            if set_year is not None:
+                set_year(action.get("year"))
+            return True
+
+        if action_id == "selection_inspector_reanchor_time" and active_sim is not None:
+            return bool(
+                getattr(active_sim, "reanchor_selection_time", lambda *_args: False)(
+                    action.get("target_kind"),
+                    action.get("target_id"),
+                    action.get("year"),
+                )
+            )
+
         if action_id == "selection_inspector_save" and active_sim is not None:
             return bool(
                 getattr(active_sim, "save_selection_inspector_updates", lambda *_args: False)(
@@ -305,6 +361,14 @@ class NavigationController:
         if action_id == "selection_inspector_edit_polygon" and active_sim is not None:
             return bool(
                 getattr(active_sim, "begin_spatial_feature_polygon_edit", lambda *_args: False)(
+                    action.get("target_kind"),
+                    action.get("target_id"),
+                )
+            )
+
+        if action_id == "selection_inspector_evolve_region" and active_sim is not None:
+            return bool(
+                getattr(active_sim, "begin_spatial_feature_evolution", lambda *_args: False)(
                     action.get("target_kind"),
                     action.get("target_id"),
                 )
@@ -330,6 +394,9 @@ class NavigationController:
                 getattr(active_sim, "begin_design_catalog_drag", lambda _catalog_id: False)(catalog_id)
             )
 
+        if action_id == "open_person_inspector" and active_sim is not None:
+            return bool(getattr(active_sim, "open_person_inspector", lambda: False)())
+
         if action_id == "knowledge_launch_entry":
             entity_id = action.get("entity_id")
             entity = self.app.world_model.get_entity(entity_id)
@@ -345,6 +412,10 @@ class NavigationController:
 
             if dataset_name == "vehicles":
                 self.launch_vehicle_tab(entity_id)
+                return True
+
+            if dataset_name == "people" or entity.get("type") == "person":
+                self.launch_person_tab(entity_id)
                 return True
 
             if dataset_name == "systems":
@@ -390,6 +461,9 @@ class NavigationController:
         if action_id == "launch_vehicle_test":
             self.launch_vehicle_test_tab()
             return True
+
+        if action_id == "open_person_inspector" and active_sim is not None:
+            return bool(getattr(active_sim, "open_person_inspector", lambda: False)())
 
         if action_id == "vehicle_mode_design" and active_sim is not None:
             return bool(getattr(active_sim, "set_view_mode", lambda mode: False)("design"))

@@ -1346,8 +1346,14 @@ class EntityCard:
         close_rect = pygame.Rect(rect.right - 24, rect.y + 12, 18, 18)
         edit_toggle_rect = pygame.Rect(rect.right - 48, rect.y + 12, 20, 20)
         idea_button_rect = pygame.Rect(rect.right - 72, rect.y + 12, 20, 20)
-        title_edit_rect = pygame.Rect(rect.x + 10, rect.y + 7, max(40, rect.width - 120), 20)
-        type_label_rect = pygame.Rect(rect.x + 10, rect.y + 28, max(40, rect.width - 120), 18)
+        time_anchor_rect = None
+        header_reserved_w = 120
+        if card.get("is_edit_mode", False):
+            time_anchor_rect = pygame.Rect(rect.right - 96, rect.y + 12, 20, 20)
+            header_reserved_w = 144
+
+        title_edit_rect = pygame.Rect(rect.x + 10, rect.y + 7, max(40, rect.width - header_reserved_w), 20)
+        type_label_rect = pygame.Rect(rect.x + 10, rect.y + 28, max(40, rect.width - header_reserved_w), 18)
         if card.get("is_edit_mode", False):
             editable_field_hitboxes.append((self._title_edit_field(), title_edit_rect))
 
@@ -1600,6 +1606,7 @@ class EntityCard:
         card["resize_hitboxes"] = resize_hitboxes
         card["edit_toggle_rect"] = edit_toggle_rect
         card["idea_button_rect"] = idea_button_rect
+        card["time_anchor_rect"] = time_anchor_rect
         card["close_rect"] = close_rect
         card["title_edit_rect"] = title_edit_rect
         card["type_label_rect"] = type_label_rect
@@ -1695,6 +1702,7 @@ class EntityCard:
 
         edit_toggle_rect = card.get("edit_toggle_rect")
         idea_button_rect = card.get("idea_button_rect")
+        time_anchor_rect = card.get("time_anchor_rect")
         close_rect = card.get("close_rect")
         if idea_button_rect is not None:
             pygame.draw.rect(screen, (52, 60, 48), idea_button_rect)
@@ -1715,6 +1723,16 @@ class EntityCard:
             edit_text_rect = edit_text.get_rect(center=edit_toggle_rect.center)
             screen.blit(edit_text, edit_text_rect)
 
+        if time_anchor_rect is not None:
+            anchor_active = bool(card.get("timeline_reanchor_active", False))
+            anchor_fill = (112, 88, 42) if anchor_active else (52, 50, 42)
+            anchor_border = (232, 210, 148) if anchor_active else (156, 146, 112)
+            pygame.draw.rect(screen, anchor_fill, time_anchor_rect)
+            pygame.draw.rect(screen, anchor_border, time_anchor_rect, 1)
+            anchor_text = font.render("T", True, (244, 232, 190))
+            anchor_text_rect = anchor_text.get_rect(center=time_anchor_rect.center)
+            screen.blit(anchor_text, anchor_text_rect)
+
         if close_rect is not None:
             pygame.draw.rect(screen, (58, 44, 48), close_rect)
             pygame.draw.rect(screen, (178, 132, 140), close_rect, 1)
@@ -1724,7 +1742,9 @@ class EntityCard:
 
         if card.get("is_edit_mode", False):
             active_field = card.get("active_edit_field")
-            if active_field:
+            if card.get("timeline_reanchor_active", False):
+                edit_status = "Reanchoring card | Click timeline to set | Esc cancel"
+            elif active_field:
                 if active_field in self.TEMPORAL_FIELDS:
                     edit_status = f"Editing {active_field} | Click timeline to set | Enter save | Esc cancel"
                 elif active_field == "wiki_entry":
@@ -1734,7 +1754,7 @@ class EntityCard:
                 else:
                     edit_status = f"Editing {active_field} | Enter save | Esc cancel | Tab next"
             else:
-                edit_status = "Edit mode | Click a highlighted row or press Tab to begin"
+                edit_status = "Edit mode | Click a highlighted row, or T then timeline to reanchor"
             status_surface = font.render(edit_status, True, (190, 205, 230))
             status_x = rect.right - 44 - status_surface.get_width()
             status_x = max(rect.x + 150, status_x)

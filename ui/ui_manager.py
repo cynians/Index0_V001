@@ -2,6 +2,7 @@ import pygame
 
 from ui.knowledge_browser_ui import KnowledgeBrowserUI
 from ui.selection_inspector_ui import SelectionInspectorUI
+from ui.timeline_ui import TimelineUI
 from ui.ui_types import UIButton
 
 
@@ -26,6 +27,7 @@ class UIManager:
         self.vehicle_requirement_lines = []
         self.hover_tooltip_lines = []
         self.hover_tooltip_pos = None
+        self.person_dossier_lines = []
 
         self.simulation_bar_rect = None
         self.simulation_bar_title = None
@@ -60,6 +62,13 @@ class UIManager:
         self.system_menu_rect = None
         self.knowledge_ui = KnowledgeBrowserUI()
         self.selection_inspector = SelectionInspectorUI()
+        self.map_history_timeline = TimelineUI()
+        self.map_history_timeline_visible = False
+        self.map_history_timeline_rect = None
+        self.map_history_timeline_drag_mode = None
+        self.map_history_timeline_drag_start_pos = None
+        self.map_history_timeline_drag_last_x = None
+        self.map_history_timeline_reanchor_target = None
         self.app_font = pygame.font.SysFont("consolas", 16)
 
     def is_text_input_active(self):
@@ -93,6 +102,7 @@ class UIManager:
         self.vehicle_requirement_lines = []
         self.hover_tooltip_lines = []
         self.hover_tooltip_pos = None
+        self.person_dossier_lines = []
 
         self.simulation_bar_rect = None
         self.simulation_bar_title = None
@@ -105,6 +115,9 @@ class UIManager:
         self.simulation_panel_tabs = []
         self.simulation_panel_active_tab_id = None
         self.simulation_panel_tab_hitboxes = []
+
+        self.map_history_timeline_visible = False
+        self.map_history_timeline_rect = None
 
         self.tab_labels = []
         self.active_tab_index = 0
@@ -320,6 +333,54 @@ class UIManager:
                 block.get("component_type", "component"),
             ]
             self.hover_tooltip_pos = getattr(active_sim, "hover_screen_pos", None) or pygame.mouse.get_pos()
+
+    def _rebuild_map_history_timeline(self, active_sim, app_width, app_height, font):
+        panel_h = 150
+        margin = 20
+        left = margin
+        bottom = app_height - margin
+
+        inspector_rect = getattr(self.selection_inspector, "rect", None)
+        if getattr(self.selection_inspector, "is_open", False) and inspector_rect is not None:
+            candidate_left = inspector_rect.right + margin
+            if app_width - candidate_left - margin >= 420:
+                left = candidate_left
+            else:
+                bottom = inspector_rect.y - 12
+
+        width = app_width - left - margin
+        if width < 320:
+            self.map_history_timeline_visible = False
+            self.map_history_timeline_rect = None
+            return
+
+        top = max(170, bottom - panel_h)
+        rect = pygame.Rect(left, top, width, panel_h)
+
+        timeline_items = []
+        if hasattr(active_sim, "get_history_timeline_items"):
+            timeline_items = active_sim.get_history_timeline_items()
+        elif hasattr(active_sim.world_model, "get_timeline_items"):
+            timeline_items = active_sim.world_model.get_timeline_items()
+
+        context_label = None
+        if hasattr(active_sim, "get_year_context_label"):
+            context_label = active_sim.get_year_context_label()
+
+        self.map_history_timeline_visible = True
+        self.map_history_timeline_rect = rect
+        self.map_history_timeline.set_title("Map History")
+        if hasattr(active_sim, "get_history_timeline_title"):
+            self.map_history_timeline.set_title(active_sim.get_history_timeline_title())
+        self.map_history_timeline.set_rect(rect)
+        self.map_history_timeline.set_font(font)
+        self.map_history_timeline.set_year_selection_enabled(True)
+        self.map_history_timeline.set_items(timeline_items)
+        self.map_history_timeline.set_selected_year(
+            getattr(active_sim, "year", None),
+            context_label=context_label,
+        )
+        self.map_history_timeline.rebuild_layout()
 
     def _rebuild_active_simulation_ui(self, active_sim, app_width, app_height, camera):
         if active_sim is None:
@@ -603,6 +664,41 @@ class UIManager:
                         f"class: {entity.get('location_class', entity.get('type', 'entity'))}",
                     ]
                     self.hover_tooltip_pos = hover_screen_pos
+
+            self._rebuild_map_history_timeline(
+                active_sim=active_sim,
+                app_width=app_width,
+                app_height=app_height,
+                font=self.app_font,
+            )
+            return
+
+        if render_mode == "person":
+            person_name = active_sim.get_person_name() if hasattr(active_sim, "get_person_name") else "Person"
+            person_class = active_sim.get_person_class() if hasattr(active_sim, "get_person_class") else "person"
+            self.scope_label = f"Person: {person_name}"
+            self.breadcrumb_label = f"class: {person_class}"
+            self.person_dossier_lines = (
+                active_sim.get_dossier_panel_lines()
+                if hasattr(active_sim, "get_dossier_panel_lines")
+                else []
+            )
+
+            self.buttons.append(
+                UIButton("open_repository", "Open Repository",
+                         pygame.Rect(button_x, button_y, button_width, button_height))
+            )
+            self.buttons.append(
+                UIButton("open_person_inspector", "Edit Dossier",
+                         pygame.Rect(button_x, button_y + 40, button_width, button_height))
+            )
+
+            self._rebuild_map_history_timeline(
+                active_sim=active_sim,
+                app_width=app_width,
+                app_height=app_height,
+                font=self.app_font,
+            )
             return
 
         if render_mode == "space":
@@ -737,8 +833,11 @@ class UIManager:
                     record = active_sim.get_spatial_feature(target_id)
                 elif target_kind == "location" and hasattr(active_sim, "get_location"):
                     record = active_sim.get_location(target_id)
+                elif target_kind == "person" and hasattr(active_sim, "get_person"):
+                    record = active_sim.get_person(target_id)
 
                 if record is not None:
+                    self._clear_map_history_reanchor_target()
                     self.selection_inspector.open(
                         target_kind=target_kind,
                         target_id=target_id,
@@ -1097,12 +1196,168 @@ class UIManager:
         if self.vehicle_requirement_lines:
             requirement_lines = ["Requirements"] + self.vehicle_requirement_lines
             self._draw_info_panel(screen, font, 20, current_info_y, requirement_lines)
+            padding = 8
+            line_gap = 4
+            rendered = [font.render(line, True, (240, 240, 240)) for line in requirement_lines]
+            panel_height = (
+                sum(text.get_height() for text in rendered)
+                + line_gap * (len(rendered) - 1)
+                + padding * 2
+            )
+            current_info_y += panel_height + 12
+
+        if self.person_dossier_lines:
+            dossier_lines = ["Dossier"] + self.person_dossier_lines
+            self._draw_info_panel(screen, font, 20, current_info_y, dossier_lines)
+
+        if self.map_history_timeline_visible:
+            self.map_history_timeline.draw(screen, font)
 
         self._draw_simulation_bar(screen, font)
         self.selection_inspector.draw(screen, font)
         self._draw_hover_tooltip(screen, font)
         self._draw_system_menu(screen, font)
 
+    def _reset_map_history_timeline_drag(self):
+        self.map_history_timeline_drag_mode = None
+        self.map_history_timeline_drag_start_pos = None
+        self.map_history_timeline_drag_last_x = None
+
+    def _set_map_history_reanchor_target(self, action):
+        target_kind = action.get("target_kind")
+        target_id = action.get("target_id")
+        if target_kind not in {"spatial_feature", "location", "person"} or not target_id:
+            return False
+
+        self.map_history_timeline_reanchor_target = {
+            "target_kind": target_kind,
+            "target_id": target_id,
+        }
+        self.selection_inspector.set_time_anchor_active(
+            True,
+            target_kind=target_kind,
+            target_id=target_id,
+        )
+        self.map_history_timeline.set_picker_target(
+            "map entity anchor",
+            preview_year=action.get("preview_year"),
+        )
+        return True
+
+    def _clear_map_history_reanchor_target(self):
+        if self.map_history_timeline_reanchor_target is None:
+            return False
+
+        self.map_history_timeline_reanchor_target = None
+        self.selection_inspector.set_time_anchor_active(False)
+        self.map_history_timeline.clear_picker_target()
+        return True
+
+    def _map_history_year_action(self, timeline_action):
+        if timeline_action is None:
+            return "__ui_consumed__"
+
+        if timeline_action.get("kind") == "selected_year_changed":
+            if self.map_history_timeline_reanchor_target is not None:
+                target = dict(self.map_history_timeline_reanchor_target)
+                self._clear_map_history_reanchor_target()
+                return {
+                    "id": "selection_inspector_reanchor_time",
+                    "target_kind": target.get("target_kind"),
+                    "target_id": target.get("target_id"),
+                    "year": timeline_action.get("year"),
+                }
+
+            return {
+                "id": "map_history_year_select",
+                "year": timeline_action.get("year"),
+            }
+
+        return "__ui_consumed__"
+
+    def _handle_map_history_timeline_event(self, event):
+        if not self.map_history_timeline_visible or self.map_history_timeline_rect is None:
+            self._reset_map_history_timeline_drag()
+            return None
+
+        if event.type == pygame.MOUSEWHEEL:
+            mouse_pos = pygame.mouse.get_pos()
+            if self.map_history_timeline_rect.collidepoint(mouse_pos):
+                self.map_history_timeline.handle_event(event)
+                return "__ui_consumed__"
+
+        if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            drag_mode = self.map_history_timeline_drag_mode
+            self._reset_map_history_timeline_drag()
+
+            if drag_mode == "pending":
+                return self._map_history_year_action(
+                    self.map_history_timeline.select_year_from_pos(event.pos)
+                )
+
+            if drag_mode is not None:
+                return "__ui_consumed__"
+
+            return None
+
+        if event.type == pygame.MOUSEMOTION:
+            drag_mode = self.map_history_timeline_drag_mode
+            if drag_mode is None:
+                return None
+
+            if drag_mode == "pending":
+                start_x, start_y = self.map_history_timeline_drag_start_pos
+                dx = event.pos[0] - start_x
+                dy = event.pos[1] - start_y
+                if abs(dx) < 5 and abs(dy) < 5:
+                    return "__ui_consumed__"
+
+                self.map_history_timeline_drag_mode = "panning"
+                self.map_history_timeline_drag_last_x = event.pos[0]
+                if dx:
+                    self.map_history_timeline.pan_by_pixels(-dx)
+                return "__ui_consumed__"
+
+            if drag_mode == "scrubbing":
+                return self._map_history_year_action(
+                    self.map_history_timeline.select_year_from_drag_pos(event.pos)
+                )
+
+            if drag_mode == "panning":
+                if self.map_history_timeline_drag_last_x is None:
+                    self.map_history_timeline_drag_last_x = event.pos[0]
+                    return "__ui_consumed__"
+
+                dx = event.pos[0] - self.map_history_timeline_drag_last_x
+                self.map_history_timeline_drag_last_x = event.pos[0]
+                if dx:
+                    self.map_history_timeline.pan_by_pixels(-dx)
+
+            return "__ui_consumed__"
+
+        if event.type != pygame.MOUSEBUTTONDOWN or event.button != 1:
+            return None
+
+        mouse_pos = event.pos
+        if not self.map_history_timeline_rect.collidepoint(mouse_pos):
+            return None
+
+        filter_action = self.map_history_timeline.handle_filter_click(mouse_pos)
+        if filter_action is not None:
+            return "__ui_consumed__"
+
+        if self.map_history_timeline.is_selected_year_marker_hit(mouse_pos):
+            self.map_history_timeline_drag_mode = "scrubbing"
+            self.map_history_timeline_drag_start_pos = mouse_pos
+            self.map_history_timeline_drag_last_x = mouse_pos[0]
+            return self._map_history_year_action(
+                self.map_history_timeline.select_year_from_drag_pos(mouse_pos)
+            )
+
+        self.map_history_timeline_drag_mode = "pending"
+        self.map_history_timeline_drag_start_pos = mouse_pos
+        self.map_history_timeline_drag_last_x = mouse_pos[0]
+        return "__ui_consumed__"
 
     def handle_event(self, event):
         if self.system_menu_active:
@@ -1124,9 +1379,31 @@ class UIManager:
         if self.menu_active:
             return self.knowledge_ui.handle_event(event)
 
+        if (
+            event.type == pygame.KEYDOWN
+            and event.key == pygame.K_ESCAPE
+            and self.map_history_timeline_reanchor_target is not None
+        ):
+            self._clear_map_history_reanchor_target()
+            return "__ui_consumed__"
+
         inspector_action = self.selection_inspector.handle_event(event)
         if inspector_action is not None:
+            if isinstance(inspector_action, dict):
+                if inspector_action.get("id") == "selection_inspector_reanchor_time_start":
+                    self._set_map_history_reanchor_target(inspector_action)
+                    return "__ui_consumed__"
+
+                if not self.selection_inspector.is_open:
+                    self._clear_map_history_reanchor_target()
+            elif not self.selection_inspector.is_open:
+                self._clear_map_history_reanchor_target()
+
             return inspector_action
+
+        map_history_action = self._handle_map_history_timeline_event(event)
+        if map_history_action is not None:
+            return map_history_action
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             mouse_pos = event.pos
