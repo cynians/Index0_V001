@@ -106,3 +106,11 @@
   name: Expand General View to Include a Statistics screen
   type: task
   wiki_entry: ''
+- id: task_new_017
+  pretty_name: Faction | Faction update
+  name: Faction | Faction update
+  type: task
+  wiki_entry: |
+    Allow Subcategory to be selected. War for lost data. 
+    
+    Also make only clickable in edit mode

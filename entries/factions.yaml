@@ -98,3 +98,22 @@
     The Geigengeist Group was a faction present on [[planet_enceladus]] in post GGO Sol.
   start_year: 8435
   end_year: 8694
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  derived_from: []
+  parents:
+  - body_enceladus
+  related:
+  - body_enceladus
+  offspring: []
+  placeholders: []
+  entry_status: ''
+  media_layers: {}

@@ -36,6 +36,7 @@
   entry_status: ''
   media_layers: {}
 - id: culture_transfer_hansa_frontier
+  pretty_name: Transfer Hansa Frontier Culture
   name: Transfer Hansa Frontier Culture
   type: culture
   culture_class: merchant_frontier
@@ -52,13 +53,12 @@
   - merchant
   - frontier
   - interstellar
-  start_year: 2390
-  end_year: 'null'
+  start_year: 5156
+  end_year: 16765
   parents: []
   related: []
   placeholders: []
   offspring: []
-  pretty_name: Transfer Hansa Frontier Culture
   description: ''
   notes: ''
   wiki_entry: ''
