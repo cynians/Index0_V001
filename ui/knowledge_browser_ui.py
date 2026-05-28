@@ -99,12 +99,16 @@ class KnowledgeBrowserUI:
         self.repository_scope_label = None
         self.header_button = None
         self.random_entry_button = None
+        self.random_unfinished_button = None
         self.random_task_button = None
         self.new_entry_button = None
         self.template_picker_rect = None
         self.template_button_hitboxes = []
+        self.template_picker_status = ""
         self.show_template_picker = False
         self.template_picker_scroll = 0
+        self.entry_name_prompt = None
+        self.pending_new_entry_name = None
         self.schema_entry_templates = self._load_schema_entry_templates()
         self.browser_scroll = 0
         self.browser_search_query = ""
@@ -173,6 +177,7 @@ class KnowledgeBrowserUI:
         self.repository_scope_label = None
         self.header_button = None
         self.random_entry_button = None
+        self.random_unfinished_button = None
         self.random_task_button = None
         self.new_entry_button = None
         self.template_picker_rect = None
@@ -575,6 +580,7 @@ class KnowledgeBrowserUI:
         if self.layout is None:
             self.header_button = None
             self.random_entry_button = None
+            self.random_unfinished_button = None
             self.random_task_button = None
             self.new_entry_button = None
             return
@@ -591,24 +597,35 @@ class KnowledgeBrowserUI:
         right_rect = self.layout["right_rect"]
         button_y = right_rect.y + 8
         button_gap = 8
-        self.random_entry_button = UIButton(
-            button_id="knowledge_random_entry",
-            label="Random Entry",
-            rect=pygame.Rect(right_rect.right - 350, button_y, 104, 28),
-            visible=True,
-            enabled=True,
-        )
-        self.random_task_button = UIButton(
-            button_id="knowledge_random_task",
-            label="Random Task",
-            rect=pygame.Rect(self.random_entry_button.rect.right + button_gap, button_y, 106, 28),
-            visible=True,
-            enabled=True,
-        )
+        button_right = right_rect.right - 22
         self.new_entry_button = UIButton(
             button_id="knowledge_new_entry",
             label="New Entry",
-            rect=pygame.Rect(right_rect.right - 118, button_y, 96, 28),
+            rect=pygame.Rect(button_right - 96, button_y, 96, 28),
+            visible=True,
+            enabled=True,
+        )
+        button_right = self.new_entry_button.rect.x - button_gap
+        self.random_task_button = UIButton(
+            button_id="knowledge_random_task",
+            label="Random Task",
+            rect=pygame.Rect(button_right - 106, button_y, 106, 28),
+            visible=True,
+            enabled=True,
+        )
+        button_right = self.random_task_button.rect.x - button_gap
+        self.random_unfinished_button = UIButton(
+            button_id="knowledge_random_unfinished",
+            label="Random Unfinished",
+            rect=pygame.Rect(button_right - 136, button_y, 136, 28),
+            visible=True,
+            enabled=True,
+        )
+        button_right = self.random_unfinished_button.rect.x - button_gap
+        self.random_entry_button = UIButton(
+            button_id="knowledge_random_entry",
+            label="Random Entry",
+            rect=pygame.Rect(button_right - 104, button_y, 104, 28),
             visible=True,
             enabled=True,
         )
@@ -1199,15 +1216,39 @@ class KnowledgeBrowserUI:
         for child_list in roots_by_system.values():
             child_list.sort(key=lambda entity: entity.get("name", entity.get("id", "")))
 
+        search_active = bool(self.browser_search_query.strip())
+
+        def linked_location_for_body(body_entity):
+            location_id = body_entity.get("location_entity") if isinstance(body_entity, dict) else None
+            if not location_id:
+                return None
+            return world_model.get_entity(location_id)
+
+        def body_or_location_matches(body_entity):
+            if self._matches_browser_filters(body_entity, "systems"):
+                return True
+            location_entity = linked_location_for_body(body_entity)
+            return self._matches_browser_filters(location_entity, "locations") if location_entity is not None else False
+
+        def body_subtree_matches(body_entity):
+            if body_or_location_matches(body_entity):
+                return True
+            for child in bodies_by_parent.get(body_entity.get("id"), []):
+                if body_subtree_matches(child):
+                    return True
+            return False
+
         def add_body_subtree(body_entity, depth):
             body_id = body_entity.get("id")
             body_name = body_entity.get("name", body_id or "unknown")
             body_class = body_entity.get("body_class", body_entity.get("type", "entity"))
+            if body_entity.get("location_entity"):
+                body_class = f"{body_class} | location"
             children = bodies_by_parent.get(body_id, [])
             expandable = len(children) > 0
-            if not self._matches_browser_filters(body_entity, "systems"):
-                if not any(self._matches_browser_filters(child, "systems") for child in children):
-                    return
+            descendant_match = any(body_subtree_matches(child) for child in children)
+            if not body_or_location_matches(body_entity) and not descendant_match:
+                return
 
             items.append(
                 {
@@ -1224,7 +1265,7 @@ class KnowledgeBrowserUI:
                 }
             )
 
-            if expandable and self._is_expanded(body_id):
+            if expandable and (self._is_expanded(body_id) or (search_active and descendant_match)):
                 for child in children:
                     add_body_subtree(child, depth + 1)
 
@@ -1234,7 +1275,7 @@ class KnowledgeBrowserUI:
             system_class = system_entity.get("system_class", system_entity.get("type", "entity"))
             root_bodies = roots_by_system.get(system_id, [])
             if not self._matches_browser_filters(system_entity, "systems"):
-                if not any(self._matches_browser_filters(body, "systems") for body in root_bodies):
+                if not any(body_subtree_matches(body) for body in root_bodies):
                     continue
 
             items.append(
@@ -1252,11 +1293,32 @@ class KnowledgeBrowserUI:
                 }
             )
 
-            if self._is_expanded(system_id):
+            if self._is_expanded(system_id) or search_active:
                 for root_body in root_bodies:
                     add_body_subtree(root_body, 1)
 
         return items
+
+    def _system_linked_location_ids(self, world_model):
+        if world_model is None:
+            return set()
+
+        linked_location_ids = set()
+        for entity in world_model.get_entities_by_dataset("systems"):
+            if not isinstance(entity, dict):
+                continue
+            location_id = entity.get("location_entity")
+            if location_id:
+                linked_location_ids.add(location_id)
+        return linked_location_ids
+
+    def _is_location_shadowed_by_system_tree(self, entity, linked_location_ids):
+        if not isinstance(entity, dict):
+            return False
+        entity_id = entity.get("id")
+        if entity_id in linked_location_ids:
+            return True
+        return bool(entity.get("derived_from_system_body"))
 
     def _dataset_display_label(self, dataset_name):
         return dataset_name.replace("_", " ").title()
@@ -1308,18 +1370,23 @@ class KnowledgeBrowserUI:
         ]
         ordered_names = [name for name in preferred_order if name in dataset_names]
         ordered_names += [name for name in dataset_names if name not in ordered_names]
+        hide_empty_sections = bool(self.browser_search_query.strip())
+        system_linked_location_ids = self._system_linked_location_ids(world_model)
 
         for dataset_name in ordered_names:
             if self.browser_filter_dataset != "all" and dataset_name != self.browser_filter_dataset:
                 continue
 
-            items.append({"kind": "section", "text": self._dataset_display_label(dataset_name)})
-
             if dataset_name == "systems":
-                items.extend(self._build_system_browser_items(world_model))
+                dataset_items = self._build_system_browser_items(world_model)
+                if hide_empty_sections and not dataset_items:
+                    continue
+                items.append({"kind": "section", "text": self._dataset_display_label(dataset_name)})
+                items.extend(dataset_items)
                 items.append({"kind": "spacer"})
                 continue
 
+            dataset_items = []
             entities = sorted(
                 world_model.get_entities_by_dataset(dataset_name),
                 key=lambda entity: self._entity_display_label(entity, fallback=entity.get("id", "")).lower()
@@ -1328,12 +1395,17 @@ class KnowledgeBrowserUI:
             for entity in entities:
                 if not self._matches_browser_filters(entity, dataset_name):
                     continue
+                if (
+                    dataset_name == "locations"
+                    and self._is_location_shadowed_by_system_tree(entity, system_linked_location_ids)
+                ):
+                    continue
 
                 label = self._entity_display_label(entity, fallback=entity.get("id", "unknown"))
                 entity_class = self._entity_class_label(dataset_name, entity)
                 missing_count = self._entity_missing_scalar_count(entity, dataset_name)
 
-                items.append(
+                dataset_items.append(
                     {
                         "kind": "entity",
                         "entity_id": entity.get("id"),
@@ -1344,6 +1416,11 @@ class KnowledgeBrowserUI:
                     }
                 )
 
+            if hide_empty_sections and not dataset_items:
+                continue
+
+            items.append({"kind": "section", "text": self._dataset_display_label(dataset_name)})
+            items.extend(dataset_items)
             items.append({"kind": "spacer"})
 
         return items
@@ -1715,6 +1792,22 @@ class KnowledgeBrowserUI:
             return None
         return random.choice(list(self.world_model.loader.entities.values()))
 
+    def _random_unfinished_entity(self):
+        if self.world_model is None:
+            return None
+
+        unfinished = []
+        for entity in self.world_model.loader.entities.values():
+            if not isinstance(entity, dict) or not entity.get("id"):
+                continue
+            dataset_name = entity.get("_dataset", entity.get("type", ""))
+            if self._entity_missing_scalar_count(entity, dataset_name) > 0:
+                unfinished.append(entity)
+
+        if not unfinished:
+            return None
+        return random.choice(unfinished)
+
     def _startup_entity(self):
         if self.world_model is None:
             return None
@@ -1731,6 +1824,13 @@ class KnowledgeBrowserUI:
 
     def _create_random_entry_card(self):
         entity = self._random_entity()
+        if entity is None:
+            return False
+        self._ensure_card(entity)
+        return True
+
+    def _create_random_unfinished_entry_card(self):
+        entity = self._random_unfinished_entity()
         if entity is None:
             return False
         self._ensure_card(entity)
@@ -1920,14 +2020,251 @@ class KnowledgeBrowserUI:
             self._save_card_draft(card)
         return entity
 
-    def _create_new_entry_from_template(self, template):
-        entity = self._create_and_open_template_entity(template)
-        if entity is None:
-            return False
+    def _open_entry_name_prompt(self, template, mode="template", context=None):
+        label = "Entry"
+        if isinstance(template, dict):
+            label = template.get("label") or self._schema_display_label(template.get("entity_type"))
+        elif mode == "idea_from_parent":
+            label = "Idea"
 
+        self.entry_name_prompt = {
+            "template": template,
+            "mode": mode,
+            "context": context or {},
+            "label": label,
+            "buffer": "",
+            "cursor": 0,
+            "rect": None,
+            "input_rect": None,
+            "create_rect": None,
+            "cancel_rect": None,
+            "status": "",
+        }
         self.show_template_picker = False
+        self.template_picker_status = ""
         self._build_template_picker_hitboxes()
         return True
+
+    def _open_new_entry_name_prompt(self):
+        self.pending_new_entry_name = None
+        return self._open_entry_name_prompt(None, mode="new_entry")
+
+    def _open_idea_name_prompt(self, parent_card):
+        if parent_card is None:
+            return False
+
+        parent_entity_id = parent_card.get("entity_id")
+        if not parent_entity_id:
+            return False
+
+        parent_label = parent_card.get("title") or parent_entity_id
+        parent_entity = self.world_model.get_entity(parent_entity_id) if self.world_model is not None else None
+        if parent_entity is not None:
+            parent_label = self._entity_display_label(parent_entity, fallback=parent_label)
+
+        return self._open_entry_name_prompt(
+            None,
+            mode="idea_from_parent",
+            context={
+                "parent_entity_id": parent_entity_id,
+                "parent_label": parent_label,
+            },
+        )
+
+    def _close_entry_name_prompt(self):
+        self.entry_name_prompt = None
+
+    def _create_named_template_entity(self, template, entry_name):
+        entity = self._create_and_open_template_entity(
+            template,
+            initial_fields={
+                "pretty_name": entry_name,
+                "name": entry_name,
+            },
+            label=entry_name,
+        )
+        if entity is None:
+            return None
+
+        entity["pretty_name"] = entry_name
+        entity["name"] = entry_name
+        card = self._find_card_by_entity_id(entity.get("id"))
+        if card is not None:
+            card["title"] = entry_name
+            self._place_new_card_in_canvas_view(card)
+            self._save_card_draft(card)
+
+        return entity
+
+    def _create_named_idea_from_parent(self, parent_entity_id, entry_name):
+        if self.world_model is None or not parent_entity_id:
+            return None
+
+        parent_entity = self.world_model.get_entity(parent_entity_id)
+        idea = self._create_template_entity(
+            "ideas",
+            initial_fields={
+                "pretty_name": entry_name,
+                "name": entry_name,
+            },
+            label=entry_name,
+        )
+        if idea is None:
+            return None
+
+        idea["pretty_name"] = entry_name
+        idea["name"] = entry_name
+        if parent_entity is not None:
+            idea["parents"] = [parent_entity_id]
+        else:
+            idea["related"] = []
+
+        self.browser_items = self._build_browser_items(self.world_model)
+        self._rebuild_browser_hitboxes()
+        card = self._ensure_card(idea)
+        if card is not None:
+            card["title"] = entry_name
+            card["is_draft_entity"] = True
+            self._place_new_card_in_canvas_view(card)
+            self._save_card_draft(card)
+        return idea
+
+    def _submit_entry_name_prompt(self):
+        prompt = self.entry_name_prompt
+        if not isinstance(prompt, dict):
+            return False
+
+        entry_name = str(prompt.get("buffer", "")).strip()
+        if not entry_name:
+            prompt["status"] = "Name required"
+            return True
+
+        mode = prompt.get("mode", "template")
+        template = prompt.get("template")
+        if mode == "idea_from_parent":
+            context = prompt.get("context", {})
+            idea = self._create_named_idea_from_parent(context.get("parent_entity_id"), entry_name)
+            if idea is None:
+                prompt["status"] = "Could not create idea"
+                return True
+            self._close_entry_name_prompt()
+            return True
+
+        if mode == "new_entry" or template is None:
+            self.pending_new_entry_name = entry_name
+            self._close_entry_name_prompt()
+            self.schema_entry_templates = self._load_schema_entry_templates()
+            self.show_template_picker = True
+            self.template_picker_scroll = 0
+            self.template_picker_status = f"Choose type for {entry_name}"
+            self._build_template_picker_hitboxes()
+            return True
+
+        entity = self._create_named_template_entity(template, entry_name)
+        if entity is None:
+            prompt["status"] = "Could not create entry"
+            return True
+
+        self._close_entry_name_prompt()
+        return True
+
+    def _handle_entry_name_prompt_keydown(self, event):
+        prompt = self.entry_name_prompt
+        if not isinstance(prompt, dict):
+            return False
+
+        buffer_text = str(prompt.get("buffer", ""))
+        cursor = max(0, min(int(prompt.get("cursor", len(buffer_text))), len(buffer_text)))
+
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            return self._submit_entry_name_prompt()
+        if event.key == pygame.K_ESCAPE:
+            self._close_entry_name_prompt()
+            return True
+        if event.key == pygame.K_BACKSPACE:
+            if cursor > 0:
+                prompt["buffer"] = buffer_text[:cursor - 1] + buffer_text[cursor:]
+                prompt["cursor"] = cursor - 1
+                prompt["status"] = ""
+            return True
+        if event.key == pygame.K_DELETE:
+            if cursor < len(buffer_text):
+                prompt["buffer"] = buffer_text[:cursor] + buffer_text[cursor + 1:]
+                prompt["status"] = ""
+            return True
+        if event.key == pygame.K_LEFT:
+            prompt["cursor"] = max(0, cursor - 1)
+            return True
+        if event.key == pygame.K_RIGHT:
+            prompt["cursor"] = min(len(buffer_text), cursor + 1)
+            return True
+        if event.key == pygame.K_HOME:
+            prompt["cursor"] = 0
+            return True
+        if event.key == pygame.K_END:
+            prompt["cursor"] = len(buffer_text)
+            return True
+
+        text = getattr(event, "unicode", "")
+        if text and text.isprintable():
+            prompt["buffer"] = buffer_text[:cursor] + text + buffer_text[cursor:]
+            prompt["cursor"] = cursor + len(text)
+            prompt["status"] = ""
+            return True
+
+        return True
+
+    def _handle_entry_name_prompt_click(self, mouse_pos):
+        prompt = self.entry_name_prompt
+        if not isinstance(prompt, dict):
+            return False
+
+        cancel_rect = prompt.get("cancel_rect")
+        if cancel_rect is not None and cancel_rect.collidepoint(mouse_pos):
+            self._close_entry_name_prompt()
+            return True
+
+        create_rect = prompt.get("create_rect")
+        if create_rect is not None and create_rect.collidepoint(mouse_pos):
+            return self._submit_entry_name_prompt()
+
+        return True
+
+    def _create_new_entry_from_template(self, template):
+        entry_name = str(self.pending_new_entry_name or "").strip()
+        if entry_name:
+            self.pending_new_entry_name = None
+            entity = self._create_named_template_entity(template, entry_name)
+            if entity is None:
+                self.template_picker_status = "Could not create entry"
+                return False
+            self.show_template_picker = False
+            self.template_picker_status = ""
+            self._build_template_picker_hitboxes()
+            return True
+        return self._open_entry_name_prompt(template)
+
+    def _handle_template_picker_click(self, mouse_pos):
+        if not self.show_template_picker:
+            return None
+
+        if self.template_picker_rect is None or not self.template_picker_rect.collidepoint(mouse_pos):
+            self.show_template_picker = False
+            self.template_picker_status = ""
+            self._build_template_picker_hitboxes()
+            return "__ui_consumed__"
+
+        for template, _, button_rect in self.template_button_hitboxes:
+            if not button_rect.collidepoint(mouse_pos):
+                continue
+
+            created = self._create_new_entry_from_template(template)
+            if not created:
+                self.template_picker_status = "Name entry first"
+                self._open_entry_name_prompt(template)
+            return "__ui_consumed__"
+
+        return "__ui_consumed__"
 
     def _create_idea_from_parent_card(self, parent_card):
         if self.world_model is None or parent_card is None:
@@ -1994,7 +2331,7 @@ class KnowledgeBrowserUI:
         if card is None:
             return False
         entity = self._entity_for_card(card)
-        if not isinstance(entity, dict) or entity.get("_dataset") != "ideas":
+        if not isinstance(entity, dict):
             return False
         card["type_picker_open"] = not bool(card.get("type_picker_open", False))
         card["type_picker_hitboxes"] = []
@@ -2028,15 +2365,13 @@ class KnowledgeBrowserUI:
             f.write(updated_text)
         return True
 
-    def _convert_idea_card_to_template(self, card, template):
+    def _convert_card_to_template(self, card, template):
         entity = self._entity_for_card(card)
         if not isinstance(entity, dict) or not isinstance(template, dict):
             return False
-        if entity.get("_dataset") != "ideas":
-            return False
 
         old_id = str(entity.get("id", ""))
-        old_dataset = entity.get("_dataset", "ideas")
+        old_dataset = entity.get("_dataset", entity.get("type", "entity"))
         new_dataset = template.get("dataset_name")
         new_type = template.get("entity_type") or self._template_entity_type(new_dataset, template)
         if not old_id or not new_dataset:
@@ -2107,6 +2442,9 @@ class KnowledgeBrowserUI:
         self._rebuild_browser_hitboxes()
         self._relayout_cards()
         return True
+
+    def _convert_idea_card_to_template(self, card, template):
+        return self._convert_card_to_template(card, template)
 
     def _is_temporal_field(self, field_key):
         return field_key in {"year", "year_number", "start_year", "end_year", "effective_year"}
@@ -2317,6 +2655,20 @@ class KnowledgeBrowserUI:
             self._relayout_cards()
             return new_card
         return None
+
+    def _place_new_card_in_canvas_view(self, card):
+        if card is None or self.layout is None:
+            return
+
+        zoom = max(0.001, self.canvas_zoom)
+        visible_x = (24 - self.canvas_offset_x) / zoom
+        visible_y = (54 - self.canvas_offset_y) / zoom
+
+        offset = max(0, len(self.cards) - 1) * 18
+        card["canvas_x"] = max(0, visible_x + offset)
+        card["canvas_y"] = max(0, visible_y + offset)
+        self.selected_entity_id = card.get("entity_id")
+        self._relayout_cards()
 
     def _ensure_schema_card(self, schema_name):
         if not schema_name:
@@ -3271,6 +3623,11 @@ class KnowledgeBrowserUI:
             row_y += self.CARD_TYPE_PICKER_ROW_H
 
     def _handle_keydown_event(self, event):
+        if self.entry_name_prompt is not None:
+            if self._handle_entry_name_prompt_keydown(event):
+                return "__ui_consumed__"
+            return None
+
         if self.canvas_relation_link_source_id is not None and event.key == pygame.K_ESCAPE:
             self._clear_canvas_relation_link()
             self._relayout_cards()
@@ -3931,14 +4288,14 @@ class KnowledgeBrowserUI:
             idea_button_rect = card.get("idea_button_rect")
             if idea_button_rect is not None and idea_button_rect.collidepoint(mouse_pos) and card_view is not None:
                 card_obj = self._bring_card_to_front(index)
-                self._create_idea_from_parent_card(card_obj)
+                self._open_idea_name_prompt(card_obj)
                 self._relayout_cards()
                 return "__ui_consumed__"
 
             for template, type_rect in card.get("type_picker_hitboxes", []):
                 if type_rect.collidepoint(mouse_pos):
                     card_obj = self._bring_card_to_front(index)
-                    self._convert_idea_card_to_template(card_obj, template)
+                    self._convert_card_to_template(card_obj, template)
                     return "__ui_consumed__"
 
             type_label_rect = card.get("type_label_rect")
@@ -4104,7 +4461,15 @@ class KnowledgeBrowserUI:
 
         pygame.draw.rect(screen, (24, 28, 40), self.template_picker_rect)
         pygame.draw.rect(screen, (160, 168, 186), self.template_picker_rect, 1)
-        picker_title = font.render("Create New Entry From Schema", True, (236, 236, 236))
+        pending_name = str(self.pending_new_entry_name or "").strip()
+        if pending_name:
+            title_text = f"Choose Entry Type: {pending_name}"
+        else:
+            title_text = "Create New Entry From Schema"
+        picker_title = font.render(title_text, True, (236, 236, 236))
+        max_title_w = self.template_picker_rect.width - 24
+        if picker_title.get_width() > max_title_w:
+            picker_title = font.render("Choose Entry Type", True, (236, 236, 236))
         title_y = self.template_picker_rect.y + max(
             6,
             (self._template_picker_header_height() - font.get_linesize()) // 2,
@@ -4138,6 +4503,102 @@ class KnowledgeBrowserUI:
                     title_y,
                 ),
             )
+
+        status = str(self.template_picker_status or "").strip()
+        if status and not pending_name:
+            status_surface = font.render(status, True, (230, 154, 132))
+            screen.blit(
+                status_surface,
+                (
+                    self.template_picker_rect.x + 12,
+                    self.template_picker_rect.bottom - status_surface.get_height() - 8,
+                ),
+            )
+
+    def _draw_entry_name_prompt(self, screen, font):
+        prompt = self.entry_name_prompt
+        if not isinstance(prompt, dict) or self.layout is None:
+            return
+
+        right_rect = self.layout["right_rect"]
+        prompt_w = min(420, max(300, right_rect.width - 48))
+        prompt_h = 148
+        prompt_x = right_rect.right - prompt_w - 12
+        prompt_y = right_rect.y + 44
+        prompt_rect = pygame.Rect(prompt_x, prompt_y, prompt_w, prompt_h)
+        header_rect = pygame.Rect(prompt_rect.x, prompt_rect.y, prompt_rect.width, 48)
+        input_rect = pygame.Rect(prompt_rect.x + 18, prompt_rect.y + 72, prompt_rect.width - 36, 30)
+        cancel_rect = pygame.Rect(prompt_rect.right - 198, prompt_rect.bottom - 42, 86, 28)
+        create_rect = pygame.Rect(prompt_rect.right - 104, prompt_rect.bottom - 42, 86, 28)
+
+        prompt["rect"] = prompt_rect
+        prompt["input_rect"] = input_rect
+        prompt["cancel_rect"] = cancel_rect
+        prompt["create_rect"] = create_rect
+
+        pygame.draw.rect(screen, (28, 30, 38), prompt_rect)
+        pygame.draw.rect(screen, (170, 170, 170), prompt_rect, 1)
+        pygame.draw.rect(screen, (34, 38, 48), header_rect)
+        pygame.draw.line(
+            screen,
+            (110, 110, 120),
+            (header_rect.x, header_rect.bottom),
+            (header_rect.right, header_rect.bottom),
+            1,
+        )
+
+        prompt_title = "Name New Idea" if prompt.get("mode") == "idea_from_parent" else "Name New Entry"
+        title = font.render(prompt_title, True, (244, 244, 244))
+        detail = font.render(str(prompt.get("label") or "Entry"), True, (166, 176, 194))
+        screen.blit(title, (prompt_rect.x + 12, prompt_rect.y + 8))
+        screen.blit(detail, (prompt_rect.x + 12, prompt_rect.y + 28))
+
+        name_label = font.render("name", True, (188, 196, 212))
+        screen.blit(name_label, (input_rect.x, input_rect.y - 18))
+
+        pygame.draw.rect(screen, (38, 43, 56), input_rect)
+        pygame.draw.rect(screen, (182, 202, 236), input_rect, 1)
+        buffer_text = str(prompt.get("buffer", ""))
+        cursor = max(0, min(int(prompt.get("cursor", len(buffer_text))), len(buffer_text)))
+        visible_text = buffer_text
+        max_input_text_w = input_rect.width - 18
+        while visible_text and font.size(visible_text)[0] > max_input_text_w:
+            visible_text = visible_text[1:]
+
+        hidden_prefix_len = len(buffer_text) - len(visible_text)
+        display_text = visible_text if buffer_text else "Entry name"
+        text_color = (238, 238, 238) if buffer_text else (126, 136, 154)
+        text_surface = font.render(display_text, True, text_color)
+        screen.blit(text_surface, (input_rect.x + 8, input_rect.y + 6))
+
+        visible_cursor = max(0, cursor - hidden_prefix_len)
+        cursor_x = input_rect.x + 8 + font.size(visible_text[:visible_cursor])[0]
+        pygame.draw.line(
+            screen,
+            (236, 236, 236),
+            (cursor_x, input_rect.y + 6),
+            (cursor_x, input_rect.bottom - 6),
+            1,
+        )
+
+        status = str(prompt.get("status") or "")
+        if status:
+            status_surface = font.render(status, True, (230, 154, 132))
+            screen.blit(status_surface, (prompt_rect.x + 18, input_rect.bottom + 8))
+
+        mouse_pos = pygame.mouse.get_pos()
+        for rect, label, primary in (
+            (cancel_rect, "Cancel", False),
+            (create_rect, "Create", True),
+        ):
+            hovered = rect.collidepoint(mouse_pos)
+            fill = (72, 92, 132) if primary else (42, 48, 62)
+            if hovered:
+                fill = (88, 108, 150) if primary else (56, 64, 82)
+            pygame.draw.rect(screen, fill, rect)
+            pygame.draw.rect(screen, (164, 176, 198), rect, 1)
+            label_surface = font.render(label, True, (244, 244, 244))
+            screen.blit(label_surface, label_surface.get_rect(center=rect.center))
 
     def draw(self, screen, font, draw_button_fn):
         if self.layout is None:
@@ -4252,6 +4713,8 @@ class KnowledgeBrowserUI:
 
         if self.random_entry_button is not None:
             draw_button_fn(screen, font, self.random_entry_button)
+        if self.random_unfinished_button is not None:
+            draw_button_fn(screen, font, self.random_unfinished_button)
         if self.random_task_button is not None:
             draw_button_fn(screen, font, self.random_task_button)
         if self.new_entry_button is not None:
@@ -4385,6 +4848,7 @@ class KnowledgeBrowserUI:
         self._draw_canvas_relation_lines(screen, right_rect)
         self._draw_canvas_relation_controls(screen, font, right_rect)
         self._draw_template_picker(screen, font)
+        self._draw_entry_name_prompt(screen, font)
 
     def handle_event(self, event):
         if self.layout is None:
@@ -4397,6 +4861,13 @@ class KnowledgeBrowserUI:
 
         if event.type == pygame.KEYDOWN:
             return self._handle_keydown_event(event)
+
+        if self.entry_name_prompt is not None:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if self._handle_entry_name_prompt_click(event.pos):
+                    return "__ui_consumed__"
+            if event.type in (pygame.MOUSEWHEEL, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
+                return "__ui_consumed__"
 
         if event.type == pygame.MOUSEWHEEL:
             return self._handle_mousewheel_event(event, timeline_rect, left_rect, right_rect)
@@ -4442,26 +4913,21 @@ class KnowledgeBrowserUI:
             self._create_random_entry_card()
             return "__ui_consumed__"
 
+        if self.random_unfinished_button is not None and self.random_unfinished_button.rect.collidepoint(mouse_pos):
+            self._create_random_unfinished_entry_card()
+            return "__ui_consumed__"
+
         if self.random_task_button is not None and self.random_task_button.rect.collidepoint(mouse_pos):
             self._create_random_task_card()
             return "__ui_consumed__"
 
         if self.new_entry_button is not None and self.new_entry_button.rect.collidepoint(mouse_pos):
-            self.schema_entry_templates = self._load_schema_entry_templates()
-            self.show_template_picker = not self.show_template_picker
-            self.template_picker_scroll = 0
-            self._build_template_picker_hitboxes()
+            self._open_new_entry_name_prompt()
             return "__ui_consumed__"
 
-        if self.show_template_picker:
-            if self.template_picker_rect is not None and self.template_picker_rect.collidepoint(mouse_pos):
-                for template, _, button_rect in self.template_button_hitboxes:
-                    if button_rect.collidepoint(mouse_pos):
-                        self._create_new_entry_from_template(template)
-                        return "__ui_consumed__"
-            else:
-                self.show_template_picker = False
-                self._build_template_picker_hitboxes()
+        template_picker_result = self._handle_template_picker_click(mouse_pos)
+        if template_picker_result is not None:
+            return template_picker_result
 
         if timeline_splitter_rect.collidepoint(mouse_pos):
             self.active_timeline_resize = True

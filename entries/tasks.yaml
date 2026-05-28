@@ -101,3 +101,8 @@
   notes: Randomly generated task placeholder.
   tags:
   - random_task
+- id: task_new_014
+  pretty_name: Expand General View to Include a Statistics screen
+  name: Expand General View to Include a Statistics screen
+  type: task
+  wiki_entry: ''

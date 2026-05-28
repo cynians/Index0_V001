@@ -807,3 +807,8 @@
   - inst_ggo_humhab
   derived_from:
   - idea_new_016
+- id: veh_new_001
+  pretty_name: Helsing CA-15
+  name: Helsing CA-15
+  type: vehicle
+  wiki_entry: ''

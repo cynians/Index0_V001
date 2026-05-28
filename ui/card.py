@@ -1679,7 +1679,7 @@ class EntityCard:
         subtitle_surface = font.render(card["subtitle"], True, (170, 170, 170))
         screen.blit(title_surface, (rect.x + 12, rect.y + 10))
         type_label_rect = card.get("type_label_rect")
-        if type_label_rect is not None and self._is_idea_card():
+        if type_label_rect is not None:
             hover_pos = pygame.mouse.get_pos()
             if type_label_rect.collidepoint(hover_pos):
                 pygame.draw.rect(screen, (42, 48, 62), type_label_rect)
@@ -1799,14 +1799,6 @@ class EntityCard:
         launch_text = font.render(f"Launch [{card['selected_year']}]", True, (245, 245, 245))
         launch_text_rect = launch_text.get_rect(center=launch_rect.center)
         screen.blit(launch_text, launch_text_rect)
-
-        for handle_rect in card.get("corner_handle_rects", []):
-            pygame.draw.rect(screen, (105, 112, 126), handle_rect)
-            pygame.draw.rect(screen, (220, 224, 232), handle_rect, 1)
-
-        handle_rect = card["resize_handle_rect"]
-        pygame.draw.rect(screen, (120, 120, 120), handle_rect)
-        pygame.draw.rect(screen, (220, 220, 220), handle_rect, 1)
 
     def _draw_tabs(self, screen, font, card):
         for tab_name, tab_rect in card.get("tab_hitboxes", []):
