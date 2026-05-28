@@ -1,5 +1,6 @@
 import math
 import re
+import shutil
 import time
 from pathlib import Path
 
@@ -43,6 +44,7 @@ class MapSimulation:
     LOCATIONS_ENTRY_PATH = (
         Path(__file__).resolve().parents[2] / "entries" / "locations.yaml"
     )
+    MAP_ASSET_ROOT = Path(__file__).resolve().parents[2] / "assets" / "maps" / "locations"
     SPATIAL_FEATURES_ENTRY_PATH = (
         Path(__file__).resolve().parents[2] / "entries" / "spatial_features.yaml"
     )
@@ -634,6 +636,161 @@ class MapSimulation:
 
         entity = self.get_location(location_id)
         return self._get_entity_bbox_bounds(entity) is not None
+
+    def _map_image_target_entity_id(self):
+        selected_entity = self.get_location(self.selected_entity_id)
+        if (
+            selected_entity is not None
+            and selected_entity.get("_dataset") in (None, "locations")
+            and selected_entity.get("type") == "location"
+            and self._map_image_rect_from_entity(selected_entity) is not None
+        ):
+            return selected_entity.get("id")
+
+        root_entity = self.get_root_entity()
+        if root_entity is not None and self._map_image_rect_from_entity(root_entity) is not None:
+            return root_entity.get("id")
+
+        return None
+
+    def _map_image_rect_from_entity(self, entity):
+        if not isinstance(entity, dict):
+            return None
+
+        if entity.get("location_class") == "planet":
+            return self._planet_rect_from_entity(entity)
+
+        bounds = self._get_entity_bbox_bounds(entity)
+        if bounds is None:
+            return None
+
+        min_x = bounds["min_x"]
+        max_x = bounds["max_x"]
+        min_y = bounds["min_y"]
+        max_y = bounds["max_y"]
+        x, y = self._map_point_to_world((min_x + max_x) / 2, (min_y + max_y) / 2)
+        return {
+            "x": x,
+            "y": y,
+            "width_world": max_x - min_x,
+            "height_world": max_y - min_y,
+        }
+
+    def can_import_map_image(self):
+        return self._map_image_target_entity_id() is not None
+
+    def get_map_image_import_target_label(self):
+        target = self.get_location(self._map_image_target_entity_id())
+        if not target:
+            return "Map Image"
+        return target.get("pretty_name") or target.get("name") or target.get("id") or "Map Image"
+
+    def _open_map_image_file_dialog(self):
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+        except ImportError:
+            return ""
+
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            selected = filedialog.askopenfilename(
+                title="Select map image",
+                filetypes=[
+                    ("Image files", "*.png *.jpg *.jpeg *.webp *.bmp"),
+                    ("All files", "*.*"),
+                ],
+            )
+        finally:
+            root.destroy()
+
+        return selected or ""
+
+    def _prompt_map_image_year(self):
+        try:
+            import tkinter as tk
+            from tkinter import simpledialog
+        except ImportError:
+            return self.year
+
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            value = simpledialog.askstring(
+                "Date map image",
+                "Map image year:",
+                initialvalue=str(int(self.year)),
+            )
+        finally:
+            root.destroy()
+
+        if value is None:
+            return None
+
+        normalized = self._normalize_year_value(value.strip())
+        return normalized if normalized is not None else self.year
+
+    def _canonical_map_image_path(self, target_id, source_path, image_year):
+        source = Path(source_path)
+        suffix = source.suffix.lower() or ".png"
+        safe_id = re.sub(r"[^a-zA-Z0-9_-]+", "_", str(target_id)).strip("_") or "map"
+        year_part = "undated" if image_year is None else str(int(image_year))
+        target_dir = self.MAP_ASSET_ROOT / safe_id
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_path = target_dir / f"base_map_{year_part}{suffix}"
+        return target_path
+
+    def _relative_project_path(self, path):
+        project_root = Path(__file__).resolve().parents[2]
+        try:
+            return str(path.relative_to(project_root)).replace("\\", "/")
+        except ValueError:
+            return str(path)
+
+    def import_map_image_for_current_target(self):
+        target_id = self._map_image_target_entity_id()
+        if not target_id:
+            return False
+
+        target = self.get_location(target_id)
+        if target is None:
+            return False
+
+        source_path = self._open_map_image_file_dialog()
+        if not source_path:
+            return False
+
+        image_year = self._prompt_map_image_year()
+        if image_year is None:
+            return False
+
+        target_path = self._canonical_map_image_path(target_id, source_path, image_year)
+        try:
+            shutil.copy2(source_path, target_path)
+        except OSError as exc:
+            logger.error(f"[MapSimulation] Failed to copy map image: {exc}")
+            return False
+
+        relative_path = self._relative_project_path(target_path)
+        updates = {
+            "map_image_path": relative_path,
+            "map_image_year": image_year,
+            "map_image_fit": "stretch_to_bounds",
+        }
+
+        if not self._update_location_map_image_fields(target_id, updates):
+            return False
+
+        target.update(updates)
+        if hasattr(self.world_model, "refresh"):
+            self.world_model.refresh()
+
+        self.selected_entity_id = target_id
+        self.selected_spatial_feature_id = None
+        self._invalidate_layer_cache()
+        logger.info(f"[MapSimulation] Imported map image for {target_id}: {relative_path}")
+        return True
 
     def _can_inspect_location(self, location_id):
         return self._can_edit_location_bounds(location_id)
@@ -2081,6 +2238,28 @@ class MapSimulation:
         entry_path.write_text(updated_text, encoding="utf-8")
         return True
 
+    def _update_location_map_image_fields(self, location_id, updates):
+        entry_path = self.LOCATIONS_ENTRY_PATH
+        if not entry_path.exists():
+            return False
+
+        text = entry_path.read_text(encoding="utf-8")
+        found = self._find_yaml_entity_block(text, location_id)
+        if found is None:
+            return False
+
+        block_start, block_end = found
+        block = text[block_start:block_end]
+        for key, value in updates.items():
+            if key == "map_image_year":
+                block = self._replace_yaml_plain_field_in_block(block, key, value)
+            else:
+                block = self._replace_yaml_field_in_block(block, key, value)
+
+        updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
+        entry_path.write_text(updated_text, encoding="utf-8")
+        return True
+
     def _update_spatial_feature_geometry(self, spatial_feature_id, points):
         entry_path = self.SPATIAL_FEATURES_ENTRY_PATH
         if not entry_path.exists():
@@ -2501,6 +2680,21 @@ class MapSimulation:
 
             location_class = entity.get("location_class")
             color = self._color_for_entity(entity)
+            image_rect = self._map_image_rect_from_entity(entity)
+            image_path = entity.get("map_image_path")
+            if image_path and image_rect is not None:
+                layers.append({
+                    "shape": "image_rect",
+                    "x": image_rect["x"],
+                    "y": image_rect["y"],
+                    "width_world": image_rect["width_world"],
+                    "height_world": image_rect["height_world"],
+                    "image_path": image_path,
+                    "image_year": entity.get("map_image_year"),
+                    "fit": entity.get("map_image_fit", "stretch_to_bounds"),
+                    "name": entity.get("name"),
+                    "entity_id": entity_id,
+                })
 
             if location_class == "planet":
                 rect = self._planet_rect_from_entity(entity)

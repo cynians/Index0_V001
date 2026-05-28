@@ -13,11 +13,6 @@ fields:
     target: institution
     optional: true
 
-  controlling_faction:
-    type: entity
-    target: faction
-    optional: true
-
   associated_cultures:
     type: entity_list
     target: culture

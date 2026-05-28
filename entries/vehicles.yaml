@@ -237,6 +237,7 @@
   parents: []
   related:
   - idea_new_011
+  - comp_hull_corner_closing_plate
   placeholders: []
   offspring: []
   wiki_entry: ''
@@ -797,3 +798,12 @@
   end_year: null
   derived_from: []
   media_layers: {}
+- id: veh_humhab_1_1
+  pretty_name: HumHab 1-1 "Pregenitor One"
+  name: HumHab 1-1 "Pregenitor One"
+  type: vehicle
+  wiki_entry: ''
+  parents:
+  - inst_ggo_humhab
+  derived_from:
+  - idea_new_016

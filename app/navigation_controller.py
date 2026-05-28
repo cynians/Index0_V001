@@ -57,6 +57,49 @@ class NavigationController:
         self.app.knowledge_layer_active = False
         self.app.camera_controller.setup_for_sim(new_tab.sim_instance.simulation)
 
+    def launch_planet_space_tab(self, body_entity_id):
+        """
+        Open or focus a local space simulation rooted on one planet body.
+        """
+        if not body_entity_id:
+            return False
+
+        body_entity = self.app.world_model.get_entity(body_entity_id)
+        if not body_entity:
+            return False
+
+        root_system_id = body_entity.get("star_system")
+        if not root_system_id:
+            return False
+
+        tab_key = ("space_body", body_entity_id)
+
+        if self.focus_existing_tab_by_key(tab_key):
+            self.app.knowledge_layer_active = False
+            return True
+
+        active_sim = self.app.get_active_simulation()
+        year = getattr(active_sim, "year", 2400) if active_sim is not None else 2400
+        body_name = body_entity.get("name", body_entity_id)
+
+        new_space_sim = SpaceSimulation(
+            world_model=self.app.world_model,
+            root_system_id=root_system_id,
+            root_body_id=body_entity_id,
+            year=year,
+        )
+        new_tab = Tab(
+            SimulationInstance(new_space_sim),
+            name=f"Local Space: {body_name}",
+            tab_key=tab_key
+        )
+
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+        self.app.camera_controller.setup_for_sim(new_space_sim)
+        return True
+
     def launch_earth_map_tab(self):
         """
         Open or focus the default Earth map simulation tab.
@@ -426,6 +469,10 @@ class NavigationController:
                     return True
 
                 if system_role == "orbital_body":
+                    body_class = entity.get("body_class")
+                    if body_class == "planet":
+                        return self.launch_planet_space_tab(entity_id)
+
                     location_entity_id = entity.get("location_entity")
 
                     if location_entity_id:
@@ -512,6 +559,9 @@ class NavigationController:
 
         if action_id == "cycle_map_layer" and active_sim is not None:
             return bool(getattr(active_sim, "cycle_active_layer_kind", lambda: False)())
+
+        if action_id == "import_map_image" and active_sim is not None:
+            return bool(getattr(active_sim, "import_map_image_for_current_target", lambda: False)())
 
         if action_id == "new_map_selection" and active_sim is not None:
             return bool(getattr(active_sim, "begin_spatial_feature_draft", lambda: False)())

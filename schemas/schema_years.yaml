@@ -12,13 +12,3 @@ fields:
     type: string
     section: Temporal
     optional: true
-
-  canonical_events:
-    type: entity_list
-    target: event
-    optional: true
-
-  simulated_changes:
-    type: entity_list
-    target: entity_core
-    optional: true

@@ -240,18 +240,27 @@ class CelestialSystem:
 
         raise AttributeError("WorldModel has no supported active-entity API.")
 
-    def _get_active_system_entities(self, world_model, year, root_system_id):
+    def _get_active_system_entities(self, world_model, year, root_system_id, root_body_id=None):
         """
         Return active orbital-body entries for the selected star system.
         """
         active_entities = list(self._iter_active_entities(world_model, year))
 
-        return [
+        bodies = [
             entity for entity in active_entities
             if entity.get("_dataset") == "systems"
             and entity.get("type") == "system"
             and entity.get("system_role") == "orbital_body"
             and entity.get("star_system") == root_system_id
+        ]
+
+        if root_body_id is None:
+            return bodies
+
+        return [
+            entity for entity in bodies
+            if entity.get("id") == root_body_id
+            or entity.get("parent_body") == root_body_id
         ]
 
     def _coerce_color(self, value, fallback=(180, 180, 180)):
@@ -333,7 +342,7 @@ class CelestialSystem:
         obj.source_system_entity_id = entity.get("id")
         return obj
 
-    def populate_from_world_model(self, world_model, year, root_system_id):
+    def populate_from_world_model(self, world_model, year, root_system_id, root_body_id=None):
         """
         Populate the celestial system from active entries in the 'systems' dataset.
 
@@ -341,11 +350,17 @@ class CelestialSystem:
         * type: system
         * system_role: orbital_body
         * star_system: <root system id>
+        * optional root_body_id: include only that body and direct children
         """
         self._entries = []
         self.objects_by_id = {}
 
-        bodies = self._get_active_system_entities(world_model, year, root_system_id)
+        bodies = self._get_active_system_entities(
+            world_model,
+            year,
+            root_system_id,
+            root_body_id=root_body_id,
+        )
 
         if not bodies:
             return
@@ -360,7 +375,7 @@ class CelestialSystem:
                 entity = pending[entity_id]
                 parent_body_id = entity.get("parent_body")
 
-                if not parent_body_id:
+                if not parent_body_id or entity_id == root_body_id:
                     obj = self._create_root_object(entity)
                     layers = self._create_layers_for_entity(entity)
                     self.add(

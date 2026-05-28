@@ -16,10 +16,6 @@ fields:
     type: dictionary
     optional: true
 
-  cultural_influences:
-    type: string_list
-    optional: true
-
   realizations:
     type: entity_list
     target: entity
@@ -28,6 +24,3 @@ fields:
   historical_examples:
     type: string_list
     optional: true
-
-
-

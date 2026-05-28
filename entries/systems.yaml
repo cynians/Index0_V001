@@ -271,6 +271,7 @@
   entry_status: ''
   media_layers: {}
 - id: body_phobos
+  pretty_name: Phobos
   name: Phobos
   type: system
   system_role: orbital_body
@@ -291,11 +292,11 @@
   - 140
   - 135
   start_year: 0
-  parents: []
+  parents:
+  - planet_mars
   related: []
   placeholders: []
   offspring: []
-  pretty_name: Phobos
   description: ''
   notes: ''
   wiki_entry: ''
@@ -681,7 +682,8 @@
   entry_status: ''
   media_layers: {}
 - id: body_callisto
-  name: Callisto
+  pretty_name: Callisto
+  name: Callisto, Moon of Jupiter
   type: system
   system_role: orbital_body
   star_system: system_sol
@@ -700,12 +702,11 @@
   - 145
   - 145
   - 140
-  start_year: 0
+  start_year: -450000000
   parents: []
   related: []
   placeholders: []
   offspring: []
-  pretty_name: Callisto
   description: ''
   notes: ''
   wiki_entry: ''
@@ -742,7 +743,7 @@
   - 155
   - 120
   - 110
-  start_year: 0
+  start_year: -276832828
   parents:
   - planet_jupiter
   related: []
@@ -1255,7 +1256,8 @@
   derived_from: []
   entry_status: ''
   media_layers: {}
-- id: body_ariel
+- id: body_uranus_ariel
+  pretty_name: Ariel, Moon of Uranus
   name: Ariel
   type: system
   system_role: orbital_body
@@ -1275,12 +1277,11 @@
   - 215
   - 215
   - 220
-  start_year: 0
+  start_year: -450000000
   parents: []
   related: []
   placeholders: []
   offspring: []
-  pretty_name: Ariel
   description: ''
   notes: ''
   wiki_entry: ''
@@ -1652,8 +1653,9 @@
   offspring: []
   description: ''
   notes: ''
-  wiki_entry: |
-    Testholder Charon
+  wiki_entry: 'Testholder Charon
+
+    '
   card_image: ''
   design_image: ''
   card_image_front: ''
@@ -2140,4 +2142,182 @@
   end_year: null
   derived_from: []
   entry_status: ''
+  media_layers: {}
+- id: sys_barycor
+  pretty_name: Barycor System
+  name: Barycor System
+  type: system
+  wiki_entry: ''
+  system_role: ''
+- id: sys_new_002
+  pretty_name: Equidorva System
+  name: Equidorva System
+  type: system
+  wiki_entry: ''
+  system_role: star_system
+  dataset: null
+  system_class: stellar_system
+  parents: []
+  related:
+  - body_equidorva_primary
+  - body_equidorva
+  placeholders: []
+  offspring: []
+  description: Earthlike development sandbox centered on Equidorva, a habitable-zone
+    terrestrial planet orbiting a G-class main-sequence star.
+  notes: Bottom-up planet construction root for Equidorva.
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags:
+  - g_class_star
+  - habitable_zone
+  - earthlike
+  start_year: 0
+  end_year: null
+  derived_from: []
+  entry_status: draft
+  media_layers: {}
+- id: body_equidorva_primary
+  pretty_name: Equidorva Primary
+  name: Equidorva Primary
+  type: system
+  wiki_entry: ''
+  system_role: orbital_body
+  star_system: sys_new_002
+  body_class: star
+  parent_body: null
+  location_entity: null
+  mass_kg: 1.98847e30
+  radius_m: 696340000
+  semi_major_axis_m: 0
+  eccentricity: 0.0
+  inclination_deg: 0.0
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color:
+  - 255
+  - 222
+  - 150
+  parents:
+  - sys_new_002
+  related:
+  - body_equidorva
+  placeholders: []
+  offspring: []
+  description: G-class main-sequence star used as Equidorva's Earthlike primary.
+  notes: Solar analogue baseline, roughly 1 solar mass and luminosity.
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags:
+  - g_class_star
+  - solar_analogue
+  start_year: 0
+  end_year: null
+  derived_from: []
+  entry_status: draft
+  media_layers: {}
+- id: body_equidorva
+  pretty_name: Equidorva
+  name: Equidorva
+  type: system
+  wiki_entry: ''
+  system_role: orbital_body
+  star_system: sys_new_002
+  body_class: planet
+  parent_body: body_equidorva_primary
+  location_entity: planet_equidorva
+  mass_kg: 5.97219e24
+  radius_m: 6371000
+  semi_major_axis_m: 149597870700
+  eccentricity: 0.0167
+  inclination_deg: 0.0
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 102.9
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color:
+  - 92
+  - 142
+  - 210
+  parents:
+  - body_equidorva_primary
+  related:
+  - planet_equidorva
+  - body_equidorva_lumen
+  placeholders: []
+  offspring: []
+  description: Earthlike terrestrial planet in the habitable zone of Equidorva Primary.
+  notes: Baseline assumes roughly Earth mass, Earth radius, and 1 AU orbit for bottom-up
+    planetary development.
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags:
+  - terrestrial_planet
+  - habitable_zone
+  - earthlike
+  start_year: 0
+  end_year: null
+  derived_from: []
+  entry_status: draft
+  media_layers: {}
+- id: body_equidorva_lumen
+  pretty_name: Lumen
+  name: Lumen
+  type: system
+  wiki_entry: ''
+  system_role: orbital_body
+  star_system: sys_new_002
+  body_class: moon
+  parent_body: body_equidorva
+  location_entity: planet_equidorva_lumen
+  mass_kg: 7.1e22
+  radius_m: 1680000
+  semi_major_axis_m: 392000000
+  eccentricity: 0.041
+  inclination_deg: 4.2
+  longitude_of_ascending_node_deg: 38.0
+  argument_of_periapsis_deg: 114.0
+  mean_anomaly_deg_at_epoch: 72.0
+  display_color:
+  - 205
+  - 202
+  - 190
+  parents:
+  - body_equidorva
+  related:
+  - planet_equidorva
+  placeholders: []
+  offspring: []
+  description: Large natural moon of Equidorva, sized to make the first local planetary-space
+    view useful.
+  notes: Rough Luna analogue with a slightly wider, calmer orbit.
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags:
+  - natural_moon
+  - luna_analogue
+  start_year: 0
+  end_year: null
+  derived_from: []
+  entry_status: draft
   media_layers: {}

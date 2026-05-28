@@ -4,20 +4,8 @@ extends: entity_core
 
 fields:
 
-  pop_class:
-    type: string
-    optional: true
-
   role:
     type: string
-    optional: true
-
-  size_min:
-    type: number
-    optional: true
-
-  size_max:
-    type: number
     optional: true
 
   faction:
@@ -30,17 +18,7 @@ fields:
     target: locations
     optional: true
 
-  formation:
-    type: entity
-    target: formation
-    optional: true
-
   culture:
     type: entity
     target: culture
-    optional: true
-
-  members:
-    type: entity_list
-    target: person
     optional: true

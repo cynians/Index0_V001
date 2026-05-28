@@ -2,11 +2,7 @@
   common_name: Versatile Parrot Raptor
   binomial_name: Psittacoraptor versatilis
   type: species
-  description: Bioengineered parrot-derived theropod lineage created by the Terran
-    BDP during the Planetary Period as an omnivorous generalist. On at least one seeded
-    Earth-like world with reduced biodiversity, later exposure to CEAG drove rapid
-    diversification into predator and generalist branches across nearly all major
-    ecosystems.
+  description: 'Bioengineered parrot-derived theropod lineage created by the Terran BDP during the Planetary Period as an omnivorous generalist. On at least one seeded Earth-like world with reduced biodiversity, later exposure to CEAG drove rapid diversification into predator and generalist branches across nearly all major ecosystems.'
   species_class: engineered_vertebrate
   parent_clade: psittacoraptorinae
   clade_class: bird
@@ -45,10 +41,7 @@
   representative_body_mass_kg: 9.5
   reproduction_type: egg_laying
   metabolism_class: endothermic
-  lifecycle_notes: The original release form was a microraptor-like gliding omnivore
-    somewhat larger than a turkey, equipped with enlarged grasping claws and a modified
-    beak suited to broad opportunistic feeding. Later CEAG-guided divergence produced
-    both more specialized predator branches and highly adaptable generalist branches.
+  lifecycle_notes: 'The original release form was a microraptor-like gliding omnivore somewhat larger than a turkey, equipped with enlarged grasping claws and a modified beak suited to broad opportunistic feeding. Later CEAG-guided divergence produced both more specialized predator branches and highly adaptable generalist branches.'
   behavioural_traits:
   - intelligent
   - opportunistic
@@ -60,9 +53,7 @@
   - microraptor_like_gliding_planform
   - turkey_plus_body_size
   simulation_tier_default: species_population
-  population_notes: Particularly successful on lower-diversity Earth-like seeded worlds,
-    where it expanded into many available niches and became one of the dominant engineered
-    vertebrate lineages.
+  population_notes: 'Particularly successful on lower-diversity Earth-like seeded worlds, where it expanded into many available niches and became one of the dominant engineered vertebrate lineages.'
   tags:
   - species
   - bioengineered
@@ -72,7 +63,7 @@
   - planetary_period
   - terran_bdp
   - ceag
-  start_year: 0
+  start_year: 4457
   entry_status: draft
   parents: []
   related: []
@@ -87,17 +78,14 @@
   card_image_top: ''
   image_path: ''
   image: ''
-  end_year: null
+  end_year: 31761
   derived_from: []
   media_layers: {}
 - id: spec_ailurus_fulgens
   common_name: Red Panda
   binomial_name: Ailurus fulgens
   type: species
-  description: Small arboreal mammal native to the temperate montane forests of the
-    eastern Himalayas and southwestern China. Red pandas are specialized climbers
-    and foragers that spend much of their time in trees, feeding primarily on bamboo
-    alongside fruits, eggs, and small animals.
+  description: 'Small arboreal mammal native to the temperate montane forests of the eastern Himalayas and southwestern China. Red pandas are specialized climbers and foragers that spend much of their time in trees, feeding primarily on bamboo alongside fruits, eggs, and small animals.'
   species_class: natural_vertebrate
   parent_clade: ailuridae
   clade_class: mammal
@@ -132,8 +120,7 @@
   representative_body_mass_kg: 5.5
   reproduction_type: live_birth
   metabolism_class: endothermic
-  lifecycle_notes: Solitary and mostly crepuscular mammal with low-energy feeding
-    behavior centered on bamboo-rich upland forests.
+  lifecycle_notes: Solitary and mostly crepuscular mammal with low-energy feeding behavior centered on bamboo-rich upland forests.
   behavioural_traits:
   - solitary
   - arboreal
@@ -146,8 +133,7 @@
   - semi_retractile_claws
   - false_thumb
   simulation_tier_default: species_population
-  population_notes: Best modeled as a low-density forest specialist vulnerable to
-    habitat fragmentation and environmental disruption.
+  population_notes: Best modeled as a low-density forest specialist vulnerable to habitat fragmentation and environmental disruption.
   tags:
   - species
   - mammal
@@ -155,7 +141,7 @@
   - asia
   - bamboo_forest
   - natural
-  start_year: 0
+  start_year: -2500000
   entry_status: draft
   parents: []
   related: []
@@ -289,3 +275,49 @@
   wiki_entry: ''
   representative_body_length_m: null
   simulation_tier_default: null
+- id: spec_pygoscelis_antarcticus
+  common_name: Chinstrap Penguin
+  binomial_name: Pygoscelis antarcticus
+  type: species
+  wiki_entry: ''
+- id: spec_pygoscelis_antarcticus
+  common_name: Chinstrap Penguin
+  binomial_name: Pygoscelis antarcticus
+  type: species
+  wiki_entry: ''
+  start_year: -3470000
+- id: spec_marmota_marmota
+  common_name: Alpine Marmot
+  binomial_name: Marmota marmota
+  type: species
+  wiki_entry: ''
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents:
+  - geo_alps
+  related: []
+  offspring: []
+  placeholders: []
+  entry_status: ''
+  media_layers: {}
+- id: spec_pterocles_senegallus
+  common_name: Spotted Sandgrouse
+  binomial_name: Pterocles senegallus
+  type: species
+  wiki_entry: ''
+- id: spec_cakkuabdra_haematocephala
+  common_name: Red Powder Puff
+  binomial_name: Cakkuabdra haematocephala
+  type: species
+  wiki_entry: ''

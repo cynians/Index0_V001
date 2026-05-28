@@ -1,0 +1,7 @@
+- id: person_biblical_abraham
+  pretty_name: Biblical Abraham
+  name: Biblical Abraham
+  type: person
+  wiki_entry: 'Abraham is the traditional patriarch of Judaism, Christianity and Islam, remembered as a founding ancestor figure associated with covenant, mirgration, and the origins of the Israelite lineage.'
+  start_year: -2166
+  end_year: -1991

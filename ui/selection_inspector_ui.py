@@ -1,5 +1,7 @@
 import pygame
 
+from ui.text_editing import TextEditing
+
 
 class SelectionInspectorUI:
     """
@@ -593,7 +595,7 @@ class SelectionInspectorUI:
 
     def _set_field_cursor(self, field, cursor):
         buffer_text = self._get_field_buffer(field)
-        cursor = max(0, min(int(cursor), len(buffer_text)))
+        cursor = TextEditing.clamp_cursor(buffer_text, cursor)
         if field == "name":
             self.name_cursor = cursor
         elif field == "notes":
@@ -621,76 +623,54 @@ class SelectionInspectorUI:
 
         buffer_text = self._get_active_buffer()
         cursor = self._get_active_cursor()
-        self._set_active_buffer(buffer_text[:cursor] + text + buffer_text[cursor:])
-        self._set_active_cursor(cursor + len(text))
+        buffer_text, cursor = TextEditing.insert_text(buffer_text, cursor, text)
+        self._set_active_buffer(buffer_text)
+        self._set_active_cursor(cursor)
         return True
 
     def _delete_before_cursor(self):
         buffer_text = self._get_active_buffer()
         cursor = self._get_active_cursor()
-        if cursor <= 0:
-            return True
-        self._set_active_buffer(buffer_text[:cursor - 1] + buffer_text[cursor:])
-        self._set_active_cursor(cursor - 1)
+        buffer_text, cursor = TextEditing.delete_before_cursor(buffer_text, cursor)
+        self._set_active_buffer(buffer_text)
+        self._set_active_cursor(cursor)
         return True
 
     def _delete_after_cursor(self):
         buffer_text = self._get_active_buffer()
         cursor = self._get_active_cursor()
-        if cursor >= len(buffer_text):
-            return True
-        self._set_active_buffer(buffer_text[:cursor] + buffer_text[cursor + 1:])
+        buffer_text, cursor = TextEditing.delete_after_cursor(buffer_text, cursor)
+        self._set_active_buffer(buffer_text)
         self._set_active_cursor(cursor)
         return True
 
     def _word_start_before_cursor(self, buffer_text, cursor):
-        cursor = max(0, min(len(buffer_text), int(cursor)))
-        index = cursor
-        while index > 0 and buffer_text[index - 1].isspace():
-            index -= 1
-        while index > 0 and (
-            buffer_text[index - 1].isalnum()
-            or buffer_text[index - 1] in {"_", "-"}
-        ):
-            index -= 1
-        return index
+        return TextEditing.word_start_before_cursor(buffer_text, cursor)
 
     def _word_end_after_cursor(self, buffer_text, cursor):
-        cursor = max(0, min(len(buffer_text), int(cursor)))
-        index = cursor
-        while index < len(buffer_text) and buffer_text[index].isspace():
-            index += 1
-        while index < len(buffer_text) and (
-            buffer_text[index].isalnum()
-            or buffer_text[index] in {"_", "-"}
-        ):
-            index += 1
-        return index
+        return TextEditing.word_end_after_cursor(buffer_text, cursor)
 
     def _delete_word_before_cursor(self):
         buffer_text = self._get_active_buffer()
         cursor = self._get_active_cursor()
-        start = self._word_start_before_cursor(buffer_text, cursor)
-        self._set_active_buffer(buffer_text[:start] + buffer_text[cursor:])
-        self._set_active_cursor(start)
+        buffer_text, cursor = TextEditing.delete_word_before_cursor(buffer_text, cursor)
+        self._set_active_buffer(buffer_text)
+        self._set_active_cursor(cursor)
         return True
 
     def _delete_word_after_cursor(self):
         buffer_text = self._get_active_buffer()
         cursor = self._get_active_cursor()
-        end = self._word_end_after_cursor(buffer_text, cursor)
-        self._set_active_buffer(buffer_text[:cursor] + buffer_text[end:])
+        buffer_text, cursor = TextEditing.delete_word_after_cursor(buffer_text, cursor)
+        self._set_active_buffer(buffer_text)
         self._set_active_cursor(cursor)
         return True
 
     def _line_start_before_cursor(self, buffer_text, cursor):
-        cursor = max(0, min(len(buffer_text), int(cursor)))
-        return buffer_text.rfind("\n", 0, cursor) + 1
+        return TextEditing.line_start_before_cursor(buffer_text, cursor)
 
     def _line_end_after_cursor(self, buffer_text, cursor):
-        cursor = max(0, min(len(buffer_text), int(cursor)))
-        line_end = buffer_text.find("\n", cursor)
-        return len(buffer_text) if line_end == -1 else line_end
+        return TextEditing.line_end_after_cursor(buffer_text, cursor)
 
     def _set_cursor_from_mouse(self, field, mouse_pos):
         font = self.layout_font

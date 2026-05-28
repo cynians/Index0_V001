@@ -60,6 +60,9 @@ class Renderer:
             self.vehicle_renderer.draw(self.screen, sim)
             return
 
+        if render_mode == "person":
+            return
+
         if hasattr(sim, "system"):
             self.space_renderer.draw(self.screen, sim)
             return

@@ -36,11 +36,6 @@ fields:
     target: factions
     optional: true
 
-  associated_cultures:
-    type: entity_list
-    target: cultures
-    optional: true
-
   associated_institutions:
     type: entity_list
     target: institutions
@@ -65,25 +60,3 @@ fields:
   embedded_sites:
     type: string_list
     optional: true
-
-  related_vehicles:
-    type: string_list
-    optional: true
-
-# --------------------------------------------------
-# COMMENTED EXAMPLE ENTRY
-# --------------------------------------------------
-#
-# - id: city_example
-#   pretty_name: Example City
-#   name: Example City
-#   type: city
-#   location_entity: loc_example
-#   parent_location: planet_earth
-#   city_class: planned_city
-#   city_role:
-#     - administrative_center
-#   population:
-#     y2100: 500000
-#   start_year: 2090
-#   entry_status: stub

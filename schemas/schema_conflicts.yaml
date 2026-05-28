@@ -6,11 +6,6 @@ extends: entity_base
 
 fields:
 
-  conflict_type: string
-
-  participants:
-    type: entity_list
-
   locations:
     type: entity_list
 
@@ -21,6 +16,3 @@ fields:
   end_event:
     type: entity|null
     section: Temporal
-
-  outcome:
-    type: string

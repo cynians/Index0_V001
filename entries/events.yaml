@@ -70,3 +70,14 @@
   end_year: null
   derived_from: []
   media_layers: {}
+- id: evt_new_001
+  pretty_name: French Revolution
+  name: French Revolution
+  type: event
+  wiki_entry: ''
+  parents:
+  - geo_france
+  derived_from:
+  - idea_new_011
+  start_year: 1789
+  end_year: 1799

@@ -1,0 +1,15 @@
+schema: cladistics
+
+extends: entity_core
+
+fields:
+
+  common_name:
+    type: string
+
+  binomial_name:
+    type: string
+
+  species_class:
+    type: string
+    optional: true

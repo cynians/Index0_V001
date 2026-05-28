@@ -506,12 +506,20 @@ class UIManager:
                     canvas_w = root_entity.get("map_canvas_width_px")
                     canvas_h = root_entity.get("map_canvas_height_px")
                     map_status = root_entity.get("map_status")
+                    map_image_year = root_entity.get("map_image_year")
 
                     if canvas_w and canvas_h:
                         self.scope_label = f"Scope: {root_name} | Canvas: {canvas_w} x {canvas_h}"
 
                     if map_status:
                         existing_status_line = f"Status: {map_status}"
+                    if map_image_year not in (None, ""):
+                        image_status = f"Map image: {map_image_year}"
+                        existing_status_line = (
+                            f"{existing_status_line} | {image_status}"
+                            if existing_status_line
+                            else image_status
+                        )
 
             if hasattr(active_sim, "get_active_layer_label"):
                 layer_label = active_sim.get_active_layer_label()
@@ -553,6 +561,24 @@ class UIManager:
             self.buttons.append(
                 UIButton("open_repository", "Open Repository",
                          pygame.Rect(button_x, next_button_y, button_width, button_height))
+            )
+            next_button_y += 40
+
+            can_import_map_image = bool(
+                getattr(active_sim, "can_import_map_image", lambda: False)()
+            )
+            image_target_label = getattr(
+                active_sim,
+                "get_map_image_import_target_label",
+                lambda: "Map",
+            )()
+            image_button_label = f"Upload Map: {image_target_label}"
+            if len(image_button_label) > 24:
+                image_button_label = "Upload Map Image"
+            self.buttons.append(
+                UIButton("import_map_image", image_button_label,
+                         pygame.Rect(button_x, next_button_y, button_width, button_height),
+                         enabled=can_import_map_image)
             )
             next_button_y += 40
 
@@ -702,6 +728,11 @@ class UIManager:
             return
 
         if render_mode == "space":
+            if hasattr(active_sim, "get_scope_label"):
+                self.scope_label = f"Space: {active_sim.get_scope_label()}"
+            if hasattr(active_sim, "get_scope_breadcrumb"):
+                self.breadcrumb_label = active_sim.get_scope_breadcrumb()
+
             self.buttons.append(
                 UIButton("open_repository", "Open Repository",
                          pygame.Rect(button_x, button_y, button_width, button_height))
@@ -713,7 +744,8 @@ class UIManager:
                 body_name = selected_body_entity.get("name", selected_body_entity.get("id"))
                 body_class = selected_body_entity.get("body_class", "body")
                 self.scope_label = f"Selected: {body_name}"
-                self.breadcrumb_label = f"class: {body_class}"
+                scope_context = active_sim.get_scope_breadcrumb() if hasattr(active_sim, "get_scope_breadcrumb") else ""
+                self.breadcrumb_label = f"{scope_context} | class: {body_class}" if scope_context else f"class: {body_class}"
 
                 self.buttons.append(
                     UIButton("open_space_body_map", "Open Map",

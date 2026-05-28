@@ -79,3 +79,45 @@
   offspring: []
   placeholders: []
   entry_status: ''
+- id: idea_new_012
+  pretty_name: New Idea
+  name: Satellite Development Trough the Ages
+  type: idea
+  wiki_entry: ''
+  description: ''
+  notes: ''
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents: []
+  related: []
+  offspring: []
+  placeholders: []
+  entry_status: ''
+- id: idea_gallilean_moons
+  pretty_name: Gallilean Moons of Jupiter
+  name: Gallilean Moons
+  type: idea
+  wiki_entry: ''
+- id: idea_new_011
+  pretty_name: HumHab First Wave Fleets
+  name: HumHab First Wave Fleets
+  type: idea
+  wiki_entry: ''
+  parents:
+  - inst_ggo_humhab
+- id: idea_barycor_gold_sector
+  pretty_name: Barycor System as a Part of the Gold Sector
+  name: Barycor System as a Part of the Gold Sector
+  type: idea
+  wiki_entry: ''
+  parents:
+  - sys_barycor
+- id: idea_distrib_psittacoraptor_versa
+  pretty_name: Versatile Parrot Raptor Distribution
+  name: Idea from Versatile Parrot Raptor - Psittacoraptor versa
+  type: idea
+  wiki_entry: ''
+  parents:
+  - spec_psittacoraptor_versatilis

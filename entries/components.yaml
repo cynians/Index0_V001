@@ -1532,3 +1532,8 @@
   end_year: null
   derived_from: []
   media_layers: {}
+- id: comp_mult_range_gear
+  pretty_name: Multi Range Gearbox
+  name: Multi Range Gearbox
+  type: component
+  wiki_entry: ''

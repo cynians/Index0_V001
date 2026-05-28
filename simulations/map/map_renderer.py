@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pygame
 
 
@@ -8,6 +10,69 @@ class MapRenderer:
 
     def __init__(self, app_view):
         self.app_view = app_view
+        self._image_cache = {}
+        self._scaled_image_cache = {}
+
+    def _resolve_image_path(self, image_path):
+        if not image_path:
+            return None
+
+        path = Path(str(image_path))
+        if path.is_absolute():
+            return path
+
+        return Path(__file__).resolve().parents[2] / path
+
+    def _load_image_surface(self, image_path):
+        resolved_path = self._resolve_image_path(image_path)
+        if resolved_path is None:
+            return None
+
+        cache_key = str(resolved_path)
+        if cache_key in self._image_cache:
+            return self._image_cache[cache_key]
+
+        try:
+            surface = pygame.image.load(cache_key).convert_alpha()
+        except (OSError, pygame.error):
+            surface = None
+
+        self._image_cache[cache_key] = surface
+        return surface
+
+    def _draw_image_rect_layer(self, screen, layer, camera):
+        image_surface = self._load_image_surface(layer.get("image_path"))
+        if image_surface is None:
+            return
+
+        center = camera.world_to_screen((layer["x"], layer["y"]))
+        if center is None:
+            return
+
+        pixel_w = max(1, int(layer.get("width_world", 1) * camera.zoom))
+        pixel_h = max(1, int(layer.get("height_world", 1) * camera.zoom))
+        rect = pygame.Rect(
+            int(center[0] - pixel_w / 2),
+            int(center[1] - pixel_h / 2),
+            pixel_w,
+            pixel_h,
+        )
+
+        if (
+            rect.right < 0
+            or rect.left > self.app_view.width
+            or rect.bottom < 0
+            or rect.top > self.app_view.height
+        ):
+            return
+
+        cache_key = (str(layer.get("image_path")), rect.width, rect.height)
+        scaled = self._scaled_image_cache.get(cache_key)
+        if scaled is None:
+            scaled = pygame.transform.smoothscale(image_surface, (rect.width, rect.height))
+            self._scaled_image_cache[cache_key] = scaled
+
+        screen.blit(scaled, rect)
 
     def _draw_polygon_layer(self, screen, layer, camera, is_selected, is_hovered):
         screen_points = []
@@ -267,6 +332,11 @@ class MapRenderer:
             shape = layer.get("shape", "marker")
             entity_id = layer.get("entity_id")
             spatial_feature_id = layer.get("spatial_feature_id")
+
+            if shape == "image_rect":
+                self._draw_image_rect_layer(screen, layer, camera)
+                continue
+
             is_selected = (
                 (spatial_feature_id is not None and spatial_feature_id == selected_spatial_feature_id)
                 or (entity_id is not None and entity_id == selected_entity_id)

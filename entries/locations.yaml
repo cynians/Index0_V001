@@ -81,7 +81,7 @@
     max_y: -45
   population:
     y0: 180000000
-  start_year: 0
+  start_year: -350000000
   parents: []
   related: []
   placeholders: []
@@ -147,7 +147,7 @@
     y: -52.52
   population:
     y0: 3800000
-  start_year: 0
+  start_year: 1237
   parents: []
   related: []
   placeholders: []
@@ -163,7 +163,7 @@
   image_path: ''
   image: ''
   tags: []
-  end_year: null
+  end_year: 2356
   derived_from: []
   entry_status: ''
   media_layers: {}
@@ -181,7 +181,7 @@
     max_y: -44
   population:
     y0: 14000000
-  start_year: 0
+  start_year: -65000000
   parents: []
   related: []
   placeholders: []
@@ -1214,7 +1214,8 @@
     y0: 3300000
   start_year: 0
   entry_status: stub
-  parents: []
+  parents:
+  - geo_spain
   related: []
   placeholders: []
   offspring: []
@@ -1500,3 +1501,98 @@
     max_y: 1517.876
   start_year: 2400
   entry_status: draft
+- id: planet_equidorva
+  pretty_name: Equidorva
+  name: Equidorva
+  type: location
+  location_class: planet
+  location_role: planetary_root
+  coords:
+    type: point
+    x: 0
+    y: 0
+  bounds:
+    type: radius
+    value: 6371000
+  derived_from_system_body: body_equidorva
+  map_projection: equirectangular
+  map_status: empty_generated
+  map_canvas_width_px: 360
+  map_canvas_height_px: 180
+  population:
+    y0: 0
+  start_year: 0
+  parents:
+  - body_equidorva
+  related:
+  - sys_new_002
+  - body_equidorva_primary
+  placeholders: []
+  offspring: []
+  description: Empty planetary map root for Equidorva, ready for bottom-up
+    geography generation.
+  notes: Earthlike map frame derived from a 6,371 km radius, rendered as a 2:1
+    equirectangular surface.
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags:
+  - earthlike
+  - planetary_root
+  - habitable_zone
+  end_year: null
+  derived_from: []
+  entry_status: draft
+  media_layers: {}
+
+
+#----------planet_equidorva_lumen----Lumen-----------
+- id: planet_equidorva_lumen
+  pretty_name: Lumen
+  name: Lumen
+  type: location
+  location_class: planet
+  location_role: planetary_root
+  coords:
+    type: point
+    x: 0
+    y: 0
+  bounds:
+    type: bbox
+    min_x: -527
+    max_x: 527
+    min_y: -264
+    max_y: 264
+  derived_from_system_body: body_equidorva_lumen
+  map_projection: equirectangular
+  map_status: empty_generated
+  map_canvas_width_px: 2048
+  map_canvas_height_px: 1024
+  population:
+    y0: 0
+  start_year: 0
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from: []
+  parents:
+  - planet_equidorva
+  related: []
+  offspring: []
+  placeholders: []
+  entry_status: ''
+  media_layers: {}

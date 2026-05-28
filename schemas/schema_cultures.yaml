@@ -32,19 +32,3 @@ fields:
     type: entity_list
     target: institution
     optional: true
-
-  belief_systems:
-    type: string_list
-    optional: true
-
-  moral_values:
-    type: string_list
-    optional: true
-
-  taboos:
-    type: string_list
-    optional: true
-
-  mythology:
-    type: string_list
-    optional: true

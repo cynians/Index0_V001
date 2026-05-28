@@ -27,10 +27,8 @@
   - retreat_to_trees
   - avoid_open_ground
   - low_energy_patch_feeding
-  simulation_notes: Reusable behavior profile for mostly solitary tree-based foragers
-    that move cautiously, feed selectively, and prefer retreat into arboreal cover
-    when disturbed.
-  start_year: 0
+  simulation_notes: 'Reusable behavior profile for mostly solitary tree-based foragers that move cautiously, feed selectively, and prefer retreat into arboreal cover when disturbed.'
+  start_year: -305000000
   entry_status: draft
   parents: []
   related: []

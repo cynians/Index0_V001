@@ -4,6 +4,7 @@ import pygame
 
 from engine.scaler import ScaleHelper
 from ui.card_wiki import CardWikiRenderer
+from ui.text_editing import TextEditing
 from world.schema_loader import SchemaLoader
 
 
@@ -764,13 +765,13 @@ class EntityCard:
     def _clamp_edit_cursor(self, card):
         buffer_text = card.get("edit_buffer", "")
         cursor = int(card.get("edit_cursor", len(buffer_text)))
-        cursor = max(0, min(len(buffer_text), cursor))
+        cursor = TextEditing.clamp_cursor(buffer_text, cursor)
         card["edit_cursor"] = cursor
         return cursor
 
     def _set_edit_cursor(self, card, cursor):
         buffer_text = card.get("edit_buffer", "")
-        card["edit_cursor"] = max(0, min(len(buffer_text), int(cursor)))
+        card["edit_cursor"] = TextEditing.clamp_cursor(buffer_text, cursor)
 
     def _insert_edit_text(self, card, text):
         if not text:
@@ -778,80 +779,63 @@ class EntityCard:
 
         buffer_text = card.get("edit_buffer", "")
         cursor = self._clamp_edit_cursor(card)
-        card["edit_buffer"] = buffer_text[:cursor] + text + buffer_text[cursor:]
-        card["edit_cursor"] = cursor + len(text)
+        card["edit_buffer"], card["edit_cursor"] = TextEditing.insert_text(
+            buffer_text,
+            cursor,
+            text,
+        )
         return True
 
     def _delete_before_cursor(self, card):
         buffer_text = card.get("edit_buffer", "")
         cursor = self._clamp_edit_cursor(card)
-        if cursor <= 0:
-            return True
-        card["edit_buffer"] = buffer_text[:cursor - 1] + buffer_text[cursor:]
-        card["edit_cursor"] = cursor - 1
+        card["edit_buffer"], card["edit_cursor"] = TextEditing.delete_before_cursor(
+            buffer_text,
+            cursor,
+        )
         return True
 
     def _delete_after_cursor(self, card):
         buffer_text = card.get("edit_buffer", "")
         cursor = self._clamp_edit_cursor(card)
-        if cursor >= len(buffer_text):
-            return True
-        card["edit_buffer"] = buffer_text[:cursor] + buffer_text[cursor + 1:]
-        card["edit_cursor"] = cursor
+        card["edit_buffer"], card["edit_cursor"] = TextEditing.delete_after_cursor(
+            buffer_text,
+            cursor,
+        )
         return True
 
     def _word_start_before_cursor(self, buffer_text, cursor):
-        cursor = max(0, min(len(buffer_text), int(cursor)))
-        index = cursor
-        while index > 0 and buffer_text[index - 1].isspace():
-            index -= 1
-        while index > 0 and (buffer_text[index - 1].isalnum() or buffer_text[index - 1] in {"_", "-"}):
-            index -= 1
-        return index
+        return TextEditing.word_start_before_cursor(buffer_text, cursor)
 
     def _word_end_after_cursor(self, buffer_text, cursor):
-        cursor = max(0, min(len(buffer_text), int(cursor)))
-        index = cursor
-        while index < len(buffer_text) and buffer_text[index].isspace():
-            index += 1
-        while index < len(buffer_text) and (buffer_text[index].isalnum() or buffer_text[index] in {"_", "-"}):
-            index += 1
-        return index
+        return TextEditing.word_end_after_cursor(buffer_text, cursor)
 
     def _delete_word_before_cursor(self, card):
         buffer_text = card.get("edit_buffer", "")
         cursor = self._clamp_edit_cursor(card)
-        start = self._word_start_before_cursor(buffer_text, cursor)
-        card["edit_buffer"] = buffer_text[:start] + buffer_text[cursor:]
-        card["edit_cursor"] = start
+        card["edit_buffer"], card["edit_cursor"] = TextEditing.delete_word_before_cursor(
+            buffer_text,
+            cursor,
+        )
         return True
 
     def _delete_word_after_cursor(self, card):
         buffer_text = card.get("edit_buffer", "")
         cursor = self._clamp_edit_cursor(card)
-        end = self._word_end_after_cursor(buffer_text, cursor)
-        card["edit_buffer"] = buffer_text[:cursor] + buffer_text[end:]
-        card["edit_cursor"] = cursor
+        card["edit_buffer"], card["edit_cursor"] = TextEditing.delete_word_after_cursor(
+            buffer_text,
+            cursor,
+        )
         return True
 
     def _line_start_before_cursor(self, buffer_text, cursor):
-        cursor = max(0, min(len(buffer_text), int(cursor)))
-        return buffer_text.rfind("\n", 0, cursor) + 1
+        return TextEditing.line_start_before_cursor(buffer_text, cursor)
 
     def _line_end_after_cursor(self, buffer_text, cursor):
-        cursor = max(0, min(len(buffer_text), int(cursor)))
-        line_end = buffer_text.find("\n", cursor)
-        return len(buffer_text) if line_end == -1 else line_end
+        return TextEditing.line_end_after_cursor(buffer_text, cursor)
 
     def _parse_edit_lines(self, buffer_text):
-        lines = []
-        for raw_line in str(buffer_text or "").splitlines():
-            stripped = raw_line.strip()
-            if stripped.startswith("-"):
-                stripped = stripped[1:].strip()
-            if stripped:
-                lines.append(stripped)
-        return lines
+        return TextEditing.parse_lines(buffer_text)
 
     def _coerce_edit_buffer(self, field_key, original_value, buffer_text):
         text = str(buffer_text or "")
@@ -968,6 +952,8 @@ class EntityCard:
         original_value = card.get("edit_original_value", self.entity.get(field_key))
         new_value = self._coerce_edit_buffer(field_key, original_value, card.get("edit_buffer", ""))
         self.entity[field_key] = new_value
+        if field_key == "name" and not self._is_species_card():
+            self.entity["pretty_name"] = new_value
         if field_key == "id":
             card["pending_entity_id_change"] = {
                 "old": str(original_value or ""),

@@ -6,7 +6,7 @@ class SpaceSimulation:
     hardcoding Sun / Earth / Moon directly in the simulation.
     """
 
-    def __init__(self, world_model=None, root_system_id="system_sol", year=2400):
+    def __init__(self, world_model=None, root_system_id="system_sol", year=2400, root_body_id=None):
         from engine.clock import Clock
         from simulations.space.system import CelestialSystem
         from engine.simulation_manager import SimulationManager
@@ -16,6 +16,7 @@ class SpaceSimulation:
 
         self.year = year
         self.root_system_id = root_system_id
+        self.root_body_id = root_body_id
 
         self.world_model = world_model if world_model is not None else WorldModel()
 
@@ -26,6 +27,10 @@ class SpaceSimulation:
         self.min_zoom = 1e-13
         self.max_zoom = 1e-6
         self.preferred_zoom = 1.0e-10
+        if self.root_body_id is not None:
+            self.min_zoom = 1e-10
+            self.max_zoom = 2e-5
+            self.preferred_zoom = 2.0e-9
 
         self.selected_space_object = None
         self.selected_system_entity_id = None
@@ -36,11 +41,25 @@ class SpaceSimulation:
         self.system.populate_from_world_model(
             world_model=self.world_model,
             year=self.year,
-            root_system_id=self.root_system_id
+            root_system_id=self.root_system_id,
+            root_body_id=self.root_body_id,
         )
 
     def get_center(self):
         return 0.0, 0.0
+
+    def get_scope_label(self):
+        if self.root_body_id is None:
+            root = self.world_model.get_entity(self.root_system_id)
+            return root.get("name", self.root_system_id) if root else self.root_system_id
+
+        body = self.world_model.get_entity(self.root_body_id)
+        return body.get("name", self.root_body_id) if body else self.root_body_id
+
+    def get_scope_breadcrumb(self):
+        if self.root_body_id is None:
+            return "Full star system"
+        return "Local planetary space"
 
     def update(self, dt):
         self.sim_manager.update(dt)

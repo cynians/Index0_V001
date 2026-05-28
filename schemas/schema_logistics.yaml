@@ -4,15 +4,6 @@ extends: entity_core
 
 fields:
 
-  logistics_class:
-    type: string
-    optional: true
-
-  operated_by:
-    type: entity_list
-    target: faction
-    optional: true
-
   associated_locations:
     type: entity_list
     target: locations

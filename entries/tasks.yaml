@@ -1,0 +1,103 @@
+- id: Satellite Implementation
+  pretty_name: Satelittes in Space Sim
+  name: Implement Sattelites into Space Simulation
+  type: task
+  wiki_entry: ''
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents: []
+  related: []
+  offspring: []
+  placeholders: []
+  entry_status: ''
+  media_layers: {}
+- id: task_new_001
+  pretty_name: Timeline T Button Edit Selection Update
+  name: Timeline T Button Edit Selection Update
+  type: task
+  wiki_entry: ''
+- id: task_new_002
+  pretty_name: New Task Button Upper Right
+  name: New Task
+  type: task
+  wiki_entry: ''
+- id: task_new_004
+  pretty_name: Merge System and Locations in one System
+  name: Merge System and Locations in one System
+  type: task
+  wiki_entry: ''
+- id: task_new_005
+  pretty_name: 'Temp Edit: Can enter 650MYA instead of raw number'
+  name: ''
+  type: task
+  wiki_entry: ''
+- id: task_new_006
+  pretty_name: Make filling out Name field also automatically fill out Pretty_Name
+  name: New Task
+  type: task
+  wiki_entry: ''
+- id: task_new_007
+  pretty_name: Add temporal anchor 882
+  name: Add temporal anchor 882
+  type: task
+  wiki_entry: ''
+  entry_status: incomplete
+  notes: Randomly generated task placeholder.
+  tags:
+  - random_task
+- id: task_new_008
+  pretty_name: Write a missing wiki note 195
+  name: Write a missing wiki note 195
+  type: task
+  wiki_entry: ''
+  entry_status: incomplete
+  notes: Randomly generated task placeholder.
+  tags:
+  - random_task
+- id: task_new_009
+  pretty_name: Connect related entries 841
+  name: Connect related entries 841
+  type: task
+  wiki_entry: ''
+  entry_status: incomplete
+  notes: Randomly generated task placeholder.
+  tags:
+  - random_task
+- id: task_new_010
+  pretty_name: Add temporal anchor 175
+  name: Add temporal anchor 175
+  type: task
+  wiki_entry: ''
+  entry_status: incomplete
+  notes: Randomly generated task placeholder.
+  tags:
+  - random_task
+- id: task_new_011
+  pretty_name: Clean up draft fields 369
+  name: Clean up draft fields 369
+  type: task
+  wiki_entry: ''
+  entry_status: incomplete
+  notes: Randomly generated task placeholder.
+  tags:
+  - random_task
+- id: task_new_012
+  pretty_name: Clean up draft fields 587
+  name: Clean up draft fields 587
+  type: task
+  wiki_entry: ''
+  entry_status: incomplete
+  notes: Randomly generated task placeholder.
+  tags:
+  - random_task

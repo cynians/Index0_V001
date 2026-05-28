@@ -86,30 +86,21 @@
   pretty_name: Sicily Draft Ecoregion
   name: Sicily Draft Ecoregion
   type: spatial_feature
-  notes: Draft planning polygon for a future Sicilian ecoregion entity. Parent remains
-    Italy until a dedicated Sicily location exists.
+  notes: Draft planning polygon for a future Sicilian ecoregion entity. Parent remains Italy until a dedicated Sicily location exists.
   layer_kind: ecoregions
   parent_entity: geo_italy
   geometry:
     type: polygon
     coordinate_space: map_world
-    points:
-    - - 12.0
-      - -36.7
-    - - 15.5
-      - -36.8
-    - - 15.4
-      - -38.1
-    - - 13.5
-      - -38.4
-    - - 12.4
-      - -37.6
+    points: '[[12.0, -36.7], [15.5, -36.8], [15.4, -38.1], [13.5, -38.4], [12.4, -37.6]]'
   resolution_m_per_pixel: 100
   coverage_mode: replaces_parent
   start_year: 0
   entry_status: draft
-  parents: []
-  related: []
+  parents:
+  - geo_italy
+  related:
+  - geo_italy
   placeholders: []
   offspring: []
   description: ''

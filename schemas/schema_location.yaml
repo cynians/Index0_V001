@@ -64,11 +64,19 @@ fields:
     type: number
     optional: true
 
-  environment_summary:
-    type: dict
+  map_image_path:
+    type: string
     optional: true
 
-  atmosphere_summary:
+  map_image_year:
+    type: number
+    optional: true
+
+  map_image_fit:
+    type: string
+    optional: true
+
+  environment_summary:
     type: dict
     optional: true
 

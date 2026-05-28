@@ -128,3 +128,8 @@
   image: ''
   derived_from: []
   media_layers: {}
+- id: inst_ggo_humhab
+  pretty_name: Human Habitat Project Group
+  name: Human Habitat Project Group
+  type: institution
+  wiki_entry: ''

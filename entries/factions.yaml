@@ -1,10 +1,8 @@
 - id: faction_terran_bdp
-  pretty_name: Terran BDP
+  pretty_name: Terran Biome Diversity Project
   name: Terran BDP
   type: faction
-  description: Terran bioengineering organization active during the Planetary Period
-    and associated with the design, release, and directed ecological shaping of engineered
-    organisms.
+  description: 'Terran bioengineering organization active during the Planetary Period and associated with the design, release, and directed ecological shaping of engineered organisms.'
   faction_class: bioengineering_program
   parent_faction: null
   associated_cultures: []
@@ -15,7 +13,7 @@
   - terran
   - bioengineering
   - planetary_period
-  start_year: 0
+  start_year: 3634
   entry_status: draft
   parents: []
   related: []
@@ -30,7 +28,7 @@
   card_image_top: ''
   image_path: ''
   image: ''
-  end_year: null
+  end_year: 17106
   derived_from: []
   media_layers: {}
 - id: gang_cog_breach_route_crew
@@ -92,3 +90,11 @@
   placeholders: []
   entry_status: ''
   media_layers: {}
+- id: fac_geigengeist
+  pretty_name: Geigengeist Group
+  name: Geigengeist Group
+  type: faction
+  wiki_entry: |
+    The Geigengeist Group was a faction present on [[planet_enceladus]] in post GGO Sol.
+  start_year: 8435
+  end_year: 8694

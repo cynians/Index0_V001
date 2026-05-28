@@ -99,6 +99,7 @@ class KnowledgeBrowserUI:
         self.repository_scope_label = None
         self.header_button = None
         self.random_entry_button = None
+        self.random_task_button = None
         self.new_entry_button = None
         self.template_picker_rect = None
         self.template_button_hitboxes = []
@@ -112,6 +113,8 @@ class KnowledgeBrowserUI:
         self.browser_filter_incomplete_only = False
         self.relation_link_target = None
         self.relation_link_status = ""
+        self.canvas_relation_link_source_id = None
+        self.canvas_relation_status = ""
 
         self.canvas_offset_x = 0
         self.canvas_offset_y = 0
@@ -170,6 +173,7 @@ class KnowledgeBrowserUI:
         self.repository_scope_label = None
         self.header_button = None
         self.random_entry_button = None
+        self.random_task_button = None
         self.new_entry_button = None
         self.template_picker_rect = None
         self.template_button_hitboxes = []
@@ -571,6 +575,7 @@ class KnowledgeBrowserUI:
         if self.layout is None:
             self.header_button = None
             self.random_entry_button = None
+            self.random_task_button = None
             self.new_entry_button = None
             return
 
@@ -585,10 +590,18 @@ class KnowledgeBrowserUI:
 
         right_rect = self.layout["right_rect"]
         button_y = right_rect.y + 8
+        button_gap = 8
         self.random_entry_button = UIButton(
             button_id="knowledge_random_entry",
             label="Random Entry",
-            rect=pygame.Rect(right_rect.right - 232, button_y, 104, 28),
+            rect=pygame.Rect(right_rect.right - 350, button_y, 104, 28),
+            visible=True,
+            enabled=True,
+        )
+        self.random_task_button = UIButton(
+            button_id="knowledge_random_task",
+            label="Random Task",
+            rect=pygame.Rect(self.random_entry_button.rect.right + button_gap, button_y, 106, 28),
             visible=True,
             enabled=True,
         )
@@ -1560,11 +1573,38 @@ class KnowledgeBrowserUI:
 
         self.canvas_content_width = max(0, max_right + 24)
         self.canvas_content_height = max(0, max_bottom + 24)
+        self._layout_canvas_relation_controls()
 
     def _clamp_canvas_offsets(self):
         # The card canvas is intentionally unbounded. Offsets are allowed to
         # move freely so cards dragged into negative space remain recoverable by panning.
         return
+
+    def _card_accepts_canvas_relation(self, card):
+        return (
+            isinstance(card, dict)
+            and card.get("card_kind") != "schema"
+            and bool(card.get("is_edit_mode", False))
+            and bool(card.get("entity_id"))
+        )
+
+    def _layout_canvas_relation_controls(self):
+        for card in self.cards:
+            card["canvas_relation_add_rect"] = None
+            if not self._card_accepts_canvas_relation(card):
+                continue
+
+            rect = card.get("rect")
+            if rect is None:
+                continue
+
+            size = 28
+            card["canvas_relation_add_rect"] = pygame.Rect(
+                rect.right - size - 6,
+                rect.centery - size // 2,
+                size,
+                size,
+            )
 
     def _relayout_cards(self):
         self._layout_all_cards()
@@ -1647,6 +1687,10 @@ class KnowledgeBrowserUI:
             self.relation_link_target = None
             self.relation_link_status = ""
 
+        if self.canvas_relation_link_source_id == closing_entity_id:
+            self.canvas_relation_link_source_id = None
+            self.canvas_relation_status = ""
+
         self._clear_timeline_edit_target()
         self._close_wiki_link_picker(closing_card)
         self._close_relation_picker(closing_card)
@@ -1689,6 +1733,39 @@ class KnowledgeBrowserUI:
         entity = self._random_entity()
         if entity is None:
             return False
+        self._ensure_card(entity)
+        return True
+
+    def _random_task_entity(self):
+        if self.world_model is None:
+            return None
+
+        tasks = [
+            entity
+            for entity in self.world_model.get_entities_by_dataset("tasks")
+            if isinstance(entity, dict) and entity.get("id")
+        ]
+        if not tasks:
+            tasks = [
+                entity
+                for entity in self.world_model.loader.entities.values()
+                if isinstance(entity, dict)
+                and entity.get("id")
+                and (entity.get("_dataset") == "tasks" or entity.get("type") == "task")
+            ]
+        if not tasks:
+            return None
+
+        return random.choice(tasks)
+
+    def _create_random_task_card(self):
+        if self.world_model is None:
+            return False
+
+        entity = self._random_task_entity()
+        if entity is None:
+            return False
+
         self._ensure_card(entity)
         return True
 
@@ -3026,6 +3103,128 @@ class KnowledgeBrowserUI:
         finally:
             screen.set_clip(previous_clip)
 
+    def _graph_relation_entity_ids_for_card(self, card):
+        entity = self._entity_for_card(card)
+        if not isinstance(entity, dict):
+            return []
+
+        values = []
+        for field_key in ("parents", "related"):
+            field_value = entity.get(field_key)
+            if isinstance(field_value, list):
+                values.extend(field_value)
+            elif field_value not in (None, ""):
+                values.append(field_value)
+
+        seen = set()
+        entity_ids = []
+        for value in values:
+            entity_id = str(value).strip()
+            if entity_id and entity_id not in seen:
+                seen.add(entity_id)
+                entity_ids.append(entity_id)
+        return entity_ids
+
+    def _rect_edge_point_toward(self, rect, target_point):
+        center_x, center_y = rect.center
+        dx = target_point[0] - center_x
+        dy = target_point[1] - center_y
+        if dx == 0 and dy == 0:
+            return rect.center
+
+        x_scale = (rect.width / 2) / abs(dx) if dx else 999999
+        y_scale = (rect.height / 2) / abs(dy) if dy else 999999
+        scale = min(x_scale, y_scale)
+        return (int(center_x + dx * scale), int(center_y + dy * scale))
+
+    def _draw_canvas_graph_line(self, screen, source_rect, target_rect, color):
+        start = self._rect_edge_point_toward(source_rect, target_rect.center)
+        end = self._rect_edge_point_toward(target_rect, source_rect.center)
+        pygame.draw.line(screen, (12, 16, 24), start, end, 6)
+        pygame.draw.line(screen, color, start, end, 3)
+        pygame.draw.circle(screen, (12, 16, 24), start, 6)
+        pygame.draw.circle(screen, color, start, 4)
+        pygame.draw.circle(screen, (12, 16, 24), end, 6)
+        pygame.draw.circle(screen, color, end, 4)
+
+    def _draw_canvas_relation_lines(self, screen, right_rect):
+        if len(self.cards) < 2:
+            return
+
+        cards_by_id = {
+            card.get("entity_id"): card
+            for card in self.cards
+            if card.get("entity_id") and card.get("card_kind") != "schema" and card.get("rect") is not None
+        }
+        if len(cards_by_id) < 2:
+            return
+
+        previous_clip = screen.get_clip()
+        screen.set_clip(previous_clip.clip(right_rect))
+        try:
+            drawn_edges = set()
+            for source_card in self.cards:
+                source_id = source_card.get("entity_id")
+                source_rect = source_card.get("rect")
+                if source_id not in cards_by_id or source_rect is None:
+                    continue
+
+                for target_id in self._graph_relation_entity_ids_for_card(source_card):
+                    target_card = cards_by_id.get(target_id)
+                    if target_card is None or target_id == source_id:
+                        continue
+
+                    target_rect = target_card.get("rect")
+                    edge_key = tuple(sorted((str(source_id), str(target_id))))
+                    if target_rect is None or edge_key in drawn_edges:
+                        continue
+                    drawn_edges.add(edge_key)
+
+                    self._draw_canvas_graph_line(screen, source_rect, target_rect, (232, 190, 92))
+
+            if self.canvas_relation_link_source_id is not None:
+                source_card = self._find_card_by_entity_id(self.canvas_relation_link_source_id)
+                source_rect = source_card.get("rect") if source_card is not None else None
+                if source_rect is not None:
+                    start = self._rect_edge_point_toward(source_rect, pygame.mouse.get_pos())
+                    pygame.draw.line(screen, (12, 16, 24), start, pygame.mouse.get_pos(), 4)
+                    pygame.draw.line(screen, (238, 214, 128), start, pygame.mouse.get_pos(), 2)
+        finally:
+            screen.set_clip(previous_clip)
+
+    def _draw_canvas_relation_controls(self, screen, font, right_rect):
+        previous_clip = screen.get_clip()
+        screen.set_clip(previous_clip.clip(right_rect))
+        try:
+            if self.canvas_relation_link_source_id is not None:
+                for card in self.cards:
+                    rect = card.get("rect")
+                    entity_id = card.get("entity_id")
+                    if (
+                        rect is None
+                        or card.get("card_kind") == "schema"
+                        or entity_id == self.canvas_relation_link_source_id
+                    ):
+                        continue
+                    pygame.draw.rect(screen, (232, 190, 92), rect.inflate(8, 8), 2)
+
+            for card in self.cards:
+                button_rect = card.get("canvas_relation_add_rect")
+                if button_rect is None:
+                    continue
+
+                is_active = card.get("entity_id") == self.canvas_relation_link_source_id
+                hovered = button_rect.collidepoint(pygame.mouse.get_pos())
+                fill = (104, 88, 36) if is_active else ((62, 78, 104) if hovered else (42, 50, 68))
+                border = (238, 210, 130) if is_active else ((174, 204, 238) if hovered else (112, 132, 162))
+                pygame.draw.ellipse(screen, fill, button_rect)
+                pygame.draw.ellipse(screen, border, button_rect, 1)
+                plus_surface = font.render("+", True, (245, 245, 245))
+                plus_rect = plus_surface.get_rect(center=button_rect.center)
+                screen.blit(plus_surface, plus_rect)
+        finally:
+            screen.set_clip(previous_clip)
+
     def _draw_card_type_picker(self, screen, font, card):
         if not card.get("type_picker_open", False):
             card["type_picker_hitboxes"] = []
@@ -3072,6 +3271,11 @@ class KnowledgeBrowserUI:
             row_y += self.CARD_TYPE_PICKER_ROW_H
 
     def _handle_keydown_event(self, event):
+        if self.canvas_relation_link_source_id is not None and event.key == pygame.K_ESCAPE:
+            self._clear_canvas_relation_link()
+            self._relayout_cards()
+            return "__ui_consumed__"
+
         if self.relation_link_target is not None:
             if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 self._finish_relation_browser_link()
@@ -3358,7 +3562,7 @@ class KnowledgeBrowserUI:
         if not isinstance(entity, dict) or not field_key or not entity_id or card_view is None:
             return False
 
-        allows_many = (
+        allows_many = field_key in EntityCard.CORE_RELATION_FIELDS or (
             card_view._relation_field_allows_many(field_key)
             if hasattr(card_view, "_relation_field_allows_many")
             else isinstance(entity.get(field_key), list)
@@ -3392,7 +3596,7 @@ class KnowledgeBrowserUI:
         if not isinstance(entity, dict) or not field_key or not entity_id or card_view is None:
             return False
 
-        allows_many = (
+        allows_many = field_key in EntityCard.CORE_RELATION_FIELDS or (
             card_view._relation_field_allows_many(field_key)
             if hasattr(card_view, "_relation_field_allows_many")
             else isinstance(entity.get(field_key), list)
@@ -3427,6 +3631,74 @@ class KnowledgeBrowserUI:
             if card.get("entity_id") == entity_id:
                 return card
         return None
+
+    def _begin_canvas_relation_link(self, card):
+        if card is None or card.get("card_kind") == "schema" or not card.get("entity_id"):
+            return False
+
+        if not card.get("is_edit_mode", False):
+            return False
+
+        self.canvas_relation_link_source_id = card.get("entity_id")
+        entity = self._entity_for_card(card)
+        label = (
+            self._entity_display_label(entity, fallback=card.get("entity_id", "entry"))
+            if isinstance(entity, dict)
+            else str(card.get("entity_id") or "entry")
+        )
+        self.canvas_relation_status = f"Linking from {label}: click a second card"
+        self._close_wiki_link_picker(card)
+        self._close_relation_picker(card)
+        self._relayout_cards()
+        return True
+
+    def _clear_canvas_relation_link(self):
+        self.canvas_relation_link_source_id = None
+        self.canvas_relation_status = ""
+
+    def _link_canvas_relation_cards(self, target_card):
+        source_card = self._find_card_by_entity_id(self.canvas_relation_link_source_id)
+        target_id = target_card.get("entity_id") if isinstance(target_card, dict) else None
+        if source_card is None or not target_id:
+            self._clear_canvas_relation_link()
+            return False
+
+        if target_id == source_card.get("entity_id") or target_card.get("card_kind") == "schema":
+            self._clear_canvas_relation_link()
+            self._relayout_cards()
+            return False
+
+        linked_related = self._insert_relation_reference_into_card(source_card, "related", target_id)
+        linked_parent = self._insert_relation_reference_into_card(source_card, "parents", target_id)
+        linked = linked_related or linked_parent
+        if linked:
+            self._clear_canvas_relation_link()
+            self.browser_items = self._build_browser_items(self.world_model)
+            self._rebuild_browser_hitboxes()
+            self._relayout_cards()
+            return True
+
+        self.canvas_relation_status = "Could not link those entries"
+        self._relayout_cards()
+        return False
+
+    def _handle_canvas_relation_target_click(self, mouse_pos):
+        if self.canvas_relation_link_source_id is None:
+            return None
+
+        for index in range(len(self.cards) - 1, -1, -1):
+            card = self.cards[index]
+            card_rect = card.get("rect")
+            if card_rect is None or not card_rect.collidepoint(mouse_pos):
+                continue
+
+            card_obj = self._bring_card_to_front(index)
+            self._link_canvas_relation_cards(card_obj)
+            return "__ui_consumed__"
+
+        self._clear_canvas_relation_link()
+        self._relayout_cards()
+        return "__ui_consumed__"
 
     def _clear_relation_browser_link(self):
         target = self.relation_link_target or {}
@@ -3636,6 +3908,14 @@ class KnowledgeBrowserUI:
 
         for index in range(len(self.cards) - 1, -1, -1):
             card = self.cards[index]
+            relation_add_rect = card.get("canvas_relation_add_rect")
+            if relation_add_rect is not None and relation_add_rect.collidepoint(mouse_pos):
+                card_obj = self._bring_card_to_front(index)
+                if self._begin_canvas_relation_link(card_obj):
+                    return "__ui_consumed__"
+
+        for index in range(len(self.cards) - 1, -1, -1):
+            card = self.cards[index]
             card_view = card.get("card_view")
 
             close_rect = card.get("close_rect")
@@ -3697,6 +3977,8 @@ class KnowledgeBrowserUI:
                     self._save_card_draft(card_obj)
                 card_obj["card_view"].toggle_edit_mode(card_obj)
                 if not card_obj.get("is_edit_mode", False):
+                    if self.canvas_relation_link_source_id == card_obj.get("entity_id"):
+                        self._clear_canvas_relation_link()
                     self._clear_timeline_edit_target()
                     self._close_wiki_link_picker(card_obj)
                     self._close_relation_picker(card_obj)
@@ -3934,6 +4216,13 @@ class KnowledgeBrowserUI:
             screen.blit(link_surface, (banner_rect.x + 6, banner_rect.y + 3))
         zoom_label = font.render(f"{int(self.canvas_zoom * 100)}%", True, (170, 180, 200))
         screen.blit(zoom_label, (right_rect.x + 118, right_rect.y + 10))
+        if self.canvas_relation_link_source_id is not None:
+            status_text = self.canvas_relation_status or "Click a second card to relate entries"
+            status_surface = font.render(status_text, True, (230, 210, 150))
+            max_status_w = max(40, right_rect.width - 260)
+            if status_surface.get_width() > max_status_w:
+                status_surface = font.render("Click a second card to relate entries", True, (230, 210, 150))
+            screen.blit(status_surface, (right_rect.x + 170, right_rect.y + 10))
 
         if self.browser_search_rect is not None:
             search_fill = (38, 44, 58) if self.browser_search_active else (28, 32, 42)
@@ -3963,6 +4252,8 @@ class KnowledgeBrowserUI:
 
         if self.random_entry_button is not None:
             draw_button_fn(screen, font, self.random_entry_button)
+        if self.random_task_button is not None:
+            draw_button_fn(screen, font, self.random_task_button)
         if self.new_entry_button is not None:
             draw_button_fn(screen, font, self.new_entry_button)
 
@@ -4091,6 +4382,8 @@ class KnowledgeBrowserUI:
         for card in self.cards:
             self._draw_card(screen, font, card)
         screen.set_clip(previous_clip)
+        self._draw_canvas_relation_lines(screen, right_rect)
+        self._draw_canvas_relation_controls(screen, font, right_rect)
         self._draw_template_picker(screen, font)
 
     def handle_event(self, event):
@@ -4119,6 +4412,9 @@ class KnowledgeBrowserUI:
 
         mouse_pos = event.pos
 
+        if self.canvas_relation_link_source_id is not None and right_rect.collidepoint(mouse_pos):
+            return self._handle_canvas_relation_target_click(mouse_pos)
+
         if self.relation_link_target is not None:
             if not left_rect.collidepoint(mouse_pos):
                 self._finish_relation_browser_link()
@@ -4144,6 +4440,10 @@ class KnowledgeBrowserUI:
 
         if self.random_entry_button is not None and self.random_entry_button.rect.collidepoint(mouse_pos):
             self._create_random_entry_card()
+            return "__ui_consumed__"
+
+        if self.random_task_button is not None and self.random_task_button.rect.collidepoint(mouse_pos):
+            self._create_random_task_card()
             return "__ui_consumed__"
 
         if self.new_entry_button is not None and self.new_entry_button.rect.collidepoint(mouse_pos):

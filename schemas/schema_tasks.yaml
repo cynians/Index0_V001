@@ -1,0 +1,18 @@
+schema: task
+
+extends: entity_core
+
+fields: {}
+
+# --------------------------------------------------
+# COMMENTED EXAMPLE ENTRY
+# --------------------------------------------------
+#
+# - id: task_001
+#   pretty_name: System A Expansion
+#   name: Expand System A to Incluide
+#   type: task
+#   wiki_entry:
+#   parents: []
+#   offspring: []
+#   entry_status: incomplete
