@@ -214,6 +214,12 @@ class WorldModel:
         return self.loader.get(entity_id)
 
     def get_dataset(self, dataset_name):
+        if dataset_name == "systems":
+            return [
+                entity
+                for entity in self.loader.get_dataset("locations")
+                if entity.get("system_role")
+            ]
         return self.loader.get_dataset(dataset_name)
 
     def get_dataset_names(self):

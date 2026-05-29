@@ -36,19 +36,29 @@ class NavigationController:
         self.app.camera_controller.setup_for_sim(active_sim)
         return True
 
-    def launch_space_root_tab(self):
+    def launch_space_root_tab(self, root_system_id="system_sol"):
         """
         Open or focus the root space simulation tab.
         """
-        tab_key = ("space", "root")
+        tab_key = ("space", root_system_id)
 
         if self.focus_existing_tab_by_key(tab_key):
             self.app.knowledge_layer_active = False
             return
 
+        root_system_entity = self.app.world_model.get_entity(root_system_id)
+        root_system_name = (
+            root_system_entity.get("name", root_system_id)
+            if root_system_entity
+            else root_system_id
+        )
+
         new_tab = Tab(
-            SimulationInstance(SpaceSimulation(world_model=self.app.world_model)),
-            name="System: Sol",
+            SimulationInstance(SpaceSimulation(
+                world_model=self.app.world_model,
+                root_system_id=root_system_id,
+            )),
+            name=f"System: {root_system_name}",
             tab_key=tab_key
         )
 
@@ -279,6 +289,54 @@ class NavigationController:
 
         self.open_region_map_tab(parent_entity_id)
 
+    def open_location_parent_placement_tab(self, location_entity_id):
+        if not location_entity_id:
+            return False
+
+        location = self.app.world_model.get_entity(location_entity_id)
+        if not location or location.get("_dataset") != "locations":
+            return False
+
+        parent_entity_id = location.get("parent_location")
+        if not parent_entity_id:
+            return False
+
+        parent_entity = self.app.world_model.get_entity(parent_entity_id)
+        if not parent_entity:
+            return False
+
+        from world.simulation_context import SimulationContext
+
+        active_sim = self.app.get_active_simulation()
+        year = getattr(active_sim, "year", 2400) if active_sim is not None else 2400
+
+        context = SimulationContext(
+            year=year,
+            root_entity_id=parent_entity_id,
+            world_model=self.app.world_model,
+        )
+        new_map_sim = MapSimulation(context)
+        if not new_map_sim.begin_location_parent_polygon_placement(
+            location_entity_id,
+            return_to_repository=True,
+        ):
+            return False
+
+        tab_key = ("map_place_parent", location_entity_id)
+        placement_name = location.get("name", location_entity_id)
+        parent_name = parent_entity.get("name", parent_entity_id)
+        new_tab = Tab(
+            SimulationInstance(new_map_sim),
+            name=f"Place: {placement_name} on {parent_name}",
+            tab_key=tab_key,
+        )
+
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+        self.app.camera_controller.setup_for_sim(new_map_sim)
+        return True
+
     def open_map_for_selected_space_body(self, space_sim):
         """
         Ensure a map anchor exists for the selected space body and open it.
@@ -450,6 +508,22 @@ class NavigationController:
             dataset_name = entity.get("_dataset")
 
             if dataset_name == "locations":
+                system_role = entity.get("system_role")
+
+                if system_role == "star_system":
+                    self.launch_space_root_tab(entity_id)
+                    return True
+
+                if system_role == "orbital_body":
+                    body_class = entity.get("body_class") or entity.get("location_class")
+                    if body_class == "planet":
+                        return self.launch_planet_space_tab(entity_id)
+
+                    location_entity_id = entity.get("location_entity") or entity_id
+                    if location_entity_id:
+                        self.open_region_map_tab(location_entity_id)
+                        return True
+
                 self.open_region_map_tab(entity_id)
                 return True
 
@@ -483,6 +557,9 @@ class NavigationController:
                     return True
 
             return False
+
+        if action_id == "knowledge_place_location_on_parent":
+            return self.open_location_parent_placement_tab(action.get("entity_id"))
 
         return False
 
@@ -570,7 +647,23 @@ class NavigationController:
             return bool(getattr(active_sim, "begin_map_square_draft", lambda: False)())
 
         if action_id == "finish_map_selection" and active_sim is not None:
-            return bool(getattr(active_sim, "finish_map_editor", lambda: False)())
+            finished = bool(getattr(active_sim, "finish_map_editor", lambda: False)())
+            if not finished:
+                return False
+
+            return_entity_id = getattr(
+                active_sim,
+                "consume_repository_return_entity_id",
+                lambda: None,
+            )()
+            if return_entity_id:
+                if hasattr(self.app.world_model, "refresh"):
+                    self.app.world_model.refresh()
+                self.app.repository_scope_entity_id = return_entity_id
+                self.app.knowledge_layer_active = True
+                return True
+
+            return True
 
         if action_id == "cancel_map_selection" and active_sim is not None:
             return bool(getattr(active_sim, "cancel_map_editor", lambda: False)())

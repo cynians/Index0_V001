@@ -140,7 +140,7 @@ class KnowledgeBrowserUI:
         self.card_resize_edges = None
 
         self.browser_tree_state = {
-            "systems": {
+            "locations": {
                 "system_sol": True,
                 "body_sol": True,
             }
@@ -1020,10 +1020,14 @@ class KnowledgeBrowserUI:
             button_y += row_h
 
     def _is_expanded(self, entity_id):
-        return self.browser_tree_state["systems"].get(entity_id, False)
+        location_state = self.browser_tree_state.setdefault("locations", {})
+        legacy_state = self.browser_tree_state.get("systems", {})
+        if entity_id in legacy_state and entity_id not in location_state:
+            location_state[entity_id] = legacy_state[entity_id]
+        return location_state.get(entity_id, False)
 
     def _set_expanded(self, entity_id, expanded):
-        self.browser_tree_state["systems"][entity_id] = expanded
+        self.browser_tree_state.setdefault("locations", {})[entity_id] = expanded
 
     def _browser_dataset_filters(self):
         if self.world_model is None:
@@ -1177,13 +1181,90 @@ class KnowledgeBrowserUI:
                 missing += 1
         return missing
 
-    def _build_system_browser_items(self, world_model):
+    def _location_tree_entity_matches(self, entity, dataset_name):
+        if entity is None:
+            return False
+
+        is_system_like = bool(entity.get("system_role"))
+        if self.browser_filter_dataset == "systems" and not is_system_like:
+            return False
+
+        if self.browser_filter_dataset not in {"all", "locations", "systems"}:
+            return False
+
+        if self.browser_filter_incomplete_only and not self._entity_missing_scalar_count(entity, dataset_name):
+            return False
+
+        query = self.browser_search_query.strip().lower()
+        if query:
+            haystack = " ".join(
+                [
+                    self._entity_display_label(entity),
+                    str(entity.get("common_name", "")),
+                    str(entity.get("binomial_name", "")),
+                    str(entity.get("pretty_name", "")),
+                    str(entity.get("name", "")),
+                    str(entity.get("id", "")),
+                    str(entity.get("type", "")),
+                    str(entity.get("system_role", "")),
+                    str(entity.get("system_class", "")),
+                    str(entity.get("body_class", "")),
+                    str(entity.get("location_class", "")),
+                    str(entity.get("location_role", "")),
+                ]
+            ).lower()
+            if query not in haystack:
+                return False
+
+        return True
+
+    def _location_tree_auto_reveal_descendants(self):
+        return bool(self.browser_search_query.strip() or self.browser_filter_incomplete_only)
+
+    def _location_tree_item(self, entity, dataset_name, depth, expandable, expanded, meta_label=None):
+        label = self._entity_display_label(entity, fallback=entity.get("id", "unknown"))
+        entity_class = meta_label or self._entity_class_label(dataset_name, entity)
+        missing_count = self._entity_missing_scalar_count(entity, dataset_name)
+        return {
+            "kind": "tree_entity",
+            "entity_id": entity.get("id"),
+            "dataset_name": dataset_name,
+            "text": label,
+            "meta_text": f"[{entity_class}]",
+            "missing_count": missing_count,
+            "is_incomplete": missing_count > 0,
+            "depth": depth,
+            "expandable": expandable,
+            "expanded": expanded,
+        }
+
+    def _build_location_browser_items(self, world_model):
         items = []
 
         if world_model is None:
             return items
 
-        system_entities = world_model.get_entities_by_dataset("systems")
+        location_entities = world_model.get_entities_by_dataset("locations")
+        location_by_id = {
+            entity.get("id"): entity
+            for entity in location_entities
+            if isinstance(entity, dict) and entity.get("id")
+        }
+        alias_to_location_id = {
+            str(alias): str(canonical_id)
+            for alias, canonical_id in getattr(world_model.loader, "entity_aliases", {}).items()
+        }
+
+        def canonical_location_id(entity_id):
+            if not entity_id:
+                return entity_id
+            return alias_to_location_id.get(str(entity_id), str(entity_id))
+
+        system_entities = [
+            entity
+            for entity in location_entities
+            if isinstance(entity, dict) and entity.get("system_role")
+        ]
 
         star_systems = sorted(
             [
@@ -1197,18 +1278,42 @@ class KnowledgeBrowserUI:
             entity for entity in system_entities
             if entity.get("system_role") == "orbital_body"
         ]
+        body_ids = {entity.get("id") for entity in bodies if entity.get("id")}
+        star_system_ids = {entity.get("id") for entity in star_systems if entity.get("id")}
+        other_systems = sorted(
+            [
+                entity for entity in system_entities
+                if entity.get("id") not in body_ids and entity.get("id") not in star_system_ids
+            ],
+            key=lambda entity: self._entity_display_label(entity, fallback=entity.get("id", "")).lower()
+        )
 
         bodies_by_parent = {}
         roots_by_system = {}
+        locations_by_parent = {}
+        attached_location_ids = set()
 
         for body in bodies:
-            parent_body = body.get("parent_body")
-            star_system_id = body.get("star_system")
+            parent_body = canonical_location_id(body.get("parent_body"))
+            star_system_id = canonical_location_id(body.get("star_system"))
+            body_id = body.get("id")
 
             if parent_body:
                 bodies_by_parent.setdefault(parent_body, []).append(body)
             else:
                 roots_by_system.setdefault(star_system_id, []).append(body)
+
+        for location in location_entities:
+            if not isinstance(location, dict) or not location.get("id"):
+                continue
+
+            parent_location = location.get("parent_location")
+            if parent_location:
+                locations_by_parent.setdefault(
+                    canonical_location_id(parent_location),
+                    [],
+                ).append(location)
+                attached_location_ids.add(location.get("id"))
 
         for child_list in bodies_by_parent.values():
             child_list.sort(key=lambda entity: entity.get("name", entity.get("id", "")))
@@ -1216,115 +1321,176 @@ class KnowledgeBrowserUI:
         for child_list in roots_by_system.values():
             child_list.sort(key=lambda entity: entity.get("name", entity.get("id", "")))
 
-        search_active = bool(self.browser_search_query.strip())
+        for child_list in locations_by_parent.values():
+            child_list.sort(key=lambda entity: self._entity_display_label(entity, fallback=entity.get("id", "")).lower())
 
-        def linked_location_for_body(body_entity):
-            location_id = body_entity.get("location_entity") if isinstance(body_entity, dict) else None
-            if not location_id:
-                return None
-            return world_model.get_entity(location_id)
+        auto_reveal = self._location_tree_auto_reveal_descendants()
+        emitted_ids = set()
 
-        def body_or_location_matches(body_entity):
-            if self._matches_browser_filters(body_entity, "systems"):
+        def child_locations_for_parent(parent_id):
+            children = []
+            for location in locations_by_parent.get(canonical_location_id(parent_id), []):
+                if location.get("system_role"):
+                    continue
+                if location.get("id") not in {child.get("id") for child in children}:
+                    children.append(location)
+            children.sort(key=lambda entity: self._entity_display_label(entity, fallback=entity.get("id", "")).lower())
+            return children
+
+        def location_subtree_matches(location_entity, seen=None):
+            if seen is None:
+                seen = set()
+            location_id = location_entity.get("id")
+            if not location_id or location_id in seen:
+                return False
+            seen.add(location_id)
+
+            if self._location_tree_entity_matches(location_entity, "locations"):
                 return True
-            location_entity = linked_location_for_body(body_entity)
-            return self._matches_browser_filters(location_entity, "locations") if location_entity is not None else False
 
-        def body_subtree_matches(body_entity):
-            if body_or_location_matches(body_entity):
-                return True
-            for child in bodies_by_parent.get(body_entity.get("id"), []):
-                if body_subtree_matches(child):
+            for child in locations_by_parent.get(location_id, []):
+                if location_subtree_matches(child, seen=seen):
                     return True
             return False
 
-        def add_body_subtree(body_entity, depth):
+        def attached_locations_match(parent_id):
+            return any(location_subtree_matches(location) for location in child_locations_for_parent(parent_id))
+
+        def body_subtree_matches(body_entity, seen=None):
+            if seen is None:
+                seen = set()
             body_id = body_entity.get("id")
-            body_name = body_entity.get("name", body_id or "unknown")
-            body_class = body_entity.get("body_class", body_entity.get("type", "entity"))
-            if body_entity.get("location_entity"):
-                body_class = f"{body_class} | location"
-            children = bodies_by_parent.get(body_id, [])
-            expandable = len(children) > 0
-            descendant_match = any(body_subtree_matches(child) for child in children)
-            if not body_or_location_matches(body_entity) and not descendant_match:
+            if not body_id or body_id in seen:
+                return False
+            seen.add(body_id)
+
+            if self._location_tree_entity_matches(body_entity, "locations"):
+                return True
+            if attached_locations_match(body_id):
+                return True
+            for child in bodies_by_parent.get(body_id, []):
+                if body_subtree_matches(child, seen=seen):
+                    return True
+            return False
+
+        def add_location_subtree(location_entity, depth):
+            location_id = location_entity.get("id")
+            if not location_id or location_id in emitted_ids:
                 return
 
+            children = locations_by_parent.get(location_id, [])
+            descendant_match = any(location_subtree_matches(child) for child in children)
+            if not self._location_tree_entity_matches(location_entity, "locations") and not descendant_match:
+                return
+
+            expandable = len(children) > 0
+            expanded = self._is_expanded(location_id)
             items.append(
-                {
-                    "kind": "tree_entity",
-                    "entity_id": body_id,
-                    "dataset_name": "systems",
-                    "text": body_name,
-                    "meta_text": f"[{body_class}]",
-                    "missing_count": self._entity_missing_scalar_count(body_entity, "systems"),
-                    "is_incomplete": self._entity_missing_scalar_count(body_entity, "systems") > 0,
-                    "depth": depth,
-                    "expandable": expandable,
-                    "expanded": self._is_expanded(body_id),
-                }
+                self._location_tree_item(
+                    location_entity,
+                    "locations",
+                    depth,
+                    expandable,
+                    expanded,
+                    meta_label=f"location: {self._entity_class_label('locations', location_entity)}",
+                )
+            )
+            emitted_ids.add(location_id)
+
+            if expandable and (expanded or (auto_reveal and descendant_match)):
+                for child in children:
+                    add_location_subtree(child, depth + 1)
+
+        def add_attached_locations(parent_id, depth):
+            for location_entity in child_locations_for_parent(parent_id):
+                add_location_subtree(location_entity, depth)
+
+        def add_body_subtree(body_entity, depth):
+            body_id = body_entity.get("id")
+            children = bodies_by_parent.get(body_id, [])
+            attached_locations = child_locations_for_parent(body_id)
+            expandable = bool(children or attached_locations)
+            descendant_match = attached_locations_match(body_id) or any(body_subtree_matches(child) for child in children)
+            if not self._location_tree_entity_matches(body_entity, "locations") and not descendant_match:
+                return
+
+            expanded = self._is_expanded(body_id)
+            meta_label = body_entity.get("body_class", body_entity.get("type", "entity"))
+            if attached_locations:
+                meta_label = f"{meta_label} | locations:{len(attached_locations)}"
+            items.append(
+                self._location_tree_item(
+                    body_entity,
+                    "locations",
+                    depth,
+                    expandable,
+                    expanded,
+                    meta_label=meta_label,
+                )
             )
 
-            if expandable and (self._is_expanded(body_id) or (search_active and descendant_match)):
+            if expandable and (expanded or (auto_reveal and descendant_match)):
+                add_attached_locations(body_id, depth + 1)
                 for child in children:
                     add_body_subtree(child, depth + 1)
 
-        for system_entity in star_systems:
+        def add_system_subtree(system_entity):
             system_id = system_entity.get("id")
-            system_name = system_entity.get("name", system_id or "unknown")
-            system_class = system_entity.get("system_class", system_entity.get("type", "entity"))
             root_bodies = roots_by_system.get(system_id, [])
-            if not self._matches_browser_filters(system_entity, "systems"):
-                if not any(body_subtree_matches(body) for body in root_bodies):
-                    continue
+            attached_locations = child_locations_for_parent(system_id)
+            expandable = bool(root_bodies or attached_locations)
+            descendant_match = attached_locations_match(system_id) or any(body_subtree_matches(body) for body in root_bodies)
+            if not self._location_tree_entity_matches(system_entity, "locations") and not descendant_match:
+                return
 
+            expanded = self._is_expanded(system_id)
             items.append(
-                {
-                    "kind": "tree_entity",
-                    "entity_id": system_id,
-                    "dataset_name": "systems",
-                    "text": system_name,
-                    "meta_text": f"[{system_class}]",
-                    "missing_count": self._entity_missing_scalar_count(system_entity, "systems"),
-                    "is_incomplete": self._entity_missing_scalar_count(system_entity, "systems") > 0,
-                    "depth": 0,
-                    "expandable": len(root_bodies) > 0,
-                    "expanded": self._is_expanded(system_id),
-                }
+                self._location_tree_item(
+                    system_entity,
+                    "locations",
+                    0,
+                    expandable,
+                    expanded,
+                    meta_label=system_entity.get("system_class") or "system",
+                )
             )
 
-            if self._is_expanded(system_id) or search_active:
+            if expandable and (expanded or (auto_reveal and descendant_match)):
+                add_attached_locations(system_id, 1)
                 for root_body in root_bodies:
                     add_body_subtree(root_body, 1)
 
+        for system_entity in star_systems:
+            add_system_subtree(system_entity)
+
+        for system_entity in other_systems:
+            add_system_subtree(system_entity)
+
+        root_locations = sorted(
+            [
+                location for location in location_entities
+                if location.get("id")
+                and not location.get("parent_location")
+                and not location.get("system_role")
+                and location.get("id") not in attached_location_ids
+                and location.get("id") not in emitted_ids
+            ],
+            key=lambda entity: self._entity_display_label(entity, fallback=entity.get("id", "")).lower()
+        )
+        for location_entity in root_locations:
+            add_location_subtree(location_entity, 0)
+
         return items
-
-    def _system_linked_location_ids(self, world_model):
-        if world_model is None:
-            return set()
-
-        linked_location_ids = set()
-        for entity in world_model.get_entities_by_dataset("systems"):
-            if not isinstance(entity, dict):
-                continue
-            location_id = entity.get("location_entity")
-            if location_id:
-                linked_location_ids.add(location_id)
-        return linked_location_ids
-
-    def _is_location_shadowed_by_system_tree(self, entity, linked_location_ids):
-        if not isinstance(entity, dict):
-            return False
-        entity_id = entity.get("id")
-        if entity_id in linked_location_ids:
-            return True
-        return bool(entity.get("derived_from_system_body"))
 
     def _dataset_display_label(self, dataset_name):
         return dataset_name.replace("_", " ").title()
 
     def _entity_class_label(self, dataset_name, entity):
         if dataset_name == "locations":
+            if entity.get("system_role") == "star_system":
+                return entity.get("system_class", entity.get("location_class", entity.get("type", "entity")))
+            if entity.get("system_role") == "orbital_body":
+                return entity.get("body_class", entity.get("location_class", entity.get("type", "entity")))
             return entity.get("location_class", entity.get("type", "entity"))
         if dataset_name == "vehicles":
             return entity.get("vehicle_class", entity.get("type", "entity"))
@@ -1343,7 +1509,7 @@ class KnowledgeBrowserUI:
 
     def _build_browser_items(self, world_model):
         items = [
-            {"kind": "label", "text": "Grouping: dataset preview"},
+            {"kind": "label", "text": "Grouping: hierarchy preview"},
             {"kind": "spacer"},
         ]
 
@@ -1366,24 +1532,27 @@ class KnowledgeBrowserUI:
             "locations",
             "vehicles",
             "components",
-            "systems",
         ]
         ordered_names = [name for name in preferred_order if name in dataset_names]
         ordered_names += [name for name in dataset_names if name not in ordered_names]
         hide_empty_sections = bool(self.browser_search_query.strip())
-        system_linked_location_ids = self._system_linked_location_ids(world_model)
 
         for dataset_name in ordered_names:
-            if self.browser_filter_dataset != "all" and dataset_name != self.browser_filter_dataset:
+            if dataset_name == "systems":
                 continue
 
-            if dataset_name == "systems":
-                dataset_items = self._build_system_browser_items(world_model)
+            if dataset_name == "locations":
+                if self.browser_filter_dataset not in {"all", "locations", "systems"}:
+                    continue
+                dataset_items = self._build_location_browser_items(world_model)
                 if hide_empty_sections and not dataset_items:
                     continue
-                items.append({"kind": "section", "text": self._dataset_display_label(dataset_name)})
+                items.append({"kind": "section", "text": "Locations / Systems"})
                 items.extend(dataset_items)
                 items.append({"kind": "spacer"})
+                continue
+
+            if self.browser_filter_dataset != "all" and dataset_name != self.browser_filter_dataset:
                 continue
 
             dataset_items = []
@@ -1394,11 +1563,6 @@ class KnowledgeBrowserUI:
 
             for entity in entities:
                 if not self._matches_browser_filters(entity, dataset_name):
-                    continue
-                if (
-                    dataset_name == "locations"
-                    and self._is_location_shadowed_by_system_tree(entity, system_linked_location_ids)
-                ):
                     continue
 
                 label = self._entity_display_label(entity, fallback=entity.get("id", "unknown"))
@@ -1534,6 +1698,7 @@ class KnowledgeBrowserUI:
             "relation_picker_matches": [],
             "relation_picker_selected_index": 0,
             "relation_picker_hitboxes": [],
+            "toolbelt_hitboxes": [],
             "type_picker_open": False,
             "type_picker_hitboxes": [],
             "draft_edit_buffers": {},
@@ -1597,6 +1762,7 @@ class KnowledgeBrowserUI:
             "relation_picker_matches": [],
             "relation_picker_selected_index": 0,
             "relation_picker_hitboxes": [],
+            "toolbelt_hitboxes": [],
             "type_picker_open": False,
             "type_picker_hitboxes": [],
         }
@@ -1644,8 +1810,12 @@ class KnowledgeBrowserUI:
                 card_view.layout_card(card, rect)
 
             final_rect = card.get("rect", rect)
+            toolbelt_rect = card.get("toolbelt_rect")
+            visual_right = final_rect.right
+            if toolbelt_rect is not None:
+                visual_right = max(visual_right, toolbelt_rect.right)
 
-            max_right = max(max_right, card.get("canvas_x", 24) + final_rect.width / zoom)
+            max_right = max(max_right, card.get("canvas_x", 24) + (visual_right - final_rect.x) / zoom)
             max_bottom = max(max_bottom, card.get("canvas_y", 84) + final_rect.height / zoom)
 
         self.canvas_content_width = max(0, max_right + 24)
@@ -2002,7 +2172,7 @@ class KnowledgeBrowserUI:
         self.world_model.loader.entities[entity_id] = entity
         return entity
 
-    def _create_and_open_template_entity(self, template, requested_id=None, initial_fields=None, label=None):
+    def _create_and_open_template_entity(self, template, requested_id=None, initial_fields=None, label=None, place_in_view=False):
         entity = self._create_template_entity(
             template,
             requested_id=requested_id,
@@ -2017,11 +2187,13 @@ class KnowledgeBrowserUI:
         card = self._ensure_card(entity)
         if card is not None:
             card["is_draft_entity"] = True
+            if place_in_view:
+                self._place_new_card_in_canvas_view(card)
             self._save_card_draft(card)
         return entity
 
-    def _open_entry_name_prompt(self, template, mode="template", context=None):
-        label = "Entry"
+    def _open_entry_name_prompt(self, template, mode="template", context=None, label=None):
+        label = label or "Entry"
         if isinstance(template, dict):
             label = template.get("label") or self._schema_display_label(template.get("entity_type"))
         elif mode == "idea_from_parent":
@@ -2071,6 +2243,25 @@ class KnowledgeBrowserUI:
             },
         )
 
+    def _open_toolbelt_name_prompt(self, source_card, tool):
+        if source_card is None or not isinstance(tool, dict):
+            return False
+
+        source_entity_id = source_card.get("entity_id")
+        if not source_entity_id:
+            return False
+
+        label = tool.get("prompt_label") or tool.get("label") or "Entry"
+        return self._open_entry_name_prompt(
+            None,
+            mode="toolbelt",
+            context={
+                "source_entity_id": source_entity_id,
+                "tool": dict(tool),
+            },
+            label=label,
+        )
+
     def _close_entry_name_prompt(self):
         self.entry_name_prompt = None
 
@@ -2082,6 +2273,7 @@ class KnowledgeBrowserUI:
                 "name": entry_name,
             },
             label=entry_name,
+            place_in_view=True,
         )
         if entity is None:
             return None
@@ -2091,7 +2283,6 @@ class KnowledgeBrowserUI:
         card = self._find_card_by_entity_id(entity.get("id"))
         if card is not None:
             card["title"] = entry_name
-            self._place_new_card_in_canvas_view(card)
             self._save_card_draft(card)
 
         return entity
@@ -2146,6 +2337,19 @@ class KnowledgeBrowserUI:
             idea = self._create_named_idea_from_parent(context.get("parent_entity_id"), entry_name)
             if idea is None:
                 prompt["status"] = "Could not create idea"
+                return True
+            self._close_entry_name_prompt()
+            return True
+
+        if mode == "toolbelt":
+            context = prompt.get("context", {})
+            created = self._create_named_toolbelt_entity(
+                context.get("source_entity_id"),
+                context.get("tool"),
+                entry_name,
+            )
+            if created is None:
+                prompt["status"] = "Could not create linked card"
                 return True
             self._close_entry_name_prompt()
             return True
@@ -2299,6 +2503,124 @@ class KnowledgeBrowserUI:
             card["is_draft_entity"] = True
             self._save_card_draft(card)
         return True
+
+    def _append_unique_relation_value(self, entity, field_key, entity_id):
+        if not isinstance(entity, dict) or not field_key or not entity_id:
+            return False
+
+        current_value = entity.get(field_key)
+        if isinstance(current_value, list):
+            values = list(current_value)
+        elif current_value in (None, ""):
+            values = []
+        else:
+            values = [current_value]
+
+        existing = {str(value).strip() for value in values}
+        if entity_id in existing:
+            entity[field_key] = values
+            return False
+
+        values.append(entity_id)
+        entity[field_key] = values
+        return True
+
+    def _append_offspring_reference(self, entity, child_entity_id):
+        if not isinstance(entity, dict) or not child_entity_id:
+            return False
+
+        current_value = entity.get("offspring")
+        if isinstance(current_value, list):
+            values = list(current_value)
+        elif current_value in (None, ""):
+            values = []
+        else:
+            values = [current_value]
+
+        for value in values:
+            if isinstance(value, dict) and str(value.get("id", "")).strip() == child_entity_id:
+                entity["offspring"] = values
+                return False
+            if str(value).strip() == child_entity_id:
+                entity["offspring"] = values
+                return False
+
+        values.append({"id": child_entity_id})
+        entity["offspring"] = values
+        return True
+
+    def _save_or_persist_card_for_entity_id(self, entity_id):
+        card = self._find_card_by_entity_id(entity_id)
+        if card is None:
+            return False
+        if card.get("is_draft_entity", False):
+            return self._save_card_draft(card)
+        return self._persist_card_entity(card)
+
+    def _create_named_toolbelt_entity(self, source_entity_id, tool, entry_name):
+        if self.world_model is None or not isinstance(tool, dict):
+            return None
+
+        source_entity = self.world_model.get_entity(source_entity_id)
+        source_card = self._find_card_by_entity_id(source_entity_id)
+        if not isinstance(source_entity, dict) or source_card is None:
+            return None
+
+        target_dataset = tool.get("target_dataset")
+        template = self._template_by_dataset(target_dataset)
+        if template is None:
+            return None
+
+        initial_fields = {
+            "pretty_name": entry_name,
+            "name": entry_name,
+        }
+        tool_id = tool.get("id")
+        if tool_id == "person_add_child":
+            initial_fields["parents"] = [source_entity_id]
+        elif tool_id in {"producer_add_product_item", "producer_add_product_vehicle"}:
+            initial_fields["produced_by"] = [source_entity_id]
+        elif tool_id == "person_add_parent":
+            initial_fields["offspring"] = [{"id": source_entity_id}]
+
+        created_entity = self._create_and_open_template_entity(
+            template,
+            initial_fields=initial_fields,
+            label=entry_name,
+            place_in_view=True,
+        )
+        if created_entity is None:
+            return None
+
+        created_entity_id = created_entity.get("id")
+        created_card = self._find_card_by_entity_id(created_entity_id)
+
+        if tool_id == "person_add_parent":
+            self._append_unique_relation_value(source_entity, "parents", created_entity_id)
+            self._append_offspring_reference(created_entity, source_entity_id)
+        elif tool_id == "person_add_child":
+            self._append_offspring_reference(source_entity, created_entity_id)
+            self._append_unique_relation_value(created_entity, "parents", source_entity_id)
+        elif tool_id == "producer_add_product_item":
+            self._append_unique_relation_value(source_entity, "produced_items", created_entity_id)
+            self._append_unique_relation_value(created_entity, "produced_by", source_entity_id)
+        elif tool_id == "producer_add_product_vehicle":
+            self._append_unique_relation_value(source_entity, "produced_vehicles", created_entity_id)
+            self._append_unique_relation_value(created_entity, "produced_by", source_entity_id)
+        elif tool_id == "producer_add_product_component":
+            self._append_unique_relation_value(source_entity, "produced_components", created_entity_id)
+            self._append_unique_relation_value(created_entity, "related", source_entity_id)
+
+        self._save_or_persist_card_for_entity_id(source_entity_id)
+        if created_card is not None:
+            created_card["is_draft_entity"] = True
+            self._save_card_draft(created_card)
+
+        self.browser_items = self._build_browser_items(self.world_model)
+        self._refresh_timeline_items()
+        self._rebuild_browser_hitboxes()
+        self._relayout_cards()
+        return created_entity
 
     def _card_subtitle_for_entity(self, entity):
         if not isinstance(entity, dict):
@@ -3446,14 +3768,24 @@ class KnowledgeBrowserUI:
             return
 
         previous_clip = screen.get_clip()
-        card_rect = card.get("rect")
-        if card_rect is not None:
-            screen.set_clip(previous_clip.clip(card_rect))
+        visual_rect = self._card_visual_rect(card)
+        if visual_rect is not None:
+            screen.set_clip(previous_clip.clip(visual_rect))
         try:
             card_view.draw_card(screen, card.get("layout_font", font), card)
             self._draw_card_type_picker(screen, card.get("layout_font", font), card)
         finally:
             screen.set_clip(previous_clip)
+
+    def _card_visual_rect(self, card):
+        if not isinstance(card, dict):
+            return None
+
+        card_rect = card.get("rect")
+        toolbelt_rect = card.get("toolbelt_rect")
+        if card_rect is not None and toolbelt_rect is not None:
+            return card_rect.union(toolbelt_rect)
+        return card_rect or toolbelt_rect
 
     def _graph_relation_entity_ids_for_card(self, card):
         entity = self._entity_for_card(card)
@@ -3544,36 +3876,57 @@ class KnowledgeBrowserUI:
         finally:
             screen.set_clip(previous_clip)
 
-    def _draw_canvas_relation_controls(self, screen, font, right_rect):
+    def _draw_canvas_relation_target_highlights(self, screen, right_rect):
+        if self.canvas_relation_link_source_id is None:
+            return
+
         previous_clip = screen.get_clip()
         screen.set_clip(previous_clip.clip(right_rect))
         try:
-            if self.canvas_relation_link_source_id is not None:
-                for card in self.cards:
-                    rect = card.get("rect")
-                    entity_id = card.get("entity_id")
-                    if (
-                        rect is None
-                        or card.get("card_kind") == "schema"
-                        or entity_id == self.canvas_relation_link_source_id
-                    ):
-                        continue
-                    pygame.draw.rect(screen, (232, 190, 92), rect.inflate(8, 8), 2)
-
             for card in self.cards:
-                button_rect = card.get("canvas_relation_add_rect")
-                if button_rect is None:
+                rect = card.get("rect")
+                entity_id = card.get("entity_id")
+                if (
+                    rect is None
+                    or card.get("card_kind") == "schema"
+                    or entity_id == self.canvas_relation_link_source_id
+                ):
                     continue
+                pygame.draw.rect(screen, (232, 190, 92), rect.inflate(8, 8), 2)
+        finally:
+            screen.set_clip(previous_clip)
 
-                is_active = card.get("entity_id") == self.canvas_relation_link_source_id
-                hovered = button_rect.collidepoint(pygame.mouse.get_pos())
-                fill = (104, 88, 36) if is_active else ((62, 78, 104) if hovered else (42, 50, 68))
-                border = (238, 210, 130) if is_active else ((174, 204, 238) if hovered else (112, 132, 162))
-                pygame.draw.ellipse(screen, fill, button_rect)
-                pygame.draw.ellipse(screen, border, button_rect, 1)
-                plus_surface = font.render("+", True, (245, 245, 245))
-                plus_rect = plus_surface.get_rect(center=button_rect.center)
-                screen.blit(plus_surface, plus_rect)
+    def _draw_canvas_relation_control_for_card(self, screen, font, card):
+        button_rect = card.get("canvas_relation_add_rect")
+        if button_rect is None:
+            return
+
+        is_active = card.get("entity_id") == self.canvas_relation_link_source_id
+        hovered = button_rect.collidepoint(pygame.mouse.get_pos())
+        fill = (104, 88, 36) if is_active else ((62, 78, 104) if hovered else (42, 50, 68))
+        border = (238, 210, 130) if is_active else ((174, 204, 238) if hovered else (112, 132, 162))
+        pygame.draw.ellipse(screen, fill, button_rect)
+        pygame.draw.ellipse(screen, border, button_rect, 1)
+        plus_surface = font.render("+", True, (245, 245, 245))
+        plus_rect = plus_surface.get_rect(center=button_rect.center)
+        screen.blit(plus_surface, plus_rect)
+
+    def _draw_card_canvas(self, screen, font, right_rect):
+        """
+        Central draw order for card-canvas content.
+
+        Keep background graph/link affordances below cards, then draw each card
+        with its own controls in card z order so lower-card controls cannot cut
+        through cards above them.
+        """
+        previous_clip = screen.get_clip()
+        screen.set_clip(previous_clip.clip(right_rect.inflate(-8, -8)))
+        try:
+            self._draw_canvas_relation_lines(screen, right_rect)
+            self._draw_canvas_relation_target_highlights(screen, right_rect)
+            for card in self.cards:
+                self._draw_card(screen, font, card)
+                self._draw_canvas_relation_control_for_card(screen, font, card)
         finally:
             screen.set_clip(previous_clip)
 
@@ -4045,8 +4398,8 @@ class KnowledgeBrowserUI:
 
         for index in range(len(self.cards) - 1, -1, -1):
             card = self.cards[index]
-            card_rect = card.get("rect")
-            if card_rect is None or not card_rect.collidepoint(mouse_pos):
+            visual_rect = self._card_visual_rect(card)
+            if visual_rect is None or not visual_rect.collidepoint(mouse_pos):
                 continue
 
             card_obj = self._bring_card_to_front(index)
@@ -4099,6 +4452,16 @@ class KnowledgeBrowserUI:
             return "__ui_consumed__"
 
         if item.get("kind") not in {"entity", "tree_entity"}:
+            return "__ui_consumed__"
+
+        if not self._browser_item_matches_relation_target(item):
+            target_label = self._relation_target_label(self.relation_link_target.get("target"))
+            self.relation_link_status = f"Pick a matching {target_label} entry"
+            source_card = self.relation_link_target.get("source_card")
+            if isinstance(source_card, dict):
+                source_card["relation_link_status"] = self.relation_link_status
+            self._rebuild_browser_hitboxes()
+            self._relayout_cards()
             return "__ui_consumed__"
 
         linked = self._link_relation_from_browser_entity(entity_id)
@@ -4265,14 +4628,6 @@ class KnowledgeBrowserUI:
 
         for index in range(len(self.cards) - 1, -1, -1):
             card = self.cards[index]
-            relation_add_rect = card.get("canvas_relation_add_rect")
-            if relation_add_rect is not None and relation_add_rect.collidepoint(mouse_pos):
-                card_obj = self._bring_card_to_front(index)
-                if self._begin_canvas_relation_link(card_obj):
-                    return "__ui_consumed__"
-
-        for index in range(len(self.cards) - 1, -1, -1):
-            card = self.cards[index]
             card_view = card.get("card_view")
 
             close_rect = card.get("close_rect")
@@ -4284,6 +4639,12 @@ class KnowledgeBrowserUI:
                 schema_result = self._handle_schema_card_click(card, index, mouse_pos)
                 if schema_result is not None:
                     return schema_result
+
+            relation_add_rect = card.get("canvas_relation_add_rect")
+            if relation_add_rect is not None and relation_add_rect.collidepoint(mouse_pos):
+                card_obj = self._bring_card_to_front(index)
+                if self._begin_canvas_relation_link(card_obj):
+                    return "__ui_consumed__"
 
             idea_button_rect = card.get("idea_button_rect")
             if idea_button_rect is not None and idea_button_rect.collidepoint(mouse_pos) and card_view is not None:
@@ -4354,6 +4715,19 @@ class KnowledgeBrowserUI:
                     card_obj = self._bring_card_to_front(index)
                     if self._handle_relation_chip_click(card_obj, relation_info, mouse_pos=mouse_pos):
                         return "__ui_consumed__"
+
+            for tool_info, tool_rect in card.get("toolbelt_hitboxes", []):
+                if tool_rect.collidepoint(mouse_pos) and card_view is not None:
+                    card_obj = self._bring_card_to_front(index)
+                    action_id = tool_info.get("action_id")
+                    if action_id:
+                        self._layout_all_cards()
+                        return {
+                            "id": action_id,
+                            "entity_id": card_obj.get("entity_id"),
+                        }
+                    self._open_toolbelt_name_prompt(card_obj, tool_info)
+                    return "__ui_consumed__"
 
             for field_key, field_rect in card.get("editable_field_hitboxes", []):
                 if field_rect.collidepoint(mouse_pos) and card_view is not None:
@@ -4439,6 +4813,15 @@ class KnowledgeBrowserUI:
                     "entity_id": card_obj.get("entity_id"),
                     "year": card_obj.get("selected_year"),
                 }
+
+            toolbelt_rect = card.get("toolbelt_rect")
+            if toolbelt_rect is not None and toolbelt_rect.collidepoint(mouse_pos):
+                for open_card in self.cards:
+                    if open_card is not card:
+                        self._close_type_picker(open_card)
+                self._bring_card_to_front(index)
+                self._layout_all_cards()
+                return "__ui_consumed__"
 
             if card["rect"].collidepoint(mouse_pos):
                 for open_card in self.cards:
@@ -4547,7 +4930,12 @@ class KnowledgeBrowserUI:
             1,
         )
 
-        prompt_title = "Name New Idea" if prompt.get("mode") == "idea_from_parent" else "Name New Entry"
+        if prompt.get("mode") == "idea_from_parent":
+            prompt_title = "Name New Idea"
+        elif prompt.get("mode") == "toolbelt":
+            prompt_title = f"Name New {prompt.get('label') or 'Entry'}"
+        else:
+            prompt_title = "Name New Entry"
         title = font.render(prompt_title, True, (244, 244, 244))
         detail = font.render(str(prompt.get("label") or "Entry"), True, (166, 176, 194))
         screen.blit(title, (prompt_rect.x + 12, prompt_rect.y + 8))
@@ -4840,13 +5228,7 @@ class KnowledgeBrowserUI:
 
             line_y += line_height
 
-        previous_clip = screen.get_clip()
-        screen.set_clip(right_rect.inflate(-8, -8))
-        for card in self.cards:
-            self._draw_card(screen, font, card)
-        screen.set_clip(previous_clip)
-        self._draw_canvas_relation_lines(screen, right_rect)
-        self._draw_canvas_relation_controls(screen, font, right_rect)
+        self._draw_card_canvas(screen, font, right_rect)
         self._draw_template_picker(screen, font)
         self._draw_entry_name_prompt(screen, font)
 

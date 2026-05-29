@@ -1,6 +1,6 @@
 schema: systems
 
-extends: entity_core
+extends: locations
 
 fields:
 
@@ -13,7 +13,7 @@ fields:
 
   star_system:
     type: entity
-    target: systems
+    target: locations
     optional: true
 
   body_class:
@@ -22,7 +22,7 @@ fields:
 
   parent_body:
     type: entity
-    target: systems
+    target: locations
     optional: true
 
   location_entity:

@@ -11,7 +11,7 @@ class CelestialSystem:
     * store instantiated space objects
     * expose renderer-safe entries
     * update all objects
-    * populate itself from the 'systems' dataset in WorldModel
+    * populate itself from system-role location entries in WorldModel
     """
 
     def __init__(self):
@@ -29,6 +29,25 @@ class CelestialSystem:
 
     def _systems_file_path(self):
         return self._project_root() / "entries" / "systems.yaml"
+
+    def _resolve_entity_id(self, world_model, entity_id):
+        if not entity_id:
+            return entity_id
+        loader = getattr(world_model, "loader", None)
+        aliases = getattr(loader, "entity_aliases", {}) if loader is not None else {}
+        return aliases.get(entity_id, entity_id)
+
+    def _entity_matches_id(self, world_model, entity, entity_id):
+        if not entity_id or not entity:
+            return False
+        resolved_entity_id = self._resolve_entity_id(world_model, entity_id)
+        candidates = {
+            entity.get("id"),
+            entity.get("legacy_system_entity_id"),
+            entity.get("derived_from_system_body"),
+            entity.get("location_entity"),
+        }
+        return resolved_entity_id in candidates or entity_id in candidates
 
     def _generated_location_id_for_body(self, body_entity):
         body_id = body_entity.get("id", "")
@@ -140,6 +159,13 @@ class CelestialSystem:
         if not body_entity:
             return None, False
 
+        if (
+            body_entity.get("_dataset") == "locations"
+            and body_entity.get("type") == "location"
+            and body_entity.get("location_class") in {"planet", "moon", "dwarf_planet", "asteroid"}
+        ):
+            return body_entity.get("location_entity") or body_entity.get("id"), False
+
         existing_location_id = body_entity.get("location_entity")
         if existing_location_id:
             if world_model is None or world_model.get_entity(existing_location_id) is not None:
@@ -198,9 +224,14 @@ class CelestialSystem:
         self._entries.append(entry)
 
         if source_entity is not None:
-            source_entity_id = source_entity.get("id")
-            if source_entity_id:
-                self.objects_by_id[source_entity_id] = obj
+            for source_entity_id in (
+                source_entity.get("id"),
+                source_entity.get("legacy_system_entity_id"),
+                source_entity.get("derived_from_system_body"),
+                source_entity.get("location_entity"),
+            ):
+                if source_entity_id:
+                    self.objects_by_id[source_entity_id] = obj
 
     def get_entries(self):
         """
@@ -242,16 +273,17 @@ class CelestialSystem:
 
     def _get_active_system_entities(self, world_model, year, root_system_id, root_body_id=None):
         """
-        Return active orbital-body entries for the selected star system.
+        Return active orbital-body location entries for the selected star system.
         """
         active_entities = list(self._iter_active_entities(world_model, year))
 
         bodies = [
             entity for entity in active_entities
-            if entity.get("_dataset") == "systems"
-            and entity.get("type") == "system"
+            if entity.get("_dataset") == "locations"
+            and entity.get("type") == "location"
             and entity.get("system_role") == "orbital_body"
-            and entity.get("star_system") == root_system_id
+            and self._resolve_entity_id(world_model, entity.get("star_system"))
+            == self._resolve_entity_id(world_model, root_system_id)
         ]
 
         if root_body_id is None:
@@ -259,8 +291,9 @@ class CelestialSystem:
 
         return [
             entity for entity in bodies
-            if entity.get("id") == root_body_id
-            or entity.get("parent_body") == root_body_id
+            if self._entity_matches_id(world_model, entity, root_body_id)
+            or self._resolve_entity_id(world_model, entity.get("parent_body"))
+            == self._resolve_entity_id(world_model, root_body_id)
         ]
 
     def _coerce_color(self, value, fallback=(180, 180, 180)):
@@ -306,7 +339,7 @@ class CelestialSystem:
         """
         from simulations.space.object import SpaceObject
 
-        entity_id = entity.get("location_entity")
+        entity_id = entity.get("location_entity") or entity.get("id")
 
         obj = SpaceObject(
             name=entity.get("name", entity.get("id")),
@@ -314,7 +347,7 @@ class CelestialSystem:
             position=(0.0, 0.0),
             entity_id=entity_id
         )
-        obj.source_system_entity_id = entity.get("id")
+        obj.source_system_entity_id = entity.get("legacy_system_entity_id") or entity.get("id")
         return obj
 
     def _create_orbiting_object(self, entity, parent_obj):
@@ -324,7 +357,7 @@ class CelestialSystem:
         from simulations.space.object import SpaceObject
         from simulations.space.orbit import KeplerOrbit
 
-        entity_id = entity.get("location_entity")
+        entity_id = entity.get("location_entity") or entity.get("id")
 
         orbit = KeplerOrbit(
             parent=parent_obj,
@@ -339,12 +372,12 @@ class CelestialSystem:
             orbit=orbit,
             entity_id=entity_id
         )
-        obj.source_system_entity_id = entity.get("id")
+        obj.source_system_entity_id = entity.get("legacy_system_entity_id") or entity.get("id")
         return obj
 
     def populate_from_world_model(self, world_model, year, root_system_id, root_body_id=None):
         """
-        Populate the celestial system from active entries in the 'systems' dataset.
+        Populate the celestial system from active system-role locations.
 
         Expected entry shape:
         * type: system
@@ -373,9 +406,12 @@ class CelestialSystem:
 
             for entity_id in list(pending.keys()):
                 entity = pending[entity_id]
-                parent_body_id = entity.get("parent_body")
+                parent_body_id = self._resolve_entity_id(
+                    world_model,
+                    entity.get("parent_body"),
+                )
 
-                if not parent_body_id or entity_id == root_body_id:
+                if not parent_body_id or self._entity_matches_id(world_model, entity, root_body_id):
                     obj = self._create_root_object(entity)
                     layers = self._create_layers_for_entity(entity)
                     self.add(

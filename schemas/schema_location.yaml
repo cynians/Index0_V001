@@ -45,7 +45,7 @@ fields:
 
   derived_from_system_body:
     type: entity
-    target: systems
+    target: locations
     optional: true
 
   map_projection:

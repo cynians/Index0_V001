@@ -20,6 +20,7 @@ class EntityCard:
     IMAGE_H = 110
     MEDIA_IMAGE_H = 176
     LAUNCH_H = 24
+    TOOLBELT_W = 148
     RESIZE_HANDLE = 14
     RESIZE_BORDER = 6
     TEXT_LINE_H = 16
@@ -102,6 +103,64 @@ class EntityCard:
         "era",
         "mean_anomaly_deg_at_epoch",
     }
+    TOOLBELT_TOOL_DEFINITIONS = [
+        {
+            "match": {"person", "people"},
+            "tools": [
+                {
+                    "id": "person_add_parent",
+                    "label": "Add Parent",
+                    "description": "Create a person and link them as a parent.",
+                    "target_dataset": "people",
+                    "prompt_label": "Parent Person",
+                },
+                {
+                    "id": "person_add_child",
+                    "label": "Add Child",
+                    "description": "Create a person with this card as a parent.",
+                    "target_dataset": "people",
+                    "prompt_label": "Child Person",
+                },
+            ],
+        },
+        {
+            "match": {"producer", "producers"},
+            "tools": [
+                {
+                    "id": "producer_add_product_item",
+                    "label": "Add Product",
+                    "description": "Create an item and add it to produced_items.",
+                    "target_dataset": "items",
+                    "prompt_label": "Product Item",
+                },
+                {
+                    "id": "producer_add_product_vehicle",
+                    "label": "Add Vehicle",
+                    "description": "Create a vehicle and add it to produced_vehicles.",
+                    "target_dataset": "vehicles",
+                    "prompt_label": "Vehicle Product",
+                },
+                {
+                    "id": "producer_add_product_component",
+                    "label": "Add Component",
+                    "description": "Create a component and add it to produced_components.",
+                    "target_dataset": "components",
+                    "prompt_label": "Component Product",
+                },
+            ],
+        },
+        {
+            "match": {"location", "locations"},
+            "tools": [
+                {
+                    "id": "location_place_on_parent",
+                    "label": "Place on Parent",
+                    "description": "Open parent map placement for this location.",
+                    "action_id": "knowledge_place_location_on_parent",
+                },
+            ],
+        },
+    ]
     SCHEMA_LOADER = SchemaLoader()
 
     def __init__(self, entity, dataset_name=None, world_model=None):
@@ -257,6 +316,48 @@ class EntityCard:
         if not normalized or normalized in {"entity", "entity_core", "core", "any"}:
             return "Entry"
         return normalized.replace("_", " ")
+
+    def _normalize_toolbelt_token(self, value):
+        return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+    def _toolbelt_match_tokens(self):
+        tokens = set()
+        for value in (self.dataset_name, self.entity.get("_dataset"), self.entity.get("type")):
+            token = self._normalize_toolbelt_token(value)
+            if token:
+                tokens.add(token)
+
+        for key, value in self.entity.items():
+            if key.endswith("_class") or key in {"system_role", "body_class", "location_role"}:
+                token = self._normalize_toolbelt_token(value)
+                if token:
+                    tokens.add(token)
+        return tokens
+
+    def _toolbelt_items(self):
+        match_tokens = self._toolbelt_match_tokens()
+        tools = []
+        seen_ids = set()
+
+        for definition in self.TOOLBELT_TOOL_DEFINITIONS:
+            definition_matches = {
+                self._normalize_toolbelt_token(value)
+                for value in definition.get("match", set())
+            }
+            if not match_tokens & definition_matches:
+                continue
+
+            for tool in definition.get("tools", []):
+                tool_id = tool.get("id")
+                if not tool_id or tool_id in seen_ids:
+                    continue
+                tools.append(dict(tool))
+                seen_ids.add(tool_id)
+
+        return tools
+
+    def _uses_toolbelt(self, card):
+        return bool(card.get("is_edit_mode", False) and self._toolbelt_items())
 
     def _ellipsize_text(self, text, font, max_width):
         text = str(text or "")
@@ -1297,6 +1398,9 @@ class EntityCard:
         editable_field_hitboxes = []
         content_editable_field_hitboxes = []
         relation_hitboxes = []
+        toolbelt_hitboxes = []
+        toolbelt_rows = []
+        toolbelt_rect = None
         field_rows = []
         general_content_rect = None
         schema_field_specs = self._get_schema_field_specs()
@@ -1573,7 +1677,35 @@ class EntityCard:
 
         final_rect = pygame.Rect(rect.x, rect.y, rect.width, rect.height)
 
+        if self._uses_toolbelt(card):
+            toolbelt_rect = pygame.Rect(final_rect.right, final_rect.y, self.TOOLBELT_W, final_rect.height)
+            tool_y = toolbelt_rect.y + 38
+            tool_inner_x = toolbelt_rect.x + 8
+            tool_inner_w = toolbelt_rect.width - 16
+            line_h = self._table_line_height(card["layout_font"])
+            for tool in self._toolbelt_items():
+                description_lines = self._wrap_text_lines(
+                    tool.get("description", ""),
+                    card["layout_font"],
+                    tool_inner_w,
+                )[:2]
+                row_h = max(48, 28 + len(description_lines) * line_h)
+                row_rect = pygame.Rect(tool_inner_x, tool_y, tool_inner_w, row_h)
+                button_rect = pygame.Rect(row_rect.x, row_rect.y, row_rect.width, 24)
+                toolbelt_rows.append(
+                    {
+                        "tool": tool,
+                        "row_rect": row_rect,
+                        "button_rect": button_rect,
+                        "description_lines": description_lines,
+                    }
+                )
+                toolbelt_hitboxes.append((tool, button_rect))
+                tool_y = row_rect.bottom + 8
+
         card["rect"] = final_rect
+        card["toolbelt_rect"] = toolbelt_rect
+        card["toolbelt_rows"] = toolbelt_rows
         card["tab_hitboxes"] = tab_hitboxes
         card["image_rect"] = image_rect
         card["general_content_rect"] = general_content_rect
@@ -1588,6 +1720,7 @@ class EntityCard:
         card["media_import_hitboxes"] = media_import_hitboxes
         card["editable_field_hitboxes"] = editable_field_hitboxes
         card["relation_hitboxes"] = relation_hitboxes
+        card["toolbelt_hitboxes"] = toolbelt_hitboxes
         card["field_rows"] = field_rows
         card["resize_hitboxes"] = resize_hitboxes
         card["edit_toggle_rect"] = edit_toggle_rect
@@ -1799,6 +1932,47 @@ class EntityCard:
         launch_text = font.render(f"Launch [{card['selected_year']}]", True, (245, 245, 245))
         launch_text_rect = launch_text.get_rect(center=launch_rect.center)
         screen.blit(launch_text, launch_text_rect)
+        self._draw_toolbelt(screen, font, card)
+
+    def _draw_toolbelt(self, screen, font, card):
+        toolbelt_rect = card.get("toolbelt_rect")
+        if toolbelt_rect is None:
+            return
+
+        pygame.draw.rect(screen, (24, 28, 36), toolbelt_rect)
+        pygame.draw.rect(screen, (128, 144, 168), toolbelt_rect, 1)
+        pygame.draw.line(
+            screen,
+            (86, 98, 118),
+            (toolbelt_rect.x, toolbelt_rect.y + 1),
+            (toolbelt_rect.x, toolbelt_rect.bottom - 1),
+            1,
+        )
+
+        title_surface = font.render("Toolbox", True, (236, 240, 248))
+        screen.blit(title_surface, (toolbelt_rect.x + 8, toolbelt_rect.y + 10))
+
+        for row in card.get("toolbelt_rows", []):
+            row_rect = row.get("row_rect")
+            button_rect = row.get("button_rect")
+            if row_rect is None or button_rect is None:
+                continue
+
+            pygame.draw.rect(screen, (32, 38, 50), row_rect)
+            pygame.draw.rect(screen, (82, 98, 124), row_rect, 1)
+
+            pygame.draw.rect(screen, (46, 70, 96), button_rect)
+            pygame.draw.rect(screen, (158, 190, 230), button_rect, 1)
+            label = self._ellipsize_text(row.get("tool", {}).get("label", "Create"), font, button_rect.width - 12)
+            label_surface = font.render(label, True, (238, 246, 255))
+            screen.blit(label_surface, label_surface.get_rect(center=button_rect.center))
+
+            line_y = button_rect.bottom + 4
+            line_h = self._table_line_height(font)
+            for line in row.get("description_lines", []):
+                description_surface = font.render(line, True, (164, 174, 194))
+                screen.blit(description_surface, (row_rect.x + 4, line_y))
+                line_y += line_h
 
     def _draw_tabs(self, screen, font, card):
         for tab_name, tab_rect in card.get("tab_hitboxes", []):

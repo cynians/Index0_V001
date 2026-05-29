@@ -1599,3 +1599,47 @@
   placeholders: []
   entry_status: ''
   media_layers: {}
+
+# ---------- loc_draft_loc_state_bihar_001 | Draft Map Area 001 ----------
+- id: loc_draft_loc_state_bihar_001
+  pretty_name: 'Bihar State'
+  name: 'Bihar State'
+  type: location
+  location_class: region
+  parent_location: loc_state_bihar
+  notes: 'Draft rectangle map area created under Bihar State, India.'
+  bounds:
+    type: bbox
+    min_x: -45.333
+    max_x: 44.807
+    min_y: -27.824
+    max_y: 28.162
+  start_year: 2400
+  entry_status: draft
+
+
+#----------planet_hygiea----Hygiea-----------
+- id: planet_hygiea
+  pretty_name: Hygiea
+  name: Hygiea
+  type: location
+  location_class: planet
+  location_role: planetary_root
+  coords:
+    type: point
+    x: 0
+    y: 0
+  bounds:
+    type: bbox
+    min_x: -128
+    max_x: 128
+    min_y: -64
+    max_y: 64
+  derived_from_system_body: body_hygiea
+  map_projection: equirectangular
+  map_status: empty_generated
+  map_canvas_width_px: 2048
+  map_canvas_height_px: 1024
+  population:
+    y0: 0
+  start_year: 0

@@ -125,6 +125,12 @@ class MapSimulation:
         self.editing_hover_map_pos = None
         self.is_evolving_spatial_feature_polygon = False
         self.evolving_source_spatial_feature_id = None
+        self.is_placing_location_polygon = False
+        self.placing_location_entity_id = None
+        self.placing_location_points = []
+        self.placing_hover_map_pos = None
+        self.placement_ancestor_entity_ids = []
+        self.return_to_repository_entity_id = None
         self.is_creating_map_square = False
         self.map_square_anchor = None
         self.map_square_hover_pos = None
@@ -828,6 +834,11 @@ class MapSimulation:
         self.editing_hover_map_pos = None
         self.is_evolving_spatial_feature_polygon = False
         self.evolving_source_spatial_feature_id = None
+        self.is_placing_location_polygon = False
+        self.placing_location_entity_id = None
+        self.placing_location_points = []
+        self.placing_hover_map_pos = None
+        self.placement_ancestor_entity_ids = []
         self.is_creating_map_square = False
         self.map_square_anchor = None
         self.map_square_hover_pos = None
@@ -881,14 +892,23 @@ class MapSimulation:
 
         return ""
 
+    def consume_repository_return_entity_id(self):
+        entity_id = self.return_to_repository_entity_id
+        self.return_to_repository_entity_id = None
+        return entity_id
+
     def is_polygon_editor_active(self):
         return (
             self.is_creating_spatial_feature
             or self.is_editing_spatial_feature_polygon
             or self.is_evolving_spatial_feature_polygon
+            or self.is_placing_location_polygon
         )
 
     def get_polygon_editor_points(self):
+        if self.is_placing_location_polygon:
+            return self.placing_location_points
+
         if (
             self.is_editing_spatial_feature_polygon
             or self.is_evolving_spatial_feature_polygon
@@ -898,6 +918,9 @@ class MapSimulation:
         return self.draft_spatial_feature_points
 
     def get_polygon_editor_hover_point(self):
+        if self.is_placing_location_polygon:
+            return self.placing_hover_map_pos
+
         if (
             self.is_editing_spatial_feature_polygon
             or self.is_evolving_spatial_feature_polygon
@@ -910,6 +933,9 @@ class MapSimulation:
         return len(self.get_polygon_editor_points())
 
     def get_polygon_editor_mode_label(self):
+        if self.is_placing_location_polygon:
+            return "Place on parent"
+
         if self.is_evolving_spatial_feature_polygon:
             return "Evolve region"
 
@@ -972,6 +998,66 @@ class MapSimulation:
         )
         return True
 
+    def begin_location_parent_polygon_placement(self, location_id, return_to_repository=True):
+        location = self.get_location(location_id)
+        if not location:
+            return False
+
+        if location.get("_dataset") not in (None, "locations"):
+            return False
+
+        if location.get("type") != "location":
+            return False
+
+        parent_location = location.get("parent_location")
+        if parent_location != self.context.root_entity_id:
+            return False
+
+        bounds = location.get("bounds") or {}
+        points = []
+        if bounds.get("type") == "polygon":
+            points = self._get_geometry_points(bounds)
+        elif bounds.get("type") == "bbox":
+            points = self._get_geometry_points(bounds)
+
+        self._set_all_editor_modes_inactive()
+        self.active_layer_kind = self.LOCATION_LAYER_KIND
+        self.is_placing_location_polygon = True
+        self.placing_location_entity_id = location_id
+        self.placing_location_points = list(points)
+        self.placing_hover_map_pos = None
+        self.placement_ancestor_entity_ids = self._placement_ancestor_ids(parent_location)
+        self.return_to_repository_entity_id = location_id if return_to_repository else None
+        self.selected_entity_id = location_id
+        self.hover_entity_id = None
+        self.selected_spatial_feature_id = None
+        self.hover_spatial_feature_id = None
+        self.hover_screen_pos = None
+        self._invalidate_layer_cache()
+
+        logger.info(f"[MapSimulation] Started parent placement polygon {location_id}")
+        return True
+
+    def _placement_ancestor_ids(self, parent_location_id):
+        ancestor_ids = []
+        visited = set()
+        current = self.world_model.get_entity(parent_location_id)
+        while current:
+            current_id = current.get("id")
+            parent_id = current.get("parent_location")
+            if not parent_id or parent_id in visited:
+                break
+
+            visited.add(parent_id)
+            parent = self.world_model.get_entity(parent_id)
+            if not parent:
+                break
+
+            ancestor_ids.append(parent_id)
+            current = parent
+
+        return ancestor_ids
+
     def cancel_spatial_feature_draft(self):
         if not self.is_creating_spatial_feature:
             return False
@@ -996,6 +1082,22 @@ class MapSimulation:
         self._draft_last_click_screen_pos = None
 
         logger.info("[MapSimulation] Cancelled map rectangle draft")
+        return True
+
+    def cancel_location_parent_polygon_placement(self):
+        if not self.is_placing_location_polygon:
+            return False
+
+        target_id = self.placing_location_entity_id
+        self.is_placing_location_polygon = False
+        self.placing_location_entity_id = None
+        self.placing_location_points = []
+        self.placing_hover_map_pos = None
+        self.placement_ancestor_entity_ids = []
+        self.selected_entity_id = target_id
+        self._invalidate_layer_cache()
+
+        logger.info(f"[MapSimulation] Cancelled parent placement polygon {target_id}")
         return True
 
     def begin_location_square_edit(self, target_kind, target_id):
@@ -1284,7 +1386,119 @@ class MapSimulation:
         )
         return True
 
+    def finish_location_parent_polygon_placement(self):
+        if not self.is_placing_location_polygon:
+            return False
+
+        if len(self.placing_location_points) < 3:
+            return False
+
+        target_id = self.placing_location_entity_id
+        parent_id = self._smallest_placement_parent_for_points(
+            self.placing_location_points
+        )
+        bounds = {
+            "type": "polygon",
+            "coordinate_space": "map_world",
+            "points": list(self.placing_location_points),
+        }
+        if parent_id and not self._update_location_parent(target_id, parent_id):
+            return False
+
+        if not self._update_location_bounds(target_id, bounds):
+            return False
+
+        target = self.get_location(target_id)
+        if target is not None:
+            if parent_id:
+                target["parent_location"] = parent_id
+            target["bounds"] = bounds
+
+        self.is_placing_location_polygon = False
+        self.placing_location_entity_id = None
+        self.placing_location_points = []
+        self.placing_hover_map_pos = None
+        self.placement_ancestor_entity_ids = []
+        self.selected_entity_id = target_id
+        self.hover_entity_id = None
+        self.selected_spatial_feature_id = None
+        self.hover_spatial_feature_id = None
+        self.hover_screen_pos = None
+
+        if hasattr(self.world_model, "refresh"):
+            self.world_model.refresh()
+
+        self._invalidate_layer_cache()
+
+        logger.info(f"[MapSimulation] Saved parent placement polygon {target_id}")
+        return True
+
+    def _smallest_placement_parent_for_points(self, points):
+        candidate_ids = [self.context.root_entity_id]
+        for entity_id in self.placement_ancestor_entity_ids:
+            if entity_id not in candidate_ids:
+                candidate_ids.append(entity_id)
+
+        containing_candidates = []
+        for entity_id in candidate_ids:
+            entity = self.get_location(entity_id)
+            if not entity:
+                continue
+
+            candidate_points = self._location_container_points(entity)
+            if len(candidate_points) < 3:
+                continue
+
+            if not self._polygon_contains_points(candidate_points, points):
+                continue
+
+            containing_candidates.append((
+                self._polygon_area(candidate_points),
+                entity_id,
+            ))
+
+        if not containing_candidates:
+            return self.context.root_entity_id
+
+        containing_candidates.sort(key=lambda item: item[0])
+        return containing_candidates[0][1]
+
+    def _location_container_points(self, entity):
+        bounds = entity.get("bounds") or {}
+        if bounds.get("type") in {"bbox", "polygon"}:
+            return self._get_geometry_points(bounds)
+
+        if entity.get("location_class") == "planet":
+            rect = self._planet_rect_from_entity(entity)
+            half_w = rect["width_world"] / 2.0
+            half_h = rect["height_world"] / 2.0
+            return [
+                (rect["x"] - half_w, rect["y"] - half_h),
+                (rect["x"] + half_w, rect["y"] - half_h),
+                (rect["x"] + half_w, rect["y"] + half_h),
+                (rect["x"] - half_w, rect["y"] + half_h),
+            ]
+
+        return []
+
+    def _polygon_contains_points(self, container_points, points):
+        if len(container_points) < 3 or len(points) < 3:
+            return False
+
+        return all(
+            self._point_in_polygon_points(
+                point[0],
+                point[1],
+                container_points,
+                edge_tolerance=1e-9,
+            )
+            for point in points
+        )
+
     def finish_polygon_editor(self):
+        if self.is_placing_location_polygon:
+            return self.finish_location_parent_polygon_placement()
+
         if (
             self.is_editing_spatial_feature_polygon
             or self.is_evolving_spatial_feature_polygon
@@ -1294,6 +1508,9 @@ class MapSimulation:
         return self.finish_spatial_feature_draft()
 
     def cancel_polygon_editor(self):
+        if self.is_placing_location_polygon:
+            return self.cancel_location_parent_polygon_placement()
+
         if (
             self.is_editing_spatial_feature_polygon
             or self.is_evolving_spatial_feature_polygon
@@ -1403,7 +1620,9 @@ class MapSimulation:
                     ]
 
         mode = "draft"
-        if self.is_evolving_spatial_feature_polygon:
+        if self.is_placing_location_polygon:
+            mode = "place"
+        elif self.is_evolving_spatial_feature_polygon:
             mode = "evolve"
         elif self.is_editing_spatial_feature_polygon:
             mode = "edit"
@@ -1844,6 +2063,20 @@ class MapSimulation:
         return "\n".join(lines) + "\n"
 
     def _format_location_bounds_lines(self, bounds):
+        if bounds.get("type") == "polygon":
+            lines = [
+                "  bounds:",
+                "    type: polygon",
+                "    coordinate_space: map_world",
+                "    points:",
+            ]
+            for x, y in bounds.get("points", []):
+                lines.append(
+                    f"      - [{self._format_yaml_number(x)}, "
+                    f"{self._format_yaml_number(y)}]"
+                )
+            return lines
+
         return [
             "  bounds:",
             "    type: bbox",
@@ -2296,6 +2529,28 @@ class MapSimulation:
         entry_path.write_text(updated_text, encoding="utf-8")
         return True
 
+    def _update_location_parent(self, location_id, parent_location_id):
+        entry_path = self.LOCATIONS_ENTRY_PATH
+        if not entry_path.exists():
+            return False
+
+        text = entry_path.read_text(encoding="utf-8")
+        found = self._find_yaml_entity_block(text, location_id)
+        if found is None:
+            return False
+
+        block_start, block_end = found
+        block = text[block_start:block_end]
+        block = self._replace_yaml_plain_field_in_block(
+            block,
+            "parent_location",
+            parent_location_id,
+        )
+
+        updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
+        entry_path.write_text(updated_text, encoding="utf-8")
+        return True
+
     def _update_spatial_feature_end_year(self, spatial_feature_id, end_year):
         entry_path = self.SPATIAL_FEATURES_ENTRY_PATH
         if not entry_path.exists():
@@ -2641,6 +2896,70 @@ class MapSimulation:
         layers.sort(key=self._spatial_layer_sort_key)
         return layers
 
+    def _build_location_bounds_layer(self, entity, color, draw_order=0, virtual=False):
+        bounds = entity.get("bounds") or {}
+        points = []
+
+        if bounds.get("type") == "bbox":
+            points = self._get_geometry_points(bounds)
+        elif bounds.get("type") == "polygon":
+            points = self._get_geometry_points(bounds)
+        elif entity.get("location_class") == "planet":
+            rect = self._planet_rect_from_entity(entity)
+            half_w = rect["width_world"] / 2.0
+            half_h = rect["height_world"] / 2.0
+            points = [
+                (rect["x"] - half_w, rect["y"] - half_h),
+                (rect["x"] + half_w, rect["y"] - half_h),
+                (rect["x"] + half_w, rect["y"] + half_h),
+                (rect["x"] - half_w, rect["y"] + half_h),
+            ]
+
+        if len(points) < 3:
+            return None
+
+        world_points = [
+            self._map_point_to_world(point[0], point[1])
+            for point in points
+        ]
+        centroid_x, centroid_y = self._polygon_centroid(world_points)
+        return {
+            "shape": "polygon",
+            "x": centroid_x,
+            "y": centroid_y,
+            "points": world_points,
+            "name": entity.get("name"),
+            "entity_id": entity.get("id"),
+            "color": color,
+            "area_world": self._polygon_area(points),
+            "draw_order": draw_order,
+            "is_virtual_spatial_feature": virtual,
+        }
+
+    def _build_placement_ancestor_layers(self):
+        layers = []
+        if not self.is_placing_location_polygon:
+            return layers
+
+        colors = [
+            (82, 98, 122),
+            (68, 82, 104),
+            (56, 68, 88),
+        ]
+        for index, entity_id in enumerate(reversed(self.placement_ancestor_entity_ids)):
+            entity = self.get_location(entity_id)
+            if not entity:
+                continue
+            layer = self._build_location_bounds_layer(
+                entity,
+                colors[min(index, len(colors) - 1)],
+                draw_order=-100 - index,
+                virtual=True,
+            )
+            if layer is not None:
+                layers.append(layer)
+        return layers
+
     def _build_layers(self, year):
         """
         Build render layers from active entities.
@@ -2654,6 +2973,7 @@ class MapSimulation:
             return self._build_spatial_feature_layers(year, self.active_layer_kind)
 
         layers = []
+        layers.extend(self._build_placement_ancestor_layers())
 
         for entity in self.context.get_active_locations():
             if not entity:
@@ -2663,6 +2983,11 @@ class MapSimulation:
             if (
                 self.is_editing_map_square
                 and entity_id == self.editing_map_square_entity_id
+            ):
+                continue
+            if (
+                self.is_placing_location_polygon
+                and entity_id == self.placing_location_entity_id
             ):
                 continue
 
@@ -2739,6 +3064,26 @@ class MapSimulation:
                     "color": color,
                 })
                 continue
+
+            if bounds.get("type") == "polygon":
+                map_points = self._get_geometry_points(bounds)
+                if len(map_points) >= 3:
+                    points = [
+                        self._map_point_to_world(point[0], point[1])
+                        for point in map_points
+                    ]
+                    centroid_x, centroid_y = self._polygon_centroid(points)
+                    layers.append({
+                        "shape": "polygon",
+                        "x": centroid_x,
+                        "y": centroid_y,
+                        "points": points,
+                        "name": entity.get("name"),
+                        "entity_id": entity_id,
+                        "color": color,
+                        "area_world": self._polygon_area(map_points),
+                    })
+                    continue
 
             if x is None or y is None:
                 continue
@@ -3044,6 +3389,10 @@ class MapSimulation:
         )
 
     def _set_polygon_editor_hover_point(self, map_point):
+        if self.is_placing_location_polygon:
+            self.placing_hover_map_pos = map_point
+            return
+
         if (
             self.is_editing_spatial_feature_polygon
             or self.is_evolving_spatial_feature_polygon
@@ -3053,6 +3402,10 @@ class MapSimulation:
             self.draft_hover_map_pos = map_point
 
     def _append_polygon_editor_point(self, map_point):
+        if self.is_placing_location_polygon:
+            self.placing_location_points.append(map_point)
+            return len(self.placing_location_points)
+
         if (
             self.is_editing_spatial_feature_polygon
             or self.is_evolving_spatial_feature_polygon

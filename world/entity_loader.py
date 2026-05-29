@@ -94,12 +94,117 @@ class EntityLoader:
 
         self.datasets = {}
         self.entities = {}
+        self.entity_aliases = {}
         self.edges = {}
         self._dataset_file_records = []
 
         self.refresh()
 
     # --------------------------------------------------
+
+    def _is_blank_value(self, value):
+        return value is None or value == "" or value == []
+
+    def _copy_missing_fields(self, target, source, fields):
+        for field in fields:
+            if field not in source:
+                continue
+            if field not in target or self._is_blank_value(target.get(field)):
+                target[field] = source.get(field)
+
+    def _converted_system_location_class(self, entity):
+        system_role = entity.get("system_role")
+        if system_role == "star_system":
+            return entity.get("system_class") or "star_system"
+        if system_role == "orbital_body":
+            return entity.get("body_class") or "orbital_body"
+        return entity.get("system_class") or entity.get("body_class") or "system"
+
+    def _convert_system_entity_to_location(self, entity):
+        converted = dict(entity)
+        converted["_legacy_dataset"] = converted.get("_dataset", "systems")
+        converted["_dataset"] = "locations"
+        converted["type"] = "location"
+        if not converted.get("location_class"):
+            converted["location_class"] = self._converted_system_location_class(entity)
+        if not converted.get("location_role"):
+            converted["location_role"] = entity.get("system_role") or "system"
+        return converted
+
+    def _fold_system_entities_into_locations(self):
+        """
+        Present legacy systems.yaml rows as location-class entries.
+
+        Orbital bodies with an explicit location_entity are merged into that
+        canonical location so planets do not appear twice in the repository
+        browser. Bodies without a map/location anchor remain visible as
+        location entries using their legacy id.
+        """
+        system_entities = self.datasets.get("systems")
+        if not system_entities:
+            return
+
+        location_entities = self.datasets.setdefault("locations", [])
+        location_by_id = {
+            entity.get("id"): entity
+            for entity in location_entities
+            if isinstance(entity, dict) and entity.get("id")
+        }
+
+        system_fields = [
+            "system_role",
+            "system_class",
+            "star_system",
+            "body_class",
+            "parent_body",
+            "location_entity",
+            "mass_kg",
+            "radius_m",
+            "semi_major_axis_m",
+            "eccentricity",
+            "inclination_deg",
+            "longitude_of_ascending_node_deg",
+            "argument_of_periapsis_deg",
+            "mean_anomaly_deg_at_epoch",
+            "display_color",
+        ]
+
+        for system_entity in list(system_entities):
+            if not isinstance(system_entity, dict):
+                continue
+
+            system_id = system_entity.get("id")
+            converted = self._convert_system_entity_to_location(system_entity)
+            canonical_id = system_entity.get("location_entity")
+
+            if canonical_id and canonical_id in location_by_id:
+                canonical = location_by_id[canonical_id]
+                self._copy_missing_fields(canonical, converted, system_fields)
+                if not canonical.get("location_class"):
+                    canonical["location_class"] = converted.get("location_class")
+                if not canonical.get("location_role"):
+                    canonical["location_role"] = converted.get("location_role")
+                if not canonical.get("derived_from_system_body") and system_id:
+                    canonical["derived_from_system_body"] = system_id
+                if system_id:
+                    canonical["legacy_system_entity_id"] = system_id
+                    self.entity_aliases[system_id] = canonical_id
+                continue
+
+            if converted.get("id") in location_by_id:
+                canonical = location_by_id[converted["id"]]
+                self._copy_missing_fields(canonical, converted, system_fields)
+                if not canonical.get("location_class"):
+                    canonical["location_class"] = converted.get("location_class")
+                if not canonical.get("location_role"):
+                    canonical["location_role"] = converted.get("location_role")
+                continue
+
+            location_entities.append(converted)
+            if converted.get("id"):
+                location_by_id[converted["id"]] = converted
+
+        self.datasets.pop("systems", None)
 
     def _ensure_standard_relations(self, entity, dataset_name=None):
         changed = False
@@ -215,6 +320,7 @@ class EntityLoader:
           without breaking existing world queries
         """
         self.datasets = {}
+        self.entity_aliases = {}
         self._dataset_file_records = []
 
         if not self.entries_directory.exists():
@@ -278,6 +384,8 @@ class EntityLoader:
 
             except Exception as exc:
                 logger.exception("Failed to load dataset from %s: %s", file, exc)
+
+        self._fold_system_entities_into_locations()
 
     # --------------------------------------------------
 
@@ -429,8 +537,14 @@ class EntityLoader:
     # --------------------------------------------------
 
     def get(self, entity_id):
+        if entity_id in self.entities:
+            return self.entities.get(entity_id)
 
-        return self.entities.get(entity_id)
+        canonical_id = self.entity_aliases.get(entity_id)
+        if canonical_id:
+            return self.entities.get(canonical_id)
+
+        return None
 
     def get_dataset(self, dataset_name):
 
