@@ -2,7 +2,14 @@ schema: task
 
 extends: entity_core
 
-fields: {}
+fields:
+  checklist:
+    type: object_list
+    optional: true
+
+  entry_status:
+    type: string
+    optional: true
 
 # --------------------------------------------------
 # COMMENTED EXAMPLE ENTRY

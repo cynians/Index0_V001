@@ -2,6 +2,7 @@ from simulations.bioregion.bioregion_renderer import BioregionRenderer
 from simulations.map.map_renderer import MapRenderer
 from simulations.space.space_renderer import SpaceRenderer
 from simulations.vehicle.vehicle_renderer import VehicleRenderer
+from simulations.world_gen.world_gen_renderer import WorldGenRenderer
 
 
 class Renderer:
@@ -23,6 +24,7 @@ class Renderer:
         self.map_renderer = MapRenderer(simulation)
         self.space_renderer = SpaceRenderer(simulation)
         self.vehicle_renderer = VehicleRenderer(simulation)
+        self.world_gen_renderer = WorldGenRenderer(simulation)
 
     # --------------------------------------------------
     # MAIN ENTRY
@@ -56,6 +58,11 @@ class Renderer:
         if render_mode == "space":
             self.space_renderer.draw(self.screen, sim)
             return
+
+        if render_mode == "world_gen":
+            self.world_gen_renderer.draw(self.screen, sim)
+            return
+
         if render_mode == "vehicle":
             self.vehicle_renderer.draw(self.screen, sim)
             return

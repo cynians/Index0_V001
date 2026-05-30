@@ -50,20 +50,15 @@ class MapSimulation:
     )
 
     LOCATION_LAYER_KIND = "locations"
+    REGION_LAYER_KIND = "regions"
 
     LAYER_LABELS = {
         "locations": "Locations",
-        "ecoregions": "Ecoregions",
-        "faction_borders": "Faction Borders",
-        "political_control": "Political Control",
-        "settlement_extent": "Settlement Extent",
-        "resource_claims": "Resource Claims",
-        "infrastructure_corridors": "Infrastructure Corridors",
-        "city_margins": "City Margins",
-        "sites": "Sites",
+        "regions": "Regions",
     }
 
     SPATIAL_LAYER_COLORS = {
+        "regions": (116, 132, 164),
         "ecoregions": (74, 132, 82),
         "faction_borders": (150, 82, 82),
         "political_control": (150, 82, 82),
@@ -74,12 +69,7 @@ class MapSimulation:
         "sites": (86, 118, 158),
     }
 
-    AUTHORABLE_HISTORY_LAYER_KINDS = [
-        "settlement_extent",
-        "political_control",
-        "resource_claims",
-        "infrastructure_corridors",
-    ]
+    AUTHORABLE_HISTORY_LAYER_KINDS = [REGION_LAYER_KIND]
 
     def __init__(self, simulation_context):
         from engine.clock import Clock
@@ -536,20 +526,12 @@ class MapSimulation:
         return self._format_layer_label(self.active_layer_kind)
 
     def get_available_layer_kinds(self):
-        layer_kinds = [self.LOCATION_LAYER_KIND]
-
-        for layer_kind in self.AUTHORABLE_HISTORY_LAYER_KINDS:
-            if layer_kind not in layer_kinds:
-                layer_kinds.append(layer_kind)
-
-        for feature in self._get_scoped_spatial_features():
-            layer_kind = feature.get("layer_kind")
-            if layer_kind and layer_kind not in layer_kinds:
-                layer_kinds.append(layer_kind)
-
-        return layer_kinds
+        return [self.LOCATION_LAYER_KIND, self.REGION_LAYER_KIND]
 
     def set_active_layer_kind(self, layer_kind):
+        if layer_kind not in {self.LOCATION_LAYER_KIND, self.REGION_LAYER_KIND}:
+            layer_kind = self.REGION_LAYER_KIND
+
         available = self.get_available_layer_kinds()
         if layer_kind not in available:
             layer_kind = self.LOCATION_LAYER_KIND
@@ -618,9 +600,6 @@ class MapSimulation:
         if not location_id:
             return False
 
-        if location_id == self.context.root_entity_id:
-            return False
-
         entity = self.get_location(location_id)
         if not entity:
             return False
@@ -631,17 +610,35 @@ class MapSimulation:
         if entity.get("type") != "location":
             return False
 
-        if entity.get("location_class") == "planet":
-            return False
-
         return True
+
+    def _get_entity_rectangle_bounds(self, entity):
+        if not entity or entity.get("location_class") not in {"planet", "moon"}:
+            return None
+
+        bounds = self._get_entity_bbox_bounds(entity)
+        if bounds is not None:
+            return bounds
+
+        if entity.get("location_class") in {"planet", "moon"}:
+            rect = self._planet_rect_from_entity(entity)
+            half_w = rect["width_world"] / 2.0
+            half_h = rect["height_world"] / 2.0
+            return {
+                "min_x": rect["x"] - half_w,
+                "max_x": rect["x"] + half_w,
+                "min_y": rect["y"] - half_h,
+                "max_y": rect["y"] + half_h,
+            }
+
+        return None
 
     def _can_edit_location_bounds(self, location_id):
         if not self._can_open_location_inspector(location_id):
             return False
 
         entity = self.get_location(location_id)
-        return self._get_entity_bbox_bounds(entity) is not None
+        return self._get_entity_rectangle_bounds(entity) is not None
 
     def _map_image_target_entity_id(self):
         selected_entity = self.get_location(self.selected_entity_id)
@@ -663,12 +660,24 @@ class MapSimulation:
         if not isinstance(entity, dict):
             return None
 
-        if entity.get("location_class") == "planet":
+        if entity.get("location_class") in {"planet", "moon"}:
             return self._planet_rect_from_entity(entity)
 
         bounds = self._get_entity_bbox_bounds(entity)
         if bounds is None:
-            return None
+            geometry = entity.get("bounds") or entity.get("geometry") or {}
+            points = self._get_geometry_points(geometry)
+            if len(points) < 3:
+                return None
+
+            xs = [point[0] for point in points]
+            ys = [point[1] for point in points]
+            bounds = {
+                "min_x": min(xs),
+                "max_x": max(xs),
+                "min_y": min(ys),
+                "max_y": max(ys),
+            }
 
         min_x = bounds["min_x"]
         max_x = bounds["max_x"]
@@ -799,7 +808,7 @@ class MapSimulation:
         return True
 
     def _can_inspect_location(self, location_id):
-        return self._can_edit_location_bounds(location_id)
+        return self._can_open_location_inspector(location_id)
 
     def consume_pending_inspector_target(self):
         target = self._pending_inspector_target
@@ -807,10 +816,16 @@ class MapSimulation:
         return target
 
     def can_create_spatial_feature_draft(self):
-        return self.active_layer_kind != self.LOCATION_LAYER_KIND
+        return self.active_layer_kind == self.REGION_LAYER_KIND
 
     def can_create_map_square_draft(self):
-        return self.active_layer_kind == self.LOCATION_LAYER_KIND
+        if self.active_layer_kind != self.LOCATION_LAYER_KIND:
+            return False
+
+        if self.selected_entity_id and self._can_edit_location_bounds(self.selected_entity_id):
+            return True
+
+        return self._can_edit_location_bounds(self.context.root_entity_id)
 
     def is_square_editor_active(self):
         return self.is_creating_map_square or self.is_editing_map_square
@@ -983,6 +998,12 @@ class MapSimulation:
         if not self.can_create_map_square_draft():
             return False
 
+        if self.selected_entity_id and self._can_edit_location_bounds(self.selected_entity_id):
+            return self.begin_location_square_edit("location", self.selected_entity_id)
+
+        if self._can_edit_location_bounds(self.context.root_entity_id):
+            return self.begin_location_square_edit("location", self.context.root_entity_id)
+
         self._set_all_editor_modes_inactive()
         self.is_creating_map_square = True
         self._draft_last_click_time = None
@@ -1108,7 +1129,7 @@ class MapSimulation:
             return False
 
         entity = self.get_location(target_id)
-        bounds = self._get_entity_bbox_bounds(entity)
+        bounds = self._get_entity_rectangle_bounds(entity)
         if bounds is None:
             return False
 
@@ -1523,13 +1544,22 @@ class MapSimulation:
         if not self.can_finish_spatial_feature_draft():
             return False
 
-        feature = self._build_draft_spatial_feature_record()
+        region = self._build_draft_spatial_feature_record()
 
         try:
-            self._append_spatial_feature_record(feature)
+            self._append_location_record(region)
+            linked_parent = self._append_offspring_reference_to_location(
+                self.context.root_entity_id,
+                region["id"],
+            )
         except OSError as exc:
             logger.error(
-                f"[MapSimulation] Failed to save spatial feature draft: {exc}"
+                f"[MapSimulation] Failed to save region draft: {exc}"
+            )
+            return False
+        if not linked_parent:
+            logger.error(
+                f"[MapSimulation] Failed to link parent offspring for {region['id']}"
             )
             return False
 
@@ -1538,10 +1568,10 @@ class MapSimulation:
         self.draft_hover_map_pos = None
         self._draft_last_click_time = None
         self._draft_last_click_screen_pos = None
-        self.last_saved_spatial_feature_id = feature["id"]
+        self.last_saved_spatial_feature_id = region["id"]
         self.selected_entity_id = None
         self.hover_entity_id = None
-        self.selected_spatial_feature_id = feature["id"]
+        self.selected_spatial_feature_id = region["id"]
         self.hover_spatial_feature_id = None
         self.hover_screen_pos = None
 
@@ -1551,7 +1581,7 @@ class MapSimulation:
         self._invalidate_layer_cache()
 
         logger.info(
-            f"[MapSimulation] Saved spatial feature draft {feature['id']}"
+            f"[MapSimulation] Saved region draft {region['id']}"
         )
         return True
 
@@ -1817,11 +1847,10 @@ class MapSimulation:
     def _allocate_spatial_feature_draft_id(self):
         existing_ids = self._get_existing_entity_ids()
         root_id = self._sanitize_identifier_part(self.context.root_entity_id)
-        layer_kind = self._sanitize_identifier_part(self.active_layer_kind)
 
         index = 1
         while True:
-            feature_id = f"sf_draft_{layer_kind}_{root_id}_{index:03d}"
+            feature_id = f"loc_region_{root_id}_{index:03d}"
             if feature_id not in existing_ids:
                 return feature_id, index
             index += 1
@@ -1853,18 +1882,28 @@ class MapSimulation:
         feature_id, index = self._allocate_spatial_feature_draft_id()
         layer_label = self.get_active_layer_label()
         root_name = self.get_root_name()
-        name = f"Draft {layer_label} Selection {index:03d}"
-        notes = f"Draft polygon created from the {layer_label} map layer under {root_name}."
+        name = f"Draft {layer_label} Region {index:03d}"
+        notes = f"Draft region polygon created under {root_name}."
 
         return {
             "id": feature_id,
             "pretty_name": name,
             "name": name,
-            "type": "spatial_feature",
+            "type": "location",
+            "location_class": "region",
+            "location_role": "map_region",
+            "region_class": self.active_layer_kind,
             "notes": notes,
             "layer_kind": self.active_layer_kind,
+            "parent_location": self.context.root_entity_id,
             "parent_entity": self.context.root_entity_id,
+            "parents": [self.context.root_entity_id],
             "geometry": {
+                "type": "polygon",
+                "coordinate_space": "map_world",
+                "points": list(self.draft_spatial_feature_points),
+            },
+            "bounds": {
                 "type": "polygon",
                 "coordinate_space": "map_world",
                 "points": list(self.draft_spatial_feature_points),
@@ -2097,10 +2136,28 @@ class MapSimulation:
         lines.extend([
             "  type: location",
             f"  location_class: {location['location_class']}",
-            f"  parent_location: {location['parent_location']}",
         ])
+        if location.get("location_role"):
+            lines.append(f"  location_role: {location['location_role']}")
+        if location.get("region_class"):
+            lines.append(f"  region_class: {location['region_class']}")
+        if location.get("layer_kind"):
+            lines.append(f"  layer_kind: {location['layer_kind']}")
+        if location.get("parent_location"):
+            lines.append(f"  parent_location: {location['parent_location']}")
+        if location.get("parent_entity"):
+            lines.append(f"  parent_entity: {location['parent_entity']}")
+        if location.get("parents"):
+            lines.extend(self._format_yaml_list_field_lines("parents", location.get("parents")))
         lines.extend(self._format_yaml_field_lines("notes", location["notes"]))
         lines.extend(self._format_location_bounds_lines(location["bounds"]))
+        geometry = location.get("geometry")
+        if isinstance(geometry, dict) and geometry.get("type") == "polygon":
+            geometry_lines = self._format_spatial_feature_geometry_lines(
+                geometry.get("points", []),
+            )
+            geometry_lines[0] = "  geometry:"
+            lines.extend(geometry_lines)
         lines.extend([
             f"  start_year: {location['start_year']}",
             "  entry_status: draft",
@@ -2136,6 +2193,74 @@ class MapSimulation:
         separator = "" if existing_text.endswith("\n") else "\n"
         entry_path.write_text(existing_text + separator + block, encoding="utf-8")
 
+    def _append_offspring_reference_to_location(self, parent_location_id, child_location_id):
+        if not parent_location_id or not child_location_id:
+            return False
+
+        entry_path = self.LOCATIONS_ENTRY_PATH
+        if not entry_path.exists():
+            return False
+
+        text = entry_path.read_text(encoding="utf-8")
+        found = self._find_yaml_entity_block(text, parent_location_id)
+        if found is None:
+            return False
+
+        block_start, block_end = found
+        block = text[block_start:block_end]
+        updated_block = self._append_yaml_offspring_reference(block, child_location_id)
+        if updated_block == block:
+            return True
+
+        updated_text = text[:block_start] + updated_block + text[block_end:].lstrip("\n")
+        entry_path.write_text(updated_text, encoding="utf-8")
+        return True
+
+    def _append_yaml_offspring_reference(self, block_text, child_location_id):
+        child_location_id = str(child_location_id).strip()
+        if not child_location_id:
+            return block_text
+
+        lines = block_text.rstrip("\n").splitlines()
+        target_prefix = "  offspring:"
+        index = 0
+        while index < len(lines):
+            if not lines[index].startswith(target_prefix):
+                index += 1
+                continue
+
+            end_index = index + 1
+            while end_index < len(lines):
+                line = lines[end_index]
+                if line.startswith("  ") and not line.startswith("    "):
+                    break
+                if line.startswith("- id: "):
+                    break
+                end_index += 1
+
+            offspring_lines = lines[index:end_index]
+            if any(child_location_id in line for line in offspring_lines):
+                return block_text
+
+            child_line = f"    - id: {child_location_id}"
+            if lines[index].strip() == "offspring: []":
+                lines[index:end_index] = ["  offspring:", child_line]
+            else:
+                lines.insert(end_index, child_line)
+            return "\n".join(lines) + "\n"
+
+        child_lines = [
+            "  offspring:",
+            f"    - id: {child_location_id}",
+        ]
+        insert_index = len(lines)
+        for index, line in enumerate(lines):
+            if line.startswith("  entry_status:"):
+                insert_index = index
+                break
+
+        return "\n".join(lines[:insert_index] + child_lines + lines[insert_index:]) + "\n"
+
     def save_selection_inspector_updates(self, target_kind, target_id, updates):
         if target_kind not in {"spatial_feature", "location"}:
             return False
@@ -2167,6 +2292,44 @@ class MapSimulation:
         logger.info(f"[MapSimulation] Updated inspector fields {target_kind}:{target_id}")
         return True
 
+    def delete_selection_inspector_target(self, target_kind, target_id):
+        if target_kind != "spatial_feature":
+            return False
+        if not self._is_real_spatial_feature_id(target_id):
+            return False
+
+        entity = self.get_spatial_feature(target_id)
+        if not isinstance(entity, dict):
+            return False
+
+        is_location_region = self._is_location_backed_region(target_id)
+        entry_path = self.LOCATIONS_ENTRY_PATH if is_location_region else self.SPATIAL_FEATURES_ENTRY_PATH
+        parent_location_id = entity.get("parent_location") or entity.get("parent_entity")
+
+        try:
+            if not self._delete_yaml_entity_block(entry_path, target_id):
+                return False
+            if is_location_region and parent_location_id:
+                self._remove_offspring_reference_from_location(parent_location_id, target_id)
+        except OSError as exc:
+            logger.error(f"[MapSimulation] Failed to delete region {target_id}: {exc}")
+            return False
+
+        if hasattr(self.world_model, "refresh"):
+            self.world_model.refresh()
+
+        self.selected_spatial_feature_id = None
+        self.hover_spatial_feature_id = None
+        if self.selected_entity_id == target_id:
+            self.selected_entity_id = None
+        self.hover_entity_id = None
+        self.hover_screen_pos = None
+        self._pending_inspector_target = None
+        self._invalidate_layer_cache()
+
+        logger.info(f"[MapSimulation] Deleted region {target_id}")
+        return True
+
     def reanchor_selection_time(self, target_kind, target_id, year):
         if target_kind not in {"spatial_feature", "location"}:
             return False
@@ -2180,7 +2343,11 @@ class MapSimulation:
             if not self._is_real_spatial_feature_id(target_id):
                 return False
             entity = self.get_spatial_feature(target_id)
-            entry_path = self.SPATIAL_FEATURES_ENTRY_PATH
+            entry_path = (
+                self.LOCATIONS_ENTRY_PATH
+                if self._is_location_backed_region(target_id)
+                else self.SPATIAL_FEATURES_ENTRY_PATH
+            )
         else:
             if not self._can_open_location_inspector(target_id):
                 return False
@@ -2271,6 +2438,15 @@ class MapSimulation:
 
         return not str(spatial_feature_id).startswith("virtual:")
 
+    def _is_location_backed_region(self, entity_id):
+        entity = self.get_location(entity_id)
+        return (
+            isinstance(entity, dict)
+            and entity.get("_dataset") in (None, "locations")
+            and entity.get("type") == "location"
+            and entity.get("location_class") == "region"
+        )
+
     def _find_yaml_entity_block(self, text, entity_id):
         start_pattern = rf"(?m)^- id: {re.escape(str(entity_id))}\s*$"
         start_match = re.search(start_pattern, text)
@@ -2281,6 +2457,108 @@ class MapSimulation:
         block_start = start_match.start()
         block_end = start_match.end() + next_match.start() if next_match else len(text)
         return block_start, block_end
+
+    def _delete_yaml_entity_block(self, entry_path, entity_id):
+        if not entry_path.exists():
+            return False
+
+        text = entry_path.read_text(encoding="utf-8")
+        found = self._find_yaml_entity_block(text, entity_id)
+        if found is None:
+            return False
+
+        block_start, block_end = found
+        before = text[:block_start].rstrip()
+        after = text[block_end:].lstrip("\n")
+        if before and after:
+            updated_text = before + "\n" + after
+        else:
+            updated_text = before + after
+        if updated_text and not updated_text.endswith("\n"):
+            updated_text += "\n"
+
+        entry_path.write_text(updated_text, encoding="utf-8")
+        return True
+
+    def _remove_offspring_reference_from_location(self, parent_location_id, child_location_id):
+        if not parent_location_id or not child_location_id:
+            return False
+
+        entry_path = self.LOCATIONS_ENTRY_PATH
+        if not entry_path.exists():
+            return False
+
+        text = entry_path.read_text(encoding="utf-8")
+        found = self._find_yaml_entity_block(text, parent_location_id)
+        if found is None:
+            return False
+
+        block_start, block_end = found
+        block = text[block_start:block_end]
+        updated_block = self._remove_yaml_offspring_reference(block, child_location_id)
+        if updated_block == block:
+            return True
+
+        updated_text = text[:block_start] + updated_block + text[block_end:].lstrip("\n")
+        entry_path.write_text(updated_text, encoding="utf-8")
+        return True
+
+    def _remove_yaml_offspring_reference(self, block_text, child_location_id):
+        child_location_id = str(child_location_id).strip()
+        if not child_location_id:
+            return block_text
+
+        lines = block_text.rstrip("\n").splitlines()
+        offspring_index = None
+        for index, line in enumerate(lines):
+            if line.startswith("  offspring:"):
+                offspring_index = index
+                break
+
+        if offspring_index is None:
+            return block_text
+
+        section_end = offspring_index + 1
+        while section_end < len(lines):
+            line = lines[section_end]
+            if line.startswith("  ") and not line.startswith("    "):
+                break
+            if line.startswith("- id: "):
+                break
+            section_end += 1
+
+        remove_start = None
+        remove_end = None
+        index = offspring_index + 1
+        while index < section_end:
+            line = lines[index]
+            stripped = line.strip()
+            is_matching_item = (
+                stripped == f"- {child_location_id}"
+                or stripped == f"- id: {child_location_id}"
+            )
+            if is_matching_item:
+                remove_start = index
+                remove_end = index + 1
+                while remove_end < section_end:
+                    next_line = lines[remove_end]
+                    if next_line.startswith("    - "):
+                        break
+                    if next_line.startswith("  ") and not next_line.startswith("    "):
+                        break
+                    remove_end += 1
+                break
+            index += 1
+
+        if remove_start is None:
+            return block_text
+
+        updated_lines = lines[:remove_start] + lines[remove_end:]
+        remaining_offspring_lines = updated_lines[offspring_index + 1:section_end - (remove_end - remove_start)]
+        if not any(line.strip().startswith("-") for line in remaining_offspring_lines):
+            updated_lines[offspring_index:offspring_index + 1] = ["  offspring: []"]
+
+        return "\n".join(updated_lines) + "\n"
 
     def _replace_yaml_field_in_block(self, block_text, key, value):
         lines = block_text.rstrip("\n").splitlines()
@@ -2432,6 +2710,9 @@ class MapSimulation:
         return "\n".join(lines[:insert_index] + new_bounds_lines + lines[insert_index:]) + "\n"
 
     def _update_spatial_feature_text_fields(self, spatial_feature_id, name, notes):
+        if self._is_location_backed_region(spatial_feature_id):
+            return self._update_location_text_fields(spatial_feature_id, name, notes)
+
         entry_path = self.SPATIAL_FEATURES_ENTRY_PATH
         if not entry_path.exists():
             return False
@@ -2494,6 +2775,18 @@ class MapSimulation:
         return True
 
     def _update_spatial_feature_geometry(self, spatial_feature_id, points):
+        if self._is_location_backed_region(spatial_feature_id):
+            bounds = {
+                "type": "polygon",
+                "coordinate_space": "map_world",
+                "points": list(points),
+            }
+            if not self._update_location_bounds(spatial_feature_id, bounds):
+                return False
+            if not self._update_location_geometry(spatial_feature_id, points):
+                return False
+            return True
+
         entry_path = self.SPATIAL_FEATURES_ENTRY_PATH
         if not entry_path.exists():
             return False
@@ -2524,6 +2817,24 @@ class MapSimulation:
         block_start, block_end = found
         block = text[block_start:block_end]
         block = self._replace_yaml_bounds_in_block(block, bounds)
+
+        updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
+        entry_path.write_text(updated_text, encoding="utf-8")
+        return True
+
+    def _update_location_geometry(self, location_id, points):
+        entry_path = self.LOCATIONS_ENTRY_PATH
+        if not entry_path.exists():
+            return False
+
+        text = entry_path.read_text(encoding="utf-8")
+        found = self._find_yaml_entity_block(text, location_id)
+        if found is None:
+            return False
+
+        block_start, block_end = found
+        block = text[block_start:block_end]
+        block = self._replace_yaml_geometry_in_block(block, points)
 
         updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
         entry_path.write_text(updated_text, encoding="utf-8")
@@ -2671,7 +2982,7 @@ class MapSimulation:
 
     def _spatial_feature_is_in_scope(self, feature):
         owner_entity_id = feature.get("owner_entity")
-        parent_entity_id = feature.get("parent_entity")
+        parent_entity_id = feature.get("parent_location") or feature.get("parent_entity")
 
         if self._entity_id_is_in_root_scope(owner_entity_id):
             return True
@@ -2682,11 +2993,17 @@ class MapSimulation:
         return False
 
     def _get_scoped_spatial_features(self):
-        features = self.world_model.get_active_entities(
-            self.year,
-            dataset_name="spatial_features",
-            entity_type="spatial_feature",
-        )
+        root_entity_id = self.context.root_entity_id
+        features = [
+            entity for entity in self.world_model.get_active_entities(
+                self.year,
+                dataset_name="locations",
+                entity_type="location",
+            )
+            if entity.get("location_class") == "region"
+            and (entity.get("geometry") or entity.get("bounds"))
+            and entity.get("id") != root_entity_id
+        ]
 
         return [
             feature for feature in features
@@ -2824,7 +3141,7 @@ class MapSimulation:
         ):
             return None
 
-        geometry = feature.get("geometry") or {}
+        geometry = feature.get("geometry") or feature.get("bounds") or {}
         map_points = self._get_geometry_points(geometry)
 
         if len(map_points) < 3:
@@ -2834,7 +3151,8 @@ class MapSimulation:
             self._map_point_to_world(x, y)
             for x, y in map_points
         ]
-        layer_kind = feature.get("layer_kind")
+        layer_kind = self.REGION_LAYER_KIND
+        region_class = feature.get("region_class") or feature.get("layer_kind")
         centroid_x, centroid_y = self._polygon_centroid(points)
 
         return {
@@ -2843,11 +3161,12 @@ class MapSimulation:
             "y": centroid_y,
             "points": points,
             "name": feature.get("name") or feature.get("pretty_name") or feature.get("id"),
-            "entity_id": feature.get("owner_entity"),
+            "entity_id": feature.get("owner_entity") or feature.get("id"),
             "spatial_feature_id": feature.get("id"),
             "layer_kind": layer_kind,
-            "parent_entity": feature.get("parent_entity"),
-            "color": self._color_for_spatial_layer(layer_kind),
+            "region_class": region_class,
+            "parent_entity": feature.get("parent_location") or feature.get("parent_entity"),
+            "color": self._color_for_spatial_layer(region_class or layer_kind),
             "area_world": self._polygon_area(map_points),
             "resolution_m_per_pixel": feature.get("resolution_m_per_pixel"),
             "coverage_mode": feature.get("coverage_mode"),
@@ -2870,28 +3189,178 @@ class MapSimulation:
             -float(resolution),
         )
 
-    def _build_spatial_feature_layers(self, year, layer_kind):
+    def _map_context_entities(self):
+        entities = []
+        seen = set()
+        current = self.get_root_entity()
+
+        while current:
+            entity_id = current.get("id")
+            if not entity_id or entity_id in seen:
+                break
+
+            seen.add(entity_id)
+            entities.append(current)
+
+            parent_id = current.get("parent_location")
+            if not parent_id:
+                break
+            current = self.world_model.get_entity(parent_id)
+
+        return entities
+
+    def _location_has_context_geometry(self, entity):
+        if not isinstance(entity, dict):
+            return False
+
+        bounds = entity.get("bounds") or {}
+        if bounds.get("type") in {"bbox", "polygon"}:
+            return len(self._get_geometry_points(bounds)) >= 3
+
+        if entity.get("location_class") in {"planet", "moon"}:
+            return True
+
+        image_path = entity.get("map_image_path")
+        return bool(image_path and self._map_image_rect_from_entity(entity) is not None)
+
+    def _map_context_sister_entities(self, context_entities):
+        if self.world_model is None:
+            return []
+
+        context_ids = {
+            entity.get("id")
+            for entity in context_entities
+            if isinstance(entity, dict) and entity.get("id")
+        }
+        parent_ids = []
+        for entity in context_entities:
+            parent_id = entity.get("parent_location") if isinstance(entity, dict) else None
+            if parent_id and parent_id not in parent_ids:
+                parent_ids.append(parent_id)
+
+        if not parent_ids:
+            return []
+
+        locations = self.world_model.get_active_entities(
+            self.year,
+            dataset_name="locations",
+            entity_type="location",
+        )
+        sisters = []
+        seen = set()
+        for parent_id in parent_ids:
+            for entity in locations:
+                entity_id = entity.get("id")
+                if not entity_id or entity_id in context_ids or entity_id in seen:
+                    continue
+                if entity.get("parent_location") != parent_id:
+                    continue
+                if not self._location_has_context_geometry(entity):
+                    continue
+                seen.add(entity_id)
+                sisters.append(entity)
+
+        return sisters
+
+    def _label_for_entity(self, entity):
+        return (
+            entity.get("name")
+            or entity.get("pretty_name")
+            or entity.get("id")
+            or "location"
+        )
+
+    def _build_ghost_context_layers(self):
         layers = []
+        context_entities = self._map_context_entities()
+        if not context_entities:
+            return layers
+
+        for index, entity in enumerate(reversed(context_entities)):
+            color = self._color_for_entity(entity)
+            layer = self._build_location_bounds_layer(
+                entity,
+                color,
+                draw_order=-3000 + index,
+                virtual=True,
+            )
+            if layer is not None:
+                layer["is_ghost_context"] = True
+                layer["pickable"] = False
+                layer["alpha"] = 34 if index < len(context_entities) - 1 else 52
+                layer["border_alpha"] = 98 if index < len(context_entities) - 1 else 132
+                layer["name"] = self._label_for_entity(entity)
+                layers.append(layer)
+
+            image_path = entity.get("map_image_path")
+            image_rect = self._map_image_rect_from_entity(entity)
+            if image_path and image_rect is not None:
+                layers.append({
+                    "shape": "image_rect",
+                    "x": image_rect["x"],
+                    "y": image_rect["y"],
+                    "width_world": image_rect["width_world"],
+                    "height_world": image_rect["height_world"],
+                    "image_path": image_path,
+                    "image_year": entity.get("map_image_year"),
+                    "fit": entity.get("map_image_fit", "stretch_to_bounds"),
+                    "name": self._label_for_entity(entity),
+                    "entity_id": entity.get("id"),
+                    "draw_order": -3100 + index,
+                    "is_ghost_context": True,
+                    "pickable": False,
+                    "alpha": 68,
+                })
+
+        sister_start_index = len(context_entities)
+        for sister_index, entity in enumerate(self._map_context_sister_entities(context_entities)):
+            color = self._color_for_entity(entity)
+            draw_index = sister_start_index + sister_index
+            layer = self._build_location_bounds_layer(
+                entity,
+                color,
+                draw_order=-2900 + draw_index,
+                virtual=True,
+            )
+            if layer is not None:
+                layer["is_ghost_context"] = True
+                layer["is_ghost_sister"] = True
+                layer["pickable"] = False
+                layer["alpha"] = 24
+                layer["border_alpha"] = 86
+                layer["name"] = self._label_for_entity(entity)
+                layers.append(layer)
+
+            image_path = entity.get("map_image_path")
+            image_rect = self._map_image_rect_from_entity(entity)
+            if image_path and image_rect is not None:
+                layers.append({
+                    "shape": "image_rect",
+                    "x": image_rect["x"],
+                    "y": image_rect["y"],
+                    "width_world": image_rect["width_world"],
+                    "height_world": image_rect["height_world"],
+                    "image_path": image_path,
+                    "image_year": entity.get("map_image_year"),
+                    "fit": entity.get("map_image_fit", "stretch_to_bounds"),
+                    "name": self._label_for_entity(entity),
+                    "entity_id": entity.get("id"),
+                    "draw_order": -2950 + draw_index,
+                    "is_ghost_context": True,
+                    "is_ghost_sister": True,
+                    "pickable": False,
+                    "alpha": 44,
+                })
+
+        return layers
+
+    def _build_spatial_feature_layers(self, year, layer_kind):
+        layers = self._build_ghost_context_layers()
 
         for feature in self._get_scoped_spatial_features():
-            if feature.get("layer_kind") != layer_kind:
-                continue
-
             layer = self._build_spatial_feature_layer(feature)
             if layer is not None:
                 layers.append(layer)
-
-        root_entity = self.get_root_entity()
-        root_entity_id = root_entity.get("id") if root_entity else None
-        has_authored_root_layer = any(
-            layer.get("entity_id") == root_entity_id
-            for layer in layers
-        )
-
-        if not has_authored_root_layer:
-            virtual_layer = self._build_virtual_spatial_layer(layer_kind)
-            if virtual_layer is not None:
-                layers.append(virtual_layer)
 
         layers.sort(key=self._spatial_layer_sort_key)
         return layers
@@ -2904,7 +3373,7 @@ class MapSimulation:
             points = self._get_geometry_points(bounds)
         elif bounds.get("type") == "polygon":
             points = self._get_geometry_points(bounds)
-        elif entity.get("location_class") == "planet":
+        elif entity.get("location_class") in {"planet", "moon"}:
             rect = self._planet_rect_from_entity(entity)
             half_w = rect["width_world"] / 2.0
             half_h = rect["height_world"] / 2.0
@@ -2972,7 +3441,7 @@ class MapSimulation:
         if self.active_layer_kind != self.LOCATION_LAYER_KIND:
             return self._build_spatial_feature_layers(year, self.active_layer_kind)
 
-        layers = []
+        layers = self._build_ghost_context_layers()
         layers.extend(self._build_placement_ancestor_layers())
 
         for entity in self.context.get_active_locations():
@@ -3021,7 +3490,7 @@ class MapSimulation:
                     "entity_id": entity_id,
                 })
 
-            if location_class == "planet":
+            if location_class in {"planet", "moon"}:
                 rect = self._planet_rect_from_entity(entity)
 
                 layers.append({
@@ -3035,6 +3504,8 @@ class MapSimulation:
                     "name": entity.get("name"),
                     "entity_id": entity_id,
                     "color": color,
+                    "location_class": location_class,
+                    "label_position": "below_right",
                 })
                 continue
 
@@ -3044,24 +3515,26 @@ class MapSimulation:
                 min_y = bounds.get("min_y", 0)
                 max_y = bounds.get("max_y", 0)
 
-                width_world = max_x - min_x
-                height_world = max_y - min_y
-
-                if x is None or y is None:
-                    x, y = self._map_point_to_world(
-                        (min_x + max_x) / 2,
-                        (min_y + max_y) / 2,
-                    )
-
+                map_points = [
+                    (min_x, min_y),
+                    (max_x, min_y),
+                    (max_x, max_y),
+                    (min_x, max_y),
+                ]
+                points = [
+                    self._map_point_to_world(point[0], point[1])
+                    for point in map_points
+                ]
+                centroid_x, centroid_y = self._polygon_centroid(points)
                 layers.append({
-                    "shape": "rect",
-                    "x": x,
-                    "y": y,
-                    "width_world": width_world,
-                    "height_world": height_world,
+                    "shape": "polygon",
+                    "x": centroid_x,
+                    "y": centroid_y,
+                    "points": points,
                     "name": entity.get("name"),
                     "entity_id": entity_id,
                     "color": color,
+                    "area_world": self._polygon_area(map_points),
                 })
                 continue
 
@@ -3330,6 +3803,9 @@ class MapSimulation:
         layers = self.get_layers()
 
         for layer in reversed(layers):
+            if layer.get("pickable") is False or layer.get("is_ghost_context"):
+                continue
+
             shape = layer.get("shape", "marker")
 
             if shape in ("map_rect", "rect"):
@@ -3416,6 +3892,49 @@ class MapSimulation:
         self.draft_spatial_feature_points.append(map_point)
         return len(self.draft_spatial_feature_points)
 
+    def _can_reuse_existing_polygon_for_editor(self):
+        return (
+            self.get_polygon_editor_point_count() == 0
+            and (
+                self.is_creating_spatial_feature
+                or self.is_placing_location_polygon
+            )
+        )
+
+    def _pick_existing_polygon_point_for_editor(self, camera, screen_pos):
+        if camera is None or screen_pos is None:
+            return None
+
+        layers = self.get_layers()
+        screen_x = float(screen_pos[0])
+        screen_y = float(screen_pos[1])
+        best_point = None
+        best_distance_sq = self.POLYGON_POINT_HIT_RADIUS_PX ** 2
+
+        for layer in reversed(layers):
+            if layer.get("pickable") is False or layer.get("is_ghost_context"):
+                continue
+            if layer.get("shape") != "polygon":
+                continue
+
+            points = layer.get("points") or []
+            if len(points) < 3:
+                continue
+
+            for point in points:
+                point_screen = camera.world_to_screen(point)
+                if point_screen is None:
+                    continue
+
+                dx = screen_x - float(point_screen[0])
+                dy = screen_y - float(point_screen[1])
+                distance_sq = dx * dx + dy * dy
+                if distance_sq <= best_distance_sq:
+                    best_point = self._world_point_to_map(point[0], point[1])
+                    best_distance_sq = distance_sq
+
+        return best_point
+
     def _delete_polygon_editor_point(self, index=None):
         points = self.get_polygon_editor_points()
         if not points:
@@ -3480,6 +3999,20 @@ class MapSimulation:
 
         if button != 1:
             return
+
+        if self._can_reuse_existing_polygon_for_editor():
+            reuse_point = self._pick_existing_polygon_point_for_editor(camera, screen_pos)
+            if reuse_point is not None:
+                point_count = self._append_polygon_editor_point(reuse_point)
+                self._set_polygon_editor_hover_point(reuse_point)
+                self._record_draft_click(screen_pos)
+                self._invalidate_layer_cache()
+                logger.debug(
+                    f"[MapSimulation] Polygon editor reused existing point count={point_count}",
+                    key="map_polygon_editor_point_reuse",
+                    interval=0.1,
+                )
+                return
 
         if hit_index is not None and self.can_finish_polygon_editor():
             self.finish_polygon_editor()

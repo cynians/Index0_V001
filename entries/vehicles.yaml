@@ -812,3 +812,29 @@
   name: Helsing CA-15
   type: vehicle
   wiki_entry: ''
+- id: veh_whopco
+  pretty_name: Wandering Habition Observation Platform and Colony
+  name: WHOPCO
+  type: vehicle
+  wiki_entry: ''
+  related:
+  - planet_mercury
+  - prod_new_001
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents: []
+  offspring: []
+  placeholders: []
+  entry_status: ''
+  media_layers: {}

@@ -60,11 +60,16 @@ class UIManager:
         self.system_settings_active = False
         self.system_menu_buttons = []
         self.system_menu_rect = None
+        self.repository_return_confirm_active = False
+        self.repository_return_confirm_rect = None
+        self.repository_return_confirm_buttons = []
         self.knowledge_ui = KnowledgeBrowserUI()
         self.selection_inspector = SelectionInspectorUI()
         self.map_history_timeline = TimelineUI()
         self.map_history_timeline_visible = False
         self.map_history_timeline_rect = None
+        self.repository_return_confirm_rect = None
+        self.repository_return_confirm_buttons = []
         self.map_history_timeline_drag_mode = None
         self.map_history_timeline_drag_start_pos = None
         self.map_history_timeline_drag_last_x = None
@@ -628,7 +633,7 @@ class UIManager:
                     )
                     if can_create_selection:
                         self.buttons.append(
-                            UIButton("new_map_selection", "New Selection",
+                            UIButton("new_map_selection", "New Region",
                                      pygame.Rect(button_x, next_button_y, button_width, button_height))
                         )
                         next_button_y += 40
@@ -667,17 +672,18 @@ class UIManager:
 
                 if feature is not None:
                     owner_entity_id = feature.get("owner_entity")
-                    owner_text = f"owner: {owner_entity_id}" if owner_entity_id else "draft spatial feature"
+                    owner_text = f"owner: {owner_entity_id}" if owner_entity_id else "draft region"
+                    region_class = feature.get("region_class") or feature.get("layer_kind", "region")
                     self.hover_tooltip_lines = [
                         feature.get("name", hover_spatial_feature_id),
-                        f"layer: {feature.get('layer_kind', 'spatial')}",
+                        f"region: {region_class}",
                         owner_text,
                     ]
                     self.hover_tooltip_pos = hover_screen_pos
                 elif feature_layer is not None:
                     self.hover_tooltip_lines = [
                         feature_layer.get("name", hover_spatial_feature_id),
-                        f"layer: {feature_layer.get('layer_kind', 'spatial')}",
+                        f"region: {feature_layer.get('region_class', 'region')}",
                         "virtual aggregate",
                     ]
                     self.hover_tooltip_pos = hover_screen_pos
@@ -765,6 +771,29 @@ class UIManager:
                     self.hover_tooltip_pos = hover_screen_pos
             return
 
+        if render_mode == "world_gen":
+            if hasattr(active_sim, "get_scope_label"):
+                self.scope_label = f"World Gen: {active_sim.get_scope_label()}"
+            if hasattr(active_sim, "get_scope_breadcrumb"):
+                self.breadcrumb_label = active_sim.get_scope_breadcrumb()
+
+            self.buttons.append(
+                UIButton("open_repository", "Open Repository",
+                         pygame.Rect(button_x, button_y, button_width, button_height))
+            )
+
+            model = getattr(active_sim, "planetary_model", {}) or {}
+            eccentricity = model.get("eccentricity")
+            semi_major = model.get("semi_major_axis_au")
+            if semi_major is not None or eccentricity is not None:
+                self.hover_tooltip_lines = [
+                    "World Gen Orbit",
+                    f"a: {semi_major:.3f} AU" if semi_major is not None else "a: n/a",
+                    f"e: {eccentricity:.4f}" if eccentricity is not None else "e: n/a",
+                ]
+                self.hover_tooltip_pos = (24, 270)
+            return
+
         if render_mode == "bioregion":
             self.scope_label = "Scope: Bioregion Test Map | 10 km x 10 km"
 
@@ -793,6 +822,7 @@ class UIManager:
             menu_active=False,
             system_menu_active=False,
             system_settings_active=False,
+            repository_return_confirm_active=False,
             world_model=None,
             repository_scope_entity_id=None
     ):
@@ -800,7 +830,9 @@ class UIManager:
         self.menu_active = menu_active
         self.system_menu_active = system_menu_active
         self.system_settings_active = system_settings_active
+        self.repository_return_confirm_active = repository_return_confirm_active
         self._rebuild_system_menu(app_width, app_height)
+        self._rebuild_repository_return_confirm(app_width, app_height)
 
         self._rebuild_selection_inspector(active_sim, app_width, app_height)
 
@@ -819,6 +851,35 @@ class UIManager:
             return
 
         self._rebuild_active_simulation_ui(active_sim, app_width, app_height, camera)
+
+    def _rebuild_repository_return_confirm(self, app_width, app_height):
+        self.repository_return_confirm_rect = None
+        self.repository_return_confirm_buttons = []
+
+        if not self.repository_return_confirm_active:
+            return
+
+        panel_w = 420
+        panel_h = 156
+        panel_x = (app_width - panel_w) // 2
+        panel_y = (app_height - panel_h) // 2
+        self.repository_return_confirm_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+
+        button_w = 156
+        button_h = 34
+        button_y = panel_y + panel_h - button_h - 20
+        self.repository_return_confirm_buttons = [
+            UIButton(
+                "confirm_open_repository",
+                "Return",
+                pygame.Rect(panel_x + 52, button_y, button_w, button_h),
+            ),
+            UIButton(
+                "cancel_repository_return",
+                "Stay",
+                pygame.Rect(panel_x + panel_w - button_w - 52, button_y, button_w, button_h),
+            ),
+        ]
 
     def _rebuild_system_menu(self, app_width, app_height):
         self.system_menu_buttons = []
@@ -1151,6 +1212,33 @@ class UIManager:
         for button in self.system_menu_buttons:
             self._draw_button(screen, font, button)
 
+    def _draw_repository_return_confirm(self, screen, font):
+        if (
+            not self.repository_return_confirm_active
+            or self.repository_return_confirm_rect is None
+        ):
+            return
+
+        overlay = pygame.Surface((screen.get_width(), screen.get_height()), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 145))
+        screen.blit(overlay, (0, 0))
+
+        rect = self.repository_return_confirm_rect
+        pygame.draw.rect(screen, (24, 26, 32), rect)
+        pygame.draw.rect(screen, (220, 220, 220), rect, 1)
+
+        title_surface = font.render("Return to Repository?", True, (245, 245, 245))
+        detail_surface = font.render(
+            "Press Esc again to confirm, or choose Stay.",
+            True,
+            (180, 184, 194),
+        )
+        screen.blit(title_surface, (rect.x + 22, rect.y + 22))
+        screen.blit(detail_surface, (rect.x + 22, rect.y + 50))
+
+        for button in self.repository_return_confirm_buttons:
+            self._draw_button(screen, font, button)
+
     def _draw_timeline_bar(self, screen, x, y, w, h):
         pygame.draw.rect(screen, (30, 30, 34), (x, y, w, h))
         pygame.draw.rect(screen, (200, 200, 200), (x, y, w, h), 1)
@@ -1249,6 +1337,7 @@ class UIManager:
         self.selection_inspector.draw(screen, font)
         self._draw_hover_tooltip(screen, font)
         self._draw_system_menu(screen, font)
+        self._draw_repository_return_confirm(screen, font)
 
     def _reset_map_history_timeline_drag(self):
         self.map_history_timeline_drag_mode = None
@@ -1392,6 +1481,21 @@ class UIManager:
         return "__ui_consumed__"
 
     def handle_event(self, event):
+        if self.repository_return_confirm_active:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                mouse_pos = event.pos
+
+                for button in self.repository_return_confirm_buttons:
+                    if not button.visible or not button.enabled:
+                        continue
+                    if button.rect.collidepoint(mouse_pos):
+                        return button.id
+
+                return "__ui_consumed__"
+
+            if event.type in (pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL, pygame.KEYDOWN):
+                return "__ui_consumed__"
+
         if self.system_menu_active:
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 mouse_pos = event.pos

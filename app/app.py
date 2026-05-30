@@ -43,6 +43,7 @@ class App(SimWindow):
         self.knowledge_layer_active = True
         self.system_menu_active = False
         self.system_settings_active = False
+        self.repository_return_confirm_active = False
         self.repository_scope_entity_id = None
 
     def get_active_simulation(self):
@@ -96,6 +97,7 @@ class App(SimWindow):
             menu_active=self.knowledge_layer_active,
             system_menu_active=self.system_menu_active,
             system_settings_active=self.system_settings_active,
+            repository_return_confirm_active=self.repository_return_confirm_active,
             world_model=self.world_model,
             repository_scope_entity_id=self.repository_scope_entity_id,
         )

@@ -1,6 +1,6 @@
 schema: spatial_features
 
-extends: entity_core
+extends: locations
 
 fields:
 

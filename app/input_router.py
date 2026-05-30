@@ -31,6 +31,7 @@ class InputRouter:
             menu_active=self.app.knowledge_layer_active,
             system_menu_active=self.app.system_menu_active,
             system_settings_active=self.app.system_settings_active,
+            repository_return_confirm_active=self.app.repository_return_confirm_active,
             world_model=self.app.world_model,
             repository_scope_entity_id=self.app.repository_scope_entity_id,
         )
@@ -41,6 +42,27 @@ class InputRouter:
         """
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
+                if not self.app.knowledge_layer_active:
+                    if self.app.repository_return_confirm_active:
+                        self.app.repository_return_confirm_active = False
+                        active_sim = self.app.get_active_simulation()
+                        self.app.navigation.open_repository_workspace(active_sim)
+                    else:
+                        self.app.repository_return_confirm_active = True
+                        self.app.system_menu_active = False
+                        self.app.system_settings_active = False
+                    return True
+
+                knowledge_ui = getattr(self.app.ui_manager, "knowledge_ui", None)
+                if (
+                    knowledge_ui is not None
+                    and getattr(knowledge_ui, "relation_link_target", None) is not None
+                ):
+                    finish_link = getattr(knowledge_ui, "_finish_relation_browser_link", None)
+                    if finish_link is not None:
+                        finish_link()
+                    return True
+
                 if self.app.system_menu_active and self.app.system_settings_active:
                     self.app.system_settings_active = False
                 else:

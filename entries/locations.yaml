@@ -1515,8 +1515,11 @@
     x: 0
     y: 0
   bounds:
-    type: radius
-    value: 6371000
+    type: bbox
+    min_x: -180
+    max_x: 180
+    min_y: -90
+    max_y: 90
   derived_from_system_body: body_equidorva
   map_projection: equirectangular
   map_status: empty_generated
@@ -1531,7 +1534,9 @@
   - sys_new_002
   - body_equidorva_primary
   placeholders: []
-  offspring: []
+  offspring:
+    - id: loc_region_planet_equidorva_001
+    - id: loc_region_planet_equidorva_002
   description: Empty planetary map root for Equidorva, ready for bottom-up
     geography generation.
   notes: Earthlike map frame derived from a 6,371 km radius, rendered as a 2:1
@@ -1643,3 +1648,114 @@
   population:
     y0: 0
   start_year: 0
+
+# ---------- loc_draft_loc_new_004_001 | Draft Map Area 001 ----------
+- id: loc_draft_loc_new_004_001
+  pretty_name: 'Draft Map Area 001'
+  name: 'Draft Map Area 001'
+  type: location
+  location_class: region
+  parent_location: loc_new_004
+  notes: 'Draft rectangle map area created under Stutters Steppe.'
+  bounds:
+    type: bbox
+    min_x: -159.51
+    max_x: 159.545
+    min_y: -91.214
+    max_y: 90.263
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_region_planet_equidorva_001 | Draft Regions Region 001 ----------
+- id: loc_region_planet_equidorva_001
+  pretty_name: 'Brothers High Plateau'
+  name: 'Brothers High Plateau'
+  type: location
+  location_class: region
+  location_role: map_region
+  region_class: regions
+  layer_kind: regions
+  parent_location: planet_equidorva
+  parent_entity: planet_equidorva
+  parents:
+    - planet_equidorva
+  notes: 'Draft region polygon created under Equidorva.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [52.154, 18.346]
+      - [21.351, -11.16]
+      - [-46.769, -18.269]
+      - [-63.333, 28.5]
+      - [22.41, 51.397]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [52.154, 18.346]
+      - [21.351, -11.16]
+      - [-46.769, -18.269]
+      - [-63.333, 28.5]
+      - [22.41, 51.397]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_region_planet_equidorva_002 | Draft Regions Region 002 ----------
+
+# ---------- loc_region_planet_equidorva_002 | Draft Regions Region 002 ----------
+- id: loc_region_planet_equidorva_002
+  pretty_name: 'Algi Sea'
+  name: 'Algi Sea'
+  type: location
+  location_class: region
+  location_role: map_region
+  region_class: regions
+  layer_kind: regions
+  parent_location: planet_equidorva
+  parent_entity: planet_equidorva
+  parents:
+    - planet_equidorva
+  notes: 'Draft region polygon created under Equidorva.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-46.769, -18.269]
+      - [21.517, -11.24]
+      - [38.486, -33.505]
+      - [40.996, -73.917]
+      - [22.983, -75.367]
+      - [18.635, -61.494]
+      - [7.661, -45.758]
+      - [-14.494, -48.864]
+      - [-22.154, -52.591]
+      - [-27.124, -56.318]
+      - [-30.229, -56.318]
+      - [-39.34, -53.833]
+      - [-50.52, -50.52]
+      - [-54.247, -46.379]
+      - [-60.045, -39.754]
+      - [-56.732, -28.366]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-46.769, -18.269]
+      - [21.517, -11.24]
+      - [38.486, -33.505]
+      - [40.996, -73.917]
+      - [22.983, -75.367]
+      - [18.635, -61.494]
+      - [7.661, -45.758]
+      - [-14.494, -48.864]
+      - [-22.154, -52.591]
+      - [-27.124, -56.318]
+      - [-30.229, -56.318]
+      - [-39.34, -53.833]
+      - [-50.52, -50.52]
+      - [-54.247, -46.379]
+      - [-60.045, -39.754]
+      - [-56.732, -28.366]
+  start_year: 2400
+  entry_status: draft

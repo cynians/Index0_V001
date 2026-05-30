@@ -12,6 +12,10 @@ fields:
     type: string
     optional: true
 
+  region_class:
+    type: string
+    optional: true
+
   parent_location:
     type: entity
     target: locations
@@ -37,6 +41,36 @@ fields:
 
   bounds:
     type: dict
+    optional: true
+
+  geometry:
+    type: dict
+    optional: true
+
+  layer_kind:
+    type: string
+    optional: true
+
+  parent_entity:
+    type: entity
+    target: locations
+    optional: true
+
+  owner_entity:
+    type: entity
+    target: entity
+    optional: true
+
+  coverage_mode:
+    type: string
+    optional: true
+
+  resolution_m_per_pixel:
+    type: number
+    optional: true
+
+  draw_order:
+    type: number
     optional: true
 
   climate_tags:

@@ -488,3 +488,24 @@
       - [1865.397, -2019.245]
   start_year: 2400
   entry_status: draft
+
+# ---------- sf_draft_regions_planet_equidorva_001 | Draft Regions Selection 001 ----------
+- id: sf_draft_regions_planet_equidorva_001
+  pretty_name: 'Elbac Dry Savannah'
+  name: 'Elbac Dry Savannah'
+  type: spatial_feature
+  notes: 'Draft polygon created from the Regions map layer under Equidorva.'
+  layer_kind: regions
+  parent_entity: planet_equidorva
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [38.529, -33.342]
+      - [79.28, -42.604]
+      - [115.586, -18.153]
+      - [106.325, 11.114]
+      - [52.236, 18.153]
+      - [21.487, -11.114]
+  start_year: 2400
+  entry_status: draft

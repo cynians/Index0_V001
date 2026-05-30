@@ -104,6 +104,7 @@ class KnowledgeBrowserUI:
         self.new_entry_button = None
         self.template_picker_rect = None
         self.template_button_hitboxes = []
+        self.template_quick_button_hitboxes = []
         self.template_picker_status = ""
         self.show_template_picker = False
         self.template_picker_scroll = 0
@@ -182,6 +183,7 @@ class KnowledgeBrowserUI:
         self.new_entry_button = None
         self.template_picker_rect = None
         self.template_button_hitboxes = []
+        self.template_quick_button_hitboxes = []
 
     def _clamp_timeline_panel_height(self, app_height, timeline_h=None):
         if timeline_h is None:
@@ -642,7 +644,21 @@ class KnowledgeBrowserUI:
         return max(self.TEMPLATE_PICKER_ROW_H, line_h * 2 + 8)
 
     def _template_picker_header_height(self):
-        return max(42, self._font_line_height() + 22)
+        return max(42, self._font_line_height() + 22) + self._template_picker_quick_row_height()
+
+    def _template_picker_quick_row_height(self):
+        return 30 if self._template_picker_quick_templates() else 0
+
+    def _template_picker_quick_templates(self):
+        by_dataset = {
+            template.get("dataset_name"): template
+            for template in self.schema_entry_templates
+        }
+        return [
+            by_dataset[dataset_name]
+            for dataset_name in ("tasks", "ideas")
+            if dataset_name in by_dataset
+        ]
 
     def _schema_display_label(self, name):
         text = str(name or "entry").replace(".yaml", "")
@@ -852,7 +868,14 @@ class KnowledgeBrowserUI:
                 }
             )
 
-        templates.sort(key=lambda item: (item["label"].lower(), item["dataset_name"]))
+        preferred = {"tasks": 0, "ideas": 1}
+        templates.sort(
+            key=lambda item: (
+                preferred.get(item.get("dataset_name"), 10),
+                item["label"].lower(),
+                item["dataset_name"],
+            )
+        )
         return templates
 
     def _template_by_dataset(self, dataset_name):
@@ -990,6 +1013,7 @@ class KnowledgeBrowserUI:
 
     def _build_template_picker_hitboxes(self):
         self.template_button_hitboxes = []
+        self.template_quick_button_hitboxes = []
         self.template_picker_rect = None
 
         if self.layout is None or not self.show_template_picker:
@@ -997,7 +1021,14 @@ class KnowledgeBrowserUI:
 
         right_rect = self.layout["right_rect"]
         picker_w = min(360, right_rect.width - 24)
-        template_count = len(self.schema_entry_templates)
+        quick_templates = self._template_picker_quick_templates()
+        quick_template_ids = {id(template) for template in quick_templates}
+        list_templates = [
+            template
+            for template in self.schema_entry_templates
+            if id(template) not in quick_template_ids
+        ]
+        template_count = len(list_templates)
         max_picker_h = max(96, right_rect.height - 70)
         header_h = self._template_picker_header_height()
         row_h = self._template_picker_row_height()
@@ -1006,12 +1037,22 @@ class KnowledgeBrowserUI:
         picker_y = right_rect.y + 44
         self.template_picker_rect = pygame.Rect(picker_x, picker_y, picker_w, picker_h)
 
+        if quick_templates:
+            quick_y = picker_y + max(42, self._font_line_height() + 22)
+            button_gap = 8
+            button_w = min(96, (picker_w - 24 - button_gap) // max(1, len(quick_templates)))
+            button_x = picker_x + 12
+            for template in quick_templates:
+                button_rect = pygame.Rect(button_x, quick_y, button_w, 24)
+                self.template_quick_button_hitboxes.append((template, template["label"], button_rect))
+                button_x += button_w + button_gap
+
         visible_rows = max(1, (picker_h - header_h - 8) // row_h)
         max_scroll = max(0, template_count - visible_rows)
         self.template_picker_scroll = max(0, min(max_scroll, self.template_picker_scroll))
 
         button_y = picker_y + header_h
-        visible_templates = self.schema_entry_templates[
+        visible_templates = list_templates[
             self.template_picker_scroll:self.template_picker_scroll + visible_rows
         ]
         for template in visible_templates:
@@ -1699,6 +1740,9 @@ class KnowledgeBrowserUI:
             "relation_picker_selected_index": 0,
             "relation_picker_hitboxes": [],
             "toolbelt_hitboxes": [],
+            "task_checklist_hitboxes": [],
+            "task_checklist_input_active": False,
+            "task_checklist_input_buffer": "",
             "type_picker_open": False,
             "type_picker_hitboxes": [],
             "draft_edit_buffers": {},
@@ -1763,6 +1807,9 @@ class KnowledgeBrowserUI:
             "relation_picker_selected_index": 0,
             "relation_picker_hitboxes": [],
             "toolbelt_hitboxes": [],
+            "task_checklist_hitboxes": [],
+            "task_checklist_input_active": False,
+            "task_checklist_input_buffer": "",
             "type_picker_open": False,
             "type_picker_hitboxes": [],
         }
@@ -2013,7 +2060,9 @@ class KnowledgeBrowserUI:
         tasks = [
             entity
             for entity in self.world_model.get_entities_by_dataset("tasks")
-            if isinstance(entity, dict) and entity.get("id")
+            if isinstance(entity, dict)
+            and entity.get("id")
+            and not self._is_finished_task_entity(entity)
         ]
         if not tasks:
             tasks = [
@@ -2022,11 +2071,20 @@ class KnowledgeBrowserUI:
                 if isinstance(entity, dict)
                 and entity.get("id")
                 and (entity.get("_dataset") == "tasks" or entity.get("type") == "task")
+                and not self._is_finished_task_entity(entity)
             ]
         if not tasks:
             return None
 
         return random.choice(tasks)
+
+    def _is_finished_task_entity(self, entity):
+        return str(entity.get("entry_status") or "").strip().lower() in {
+            "finished",
+            "complete",
+            "completed",
+            "done",
+        }
 
     def _create_random_task_card(self):
         if self.world_model is None:
@@ -2161,6 +2219,9 @@ class KnowledgeBrowserUI:
             for field_key, value in initial_fields.items():
                 if field_key not in {"id", "_dataset"}:
                     entity[field_key] = value
+        if dataset_name == "tasks":
+            entity.setdefault("entry_status", "incomplete")
+            entity.setdefault("checklist", [])
         if dataset_name == "species":
             common_name, binomial_name = self._normalize_species_entity(entity)
             generated_id = self._species_id_from_binomial(binomial_name)
@@ -2457,6 +2518,14 @@ class KnowledgeBrowserUI:
             self.template_picker_status = ""
             self._build_template_picker_hitboxes()
             return "__ui_consumed__"
+
+        for template, _, button_rect in self.template_quick_button_hitboxes:
+            if button_rect.collidepoint(mouse_pos):
+                created = self._create_new_entry_from_template(template)
+                if not created:
+                    self.template_picker_status = "Name entry first"
+                    self._open_entry_name_prompt(template)
+                return "__ui_consumed__"
 
         for template, _, button_rect in self.template_button_hitboxes:
             if not button_rect.collidepoint(mouse_pos):
@@ -3329,6 +3398,74 @@ class KnowledgeBrowserUI:
             return "'" + text.replace("'", "''") + "'"
         return text
 
+    def _format_yaml_value_lines(self, key, value, prefix):
+        if isinstance(value, list):
+            if not value:
+                return [f"{prefix}{key}: []"]
+
+            lines = [f"{prefix}{key}:"]
+            for item in value:
+                if isinstance(item, dict):
+                    item_keys = list(item.keys())
+                    if not item_keys:
+                        lines.append("  - {}")
+                        continue
+
+                    first_key = item_keys[0]
+                    lines.append(f"  - {first_key}: {self._format_yaml_scalar(item.get(first_key))}")
+                    for child_key in item_keys[1:]:
+                        child_value = item.get(child_key)
+                        if isinstance(child_value, list):
+                            if not child_value:
+                                lines.append(f"    {child_key}: []")
+                            else:
+                                lines.append(f"    {child_key}:")
+                                for child_item in child_value:
+                                    if isinstance(child_item, dict):
+                                        nested_keys = list(child_item.keys())
+                                        if not nested_keys:
+                                            lines.append("      - {}")
+                                            continue
+                                        nested_first = nested_keys[0]
+                                        lines.append(f"      - {nested_first}: {self._format_yaml_scalar(child_item.get(nested_first))}")
+                                        for nested_key in nested_keys[1:]:
+                                            lines.append(f"        {nested_key}: {self._format_yaml_scalar(child_item.get(nested_key))}")
+                                    else:
+                                        lines.append(f"      - {self._format_yaml_scalar(child_item)}")
+                            continue
+                        if isinstance(child_value, dict):
+                            if not child_value:
+                                lines.append(f"    {child_key}: {{}}")
+                            else:
+                                lines.append(f"    {child_key}:")
+                                for nested_key, nested_value in child_value.items():
+                                    lines.append(f"      {nested_key}: {self._format_yaml_scalar(nested_value)}")
+                            continue
+                        lines.append(f"    {child_key}: {self._format_yaml_scalar(child_value)}")
+                else:
+                    lines.append(f"  - {self._format_yaml_scalar(item)}")
+            return lines
+
+        if isinstance(value, dict):
+            if not value:
+                return [f"{prefix}{key}: {{}}"]
+
+            lines = [f"{prefix}{key}:"]
+            for child_key, child_value in value.items():
+                if isinstance(child_value, list):
+                    if not child_value:
+                        lines.append(f"    {child_key}: []")
+                    else:
+                        lines.append(f"    {child_key}:")
+                        for item in child_value:
+                            lines.append(f"      - {self._format_yaml_scalar(item)}")
+                    continue
+                lines.append(f"    {child_key}: {self._format_yaml_scalar(child_value)}")
+            return lines
+
+        scalar = self._format_yaml_scalar(value)
+        return [f"{prefix}{key}: {scalar}"]
+
     def _format_yaml_entity_block(self, entity):
         if self._is_species_entity(entity):
             self._normalize_species_entity(entity)
@@ -3342,30 +3479,7 @@ class KnowledgeBrowserUI:
         for index, key in enumerate(keys):
             value = entity.get(key)
             prefix = "- " if index == 0 else "  "
-
-            if isinstance(value, list):
-                lines.append(f"{prefix}{key}:")
-                if value:
-                    for item in value:
-                        lines.append(f"  - {self._format_yaml_scalar(item)}")
-                else:
-                    lines[-1] = f"{prefix}{key}: []"
-                continue
-
-            if isinstance(value, dict):
-                lines.append(f"{prefix}{key}:")
-                if value:
-                    for child_key, child_value in value.items():
-                        lines.append(f"    {child_key}: {self._format_yaml_scalar(child_value)}")
-                else:
-                    lines[-1] = f"{prefix}{key}: {{}}"
-                continue
-
-            scalar = self._format_yaml_scalar(value)
-            if scalar.startswith("|\n"):
-                lines.append(f"{prefix}{key}: {scalar}")
-            else:
-                lines.append(f"{prefix}{key}: {scalar}")
+            lines.extend(self._format_yaml_value_lines(key, value, prefix))
 
         return "\n".join(lines).rstrip() + "\n"
 
@@ -3981,6 +4095,9 @@ class KnowledgeBrowserUI:
                 return "__ui_consumed__"
             return None
 
+        if self._handle_task_checklist_keydown(event):
+            return "__ui_consumed__"
+
         if self.canvas_relation_link_source_id is not None and event.key == pygame.K_ESCAPE:
             self._clear_canvas_relation_link()
             self._relayout_cards()
@@ -4419,6 +4536,7 @@ class KnowledgeBrowserUI:
 
         self.relation_link_target = None
         self.relation_link_status = ""
+        self.browser_search_active = False
 
     def _finish_relation_browser_link(self):
         if self.relation_link_target is None:
@@ -4485,13 +4603,13 @@ class KnowledgeBrowserUI:
             "target": relation_info.get("target", ""),
         }
         target_label = self._relation_target_label(relation_info.get("target"))
-        status = f"Choose an existing {target_label} in the repository"
+        status = f"Choose an existing {target_label} in the repository or click an open card"
         card["active_relation_link_field"] = field_key
         card["relation_link_status"] = status
         self.relation_link_status = status
         self.browser_filter_dataset = self._relation_target_dataset_filter(relation_info.get("target", ""))
         self.browser_filter_incomplete_only = False
-        self.browser_search_active = False
+        self.browser_search_active = True
         self.browser_search_query = ""
         self.browser_scroll = 0
         self.browser_items = self._build_browser_items(self.world_model)
@@ -4500,6 +4618,48 @@ class KnowledgeBrowserUI:
         self._rebuild_browser_hitboxes()
         self._relayout_cards()
         return True
+
+    def _handle_relation_card_link_target_click(self, mouse_pos):
+        if self.relation_link_target is None:
+            return None
+
+        source_card = self.relation_link_target.get("source_card")
+        source_entity_id = self.relation_link_target.get("source_entity_id")
+
+        for index in range(len(self.cards) - 1, -1, -1):
+            card = self.cards[index]
+            visual_rect = self._card_visual_rect(card)
+            if visual_rect is None or not visual_rect.collidepoint(mouse_pos):
+                continue
+
+            target_entity_id = card.get("entity_id")
+            if not target_entity_id or target_entity_id == source_entity_id:
+                self.relation_link_status = "Pick a different card"
+                if isinstance(source_card, dict):
+                    source_card["relation_link_status"] = self.relation_link_status
+                self._relayout_cards()
+                return "__ui_consumed__"
+
+            entity = self.world_model.get_entity(target_entity_id) if self.world_model is not None else None
+            if entity is None or not self._entity_matches_relation_target(
+                entity,
+                self.relation_link_target.get("target"),
+            ):
+                target_label = self._relation_target_label(self.relation_link_target.get("target"))
+                self.relation_link_status = f"Pick a matching {target_label} card"
+                if isinstance(source_card, dict):
+                    source_card["relation_link_status"] = self.relation_link_status
+                self._relayout_cards()
+                return "__ui_consumed__"
+
+            self._bring_card_to_front(index)
+            linked = self._link_relation_from_browser_entity(target_entity_id)
+            if not linked:
+                self._relayout_cards()
+            return "__ui_consumed__"
+
+        self._finish_relation_browser_link()
+        return "__ui_consumed__"
 
     def _link_relation_from_browser_entity(self, entity_id):
         if self.relation_link_target is None or self.world_model is None:
@@ -4597,6 +4757,124 @@ class KnowledgeBrowserUI:
             self._rebuild_browser_hitboxes()
 
         self._relayout_cards()
+        return True
+
+    def _is_task_card_obj(self, card):
+        entity = self._entity_for_card(card)
+        return (
+            isinstance(entity, dict)
+            and (entity.get("_dataset") == "tasks" or entity.get("type") == "task")
+        )
+
+    def _normalize_task_checklist(self, entity):
+        raw_items = entity.get("checklist")
+        if not isinstance(raw_items, list):
+            raw_items = []
+
+        items = []
+        for item in raw_items:
+            if isinstance(item, dict):
+                text = str(item.get("text") or item.get("label") or item.get("name") or "").strip()
+                done = bool(item.get("done", item.get("checked", False)))
+            else:
+                text = str(item or "").strip()
+                done = False
+            if text:
+                items.append({"text": text, "done": done})
+        entity["checklist"] = items
+        return items
+
+    def _set_task_finished(self, card, finished):
+        entity = self._entity_for_card(card)
+        if not isinstance(entity, dict):
+            return False
+
+        entity["entry_status"] = "finished" if finished else "incomplete"
+        self._persist_card_entity(card)
+        self.browser_items = self._build_browser_items(self.world_model)
+        self._rebuild_browser_hitboxes()
+        self._relayout_cards()
+        return True
+
+    def _handle_task_checklist_click(self, card, mouse_pos):
+        if not self._is_task_card_obj(card):
+            return False
+
+        finish_rect = card.get("task_finish_checkbox_rect")
+        if finish_rect is not None and finish_rect.collidepoint(mouse_pos):
+            entity = self._entity_for_card(card)
+            return self._set_task_finished(card, not self._is_finished_task_entity(entity))
+
+        entity = self._entity_for_card(card)
+        items = self._normalize_task_checklist(entity)
+        for item_index, checkbox_rect in card.get("task_checklist_hitboxes", []):
+            if checkbox_rect.collidepoint(mouse_pos) and 0 <= item_index < len(items):
+                items[item_index]["done"] = not bool(items[item_index].get("done"))
+                self._persist_card_entity(card)
+                self._relayout_cards()
+                return True
+
+        input_rect = card.get("task_checklist_input_rect")
+        if input_rect is not None and input_rect.collidepoint(mouse_pos):
+            self.browser_search_active = False
+            for other_card in self.cards:
+                other_card["task_checklist_input_active"] = other_card is card
+            card.setdefault("task_checklist_input_buffer", "")
+            self._relayout_cards()
+            return True
+
+        return False
+
+    def _active_task_checklist_card(self):
+        for card in reversed(self.cards):
+            if card.get("task_checklist_input_active"):
+                return card
+        return None
+
+    def _submit_task_checklist_input(self, card):
+        entity = self._entity_for_card(card)
+        if not isinstance(entity, dict):
+            return False
+
+        text = str(card.get("task_checklist_input_buffer") or "").strip()
+        if not text:
+            card["task_checklist_input_active"] = False
+            self._relayout_cards()
+            return True
+
+        items = self._normalize_task_checklist(entity)
+        items.append({"text": text, "done": False})
+        entity["checklist"] = items
+        entity["entry_status"] = "incomplete"
+        card["task_checklist_input_buffer"] = ""
+        card["task_checklist_input_active"] = False
+        self._persist_card_entity(card)
+        self.browser_items = self._build_browser_items(self.world_model)
+        self._rebuild_browser_hitboxes()
+        self._relayout_cards()
+        return True
+
+    def _handle_task_checklist_keydown(self, event):
+        card = self._active_task_checklist_card()
+        if card is None:
+            return False
+
+        buffer_text = str(card.get("task_checklist_input_buffer") or "")
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            return self._submit_task_checklist_input(card)
+        if event.key == pygame.K_ESCAPE:
+            card["task_checklist_input_active"] = False
+            self._relayout_cards()
+            return True
+        if event.key == pygame.K_BACKSPACE:
+            card["task_checklist_input_buffer"] = buffer_text[:-1]
+            self._relayout_cards()
+            return True
+        text = getattr(event, "unicode", "")
+        if text and text.isprintable():
+            card["task_checklist_input_buffer"] = buffer_text + text
+            self._relayout_cards()
+            return True
         return True
 
     def _handle_schema_card_click(self, card, index, mouse_pos):
@@ -4715,6 +4993,10 @@ class KnowledgeBrowserUI:
                     card_obj = self._bring_card_to_front(index)
                     if self._handle_relation_chip_click(card_obj, relation_info, mouse_pos=mouse_pos):
                         return "__ui_consumed__"
+
+            if self._handle_task_checklist_click(card, mouse_pos):
+                self._bring_card_to_front(index)
+                return "__ui_consumed__"
 
             for tool_info, tool_rect in card.get("toolbelt_hitboxes", []):
                 if tool_rect.collidepoint(mouse_pos) and card_view is not None:
@@ -4859,6 +5141,14 @@ class KnowledgeBrowserUI:
         )
         screen.blit(picker_title, (self.template_picker_rect.x + 12, title_y))
 
+        for template, label, button_rect in self.template_quick_button_hitboxes:
+            hovered = button_rect.collidepoint(pygame.mouse.get_pos())
+            fill = (66, 82, 112) if hovered else (48, 58, 78)
+            pygame.draw.rect(screen, fill, button_rect)
+            pygame.draw.rect(screen, (176, 190, 216), button_rect, 1)
+            quick_label = font.render(label, True, (244, 246, 250))
+            screen.blit(quick_label, quick_label.get_rect(center=button_rect.center))
+
         for template, label, button_rect in self.template_button_hitboxes:
             pygame.draw.rect(screen, (44, 50, 64), button_rect)
             pygame.draw.rect(screen, (132, 142, 160), button_rect, 1)
@@ -4871,12 +5161,14 @@ class KnowledgeBrowserUI:
             screen.blit(button_text, (button_rect.x + 8, text_y))
             screen.blit(detail_text, (button_rect.x + 8, text_y + line_h))
 
-        if len(self.schema_entry_templates) > len(self.template_button_hitboxes):
+        quick_count = len(self.template_quick_button_hitboxes)
+        list_count = len(self.schema_entry_templates) - quick_count
+        if list_count > len(self.template_button_hitboxes):
             visible_count = max(1, len(self.template_button_hitboxes))
             scroll_label = (
                 f"{self.template_picker_scroll + 1}-"
                 f"{self.template_picker_scroll + visible_count} / "
-                f"{len(self.schema_entry_templates)}"
+                f"{list_count}"
             )
             scroll_surface = font.render(scroll_label, True, (166, 174, 190))
             screen.blit(
@@ -5269,6 +5561,8 @@ class KnowledgeBrowserUI:
             return self._handle_canvas_relation_target_click(mouse_pos)
 
         if self.relation_link_target is not None:
+            if right_rect.collidepoint(mouse_pos):
+                return self._handle_relation_card_link_target_click(mouse_pos)
             if not left_rect.collidepoint(mouse_pos):
                 self._finish_relation_browser_link()
                 return "__ui_consumed__"

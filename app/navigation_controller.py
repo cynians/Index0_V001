@@ -7,6 +7,7 @@ from simulations.map.map_simulation import MapSimulation
 from simulations.bioregion.bioregion_simulation import BioregionSimulation
 from simulations.vehicle.vehicle_simulation import VehicleSimulation
 from simulations.person.person_simulation import PersonSimulation
+from simulations.world_gen.world_gen_sim import WorldGenSimulation
 
 
 class NavigationController:
@@ -233,6 +234,43 @@ class NavigationController:
         self.app.knowledge_layer_active = False
         self.app.camera_controller.setup_for_sim(new_person_sim)
 
+    def launch_world_gen_tab(self, planet_location_id):
+        """
+        Open or focus a planetary world-generation workspace.
+        """
+        if not planet_location_id:
+            return False
+
+        planet = self.app.world_model.get_entity(planet_location_id)
+        if not planet or planet.get("location_class") != "planet":
+            return False
+
+        tab_key = ("world_gen", planet_location_id)
+        if self.focus_existing_tab_by_key(tab_key):
+            self.app.knowledge_layer_active = False
+            return True
+
+        active_sim = self.app.get_active_simulation()
+        year = getattr(active_sim, "year", 2400) if active_sim is not None else 2400
+        planet_name = planet.get("name", planet_location_id)
+
+        new_world_gen_sim = WorldGenSimulation(
+            world_model=self.app.world_model,
+            planet_location_id=planet_location_id,
+            year=year,
+        )
+        new_tab = Tab(
+            SimulationInstance(new_world_gen_sim),
+            name=f"World Gen: {planet_name}",
+            tab_key=tab_key,
+        )
+
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+        self.app.camera_controller.setup_for_sim(new_world_gen_sim)
+        return True
+
     def open_region_map_tab(self, entity_id):
         """
         Open a new map simulation tab rooted at the selected entity,
@@ -401,6 +439,9 @@ class NavigationController:
         """
         self.app.repository_scope_entity_id = self._infer_repository_scope_entity_id(active_sim)
         self.app.knowledge_layer_active = True
+        self.app.repository_return_confirm_active = False
+        self.app.system_menu_active = False
+        self.app.system_settings_active = False
         return True
 
     def activate_tab_index(self, tab_index):
@@ -470,6 +511,14 @@ class NavigationController:
         if action_id == "selection_inspector_evolve_region" and active_sim is not None:
             return bool(
                 getattr(active_sim, "begin_spatial_feature_evolution", lambda *_args: False)(
+                    action.get("target_kind"),
+                    action.get("target_id"),
+                )
+            )
+
+        if action_id == "selection_inspector_delete_region" and active_sim is not None:
+            return bool(
+                getattr(active_sim, "delete_selection_inspector_target", lambda *_args: False)(
                     action.get("target_kind"),
                     action.get("target_id"),
                 )
@@ -561,6 +610,9 @@ class NavigationController:
         if action_id == "knowledge_place_location_on_parent":
             return self.open_location_parent_placement_tab(action.get("entity_id"))
 
+        if action_id == "knowledge_launch_world_gen":
+            return self.launch_world_gen_tab(action.get("entity_id"))
+
         return False
 
     def _handle_simple_ui_action(self, action_id, active_sim):
@@ -600,6 +652,13 @@ class NavigationController:
 
         if action_id == "open_repository":
             return self.open_repository_workspace(active_sim)
+
+        if action_id == "confirm_open_repository":
+            return self.open_repository_workspace(active_sim)
+
+        if action_id == "cancel_repository_return":
+            self.app.repository_return_confirm_active = False
+            return True
 
         if action_id == "system_menu_continue":
             self.app.system_menu_active = False

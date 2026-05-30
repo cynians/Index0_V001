@@ -206,6 +206,72 @@ class EntityLoader:
 
         self.datasets.pop("systems", None)
 
+    def _convert_spatial_feature_to_location(self, entity):
+        converted = dict(entity)
+        converted["_legacy_dataset"] = converted.get("_dataset", "spatial_features")
+        converted["_dataset"] = "locations"
+        converted["type"] = "location"
+        converted.setdefault("location_class", "region")
+        converted.setdefault("location_role", "map_region")
+
+        layer_kind = converted.get("layer_kind")
+        if layer_kind and not converted.get("region_class"):
+            converted["region_class"] = layer_kind
+
+        parent_entity = converted.get("parent_entity")
+        if parent_entity and not converted.get("parent_location"):
+            converted["parent_location"] = parent_entity
+
+        geometry = converted.get("geometry")
+        if isinstance(geometry, dict) and not converted.get("bounds"):
+            converted["bounds"] = dict(geometry)
+
+        return converted
+
+    def _fold_spatial_features_into_locations(self):
+        spatial_features = self.datasets.get("spatial_features")
+        if not spatial_features:
+            return
+
+        location_entities = self.datasets.setdefault("locations", [])
+        location_by_id = {
+            entity.get("id"): entity
+            for entity in location_entities
+            if isinstance(entity, dict) and entity.get("id")
+        }
+
+        for feature in spatial_features:
+            if not isinstance(feature, dict) or not feature.get("id"):
+                continue
+
+            converted = self._convert_spatial_feature_to_location(feature)
+            existing = location_by_id.get(converted.get("id"))
+            if existing is not None:
+                self._copy_missing_fields(
+                    existing,
+                    converted,
+                    [
+                        "location_class",
+                        "location_role",
+                        "region_class",
+                        "parent_location",
+                        "parent_entity",
+                        "owner_entity",
+                        "layer_kind",
+                        "geometry",
+                        "bounds",
+                        "coverage_mode",
+                        "resolution_m_per_pixel",
+                        "draw_order",
+                    ],
+                )
+                continue
+
+            location_entities.append(converted)
+            location_by_id[converted["id"]] = converted
+
+        self.datasets.pop("spatial_features", None)
+
     def _ensure_standard_relations(self, entity, dataset_name=None):
         changed = False
 
@@ -386,6 +452,7 @@ class EntityLoader:
                 logger.exception("Failed to load dataset from %s: %s", file, exc)
 
         self._fold_system_entities_into_locations()
+        self._fold_spatial_features_into_locations()
 
     # --------------------------------------------------
 

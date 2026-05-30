@@ -24,6 +24,7 @@ class SelectionInspectorUI:
     BUTTON_W = 78
     EDIT_BUTTON_W = 118
     EVOLVE_BUTTON_W = 86
+    DELETE_BUTTON_W = 72
     BUTTON_H = 28
     KEY_REPEAT_DELAY_MS = 320
     KEY_REPEAT_INTERVAL_MS = 38
@@ -55,6 +56,8 @@ class SelectionInspectorUI:
         self.evolve_rect = None
         self.time_anchor_rect = None
         self.close_rect = None
+        self.delete_rect = None
+        self.delete_confirm_active = False
 
     def open(self, target_kind, target_id, record):
         self.is_open = True
@@ -69,6 +72,7 @@ class SelectionInspectorUI:
         self.target_can_edit_geometry = self._can_edit_target_geometry(target_kind, record)
         self.time_anchor_preview_year = self._time_anchor_preview_year(record)
         self.time_anchor_active = False
+        self.delete_confirm_active = False
         self._reset_key_repeat()
 
     def close(self):
@@ -87,6 +91,8 @@ class SelectionInspectorUI:
         self.edit_rect = None
         self.evolve_rect = None
         self.time_anchor_rect = None
+        self.delete_rect = None
+        self.delete_confirm_active = False
         self._reset_key_repeat()
 
     def set_time_anchor_active(self, active, target_kind=None, target_id=None):
@@ -139,8 +145,8 @@ class SelectionInspectorUI:
 
     def _title_for_target(self, target_kind, target_id, record):
         if target_kind == "spatial_feature":
-            layer_kind = record.get("layer_kind", "spatial")
-            return f"Spatial Feature | {layer_kind}"
+            region_class = record.get("region_class") or record.get("layer_kind", "region")
+            return f"Region | {region_class}"
 
         if target_kind == "location":
             location_class = record.get("location_class", "location")
@@ -192,6 +198,15 @@ class SelectionInspectorUI:
             self.EVOLVE_BUTTON_W,
             self.BUTTON_H,
         )
+        next_button_x = self.evolve_rect.right + 8
+        self.delete_rect = None
+        if self.target_kind == "spatial_feature":
+            self.delete_rect = pygame.Rect(
+                next_button_x,
+                button_y,
+                self.DELETE_BUTTON_W,
+                self.BUTTON_H,
+            )
         self.save_rect = pygame.Rect(
             self.rect.right - self.BUTTON_W * 2 - 26,
             button_y,
@@ -204,8 +219,13 @@ class SelectionInspectorUI:
             self.BUTTON_W,
             self.BUTTON_H,
         )
-        if self.evolve_rect.right > self.save_rect.x - 8:
+        if self.delete_rect is not None and self.delete_rect.right > self.save_rect.x - 8:
             self.evolve_rect = None
+            self.delete_rect.x = self.edit_rect.right + 8
+        if self.evolve_rect is not None and self.evolve_rect.right > self.save_rect.x - 8:
+            self.evolve_rect = None
+        if self.delete_rect is not None and self.delete_rect.right > self.save_rect.x - 8:
+            self.delete_rect = None
 
     def draw(self, screen, font):
         if not self.is_open or self.rect is None:
@@ -239,8 +259,21 @@ class SelectionInspectorUI:
             self._draw_button(screen, font, self.edit_rect, "Edit Polygon", True)
             if self.evolve_rect is not None:
                 self._draw_button(screen, font, self.evolve_rect, "Evolve", True)
+            if self.delete_rect is not None:
+                delete_label = "Confirm" if self.delete_confirm_active else "Delete"
+                self._draw_button(
+                    screen,
+                    font,
+                    self.delete_rect,
+                    delete_label,
+                    True,
+                    danger=True,
+                )
         elif self.target_kind == "location" and self.target_can_edit_geometry:
             self._draw_button(screen, font, self.edit_rect, "Edit Rectangle", True)
+        if self.delete_confirm_active:
+            warning = font.render("Delete region?", True, (240, 176, 152))
+            screen.blit(warning, (self.rect.x + 12, self.save_rect.y - font.get_height() - 2))
         self._draw_button(screen, font, self.save_rect, "Save", True)
         self._draw_button(screen, font, self.cancel_rect, "Cancel", True)
 
@@ -323,9 +356,13 @@ class SelectionInspectorUI:
                 1,
             )
 
-    def _draw_button(self, screen, font, rect, label, enabled):
-        fill = (58, 66, 82) if enabled else (42, 44, 50)
-        border = (210, 218, 232) if enabled else (112, 116, 124)
+    def _draw_button(self, screen, font, rect, label, enabled, danger=False):
+        if danger and enabled:
+            fill = (88, 42, 48)
+            border = (232, 154, 164)
+        else:
+            fill = (58, 66, 82) if enabled else (42, 44, 50)
+            border = (210, 218, 232) if enabled else (112, 116, 124)
         text_color = (245, 245, 245) if enabled else (150, 150, 150)
 
         pygame.draw.rect(screen, fill, rect)
@@ -412,6 +449,7 @@ class SelectionInspectorUI:
 
         if self.time_anchor_rect and self.time_anchor_rect.collidepoint(mouse_pos):
             self.active_field = None
+            self.delete_confirm_active = False
             self.time_anchor_active = True
             return {
                 "id": "selection_inspector_reanchor_time_start",
@@ -422,12 +460,14 @@ class SelectionInspectorUI:
 
         if self.name_rect and self.name_rect.collidepoint(mouse_pos):
             self.active_field = "name"
+            self.delete_confirm_active = False
             self._set_cursor_from_mouse("name", mouse_pos)
             self._reset_key_repeat()
             return "ui_consumed"
 
         if self.notes_rect and self.notes_rect.collidepoint(mouse_pos):
             self.active_field = "notes"
+            self.delete_confirm_active = False
             self._set_cursor_from_mouse("notes", mouse_pos)
             self._reset_key_repeat()
             return "ui_consumed"
@@ -452,6 +492,24 @@ class SelectionInspectorUI:
 
         if (
             self.target_kind == "spatial_feature"
+            and self.delete_rect
+            and self.delete_rect.collidepoint(mouse_pos)
+        ):
+            if not self.delete_confirm_active:
+                self.active_field = None
+                self.delete_confirm_active = True
+                return "ui_consumed"
+
+            action = {
+                "id": "selection_inspector_delete_region",
+                "target_kind": self.target_kind,
+                "target_id": self.target_id,
+            }
+            self.close()
+            return action
+
+        if (
+            self.target_kind == "spatial_feature"
             and self.target_can_edit_geometry
             and self.evolve_rect
             and self.evolve_rect.collidepoint(mouse_pos)
@@ -465,6 +523,7 @@ class SelectionInspectorUI:
             return action
 
         if self.save_rect and self.save_rect.collidepoint(mouse_pos):
+            self.delete_confirm_active = False
             action = {
                 "id": "selection_inspector_save",
                 "target_kind": self.target_kind,
@@ -478,6 +537,9 @@ class SelectionInspectorUI:
             return action
 
         if self.cancel_rect and self.cancel_rect.collidepoint(mouse_pos):
+            if self.delete_confirm_active:
+                self.delete_confirm_active = False
+                return "ui_consumed"
             self.close()
             return "ui_consumed"
 

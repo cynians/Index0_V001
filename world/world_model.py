@@ -220,10 +220,20 @@ class WorldModel:
                 for entity in self.loader.get_dataset("locations")
                 if entity.get("system_role")
             ]
+        if dataset_name == "spatial_features":
+            return [
+                entity
+                for entity in self.loader.get_dataset("locations")
+                if entity.get("location_class") == "region"
+                and (entity.get("geometry") or entity.get("layer_kind"))
+            ]
         return self.loader.get_dataset(dataset_name)
 
     def get_dataset_names(self):
-        return list(self.loader.datasets.keys())
+        names = list(self.loader.datasets.keys())
+        if "locations" in self.loader.datasets and "systems" not in names:
+            names.append("systems")
+        return names
 
     def get_entities_by_dataset(self, dataset_name):
         dataset = self.loader.get_dataset(dataset_name)

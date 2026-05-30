@@ -114,3 +114,16 @@
     Allow Subcategory to be selected. War for lost data. 
     
     Also make only clickable in edit mode
+- id: task_new_026
+  pretty_name: Add Neighbouring Systems to Space Sim
+  name: Add Neighbouring Systems to Space Sim
+  type: task
+  wiki_entry: ''
+  entry_status: incomplete
+  checklist:
+  - text: Start With Sol
+    done: false
+  - text: Be able to display distances
+    done: false
+  - text: assume static universe
+    done: false

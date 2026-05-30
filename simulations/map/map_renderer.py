@@ -72,7 +72,20 @@ class MapRenderer:
             scaled = pygame.transform.smoothscale(image_surface, (rect.width, rect.height))
             self._scaled_image_cache[cache_key] = scaled
 
+        alpha = layer.get("alpha")
+        if alpha is not None:
+            scaled = scaled.copy()
+            scaled.set_alpha(max(0, min(255, int(alpha))))
+
         screen.blit(scaled, rect)
+
+        if layer.get("is_ghost_context") and layer.get("name"):
+            text = self.app_view.default_font.render(
+                layer.get("name", "location"),
+                True,
+                (210, 218, 230),
+            )
+            screen.blit(text, (rect.x + 6, rect.y + 6))
 
     def _draw_polygon_layer(self, screen, layer, camera, is_selected, is_hovered):
         screen_points = []
@@ -115,8 +128,18 @@ class MapRenderer:
             fill_color = base_color
             border_color = (225, 235, 220)
 
-        pygame.draw.polygon(screen, fill_color, screen_points)
-        pygame.draw.polygon(screen, border_color, screen_points, 2)
+        alpha = layer.get("alpha")
+        border_alpha = layer.get("border_alpha", alpha)
+        if alpha is not None or border_alpha is not None:
+            alpha_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+            fill_alpha = 80 if alpha is None else max(0, min(255, int(alpha)))
+            line_alpha = 120 if border_alpha is None else max(0, min(255, int(border_alpha)))
+            pygame.draw.polygon(alpha_surface, (*fill_color, fill_alpha), screen_points)
+            pygame.draw.polygon(alpha_surface, (*border_color, line_alpha), screen_points, 2)
+            screen.blit(alpha_surface, (0, 0))
+        else:
+            pygame.draw.polygon(screen, fill_color, screen_points)
+            pygame.draw.polygon(screen, border_color, screen_points, 2)
 
         if is_hovered and not is_selected:
             pygame.draw.polygon(screen, (120, 220, 255), screen_points, 3)
@@ -129,10 +152,15 @@ class MapRenderer:
             if label_pos is None:
                 return
 
+            if layer.get("is_ghost_context"):
+                text_color = (210, 218, 230)
+            else:
+                text_color = (245, 245, 245)
+
             text = self.app_view.default_font.render(
                 layer.get("name", "feature"),
                 True,
-                (245, 245, 245)
+                text_color,
             )
             screen.blit(text, (int(label_pos[0]) + 6, int(label_pos[1]) + 6))
 
@@ -416,7 +444,12 @@ class MapRenderer:
                         True,
                         (240, 240, 240)
                     )
-                    screen.blit(text, (rect.x + 6, rect.y + 6))
+                    if layer.get("label_position") == "below_right":
+                        label_x = rect.right - text.get_width()
+                        label_y = rect.bottom + 4
+                        screen.blit(text, (label_x, label_y))
+                    else:
+                        screen.blit(text, (rect.x + 6, rect.y + 6))
 
                 continue
 
