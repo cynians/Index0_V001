@@ -66,7 +66,7 @@ class SelectionInspectorUI:
         self.target_id = target_id
         self.title = self._title_for_target(target_kind, target_id, record)
         self.name_buffer = str(record.get("name") or record.get("pretty_name") or "")
-        self.notes_buffer = str(record.get("notes") or "")
+        self.notes_buffer = str(record.get("wiki_entry") or record.get("notes") or "")
         self.name_cursor = len(self.name_buffer)
         self.notes_cursor = len(self.notes_buffer)
         self.active_field = "name"
@@ -145,7 +145,7 @@ class SelectionInspectorUI:
         return None
 
     def is_text_input_active(self):
-        return self.is_open and self.active_field in {"name", "notes"}
+        return self.is_open and self.active_field in {"name", "wiki_entry"}
 
     def _title_for_target(self, target_kind, target_id, record):
         if target_kind == "spatial_feature":
@@ -258,7 +258,7 @@ class SelectionInspectorUI:
         if self.time_anchor_rect is not None:
             self._draw_time_anchor_button(screen, font)
         self._draw_labeled_field(screen, font, "name", self.name_rect, self.name_buffer)
-        self._draw_labeled_field(screen, font, "notes", self.notes_rect, self.notes_buffer)
+        self._draw_labeled_field(screen, font, "wiki_entry", self.notes_rect, self.notes_buffer)
         if self.target_kind == "spatial_feature" and self.target_can_edit_geometry:
             self._draw_button(screen, font, self.edit_rect, "Edit Polygon", True)
             if self.evolve_rect is not None:
@@ -471,9 +471,9 @@ class SelectionInspectorUI:
             return "ui_consumed"
 
         if self.notes_rect and self.notes_rect.collidepoint(mouse_pos):
-            self.active_field = "notes"
+            self.active_field = "wiki_entry"
             self.delete_confirm_active = False
-            self._set_cursor_from_mouse("notes", mouse_pos)
+            self._set_cursor_from_mouse("wiki_entry", mouse_pos)
             self._reset_key_repeat()
             return "ui_consumed"
 
@@ -535,7 +535,7 @@ class SelectionInspectorUI:
                 "target_id": self.target_id,
                 "updates": {
                     "name": self.name_buffer.strip(),
-                    "notes": self.notes_buffer.strip(),
+                    "wiki_entry": self.notes_buffer.strip(),
                 },
             }
             self.close()
@@ -564,7 +564,7 @@ class SelectionInspectorUI:
             return
 
         if event.key == pygame.K_TAB:
-            self.active_field = "notes" if self.active_field == "name" else "name"
+            self.active_field = "wiki_entry" if self.active_field == "name" else "name"
             self._reset_key_repeat()
             return
 
@@ -591,7 +591,7 @@ class SelectionInspectorUI:
             return
 
         if event.key == pygame.K_HOME:
-            if self.active_field == "notes" and not (event.mod & pygame.KMOD_CTRL):
+            if self.active_field == "wiki_entry" and not (event.mod & pygame.KMOD_CTRL):
                 self._set_active_cursor(
                     self._line_start_before_cursor(
                         self._get_active_buffer(),
@@ -603,7 +603,7 @@ class SelectionInspectorUI:
             return
 
         if event.key == pygame.K_END:
-            if self.active_field == "notes" and not (event.mod & pygame.KMOD_CTRL):
+            if self.active_field == "wiki_entry" and not (event.mod & pygame.KMOD_CTRL):
                 self._set_active_cursor(
                     self._line_end_after_cursor(
                         self._get_active_buffer(),
@@ -631,7 +631,7 @@ class SelectionInspectorUI:
             return
 
         if event.key == pygame.K_RETURN:
-            if self.active_field == "notes":
+            if self.active_field == "wiki_entry":
                 self._insert_text("\n")
             return
 
@@ -642,7 +642,7 @@ class SelectionInspectorUI:
     def _get_field_buffer(self, field):
         if field == "name":
             return self.name_buffer
-        if field == "notes":
+        if field == "wiki_entry":
             return self.notes_buffer
         return ""
 
@@ -651,7 +651,7 @@ class SelectionInspectorUI:
         if field == "name":
             self.name_buffer = value.replace("\n", " ")
             self.name_cursor = max(0, min(self.name_cursor, len(self.name_buffer)))
-        elif field == "notes":
+        elif field == "wiki_entry":
             self.notes_buffer = value
             self.notes_cursor = max(0, min(self.notes_cursor, len(self.notes_buffer)))
 
@@ -660,7 +660,7 @@ class SelectionInspectorUI:
         if field == "name":
             self.name_cursor = max(0, min(self.name_cursor, len(buffer_text)))
             return self.name_cursor
-        if field == "notes":
+        if field == "wiki_entry":
             self.notes_cursor = max(0, min(self.notes_cursor, len(buffer_text)))
             return self.notes_cursor
         return 0
@@ -670,7 +670,7 @@ class SelectionInspectorUI:
         cursor = TextEditing.clamp_cursor(buffer_text, cursor)
         if field == "name":
             self.name_cursor = cursor
-        elif field == "notes":
+        elif field == "wiki_entry":
             self.notes_cursor = cursor
 
     def _get_active_buffer(self):
@@ -686,7 +686,7 @@ class SelectionInspectorUI:
         self._set_field_cursor(self.active_field, cursor)
 
     def _insert_text(self, text):
-        if self.active_field not in {"name", "notes"}:
+        if self.active_field not in {"name", "wiki_entry"}:
             return False
 
         text = str(text)

@@ -24,16 +24,6 @@ class EntityLoader:
     """
 
     CORE_DEFAULTS = {
-        "description": "",
-        "notes": "",
-        "wiki_entry": "",
-        "card_image": "",
-        "design_image": "",
-        "card_image_front": "",
-        "card_image_side": "",
-        "card_image_top": "",
-        "image_path": "",
-        "image": "",
         "tags": [],
         "start_year": None,
         "end_year": None,
@@ -42,14 +32,9 @@ class EntityLoader:
         "related": [],
         "wiki_mentions": [],
         "offspring": [],
-        "placeholders": [],
         "entry_status": "",
-        "media_layers": {},
     }
     IDEA_DEFAULTS = {
-        "description": "",
-        "notes": "",
-        "wiki_entry": "",
         "tags": [],
         "start_year": None,
         "end_year": None,
@@ -58,11 +43,9 @@ class EntityLoader:
         "related": [],
         "wiki_mentions": [],
         "offspring": [],
-        "placeholders": [],
         "entry_status": "",
     }
     LEGACY_IDEA_FIELDS = {
-        "idea_class",
         "related_entities",
         "parent_entity",
         "source",

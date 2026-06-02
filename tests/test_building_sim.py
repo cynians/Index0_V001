@@ -219,7 +219,7 @@ class BuildingSimulationTests(unittest.TestCase):
                 "location_class": "room",
                 "room_class": "room",
                 "parent_location": "loc_archive_building",
-                "notes": "First pass.",
+                "wiki_entry": "First pass.",
                 "bounds": {
                     "type": "polygon",
                     "coordinate_space": "map_world",
@@ -229,7 +229,7 @@ class BuildingSimulationTests(unittest.TestCase):
                 "entry_status": "draft",
             }
             sim._append_location_record(room)
-            room["notes"] = "Retry pass."
+            room["wiki_entry"] = "Retry pass."
             sim._append_location_record(room)
 
             text = sim.LOCATIONS_ENTRY_PATH.read_text(encoding="utf-8")

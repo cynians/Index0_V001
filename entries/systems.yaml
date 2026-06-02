@@ -6,24 +6,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Sol System
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_sol
   name: Sol
   type: system
@@ -47,24 +35,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Sol
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_luna
   name: Luna
   type: system
@@ -88,24 +64,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Luna
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_phobos
   pretty_name: Phobos
   name: Phobos
@@ -131,23 +95,11 @@
   parents:
   - planet_mars
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_deimos
   name: Deimos
   type: system
@@ -171,24 +123,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Deimos
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_ceres
   name: Ceres
   type: system
@@ -212,24 +152,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Ceres
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_pallas
   name: Pallas
   type: system
@@ -253,24 +181,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Pallas
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_ganymede
   name: Ganymede
   type: system
@@ -294,24 +210,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Ganymede
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_callisto
   pretty_name: Callisto
   name: Callisto, Moon of Jupiter
@@ -336,23 +240,11 @@
   start_year: -450000000
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_amalthea
   pretty_name: Amalthea
   name: Amalthea
@@ -378,23 +270,11 @@
   parents:
   - planet_jupiter
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_himalia
   name: Himalia
   type: system
@@ -418,24 +298,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Himalia
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_saturn
   name: Saturn
   type: system
@@ -459,24 +327,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Saturn
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_mimas
   name: Mimas
   type: system
@@ -500,24 +356,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Mimas
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_tethys
   name: Tethys
   type: system
@@ -541,24 +385,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Tethys
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_dione
   name: Dione
   type: system
@@ -582,24 +414,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Dione
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_rhea
   name: Rhea
   type: system
@@ -623,24 +443,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Rhea
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_iapetus
   name: Iapetus
   type: system
@@ -664,24 +472,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Iapetus
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_phoebe
   name: Phoebe
   type: system
@@ -705,24 +501,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Phoebe
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_uranus
   name: Uranus
   type: system
@@ -746,24 +530,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Uranus
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_miranda
   name: Miranda
   type: system
@@ -787,24 +559,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Miranda
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_uranus_ariel
   pretty_name: Ariel, Moon of Uranus
   name: Ariel
@@ -829,23 +589,11 @@
   start_year: -450000000
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_umbriel
   name: Umbriel
   type: system
@@ -869,24 +617,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Umbriel
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_titania
   name: Titania
   type: system
@@ -910,24 +646,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Titania
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_oberon
   name: Oberon
   type: system
@@ -951,24 +675,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Oberon
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_neptune
   name: Neptune
   type: system
@@ -992,24 +704,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Neptune
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_triton
   name: Triton
   type: system
@@ -1033,24 +733,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Triton
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_proteus
   pretty_name: Proteus, Moon of Neptune
   name: Proteus
@@ -1076,23 +764,11 @@
   parents:
   - body_neptune
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_charon
   pretty_name: Charon
   name: Charon
@@ -1117,25 +793,13 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: 'Testholder Charon
-
-    '
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Testholder Charon
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_nix
   name: Nix
   type: system
@@ -1159,24 +823,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Nix
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_hydra
   name: Hydra
   type: system
@@ -1200,24 +852,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Hydra
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_kerberos
   name: Kerberos
   type: system
@@ -1241,24 +881,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Kerberos
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_styx
   name: Styx
   type: system
@@ -1282,24 +910,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Styx
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_haumea
   name: Haumea
   type: system
@@ -1323,24 +939,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Haumea
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_hiiaka
   name: Hiʻiaka
   type: system
@@ -1364,24 +968,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Hiʻiaka
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_namaka
   name: Namaka
   type: system
@@ -1405,24 +997,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Namaka
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_makemake
   name: Makemake
   type: system
@@ -1446,24 +1026,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Makemake
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_mk2
   name: MK2
   type: system
@@ -1487,24 +1055,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: MK2
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_eris
   name: Eris
   type: system
@@ -1528,24 +1084,12 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Eris
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: body_dysnomia
   name: Dysnomia
   type: system
@@ -1569,59 +1113,37 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Dysnomia
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: sys_new_001
   pretty_name: New System
   name: Aramite
   type: system
-  wiki_entry: ''
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   start_year: null
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: sys_barycor
   pretty_name: Barycor System
   name: Barycor System
   type: system
-  wiki_entry: ''
   system_role: ''
 - id: sys_new_002
   pretty_name: Equidorva System
   name: Equidorva System
   type: system
-  wiki_entry: ''
+  wiki_entry: |-
+    Earthlike development sandbox centered on Equidorva, a habitable-zone terrestrial planet orbiting a G-class main-sequence star.
+    
+    Bottom-up planet construction root for Equidorva.
   system_role: star_system
   dataset: null
   system_class: stellar_system
@@ -1629,18 +1151,7 @@
   related:
   - body_equidorva_primary
   - body_equidorva
-  placeholders: []
   offspring: []
-  description: Earthlike development sandbox centered on Equidorva, a habitable-zone
-    terrestrial planet orbiting a G-class main-sequence star.
-  notes: Bottom-up planet construction root for Equidorva.
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags:
   - g_class_star
   - habitable_zone
@@ -1649,12 +1160,14 @@
   end_year: null
   derived_from: []
   entry_status: draft
-  media_layers: {}
 - id: body_equidorva_primary
   pretty_name: Equidorva Primary
   name: Equidorva Primary
   type: system
-  wiki_entry: ''
+  wiki_entry: |-
+    G-class main-sequence star used as Equidorva's Earthlike primary.
+    
+    Solar analogue baseline, roughly 1 solar mass and luminosity.
   system_role: orbital_body
   star_system: sys_new_002
   body_class: star
@@ -1676,17 +1189,7 @@
   - sys_new_002
   related:
   - body_equidorva
-  placeholders: []
   offspring: []
-  description: G-class main-sequence star used as Equidorva's Earthlike primary.
-  notes: Solar analogue baseline, roughly 1 solar mass and luminosity.
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags:
   - g_class_star
   - solar_analogue
@@ -1694,4 +1197,24 @@
   end_year: null
   derived_from: []
   entry_status: draft
-  media_layers: {}
+- id: sys_belmont
+  pretty_name: Belmont
+  name: Belmont
+  type: system
+  system_role: ''
+  wiki_entry: ''
+  offspring: []
+- id: sys_new_003
+  pretty_name: Babylon System
+  name: Babylon System
+  type: system
+  system_role: ''
+  wiki_entry: ''
+  offspring: []
+- id: sys_new_004
+  pretty_name: Spinosaurus mirabilis
+  name: Spinosaurus mirabilis
+  type: system
+  system_role: ''
+  wiki_entry: ''
+  offspring: []

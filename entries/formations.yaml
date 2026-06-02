@@ -9,8 +9,6 @@
   vehicles: []
   pops: []
   commanding_officers: []
-  description: Panamericana land formation derived from naval infantry and specialized in cliff and mountain fighting.
-  notes: 'Known for mobile alpine reconnaissance and strike operations, difficult-terrain recovery and expedition escort, and mountain-border guarding in regions such as the Rockies and Andes.'
   tags:
   - formation
   - panamericana
@@ -23,18 +21,66 @@
   parents:
   - fac_new_003
   related: []
-  placeholders: []
-  offspring: []
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  offspring:
+  - id: form_panam_lf_53th_mountain_guards_1st_peak_group
+  wiki_entry: |
+    Panamericana land formation derived from naval infantry and specialized in cliff and mountain fighting.
+    
+    Known for mobile alpine reconnaissance and strike operations, difficult-terrain recovery and expedition escort, and mountain-border guarding in regions such as the Rockies and Andes.
   end_year: 2253
   derived_from: []
-  media_layers: {}
   wiki_mentions: []
   card_color: '#364758'
+- id: form_ggo_planetary_defenses
+  pretty_name: GGO Planetary Defenses
+  name: GGO Planetary Defenses
+  type: formation
+  card_color: '#1d0f0d'
+  related:
+  - evt_new_003
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: form_panam_land_air_service
+  pretty_name: PanAm Land Air Service
+  name: PanAm Land Air Service
+  type: formation
+  card_color: '#4c6272'
+  related:
+  - event_panamericana_rockies_f22_discovery
+  - veh_f22_raptor
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: form_panam_lf_53th_mountain_guards_1st_peak_group
+  pretty_name: 'PanAM LF, 53th Mountain Guards, 1st Peak Group'
+  name: 'PanAM LF, 53th Mountain Guards, 1st Peak Group'
+  type: formation
+  card_color: '#546372'
+  derived_from:
+  - idea_new_019
+  parents:
+  - formation_panam_land_forces_53th_mountain_guards
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: form_teutonian_kaiserheer
+  pretty_name: Teutonian Kaiserheer
+  name: Teutonian Kaiserheer
+  type: formation
+  card_color: '#000000'
+  parents:
+  - fac_teutonian_resurgence
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  related:
+  - conf_borders_rebellion
+  - fac_retronationalist_forced_of_the_border_rebellion
+  - inst_ggop
+  entry_status: ''
+  card_header_color: '#173352'

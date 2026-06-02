@@ -26,22 +26,10 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
-  media_layers: {}
 - id: item_pump_module
   pretty_name: Pump Module
   name: Pump Module
@@ -74,22 +62,10 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
-  media_layers: {}
 - id: item_storage_rack
   pretty_name: Storage Rack
   name: Storage Rack
@@ -121,19 +97,19 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
-  media_layers: {}
+- id: item_alcova_special_brew
+  pretty_name: Alcova Special Brew
+  name: Alcova Special Brew
+  type: item
+  card_color: '#162526'
+  item_class: industrial_good
+  wiki_entry: ''
+  wiki_mentions:
+  - prod_aldos_j_brewery
+  - loc_acapulco_system
+  - mkt_planetary_period_markets
+  offspring: []

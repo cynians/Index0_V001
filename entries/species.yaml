@@ -2,7 +2,6 @@
   common_name: Versatile Parrot Raptor
   binomial_name: Psittacoraptor versatilis
   type: species
-  description: 'Bioengineered parrot-derived theropod lineage created by the Terran BDP during the Planetary Period as an omnivorous generalist. On at least one seeded Earth-like world with reduced biodiversity, later exposure to CEAG drove rapid diversification into predator and generalist branches across nearly all major ecosystems.'
   species_class: engineered_vertebrate
   parent_clade: psittacoraptorinae
   clade_class: bird
@@ -67,25 +66,15 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Bioengineered parrot-derived theropod lineage created by the Terran BDP during the Planetary Period as an omnivorous generalist. On at least one seeded Earth-like world with reduced biodiversity, later exposure to CEAG drove rapid diversification into predator and generalist branches across nearly all major ecosystems.
   end_year: 31761
   derived_from: []
-  media_layers: {}
 - id: spec_ailurus_fulgens
   common_name: Red Panda
   binomial_name: Ailurus fulgens
   type: species
-  description: 'Small arboreal mammal native to the temperate montane forests of the eastern Himalayas and southwestern China. Red pandas are specialized climbers and foragers that spend much of their time in trees, feeding primarily on bamboo alongside fruits, eggs, and small animals.'
   species_class: natural_vertebrate
   parent_clade: ailuridae
   clade_class: mammal
@@ -145,28 +134,15 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Small arboreal mammal native to the temperate montane forests of the eastern Himalayas and southwestern China. Red pandas are specialized climbers and foragers that spend much of their time in trees, feeding primarily on bamboo alongside fruits, eggs, and small animals.
   end_year: null
   derived_from: []
-  media_layers: {}
 - id: spec_rheithrosciurus_macrotis
   common_name: Tufted Ground Squirrel
   binomial_name: Rheithrosciurus macrotis
   type: species
-  description: Large terrestrial squirrel native to the lowland forests of Borneo,
-    known for its extremely bushy tail and powerful jaws. Despite its common name,
-    it is primarily a forest-floor rodent that forages among dense vegetation and
-    fallen material for hard seeds, nuts, and other food items.
   species_class: natural_vertebrate
   parent_clade: sciuridae
   clade_class: mammal
@@ -230,34 +206,15 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Large terrestrial squirrel native to the lowland forests of Borneo, known for its extremely bushy tail and powerful jaws. Despite its common name, it is primarily a forest-floor rodent that forages among dense vegetation and fallen material for hard seeds, nuts, and other food items.
   end_year: null
   derived_from: []
-  media_layers: {}
 - id: spec_atopodentatus
   common_name: New Species
   binomial_name: Atopodentatus
   type: species
-  wiki_entry: ''
-  description: ''
-  notes: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   start_year: null
   end_year: null
@@ -265,41 +222,26 @@
   parents: []
   related: []
   offspring: []
-  placeholders: []
   entry_status: ''
-  media_layers: {}
 - id: spec_new_003
   common_name: New Species
   binomial_name: ''
   type: species
-  wiki_entry: ''
   representative_body_length_m: null
   simulation_tier_default: null
 - id: spec_pygoscelis_antarcticus
   common_name: Chinstrap Penguin
   binomial_name: Pygoscelis antarcticus
   type: species
-  wiki_entry: ''
 - id: spec_pygoscelis_antarcticus
   common_name: Chinstrap Penguin
   binomial_name: Pygoscelis antarcticus
   type: species
-  wiki_entry: ''
   start_year: -3470000
 - id: spec_marmota_marmota
   common_name: Alpine Marmot
   binomial_name: Marmota marmota
   type: species
-  wiki_entry: ''
-  description: ''
-  notes: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   start_year: null
   end_year: null
@@ -308,59 +250,48 @@
   - geo_alps
   related: []
   offspring: []
-  placeholders: []
   entry_status: ''
-  media_layers: {}
 - id: spec_pterocles_senegallus
   common_name: Spotted Sandgrouse
   binomial_name: Pterocles senegallus
   type: species
-  wiki_entry: ''
 - id: spec_cakkuabdra_haematocephala
   common_name: Red Powder Puff
   binomial_name: Cakkuabdra haematocephala
   type: species
-  wiki_entry: ''
 - id: spec_pleurodeles_nebulosus
   common_name: Algerian Ribbet Newt
   binomial_name: Pleurodeles nebulosus
   type: species
-  wiki_entry: ''
 - id: spec_phoebastria_immutabilis
   common_name: Laysan Albatross
   binomial_name: Phoebastria immutabilis
   type: species
-  wiki_entry: ''
 - id: spec_mustela_erminea
   common_name: Eurasian Stoat
   binomial_name: Mustela erminea
   type: species
-  wiki_entry: ''
 - id: spec_sphaeralcea_coccinea
   common_name: Scarlet Globemallow
   binomial_name: Sphaeralcea coccinea
   type: species
-  wiki_entry: ''
   wiki_mentions: []
   card_color: '#c2472b'
 - id: spec_aenocyon_dirus
   common_name: Dire Wolf
   binomial_name: Aenocyon dirus
   type: species
-  wiki_entry: ''
   wiki_mentions: []
 - id: spec_carcharhinus_amblyrhynchos
   common_name: Grey Reef Shark
   binomial_name: Carcharhinus amblyrhynchos
   type: species
-  wiki_entry: ''
   wiki_mentions: []
   card_color: '#202830'
 - id: spec_dicrurus_macrocerus
   common_name: Black Drongo
   binomial_name: Dicrurus macrocerus
   type: species
-  wiki_entry: ''
   wiki_mentions: []
   card_color: '#111318'
   related:
@@ -369,7 +300,6 @@
   common_name: Common Raven - Corvus corax
   binomial_name: Corvus corax
   type: species
-  wiki_entry: ''
   wiki_mentions: []
   card_color: '#0d0f13'
   start_year: -500000
@@ -378,8 +308,39 @@
   common_name: Yellow Bellied Water Skink
   binomial_name: ''
   type: species
-  wiki_entry: ''
   wiki_mentions: []
   card_color: '#26261c'
   start_year: -5000000
   end_year: 26607
+- id: sp_new_002
+  common_name: New Species
+  binomial_name: ''
+  type: species
+  wiki_entry: ''
+  offspring: []
+- id: spec_furnarius_figulus
+  common_name: Band Tailed Hornero
+  binomial_name: Furnarius figulus
+  type: species
+  wiki_entry: ''
+  offspring:
+  - id: idea_new_018
+  - id: illust_band_tailed_hornero_in_habitat
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents:
+  - cladis_hornero_furnarius
+  related: []
+  wiki_mentions: []
+  entry_status: ''
+  card_color: '#4a250d'
+  card_header_color: '#6d604c'
+- id: spec_new_002
+  common_name: Spinosaurus mirabilis
+  binomial_name: ''
+  type: species
+  wiki_entry: ''
+  offspring:
+  - id: idea_spinosaurus_minisculus

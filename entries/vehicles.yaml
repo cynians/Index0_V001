@@ -2,11 +2,6 @@
   pretty_name: Fletcher-class Destroyer
   name: Fletcher-class Destroyer
   type: vehicle
-  description: United States Navy destroyer class built in large numbers during the
-    Second World War for fleet screening, anti-submarine warfare, anti-air warfare,
-    torpedo attack, and general surface combat service.
-  notes: Class-level historical entry. Producer, operator, component, and ship-specific
-    derivative entries can be added later.
   vehicle_class: fleet_destroyer
   produced_by: []
   uses_technology: []
@@ -74,28 +69,16 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    United States Navy destroyer class built in large numbers during the Second World War for fleet screening, anti-submarine warfare, anti-air warfare, torpedo attack, and general surface combat service.
+    
+    Class-level historical entry. Producer, operator, component, and ship-specific derivative entries can be added later.
   derived_from: []
-  media_layers: {}
 - id: veh_d48_gun
   pretty_name: D-48 Gun
   name: D-48 Gun
   type: vehicle
-  description: Soviet 85 mm towed anti-tank gun developed in the postwar period for
-    high-velocity direct fire against armored targets, while retaining limited secondary
-    field-gun utility.
-  notes: Real-world baseline entry for the D-48. Stored in vehicles for now because
-    the current repo has no dedicated weapons schema and the gun functions as a crew-served
-    towed battlefield platform.
   vehicle_class: towed_anti_tank_gun
   produced_by: []
   uses_technology: []
@@ -154,25 +137,17 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Soviet 85 mm towed anti-tank gun developed in the postwar period for high-velocity direct fire against armored targets, while retaining limited secondary field-gun utility.
+    
+    Real-world baseline entry for the D-48. Stored in vehicles for now because the current repo has no dedicated weapons schema and the gun functions as a crew-served towed battlefield platform.
   end_year: null
   derived_from: []
-  media_layers: {}
 - id: veh_luaz_967
   pretty_name: LuAZ-967
   name: LuAZ-967
   type: vehicle
-  description: 'Soviet light amphibious front-line transport vehicle intended for casualty evacuation, ammunition supply, and light battlefield utility transport in difficult terrain.'
-  notes: 'Real-world baseline entry for the LuAZ-967 vehicle line. The line is most commonly associated with the LuAZ-967M production form, but this entry represents the broader vehicle family.'
   vehicle_class: amphibious_front_line_transport
   vehicle_class_parents:
   - utility_vehicle
@@ -238,25 +213,17 @@
   related:
   - idea_new_011
   - comp_hull_corner_closing_plate
-  placeholders: []
   offspring: []
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Soviet light amphibious front-line transport vehicle intended for casualty evacuation, ammunition supply, and light battlefield utility transport in difficult terrain.
+    
+    Real-world baseline entry for the LuAZ-967 vehicle line. The line is most commonly associated with the LuAZ-967M production form, but this entry represents the broader vehicle family.
   end_year: null
   derived_from: []
-  media_layers: {}
 - id: veh_f22_raptor
   pretty_name: F-22 Raptor
   name: F-22 Raptor
   type: vehicle
-  description: 'United States stealth air-dominance fighter introduced in the late 20th and early 21st century, combining low observability, supercruise, extreme maneuverability, and integrated sensor fusion.'
-  notes: Real-world baseline entry for later adaptation into the Superpower Wars context.
   vehicle_class: stealth_air_dominance_fighter
   produced_by: []
   uses_technology: []
@@ -317,27 +284,19 @@
   parents: []
   related:
   - event_panamericana_rockies_f22_discovery
-  placeholders: []
   offspring: []
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    United States stealth air-dominance fighter introduced in the late 20th and early 21st century, combining low observability, supercruise, extreme maneuverability, and integrated sensor fusion.
+    
+    Real-world baseline entry for later adaptation into the Superpower Wars context.
   end_year: 2176
   derived_from: []
-  media_layers: {}
   wiki_mentions: []
   card_color: '#70706f'
 - id: veh_panamericana_q3n_stormpetrel
   pretty_name: Panamericana Q3N Stormpetrel
   name: Panamericana Q3N Stormpetrel
   type: vehicle
-  description: 'Panamericana naval combat drone boat optimized for littoral surveillance, scouting, targeting, and quick-response combat in coastal waters.'
-  notes: Semi-submersible standby posture allows long-term concealment and persistent observation before activation.
   vehicle_class: naval_combat_drone
   produced_by: []
   uses_technology: []
@@ -383,19 +342,13 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Panamericana naval combat drone boat optimized for littoral surveillance, scouting, targeting, and quick-response combat in coastal waters.
+    
+    Semi-submersible standby posture allows long-term concealment and persistent observation before activation.
   end_year: null
   derived_from: []
-  media_layers: {}
   wiki_mentions: []
   card_color: '#1a2a3d'
 - id: veh_mdv_3
@@ -403,8 +356,6 @@
   name: MDV-3
   type: vehicle
   idea_reference: IDEA-496
-  description: Orbital-built Mars cargo transport vehicle used for high-volume freight transfer between Earth orbit and Mars orbit during the Race for Sol.
-  notes: 'Designed as a larger follow-up to earlier Mars Delivery Vehicle concepts. Unlike earlier atmosphere-capable variants, MDV-3 is a pure space transport and does not perform atmospheric entry. It carries roughly 385 tons of cargo and operates between orbital infrastructure nodes rather than surface delivery points.'
   vehicle_class: interplanetary_cargo_transport
   produced_by: []
   uses_technology: []
@@ -438,30 +389,18 @@
   parents: []
   related:
   - idea_new_009
-  placeholders: []
   offspring: []
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Orbital-built Mars cargo transport vehicle used for high-volume freight transfer between Earth orbit and Mars orbit during the Race for Sol.
+    
+    Designed as a larger follow-up to earlier Mars Delivery Vehicle concepts. Unlike earlier atmosphere-capable variants, MDV-3 is a pure space transport and does not perform atmospheric entry. It carries roughly 385 tons of cargo and operates between orbital infrastructure nodes rather than surface delivery points.
   end_year: null
   derived_from: []
-  media_layers: {}
 - id: veh_taltos_class_mars_cargo_lander
   pretty_name: Taltos-class Mars Cargo Lander
   name: Taltos-class Mars Cargo Lander
   type: vehicle
   idea_reference: IDEA-502
-  description: Reusable Mars orbit-to-surface cargo lander used during the Race for
-    Sol for freight delivery between orbital logistics hubs and surface landing pads.
-  notes: The class is built around repeated cargo descent and unloading operations
-    on Mars. The design uses detachable modular lifting wings that can be removed
-    and remounted in reversed orientation depending on mission profile and servicing
-    state.
   vehicle_class: mars_cargo_lander
   produced_by: []
   uses_technology: []
@@ -502,28 +441,17 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Reusable Mars orbit-to-surface cargo lander used during the Race for Sol for freight delivery between orbital logistics hubs and surface landing pads.
+    
+    The class is built around repeated cargo descent and unloading operations on Mars. The design uses detachable modular lifting wings that can be removed and remounted in reversed orientation depending on mission profile and servicing state.
   end_year: null
   derived_from: []
-  media_layers: {}
 - id: veh_conviction_c1
   pretty_name: Conviction C1
   name: Conviction C1
   type: vehicle
-  description: Compact 2-door convertible grand tourer by Conviction Automobiles,
-    intended for refined private leisure touring with a smooth luxury character and
-    a mild sporting edge.
-  notes: Early Conviction model line centered on open-top prestige touring rather
-    than formal executive transport.
   vehicle_class: compact_grand_touring_convertible
   vehicle_class_parents:
   - car
@@ -570,28 +498,17 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Compact 2-door convertible grand tourer by Conviction Automobiles, intended for refined private leisure touring with a smooth luxury character and a mild sporting edge.
+    
+    Early Conviction model line centered on open-top prestige touring rather than formal executive transport.
   end_year: null
   derived_from: []
-  media_layers: {}
 - id: veh_unicorn_class_communications_cruiser
   pretty_name: Unicorn Class Communications Cruiser
   name: Unicorn Class Communications Cruiser
   type: vehicle
-  description: Planetary Period communications cruiser with a long forward antenna
-    nose used for in-system relay, coordination, and communications support duties.
-  notes: Dual-use specialist ship operating both as semi-static communications infrastructure
-    within systems and as a limited-mobility support craft able to reposition between
-    planets, stations, and fleet formations.
   vehicle_class: communications_cruiser
   produced_by: []
   uses_technology: []
@@ -638,25 +555,17 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Planetary Period communications cruiser with a long forward antenna nose used for in-system relay, coordination, and communications support duties.
+    
+    Dual-use specialist ship operating both as semi-static communications infrastructure within systems and as a limited-mobility support craft able to reposition between planets, stations, and fleet formations.
   end_year: null
   derived_from: []
-  media_layers: {}
 - id: veh_bospor_3_regolith
   pretty_name: Bospor 3 "Regolith"
   name: Bospor 3 "Regolith"
   type: vehicle
-  description: Mid-size utility SUV produced by Bospor Automat for everyday transport and light-duty work on Noyanakh in the Metyaki System during the Planetary Period.
-  notes: Civilian frontier vehicle intended to bridge personal mobility and practical utility use in settlement and rough-surface conditions.
   vehicle_class: suv
   manufacturer_name: Bospor Automat
   dimension_x_m: 4.8
@@ -690,8 +599,6 @@
     configurable_groups:
       - drivetrain_variants
       - utility_fittings
-  card_image: assets/cards/vehicles/veh_bospor_3_regolith_front.png
-  card_image_front: assets/cards/vehicles/veh_bospor_3_regolith_front.png
   tags:
   - vehicle
   - ground_vehicle
@@ -705,17 +612,13 @@
   parents:
   - producer_bospor_automat
   related: []
-  placeholders: []
   offspring: []
-  wiki_entry: ''
-  design_image: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Mid-size utility SUV produced by Bospor Automat for everyday transport and light-duty work on Noyanakh in the Metyaki System during the Planetary Period.
+    
+    Civilian frontier vehicle intended to bridge personal mobility and practical utility use in settlement and rough-surface conditions.
   end_year: 7260
   derived_from: []
-  media_layers: {}
   wiki_mentions: []
   card_color: '#722f3a'
 - id: veh_octa_35p
@@ -723,12 +626,6 @@
   name: Octa 35P
   type: vehicle
   idea_reference: IDEA-364
-  description: Ground urban electric taxi used in the sprawling industrial cities.yaml
-    around Patina’s orbital shipyard during the Planetary Period.
-  notes: Repository conversion of the Patina Surface Taxi concept. Associated with
-    Stacklinger and the broader Patina shipyard-adjacent urban surface environment.
-    Exact operational variants, trim levels, and later local modifications remain
-    open for later refinement.
   vehicle_class: urban_taxi
   vehicle_class_parents:
   - car
@@ -784,24 +681,17 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Ground urban electric taxi used in the sprawling industrial cities.yaml around Patina’s orbital shipyard during the Planetary Period.
+    
+    Repository conversion of the Patina Surface Taxi concept. Associated with Stacklinger and the broader Patina shipyard-adjacent urban surface environment. Exact operational variants, trim levels, and later local modifications remain open for later refinement.
   end_year: null
   derived_from: []
-  media_layers: {}
 - id: veh_humhab_1_1
   pretty_name: HumHab 1-1 "Pregenitor One"
   name: HumHab 1-1 "Pregenitor One"
   type: vehicle
-  wiki_entry: ''
   parents:
   - inst_ggo_humhab
   derived_from:
@@ -810,16 +700,6 @@
   pretty_name: Helsing CA-15
   name: Helsing CA-15
   type: vehicle
-  wiki_entry: ''
-  description: ''
-  notes: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   start_year: null
   end_year: null
@@ -828,43 +708,28 @@
   related: []
   wiki_mentions: []
   offspring: []
-  placeholders: []
   entry_status: ''
-  media_layers: {}
   card_color: '#373c42'
 - id: veh_whopco
   pretty_name: Wandering Habition Observation Platform and Colony
   name: WHOPCO
   type: vehicle
-  wiki_entry: ''
   related:
   - planet_mercury
   - prod_new_001
-  description: ''
-  notes: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   start_year: null
   end_year: null
   derived_from: []
   parents: []
   offspring: []
-  placeholders: []
   entry_status: ''
-  media_layers: {}
   wiki_mentions: []
   card_color: '#230404'
 - id: veh_plowshare_class_combat_tug
   pretty_name: Plowshare Class - Combat Tug
   name: Plowshare Class - Combat Tug
   type: vehicle
-  wiki_entry: ''
   wiki_mentions: []
   card_color: '#0d1626'
   parents:
@@ -876,7 +741,6 @@
   name: Bospor 3 - Sn B3-1
   type: vehicle
   card_color: '#b75c5c'
-  wiki_entry: ''
   wiki_mentions: []
   card_header_color: '#825445'
   parents:
@@ -887,7 +751,6 @@
   pretty_name: Bospor 2 "Ouremite"
   name: Bospor 2 "Ouremite"
   type: vehicle
-  wiki_entry: ''
   wiki_mentions: []
   card_color: '#622d3e'
   start_year: 7137
@@ -898,7 +761,6 @@
   pretty_name: Bospor 1 "Calcetite"
   name: Bospor 1 "Calcetite"
   type: vehicle
-  wiki_entry: ''
   wiki_mentions: []
   card_color: '#6d445f'
   parents:
@@ -909,10 +771,74 @@
   pretty_name: Bospor 4 "Basaltite"
   name: Bospor 4 "Basaltite"
   type: vehicle
-  wiki_entry: ''
   wiki_mentions: []
   card_color: '#552a32'
   parents:
   - producer_bospor_automat
   start_year: 7154
   end_year: 7173
+- id: veh_altona_class_interstellar_cruisers
+  pretty_name: Altona Class Interstellar Cruisers
+  name: Altona Class Interstellar Cruisers
+  type: vehicle
+  card_color: '#1c2625'
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring:
+  - id: veh_th_altona
+- id: veh_hansa_postman_class_interstellar_one_way_delivery_vehicle
+  pretty_name: Hansa Postman Class - Interstellar One Way Delivery Vehicle
+  name: Hansa Postman Class - Interstellar One Way Delivery Vehicle
+  type: vehicle
+  card_color: '#102126'
+  offspring:
+  - id: veh_tho_hildebrand_postman_class
+  related:
+  - fac_transfer_hansa
+  - inst_transfer_hansa_frontier_charter
+  wiki_entry: ''
+  wiki_mentions: []
+- id: veh_lotus_elise
+  pretty_name: Lotus Elise
+  name: Lotus Elise
+  type: vehicle
+  card_color: '#e2e250'
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: veh_martian_heavy_weight_crawlers
+  pretty_name: Martian Heavy Weight Crawlers
+  name: Martian Heavy Weight Crawlers
+  type: vehicle
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: veh_th_altona
+  pretty_name: TH Altona
+  name: TH Altona
+  type: vehicle
+  card_color: '#142625'
+  derived_from:
+  - idea_new_008
+  parents:
+  - veh_altona_class_interstellar_cruisers
+  related:
+  - loc_l_beck_system
+  - idea_new_008
+  wiki_entry: ''
+  wiki_mentions:
+  - loc_l_beck_system
+  - fac_transfer_hansa
+  offspring: []
+- id: veh_tho_hildebrand_postman_class
+  pretty_name: THO Hildebrand - Postman Class
+  name: THO Hildebrand - Postman Class
+  type: vehicle
+  card_color: '#122326'
+  parents:
+  - veh_hansa_postman_class_interstellar_one_way_delivery_vehicle
+  related:
+  - fac_transfer_hansa
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []

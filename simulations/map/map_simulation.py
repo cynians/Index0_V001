@@ -1975,7 +1975,7 @@ class MapSimulation:
                 "location_role": "indoor_room",
                 "room_class": "room",
                 "layer_kind": "rooms",
-                "notes": notes,
+                "wiki_entry": notes,
                 "parent_location": self.context.root_entity_id,
                 "parent_entity": self.context.root_entity_id,
                 "parents": [self.context.root_entity_id],
@@ -2006,7 +2006,7 @@ class MapSimulation:
             "location_class": "region",
             "location_role": "map_region",
             "region_class": self.active_layer_kind,
-            "notes": notes,
+            "wiki_entry": notes,
             "layer_kind": self.active_layer_kind,
             "parent_location": self.context.root_entity_id,
             "parent_entity": self.context.root_entity_id,
@@ -2054,7 +2054,7 @@ class MapSimulation:
             "type": "location",
             "location_class": "region",
             "location_role": "map_region",
-            "notes": notes,
+            "wiki_entry": notes,
             "region_class": source_feature.get("region_class") or source_feature.get("layer_kind", self.active_layer_kind),
             "layer_kind": source_feature.get("layer_kind", self.active_layer_kind),
             "parent_location": (
@@ -2108,7 +2108,7 @@ class MapSimulation:
             "type": "location",
             "location_class": "region",
             "parent_location": self.context.root_entity_id,
-            "notes": notes,
+            "wiki_entry": notes,
             "bounds": self._current_map_square_bounds(),
             "start_year": self.year,
             "entry_status": "draft",
@@ -2167,7 +2167,7 @@ class MapSimulation:
         lines.extend([
             "  type: spatial_feature",
         ])
-        lines.extend(self._format_yaml_field_lines("notes", feature["notes"]))
+        lines.extend(self._format_yaml_field_lines("wiki_entry", feature["wiki_entry"]))
         lines.extend([
             f"  layer_kind: {feature['layer_kind']}",
         ])
@@ -2288,7 +2288,7 @@ class MapSimulation:
             lines.append(f"  owner_entity: {location['owner_entity']}")
         if location.get("parents"):
             lines.extend(self._format_yaml_list_field_lines("parents", location.get("parents")))
-        lines.extend(self._format_yaml_field_lines("notes", location["notes"]))
+        lines.extend(self._format_yaml_field_lines("wiki_entry", location["wiki_entry"]))
         lines.extend(self._format_location_bounds_lines(location["bounds"]))
         geometry = location.get("geometry")
         if isinstance(geometry, dict) and geometry.get("type") == "polygon":
@@ -2422,7 +2422,7 @@ class MapSimulation:
             return False
 
         name = str(updates.get("name", "")).strip()
-        notes = str(updates.get("notes", "")).strip()
+        notes = str(updates.get("wiki_entry", updates.get("notes", ""))).strip()
 
         if not name:
             name = str(target_id)
@@ -2882,7 +2882,7 @@ class MapSimulation:
         block = text[block_start:block_end]
         block = self._replace_yaml_field_in_block(block, "pretty_name", name)
         block = self._replace_yaml_field_in_block(block, "name", name)
-        block = self._replace_yaml_field_in_block(block, "notes", notes)
+        block = self._replace_yaml_field_in_block(block, "wiki_entry", notes)
 
         updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
         entry_path.write_text(updated_text, encoding="utf-8")
@@ -2902,7 +2902,7 @@ class MapSimulation:
         block = text[block_start:block_end]
         block = self._replace_yaml_field_in_block(block, "pretty_name", name)
         block = self._replace_yaml_field_in_block(block, "name", name)
-        block = self._replace_yaml_field_in_block(block, "notes", notes)
+        block = self._replace_yaml_field_in_block(block, "wiki_entry", notes)
 
         updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
         entry_path.write_text(updated_text, encoding="utf-8")
@@ -3331,7 +3331,7 @@ class MapSimulation:
             "resolution_m_per_pixel": feature.get("resolution_m_per_pixel"),
             "coverage_mode": feature.get("coverage_mode"),
             "draw_order": feature.get("draw_order", 0),
-            "notes": feature.get("notes"),
+            "wiki_entry": feature.get("wiki_entry"),
         }
 
     def _spatial_layer_sort_key(self, layer):

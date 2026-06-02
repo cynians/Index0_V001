@@ -2,18 +2,8 @@
   pretty_name: Bryopsis
   name: Hair Algae
   type: cladistics
-  wiki_entry: ''
   common_name: ''
   binomial_name: ''
-  description: ''
-  notes: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   start_year: null
   end_year: null
@@ -22,15 +12,12 @@
   related: []
   wiki_mentions: []
   offspring: []
-  placeholders: []
   entry_status: ''
-  media_layers: {}
   card_color: '#172517'
 - id: cladis_otters
   pretty_name: Otters - Lutrinae
   name: Otters
   type: cladistics
-  wiki_entry: ''
   common_name: ''
   binomial_name: ''
   wiki_mentions: []
@@ -41,7 +28,6 @@
   pretty_name: Clawless Otters - Aonyx
   name: Clawless Otters - Aonyx
   type: cladistics
-  wiki_entry: ''
   card_color: '#26201c'
   wiki_mentions: []
   derived_from: []
@@ -49,3 +35,769 @@
   binomial_name: ''
   parents:
   - cladis_otters
+- id: cladis_hornero_furnarius
+  pretty_name: Hornero - Furnarius
+  name: Hornero - Furnarius
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: spec_furnarius_figulus
+    offspring:
+      - id: idea_new_018
+      - id: illust_band_tailed_hornero_in_habitat
+  parents:
+  - cladis_ovenbirds_furnariidae
+- id: cladis_ovenbirds_furnariidae
+  pretty_name: Ovenbirds - Furnariidae
+  name: Ovenbirds - Furnariidae
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_hornero_furnarius
+    offspring:
+      - id: spec_furnarius_figulus
+        offspring: '[{''id'': ''idea_new_018''}, {''id'': ''illust_band_tailed_hornero_in_habitat''}]'
+  parents:
+  - cladis_furnariida
+- id: cladis_furnariida
+  pretty_name: Furnariida
+  name: Furnariida
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_ovenbirds_furnariidae
+    offspring:
+      - id: cladis_hornero_furnarius
+        offspring: '[{''id'': ''spec_furnarius_figulus'', ''offspring'': [{''id'': ''idea_new_018''}, {''id'': ''illust_band_tailed_hornero_in_habitat''}]}]'
+  derived_from:
+  - cladis_new_world_suboscine_birds_tyrannides
+- id: cladis_new_world_suboscine_birds_tyrannides
+  pretty_name: New World Suboscine Birds - Tyrannides
+  name: New World Suboscine Birds - Tyrannides
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring: []
+  parents:
+  - cladis_suboscine_birds_tyranni
+- id: cladis_suboscine_birds_tyranni
+  pretty_name: Suboscine Birds - Tyranni
+  name: Suboscine Birds - Tyranni
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_new_world_suboscine_birds_tyrannides
+  parents:
+  - cladis_eupasserine_birds_eupasserine
+- id: cladis_eupasserine_birds_eupasserine
+  pretty_name: Eupasserine Birds - Eupasserine
+  name: Eupasserine Birds - Eupasserine
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_suboscine_birds_tyranni
+    offspring:
+      - id: cladis_new_world_suboscine_birds_tyrannides
+  parents:
+  - cladis_passerine_birds_passerine
+- id: cladis_passerine_birds_passerine
+  pretty_name: Passerine Birds - Passerine
+  name: Passerine Birds - Passerine
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_eupasserine_birds_eupasserine
+    offspring:
+      - id: cladis_suboscine_birds_tyranni
+        offspring: '[{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]'
+  parents:
+  - cladis_psittacopasseres
+- id: cladis_psittacopasseres
+  pretty_name: Psittacopasseres
+  name: Psittacopasseres
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_passerine_birds_passerine
+    offspring:
+      - id: cladis_eupasserine_birds_eupasserine
+        offspring: '[{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]'
+  parents:
+  - cladis_eufalconimorphae
+- id: cladis_eufalconimorphae
+  pretty_name: Eufalconimorphae
+  name: Eufalconimorphae
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_psittacopasseres
+    offspring:
+      - id: cladis_passerine_birds_passerine
+        offspring: '[{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]'
+  parents:
+  - cladis_australaves
+- id: cladis_australaves
+  pretty_name: Australaves
+  name: Australaves
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_eufalconimorphae
+    offspring:
+      - id: cladis_psittacopasseres
+        offspring: '[{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]'
+  parents:
+  - cladis_land_birds_telluraves
+- id: cladis_land_birds_telluraves
+  pretty_name: Land Birds - Telluraves
+  name: Land Birds - Telluraves
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_australaves
+    offspring:
+      - id: cladis_eufalconimorphae
+        offspring: '[{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]'
+  parents:
+  - cladis_passera
+- id: cladis_passera
+  pretty_name: Passera
+  name: Passera
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_land_birds_telluraves
+    offspring:
+      - id: cladis_australaves
+        offspring: '[{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]'
+  parents:
+  - cladis_neoaves
+- id: cladis_neoaves
+  pretty_name: Neoaves
+  name: Neoaves
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_passera
+    offspring:
+      - id: cladis_land_birds_telluraves
+        offspring: '[{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]'
+  parents:
+  - cladis_neognath_birds_neognathae
+- id: cladis_neognath_birds_neognathae
+  pretty_name: Neognath Birds - Neognathae
+  name: Neognath Birds - Neognathae
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_neoaves
+    offspring:
+      - id: cladis_passera
+        offspring: '[{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_birds_aves
+- id: cladis_birds_aves
+  pretty_name: Birds - Aves
+  name: Birds - Aves
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_neognath_birds_neognathae
+    offspring:
+      - id: cladis_neoaves
+        offspring: '[{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_bird_tailed_birds_ornithurae
+- id: cladis_bird_tailed_birds_ornithurae
+  pretty_name: Bird Tailed Birds - Ornithurae
+  name: Bird Tailed Birds - Ornithurae
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_birds_aves
+    offspring:
+      - id: cladis_neognath_birds_neognathae
+        offspring: '[{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_euornithes
+- id: cladis_euornithes
+  pretty_name: Euornithes
+  name: Euornithes
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_bird_tailed_birds_ornithurae
+    offspring:
+      - id: cladis_birds_aves
+        offspring: '[{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_ornithothoraces
+- id: cladis_ornithothoraces
+  pretty_name: Ornithothoraces
+  name: Ornithothoraces
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_euornithes
+    offspring:
+      - id: cladis_bird_tailed_birds_ornithurae
+        offspring: '[{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_pygostylia
+- id: cladis_pygostylia
+  pretty_name: Pygostylia
+  name: Pygostylia
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_ornithothoraces
+    offspring:
+      - id: cladis_euornithes
+        offspring: '[{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_avialae
+- id: cladis_avialae
+  pretty_name: Avialae
+  name: Avialae
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_pygostylia
+    offspring:
+      - id: cladis_ornithothoraces
+        offspring: '[{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_paraves
+- id: cladis_paraves
+  pretty_name: Paraves
+  name: Paraves
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_avialae
+    offspring:
+      - id: cladis_pygostylia
+        offspring: '[{''id'': ''cladis_ornithothoraces'', ''offspring'': [{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_maniraptora
+- id: cladis_maniraptora
+  pretty_name: Maniraptora
+  name: Maniraptora
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_paraves
+    offspring:
+      - id: cladis_avialae
+        offspring: '[{''id'': ''cladis_pygostylia'', ''offspring'': [{''id'': ''cladis_ornithothoraces'', ''offspring'': [{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_coelurosauria
+- id: cladis_coelurosauria
+  pretty_name: Coelurosauria
+  name: Coelurosauria
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_maniraptora
+    offspring:
+      - id: cladis_paraves
+        offspring: '[{''id'': ''cladis_avialae'', ''offspring'': [{''id'': ''cladis_pygostylia'', ''offspring'': [{''id'': ''cladis_ornithothoraces'', ''offspring'': [{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_stiff_tailed_dinosaurs_tetanurae
+- id: cladis_stiff_tailed_dinosaurs_tetanurae
+  pretty_name: Stiff Tailed Dinosaurs - Tetanurae
+  name: Stiff Tailed Dinosaurs - Tetanurae
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_coelurosauria
+    offspring:
+      - id: cladis_maniraptora
+        offspring: '[{''id'': ''cladis_paraves'', ''offspring'': [{''id'': ''cladis_avialae'', ''offspring'': [{''id'': ''cladis_pygostylia'', ''offspring'': [{''id'': ''cladis_ornithothoraces'', ''offspring'': [{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_theropod_dinosaurs_theropoda
+- id: cladis_theropod_dinosaurs_theropoda
+  pretty_name: Theropod Dinosaurs - Theropoda
+  name: Theropod Dinosaurs - Theropoda
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_stiff_tailed_dinosaurs_tetanurae
+    offspring:
+      - id: cladis_coelurosauria
+        offspring: '[{''id'': ''cladis_maniraptora'', ''offspring'': [{''id'': ''cladis_paraves'', ''offspring'': [{''id'': ''cladis_avialae'', ''offspring'': [{''id'': ''cladis_pygostylia'', ''offspring'': [{''id'': ''cladis_ornithothoraces'', ''offspring'': [{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_reptile_hipped_dinosaurs_saurischia
+- id: cladis_reptile_hipped_dinosaurs_saurischia
+  pretty_name: Reptile Hipped Dinosaurs - Saurischia
+  name: Reptile Hipped Dinosaurs - Saurischia
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_theropod_dinosaurs_theropoda
+    offspring:
+      - id: cladis_stiff_tailed_dinosaurs_tetanurae
+        offspring: '[{''id'': ''cladis_coelurosauria'', ''offspring'': [{''id'': ''cladis_maniraptora'', ''offspring'': [{''id'': ''cladis_paraves'', ''offspring'': [{''id'': ''cladis_avialae'', ''offspring'': [{''id'': ''cladis_pygostylia'', ''offspring'': [{''id'': ''cladis_ornithothoraces'', ''offspring'': [{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_dinosaurs_dinosauria
+- id: cladis_dinosaurs_dinosauria
+  pretty_name: Dinosaurs - Dinosauria
+  name: Dinosaurs - Dinosauria
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_reptile_hipped_dinosaurs_saurischia
+    offspring:
+      - id: cladis_theropod_dinosaurs_theropoda
+        offspring: '[{''id'': ''cladis_stiff_tailed_dinosaurs_tetanurae'', ''offspring'': [{''id'': ''cladis_coelurosauria'', ''offspring'': [{''id'': ''cladis_maniraptora'', ''offspring'': [{''id'': ''cladis_paraves'', ''offspring'': [{''id'': ''cladis_avialae'', ''offspring'': [{''id'': ''cladis_pygostylia'', ''offspring'': [{''id'': ''cladis_ornithothoraces'', ''offspring'': [{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_dinosauromorpha
+- id: cladis_dinosauromorpha
+  pretty_name: Dinosauromorpha
+  name: Dinosauromorpha
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_dinosaurs_dinosauria
+    offspring:
+      - id: cladis_reptile_hipped_dinosaurs_saurischia
+        offspring: '[{''id'': ''cladis_theropod_dinosaurs_theropoda'', ''offspring'': [{''id'': ''cladis_stiff_tailed_dinosaurs_tetanurae'', ''offspring'': [{''id'': ''cladis_coelurosauria'', ''offspring'': [{''id'': ''cladis_maniraptora'', ''offspring'': [{''id'': ''cladis_paraves'', ''offspring'': [{''id'': ''cladis_avialae'', ''offspring'': [{''id'': ''cladis_pygostylia'', ''offspring'': [{''id'': ''cladis_ornithothoraces'', ''offspring'': [{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_avemetatarsalia
+- id: cladis_avemetatarsalia
+  pretty_name: Avemetatarsalia
+  name: Avemetatarsalia
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_dinosauromorpha
+    offspring:
+      - id: cladis_dinosaurs_dinosauria
+        offspring: '[{''id'': ''cladis_reptile_hipped_dinosaurs_saurischia'', ''offspring'': [{''id'': ''cladis_theropod_dinosaurs_theropoda'', ''offspring'': [{''id'': ''cladis_stiff_tailed_dinosaurs_tetanurae'', ''offspring'': [{''id'': ''cladis_coelurosauria'', ''offspring'': [{''id'': ''cladis_maniraptora'', ''offspring'': [{''id'': ''cladis_paraves'', ''offspring'': [{''id'': ''cladis_avialae'', ''offspring'': [{''id'': ''cladis_pygostylia'', ''offspring'': [{''id'': ''cladis_ornithothoraces'', ''offspring'': [{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_archosauria
+- id: cladis_archosauria
+  pretty_name: Archosauria
+  name: Archosauria
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_avemetatarsalia
+    offspring:
+      - id: cladis_dinosauromorpha
+        offspring: '[{''id'': ''cladis_dinosaurs_dinosauria'', ''offspring'': [{''id'': ''cladis_reptile_hipped_dinosaurs_saurischia'', ''offspring'': [{''id'': ''cladis_theropod_dinosaurs_theropoda'', ''offspring'': [{''id'': ''cladis_stiff_tailed_dinosaurs_tetanurae'', ''offspring'': [{''id'': ''cladis_coelurosauria'', ''offspring'': [{''id'': ''cladis_maniraptora'', ''offspring'': [{''id'': ''cladis_paraves'', ''offspring'': [{''id'': ''cladis_avialae'', ''offspring'': [{''id'': ''cladis_pygostylia'', ''offspring'': [{''id'': ''cladis_ornithothoraces'', ''offspring'': [{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_archosauriformes
+- id: cladis_archosauriformes
+  pretty_name: Archosauriformes
+  name: Archosauriformes
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_archosauria
+    offspring:
+      - id: cladis_avemetatarsalia
+        offspring: '[{''id'': ''cladis_dinosauromorpha'', ''offspring'': [{''id'': ''cladis_dinosaurs_dinosauria'', ''offspring'': [{''id'': ''cladis_reptile_hipped_dinosaurs_saurischia'', ''offspring'': [{''id'': ''cladis_theropod_dinosaurs_theropoda'', ''offspring'': [{''id'': ''cladis_stiff_tailed_dinosaurs_tetanurae'', ''offspring'': [{''id'': ''cladis_coelurosauria'', ''offspring'': [{''id'': ''cladis_maniraptora'', ''offspring'': [{''id'': ''cladis_paraves'', ''offspring'': [{''id'': ''cladis_avialae'', ''offspring'': [{''id'': ''cladis_pygostylia'', ''offspring'': [{''id'': ''cladis_ornithothoraces'', ''offspring'': [{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_archosauromorpha
+- id: cladis_archosauromorpha
+  pretty_name: Archosauromorpha
+  name: Archosauromorpha
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_archosauriformes
+    offspring:
+      - id: cladis_archosauria
+        offspring: '[{''id'': ''cladis_avemetatarsalia'', ''offspring'': [{''id'': ''cladis_dinosauromorpha'', ''offspring'': [{''id'': ''cladis_dinosaurs_dinosauria'', ''offspring'': [{''id'': ''cladis_reptile_hipped_dinosaurs_saurischia'', ''offspring'': [{''id'': ''cladis_theropod_dinosaurs_theropoda'', ''offspring'': [{''id'': ''cladis_stiff_tailed_dinosaurs_tetanurae'', ''offspring'': [{''id'': ''cladis_coelurosauria'', ''offspring'': [{''id'': ''cladis_maniraptora'', ''offspring'': [{''id'': ''cladis_paraves'', ''offspring'': [{''id'': ''cladis_avialae'', ''offspring'': [{''id'': ''cladis_pygostylia'', ''offspring'': [{''id'': ''cladis_ornithothoraces'', ''offspring'': [{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_archelosauria
+- id: cladis_archelosauria
+  pretty_name: Archelosauria
+  name: Archelosauria
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_archosauromorpha
+    offspring:
+      - id: cladis_archosauriformes
+        offspring: '[{''id'': ''cladis_archosauria'', ''offspring'': [{''id'': ''cladis_avemetatarsalia'', ''offspring'': [{''id'': ''cladis_dinosauromorpha'', ''offspring'': [{''id'': ''cladis_dinosaurs_dinosauria'', ''offspring'': [{''id'': ''cladis_reptile_hipped_dinosaurs_saurischia'', ''offspring'': [{''id'': ''cladis_theropod_dinosaurs_theropoda'', ''offspring'': [{''id'': ''cladis_stiff_tailed_dinosaurs_tetanurae'', ''offspring'': [{''id'': ''cladis_coelurosauria'', ''offspring'': [{''id'': ''cladis_maniraptora'', ''offspring'': [{''id'': ''cladis_paraves'', ''offspring'': [{''id'': ''cladis_avialae'', ''offspring'': [{''id'': ''cladis_pygostylia'', ''offspring'': [{''id'': ''cladis_ornithothoraces'', ''offspring'': [{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_sauria
+- id: cladis_sauria
+  pretty_name: Sauria
+  name: Sauria
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_archelosauria
+    offspring:
+      - id: cladis_archosauromorpha
+        offspring: '[{''id'': ''cladis_archosauriformes'', ''offspring'': [{''id'': ''cladis_archosauria'', ''offspring'': [{''id'': ''cladis_avemetatarsalia'', ''offspring'': [{''id'': ''cladis_dinosauromorpha'', ''offspring'': [{''id'': ''cladis_dinosaurs_dinosauria'', ''offspring'': [{''id'': ''cladis_reptile_hipped_dinosaurs_saurischia'', ''offspring'': [{''id'': ''cladis_theropod_dinosaurs_theropoda'', ''offspring'': [{''id'': ''cladis_stiff_tailed_dinosaurs_tetanurae'', ''offspring'': [{''id'': ''cladis_coelurosauria'', ''offspring'': [{''id'': ''cladis_maniraptora'', ''offspring'': [{''id'': ''cladis_paraves'', ''offspring'': [{''id'': ''cladis_avialae'', ''offspring'': [{''id'': ''cladis_pygostylia'', ''offspring'': [{''id'': ''cladis_ornithothoraces'', ''offspring'': [{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_diapsida
+- id: cladis_diapsida
+  pretty_name: Diapsida
+  name: Diapsida
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_sauria
+    offspring:
+      - id: cladis_archelosauria
+        offspring: '[{''id'': ''cladis_archosauromorpha'', ''offspring'': [{''id'': ''cladis_archosauriformes'', ''offspring'': [{''id'': ''cladis_archosauria'', ''offspring'': [{''id'': ''cladis_avemetatarsalia'', ''offspring'': [{''id'': ''cladis_dinosauromorpha'', ''offspring'': [{''id'': ''cladis_dinosaurs_dinosauria'', ''offspring'': [{''id'': ''cladis_reptile_hipped_dinosaurs_saurischia'', ''offspring'': [{''id'': ''cladis_theropod_dinosaurs_theropoda'', ''offspring'': [{''id'': ''cladis_stiff_tailed_dinosaurs_tetanurae'', ''offspring'': [{''id'': ''cladis_coelurosauria'', ''offspring'': [{''id'': ''cladis_maniraptora'', ''offspring'': [{''id'': ''cladis_paraves'', ''offspring'': [{''id'': ''cladis_avialae'', ''offspring'': [{''id'': ''cladis_pygostylia'', ''offspring'': [{''id'': ''cladis_ornithothoraces'', ''offspring'': [{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_sauropsida
+- id: cladis_sauropsida
+  pretty_name: Sauropsida
+  name: Sauropsida
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_diapsida
+    offspring:
+      - id: cladis_sauria
+        offspring: '[{''id'': ''cladis_archelosauria'', ''offspring'': [{''id'': ''cladis_archosauromorpha'', ''offspring'': [{''id'': ''cladis_archosauriformes'', ''offspring'': [{''id'': ''cladis_archosauria'', ''offspring'': [{''id'': ''cladis_avemetatarsalia'', ''offspring'': [{''id'': ''cladis_dinosauromorpha'', ''offspring'': [{''id'': ''cladis_dinosaurs_dinosauria'', ''offspring'': [{''id'': ''cladis_reptile_hipped_dinosaurs_saurischia'', ''offspring'': [{''id'': ''cladis_theropod_dinosaurs_theropoda'', ''offspring'': [{''id'': ''cladis_stiff_tailed_dinosaurs_tetanurae'', ''offspring'': [{''id'': ''cladis_coelurosauria'', ''offspring'': [{''id'': ''cladis_maniraptora'', ''offspring'': [{''id'': ''cladis_paraves'', ''offspring'': [{''id'': ''cladis_avialae'', ''offspring'': [{''id'': ''cladis_pygostylia'', ''offspring'': [{''id'': ''cladis_ornithothoraces'', ''offspring'': [{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_amniota
+- id: cladis_amniota
+  pretty_name: Amniota
+  name: Amniota
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_sauropsida
+    offspring:
+      - id: cladis_diapsida
+        offspring: '[{''id'': ''cladis_sauria'', ''offspring'': [{''id'': ''cladis_archelosauria'', ''offspring'': [{''id'': ''cladis_archosauromorpha'', ''offspring'': [{''id'': ''cladis_archosauriformes'', ''offspring'': [{''id'': ''cladis_archosauria'', ''offspring'': [{''id'': ''cladis_avemetatarsalia'', ''offspring'': [{''id'': ''cladis_dinosauromorpha'', ''offspring'': [{''id'': ''cladis_dinosaurs_dinosauria'', ''offspring'': [{''id'': ''cladis_reptile_hipped_dinosaurs_saurischia'', ''offspring'': [{''id'': ''cladis_theropod_dinosaurs_theropoda'', ''offspring'': [{''id'': ''cladis_stiff_tailed_dinosaurs_tetanurae'', ''offspring'': [{''id'': ''cladis_coelurosauria'', ''offspring'': [{''id'': ''cladis_maniraptora'', ''offspring'': [{''id'': ''cladis_paraves'', ''offspring'': [{''id'': ''cladis_avialae'', ''offspring'': [{''id'': ''cladis_pygostylia'', ''offspring'': [{''id'': ''cladis_ornithothoraces'', ''offspring'': [{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_reptiliomorpha
+- id: cladis_reptiliomorpha
+  pretty_name: Reptiliomorpha
+  name: Reptiliomorpha
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_amniota
+    offspring:
+      - id: cladis_sauropsida
+        offspring: '[{''id'': ''cladis_diapsida'', ''offspring'': [{''id'': ''cladis_sauria'', ''offspring'': [{''id'': ''cladis_archelosauria'', ''offspring'': [{''id'': ''cladis_archosauromorpha'', ''offspring'': [{''id'': ''cladis_archosauriformes'', ''offspring'': [{''id'': ''cladis_archosauria'', ''offspring'': [{''id'': ''cladis_avemetatarsalia'', ''offspring'': [{''id'': ''cladis_dinosauromorpha'', ''offspring'': [{''id'': ''cladis_dinosaurs_dinosauria'', ''offspring'': [{''id'': ''cladis_reptile_hipped_dinosaurs_saurischia'', ''offspring'': [{''id'': ''cladis_theropod_dinosaurs_theropoda'', ''offspring'': [{''id'': ''cladis_stiff_tailed_dinosaurs_tetanurae'', ''offspring'': [{''id'': ''cladis_coelurosauria'', ''offspring'': [{''id'': ''cladis_maniraptora'', ''offspring'': [{''id'': ''cladis_paraves'', ''offspring'': [{''id'': ''cladis_avialae'', ''offspring'': [{''id'': ''cladis_pygostylia'', ''offspring'': [{''id'': ''cladis_ornithothoraces'', ''offspring'': [{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_tetrapoda
+- id: cladis_tetrapoda
+  pretty_name: Tetrapoda
+  name: Tetrapoda
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_reptiliomorpha
+    offspring:
+      - id: cladis_amniota
+        offspring: '[{''id'': ''cladis_sauropsida'', ''offspring'': [{''id'': ''cladis_diapsida'', ''offspring'': [{''id'': ''cladis_sauria'', ''offspring'': [{''id'': ''cladis_archelosauria'', ''offspring'': [{''id'': ''cladis_archosauromorpha'', ''offspring'': [{''id'': ''cladis_archosauriformes'', ''offspring'': [{''id'': ''cladis_archosauria'', ''offspring'': [{''id'': ''cladis_avemetatarsalia'', ''offspring'': [{''id'': ''cladis_dinosauromorpha'', ''offspring'': [{''id'': ''cladis_dinosaurs_dinosauria'', ''offspring'': [{''id'': ''cladis_reptile_hipped_dinosaurs_saurischia'', ''offspring'': [{''id'': ''cladis_theropod_dinosaurs_theropoda'', ''offspring'': [{''id'': ''cladis_stiff_tailed_dinosaurs_tetanurae'', ''offspring'': [{''id'': ''cladis_coelurosauria'', ''offspring'': [{''id'': ''cladis_maniraptora'', ''offspring'': [{''id'': ''cladis_paraves'', ''offspring'': [{''id'': ''cladis_avialae'', ''offspring'': [{''id'': ''cladis_pygostylia'', ''offspring'': [{''id'': ''cladis_ornithothoraces'', ''offspring'': [{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_stegocephalia
+- id: cladis_stegocephalia
+  pretty_name: Stegocephalia
+  name: Stegocephalia
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_tetrapoda
+    offspring:
+      - id: cladis_reptiliomorpha
+        offspring: '[{''id'': ''cladis_amniota'', ''offspring'': [{''id'': ''cladis_sauropsida'', ''offspring'': [{''id'': ''cladis_diapsida'', ''offspring'': [{''id'': ''cladis_sauria'', ''offspring'': [{''id'': ''cladis_archelosauria'', ''offspring'': [{''id'': ''cladis_archosauromorpha'', ''offspring'': [{''id'': ''cladis_archosauriformes'', ''offspring'': [{''id'': ''cladis_archosauria'', ''offspring'': [{''id'': ''cladis_avemetatarsalia'', ''offspring'': [{''id'': ''cladis_dinosauromorpha'', ''offspring'': [{''id'': ''cladis_dinosaurs_dinosauria'', ''offspring'': [{''id'': ''cladis_reptile_hipped_dinosaurs_saurischia'', ''offspring'': [{''id'': ''cladis_theropod_dinosaurs_theropoda'', ''offspring'': [{''id'': ''cladis_stiff_tailed_dinosaurs_tetanurae'', ''offspring'': [{''id'': ''cladis_coelurosauria'', ''offspring'': [{''id'': ''cladis_maniraptora'', ''offspring'': [{''id'': ''cladis_paraves'', ''offspring'': [{''id'': ''cladis_avialae'', ''offspring'': [{''id'': ''cladis_pygostylia'', ''offspring'': [{''id'': ''cladis_ornithothoraces'', ''offspring'': [{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_elipsostegalia
+- id: cladis_elipsostegalia
+  pretty_name: Elipsostegalia
+  name: Elipsostegalia
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_stegocephalia
+    offspring:
+      - id: cladis_tetrapoda
+        offspring: '[{''id'': ''cladis_reptiliomorpha'', ''offspring'': [{''id'': ''cladis_amniota'', ''offspring'': [{''id'': ''cladis_sauropsida'', ''offspring'': [{''id'': ''cladis_diapsida'', ''offspring'': [{''id'': ''cladis_sauria'', ''offspring'': [{''id'': ''cladis_archelosauria'', ''offspring'': [{''id'': ''cladis_archosauromorpha'', ''offspring'': [{''id'': ''cladis_archosauriformes'', ''offspring'': [{''id'': ''cladis_archosauria'', ''offspring'': [{''id'': ''cladis_avemetatarsalia'', ''offspring'': [{''id'': ''cladis_dinosauromorpha'', ''offspring'': [{''id'': ''cladis_dinosaurs_dinosauria'', ''offspring'': [{''id'': ''cladis_reptile_hipped_dinosaurs_saurischia'', ''offspring'': [{''id'': ''cladis_theropod_dinosaurs_theropoda'', ''offspring'': [{''id'': ''cladis_stiff_tailed_dinosaurs_tetanurae'', ''offspring'': [{''id'': ''cladis_coelurosauria'', ''offspring'': [{''id'': ''cladis_maniraptora'', ''offspring'': [{''id'': ''cladis_paraves'', ''offspring'': [{''id'': ''cladis_avialae'', ''offspring'': [{''id'': ''cladis_pygostylia'', ''offspring'': [{''id'': ''cladis_ornithothoraces'', ''offspring'': [{''id'': ''cladis_euornithes'', ''offspring'': [{''id'': ''cladis_bird_tailed_birds_ornithurae'', ''offspring'': [{''id'': ''cladis_birds_aves'', ''offspring'': [{''id'': ''cladis_neognath_birds_neognathae'', ''offspring'': [{''id'': ''cladis_neoaves'', ''offspring'': [{''id'': ''cladis_passera'', ''offspring'': [{''id'': ''cladis_land_birds_telluraves'', ''offspring'': [{''id'': ''cladis_australaves'', ''offspring'': [{''id'': ''cladis_eufalconimorphae'', ''offspring'': [{''id'': ''cladis_psittacopasseres'', ''offspring'': [{''id'': ''cladis_passerine_birds_passerine'', ''offspring'': [{''id'': ''cladis_eupasserine_birds_eupasserine'', ''offspring'': [{''id'': ''cladis_suboscine_birds_tyranni'', ''offspring'': [{''id'': ''cladis_new_world_suboscine_birds_tyrannides''}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]'
+  related:
+  - cladis_eotetrapodiformes
+- id: cladis_eotetrapodiformes
+  pretty_name: Eotetrapodiformes
+  name: Eotetrapodiformes
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring: []
+  parents:
+  - cladis_tetrapodomorpha
+- id: cladis_tetrapodomorpha
+  pretty_name: Tetrapodomorpha
+  name: Tetrapodomorpha
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_eotetrapodiformes
+  parents:
+  - cladis_rhipidistia
+- id: cladis_rhipidistia
+  pretty_name: Rhipidistia
+  name: Rhipidistia
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_tetrapodomorpha
+    offspring:
+      - id: cladis_eotetrapodiformes
+  parents:
+  - cladis_lobe_finned_fish_sarcopterygii
+- id: cladis_lobe_finned_fish_sarcopterygii
+  pretty_name: Lobe Finned Fish - Sarcopterygii
+  name: Lobe Finned Fish - Sarcopterygii
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_rhipidistia
+    offspring:
+      - id: cladis_tetrapodomorpha
+        offspring: '[{''id'': ''cladis_eotetrapodiformes''}]'
+  parents:
+  - cladis_bony_fish_osteichthyes
+- id: cladis_bony_fish_osteichthyes
+  pretty_name: Bony Fish - Osteichthyes
+  name: Bony Fish - Osteichthyes
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_lobe_finned_fish_sarcopterygii
+    offspring:
+      - id: cladis_rhipidistia
+        offspring: '[{''id'': ''cladis_tetrapodomorpha'', ''offspring'': [{''id'': ''cladis_eotetrapodiformes''}]}]'
+  parents:
+  - cladis_jawed_vertebrates_gnastostomata
+- id: cladis_jawed_vertebrates_gnastostomata
+  pretty_name: Jawed Vertebrates - Gnastostomata
+  name: Jawed Vertebrates - Gnastostomata
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_bony_fish_osteichthyes
+    offspring:
+      - id: cladis_lobe_finned_fish_sarcopterygii
+        offspring: '[{''id'': ''cladis_rhipidistia'', ''offspring'': [{''id'': ''cladis_tetrapodomorpha'', ''offspring'': [{''id'': ''cladis_eotetrapodiformes''}]}]}]'
+  parents:
+  - cladis_vertebrates_vertebrata
+- id: cladis_vertebrates_vertebrata
+  pretty_name: Vertebrates - Vertebrata
+  name: Vertebrates - Vertebrata
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_jawed_vertebrates_gnastostomata
+    offspring:
+      - id: cladis_bony_fish_osteichthyes
+        offspring: '[{''id'': ''cladis_lobe_finned_fish_sarcopterygii'', ''offspring'': [{''id'': ''cladis_rhipidistia'', ''offspring'': [{''id'': ''cladis_tetrapodomorpha'', ''offspring'': [{''id'': ''cladis_eotetrapodiformes''}]}]}]}]'
+  parents:
+  - cladis_olfactores
+- id: cladis_olfactores
+  pretty_name: Olfactores
+  name: Olfactores
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_vertebrates_vertebrata
+    offspring:
+      - id: cladis_jawed_vertebrates_gnastostomata
+        offspring: '[{''id'': ''cladis_bony_fish_osteichthyes'', ''offspring'': [{''id'': ''cladis_lobe_finned_fish_sarcopterygii'', ''offspring'': [{''id'': ''cladis_rhipidistia'', ''offspring'': [{''id'': ''cladis_tetrapodomorpha'', ''offspring'': [{''id'': ''cladis_eotetrapodiformes''}]}]}]}]}]'
+  parents:
+  - cladis_chordate
+- id: cladis_chordate
+  pretty_name: Chordate
+  name: Chordate
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_olfactores
+    offspring:
+      - id: cladis_vertebrates_vertebrata
+        offspring: '[{''id'': ''cladis_jawed_vertebrates_gnastostomata'', ''offspring'': [{''id'': ''cladis_bony_fish_osteichthyes'', ''offspring'': [{''id'': ''cladis_lobe_finned_fish_sarcopterygii'', ''offspring'': [{''id'': ''cladis_rhipidistia'', ''offspring'': [{''id'': ''cladis_tetrapodomorpha'', ''offspring'': [{''id'': ''cladis_eotetrapodiformes''}]}]}]}]}]}]'
+  parents:
+  - cladis_deuterostome
+- id: cladis_deuterostome
+  pretty_name: Deuterostome
+  name: Deuterostome
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_chordate
+    offspring:
+      - id: cladis_olfactores
+        offspring: '[{''id'': ''cladis_vertebrates_vertebrata'', ''offspring'': [{''id'': ''cladis_jawed_vertebrates_gnastostomata'', ''offspring'': [{''id'': ''cladis_bony_fish_osteichthyes'', ''offspring'': [{''id'': ''cladis_lobe_finned_fish_sarcopterygii'', ''offspring'': [{''id'': ''cladis_rhipidistia'', ''offspring'': [{''id'': ''cladis_tetrapodomorpha'', ''offspring'': [{''id'': ''cladis_eotetrapodiformes''}]}]}]}]}]}]}]'
+  parents:
+  - cladis_nephrozoa
+- id: cladis_nephrozoa
+  pretty_name: Nephrozoa
+  name: Nephrozoa
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_deuterostome
+    offspring:
+      - id: cladis_chordate
+        offspring: '[{''id'': ''cladis_olfactores'', ''offspring'': [{''id'': ''cladis_vertebrates_vertebrata'', ''offspring'': [{''id'': ''cladis_jawed_vertebrates_gnastostomata'', ''offspring'': [{''id'': ''cladis_bony_fish_osteichthyes'', ''offspring'': [{''id'': ''cladis_lobe_finned_fish_sarcopterygii'', ''offspring'': [{''id'': ''cladis_rhipidistia'', ''offspring'': [{''id'': ''cladis_tetrapodomorpha'', ''offspring'': [{''id'': ''cladis_eotetrapodiformes''}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_bilateria
+- id: cladis_bilateria
+  pretty_name: Bilateria
+  name: Bilateria
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_nephrozoa
+    offspring:
+      - id: cladis_deuterostome
+        offspring: '[{''id'': ''cladis_chordate'', ''offspring'': [{''id'': ''cladis_olfactores'', ''offspring'': [{''id'': ''cladis_vertebrates_vertebrata'', ''offspring'': [{''id'': ''cladis_jawed_vertebrates_gnastostomata'', ''offspring'': [{''id'': ''cladis_bony_fish_osteichthyes'', ''offspring'': [{''id'': ''cladis_lobe_finned_fish_sarcopterygii'', ''offspring'': [{''id'': ''cladis_rhipidistia'', ''offspring'': [{''id'': ''cladis_tetrapodomorpha'', ''offspring'': [{''id'': ''cladis_eotetrapodiformes''}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_parahoxozoa
+- id: cladis_parahoxozoa
+  pretty_name: Parahoxozoa
+  name: Parahoxozoa
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_bilateria
+    offspring:
+      - id: cladis_nephrozoa
+        offspring: '[{''id'': ''cladis_deuterostome'', ''offspring'': [{''id'': ''cladis_chordate'', ''offspring'': [{''id'': ''cladis_olfactores'', ''offspring'': [{''id'': ''cladis_vertebrates_vertebrata'', ''offspring'': [{''id'': ''cladis_jawed_vertebrates_gnastostomata'', ''offspring'': [{''id'': ''cladis_bony_fish_osteichthyes'', ''offspring'': [{''id'': ''cladis_lobe_finned_fish_sarcopterygii'', ''offspring'': [{''id'': ''cladis_rhipidistia'', ''offspring'': [{''id'': ''cladis_tetrapodomorpha'', ''offspring'': [{''id'': ''cladis_eotetrapodiformes''}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_eumetazoa
+- id: cladis_eumetazoa
+  pretty_name: Eumetazoa
+  name: Eumetazoa
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_parahoxozoa
+    offspring:
+      - id: cladis_bilateria
+        offspring: '[{''id'': ''cladis_nephrozoa'', ''offspring'': [{''id'': ''cladis_deuterostome'', ''offspring'': [{''id'': ''cladis_chordate'', ''offspring'': [{''id'': ''cladis_olfactores'', ''offspring'': [{''id'': ''cladis_vertebrates_vertebrata'', ''offspring'': [{''id'': ''cladis_jawed_vertebrates_gnastostomata'', ''offspring'': [{''id'': ''cladis_bony_fish_osteichthyes'', ''offspring'': [{''id'': ''cladis_lobe_finned_fish_sarcopterygii'', ''offspring'': [{''id'': ''cladis_rhipidistia'', ''offspring'': [{''id'': ''cladis_tetrapodomorpha'', ''offspring'': [{''id'': ''cladis_eotetrapodiformes''}]}]}]}]}]}]}]}]}]}]}]'
+  parents:
+  - cladis_animalia
+- id: cladis_animalia
+  pretty_name: Animalia
+  name: Animalia
+  type: cladistics
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  offspring:
+  - id: cladis_eumetazoa
+    offspring:
+      - id: cladis_parahoxozoa
+        offspring: '[{''id'': ''cladis_bilateria'', ''offspring'': [{''id'': ''cladis_nephrozoa'', ''offspring'': [{''id'': ''cladis_deuterostome'', ''offspring'': [{''id'': ''cladis_chordate'', ''offspring'': [{''id'': ''cladis_olfactores'', ''offspring'': [{''id'': ''cladis_vertebrates_vertebrata'', ''offspring'': [{''id'': ''cladis_jawed_vertebrates_gnastostomata'', ''offspring'': [{''id'': ''cladis_bony_fish_osteichthyes'', ''offspring'': [{''id'': ''cladis_lobe_finned_fish_sarcopterygii'', ''offspring'': [{''id'': ''cladis_rhipidistia'', ''offspring'': [{''id'': ''cladis_tetrapodomorpha'', ''offspring'': [{''id'': ''cladis_eotetrapodiformes''}]}]}]}]}]}]}]}]}]}]}]}]'

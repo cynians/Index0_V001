@@ -6,28 +6,35 @@ fields:
 
   layer_kind:
     type: string
+    section: Simulation / Map Sim
 
   owner_entity:
     type: entity
+    section: Simulation / Map Sim
     optional: true
 
   parent_entity:
     type: entity
+    section: Simulation / Map Sim
     optional: true
 
   geometry:
     type: dict
+    section: Simulation / Map Sim
 
   resolution_m_per_pixel:
     type: number
+    section: Simulation / Map Sim
     optional: true
 
   coverage_mode:
     type: string
+    section: Simulation / Map Sim
     optional: true
 
   draw_order:
     type: number
+    section: Simulation / Map Sim
     optional: true
 
 # --------------------------------------------------
@@ -38,7 +45,7 @@ fields:
 #   pretty_name: Central Germany Draft Ecoregion
 #   name: Central Germany Draft Ecoregion
 #   type: spatial_feature
-#   notes: Rough planning polygon for later entity attachment.
+#   wiki_entry: Rough planning polygon for later entity attachment.
 #   layer_kind: ecoregions
 #   parent_entity: geo_germany
 #   geometry:

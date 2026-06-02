@@ -2,7 +2,27 @@ schema: idea
 
 extends: entity_core
 
-fields: {}
+fields:
+
+  idea_class:
+    type: string
+    section: Classification
+    optional: true
+
+  description:
+    type: text
+    section: Media
+    optional: true
+
+  date:
+    type: string
+    section: Media
+    optional: true
+
+  media_path:
+    type: string
+    section: Media
+    optional: true
 
 # --------------------------------------------------
 # COMMENTED EXAMPLE ENTRY
@@ -12,7 +32,11 @@ fields: {}
 #   pretty_name: Orbital Habitat Market
 #   name: Orbital Habitat Market
 #   type: idea
+#   idea_class: illustration
 #   wiki_entry: Early note for how habitat markets might emerge around transit chokepoints.
+#   description: Illustration prompt for market stalls inside the station ring.
+#   date: 15303
+#   media_path: assets/illustrations/idea_orbital_habitat_market.png
 #   parents: []
 #   offspring: []
 #   entry_status: draft

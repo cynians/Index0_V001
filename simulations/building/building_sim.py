@@ -110,7 +110,7 @@ class BuildingSimulation(MapSimulation):
             "location_role": "indoor_room",
             "room_class": "room",
             "layer_kind": self.ROOM_LAYER_KIND,
-            "notes": notes,
+            "wiki_entry": notes,
             "parent_location": self.context.root_entity_id,
             "parent_entity": self.context.root_entity_id,
             "parents": [self.context.root_entity_id],

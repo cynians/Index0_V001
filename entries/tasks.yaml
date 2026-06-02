@@ -2,16 +2,6 @@
   pretty_name: Satelittes in Space Sim
   name: Implement Sattelites into Space Simulation
   type: task
-  wiki_entry: ''
-  description: ''
-  notes: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   start_year: null
   end_year: null
@@ -19,98 +9,90 @@
   parents: []
   related: []
   offspring: []
-  placeholders: []
   entry_status: ''
-  media_layers: {}
 - id: task_new_001
   pretty_name: Timeline T Button Edit Selection Update
   name: Timeline T Button Edit Selection Update
   type: task
-  wiki_entry: ''
 - id: task_new_002
   pretty_name: New Task Button Upper Right
   name: New Task
   type: task
-  wiki_entry: ''
 - id: task_new_004
   pretty_name: Merge System and Locations in one System
   name: Merge System and Locations in one System
   type: task
-  wiki_entry: ''
 - id: task_new_005
   pretty_name: 'Temp Edit: Can enter 650MYA instead of raw number'
   name: ''
   type: task
-  wiki_entry: ''
 - id: task_new_006
   pretty_name: Make filling out Name field also automatically fill out Pretty_Name
   name: New Task
   type: task
-  wiki_entry: ''
 - id: task_new_007
   pretty_name: Add temporal anchor 882
   name: Add temporal anchor 882
   type: task
-  wiki_entry: ''
+  wiki_entry: |-
+    Randomly generated task placeholder.
   entry_status: incomplete
-  notes: Randomly generated task placeholder.
   tags:
   - random_task
 - id: task_new_008
   pretty_name: Write a missing wiki note 195
   name: Write a missing wiki note 195
   type: task
-  wiki_entry: ''
+  wiki_entry: |-
+    Randomly generated task placeholder.
   entry_status: incomplete
-  notes: Randomly generated task placeholder.
   tags:
   - random_task
 - id: task_new_009
   pretty_name: Connect related entries 841
   name: Connect related entries 841
   type: task
-  wiki_entry: ''
+  wiki_entry: |-
+    Randomly generated task placeholder.
   entry_status: incomplete
-  notes: Randomly generated task placeholder.
   tags:
   - random_task
 - id: task_new_010
   pretty_name: Add temporal anchor 175
   name: Add temporal anchor 175
   type: task
-  wiki_entry: ''
+  wiki_entry: |-
+    Randomly generated task placeholder.
   entry_status: incomplete
-  notes: Randomly generated task placeholder.
   tags:
   - random_task
 - id: task_new_011
   pretty_name: Clean up draft fields 369
   name: Clean up draft fields 369
   type: task
-  wiki_entry: ''
+  wiki_entry: |-
+    Randomly generated task placeholder.
   entry_status: incomplete
-  notes: Randomly generated task placeholder.
   tags:
   - random_task
 - id: task_new_012
   pretty_name: Clean up draft fields 587
   name: Clean up draft fields 587
   type: task
-  wiki_entry: ''
+  wiki_entry: |-
+    Randomly generated task placeholder.
   entry_status: incomplete
-  notes: Randomly generated task placeholder.
   tags:
   - random_task
 - id: task_new_014
   pretty_name: Expand General View to Include a Statistics screen
   name: Expand General View to Include a Statistics screen
   type: task
-  wiki_entry: ''
 - id: task_new_017
   pretty_name: Faction | Faction update
   name: Faction | Faction update
   type: task
-  wiki_entry: |
+  wiki_entry: |-
     Allow Subcategory to be selected. War for lost data. 
     
     Also make only clickable in edit mode
@@ -118,7 +100,6 @@
   pretty_name: Add Neighbouring Systems to Space Sim
   name: Add Neighbouring Systems to Space Sim
   type: task
-  wiki_entry: ''
   entry_status: incomplete
   checklist:
   - text: Start With Sol
@@ -127,3 +108,85 @@
     done: false
   - text: assume static universe
     done: false
+- id: task_new_003
+  pretty_name: New Task
+  name: New Task
+  type: task
+  wiki_entry: ''
+  offspring: []
+- id: task_new_013
+  pretty_name: New Task
+  name: New Task
+  type: task
+  wiki_entry: ''
+  offspring: []
+- id: task_new_015
+  pretty_name: Remove Corners from Cards
+  name: Remove Corners from Cards
+  type: task
+  wiki_entry: ''
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents: []
+  related: []
+  wiki_mentions: []
+  entry_status: finished
+  checklist: []
+- id: task_new_016
+  pretty_name: Map Images Rescalable both by streching and meter scale
+  name: Map Images Rescalable both by streching and meter scale
+  type: task
+  wiki_entry: ''
+  offspring: []
+- id: task_new_018
+  pretty_name: Card Tags
+  name: Card Tags
+  type: task
+  wiki_entry: ''
+  offspring: []
+- id: task_new_019
+  pretty_name: 'Per Card Era Selection: Enable easy declaration of card specific eras'
+  name: 'Per Card Era Selection: Enable easy declaration of card specific eras'
+  type: task
+  wiki_entry: ''
+  offspring: []
+- id: task_new_020
+  pretty_name: 'In Timeline: Allow Several Categories to be open at once'
+  name: 'In Timeline: Allow Several Categories to be open at once'
+  type: task
+  wiki_entry: ''
+  offspring: []
+- id: task_new_021
+  pretty_name: allow reusing points from parent polygons during creation
+  name: allow reusing points from parent polygons during creation
+  type: task
+  wiki_entry: ''
+  offspring: []
+- id: task_new_022
+  pretty_name: Power Projection for Faction Colonies
+  name: Power Projection for Faction Colonies
+  type: task
+  wiki_entry: ''
+  offspring: []
+- id: task_new_023
+  pretty_name: Faction Person Interaction
+  name: Faction Person Interaction
+  type: task
+  wiki_entry: ''
+  offspring:
+  - id: idea_new_024
+- id: task_new_024
+  pretty_name: Auto-IDs
+  name: Auto-IDs
+  type: task
+  wiki_entry: ''
+  offspring: []
+- id: task_new_025
+  pretty_name: In-Card Timeline
+  name: In-Card Timeline
+  type: task
+  wiki_entry: ''
+  offspring: []

@@ -2,7 +2,6 @@
   pretty_name: Habil Family of Hebsbrook
   name: Habil Family of Hebsbrook
   type: pop
-  wiki_entry: ''
   wiki_mentions: []
   card_color: '#426a65'
   offspring:
@@ -11,19 +10,16 @@
   - person_ahman_habil
   start_year: 4212
   end_year: 8201
-  description: ''
-  notes: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   derived_from: []
   parents: []
   related: []
-  placeholders: []
   entry_status: ''
-  media_layers: {}
+- id: pop_castelli_family
+  pretty_name: Castelli Family
+  name: Castelli Family
+  type: pop
+  card_color: '#644e78'
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []

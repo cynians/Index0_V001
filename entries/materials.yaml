@@ -21,22 +21,10 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
-  media_layers: {}
 - id: mat_copper_alloy
   pretty_name: Copper Alloy
   name: Copper Alloy
@@ -60,19 +48,7 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
-  media_layers: {}

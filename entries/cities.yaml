@@ -11,16 +11,6 @@
   - population_center
   - logistics_hub
   - orbital_interface_city
-  description: Massive terrestrial megastructure city constructed by the Global Government
-    Organization in the Central Asian steppes. During the GGO Hegemony it became the
-    primary population and administrative center of Earth. The original complex consisted
-    of five concentric urban rings surrounding the central core district, separated
-    by inhabited infrastructure belts and enclosed by the CoG Outer Wall. Later phases
-    expanded beyond the original structure into additional outer habitation and production
-    districts.
-  notes: City-layer aggregate entry. Geography remains on the linked location entry.
-    Urban systems, structural districts, social organization, and internal city capabilities
-    are represented here.
   population:
     y2884: 0
   controlling_factions:
@@ -62,29 +52,28 @@
     central_district: cog_central_core_district
     outer_boundary: cog_outer_wall
     primary_structural_zones:
-    - cog_ring_1
-    - cog_ring_2
-    - cog_ring_3
-    - cog_ring_4
-    - cog_ring_5
-    - cog_infrastructure_belts
+      - cog_ring_1
+      - cog_ring_2
+      - cog_ring_3
+      - cog_ring_4
+      - cog_ring_5
+      - cog_infrastructure_belts
     later_expansion: true
-    later_expansion_notes: Additional outer habitation and production districts were
-      added beyond the original five-ring structure.
+    later_expansion_notes: Additional outer habitation and production districts were added beyond the original five-ring structure.
   city_systems:
     transport_systems:
-    - sys_cog_high_speed_ring_rail_network
-    - sys_cog_leveling_access_structure
+      - sys_cog_high_speed_ring_rail_network
+      - sys_cog_leveling_access_structure
     utility_systems:
-    - sys_cog_infrastructure
-    - sys_cog_water_system
-    - sys_cog_energy_system
+      - sys_cog_infrastructure
+      - sys_cog_water_system
+      - sys_cog_energy_system
     logistics_and_production_systems:
-    - sys_cog_commodity_quarters
+      - sys_cog_commodity_quarters
     orbital_interface_systems:
-    - sys_central_cog_space_elevator
-    - station_upper_cog
-    - site_cog_orbital_launch_fields
+      - sys_central_cog_space_elevator
+      - station_upper_cog
+      - site_cog_orbital_launch_fields
   cultural_features:
   - aspect_cog_interior_hobby_agriculture
   - aspect_late_cog_quarantine_regime
@@ -94,26 +83,32 @@
   entry_status: stub
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
-  end_year: null
-  media_layers: {}
+  wiki_entry: |
+    Massive terrestrial megastructure city constructed by the Global Government Organization in the Central Asian steppes. During the GGO Hegemony it became the primary population and administrative center of Earth. The original complex consisted of five concentric urban rings surrounding the central core district, separated by inhabited infrastructure belts and enclosed by the CoG Outer Wall. Later phases expanded beyond the original structure into additional outer habitation and production districts.
+    
+    City-layer aggregate entry. Geography remains on the linked location entry. Urban systems, structural districts, social organization, and internal city capabilities are represented here.
+  end_year: 5917
+  wiki_mentions: []
+  card_color: '#26231b'
+  card_header_color: '#b56f26'
 - id: city_ruins_of_the_cog
   pretty_name: Ruins of the CoG
   name: Ruins of the CoG
   type: city
-  wiki_entry: ''
   location_entity: null
   start_year: 5917
   end_year: 6196
+  tags: []
+  derived_from: []
+  parents: []
+  related:
+  - city_cog
+  - city_late_decline_cog
+  wiki_mentions: []
+  offspring: []
+  entry_status: ''
+  card_color: '#2a2827'
 - id: city_lumen_free_city_metropolitan_area
   pretty_name: Lumen Free City Metropolitan Area
   name: Lumen Free City Metropolitan Area
@@ -121,10 +116,30 @@
   card_color: '#ca8c65'
   location_entity: null
   offspring:
-  - loc_groundworks_district_lumen_free_city
+  - id: loc_castelli_automobiles_plant
+  - id: loc_groundworks_district_lumen_free_city
+  - id: loc_lumen_free_trade_port
   parents:
   - planet_mars
-  wiki_entry: ''
   wiki_mentions: []
   start_year: 5334
   end_year: 7411
+  tags: []
+  derived_from: []
+  related: []
+  entry_status: ''
+- id: city_late_decline_cog
+  pretty_name: Late Decline CoG
+  name: Late Decline CoG
+  type: city
+  location_entity: null
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: city_new_001
+  pretty_name: Bogota City
+  name: Bogota City
+  type: city
+  location_entity: null
+  wiki_entry: ''
+  offspring: []

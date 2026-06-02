@@ -26,10 +26,6 @@
   treaty_domains: []
   predecessor_institutions: []
   successor_institutions: []
-  description: GGO institution through which selected interest groups are granted
-    leeway to establish producers outside the direct internal GGO production structure.
-  notes: Serves as the framework under which externally structured branded producers
-    can exist while remaining tied to the wider GGO order.
   tags:
   - institution
   - ggo
@@ -42,19 +38,13 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    GGO institution through which selected interest groups are granted leeway to establish producers outside the direct internal GGO production structure.
+    
+    Serves as the framework under which externally structured branded producers can exist while remaining tied to the wider GGO order.
   end_year: null
   derived_from: []
-  media_layers: {}
 - id: inst_race_for_sol_outer_space_treaty_adaptation
   pretty_name: Race for Sol Outer Space Treaty Adaptation
   name: Race for Sol Outer Space Treaty Adaptation
@@ -93,14 +83,6 @@
   - settlement_jurisdiction
   predecessor_institutions: []
   successor_institutions: []
-  description: Race for Sol adaptation of the Outer Space Treaty framework for an
-    era of permanent off-world colonies. The treaty largely preserves the original
-    baseline principles of non-total appropriation, but allows states to hold sovereignty
-    within a bounded radius around established colonies.
-  notes: Intended to regulate the transition from exploration to sustained colonization
-    after 2090. The main adaptation is the recognition of limited territorial sovereignty
-    around colonies, treated analogously to territorial waters rather than full ownership
-    of whole planets or moons.
   tags:
   - institution
   - treaty
@@ -116,28 +98,20 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Race for Sol adaptation of the Outer Space Treaty framework for an era of permanent off-world colonies. The treaty largely preserves the original baseline principles of non-total appropriation, but allows states to hold sovereignty within a bounded radius around established colonies.
+    
+    Intended to regulate the transition from exploration to sustained colonization after 2090. The main adaptation is the recognition of limited territorial sovereignty around colonies, treated analogously to territorial waters rather than full ownership of whole planets or moons.
   derived_from: []
-  media_layers: {}
 - id: inst_ggo_humhab
   pretty_name: Human Habitat Project Group
   name: Human Habitat Project Group
   type: institution
-  wiki_entry: ''
 - id: inst_catal_press
   pretty_name: Catal Press
   name: Catal Press
   type: institution
-  wiki_entry: ''
   wiki_mentions: []
   card_color: '#9d9d84'
   start_year: 7506
@@ -146,15 +120,61 @@
   pretty_name: GGO Police Forces
   name: GGOP
   type: institution
-  wiki_entry: ''
   wiki_mentions: []
   card_color: '#15385a'
 - id: inst_cultural_seeding_group
   pretty_name: CSG
   name: CSG
   type: institution
-  wiki_entry: ''
   wiki_mentions: []
   card_color: '#458487'
   start_year: 4912
   end_year: 18876
+  tags: []
+  derived_from: []
+  parents: []
+  related: []
+  offspring:
+  - id: fac_csg_babylon_tribe
+  entry_status: ''
+- id: inst_hansa_kontor_ports
+  pretty_name: Hansa Kontor Ports
+  name: Hansa Kontor Ports
+  type: institution
+  card_color: '#112126'
+  parents:
+  - fac_transfer_hansa
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: inst_omerta_fractata
+  pretty_name: Omerta Fractata
+  name: Omerta Fractata
+  type: institution
+  card_color: '#634f87'
+  related:
+  - pop_castelli_family
+  - loc_castelli_automobiles_plant
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: inst_transfer_hansa_frontier_charter
+  pretty_name: Transfer Hansa Frontier Charter
+  name: Transfer Hansa Frontier Charter
+  type: institution
+  card_color: '#132526'
+  parents:
+  - fac_transfer_hansa
+  related:
+  - veh_hansa_postman_class_interstellar_one_way_delivery_vehicle
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: inst_project_deep_sleep
+  pretty_name: Project Deep Sleep
+  name: Project Deep Sleep
+  type: institution
+  wiki_mentions: []
+  related:
+  - idea_deep_earth_storage
+  offspring: []

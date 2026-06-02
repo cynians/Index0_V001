@@ -26,7 +26,6 @@ class PersonSimulation:
         "related",
         "derived_from",
         "offspring",
-        "placeholders",
     )
 
     TEMPORAL_KEYS = (
@@ -141,7 +140,7 @@ class PersonSimulation:
             if values:
                 lines.append(f"{label}: {', '.join(str(value) for value in values[:3])}")
 
-        notes = str(person.get("notes") or person.get("description") or "").strip()
+        notes = str(person.get("wiki_entry") or person.get("notes") or person.get("description") or "").strip()
         if notes:
             short_notes = notes.replace("\n", " ")
             if len(short_notes) > 96:
@@ -223,8 +222,8 @@ class PersonSimulation:
             return False
 
         name = str(updates.get("name", "")).strip() or str(target_id)
-        notes = str(updates.get("notes", "")).strip()
-        if not self._persist_person_updates(person, {"pretty_name": name, "name": name, "notes": notes}):
+        notes = str(updates.get("wiki_entry", updates.get("notes", ""))).strip()
+        if not self._persist_person_updates(person, {"pretty_name": name, "name": name, "wiki_entry": notes}):
             return False
 
         self._refresh_world_model()

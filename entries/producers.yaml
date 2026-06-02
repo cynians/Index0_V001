@@ -6,29 +6,21 @@
   associated_locations:
   - planet_noyanakh
   - sys_metyaki
-  description: Automobile producer of the Planetary Period operating in the Sol-near Metyaki System and associated with vehicle production on Noyanakh.
-  notes: 'Initial repository entry for Bospor vehicle-line integration. Internal structure, ownership, and production footprint remain placeholder for later refinement.'
-  card_image: ''
   start_year: 7129
   end_year: 9216
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring:
   - id: veh_bospor_3_regolith
   - veh_bospor_2_ouremite
   - veh_bospor_1_calcetite
-  wiki_entry: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Automobile producer of the Planetary Period operating in the Sol-near Metyaki System and associated with vehicle production on Noyanakh.
+    
+    Initial repository entry for Bospor vehicle-line integration. Internal structure, ownership, and production footprint remain placeholder for later refinement.
   tags: []
   derived_from: []
-  media_layers: {}
   wiki_mentions: []
   card_color: '#af2839'
 - id: producer_stacklingen_consolidated_industries
@@ -39,29 +31,18 @@
   associated_locations:
   - planet_patina
   - settlement_stacklinger
-  description: Local producer associated with vehicle manufacturing in the Stacklinger
-    urban-industrial zone on Patina during the Planetary Period.
-  notes: Inferred repository producer entry created to anchor the Octa 35P / Patina
-    Surface Taxi concept. Broader industrial portfolio, ownership structure, and production
-    scale remain open for later refinement.
   start_year: 8112
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Local producer associated with vehicle manufacturing in the Stacklinger urban-industrial zone on Patina during the Planetary Period.
+    
+    Inferred repository producer entry created to anchor the Octa 35P / Patina Surface Taxi concept. Broader industrial portfolio, ownership structure, and production scale remain open for later refinement.
   tags: []
   end_year: null
   derived_from: []
-  media_layers: {}
 - id: producer_conviction_automobiles
   pretty_name: Conviction Automobiles
   name: Conviction Automobiles
@@ -79,8 +60,6 @@
   - luxurious
   - prestige_oriented
   - streamlined
-  description: 'External GGO-era automobile producer known for sleek, luxurious road vehicles and a compact alphanumeric naming style such as Conviction C1 and Conviction C2.'
-  notes: Established as one of the branded producers permitted under the GGO External Production framework. Intended as a classically styled prestige manufacturer rather than a general industrial mass producer.
   tags:
   - producer
   - automobile_manufacturer
@@ -91,26 +70,19 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    External GGO-era automobile producer known for sleek, luxurious road vehicles and a compact alphanumeric naming style such as Conviction C1 and Conviction C2.
+    
+    Established as one of the branded producers permitted under the GGO External Production framework. Intended as a classically styled prestige manufacturer rather than a general industrial mass producer.
   end_year: null
   derived_from: []
-  media_layers: {}
   wiki_mentions: []
   card_color: '#824227'
 - id: prod_paladin_aerospace
   pretty_name: Paladin Aerospace
   name: Paladin Aerospace
   type: producer
-  wiki_entry: ''
   wiki_mentions: []
   card_color: '#14284a'
   start_year: 9558
@@ -119,12 +91,31 @@
   pretty_name: Saab AB
   name: Saab AB
   type: producer
-  wiki_entry: |
+  wiki_entry: |-
     ! Production
-    !! 
+    !!
   wiki_mentions: []
   card_color: '#191e42'
   parents:
   - geo_sweden
   start_year: 1937
   end_year: 2079
+- id: prod_aldos_j_brewery
+  pretty_name: Aldos J. Brewery
+  name: Aldos J. Brewery
+  type: producer
+  card_color: '#366040'
+  related:
+  - mkt_planetary_period_markets
+  - item_alcova_special_brew
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: prod_new_001
+  pretty_name: LocoMotion
+  name: LocoMotion
+  type: producer
+  card_color: '#250b20'
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []

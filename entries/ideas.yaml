@@ -2,69 +2,54 @@
   pretty_name: New Idea
   name: New Idea
   type: idea
-  wiki_entry: Starter idea.
-  description: ''
-  notes: ''
+  wiki_entry: |-
+    Starter idea.
   tags: []
   start_year: null
   end_year: null
   parents: []
   related: []
   offspring: []
-  placeholders: []
   entry_status: ''
 - id: idea_new_002
   pretty_name: New Idea
   name: Gold Sector Pseudoreligious Schism
   type: idea
-  wiki_entry: Schism of the Col
-  description: ''
-  notes: ''
+  wiki_entry: |-
+    Schism of the Col
   tags: []
   start_year: null
   end_year: null
   parents: []
   related: []
   offspring: []
-  placeholders: []
   entry_status: ''
 - id: idea_new_003
   pretty_name: New Idea
   name: Trifecta Dominion Deep Rust Sector
   type: idea
-  wiki_entry: ''
-  description: ''
-  notes: ''
   tags: []
   start_year: 15303
   end_year: null
   parents: []
   related: []
   offspring: []
-  placeholders: []
   entry_status: ''
 - id: idea_new_006
   pretty_name: New Idea
   name: Atmospheric Sputtering
   type: idea
-  wiki_entry: ''
-  description: ''
-  notes: ''
   tags: []
   start_year: null
   end_year: null
   parents: []
   related: []
   offspring: []
-  placeholders: []
   entry_status: ''
 - id: idea_new_012
   pretty_name: New Idea
   name: Satellite Development Trough the Ages
   type: idea
-  wiki_entry: ''
-  description: ''
-  notes: ''
   tags: []
   start_year: null
   end_year: null
@@ -72,15 +57,11 @@
   parents: []
   related: []
   offspring: []
-  placeholders: []
   entry_status: ''
 - id: idea_gallilean_moons
   pretty_name: Gallilean Moons of Jupiter
   name: Gallilean Moons
   type: idea
-  wiki_entry: ''
-  description: ''
-  notes: ''
   tags: []
   start_year: null
   end_year: null
@@ -90,32 +71,35 @@
   wiki_mentions:
   - Gallileo Gallilei
   offspring: []
-  placeholders: []
   entry_status: ''
   wiki_link_color: '#8a6f2e'
 - id: idea_new_011
   pretty_name: HumHab First Wave Fleets
   name: HumHab First Wave Fleets
   type: idea
-  wiki_entry: ''
   parents:
   - inst_ggo_humhab
 - id: idea_barycor_gold_sector
   pretty_name: Barycor System as a Part of the Gold Sector
   name: Barycor System as a Part of the Gold Sector
   type: idea
-  wiki_entry: ''
   parents:
   - sys_barycor
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  related:
+  - fac_gold_sector
+  wiki_mentions: []
+  offspring: []
+  entry_status: ''
 - id: idea_distrib_psittacoraptor_versa
   pretty_name: Versatile Parrot Raptor Distribution
   name: Idea from Versatile Parrot Raptor - Psittacoraptor versa
   type: idea
-  wiki_entry: ''
   parents:
   - spec_psittacoraptor_versatilis
-  description: ''
-  notes: ''
   tags: []
   start_year: null
   end_year: null
@@ -123,39 +107,33 @@
   related: []
   wiki_mentions: []
   offspring: []
-  placeholders: []
   entry_status: ''
   card_color: '#504f31'
 - id: idea_new_025
   pretty_name: PanAm search for Nuclear Capabilities
   name: PanAm search for Nuclear Capabilities
   type: idea
-  wiki_entry: ''
   parents:
   - fac_panamericana
   start_year: 2088
   end_year: 2145
-  description: ''
-  notes: ''
   tags: []
   derived_from: []
   related: []
   wiki_mentions: []
   offspring: []
-  placeholders: []
   entry_status: ''
   card_color: '#1f2e3d'
 - id: idea_new_008
   pretty_name: Life Aboard a Hansa Ship
   name: Life Aboard a Hansa Ship
   type: idea
-  wiki_entry: 'This is a document published in '
+  wiki_entry: |-
+    This is a document published in
   related:
   - fac_transfer_hansa
   - veh_th_altona
   - person_jarem_habil
-  description: ''
-  notes: ''
   tags: []
   start_year: 5329
   end_year: null
@@ -163,35 +141,347 @@
   parents: []
   wiki_mentions: []
   offspring: []
-  placeholders: []
   entry_status: ''
   card_color: '#2e3838'
 - id: idea_retronationalist_isolation_of_earth
   pretty_name: Retronationalist Isolation of Earth
   name: Retronationalist Isolation of Earth
   type: idea
-  wiki_entry: ''
   parents:
   - fac_retronationalis_successor_states
   start_year: 5960
   start_event: evt_new_003
-  description: ''
-  notes: ''
   tags: []
   end_year: 6714
   derived_from: []
   related: []
   wiki_mentions: []
   offspring: []
-  placeholders: []
   entry_status: ''
 - id: idea_csg_seeding_of_akkad
   pretty_name: CSG Seeding of Akkad
   name: CSG Seeding of Akkad
   type: idea
-  wiki_entry: ''
   parents:
   - person_malrib_huub
   wiki_mentions: []
   start_year: 7771
   end_year: 7950
+- id: idea_local_gulden_emerges
+  pretty_name: Local Gulden Emerges
+  name: Local Gulden Emerges
+  type: idea
+  idea_class: note
+  wiki_entry: Local Gulden Emerges
+  related:
+  - idea_hanseatic_local_gulden
+  wiki_mentions: []
+  start_year: 7120
+- id: idea_hanseatic_local_gulden
+  pretty_name: Hanseatic Local Gulden
+  name: Hanseatic Local Gulden
+  type: idea
+  parents:
+  - fac_transfer_hansa
+  related:
+  - fac_transfer_hansa
+  - inst_hansa_kontor_ports
+  wiki_entry: ''
+  card_color: '#475a43'
+  wiki_mentions: []
+  start_event: idea_local_gulden_emerges
+  start_year: 7119
+  end_year: 15405
+- id: illust_planet_earth_map
+  pretty_name: Earth Map Illustration
+  name: Earth Map Illustration
+  type: idea
+  idea_class: illustration
+  description: Migrated map image for Earth.
+  wiki_entry: Migrated map image for Earth.
+  date: ''
+  media_path: assets/cards/locations/planet_earth_map.png
+  parents:
+  - planet_earth
+  related: []
+  offspring: []
+  entry_status: ''
+- id: illust_original_cog_site_map
+  pretty_name: Original CoG Site Map Illustration
+  name: Original CoG Site Map Illustration
+  type: idea
+  idea_class: illustration
+  description: Migrated base map image for Original CoG Site.
+  wiki_entry: Migrated base map image for Original CoG Site.
+  date: '0'
+  media_path: assets/maps/locations/loc_draft_loc_central_asian_steppe_cog_001/base_map_0.jpg
+  parents:
+  - loc_draft_loc_central_asian_steppe_cog_001
+  related: []
+  offspring: []
+  entry_status: ''
+- id: illust_steel_plate_rolling_card
+  pretty_name: Steel Plate Rolling Illustration
+  name: Steel Plate Rolling Illustration
+  type: idea
+  idea_class: illustration
+  description: Migrated card image for Steel Plate Rolling.
+  wiki_entry: Migrated card image for Steel Plate Rolling.
+  date: ''
+  media_path: assets/cards/production/prod_steel_plate_rolling_card.png
+  parents:
+  - prod_steel_plate_rolling
+  related: []
+  offspring: []
+  entry_status: ''
+- id: illust_bospor_3_regolith_front
+  pretty_name: Bospor 3 Regolith Front Illustration
+  name: Bospor 3 Regolith Front Illustration
+  type: idea
+  idea_class: illustration
+  description: Migrated front card image for Bospor-3 Regolith.
+  wiki_entry: Migrated front card image for Bospor-3 Regolith.
+  date: ''
+  media_path: assets/cards/vehicles/veh_bospor_3_regolith_front.png
+  parents:
+  - veh_bospor_3_regolith
+  related: []
+  offspring: []
+  entry_status: ''
+- id: illust_transfer_hansa_frontier_logo
+  pretty_name: Transfer Hansa Frontier Logo
+  name: Transfer Hansa Frontier Logo
+  type: idea
+  idea_class: illustration
+  description: 'The Logo of the TH Frontier Service, widespread on items distributed by the Forntier Charter'
+  wiki_entry: 'The Logo of the TH Frontier Service, widespread on items distributed by the Forntier Charter'
+  date: 5156
+  parents:
+  - culture_transfer_hansa_frontier
+  media_path: assets/illustrations/illust_transfer_hansa_frontier_logo.jpg
+  entry_status: ''
+  offspring: []
+- id: idea_amto_nereidii
+  pretty_name: Amto Nereidii
+  name: Amto Nereidii
+  type: idea
+  parents:
+  - idea_nereidii_family
+  wiki_entry: ''
+  offspring: []
+- id: idea_nereidii_family
+  pretty_name: Nereidii Family
+  name: Nereidii Family
+  type: idea
+  parents:
+  - planet_nereid
+  wiki_entry: ''
+  offspring:
+  - id: idea_amto_nereidii
+- id: idea_new_004
+  pretty_name: New Idea
+  name: New Idea
+  type: idea
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: idea_new_005
+  pretty_name: New Idea
+  name: New Idea
+  type: idea
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring:
+  - id: idea_venusian_settlements_during_the_ggo_hegemony_period
+- id: idea_new_007
+  pretty_name: New Idea
+  name: New Idea
+  type: idea
+  wiki_entry: ''
+  offspring: []
+- id: idea_new_009
+  pretty_name: New Idea
+  name: New Idea
+  type: idea
+  wiki_entry: ''
+  offspring: []
+- id: idea_new_013
+  pretty_name: Idea from Madrid
+  name: Idea from Madrid
+  type: idea
+  parents:
+  - city_madrid
+  wiki_entry: ''
+  offspring: []
+- id: idea_new_014
+  pretty_name: New Idea
+  name: New Idea
+  type: idea
+  wiki_entry: ''
+  offspring: []
+- id: idea_new_015
+  pretty_name: Idea from Sicily Draft Ecoregion
+  name: Idea from Sicily Draft Ecoregion
+  type: idea
+  parents:
+  - sf_eco_sicily_draft
+  wiki_entry: ''
+  offspring: []
+- id: idea_new_016
+  pretty_name: Idea from Mars
+  name: Idea from Mars
+  type: idea
+  parents:
+  - planet_mars
+  wiki_entry: ''
+  offspring: []
+- id: idea_new_018
+  pretty_name: Idea from Band Tailed Hornero
+  name: Idea from Band Tailed Hornero
+  type: idea
+  parents:
+  - spec_furnarius_figulus
+  wiki_entry: ''
+  wiki_mentions:
+  - Horneros
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  related: []
+  entry_status: ''
+- id: idea_new_019
+  pretty_name: New 019
+  name: New 019
+  type: idea
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: idea_new_020
+  pretty_name: New Idea
+  name: New Idea
+  type: idea
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: idea_new_021
+  pretty_name: High Velocity Battles
+  name: High Velocity Battles
+  type: idea
+  wiki_entry: ''
+  offspring:
+  - id: idea_new_022
+- id: idea_new_022
+  pretty_name: Card Tags
+  name: Card Tags
+  type: idea
+  parents:
+  - idea_new_021
+  wiki_entry: ''
+  offspring: []
+- id: idea_new_023
+  pretty_name: Geigengeist Group buys Bospor Automat Vehicle
+  name: Geigengeist Group buys Bospor Automat Vehicle
+  type: idea
+  card_color: '#1e3f42'
+  parents:
+  - fac_geigengeist
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: idea_new_024
+  pretty_name: Self Interest Pseudo-Faction for each Person
+  name: Self Interest Pseudo-Faction for each Person
+  type: idea
+  parents:
+  - task_new_023
+  related:
+  - task_new_023
+  wiki_entry: ''
+  offspring: []
+- id: idea_new_026
+  pretty_name: New Idea
+  name: New Idea
+  type: idea
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: idea_new_027
+  pretty_name: New Idea
+  name: New Idea
+  type: idea
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: idea_perihelion
+  pretty_name: Perihelion
+  name: Perihelion
+  type: idea
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: idea_spanish_contribution_to_the_superpower_wars
+  pretty_name: Spanish Contribution to the Superpower Wars
+  name: Spanish Contribution to the Superpower Wars
+  type: idea
+  card_color: '#afac95'
+  parents:
+  - geo_spain
+  - conf_superpower_wars
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: idea_spinosaurus_minisculus
+  pretty_name: Spinosaurus minisculus
+  name: Spinosaurus minisculus
+  type: idea
+  parents:
+  - spec_new_002
+  wiki_entry: ''
+  offspring: []
+- id: idea_test_subregion
+  pretty_name: Test Subregion
+  name: Test Subregion
+  type: idea
+  parents:
+  - loc_draft_geo_europe_001
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: idea_venusian_settlements_during_the_ggo_hegemony_period
+  pretty_name: Venusian Settlements during the GGO Hegemony Period
+  name: Venusian Settlements during the GGO Hegemony Period
+  type: idea
+  parents:
+  - idea_new_005
+  wiki_entry: ''
+  offspring: []
+- id: loc_new_003
+  pretty_name: Loc New 003
+  name: Loc New 003
+  type: idea
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: illust_band_tailed_hornero_in_habitat
+  pretty_name: Band Tailed Hornero in Habitat
+  name: Band Tailed Hornero in Habitat
+  type: idea
+  idea_class: illustration
+  description: A Band Tailed Hornero in its natural Habitat
+  wiki_entry: A Band Tailed Hornero in its natural Habitat
+  date: ''
+  parents:
+  - spec_furnarius_figulus
+  media_path: ''
+  entry_status: ''
+  offspring: []
+- id: idea_deep_earth_storage
+  pretty_name: Deep Earth Storage
+  name: Deep Earth Storage
+  type: idea
+  wiki_mentions: []
+  offspring: []
+  related:
+  - inst_project_deep_sleep

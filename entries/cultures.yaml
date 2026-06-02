@@ -19,36 +19,19 @@
   end_year: '2158'
   parents: []
   related: []
-  placeholders: []
   offspring: []
   pretty_name: Pan-African Union Urban Culture
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: culture_transfer_hansa_frontier
   pretty_name: Transfer Hansa Frontier Culture
   name: Transfer Hansa Frontier Culture
   type: culture
   culture_class: merchant_frontier
   parent_culture: null
-  associated_factions:
-  - faction_transfer_hansa
-  associated_locations:
-  - system_lubeck
-  cultural_aspects:
-  - aspect_contract_honor_norm
-  - aspect_trade_network_identity
-  - aspect_mobile_frontier_ethos
+  associated_factions: []
+  associated_locations: []
+  cultural_aspects: []
   tags:
   - merchant
   - frontier
@@ -58,21 +41,10 @@
   parents:
   - fac_transfer_hansa
   related: []
-  placeholders: []
-  offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  offspring:
+  - id: illust_transfer_hansa_frontier_logo
   derived_from: []
   entry_status: ''
-  media_layers: {}
   wiki_mentions: []
   card_color: '#1c2426'
 - id: culture_csg_crusader_reconstruction
@@ -97,29 +69,42 @@
   end_year: 'null'
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   derived_from: []
   entry_status: ''
-  media_layers: {}
   wiki_mentions: []
   card_color: '#7a735e'
 - id: cult_amami_shintoist_culture
   pretty_name: Amami Shintoist Culture
   name: Amami Shintoist Culture
   type: culture
-  wiki_entry: ''
   wiki_mentions: []
   card_color: '#b7000f'
   start_year: 5844
   end_year: 6214
+- id: cult_retronationalist_movements
+  pretty_name: Retronationalist Movements
+  name: Retronationalist Movements
+  type: culture
+  card_color: '#8a3749'
+  related:
+  - fac_retronationalis_successor_states
+  - fac_retronationalist_forced_of_the_border_rebellion
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+  tags: []
+  start_year: 5794
+  end_year: 6215
+  derived_from: []
+  parents: []
+  entry_status: ''
+- id: cult_yu_jade_materialistic_culture
+  pretty_name: Yu Jade Materialistic Culture
+  name: Yu Jade Materialistic Culture
+  type: culture
+  card_color: '#133522'
+  card_header_color: '#607d73'
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []

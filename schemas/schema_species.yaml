@@ -131,7 +131,7 @@ fields:
 #   common_name: Versatile Parrot Raptor
 #   binomial_name: Psittacoraptor versatilis
 #   type: species
-#   description: Bioengineered parrot-derived theropod lineage created by the Terran BDP during the Planetary Period as an omnivorous generalist and later diversified through CEAG-assisted accelerated evolution on one seeded Earth-like world.
+#   wiki_entry: Bioengineered parrot-derived theropod lineage created by the Terran BDP during the Planetary Period as an omnivorous generalist and later diversified through CEAG-assisted accelerated evolution on one seeded Earth-like world.
 #   species_class: engineered_vertebrate
 #   parent_clade: psittacoraptorinae
 #   clade_class: bird

@@ -6,63 +6,77 @@ fields:
 
   system_role:
     type: string
+    section: Simulation / Space Sim
 
   system_class:
     type: string
+    section: Simulation / Space Sim
     optional: true
 
   star_system:
     type: entity
     target: locations
+    section: Simulation / Space Sim
     optional: true
 
   body_class:
     type: string
+    section: Simulation / Space Sim
     optional: true
 
   parent_body:
     type: entity
     target: locations
+    section: Simulation / Space Sim
     optional: true
 
   location_entity:
     type: entity
     target: locations
+    section: Simulation / Space Sim
     optional: true
 
   mass_kg:
     type: number
+    section: Simulation / Space Sim
     optional: true
 
   radius_m:
     type: number
+    section: Simulation / Space Sim
     optional: true
 
   semi_major_axis_m:
     type: number
+    section: Simulation / Space Sim
     optional: true
 
   eccentricity:
     type: number
+    section: Simulation / Space Sim
     optional: true
 
   inclination_deg:
     type: number
+    section: Simulation / Space Sim
     optional: true
 
   longitude_of_ascending_node_deg:
     type: number
+    section: Simulation / Space Sim
     optional: true
 
   argument_of_periapsis_deg:
     type: number
+    section: Simulation / Space Sim
     optional: true
 
   mean_anomaly_deg_at_epoch:
     type: number
-    section: Temporal
+    section: Simulation / Space Sim
     optional: true
 
   display_color:
     type: string_list
+    section: Simulation / Space Sim
     optional: true

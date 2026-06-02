@@ -69,9 +69,11 @@ class KnowledgeBrowserUI:
     IDEA_GENERIC_FIELDS = {
         "pretty_name",
         "name",
-        "description",
-        "notes",
+        "idea_class",
         "wiki_entry",
+        "description",
+        "date",
+        "media_path",
         "card_color",
         "card_header_color",
         "wiki_field_colors",
@@ -85,11 +87,9 @@ class KnowledgeBrowserUI:
         "related",
         "wiki_mentions",
         "offspring",
-        "placeholders",
         "entry_status",
     }
     LEGACY_IDEA_FIELDS = {
-        "idea_class",
         "related_entities",
         "parent_entity",
         "source",
@@ -1925,11 +1925,7 @@ class KnowledgeBrowserUI:
 
         location_entities = list(location_by_id.values())
         children_by_parent = {}
-        parent_ids_by_child = {}
-
-        def append_unique(target, value):
-            if value and value not in target:
-                target.append(value)
+        parent_id_by_child = {}
 
         def relation_values(value):
             if value is None:
@@ -1946,38 +1942,35 @@ class KnowledgeBrowserUI:
                 return values
             return []
 
-        def structural_parent_ids(entity):
+        def structural_parent_id(entity):
             entity_id = canonical_location_id(entity.get("id"))
-            parent_ids = []
             for field_key in ("parent_cluster", "parent_location", "parent_entity", "parent_body"):
                 for parent_id in relation_values(entity.get(field_key)):
                     parent_id = canonical_location_id(parent_id)
                     if parent_id and parent_id != entity_id and parent_id in location_by_id:
-                        append_unique(parent_ids, parent_id)
+                        return parent_id
 
-            if not parent_ids and entity.get("system_role") == "orbital_body":
+            if entity.get("system_role") == "orbital_body":
                 for parent_id in relation_values(entity.get("star_system")):
                     parent_id = canonical_location_id(parent_id)
                     if parent_id and parent_id != entity_id and parent_id in location_by_id:
-                        append_unique(parent_ids, parent_id)
+                        return parent_id
 
-            if not parent_ids:
-                for parent_id in relation_values(entity.get("parents")):
-                    parent_id = canonical_location_id(parent_id)
-                    if parent_id and parent_id != entity_id and parent_id in location_by_id:
-                        append_unique(parent_ids, parent_id)
+            for parent_id in relation_values(entity.get("parents")):
+                parent_id = canonical_location_id(parent_id)
+                if parent_id and parent_id != entity_id and parent_id in location_by_id:
+                    return parent_id
 
-            return parent_ids
+            return None
 
         for entity in location_entities:
             entity_id = canonical_location_id(entity.get("id"))
             if not entity_id:
                 continue
-            parent_ids = structural_parent_ids(entity)
-            if parent_ids:
-                parent_ids_by_child[entity_id] = parent_ids
-                for parent_id in parent_ids:
-                    children_by_parent.setdefault(parent_id, []).append(entity)
+            parent_id = structural_parent_id(entity)
+            if parent_id:
+                parent_id_by_child[entity_id] = parent_id
+                children_by_parent.setdefault(parent_id, []).append(entity)
 
         for parent_entity in location_entities:
             parent_id = canonical_location_id(parent_entity.get("id"))
@@ -1989,11 +1982,12 @@ class KnowledgeBrowserUI:
                     child_entity = location_by_id.get(child_id)
                     if not child_entity or child_id == parent_id:
                         continue
+                    if child_id in parent_id_by_child:
+                        continue
+                    parent_id_by_child[child_id] = parent_id
                     children = children_by_parent.setdefault(parent_id, [])
                     if child_entity not in children:
                         children.append(child_entity)
-                    parent_ids_by_child.setdefault(child_id, [])
-                    append_unique(parent_ids_by_child[child_id], parent_id)
 
         for child_list in children_by_parent.values():
             unique_children = {}
@@ -2054,16 +2048,12 @@ class KnowledgeBrowserUI:
             [
                 location for location in location_entities
                 if canonical_location_id(location.get("id"))
-                and canonical_location_id(location.get("id")) not in parent_ids_by_child
+                and canonical_location_id(location.get("id")) not in parent_id_by_child
             ],
             key=self._location_hierarchy_sort_key,
         )
         for location_entity in root_locations:
             add_location_subtree(location_entity, 0)
-
-        for location_entity in sorted(location_entities, key=self._location_hierarchy_sort_key):
-            if canonical_location_id(location_entity.get("id")) not in emitted_ids:
-                add_location_subtree(location_entity, 0)
 
         return items
 
@@ -2182,7 +2172,7 @@ class KnowledgeBrowserUI:
             subtype = entity.get("location_class", entity.get("type", "entity"))
         elif dataset_name == "ideas":
             display_group = "idea"
-            subtype = entity.get("entry_status") or "generic"
+            subtype = entity.get("idea_class") or entity.get("entry_status") or "generic"
         elif dataset_name == "systems":
             system_role = entity.get("system_role")
             if system_role == "star_system":
@@ -2703,6 +2693,13 @@ class KnowledgeBrowserUI:
             self._entity_id_from_name(dataset_name, entity_type, entry_name, template=template)
         )
 
+    def _requested_illustration_entity_id_from_name(self, entry_name):
+        slug = self._slug_from_text(entry_name)
+        if not slug:
+            return ""
+        requested_id = slug if slug.startswith("illust_") else f"illust_{slug}"
+        return self._unique_entity_id(requested_id)
+
     def _default_value_for_schema_field(self, field_type):
         field_type = str(field_type or "").lower()
         if "list" in field_type:
@@ -2794,7 +2791,6 @@ class KnowledgeBrowserUI:
                 "binomial_name": species_binomial,
                 "type": "species",
                 "_dataset": dataset_name,
-                "wiki_entry": "",
             }
         else:
             entity = {
@@ -2803,7 +2799,6 @@ class KnowledgeBrowserUI:
                 "name": label,
                 "type": entity_type,
                 "_dataset": dataset_name,
-                "wiki_entry": "",
             }
         self._populate_required_schema_fields(entity, template)
         for field_key, value in initial_fields.items():
@@ -2857,8 +2852,12 @@ class KnowledgeBrowserUI:
             "label": label,
             "buffer": str(initial_buffer or ""),
             "cursor": len(str(initial_buffer or "")),
+            "description_buffer": "",
+            "description_cursor": 0,
+            "active_prompt_field": "name",
             "rect": None,
             "input_rect": None,
+            "description_rect": None,
             "create_rect": None,
             "cancel_rect": None,
             "status": "",
@@ -2892,6 +2891,31 @@ class KnowledgeBrowserUI:
                 "parent_entity_id": parent_entity_id,
                 "parent_label": parent_label,
             },
+        )
+
+    def _open_illustration_prompt(self, parent_card):
+        if parent_card is None:
+            return False
+
+        parent_entity_id = parent_card.get("entity_id")
+        if not parent_entity_id:
+            return False
+
+        parent_label = parent_card.get("title") or parent_entity_id
+        parent_entity = self.world_model.get_entity(parent_entity_id) if self.world_model is not None else None
+        if parent_entity is not None:
+            parent_label = self._entity_display_label(parent_entity, fallback=parent_label)
+
+        selected_year = parent_card.get("selected_year")
+        return self._open_entry_name_prompt(
+            None,
+            mode="illustration_from_parent",
+            context={
+                "parent_entity_id": parent_entity_id,
+                "parent_label": parent_label,
+                "selected_year": selected_year,
+            },
+            label=f"Illustration for {parent_label}",
         )
 
     def _open_toolbelt_name_prompt(self, source_card, tool):
@@ -3067,6 +3091,44 @@ class KnowledgeBrowserUI:
             self._save_card_draft(card)
         return idea
 
+    def _create_illustration_from_parent(self, parent_entity_id, entry_name, description="", date_value=None):
+        if self.world_model is None or not parent_entity_id:
+            return None
+
+        template = self._template_by_dataset("ideas") or {
+            "dataset_name": "ideas",
+            "entity_type": "idea",
+            "schema_name": "idea",
+        }
+        initial_fields = {
+            "pretty_name": entry_name,
+            "name": entry_name,
+            "idea_class": "illustration",
+            "description": str(description or "").strip(),
+            "wiki_entry": str(description or "").strip(),
+            "date": "" if date_value in (None, "") else str(date_value),
+            "parents": [parent_entity_id],
+            "media_path": "",
+            "entry_status": "",
+        }
+        illustration = self._create_template_entity(
+            template,
+            requested_id=self._requested_illustration_entity_id_from_name(entry_name),
+            initial_fields=initial_fields,
+            label=entry_name,
+        )
+        if illustration is None:
+            return None
+
+        illustration.update(initial_fields)
+        self._persist_entity_to_repository(illustration)
+        self._sync_bidirectional_relations(persist=True)
+        self.browser_items = self._build_browser_items(self.world_model)
+        self._refresh_timeline_items()
+        self._rebuild_browser_hitboxes()
+        self._relayout_cards()
+        return illustration
+
     def _open_relation_note_prompt(self, source_card, relation_info, initial_text=""):
         if source_card is None or not isinstance(relation_info, dict):
             return False
@@ -3163,6 +3225,20 @@ class KnowledgeBrowserUI:
             self._close_entry_name_prompt()
             return True
 
+        if mode == "illustration_from_parent":
+            context = prompt.get("context", {})
+            illustration = self._create_illustration_from_parent(
+                context.get("parent_entity_id"),
+                entry_name,
+                description=prompt.get("description_buffer", ""),
+                date_value=context.get("selected_year"),
+            )
+            if illustration is None:
+                prompt["status"] = "Could not create illustration"
+                return True
+            self._close_entry_name_prompt()
+            return True
+
         if mode == "toolbelt":
             context = prompt.get("context", {})
             created = self._create_named_toolbelt_entity(
@@ -3203,42 +3279,51 @@ class KnowledgeBrowserUI:
         if not isinstance(prompt, dict):
             return False
 
-        buffer_text = str(prompt.get("buffer", ""))
-        cursor = max(0, min(int(prompt.get("cursor", len(buffer_text))), len(buffer_text)))
+        active_field = "description" if (
+            prompt.get("mode") == "illustration_from_parent"
+            and prompt.get("active_prompt_field") == "description"
+        ) else "name"
+        buffer_key = "description_buffer" if active_field == "description" else "buffer"
+        cursor_key = "description_cursor" if active_field == "description" else "cursor"
+        buffer_text = str(prompt.get(buffer_key, ""))
+        cursor = max(0, min(int(prompt.get(cursor_key, len(buffer_text))), len(buffer_text)))
 
         if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             return self._submit_entry_name_prompt()
+        if event.key == pygame.K_TAB and prompt.get("mode") == "illustration_from_parent":
+            prompt["active_prompt_field"] = "name" if active_field == "description" else "description"
+            return True
         if event.key == pygame.K_ESCAPE:
             self._close_entry_name_prompt()
             return True
         if event.key == pygame.K_BACKSPACE:
             if cursor > 0:
-                prompt["buffer"] = buffer_text[:cursor - 1] + buffer_text[cursor:]
-                prompt["cursor"] = cursor - 1
+                prompt[buffer_key] = buffer_text[:cursor - 1] + buffer_text[cursor:]
+                prompt[cursor_key] = cursor - 1
                 prompt["status"] = ""
             return True
         if event.key == pygame.K_DELETE:
             if cursor < len(buffer_text):
-                prompt["buffer"] = buffer_text[:cursor] + buffer_text[cursor + 1:]
+                prompt[buffer_key] = buffer_text[:cursor] + buffer_text[cursor + 1:]
                 prompt["status"] = ""
             return True
         if event.key == pygame.K_LEFT:
-            prompt["cursor"] = max(0, cursor - 1)
+            prompt[cursor_key] = max(0, cursor - 1)
             return True
         if event.key == pygame.K_RIGHT:
-            prompt["cursor"] = min(len(buffer_text), cursor + 1)
+            prompt[cursor_key] = min(len(buffer_text), cursor + 1)
             return True
         if event.key == pygame.K_HOME:
-            prompt["cursor"] = 0
+            prompt[cursor_key] = 0
             return True
         if event.key == pygame.K_END:
-            prompt["cursor"] = len(buffer_text)
+            prompt[cursor_key] = len(buffer_text)
             return True
 
         text = getattr(event, "unicode", "")
         if text and text.isprintable():
-            prompt["buffer"] = buffer_text[:cursor] + text + buffer_text[cursor:]
-            prompt["cursor"] = cursor + len(text)
+            prompt[buffer_key] = buffer_text[:cursor] + text + buffer_text[cursor:]
+            prompt[cursor_key] = cursor + len(text)
             prompt["status"] = ""
             return True
 
@@ -3257,6 +3342,16 @@ class KnowledgeBrowserUI:
         create_rect = prompt.get("create_rect")
         if create_rect is not None and create_rect.collidepoint(mouse_pos):
             return self._submit_entry_name_prompt()
+
+        input_rect = prompt.get("input_rect")
+        if input_rect is not None and input_rect.collidepoint(mouse_pos):
+            prompt["active_prompt_field"] = "name"
+            return True
+
+        description_rect = prompt.get("description_rect")
+        if description_rect is not None and description_rect.collidepoint(mouse_pos):
+            prompt["active_prompt_field"] = "description"
+            return True
 
         return True
 
@@ -3522,7 +3617,7 @@ class KnowledgeBrowserUI:
         if dataset_name == "locations":
             return f"location | {entity.get('location_class', entity.get('type', 'entity'))}"
         if dataset_name == "ideas":
-            return f"idea | {entity.get('entry_status') or 'generic'}"
+            return f"idea | {entity.get('idea_class') or entity.get('entry_status') or 'generic'}"
         if dataset_name == "species":
             common_name, binomial_name = self._species_name_parts(entity)
             if binomial_name:
@@ -3986,7 +4081,7 @@ class KnowledgeBrowserUI:
                         collect_refs(item)
 
             for field_key, field_value in entity.items():
-                if field_key in {"id", "pretty_name", "name", "description", "notes", "wiki_entry"}:
+                if field_key in {"id", "pretty_name", "name", "wiki_entry"}:
                     continue
                 collect_refs(field_value)
 
@@ -4317,19 +4412,6 @@ class KnowledgeBrowserUI:
         finally:
             root.destroy()
         return selected
-
-    def _role_field_name(self, role_name):
-        role_name = (role_name or "card").lower()
-        if role_name == "card":
-            return "card_image"
-        if role_name == "design":
-            return "design_image"
-        return f"card_image_{role_name}"
-
-    def _dataset_asset_folder(self, dataset_name):
-        if not dataset_name:
-            return "misc"
-        return dataset_name.replace("\\", "_").replace("/", "_")
 
     def _entry_file_path_for_dataset(self, dataset_name):
         if not dataset_name:
@@ -4715,6 +4797,32 @@ class KnowledgeBrowserUI:
 
         return True
 
+    def _sync_bidirectional_relations(self, persist=True):
+        if self.world_model is None or getattr(self.world_model, "loader", None) is None:
+            return set()
+
+        loader = self.world_model.loader
+        entities = getattr(loader, "entities", {}) or {}
+        changed_entity_ids = set()
+
+        if hasattr(loader, "populate_offspring"):
+            changed_entity_ids.update(loader.populate_offspring())
+
+        if changed_entity_ids and persist:
+            for entity_id in sorted(changed_entity_ids):
+                entity = entities.get(entity_id)
+                if isinstance(entity, dict):
+                    self._persist_entity_to_repository(entity)
+
+        if changed_entity_ids:
+            self.relation_tree_neighbor_cache = {}
+            self.canvas_relation_edges = []
+            if hasattr(loader, "build_reference_graph"):
+                loader.build_reference_graph()
+            self._refresh_timeline_items()
+
+        return changed_entity_ids
+
     def _persist_card_entity(self, card):
         if card is None:
             return False
@@ -4784,162 +4892,55 @@ class KnowledgeBrowserUI:
                 self._remove_card_draft(entity.get("id"))
         return persisted
 
-    def _build_canonical_image_path(self, entity_id, dataset_name, role_name, source_path):
+    def _build_canonical_illustration_path(self, illustration_id, source_path):
         _, ext = os.path.splitext(source_path)
         ext = ext.lower() if ext else ".png"
-
-        asset_folder = self._dataset_asset_folder(dataset_name)
-        filename = f"{entity_id}_{role_name}{ext}"
-        rel_path = os.path.join("assets", "cards", asset_folder, filename)
+        safe_id = self._sanitize_entity_id(illustration_id) or "illustration"
+        rel_path = os.path.join("assets", "illustrations", f"{safe_id}{ext}")
         return rel_path.replace("\\", "/")
 
-    def _copy_to_canonical_asset(self, entity_id, dataset_name, role_name, source_path):
-        canonical_rel_path = self._build_canonical_image_path(entity_id, dataset_name, role_name, source_path)
+    def _copy_to_canonical_illustration_asset(self, illustration_id, source_path):
+        canonical_rel_path = self._build_canonical_illustration_path(illustration_id, source_path)
         canonical_abs_path = os.path.normpath(str(self.PROJECT_ROOT / canonical_rel_path))
         os.makedirs(os.path.dirname(canonical_abs_path), exist_ok=True)
         shutil.copy2(source_path, canonical_abs_path)
         return canonical_rel_path
 
-    def _upsert_yaml_scalar_in_block(self, block_text, key, value):
-        pattern = rf"(?m)^  {re.escape(key)}:.*$"
-        replacement = f"  {key}: {value}"
-
-        if re.search(pattern, block_text):
-            return re.sub(pattern, replacement, block_text)
-
-        insert_before_keys = [
-            "tags",
-            "start_year",
-            "end_year",
-            "entry_status",
-        ]
-
-        for anchor_key in insert_before_keys:
-            anchor_pattern = rf"(?m)^  {re.escape(anchor_key)}:"
-            match = re.search(anchor_pattern, block_text)
-            if match:
-                return block_text[:match.start()] + replacement + "\n" + block_text[match.start():]
-
-        if not block_text.endswith("\n"):
-            block_text += "\n"
-        return block_text + replacement + "\n"
-
-    def _write_image_fields_to_repository(self, entity_id, dataset_name, canonical_path, role_name):
-        field_name = self._role_field_name(role_name)
-        entry_path = self._entry_file_path_for_dataset(dataset_name)
-
-        if entry_path is None or not os.path.exists(entry_path):
+    def assign_illustration_image(self, illustration_id, image_path):
+        if not illustration_id or not image_path or self.world_model is None:
             return False
 
-        with open(entry_path, "r", encoding="utf-8") as f:
-            text = f.read()
-
-        start_pattern = rf"(?m)^- id: {re.escape(entity_id)}\s*$"
-        start_match = re.search(start_pattern, text)
-        if not start_match:
+        illustration = self.world_model.get_entity(illustration_id)
+        if not isinstance(illustration, dict):
             return False
 
-        next_match = re.search(r"(?m)^- id: ", text[start_match.end():])
-        block_start = start_match.start()
-        block_end = start_match.end() + next_match.start() if next_match else len(text)
+        if str(illustration.get("idea_class") or "").strip().lower() != "illustration":
+            return False
 
-        block = text[block_start:block_end]
-        updated_block = block
-        updated_block = self._upsert_yaml_scalar_in_block(updated_block, field_name, canonical_path)
+        illustration["media_path"] = image_path
+        self._persist_entity_to_repository(illustration)
+        for card in self.cards:
+            if card.get("entity_id") != illustration_id:
+                continue
+            card_view = card.get("card_view")
+            if card_view is not None and isinstance(getattr(card_view, "entity", None), dict):
+                card_view.entity["media_path"] = image_path
+            card["is_draft_entity"] = False
+            self._remove_card_draft(illustration_id)
 
-        existing_card_match = re.search(r"(?m)^  card_image:\s*(.+?)\s*$", block)
-        has_card_image = bool(existing_card_match and existing_card_match.group(1).strip())
-
-        if role_name != "design":
-            updated_block = self._upsert_yaml_scalar_in_block(updated_block, "card_image", canonical_path)
-        elif not has_card_image:
-            updated_block = self._upsert_yaml_scalar_in_block(updated_block, "card_image", canonical_path)
-
-        if updated_block == block:
-            return True
-
-        updated_text = text[:block_start] + updated_block + text[block_end:]
-
-        with open(entry_path, "w", encoding="utf-8") as f:
-            f.write(updated_text)
-
+        self.browser_items = self._build_browser_items(self.world_model)
+        self._refresh_timeline_items()
+        self._rebuild_browser_hitboxes()
+        self._relayout_cards()
         return True
 
-    def assign_card_image(self, entity_id, image_path, role_name=None):
-        """
-        Assign an image path to an entity/card currently visible in the
-        Knowledge Layer.
-
-        Behavior:
-        * card role updates card_image
-        * design role updates design_image and only fills card_image if empty
-        * all other roles update their role-specific image field and also set
-          card_image as the active preview
-        """
-        if not entity_id or not image_path:
-            return False
-
-        updated = False
-        normalized_role = (role_name or "card").lower()
-        field_name = self._role_field_name(role_name) if role_name else None
-
-        def _apply_to_entity(entity_obj):
-            nonlocal updated
-            if entity_obj is None:
-                return
-
-            if field_name is not None:
-                entity_obj[field_name] = image_path
-
-            if normalized_role == "design":
-                existing_card = entity_obj.get("card_image")
-                if not (isinstance(existing_card, str) and existing_card.strip()):
-                    entity_obj["card_image"] = image_path
-            else:
-                entity_obj["card_image"] = image_path
-
-            updated = True
-
-        if self.world_model is not None:
-            entity = self.world_model.get_entity(entity_id)
-            _apply_to_entity(entity)
-
-        for card in self.cards:
-            if card.get("entity_id") != entity_id:
-                continue
-
-            card_view = card.get("card_view")
-            if card_view is not None and getattr(card_view, "entity", None) is not None:
-                _apply_to_entity(card_view.entity)
-
-        if updated:
-            self._relayout_cards()
-
-        return updated
-
-    def choose_and_assign_card_image(self, entity_id, role_name=None):
+    def choose_and_assign_illustration_image(self, illustration_id):
         image_path = self._open_image_file_dialog()
         if not image_path:
             return False
 
-        dataset_name = None
-        if self.world_model is not None:
-            entity = self.world_model.get_entity(entity_id)
-            if entity is not None:
-                dataset_name = entity.get("_dataset", entity.get("type", "entity"))
-
-        canonical_path = image_path
-        if dataset_name is not None and role_name is not None:
-            canonical_path = self._copy_to_canonical_asset(entity_id, dataset_name, role_name, image_path)
-
-        assigned = self.assign_card_image(entity_id, canonical_path, role_name=role_name)
-        if not assigned:
-            return False
-
-        if dataset_name is not None and role_name is not None:
-            self._write_image_fields_to_repository(entity_id, dataset_name, canonical_path, role_name)
-
-        return True
+        canonical_path = self._copy_to_canonical_illustration_asset(illustration_id, image_path)
+        return self.assign_illustration_image(illustration_id, canonical_path)
 
     def _rebuild_browser_hitboxes(self):
         self.browser_hitboxes = []
@@ -6554,9 +6555,16 @@ class KnowledgeBrowserUI:
                     self._relayout_cards()
                     return "__ui_consumed__"
                 if card_obj.get("is_edit_mode", False) and card_obj.get("active_edit_field"):
-                    self._save_card_draft(card_obj)
+                    card_obj["card_view"].commit_edit_field(card_obj)
+                    if card_obj.get("last_edit_action") == "commit":
+                        self._persist_card_entity(card_obj)
+                    else:
+                        self._save_card_draft(card_obj)
+                    card_obj["last_edit_action"] = None
                 card_obj["card_view"].toggle_edit_mode(card_obj)
                 if not card_obj.get("is_edit_mode", False):
+                    self._persist_card_entity(card_obj)
+                    self._sync_bidirectional_relations(persist=True)
                     if self.canvas_relation_link_source_id == card_obj.get("entity_id"):
                         self._clear_canvas_relation_link()
                     self._clear_timeline_edit_target()
@@ -6691,10 +6699,33 @@ class KnowledgeBrowserUI:
                     self._relayout_cards()
                     return "__ui_consumed__"
 
-            for role_name, button_rect in card.get("media_import_hitboxes", []):
+            for tab_name, subtab_name, subtab_rect in card.get("subtab_hitboxes", []):
+                if subtab_rect.collidepoint(mouse_pos) and card_view is not None:
+                    card_obj = self._bring_card_to_front(index)
+                    card_obj["card_view"].set_active_subtab(tab_name, subtab_name)
+                    self._relayout_cards()
+                    return "__ui_consumed__"
+
+            add_illustration_rect = card.get("media_add_illustration_rect")
+            if add_illustration_rect is not None and add_illustration_rect.collidepoint(mouse_pos):
+                card_obj = self._bring_card_to_front(index)
+                self._open_illustration_prompt(card_obj)
+                self._relayout_cards()
+                return "__ui_consumed__"
+
+            for illustration_id, title_rect in card.get("media_illustration_link_hitboxes", []):
+                if title_rect.collidepoint(mouse_pos):
+                    self._bring_card_to_front(index)
+                    illustration = self.world_model.get_entity(illustration_id) if self.world_model is not None else None
+                    if illustration is not None:
+                        self._ensure_card(illustration)
+                        self._relayout_cards()
+                    return "__ui_consumed__"
+
+            for illustration_id, button_rect in card.get("media_import_hitboxes", []):
                 if button_rect.collidepoint(mouse_pos):
                     card_obj = self._bring_card_to_front(index)
-                    self.choose_and_assign_card_image(card_obj["entity_id"], role_name=role_name)
+                    self.choose_and_assign_illustration_image(illustration_id)
                     self._relayout_cards()
                     return "__ui_consumed__"
 
@@ -6850,17 +6881,22 @@ class KnowledgeBrowserUI:
 
         right_rect = self.layout["right_rect"]
         prompt_w = min(420, max(300, right_rect.width - 48))
-        prompt_h = 148
+        is_illustration_prompt = prompt.get("mode") == "illustration_from_parent"
+        prompt_h = 194 if is_illustration_prompt else 148
         prompt_x = right_rect.right - prompt_w - 12
         prompt_y = right_rect.y + 44
         prompt_rect = pygame.Rect(prompt_x, prompt_y, prompt_w, prompt_h)
         header_rect = pygame.Rect(prompt_rect.x, prompt_rect.y, prompt_rect.width, 48)
         input_rect = pygame.Rect(prompt_rect.x + 18, prompt_rect.y + 72, prompt_rect.width - 36, 30)
+        description_rect = None
+        if is_illustration_prompt:
+            description_rect = pygame.Rect(prompt_rect.x + 18, input_rect.bottom + 28, prompt_rect.width - 36, 30)
         cancel_rect = pygame.Rect(prompt_rect.right - 198, prompt_rect.bottom - 42, 86, 28)
         create_rect = pygame.Rect(prompt_rect.right - 104, prompt_rect.bottom - 42, 86, 28)
 
         prompt["rect"] = prompt_rect
         prompt["input_rect"] = input_rect
+        prompt["description_rect"] = description_rect
         prompt["cancel_rect"] = cancel_rect
         prompt["create_rect"] = create_rect
 
@@ -6877,6 +6913,8 @@ class KnowledgeBrowserUI:
 
         if prompt.get("mode") == "idea_from_parent":
             prompt_title = "Name New Idea"
+        elif prompt.get("mode") == "illustration_from_parent":
+            prompt_title = "Add Illustration"
         elif prompt.get("mode") == "toolbelt":
             prompt_title = f"Name New {prompt.get('label') or 'Entry'}"
         else:
@@ -6889,35 +6927,53 @@ class KnowledgeBrowserUI:
         name_label = font.render("name", True, (188, 196, 212))
         screen.blit(name_label, (input_rect.x, input_rect.y - 18))
 
-        pygame.draw.rect(screen, (38, 43, 56), input_rect)
-        pygame.draw.rect(screen, (182, 202, 236), input_rect, 1)
-        buffer_text = str(prompt.get("buffer", ""))
-        cursor = max(0, min(int(prompt.get("cursor", len(buffer_text))), len(buffer_text)))
-        visible_text = buffer_text
-        max_input_text_w = input_rect.width - 18
-        while visible_text and font.size(visible_text)[0] > max_input_text_w:
-            visible_text = visible_text[1:]
+        def draw_prompt_input(field_rect, buffer_key, cursor_key, placeholder, active_field_name):
+            active = prompt.get("active_prompt_field") == active_field_name
+            border = (210, 224, 248) if active else (150, 162, 186)
+            pygame.draw.rect(screen, (38, 43, 56), field_rect)
+            pygame.draw.rect(screen, border, field_rect, 1)
+            buffer_text = str(prompt.get(buffer_key, ""))
+            cursor = max(0, min(int(prompt.get(cursor_key, len(buffer_text))), len(buffer_text)))
+            visible_text = buffer_text
+            max_input_text_w = field_rect.width - 18
+            while visible_text and font.size(visible_text)[0] > max_input_text_w:
+                visible_text = visible_text[1:]
 
-        hidden_prefix_len = len(buffer_text) - len(visible_text)
-        display_text = visible_text if buffer_text else "Entry name"
-        text_color = (238, 238, 238) if buffer_text else (126, 136, 154)
-        text_surface = font.render(display_text, True, text_color)
-        screen.blit(text_surface, (input_rect.x + 8, input_rect.y + 6))
+            hidden_prefix_len = len(buffer_text) - len(visible_text)
+            display_text = visible_text if buffer_text else placeholder
+            text_color = (238, 238, 238) if buffer_text else (126, 136, 154)
+            text_surface = font.render(display_text, True, text_color)
+            screen.blit(text_surface, (field_rect.x + 8, field_rect.y + 6))
 
-        visible_cursor = max(0, cursor - hidden_prefix_len)
-        cursor_x = input_rect.x + 8 + font.size(visible_text[:visible_cursor])[0]
-        pygame.draw.line(
-            screen,
-            (236, 236, 236),
-            (cursor_x, input_rect.y + 6),
-            (cursor_x, input_rect.bottom - 6),
-            1,
-        )
+            if active:
+                visible_cursor = max(0, cursor - hidden_prefix_len)
+                cursor_x = field_rect.x + 8 + font.size(visible_text[:visible_cursor])[0]
+                pygame.draw.line(
+                    screen,
+                    (236, 236, 236),
+                    (cursor_x, field_rect.y + 6),
+                    (cursor_x, field_rect.bottom - 6),
+                    1,
+                )
+
+        draw_prompt_input(input_rect, "buffer", "cursor", "Entry name", "name")
+
+        if description_rect is not None:
+            description_label = font.render("description", True, (188, 196, 212))
+            screen.blit(description_label, (description_rect.x, description_rect.y - 18))
+            draw_prompt_input(
+                description_rect,
+                "description_buffer",
+                "description_cursor",
+                "Illustration description",
+                "description",
+            )
 
         status = str(prompt.get("status") or "")
         if status:
             status_surface = font.render(status, True, (230, 154, 132))
-            screen.blit(status_surface, (prompt_rect.x + 18, input_rect.bottom + 8))
+            status_y = (description_rect.bottom if description_rect is not None else input_rect.bottom) + 6
+            screen.blit(status_surface, (prompt_rect.x + 18, status_y))
 
         mouse_pos = pygame.mouse.get_pos()
         for rect, label, primary in (

@@ -12,27 +12,31 @@
     value: 6371000
   population:
     y0: 8000000000
-  card_image_map: assets/cards/locations/planet_earth_map.png
-  card_image: assets/cards/locations/planet_earth_map.png
   start_year: null
   parents: []
   related: []
-  placeholders: []
-  offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  offspring:
+  - id: illust_planet_earth_map
+  - id: body_luna
+  - id: loc_north_america
+    offspring:
+      - id: loc_united_states_of_america
+        offspring: '[{''id'': ''loc_hawaii'', ''offspring'': [{''id'': ''geo_northwestern_hawaiian_islands'', ''offspring'': [{''id'': ''geo_kure_atoll''}]}]}]'
+  - id: loc_australia
+    offspring:
+      - id: loc_victoria_state_australia
+  - id: loc_atlantic_ocean
+    offspring:
+      - id: loc_greenland
+        offspring: '[{''id'': ''loc_northeast_greenland_national_park''}]'
+  - id: loc_eurasia
+    offspring:
+      - id: geo_europe
+        offspring: '[{''id'': ''geo_spain'', ''offspring'': [{''id'': ''idea_spanish_contribution_to_the_superpower_wars''}, {''id'': ''city_madrid'', ''offspring'': [{''id'': ''idea_new_013''}]}]}, {''id'': ''loc_new_idea'', ''offspring'': [{''id'': ''geo_france'', ''offspring'': [{''id'': ''evt_new_001''}, {''id'': ''city_paris''}, {''id'': ''sf_draft_ecoregions_geo_central_europe_001''}]}]}, {''id'': ''loc_scandinavia'', ''offspring'': [{''id'': ''geo_sweden'', ''offspring'': [{''id'': ''prod_saab_ab''}]}]}]'
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   system_role: orbital_body
   star_system: system_sol
   body_class: planet
@@ -42,7 +46,7 @@
   radius_m: 6371000
   semi_major_axis_m: 149597870700
   eccentricity: 0.0167086
-  inclination_deg: 5.0e-05
+  inclination_deg: 5e-05
   longitude_of_ascending_node_deg: -11.26064
   argument_of_periapsis_deg: 114.20783
   mean_anomaly_deg_at_epoch: 358.617
@@ -53,6 +57,7 @@
   location_role: orbital_body
   derived_from_system_body: body_earth
   legacy_system_entity_id: body_earth
+  wiki_mentions: []
 - id: geo_europe
   pretty_name: Europe
   name: Europe
@@ -68,25 +73,28 @@
   population:
     y0: 450000000
   start_year: null
-  parents: []
+  parents:
+  - loc_eurasia
   related: []
-  placeholders: []
-  offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  offspring:
+  - id: geo_spain
+    offspring:
+      - id: idea_spanish_contribution_to_the_superpower_wars
+      - id: city_madrid
+        offspring: '[{''id'': ''idea_new_013''}]'
+  - id: loc_new_idea
+    offspring:
+      - id: geo_france
+        offspring: '[{''id'': ''evt_new_001''}, {''id'': ''city_paris''}, {''id'': ''sf_draft_ecoregions_geo_central_europe_001''}]'
+  - id: loc_scandinavia
+    offspring:
+      - id: geo_sweden
+        offspring: '[{''id'': ''prod_saab_ab''}]'
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
+  wiki_mentions: []
 - id: geo_central_europe
   pretty_name: Central Europe
   name: Central Europe
@@ -104,23 +112,11 @@
   start_year: -350000000
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: geo_germany
   pretty_name: Germany
   name: Germany
@@ -138,23 +134,11 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: city_berlin
   pretty_name: Berlin
   name: Berlin
@@ -170,23 +154,11 @@
   start_year: 1237
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: 2356
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: geo_alps
   pretty_name: Alps
   name: Alps
@@ -204,23 +176,11 @@
   start_year: -65000000
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: geo_france
   pretty_name: France
   name: France
@@ -239,25 +199,13 @@
   parents:
   - loc_new_idea
   related: []
-  placeholders: []
   offspring:
   - id: evt_new_001
   - id: city_paris
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   wiki_mentions: []
   card_color: '#1e3560'
 - id: city_paris
@@ -284,23 +232,11 @@
   parents:
   - geo_france
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: 2486
   derived_from: []
   entry_status: ''
-  media_layers: {}
   wiki_mentions: []
   card_color: '#5f787d'
 - id: planet_mercury
@@ -331,23 +267,11 @@
   - body_sol
   related:
   - veh_whopco
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   system_role: orbital_body
   star_system: system_sol
   body_class: planet
@@ -394,23 +318,11 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   system_role: orbital_body
   star_system: system_sol
   body_class: planet
@@ -458,25 +370,19 @@
   parents:
   - body_sol
   related: []
-  placeholders: []
   offspring:
+  - id: city_lumen_free_city_metropolitan_area
+    offspring:
+      - id: loc_castelli_automobiles_plant
+      - id: loc_groundworks_district_lumen_free_city
+      - id: loc_lumen_free_trade_port
+  - id: body_deimos
   - id: body_phobos
-  - city_lumen_free_city_metropolitan_area
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  - id: idea_new_016
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   controlling_factions:
   - fac_new_001
   system_role: orbital_body
@@ -525,23 +431,11 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   system_role: orbital_body
   star_system: system_sol
   body_class: asteroid
@@ -586,23 +480,11 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   system_role: orbital_body
   star_system: system_sol
   body_class: planet
@@ -647,23 +529,11 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   system_role: orbital_body
   star_system: system_sol
   body_class: moon
@@ -708,23 +578,11 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   system_role: orbital_body
   star_system: system_sol
   body_class: moon
@@ -757,21 +615,9 @@
   - IDEA-492
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
-  media_layers: {}
 - id: city_pontiferrum_harbor
   pretty_name: Pontiferrum Harbor
   name: Pontiferrum Harbor
@@ -788,10 +634,6 @@
   population:
     y6034: 40000
     y6038: 45000
-  notes: Main industrial port of the Ironclad Shipyard Republic on Nanhai. The city
-    is built around an artificial harbor in a volcanic island chain rich in metallic
-    resources and later contains multiple industrial and shipbuilding sites within
-    its quarters.
   environment_summary:
     status: lore_defined
     tags:
@@ -800,7 +642,7 @@
     - metallic_resource_rich
     sources:
     - IDEA-492
-    notes: High-level environmental exposure only.
+    summary: High-level environmental exposure only.
     data:
       setting:
       - artificial_harbor
@@ -814,7 +656,7 @@
     - island_chain
     sources:
     - IDEA-492
-    notes: Exposed geology summary for the location entry.
+    summary: Exposed geology summary for the location entry.
     data:
       major_features:
       - volcanic_island_chain
@@ -825,7 +667,7 @@
     - port_city
     sources:
     - IDEA-492
-    notes: City-scale location with strong industrial transformation; deeper ecological
+    summary: City-scale location with strong industrial transformation; deeper ecological
       detail not yet defined.
     data: {}
   derived_from:
@@ -833,20 +675,11 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Main industrial port of the Ironclad Shipyard Republic on Nanhai. The city is built around an artificial harbor in a volcanic island chain rich in metallic resources and later contains multiple industrial and shipbuilding sites within its quarters.
   tags: []
   end_year: null
-  media_layers: {}
 - id: planet_pluto
   pretty_name: Pluto
   name: Pluto
@@ -873,23 +706,11 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   system_role: orbital_body
   star_system: system_sol
   body_class: dwarf_planet
@@ -934,23 +755,14 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
-  offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  offspring:
+  - id: idea_nereidii_family
+    offspring:
+      - id: idea_amto_nereidii
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   system_role: orbital_body
   star_system: system_sol
   body_class: moon
@@ -997,23 +809,11 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   system_role: orbital_body
   star_system: system_sol
   body_class: moon
@@ -1058,23 +858,11 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   system_role: orbital_body
   star_system: system_sol
   body_class: moon
@@ -1105,24 +893,12 @@
   start_year: 5240
   parents: []
   related: []
-  placeholders: []
   offspring:
   - planet_noyanakh
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   wiki_mentions: []
   card_color: '#47604b'
 - id: planet_noyanakh
@@ -1141,34 +917,22 @@
     value: 5400000
   population:
     y0: 0
-  notes: Placeholder planetary entry for Bospor-related entity integration. Detailed
-    planetary properties still to be defined.
   start_year: 5246
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Placeholder planetary entry for Bospor-related entity integration. Detailed planetary properties still to be defined.
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: geo_kure_atoll
   pretty_name: Kure Atoll
   name: Kure Atoll
   type: location
   location_class: atoll
   parent_location: planet_earth
-  description: Remote coral atoll in the Northwestern Hawaiian Islands.
   tags:
   - earth
   - hawaii
@@ -1192,45 +956,36 @@
       - coral_atoll
       - low_lying_island
       - protected_ecology
-    notes: Placeholder summary for future card-tab content.
+    summary: Placeholder summary for future card-tab content.
   geology_summary:
     status: placeholder
     tags:
       - coral_formation
       - reef_structure
-    notes: Placeholder geology tab content.
+    summary: Placeholder geology tab content.
   hydrology_summary:
     status: placeholder
     tags:
       - lagoon
       - marine_exchange
-    notes: Placeholder hydrology tab content.
+    summary: Placeholder hydrology tab content.
   ecology_summary:
     status: placeholder
     tags:
       - seabird_habitat
       - marine_ecosystem
       - conservation_area
-    notes: Placeholder ecology tab content.
+    summary: Placeholder ecology tab content.
   start_year: null
   parents:
   - geo_northwestern_hawaiian_islands
   related: []
-  placeholders: []
   offspring: []
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Remote coral atoll in the Northwestern Hawaiian Islands.
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   wiki_mentions: []
 - id: geo_northwestern_hawaiian_islands
   pretty_name: Northwestern Hawaiian Islands
@@ -1254,35 +1009,23 @@
       - island_chain
       - coral_and_islet_systems
       - protected_ecology
-    notes: Placeholder summary for future card-tab content.
+    summary: Placeholder summary for future card-tab content.
   ecology_summary:
     status: placeholder
     tags:
       - seabird_habitat
       - marine_ecosystem
       - conservation_area
-    notes: Placeholder ecology tab content.
+    summary: Placeholder ecology tab content.
   start_year: null
   parents:
   - loc_hawaii
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   wiki_mentions: []
   card_color: '#5d8185'
 - id: site_mcas_futenma
@@ -1292,9 +1035,6 @@
   location_class: site
   location_role: military_air_station
   parent_location: planet_earth
-  description: United States Marine Corps air station in Ginowan, Okinawa.
-  notes: Parented directly to planet_earth for now until a Japan/Okinawa location
-    chain is added.
   coords:
     type: point
     x: 127.761
@@ -1315,37 +1055,31 @@
     - urban_embedded_base
     - airfield
     - military_installation
-    notes: Placeholder summary for future card-tab content.
+    summary: Placeholder summary for future card-tab content.
   hydrology_summary:
     status: placeholder
     tags:
     - island_drainage
     - coastal_weather_exposure
-    notes: Placeholder hydrology tab content.
+    summary: Placeholder hydrology tab content.
   ecology_summary:
     status: placeholder
     tags:
     - heavily_modified_site
     - adjacent_urban_ecology
-    notes: Placeholder ecology tab content.
+    summary: Placeholder ecology tab content.
   start_year: 1946
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    United States Marine Corps air station in Ginowan, Okinawa.
+    
+    Parented directly to planet_earth for now until a Japan/Okinawa location chain is added.
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: loc_central_asian_steppe_cog
   pretty_name: Central Asian Steppe CoG Site
   name: Central Asian Steppe CoG Site
@@ -1353,11 +1087,6 @@
   location_class: macro_site
   location_role: megastructure_foundation_region
   parent_location: planet_earth
-  description: Physical siting region of the Center of Gravity megastructure in the
-    Central Asian steppes.
-  notes: Geographic anchor for the CoG urban aggregate. City-scale social, infrastructural,
-    and internal structural content should be represented on city_cog rather than
-    here.
   climate_tags:
   - continental
   - steppe
@@ -1368,25 +1097,19 @@
     - open_steppe
     - engineered_groundworks
     - megastructure_host_region
-    notes: Placeholder summary for future location card content.
+    summary: Placeholder summary for future location card content.
   start_year: 2884
   entry_status: stub
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Physical siting region of the Center of Gravity megastructure in the Central Asian steppes.
+    
+    Geographic anchor for the CoG urban aggregate. City-scale social, infrastructural, and internal structural content should be represented on city_cog rather than here.
   tags: []
   end_year: null
   derived_from: []
-  media_layers: {}
 - id: loc_cog_breach_vent_tunnel
   pretty_name: CoG Breach Vent Tunnel
   name: CoG Breach Vent Tunnel
@@ -1394,30 +1117,18 @@
   location_class: internal_passage
   location_role: clandestine_exit_route
   parent_location: loc_central_asian_steppe_cog
-  description: Old ventilation shaft segment within the declining Center of Gravity
-    whose structure cracked open at an opportune point, creating a clandestine physical
-    exit from the quarantined megastructure.
-  notes: Initially exploited by a late-CoG gang as a real escape route, later used
-    for selected extractions, paid passage, police crackdown operations, and covert
-    regime reuse.
   start_year: 5742
   entry_status: stub
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Old ventilation shaft segment within the declining Center of Gravity whose structure cracked open at an opportune point, creating a clandestine physical exit from the quarantined megastructure.
+    
+    Initially exploited by a late-CoG gang as a real escape route, later used for selected extractions, paid passage, police crackdown operations, and covert regime reuse.
   tags: []
   end_year: null
   derived_from: []
-  media_layers: {}
 - id: geo_spain
   pretty_name: Spain
   name: Spain
@@ -1437,23 +1148,14 @@
   parents:
   - geo_europe
   related: []
-  placeholders: []
   offspring:
   - id: city_madrid
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+    offspring:
+      - id: idea_new_013
+  - id: idea_spanish_contribution_to_the_superpower_wars
   tags: []
   end_year: 2115
   derived_from: []
-  media_layers: {}
   wiki_mentions: []
   card_color: '#a5a264'
   start_event: evt_new_005
@@ -1474,22 +1176,12 @@
   parents:
   - geo_spain
   related: []
-  placeholders: []
-  offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  offspring:
+  - id: idea_new_013
   tags: []
   end_year: null
   derived_from: []
-  media_layers: {}
+  wiki_mentions: []
 - id: geo_italy
   pretty_name: Italy
   name: Italy
@@ -1508,22 +1200,14 @@
   entry_status: stub
   parents: []
   related: []
-  placeholders: []
-  offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  offspring:
+  - id: sf_eco_sicily_draft
+    offspring:
+      - id: idea_new_015
   tags: []
   end_year: null
   derived_from: []
-  media_layers: {}
+  wiki_mentions: []
 - id: city_rome
   pretty_name: Rome
   name: Rome
@@ -1540,22 +1224,10 @@
   entry_status: stub
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
-  media_layers: {}
 - id: geo_sweden
   pretty_name: Sweden
   name: Sweden
@@ -1575,22 +1247,10 @@
   parents:
   - loc_scandinavia
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
-  media_layers: {}
   wiki_mentions: []
   card_color: '#0a123a'
 - id: city_stockholm
@@ -1609,56 +1269,31 @@
   entry_status: stub
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
-  media_layers: {}
 - id: loc_new_001
   pretty_name: New Location
   name: Hamburg
   type: location
-  wiki_entry: ''
   parent_location: geo_alps
   associated_cultures: []
   derived_from_system_body: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   start_year: null
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
 - id: loc_draft_geo_europe_001
   pretty_name: Draft Map Area 001
   name: Draft Map Area 001
   type: location
   location_class: region
   parent_location: geo_europe
-  notes: Draft square map area created under Europe.
   bounds:
     type: bbox
     min_x: -16.868
@@ -1669,21 +1304,12 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
-  offspring: []
-  description: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  offspring:
+  - id: idea_test_subregion
+  wiki_entry: Draft square map area created under Europe.
   tags: []
   end_year: null
   derived_from: []
-  media_layers: {}
   wiki_mentions: []
   card_color: '#2b3e40'
 - id: loc_draft_geo_spain_001
@@ -1692,7 +1318,6 @@
   type: location
   location_class: region
   parent_location: geo_spain
-  notes: Draft rectangle map area created under Spain.
   bounds:
     type: bbox
     min_x: -2.282
@@ -1703,36 +1328,19 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Draft rectangle map area created under Spain.
   tags: []
   end_year: null
   derived_from: []
-  media_layers: {}
 - id: loc_state_bihar
   pretty_name: 'Bihar State, India'
   name: 'Bihar State, India'
   type: location
-  wiki_entry: Second Largest State in India
+  wiki_entry: |-
+    Second Largest State in India
   location_class: state
-  description: ''
-  notes: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   start_year: null
   end_year: null
@@ -1742,19 +1350,16 @@
   related: []
   wiki_mentions: []
   offspring: []
-  placeholders: []
   entry_status: ''
-  media_layers: {}
   card_color: '#6f9d33'
 - id: loc_draft_loc_central_asian_steppe_cog_001
-  map_image_fit: stretch_to_bounds
-  map_image_path: assets/maps/locations/loc_draft_loc_central_asian_steppe_cog_001/base_map_0.jpg
   pretty_name: Original CoG Site
   name: Original CoG Site
   type: location
+  wiki_entry: |-
+    Draft rectangle map area created under Central Asian Steppe CoG Site.
   location_class: region
   parent_location: loc_central_asian_steppe_cog
-  notes: Draft rectangle map area created under Central Asian Steppe CoG Site.
   bounds:
     type: bbox
     min_x: -12.42
@@ -1762,7 +1367,6 @@
     min_y: -7.627
     max_y: 7.635
   start_year: 2400
-  map_image_year: 0
   entry_status: draft
 - id: planet_equidorva
   pretty_name: Equidorva
@@ -1793,21 +1397,15 @@
   related:
   - sys_equidorva
   - body_equidorva_primary
-  placeholders: []
   offspring:
   - id: planet_equidorva_lumen
   - id: loc_region_planet_equidorva_001
   - id: loc_region_planet_equidorva_002
-  description: 'Empty planetary map root for Equidorva, ready for bottom-up geography generation.'
-  notes: 'Earthlike map frame derived from a 6,371 km radius, rendered as a 2:1 equirectangular surface.'
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  - id: loc_stutters_steppe
+  wiki_entry: |
+    Empty planetary map root for Equidorva, ready for bottom-up geography generation.
+    
+    Earthlike map frame derived from a 6,371 km radius, rendered as a 2:1 equirectangular surface.
   tags:
   - earthlike
   - planetary_root
@@ -1815,7 +1413,6 @@
   end_year: null
   derived_from: []
   entry_status: draft
-  media_layers: {}
   system_role: orbital_body
   star_system: sys_equidorva
   body_class: planet
@@ -1860,16 +1457,6 @@
   population:
     y0: 0
   start_year: null
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
@@ -1877,9 +1464,7 @@
   - planet_equidorva
   related: []
   offspring: []
-  placeholders: []
   entry_status: ''
-  media_layers: {}
   system_role: orbital_body
   star_system: sys_equidorva
   body_class: moon
@@ -1903,9 +1488,10 @@
   pretty_name: Bihar State
   name: Bihar State
   type: location
+  wiki_entry: |-
+    Draft rectangle map area created under Bihar State, India.
   location_class: region
   parent_location: loc_state_bihar
-  notes: Draft rectangle map area created under Bihar State, India.
   bounds:
     type: bbox
     min_x: -45.333
@@ -1956,16 +1542,6 @@
   - 145
   - 135
   legacy_system_entity_id: body_hygiea
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
@@ -1973,17 +1549,16 @@
   related: []
   wiki_mentions: []
   offspring: []
-  placeholders: []
   entry_status: ''
-  media_layers: {}
   card_color: '#0c0d10'
 - id: loc_draft_loc_new_004_001
   pretty_name: Draft Map Area 001
   name: Draft Map Area 001
   type: location
+  wiki_entry: |-
+    Draft rectangle map area created under Stutters Steppe.
   location_class: region
   parent_location: loc_new_004
-  notes: Draft rectangle map area created under Stutters Steppe.
   bounds:
     type: bbox
     min_x: -159.51
@@ -1996,6 +1571,8 @@
   pretty_name: Brothers High Plateau
   name: Brothers High Plateau
   type: location
+  wiki_entry: |-
+    Draft region polygon created under Equidorva.
   location_class: region
   location_role: map_region
   region_class: regions
@@ -2004,7 +1581,6 @@
   parent_entity: planet_equidorva
   parents:
   - planet_equidorva
-  notes: Draft region polygon created under Equidorva.
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2047,7 +1623,6 @@
   parent_entity: planet_equidorva
   parents:
   - planet_equidorva
-  notes: Draft region polygon created under Equidorva.
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2090,15 +1665,8 @@
       - '[-56.732, -28.366]'
   start_year: 2400
   entry_status: draft
-  description: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Draft region polygon created under Equidorva.
   tags: []
   end_year: null
   derived_from: []
@@ -2107,13 +1675,13 @@
   - planet_equidorva
   - tech_ceag
   offspring: []
-  placeholders: []
-  media_layers: {}
   card_color: '#486d54'
 - id: loc_region_loc_test_building_001
   pretty_name: 'Draft Regions Region 001'
   name: 'Draft Regions Region 001'
   type: location
+  wiki_entry: |-
+    Draft region polygon created under Test Building.
   location_class: region
   location_role: map_region
   region_class: regions
@@ -2122,7 +1690,6 @@
   parent_entity: loc_test_building
   parents:
     - loc_test_building
-  notes: 'Draft region polygon created under Test Building.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2151,6 +1718,8 @@
   pretty_name: 'Draft Regions Region 001'
   name: 'Draft Regions Region 001'
   type: location
+  wiki_entry: |-
+    Draft region polygon created under Test Building.
   location_class: region
   location_role: map_region
   region_class: regions
@@ -2159,46 +1728,6 @@
   parent_entity: loc_test_building
   parents:
     - loc_test_building
-  notes: 'Draft region polygon created under Test Building.'
-  bounds:
-    type: polygon
-    coordinate_space: map_world
-    points:
-      - [9.51, -38.597]
-      - [107.288, -22.597]
-      - [141.066, -66.152]
-      - [120.621, -119.486]
-      - [45.955, -116.375]
-      - [-8.712, -103.486]
-      - [26.844, -91.93]
-  geometry:
-    type: polygon
-    coordinate_space: map_world
-    points:
-      - [9.51, -38.597]
-      - [107.288, -22.597]
-      - [141.066, -66.152]
-      - [120.621, -119.486]
-      - [45.955, -116.375]
-      - [-8.712, -103.486]
-      - [26.844, -91.93]
-  start_year: 2400
-  entry_status: draft
-
-# ---------- loc_region_loc_test_building_001 | Draft Regions Region 001 ----------
-- id: loc_region_loc_test_building_001
-  pretty_name: 'Draft Regions Region 001'
-  name: 'Draft Regions Region 001'
-  type: location
-  location_class: region
-  location_role: map_region
-  region_class: regions
-  layer_kind: regions
-  parent_location: loc_test_building
-  parent_entity: loc_test_building
-  parents:
-    - loc_test_building
-  notes: 'Draft region polygon created under Test Building.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2229,6 +1758,8 @@
   pretty_name: 'Draft Regions Region 001'
   name: 'Draft Regions Region 001'
   type: location
+  wiki_entry: |-
+    Draft region polygon created under Test Building.
   location_class: region
   location_role: map_region
   region_class: regions
@@ -2237,7 +1768,6 @@
   parent_entity: loc_test_building
   parents:
     - loc_test_building
-  notes: 'Draft region polygon created under Test Building.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2249,7 +1779,6 @@
       - [45.955, -116.375]
       - [-8.712, -103.486]
       - [26.844, -91.93]
-      - [6.399, -76.375]
   geometry:
     type: polygon
     coordinate_space: map_world
@@ -2261,7 +1790,6 @@
       - [45.955, -116.375]
       - [-8.712, -103.486]
       - [26.844, -91.93]
-      - [6.399, -76.375]
   start_year: 2400
   entry_status: draft
 
@@ -2270,6 +1798,8 @@
   pretty_name: 'Draft Regions Region 001'
   name: 'Draft Regions Region 001'
   type: location
+  wiki_entry: |-
+    Draft region polygon created under Test Building.
   location_class: region
   location_role: map_region
   region_class: regions
@@ -2278,7 +1808,6 @@
   parent_entity: loc_test_building
   parents:
     - loc_test_building
-  notes: 'Draft region polygon created under Test Building.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2311,6 +1840,8 @@
   pretty_name: 'Draft Regions Region 001'
   name: 'Draft Regions Region 001'
   type: location
+  wiki_entry: |-
+    Draft region polygon created under Test Building.
   location_class: region
   location_role: map_region
   region_class: regions
@@ -2319,7 +1850,48 @@
   parent_entity: loc_test_building
   parents:
     - loc_test_building
-  notes: 'Draft region polygon created under Test Building.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [9.51, -38.597]
+      - [107.288, -22.597]
+      - [141.066, -66.152]
+      - [120.621, -119.486]
+      - [45.955, -116.375]
+      - [-8.712, -103.486]
+      - [26.844, -91.93]
+      - [6.399, -76.375]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [9.51, -38.597]
+      - [107.288, -22.597]
+      - [141.066, -66.152]
+      - [120.621, -119.486]
+      - [45.955, -116.375]
+      - [-8.712, -103.486]
+      - [26.844, -91.93]
+      - [6.399, -76.375]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_region_loc_test_building_001 | Draft Regions Region 001 ----------
+- id: loc_region_loc_test_building_001
+  pretty_name: 'Draft Regions Region 001'
+  name: 'Draft Regions Region 001'
+  type: location
+  wiki_entry: |-
+    Draft region polygon created under Test Building.
+  location_class: region
+  location_role: map_region
+  region_class: regions
+  layer_kind: regions
+  parent_location: loc_test_building
+  parent_entity: loc_test_building
+  parents:
+    - loc_test_building
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2350,13 +1922,12 @@
   pretty_name: Test Building
   name: Test Building
   type: location
-  wiki_entry: ''
-
-# ---------- loc_room_loc_classic_building_001 | Draft Room 001 ----------
 - id: loc_room_loc_classic_building_001
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -2365,7 +1936,6 @@
   parent_entity: loc_classic_building
   parents:
     - loc_classic_building
-  notes: 'Draft room polygon created inside Classic Building.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2392,6 +1962,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -2400,7 +1972,6 @@
   parent_entity: loc_classic_building
   parents:
     - loc_classic_building
-  notes: 'Draft room polygon created inside Classic Building.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2427,6 +1998,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -2435,7 +2008,6 @@
   parent_entity: loc_classic_building
   parents:
     - loc_classic_building
-  notes: 'Draft room polygon created inside Classic Building.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2460,6 +2032,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -2468,7 +2042,6 @@
   parent_entity: loc_classic_building
   parents:
     - loc_classic_building
-  notes: 'Draft room polygon created inside Classic Building.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2493,6 +2066,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -2501,7 +2076,6 @@
   parent_entity: loc_classic_building
   parents:
     - loc_classic_building
-  notes: 'Draft room polygon created inside Classic Building.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2526,6 +2100,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -2534,7 +2110,6 @@
   parent_entity: loc_classic_building
   parents:
     - loc_classic_building
-  notes: 'Draft room polygon created inside Classic Building.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2559,6 +2134,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -2567,7 +2144,6 @@
   parent_entity: loc_classic_building
   parents:
     - loc_classic_building
-  notes: 'Draft room polygon created inside Classic Building.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2592,6 +2168,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -2600,7 +2178,6 @@
   parent_entity: loc_classic_building
   parents:
     - loc_classic_building
-  notes: 'Draft room polygon created inside Classic Building.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2625,6 +2202,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building 2.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -2633,7 +2212,6 @@
   parent_entity: loc_classic_building_2
   parents:
     - loc_classic_building_2
-  notes: 'Draft room polygon created inside Classic Building 2.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2658,6 +2236,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building 2.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -2666,7 +2246,6 @@
   parent_entity: loc_classic_building_2
   parents:
     - loc_classic_building_2
-  notes: 'Draft room polygon created inside Classic Building 2.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2691,6 +2270,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building 2.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -2699,7 +2280,6 @@
   parent_entity: loc_classic_building_2
   parents:
     - loc_classic_building_2
-  notes: 'Draft room polygon created inside Classic Building 2.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2726,6 +2306,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building 2.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -2734,7 +2316,6 @@
   parent_entity: loc_classic_building_2
   parents:
     - loc_classic_building_2
-  notes: 'Draft room polygon created inside Classic Building 2.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2759,6 +2340,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building 2.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -2767,42 +2350,6 @@
   parent_entity: loc_classic_building_2
   parents:
     - loc_classic_building_2
-  notes: 'Draft room polygon created inside Classic Building 2.'
-  bounds:
-    type: polygon
-    coordinate_space: map_world
-    points:
-      - [-4.226, 16.283]
-      - [-4.475, -5.78]
-      - [23.989, -5.842]
-      - [24.051, 16.034]
-      - [12.989, 6.96]
-  geometry:
-    type: polygon
-    coordinate_space: map_world
-    points:
-      - [-4.226, 16.283]
-      - [-4.475, -5.78]
-      - [23.989, -5.842]
-      - [24.051, 16.034]
-      - [12.989, 6.96]
-  start_year: 2400
-  entry_status: draft
-
-# ---------- loc_room_loc_classic_building_2_001 | Draft Room 001 ----------
-- id: loc_room_loc_classic_building_2_001
-  pretty_name: 'Draft Room 001'
-  name: 'Draft Room 001'
-  type: location
-  location_class: room
-  location_role: indoor_room
-  room_class: room
-  layer_kind: rooms
-  parent_location: loc_classic_building_2
-  parent_entity: loc_classic_building_2
-  parents:
-    - loc_classic_building_2
-  notes: 'Draft room polygon created inside Classic Building 2.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2829,6 +2376,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building 2.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -2837,7 +2386,6 @@
   parent_entity: loc_classic_building_2
   parents:
     - loc_classic_building_2
-  notes: 'Draft room polygon created inside Classic Building 2.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2864,6 +2412,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building 2.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -2872,7 +2422,42 @@
   parent_entity: loc_classic_building_2
   parents:
     - loc_classic_building_2
-  notes: 'Draft room polygon created inside Classic Building 2.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+      - [12.989, 6.96]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+      - [12.989, 6.96]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_2_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_2_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building 2.
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building_2
+  parent_entity: loc_classic_building_2
+  parents:
+    - loc_classic_building_2
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2897,6 +2482,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building 2.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -2905,7 +2492,6 @@
   parent_entity: loc_classic_building_2
   parents:
     - loc_classic_building_2
-  notes: 'Draft room polygon created inside Classic Building 2.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2930,6 +2516,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building 2.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -2938,7 +2526,6 @@
   parent_entity: loc_classic_building_2
   parents:
     - loc_classic_building_2
-  notes: 'Draft room polygon created inside Classic Building 2.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2963,6 +2550,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building 2.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -2971,7 +2560,6 @@
   parent_entity: loc_classic_building_2
   parents:
     - loc_classic_building_2
-  notes: 'Draft room polygon created inside Classic Building 2.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -2996,6 +2584,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building 2.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -3004,7 +2594,6 @@
   parent_entity: loc_classic_building_2
   parents:
     - loc_classic_building_2
-  notes: 'Draft room polygon created inside Classic Building 2.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -3029,6 +2618,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building 2.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -3037,7 +2628,6 @@
   parent_entity: loc_classic_building_2
   parents:
     - loc_classic_building_2
-  notes: 'Draft room polygon created inside Classic Building 2.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -3062,6 +2652,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building 2.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -3070,7 +2662,6 @@
   parent_entity: loc_classic_building_2
   parents:
     - loc_classic_building_2
-  notes: 'Draft room polygon created inside Classic Building 2.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -3095,6 +2686,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building 2.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -3103,7 +2696,6 @@
   parent_entity: loc_classic_building_2
   parents:
     - loc_classic_building_2
-  notes: 'Draft room polygon created inside Classic Building 2.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -3128,6 +2720,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building 2.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -3136,7 +2730,6 @@
   parent_entity: loc_classic_building_2
   parents:
     - loc_classic_building_2
-  notes: 'Draft room polygon created inside Classic Building 2.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -3163,6 +2756,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building 2.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -3171,7 +2766,6 @@
   parent_entity: loc_classic_building_2
   parents:
     - loc_classic_building_2
-  notes: 'Draft room polygon created inside Classic Building 2.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -3196,6 +2790,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building 2.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -3204,7 +2800,6 @@
   parent_entity: loc_classic_building_2
   parents:
     - loc_classic_building_2
-  notes: 'Draft room polygon created inside Classic Building 2.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -3229,6 +2824,8 @@
   pretty_name: 'Draft Room 001'
   name: 'Draft Room 001'
   type: location
+  wiki_entry: |-
+    Draft room polygon created inside Classic Building 2.
   location_class: room
   location_role: indoor_room
   room_class: room
@@ -3237,7 +2834,6 @@
   parent_entity: loc_classic_building_2
   parents:
     - loc_classic_building_2
-  notes: 'Draft room polygon created inside Classic Building 2.'
   bounds:
     type: polygon
     coordinate_space: map_world
@@ -3281,23 +2877,11 @@
   parents:
   - body_uranus
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   wiki_mentions: []
   location_class: moon
   location_role: orbital_body
@@ -3327,25 +2911,13 @@
   parents: []
   related:
   - body_uranus_ariel
-  placeholders: []
   offspring:
   - body_uranus_ariel
   - body_miranda
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   wiki_mentions: []
   location_class: planet
   location_role: orbital_body
@@ -3375,23 +2947,11 @@
   parents:
   - planet_earth
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   wiki_mentions: []
   location_class: moon
   location_role: orbital_body
@@ -3400,7 +2960,10 @@
   pretty_name: Equidorva Primary
   name: Equidorva Primary
   type: location
-  wiki_entry: ''
+  wiki_entry: |-
+    G-class main-sequence star used as Equidorva's Earthlike primary.
+    
+    Solar analogue baseline, roughly 1 solar mass and luminosity.
   system_role: orbital_body
   star_system: sys_equidorva
   body_class: star
@@ -3422,17 +2985,7 @@
   - sys_equidorva
   related:
   - body_equidorva
-  placeholders: []
   offspring: []
-  description: G-class main-sequence star used as Equidorva's Earthlike primary.
-  notes: 'Solar analogue baseline, roughly 1 solar mass and luminosity.'
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags:
   - g_class_star
   - solar_analogue
@@ -3440,7 +2993,6 @@
   end_year: null
   derived_from: []
   entry_status: draft
-  media_layers: {}
   wiki_mentions: []
   location_class: star
   location_role: orbital_body
@@ -3449,7 +3001,6 @@
   pretty_name: Hawaii
   name: Hawaii
   type: location
-  wiki_entry: ''
   wiki_mentions: []
   derived_from: []
   location_class: state
@@ -3460,7 +3011,6 @@
   pretty_name: United States of America
   name: United States of America
   type: location
-  wiki_entry: ''
   wiki_mentions: []
   derived_from:
   - idea_new_026
@@ -3473,7 +3023,6 @@
   name: North America
   type: location
   card_color: '#394878'
-  wiki_entry: ''
   wiki_mentions: []
   derived_from: []
   location_class: continent
@@ -3483,7 +3032,6 @@
   pretty_name: India
   name: India
   type: location
-  wiki_entry: ''
   wiki_mentions: []
   derived_from:
   - idea_new_027
@@ -3493,31 +3041,20 @@
   pretty_name: Australia
   name: Australia
   type: location
-  wiki_entry: ''
   wiki_mentions: []
   derived_from:
   - idea_new_027
   location_class: country
   card_color: '#75361f'
-  description: ''
-  notes: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   start_year: null
   end_year: null
   parents:
   - planet_earth
   related: []
-  offspring: []
-  placeholders: []
+  offspring:
+  - id: loc_victoria_state_australia
   entry_status: ''
-  media_layers: {}
 - id: body_miranda
   pretty_name: 'Miranda, Moon of Uranus'
   name: Miranda
@@ -3543,32 +3080,19 @@
   parents:
   - body_uranus
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   wiki_mentions: []
   location_class: moon
   location_role: orbital_body
   card_color: '#555762'
 - id: loc_hemsbrook_l_beck_system
-  pretty_name: 'Hebsbrook, Lübeck System'
-  name: 'Hebsbrook, Lübeck System'
+  pretty_name: 'Hebsbrook, LÃ¼beck System'
+  name: 'Hebsbrook, LÃ¼beck System'
   type: location
-  wiki_entry: ''
   location_class: planet
   wiki_mentions: []
   card_color: '#2d5a4c'
@@ -3578,7 +3102,6 @@
   pretty_name: Western Europe
   name: Western Europe
   type: location
-  wiki_entry: ''
   wiki_mentions: []
   derived_from: []
   location_class: region
@@ -3591,7 +3114,6 @@
   pretty_name: France Ecoregion
   name: France Ecoregion
   type: location
-  notes: Draft polygon created from the Ecoregions map layer under Central Europe.
   layer_kind: ecoregions
   parent_entity: geo_central_europe
   geometry:
@@ -3614,21 +3136,12 @@
   parents:
   - geo_france
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Draft polygon created from the Ecoregions map layer under Central Europe.
   tags: []
   end_year: null
   derived_from: []
-  media_layers: {}
   wiki_mentions: []
   location_class: region
   location_role: map_region
@@ -3659,23 +3172,11 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   wiki_mentions: []
   location_class: stellar_system
   location_role: star_system
@@ -3704,23 +3205,11 @@
   start_year: 1672
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   wiki_mentions: []
   location_class: moon
   location_role: orbital_body
@@ -3749,24 +3238,12 @@
   start_year: -45000000
   parents: []
   related: []
-  placeholders: []
   offspring:
   - id: body_iapetus
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: 5000000000
   derived_from: []
   entry_status: ''
-  media_layers: {}
   wiki_mentions: []
   location_class: planet
   location_role: orbital_body
@@ -3795,26 +3272,14 @@
   start_year: null
   parents: []
   related: []
-  placeholders: []
   offspring:
   - id: body_proteus
   - body_triton
   - planet_nereid
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   wiki_mentions: []
   location_class: planet
   location_role: orbital_body
@@ -3844,23 +3309,11 @@
   parents:
   - planet_jupiter
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   wiki_mentions: []
   location_class: moon
   location_role: orbital_body
@@ -3868,7 +3321,6 @@
   pretty_name: Noarille
   name: Noarille
   type: location
-  wiki_entry: ''
   location_class: planet
   wiki_mentions: []
   card_color: '#100f1d'
@@ -3880,7 +3332,10 @@
   pretty_name: Equidorva System
   name: Equidorva System
   type: location
-  wiki_entry: ''
+  wiki_entry: |-
+    Earthlike development sandbox centered on Equidorva, a habitable-zone terrestrial planet orbiting a G-class main-sequence star.
+    
+    Bottom-up planet construction root for Equidorva.
   system_role: star_system
   dataset: null
   system_class: stellar_system
@@ -3888,18 +3343,8 @@
   related:
   - body_equidorva_primary
   - body_equidorva
-  placeholders: []
   offspring:
   - id: body_equidorva_primary
-  description: 'Earthlike development sandbox centered on Equidorva, a habitable-zone terrestrial planet orbiting a G-class main-sequence star.'
-  notes: Bottom-up planet construction root for Equidorva.
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags:
   - g_class_star
   - habitable_zone
@@ -3908,7 +3353,6 @@
   end_year: null
   derived_from: []
   entry_status: draft
-  media_layers: {}
   wiki_mentions: []
   location_class: stellar_system
   location_role: star_system
@@ -3919,7 +3363,6 @@
   type: location
   card_color: '#3e3050'
   location_class: site
-  wiki_entry: ''
   wiki_mentions: []
   parents:
   - city_lumen_free_city_metropolitan_area
@@ -3950,23 +3393,11 @@
   parents:
   - body_saturn
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   wiki_mentions: []
   location_class: moon
   location_role: orbital_body
@@ -3996,23 +3427,11 @@
   parents:
   - planet_mars
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   wiki_mentions: []
   location_class: moon
   location_role: orbital_body
@@ -4042,25 +3461,480 @@
   parents:
   - planet_pluto
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: |
+  wiki_entry: |-
     Testholder Charon
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
-  media_layers: {}
   wiki_mentions: []
   location_class: moon
   location_role: orbital_body
   card_color: '#2c2c38'
+- id: loc_l_beck_system
+  pretty_name: Lübeck System
+  name: Lübeck System
+  type: location
+  card_color: '#122426'
+  location_class: star_system
+  offspring:
+  - loc_hemsbrook_l_beck_system
+  - pop_habil_family_of_l_beck
+  related:
+  - fac_transfer_hansa
+  wiki_entry: ''
+  wiki_mentions: []
+  start_year: 3990
+  end_year: 27393
+- id: body_sol
+  pretty_name: Sol
+  name: Sol
+  type: location
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: star
+  parent_body: null
+  location_entity: null
+  mass_kg: 1.98847e30
+  radius_m: 696340000
+  semi_major_axis_m: 0
+  eccentricity: 0.0
+  inclination_deg: 0.0
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color:
+  - 255
+  - 220
+  - 120
+  start_year: null
+  parents: []
+  related: []
+  offspring:
+  - id: planet_mercury
+  - id: planet_mars
+    offspring:
+      - id: city_lumen_free_city_metropolitan_area
+        offspring: '[{''id'': ''loc_castelli_automobiles_plant''}, {''id'': ''loc_groundworks_district_lumen_free_city''}, {''id'': ''loc_lumen_free_trade_port''}]'
+      - id: body_deimos
+      - id: body_phobos
+      - id: idea_new_016
+  tags: []
+  end_year: null
+  derived_from: []
+  entry_status: ''
+  wiki_mentions: []
+  location_class: star
+  location_role: orbital_body
+- id: loc_acapulco_system
+  pretty_name: Acapulco System
+  name: Acapulco System
+  type: location
+  location_class: stellar_system
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: loc_aegyptus
+  pretty_name: Aegyptus
+  name: Aegyptus
+  type: location
+  card_color: '#9d9b6c'
+  location_class: planet
+  wiki_entry: ''
+  wiki_mentions:
+  - Seven Kingdoms of the Ni
+  - loc_river_gi_delta_aegyptus
+  offspring:
+  - id: loc_river_gi_delta_aegyptus
+- id: loc_akkad_babylon_system
+  pretty_name: 'Akkad, Babylon System'
+  name: 'Akkad, Babylon System'
+  type: location
+  card_color: '#151b48'
+  location_class: planet
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring:
+  - id: fac_csg_babylon_tribe
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents:
+  - sys_babylon
+  related: []
+  entry_status: ''
+- id: loc_angermansland_grand_carperies
+  pretty_name: Angermansland Grand Carperies
+  name: Angermansland Grand Carperies
+  type: location
+  location_class: site
+  wiki_entry: ''
+  offspring: []
+- id: loc_atlantic_ocean
+  pretty_name: Atlantic Ocean
+  name: Atlantic Ocean
+  type: location
+  card_color: '#1a2235'
+  location_class: region
+  parents:
+  - planet_earth
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring:
+  - id: loc_greenland
+    offspring:
+      - id: loc_northeast_greenland_national_park
+- id: loc_black_sea
+  pretty_name: Black Sea
+  name: Black Sea
+  type: location
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring:
+  - id: loc_danube_delta
+- id: loc_classic_building_2
+  pretty_name: Classic Building 2
+  name: Classic Building 2
+  type: location
+  location_class: building
+  wiki_entry: ''
+  offspring:
+  - id: loc_room_loc_classic_building_2_001
+- id: loc_compost_temple_complex_of_whicker
+  pretty_name: Compost Temple Complex of Whicker
+  name: Compost Temple Complex of Whicker
+  type: location
+  card_color: '#23231e'
+  derived_from: []
+  location_class: site
+  parents:
+  - loc_whicker
+  related: []
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring:
+  - id: cultasp_earthworm_god_of_the_harvest_of_whicker
+- id: loc_danube_delta
+  pretty_name: Danube Delta
+  name: Danube Delta
+  type: location
+  location_class: region
+  parents:
+  - loc_romania
+  - loc_ukraine
+  - loc_black_sea
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: loc_estonia
+  pretty_name: Estonia
+  name: Estonia
+  type: location
+  location_class: country
+  wiki_entry: ''
+  offspring: []
+- id: loc_golden_core
+  pretty_name: Golden Core
+  name: Golden Core
+  type: location
+  card_color: '#26251c'
+  derived_from:
+  - loc_golden_core
+  location_class: cluster
+  offspring: []
+  wiki_entry: ''
+  wiki_mentions: []
+- id: loc_greenland
+  pretty_name: Greenland
+  name: Greenland
+  type: location
+  card_color: '#798d8a'
+  card_header_color: '#5d818d'
+  location_class: region
+  parents:
+  - loc_atlantic_ocean
+  wiki_entry: ''
+  wiki_field_colors:
+    intro: '#305021'
+  wiki_mentions: []
+  offspring:
+  - id: loc_northeast_greenland_national_park
+- id: loc_groundworks_district_lumen_free_city
+  pretty_name: 'Groundworks District, Lumen Free City'
+  name: 'Groundworks District, Lumen Free City'
+  type: location
+  card_color: '#b28745'
+  location_class: site
+  parents:
+  - city_lumen_free_city_metropolitan_area
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: loc_lumen_free_trade_port
+  pretty_name: Lumen Free Trade Port
+  name: Lumen Free Trade Port
+  type: location
+  location_class: site
+  parents:
+  - city_lumen_free_city_metropolitan_area
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: loc_murtensee
+  pretty_name: Murtensee
+  name: Murtensee
+  type: location
+  card_color: '#22283a'
+  location_class: planet
+  related:
+  - spec_dicrurus_macrocerus
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: loc_northeast_greenland_national_park
+  pretty_name: Northeast Greenland National Park
+  name: Northeast Greenland National Park
+  type: location
+  card_color: '#1c2625'
+  location_class: region
+  parents:
+  - loc_greenland
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: loc_outer_reaches
+  pretty_name: Outer Reaches
+  name: Outer Reaches
+  type: location
+  location_class: cluster
+  wiki_entry: ''
+  wiki_mentions:
+  - fac_transfer_hansa
+  offspring: []
+- id: loc_piscinis_system
+  pretty_name: Piscinis System
+  name: Piscinis System
+  type: location
+  card_color: '#5b7892'
+  location_class: stellar_system
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: loc_river_gi_delta_aegyptus
+  pretty_name: 'River Gi Delta, Aegyptus'
+  name: 'River Gi Delta, Aegyptus'
+  type: location
+  card_color: '#4b7034'
+  location_class: region
+  parents:
+  - loc_aegyptus
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: loc_romania
+  pretty_name: Romania
+  name: Romania
+  type: location
+  location_class: country
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring:
+  - id: loc_danube_delta
+- id: loc_scandinavia
+  pretty_name: Scandinavia
+  name: Scandinavia
+  type: location
+  card_color: '#131a26'
+  location_class: region
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring:
+  - id: geo_sweden
+    offspring:
+      - id: prod_saab_ab
+  parents:
+  - geo_europe
+- id: loc_shinogo_system
+  pretty_name: Shinogo System
+  name: Shinogo System
+  type: location
+  location_class: star_system
+  offspring:
+  - id: loc_noarille
+  wiki_entry: ''
+  wiki_mentions: []
+- id: loc_stutters_steppe
+  pretty_name: Stutters Steppe
+  name: Stutters Steppe
+  type: location
+  card_color: '#22261c'
+  card_header_color: '#344a22'
+  derived_from:
+  - loc_new_004
+  location_class: region
+  parents:
+  - planet_equidorva
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: loc_test_building
+  pretty_name: Test Building
+  name: Test Building
+  type: location
+  wiki_entry: ''
+  offspring:
+  - id: loc_region_loc_test_building_001
+- id: loc_test_building_2
+  pretty_name: Test Building 2
+  name: Test Building 2
+  type: location
+  wiki_entry: ''
+  offspring: []
+- id: loc_test_building_3
+  pretty_name: Test Building 3
+  name: Test Building 3
+  type: location
+  wiki_entry: ''
+  offspring: []
+- id: loc_ukraine
+  pretty_name: Ukraine
+  name: Ukraine
+  type: location
+  location_class: country
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring:
+  - id: loc_danube_delta
+- id: loc_victoria_state_australia
+  pretty_name: 'Victoria State, Australia'
+  name: 'Victoria State, Australia'
+  type: location
+  card_color: '#32553b'
+  location_class: state
+  parents:
+  - loc_australia
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: loc_whicker
+  pretty_name: Whicker
+  name: Whicker
+  type: location
+  card_color: '#706a52'
+  derived_from:
+  - loc_new_003
+  location_class: planet
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring:
+  - id: cultasp_earthworm_god_of_the_harvest_of_whicker
+  - id: loc_compost_temple_complex_of_whicker
+    offspring:
+      - id: cultasp_earthworm_god_of_the_harvest_of_whicker
+- id: sf_eco_sicily_draft
+  pretty_name: Sicily Draft Ecoregion
+  name: Sicily Draft Ecoregion
+  type: location
+  layer_kind: ecoregions
+  parent_entity: geo_italy
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points: '[[12.0, -36.7], [15.5, -36.8], [15.4, -38.1], [13.5, -38.4], [12.4, -37.6]]'
+  resolution_m_per_pixel: 100
+  coverage_mode: replaces_parent
+  start_year: null
+  entry_status: draft
+  parents:
+  - geo_italy
+  related:
+  - geo_italy
+  offspring:
+  - id: idea_new_015
+  wiki_entry: Draft planning polygon for a future Sicilian ecoregion entity. Parent remains Italy until a dedicated Sicily location exists.
+  tags: []
+  end_year: null
+  derived_from: []
+  wiki_mentions: []
+  location_class: region
+  location_role: map_region
+  region_class: ecoregions
+  parent_location: geo_italy
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points: '[[12.0, -36.7], [15.5, -36.8], [15.4, -38.1], [13.5, -38.4], [12.4, -37.6]]'
+- id: loc_kellerschacht
+  pretty_name: Kellerschacht
+  name: Kellerschacht
+  type: location
+  location_class: site
+  wiki_mentions:
+  - fac_teutonian_resurgence
+  - comp_wirkkern_exoskeleton_cores
+  - tech_exoskeleton_technology
+  card_color: '#09090d'
+  offspring: []
+  wiki_entry: 'The Kellerschacht was a GGO Deep Storage Facility that got discovered by the [[fac_teutonian_resurgence]] and became the primary source for [[Wirkkern Exoskeleton Cores]], the Teutonian name for GGO Era [[Exoskeleton Technology]]'
+  card_header_color: '#451f05'
+  tags: []
+  start_year: 5902
+  end_year: 6013
+  derived_from: []
+  parents: []
+  related: []
+  entry_status: ''
+- id: sys_babylon
+  pretty_name: Babylon System
+  name: Babylon System
+  type: location
+  system_role: ''
+  wiki_entry: ''
+  offspring:
+  - id: loc_akkad_babylon_system
+    offspring:
+      - id: fac_csg_babylon_tribe
+  - id: fac_house_egibi_of_the_babylon_system
+  - id: fac_csg_babylon_tribe
+  tags: []
+  start_year: 8333
+  end_year: 12700
+  derived_from: []
+  parents: []
+  related:
+  - inst_cultural_seeding_group
+  - loc_blue_sector
+  wiki_mentions: []
+  entry_status: ''
+  location_class: system
+  location_role: system
+  card_color: '#13172a'
+- id: loc_blue_sector
+  pretty_name: Blue Sector
+  name: Blue Sector
+  type: location
+  location_class: cluster
+  wiki_mentions: []
+  card_color: '#162758'
+  offspring: []
+  start_year: 9559
+  end_year: 20777
+- id: loc_eurasia
+  pretty_name: Eurasia
+  name: Eurasia
+  type: location
+  location_class: continent
+  wiki_mentions: []
+  parents:
+  - planet_earth
+  offspring:
+  - id: geo_europe
+    offspring:
+      - id: geo_spain
+        offspring: '[{''id'': ''idea_spanish_contribution_to_the_superpower_wars''}, {''id'': ''city_madrid'', ''offspring'': [{''id'': ''idea_new_013''}]}]'
+      - id: loc_new_idea
+        offspring: '[{''id'': ''geo_france'', ''offspring'': [{''id'': ''evt_new_001''}, {''id'': ''city_paris''}, {''id'': ''sf_draft_ecoregions_geo_central_europe_001''}]}]'
+      - id: loc_scandinavia
+        offspring: '[{''id'': ''geo_sweden'', ''offspring'': [{''id'': ''prod_saab_ab''}]}]'

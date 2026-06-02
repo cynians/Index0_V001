@@ -20,14 +20,6 @@ fields:
     type: string
     optional: true
 
-  description:
-    type: text
-    optional: true
-
-  notes:
-    type: text
-    optional: true
-
   wiki_entry:
     type: text
     optional: true
@@ -45,34 +37,6 @@ fields:
   wiki_field_colors:
     type: dict
     section: Metadata
-    optional: true
-
-  card_image:
-    type: string
-    optional: true
-
-  design_image:
-    type: string
-    optional: true
-
-  card_image_front:
-    type: string
-    optional: true
-
-  card_image_side:
-    type: string
-    optional: true
-
-  card_image_top:
-    type: string
-    optional: true
-
-  image_path:
-    type: string
-    optional: true
-
-  image:
-    type: string
     optional: true
 
   tags:
@@ -130,17 +94,8 @@ fields:
     section: Relations
     optional: true
 
-  placeholders:
-    type: string_list
-    section: Relations
-    optional: true
-
   entry_status:
     type: string
-    optional: true
-
-  media_layers:
-    type: dict
     optional: true
 
 # --------------------------------------------------
@@ -151,11 +106,7 @@ fields:
 #   pretty_name: Earth
 #   type: location
 #   name: earth
-#   description: Homeworld of humanity and a persistent anchor entity across many simulations.
-#   notes: Example core entry showing only broadly reusable fields.
-#   card_image: assets/cards/locations/planet_earth_card.png
-#   design_image: assets/cards/locations/planet_earth_design.png
-#   card_image_top: assets/cards/locations/planet_earth_top.png
+#   wiki_entry: Homeworld of humanity and a persistent anchor entity across many simulations.
 #   tags:
 #     - planet
 #     - homeworld
@@ -164,7 +115,3 @@ fields:
 #   derived_from:
 #     - IDEA-001
 #   entry_status: canon
-#   media_layers:
-#     default:
-#       kind: image
-#       description: Primary card image or map preview

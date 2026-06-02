@@ -2,7 +2,6 @@
   pretty_name: Terran Biome Diversity Project
   name: Terran BDP
   type: faction
-  description: 'Terran bioengineering organization active during the Planetary Period and associated with the design, release, and directed ecological shaping of engineered organisms.'
   faction_class: bioengineering_program
   parent_faction: null
   associated_cultures: []
@@ -17,27 +16,17 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: 'Terran bioengineering organization active during the Planetary Period and associated with the design, release, and directed ecological shaping of engineered organisms.'
   end_year: 17106
   derived_from: []
-  media_layers: {}
+  wiki_mentions: []
+  card_color: '#1c3518'
 - id: gang_cog_breach_route_crew
   pretty_name: CoG Breach Route Crew
   name: CoG Breach Route Crew
   type: faction
   faction_class: street_gang
-  description: Mixed late-CoG underclass gang rooted in one quarter but active as a smuggling and scavenging crew across sealed sectors. A member using inherited maintenance-line lore helped uncover the cracked vent route later used as a clandestine exit.
-  notes: Historically important but mostly erased from official memory.
   tags:
   - cog
   - gang
@@ -49,119 +38,69 @@
   entry_status: stub
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
+  wiki_entry: |-
+    Mixed late-CoG underclass gang rooted in one quarter but active as a smuggling and scavenging crew across sealed sectors. A member using inherited maintenance-line lore helped uncover the cracked vent route later used as a clandestine exit.
+    
+    Historically important but mostly erased from official memory.
   end_year: 5781
   derived_from: []
-  media_layers: {}
   wiki_mentions: []
   card_color: '#1c2624'
 - id: fac_sov_union
   pretty_name: Soviet Union
   name: Soviet Union
   type: faction
-  wiki_entry: ''
   derived_from:
   - idea_new_011
   start_year: 1918
   end_year: 1989
-  description: ''
-  notes: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   parents: []
   related: []
   offspring: []
-  placeholders: []
   entry_status: ''
-  media_layers: {}
 - id: fac_geigengeist
   pretty_name: Geigengeist Group
   name: Geigengeist Group
   type: faction
-  wiki_entry: |
-    The Geigengeist Group was a faction present on [[planet_enceladus]] in post GGO Sol.
+  wiki_entry: 'The Geigengeist Group was a faction present on [[planet_enceladus]] in post GGO Sol.'
   start_year: 8435
   end_year: 8694
-  description: ''
-  notes: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   derived_from: []
   parents:
   - body_enceladus
   related:
   - body_enceladus
-  offspring: []
-  placeholders: []
+  offspring:
+  - id: idea_new_023
   entry_status: ''
-  media_layers: {}
+  wiki_mentions: []
 - id: fac_panamericana
   pretty_name: Panamericana
   name: Panamericana
   type: faction
-  wiki_entry: ''
   related:
   - fac_new_002
   - event_panamericana_rockies_f22_discovery
   - formation_panam_land_forces_53th_mountain_guards
   parents: []
   start_year: 2086
-  description: ''
-  notes: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: 2427
   derived_from: []
   wiki_mentions: []
   offspring:
   - id: idea_new_025
-  placeholders: []
   entry_status: ''
-  media_layers: {}
   card_color: '#0d1926'
 - id: fac_transfer_hansa
   pretty_name: Transfer Hansa
   name: Transfer Hansa
   type: faction
-  wiki_entry: ''
-  start_year: 6916
+  start_year: 5029
   end_year: 16729
-  description: ''
-  notes: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   derived_from: []
   parents: []
@@ -169,49 +108,51 @@
   wiki_mentions: []
   offspring:
   - id: culture_transfer_hansa_frontier
-  placeholders: []
+    offspring:
+      - id: illust_transfer_hansa_frontier_logo
+  - id: idea_hanseatic_local_gulden
+  - id: inst_hansa_kontor_ports
+  - id: inst_transfer_hansa_frontier_charter
   entry_status: ''
-  media_layers: {}
   card_color: '#4e6861'
 - id: fac_retronationalis_successor_states
   pretty_name: Retronationalis Successor States
   name: Retronationalis Successor States
   type: faction
-  wiki_entry: ''
   start_year: 5947
   end_year: 6122
   start_event: evt_new_002
+  tags: []
+  derived_from: []
+  parents: []
+  related: []
+  wiki_mentions: []
+  offspring:
+  - id: idea_retronationalist_isolation_of_earth
+  entry_status: ''
+  card_color: '#261622'
 - id: fac_retronationalist_forced_of_the_border_rebellion
   pretty_name: Retronationalist Forces during Border Rebellion
   name: Retronationalist Forces during Border Rebellion
   type: faction
-  wiki_entry: ''
-  description: ''
-  notes: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
-  start_year: null
-  end_year: null
+  start_year: 5917
+  end_year: 5955
   derived_from: []
   parents: []
   related: []
-  offspring: []
-  placeholders: []
+  offspring:
+  - id: fac_teutonian_resurgence
+    offspring:
+      - id: form_teutonian_kaiserheer
+  - id: fac_polabian_commonwealth
   entry_status: ''
-  media_layers: {}
   wiki_mentions: []
   card_color: '#2f454a'
 - id: fac_sylph_corp
   pretty_name: Sylph Corp
   name: Sylph Corp
   type: faction
-  wiki_entry: ''
   wiki_mentions: []
   card_color: '#4e7e8a'
   start_year: 2244
@@ -220,7 +161,6 @@
   pretty_name: Teutonian Resurgence
   name: Teutonian Resurgence
   type: faction
-  wiki_entry: ''
   wiki_mentions: []
   card_color: '#0f1215'
   parents:
@@ -229,19 +169,72 @@
   - conf_borders_rebellion
   start_year: 5794
   end_year: 6185
-  description: ''
-  notes: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   derived_from: []
   offspring:
-  - form_teutonian_kaiserheer
-  placeholders: []
+  - id: form_teutonian_kaiserheer
   entry_status: ''
-  media_layers: {}
+  card_header_color: '#153240'
+- id: fac_ggo_hegemony
+  pretty_name: GGO Hegemony
+  name: GGO Hegemony
+  type: faction
+  card_color: '#bf7212'
+  offspring: []
+  related:
+  - conf_borders_rebellion
+  wiki_entry: ''
+  wiki_mentions: []
+  tags: []
+  start_year: 2437
+  end_year: 6034
+  derived_from: []
+  parents: []
+  entry_status: ''
+- id: fac_gold_sector
+  pretty_name: Gold Sector
+  name: Gold Sector
+  type: faction
+  card_color: '#928e44'
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: fac_new_001
+  pretty_name: New Faction
+  name: New Faction
+  type: faction
+  wiki_entry: ''
+  offspring: []
+- id: fac_polabian_commonwealth
+  pretty_name: Polabian Commonwealth
+  name: Polabian Commonwealth
+  type: faction
+  card_color: '#806d85'
+  parents:
+  - fac_retronationalist_forced_of_the_border_rebellion
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+- id: fac_house_egibi_of_the_babylon_system
+  pretty_name: House Egibi of the Babylon System
+  name: House Egibi of the Babylon System
+  type: faction
+  wiki_mentions: []
+  card_color: '#101738'
+  offspring: []
+  parents:
+  - sys_babylon
+  wiki_entry: urban banking /trade house tracing orginins back to pre contact era
+  start_year: 8425
+  end_year: 8919
+- id: fac_csg_babylon_tribe
+  pretty_name: CSG Babylon Tribe
+  name: CSG Babylon Tribe
+  type: faction
+  wiki_mentions: []
+  card_color: '#112c3a'
+  offspring: []
+  parents:
+  - inst_cultural_seeding_group
+  - sys_babylon
+  - loc_akkad_babylon_system

@@ -19,7 +19,7 @@ class EntityCard:
     SECTION_HEADER_H = 22
     IMAGE_TOP = 86
     IMAGE_H = 110
-    MEDIA_IMAGE_H = 176
+    MEDIA_IMAGE_H = 244
     LAUNCH_H = 24
     TIMELINE_TO_LAUNCH_GAP = 58
     RELATED_TIMELINE_OFFSET_Y = 34
@@ -48,7 +48,6 @@ class EntityCard:
         "related",
         "wiki_mentions",
         "offspring",
-        "placeholders",
     ]
     CORE_RELATION_FIELDS = set(STANDARD_RELATION_FIELDS)
     IDEA_GENERIC_FIELDS = {
@@ -56,9 +55,11 @@ class EntityCard:
         "pretty_name",
         "name",
         "type",
-        "description",
-        "notes",
+        "idea_class",
         "wiki_entry",
+        "description",
+        "date",
+        "media_path",
         "card_color",
         "card_header_color",
         "wiki_field_colors",
@@ -72,7 +73,6 @@ class EntityCard:
         "related",
         "wiki_mentions",
         "offspring",
-        "placeholders",
         "entry_status",
     }
 
@@ -86,10 +86,11 @@ class EntityCard:
         "Metadata",
     ]
 
-    TAB_ORDER = ["general", "overview", "temporal", "relations", "state", "media"]
+    SUBTAB_H = 22
+    TAB_ORDER = ["general", "overview", "temporal", "relations", "state", "simulation", "media"]
     DATASET_TAB_ORDER = {
-        "ideas": ["general", "overview", "temporal", "relations"],
-        "components": ["general", "overview", "temporal", "relations", "operational", "media"],
+        "ideas": ["general", "overview", "temporal", "relations", "media"],
+        "components": ["general", "overview", "temporal", "relations", "operational", "simulation", "media"],
     }
     TAB_LABELS = {
         "general": "General",
@@ -97,8 +98,15 @@ class EntityCard:
         "temporal": "Temporal",
         "relations": "Relations",
         "state": "State",
+        "simulation": "Simulation",
         "operational": "Operational",
         "media": "Media",
+    }
+    SIMULATION_SUBTAB_ORDER = ["space", "map", "world_gen"]
+    SIMULATION_SUBTAB_LABELS = {
+        "space": "Space Sim",
+        "map": "Map Sim",
+        "world_gen": "World Gen",
     }
     TAB_SECTIONS = {
         "general": [],
@@ -107,7 +115,13 @@ class EntityCard:
         "relations": ["Relations"],
         "state": ["State / Layout"],
         "operational": ["Operational"],
-        "media": [],
+        "simulation": [],
+        "media": ["Media"],
+    }
+    SIMULATION_SUBTAB_SECTIONS = {
+        "space": ["Simulation / Space Sim"],
+        "map": ["Simulation / Map Sim"],
+        "world_gen": ["Simulation / World Gen"],
     }
     TEMPORAL_FIELDS = {
         "year",
@@ -119,7 +133,48 @@ class EntityCard:
         "end_event",
         "end_condition",
         "era",
+    }
+    MEDIA_FIELDS = {
+        "media_path",
+    }
+    SPACE_SIM_FIELDS = {
+        "system_role",
+        "system_class",
+        "star_system",
+        "body_class",
+        "parent_body",
+        "location_entity",
+        "legacy_system_entity_id",
+        "derived_from_system_body",
+        "radius_m",
+        "semi_major_axis_m",
+        "eccentricity",
+        "inclination_deg",
+        "longitude_of_ascending_node_deg",
+        "argument_of_periapsis_deg",
         "mean_anomaly_deg_at_epoch",
+        "display_color",
+    }
+    MAP_SIM_FIELDS = {
+        "coords",
+        "bounds",
+        "geometry",
+        "layer_kind",
+        "parent_entity",
+        "owner_entity",
+        "coverage_mode",
+        "resolution_m_per_pixel",
+        "draw_order",
+        "map_projection",
+        "map_status",
+        "map_canvas_width_px",
+        "map_canvas_height_px",
+    }
+    WORLD_GEN_SIM_FIELDS = {
+        "environment_summary",
+        "geology_summary",
+        "hydrology_summary",
+        "ecology_summary",
     }
     TOOLBELT_TOOL_DEFINITIONS = [
         {
@@ -193,6 +248,7 @@ class EntityCard:
         self.dataset_name = dataset_name or self.entity.get("_dataset", self.entity.get("type", "entity"))
         self.world_model = world_model
         self.active_tab = "general"
+        self.active_simulation_subtab = "space"
         self.collapsed_sections = {
             "Identity": False,
             "Classification": False,
@@ -201,6 +257,10 @@ class EntityCard:
             "Relations": False,
             "State / Layout": True,
             "Metadata": False,
+            "Media": False,
+            "Simulation / Space Sim": False,
+            "Simulation / Map Sim": False,
+            "Simulation / World Gen": False,
         }
 
     def _is_idea_card(self):
@@ -244,8 +304,12 @@ class EntityCard:
         if self._is_idea_card():
             return self.DATASET_TAB_ORDER["ideas"]
         if self._is_component_card():
-            return self.DATASET_TAB_ORDER["components"]
-        return self.DATASET_TAB_ORDER.get(self.dataset_name, self.TAB_ORDER)
+            order = self.DATASET_TAB_ORDER["components"]
+        else:
+            order = self.DATASET_TAB_ORDER.get(self.dataset_name, self.TAB_ORDER)
+        if self._has_simulation_fields():
+            return order
+        return [tab_name for tab_name in order if tab_name != "simulation"]
 
     def toggle_section(self, section_name):
         if section_name in self.collapsed_sections:
@@ -254,18 +318,55 @@ class EntityCard:
     def set_active_tab(self, tab_name):
         if tab_name in self._tab_order():
             self.active_tab = tab_name
+            if tab_name == "simulation":
+                self.active_simulation_subtab = self._default_simulation_subtab()
+
+    def set_active_subtab(self, tab_name, subtab_name):
+        if tab_name == "simulation" and subtab_name in self.SIMULATION_SUBTAB_ORDER:
+            self.active_tab = tab_name
+            self.active_simulation_subtab = subtab_name
+            return True
+        return False
+
+    def _has_simulation_fields(self):
+        keys = set(self.entity.keys()) | set(self._get_schema_field_specs().keys())
+        simulation_keys = self.SPACE_SIM_FIELDS | self.MAP_SIM_FIELDS | self.WORLD_GEN_SIM_FIELDS
+        return bool(keys & simulation_keys)
+
+    def _active_subtab_order(self):
+        if self.active_tab == "simulation":
+            return self.SIMULATION_SUBTAB_ORDER
+        return []
+
+    def _default_simulation_subtab(self):
+        keys = set(self.entity.keys())
+        if keys & (self.SPACE_SIM_FIELDS | {"mass_kg"}) and self._is_space_sim_context():
+            return "space"
+        if keys & self.MAP_SIM_FIELDS:
+            return "map"
+        if keys & self.WORLD_GEN_SIM_FIELDS:
+            return "world_gen"
+        return self.active_simulation_subtab if self.active_simulation_subtab in self.SIMULATION_SUBTAB_ORDER else "space"
 
     def _visible_sections(self):
+        if self.active_tab == "simulation":
+            return self.SIMULATION_SUBTAB_SECTIONS.get(
+                self.active_simulation_subtab,
+                self.SIMULATION_SUBTAB_SECTIONS["space"],
+            )
         return self.TAB_SECTIONS.get(self.active_tab, self.TAB_SECTIONS["general"])
 
     def _is_media_mode(self):
         return self.active_tab == "media"
 
+    def _is_temporal_mode(self):
+        return self.active_tab == "temporal"
+
     def _is_general_mode(self):
         return self.active_tab == "general"
 
     def _uses_image_block(self):
-        return not self._is_general_mode() and not self._is_idea_card()
+        return self._is_media_mode() or self._is_temporal_mode()
 
     def _field_spec(self, field_key):
         return self._normalize_field_spec(self._get_schema_field_specs().get(field_key, {}))
@@ -408,10 +509,8 @@ class EntityCard:
             if self.entity.get("location_class") != "planet":
                 return False
             map_fields = (
-                "map_image_path",
                 "map_canvas_width_px",
                 "map_canvas_height_px",
-                "card_image_map",
             )
             return not any(bool(self.entity.get(field)) for field in map_fields)
 
@@ -633,31 +732,27 @@ class EntityCard:
         return self.IMAGE_H
 
     def _media_field_keys(self):
-        media_keys = {
-            "card_image",
-            "design_image",
-            "image_path",
-            "image",
-        }
+        return set(self.MEDIA_FIELDS)
 
-        for role_info in ScaleHelper.suggest_media_canvases(self.entity):
-            role = role_info.get("role")
-            if role:
-                media_keys.add(self._role_field_name(role))
+    def _is_space_sim_context(self):
+        return bool(
+            self.entity.get("system_role")
+            or self.entity.get("body_class")
+            or self.entity.get("star_system")
+            or self.entity.get("parent_body")
+            or self.entity.get("derived_from_system_body")
+            or self.dataset_name == "systems"
+        )
 
-        return media_keys
-
-    def _role_field_name(self, role_name):
-        role_name = (role_name or "card").lower()
-        if role_name == "card":
-            return "card_image"
-        return f"card_image_{role_name}"
-
-    def _resolve_role_image_reference(self, role_name):
-        field_name = self._role_field_name(role_name)
-        value = self.entity.get(field_name)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
+    def _simulation_section_for_key(self, key):
+        if key in self.SPACE_SIM_FIELDS:
+            return "Simulation / Space Sim"
+        if key == "mass_kg" and self._is_space_sim_context():
+            return "Simulation / Space Sim"
+        if key in self.MAP_SIM_FIELDS:
+            return "Simulation / Map Sim"
+        if key in self.WORLD_GEN_SIM_FIELDS:
+            return "Simulation / World Gen"
         return None
 
     def _get_general_wiki_text(self, card=None):
@@ -673,19 +768,7 @@ class EntityCard:
         if isinstance(wiki_text, str) and wiki_text.strip():
             return wiki_text
 
-        fallback_parts = []
-        description = self.entity.get("description")
-        notes = self.entity.get("notes")
-        image_ref = self._resolve_image_reference()
-
-        if description:
-            fallback_parts.append(str(description).strip())
-        if image_ref:
-            fallback_parts.append(f"![Primary image]({image_ref})")
-        if notes:
-            fallback_parts.append(str(notes).strip())
-
-        return "\n\n".join(part for part in fallback_parts if part)
+        return ""
 
     def _task_is_finished(self):
         return str(self.entity.get("entry_status") or "").strip().lower() in {
@@ -850,8 +933,6 @@ class EntityCard:
         own_id = str(self.entity.get("id") or card.get("entity_id") or "")
         refs = []
         for field_key in self.STANDARD_RELATION_FIELDS:
-            if field_key == "placeholders":
-                continue
             refs.extend(self._collect_relation_refs_from_value(self.entity.get(field_key)))
 
         entries = []
@@ -946,6 +1027,9 @@ class EntityCard:
         return field_type in {None, "string", "number", "text"}
 
     def _is_temporal_field(self, field_key, spec=None):
+        if self._simulation_section_for_key(field_key):
+            return False
+
         if field_key in self.TEMPORAL_FIELDS:
             return True
 
@@ -1018,9 +1102,6 @@ class EntityCard:
             "component_class",
             "idea_class",
             "location_class",
-            "system_role",
-            "system_class",
-            "body_class",
         ]
         classification = []
         for key in classification_keys:
@@ -1035,6 +1116,8 @@ class EntityCard:
             ("power_kw", entity.get("power_kw")),
         ]
         dims = [(key, value) for key, value in dims if key in entity or key in schema_field_specs]
+        if self._is_space_sim_context():
+            dims = [(key, value) for key, value in dims if key != "mass_kg"]
         overview_dims = [] if self._is_component_card() else dims
 
         relation_values = []
@@ -1042,6 +1125,10 @@ class EntityCard:
         metadata_values = []
         operational_values = []
         temporal_values = []
+        media_values = []
+        space_sim_values = []
+        map_sim_values = []
+        world_gen_sim_values = []
 
         media_keys = self._media_field_keys()
 
@@ -1062,12 +1149,10 @@ class EntityCard:
 
         handled_keys = {
             "id", "pretty_name", "name", "common_name", "binomial_name", "type", "_dataset",
-            "vehicle_class", "component_class", "idea_class", "location_class",
-            "system_role", "system_class", "body_class",
-            "dimension_x_m", "dimension_y_m", "dimension_z_m",
-            "mass_kg", "power_kw",
             "card_color", "card_header_color", "wiki_field_colors", "wiki_link_color",
         }
+        handled_keys.update(key for key, _ in classification)
+        handled_keys.update(key for key, _ in overview_dims)
 
         ordered_keys = []
         for key in schema_field_order:
@@ -1088,15 +1173,29 @@ class EntityCard:
 
             if key in {
                 "id", "pretty_name", "name", "common_name", "binomial_name", "type", "_dataset",
-                "vehicle_class", "component_class", "idea_class", "location_class",
-                "system_role", "system_class", "body_class",
-                "dimension_x_m", "dimension_y_m", "dimension_z_m",
-                "mass_kg", "power_kw",
             }:
                 continue
 
             spec = self._normalize_field_spec(schema_field_specs.get(key, {}))
             section_name = str(spec.get("section", "")).lower()
+
+            if key in {"description", "notes"}:
+                continue
+
+            if key in media_keys:
+                media_values.append((key, value))
+                continue
+
+            simulation_section = self._simulation_section_for_key(key)
+            if simulation_section == "Simulation / Space Sim":
+                space_sim_values.append((key, value))
+                continue
+            if simulation_section == "Simulation / Map Sim":
+                map_sim_values.append((key, value))
+                continue
+            if simulation_section == "Simulation / World Gen":
+                world_gen_sim_values.append((key, value))
+                continue
 
             if self._is_temporal_field(key, spec):
                 temporal_values.append((key, value))
@@ -1110,14 +1209,7 @@ class EntityCard:
                 operational_values.append((key, value))
                 continue
 
-            if self._is_component_card() and key in media_keys:
-                continue
-
-            if key in {"description", "notes", "tags", "entry_status"}:
-                metadata_values.append((key, value))
-                continue
-
-            if key in media_keys:
+            if key in {"tags", "entry_status"}:
                 metadata_values.append((key, value))
                 continue
 
@@ -1149,6 +1241,10 @@ class EntityCard:
             "Relations": relation_values,
             "State / Layout": state_values,
             "Metadata": metadata_values,
+            "Media": media_values,
+            "Simulation / Space Sim": space_sim_values,
+            "Simulation / Map Sim": map_sim_values,
+            "Simulation / World Gen": world_gen_sim_values,
             "Operational": dims + operational_values if self._is_component_card() else operational_values,
         }
 
@@ -1188,9 +1284,6 @@ class EntityCard:
 
     def _initial_edit_buffer(self, field_key, value):
         if field_key == "wiki_entry" and not (isinstance(value, str) and value.strip()):
-            description = self.entity.get("description")
-            if isinstance(description, str) and description.strip():
-                return description.strip()
             fallback_text = self._get_general_wiki_text()
             if fallback_text and fallback_text != CardWikiRenderer.EMPTY_HINT:
                 return fallback_text
@@ -1718,55 +1811,8 @@ class EntityCard:
         return wrapped_lines or [""]
 
     def _resolve_image_reference(self):
-        """
-        Resolve the active preview image using shared fallback order.
-
-        Preferred order:
-        1. card_image
-        2. design_image
-        3. card_image_front
-        4. card_image_side
-        5. card_image_top
-        6. any other role-specific card image fields suggested for the entity
-        7. image_path
-        8. image
-        """
-        explicit_order = [
-            "card_image",
-            "design_image",
-            "card_image_front",
-            "card_image_side",
-            "card_image_top",
-        ]
-
-        seen = set()
-
-        for key in explicit_order:
-            seen.add(key)
-            value = self.entity.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-
-        for role_info in ScaleHelper.suggest_media_canvases(self.entity):
-            role = role_info.get("role")
-            if not role:
-                continue
-
-            field_name = self._role_field_name(role)
-            if field_name in seen:
-                continue
-
-            seen.add(field_name)
-            value = self.entity.get(field_name)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-
-        for key in ("image_path", "image"):
-            value = self.entity.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-
-        return None
+        value = self.entity.get("media_path")
+        return value.strip() if isinstance(value, str) and value.strip() else None
 
     def _load_card_image_surface(self, image_path):
         if not image_path:
@@ -1828,10 +1874,59 @@ class EntityCard:
         }
         return labels.get(field_key, str(field_key or ""))
 
+    def _entity_display_label(self, entity):
+        if not isinstance(entity, dict):
+            return ""
+        for key in ("pretty_name", "name", "id"):
+            value = entity.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return ""
+
+    def _is_illustration_entity(self, entity):
+        if not isinstance(entity, dict):
+            return False
+        return (
+            str(entity.get("type") or "").strip().lower() == "idea"
+            and str(entity.get("idea_class") or "").strip().lower() == "illustration"
+        )
+
+    def _media_illustrations(self):
+        parent_id = str(self.entity.get("id") or "").strip()
+        if not parent_id or self.world_model is None:
+            return []
+
+        ideas = self.world_model.get_entities_by_dataset("ideas")
+        illustrations = []
+        for idea in ideas:
+            if not self._is_illustration_entity(idea):
+                continue
+            if parent_id not in self._relation_reference_values(idea.get("parents")):
+                continue
+            illustrations.append(idea)
+
+        def sort_key(idea):
+            date_value = str(idea.get("date") or "").strip()
+            label = self._entity_display_label(idea).lower()
+            return (date_value, label)
+
+        return sorted(illustrations, key=sort_key)
+
+    def _illustration_media_path(self, illustration):
+        if not isinstance(illustration, dict):
+            return ""
+        value = illustration.get("media_path")
+        return value.strip() if isinstance(value, str) else ""
+
     def layout_card(self, card, rect):
         section_hitboxes = []
         tab_hitboxes = []
+        subtab_hitboxes = []
         media_import_hitboxes = []
+        media_add_illustration_rect = None
+        media_illustration_rows = []
+        media_illustration_link_hitboxes = []
+        media_content_end_y = None
         editable_field_hitboxes = []
         content_editable_field_hitboxes = []
         relation_hitboxes = []
@@ -1857,6 +1952,7 @@ class EntityCard:
             "temporal": 82,
             "relations": 76,
             "state": 54,
+            "simulation": 92,
             "operational": 92,
             "media": 54,
         }
@@ -1875,6 +1971,33 @@ class EntityCard:
             tab_rect = pygame.Rect(tab_x, tab_y, tab_widths[tab_name], self.TAB_H)
             tab_hitboxes.append((tab_name, tab_rect))
             tab_x = tab_rect.right + tab_gap
+
+        tabs_bottom_y = tab_y + self.TAB_H
+        subtab_order = self._active_subtab_order()
+        if subtab_order:
+            subtab_y = tabs_bottom_y + 5
+            subtab_x = rect.x + 12
+            subtab_gap = 5
+            subtab_widths = {
+                "space": 86,
+                "map": 72,
+                "world_gen": 82,
+            }
+            available_subtab_w = max(120, rect.width - 24)
+            total_subtab_w = sum(subtab_widths[name] for name in subtab_order) + subtab_gap * max(0, len(subtab_order) - 1)
+            if total_subtab_w > available_subtab_w:
+                subtab_gap = 4
+                available_for_subtabs = available_subtab_w - subtab_gap * max(0, len(subtab_order) - 1)
+                base_total = sum(subtab_widths[name] for name in subtab_order)
+                scale = max(0.58, available_for_subtabs / max(1, base_total))
+                for subtab_name in subtab_order:
+                    subtab_widths[subtab_name] = max(48, int(subtab_widths[subtab_name] * scale))
+
+            for subtab_name in subtab_order:
+                subtab_rect = pygame.Rect(subtab_x, subtab_y, subtab_widths[subtab_name], self.SUBTAB_H)
+                subtab_hitboxes.append(("simulation", subtab_name, subtab_rect))
+                subtab_x = subtab_rect.right + subtab_gap
+            tabs_bottom_y = subtab_y + self.SUBTAB_H
 
         close_rect = pygame.Rect(rect.right - 24, rect.y + 12, 18, 18)
         edit_toggle_rect = pygame.Rect(rect.right - 48, rect.y + 12, 20, 20)
@@ -1898,29 +2021,44 @@ class EntityCard:
 
         image_rect = pygame.Rect(
             rect.x + 12,
-            rect.y + self.IMAGE_TOP,
+            tabs_bottom_y + 6,
             rect.width - 24,
             self._image_block_height(),
         )
 
         if self._is_media_mode():
-            row_y = image_rect.y + 104
-            button_w = 68
-            button_h = 18
-            row_gap = 20
-            button_x = image_rect.right - button_w - 10
-
-            for media_info in ScaleHelper.suggest_media_canvases(self.entity):
-                role_name = media_info["role"]
-                button_rect = pygame.Rect(button_x, row_y - 1, button_w, button_h)
-                media_import_hitboxes.append((role_name, button_rect))
-                row_y += row_gap
+            media_add_illustration_rect = pygame.Rect(image_rect.right - 148, image_rect.y + 8, 136, 24)
+            row_y = image_rect.y + 44
+            row_h = 58
+            row_gap = 8
+            button_w = 92
+            button_h = 22
+            for illustration in self._media_illustrations():
+                row_rect = pygame.Rect(image_rect.x + 8, row_y, image_rect.width - 16, row_h)
+                import_rect = pygame.Rect(row_rect.right - button_w - 8, row_rect.y + 18, button_w, button_h)
+                title_rect = pygame.Rect(row_rect.x + 60, row_rect.y + 6, max(40, row_rect.width - 166), self.TEXT_LINE_H + 4)
+                illustration_id = str(illustration.get("id") or "").strip()
+                if illustration_id and not self._illustration_media_path(illustration):
+                    media_import_hitboxes.append((illustration_id, import_rect))
+                if illustration_id:
+                    media_illustration_link_hitboxes.append((illustration_id, title_rect))
+                media_illustration_rows.append(
+                    {
+                        "id": illustration_id,
+                        "entity": illustration,
+                        "row_rect": row_rect,
+                        "import_rect": import_rect,
+                        "title_rect": title_rect,
+                    }
+                )
+                row_y = row_rect.bottom + row_gap
+            media_content_end_y = row_y
 
         current_y = image_rect.bottom + 12
         content_left = rect.x + 12
         content_right = rect.right - 12
         text_width = content_right - content_left
-        top_content_y = tab_y + self.TAB_H + 10
+        top_content_y = tabs_bottom_y + 10
         if not self._uses_image_block():
             current_y = top_content_y
 
@@ -2011,6 +2149,10 @@ class EntityCard:
                 )
         else:
             content_end_y = current_y
+            if media_content_end_y is not None:
+                content_end_y = max(content_end_y, media_content_end_y + 8)
+            if media_content_end_y is not None:
+                content_end_y = max(content_end_y, media_content_end_y + 8)
 
             for section_name in self._visible_sections():
                 section_rect = pygame.Rect(content_left, current_y, text_width, self.SECTION_HEADER_H)
@@ -2098,9 +2240,24 @@ class EntityCard:
                 image_rect = image_rect.move(0, -scroll_y)
 
             media_import_hitboxes = [
-                (role_name, button_rect.move(0, -scroll_y).clip(content_viewport_rect))
-                for role_name, button_rect in media_import_hitboxes
+                (illustration_id, button_rect.move(0, -scroll_y).clip(content_viewport_rect))
+                for illustration_id, button_rect in media_import_hitboxes
                 if button_rect.move(0, -scroll_y).colliderect(content_viewport_rect)
+            ]
+            if media_add_illustration_rect is not None:
+                shifted_add_rect = media_add_illustration_rect.move(0, -scroll_y)
+                media_add_illustration_rect = (
+                    shifted_add_rect.clip(content_viewport_rect)
+                    if shifted_add_rect.colliderect(content_viewport_rect)
+                    else None
+                )
+            for row in media_illustration_rows:
+                for rect_key in ("row_rect", "import_rect", "title_rect"):
+                    row[rect_key] = row[rect_key].move(0, -scroll_y)
+            media_illustration_link_hitboxes = [
+                (illustration_id, title_rect.move(0, -scroll_y).clip(content_viewport_rect))
+                for illustration_id, title_rect in media_illustration_link_hitboxes
+                if title_rect.move(0, -scroll_y).colliderect(content_viewport_rect)
             ]
 
             shifted_section_hitboxes = []
@@ -2128,9 +2285,20 @@ class EntityCard:
         elif not self._is_general_mode():
             section_draw_rects = list(section_hitboxes)
             media_import_hitboxes = [
-                (role_name, button_rect.clip(content_viewport_rect))
-                for role_name, button_rect in media_import_hitboxes
+                (illustration_id, button_rect.clip(content_viewport_rect))
+                for illustration_id, button_rect in media_import_hitboxes
                 if button_rect.colliderect(content_viewport_rect)
+            ]
+            if media_add_illustration_rect is not None:
+                media_add_illustration_rect = (
+                    media_add_illustration_rect.clip(content_viewport_rect)
+                    if media_add_illustration_rect.colliderect(content_viewport_rect)
+                    else None
+                )
+            media_illustration_link_hitboxes = [
+                (illustration_id, title_rect.clip(content_viewport_rect))
+                for illustration_id, title_rect in media_illustration_link_hitboxes
+                if title_rect.colliderect(content_viewport_rect)
             ]
             section_hitboxes = [
                 (section_name, section_rect.clip(content_viewport_rect))
@@ -2259,6 +2427,7 @@ class EntityCard:
         card["toolbelt_rect"] = toolbelt_rect
         card["toolbelt_rows"] = toolbelt_rows
         card["tab_hitboxes"] = tab_hitboxes
+        card["subtab_hitboxes"] = subtab_hitboxes
         card["image_rect"] = image_rect
         card["general_content_rect"] = general_content_rect
         card["task_checklist_rect"] = task_checklist_rect
@@ -2274,6 +2443,9 @@ class EntityCard:
         card["section_hitboxes"] = section_hitboxes
         card["section_draw_rects"] = section_draw_rects
         card["media_import_hitboxes"] = media_import_hitboxes
+        card["media_add_illustration_rect"] = media_add_illustration_rect
+        card["media_illustration_rows"] = media_illustration_rows
+        card["media_illustration_link_hitboxes"] = media_illustration_link_hitboxes
         card["editable_field_hitboxes"] = editable_field_hitboxes
         card["relation_hitboxes"] = relation_hitboxes
         card["wiki_link_hitboxes"] = wiki_link_hitboxes
@@ -2315,16 +2487,21 @@ class EntityCard:
                     content_rect.width,
                     card,
                 )
-            timeline_label_y = self.HEADER_H + self.TAB_H + 20 + general_h + 8
+            tabs_bottom_y = self.HEADER_H + 6 + self.TAB_H
+            timeline_label_y = tabs_bottom_y + 10 + general_h + 8
             timeline_y = timeline_label_y + 18
             center_y = timeline_y + 10
             launch_top = center_y + self.TIMELINE_TO_LAUNCH_GAP
             resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
             return max(320, resize_bottom + 8)
 
-        current_y = self.IMAGE_TOP + self._image_block_height() + 12
+        tabs_bottom_y = self.HEADER_H + 6 + self.TAB_H
+        if self._active_subtab_order():
+            tabs_bottom_y += 5 + self.SUBTAB_H
+
+        current_y = tabs_bottom_y + 6 + self._image_block_height() + 12
         if not self._uses_image_block():
-            current_y = self.HEADER_H + self.TAB_H + 20
+            current_y = tabs_bottom_y + 10
         probe_rect = pygame.Rect(0, 0, int(card.get("canvas_w", 420)), 0)
         key_column_w, value_column_w = self._get_table_column_widths(font, probe_rect, section_map)
 
@@ -2474,6 +2651,7 @@ class EntityCard:
             screen.blit(status_surface, (status_x, rect.y + 30))
 
         self._draw_tabs(screen, font, card)
+        self._draw_subtabs(screen, font, card)
         if self._is_general_mode():
             self._draw_general_content(screen, font, card)
         else:
@@ -2696,6 +2874,7 @@ class EntityCard:
                 "temporal": "Temp",
                 "relations": "Rel",
                 "state": "State",
+                "simulation": "Sim",
                 "operational": "Ops",
                 "media": "Media",
             }
@@ -2704,6 +2883,30 @@ class EntityCard:
             text_surface = font.render(label, True, text_color)
             text_rect = text_surface.get_rect(center=tab_rect.center)
             screen.blit(text_surface, text_rect)
+
+    def _draw_subtabs(self, screen, font, card):
+        for tab_name, subtab_name, subtab_rect in card.get("subtab_hitboxes", []):
+            if tab_name != self.active_tab:
+                continue
+
+            selected = tab_name == "simulation" and subtab_name == self.active_simulation_subtab
+            fill = (50, 58, 72) if selected else (32, 36, 46)
+            border = (184, 194, 214) if selected else (92, 102, 122)
+            text_color = (240, 244, 250) if selected else (176, 184, 198)
+
+            pygame.draw.rect(screen, fill, subtab_rect)
+            pygame.draw.rect(screen, border, subtab_rect, 1)
+
+            label = self.SIMULATION_SUBTAB_LABELS.get(subtab_name, subtab_name.title())
+            if font.size(label)[0] > subtab_rect.width - 8:
+                abbreviations = {
+                    "space": "Space",
+                    "map": "Map",
+                    "world_gen": "World",
+                }
+                label = abbreviations.get(subtab_name, label[:5])
+            text_surface = font.render(label, True, text_color)
+            screen.blit(text_surface, text_surface.get_rect(center=subtab_rect.center))
 
     def _draw_scaled_preview(self, screen, image_surface, target_rect):
         inner_rect = target_rect.inflate(-8, -8)
@@ -2718,53 +2921,105 @@ class EntityCard:
         screen.blit(scaled, scaled_rect)
 
     def _draw_media_block(self, screen, font, card, image_rect):
-        preview_rect = pygame.Rect(image_rect.x + 8, image_rect.y + 8, image_rect.width - 16, 88)
-        pygame.draw.rect(screen, (32, 34, 44), preview_rect)
-        pygame.draw.rect(screen, (100, 100, 110), preview_rect, 1)
+        header_y = image_rect.y + 8
+        title_surface = font.render("Illustrations", True, (232, 234, 240))
+        screen.blit(title_surface, (image_rect.x + 10, header_y + 4))
 
-        image_ref = self._resolve_image_reference()
-        image_surface = self._load_card_image_surface(image_ref)
+        add_rect = card.get("media_add_illustration_rect")
+        if add_rect is not None:
+            mouse_pos = pygame.mouse.get_pos()
+            fill = (64, 80, 114) if add_rect.collidepoint(mouse_pos) else (52, 62, 84)
+            pygame.draw.rect(screen, fill, add_rect)
+            pygame.draw.rect(screen, (184, 196, 220), add_rect, 1)
+            add_text = font.render("Add Illustration", True, (245, 245, 245))
+            screen.blit(add_text, add_text.get_rect(center=add_rect.center))
 
-        if image_surface is not None:
-            self._draw_scaled_preview(screen, image_surface, preview_rect)
-            label_text = "Preview image"
-        else:
-            no_image = font.render("No active preview image", True, (195, 195, 195))
-            no_image_rect = no_image.get_rect(center=preview_rect.center)
-            screen.blit(no_image, no_image_rect)
-            label_text = ScaleHelper.format_dimensions_label(self.entity)
+        rows = card.get("media_illustration_rows", [])
+        if not rows:
+            empty_rect = pygame.Rect(image_rect.x + 8, image_rect.y + 46, image_rect.width - 16, 58)
+            pygame.draw.rect(screen, (34, 37, 48), empty_rect)
+            pygame.draw.rect(screen, (88, 94, 112), empty_rect, 1)
+            empty_text = font.render("No illustration ideas yet", True, (174, 182, 198))
+            screen.blit(empty_text, (empty_rect.x + 10, empty_rect.y + 20))
+            return
 
-        label_surface = font.render(label_text, True, (195, 195, 195))
-        screen.blit(label_surface, (preview_rect.x + 6, preview_rect.y + 6))
+        import_buttons = {
+            illustration_id: button_rect
+            for illustration_id, button_rect in card.get("media_import_hitboxes", [])
+        }
 
-        divider_y = image_rect.y + 102
-        pygame.draw.line(screen, (90, 90, 100), (image_rect.x + 8, divider_y), (image_rect.right - 8, divider_y), 1)
+        for row in rows:
+            row_rect = row.get("row_rect")
+            illustration = row.get("entity")
+            if row_rect is None or not isinstance(illustration, dict):
+                continue
+            if not row_rect.colliderect(image_rect):
+                continue
 
-        row_y = divider_y + 8
-        text_x = image_rect.x + 10
+            pygame.draw.rect(screen, (34, 37, 48), row_rect)
+            pygame.draw.rect(screen, (82, 88, 106), row_rect, 1)
 
-        buttons_by_role = {role_name: rect for role_name, rect in card.get("media_import_hitboxes", [])}
+            thumb_rect = pygame.Rect(row_rect.x + 8, row_rect.y + 8, 42, row_rect.height - 16)
+            pygame.draw.rect(screen, (26, 28, 36), thumb_rect)
+            pygame.draw.rect(screen, (96, 104, 124), thumb_rect, 1)
 
-        for media_info in ScaleHelper.suggest_media_canvases(self.entity):
-            role_name = media_info["role"]
-            width_px = media_info["width"]
-            height_px = media_info["height"]
-            role_ref = self._resolve_role_image_reference(role_name)
-            status = "set" if role_ref else "empty"
+            image_ref = self._illustration_media_path(illustration)
+            image_surface = self._load_card_image_surface(image_ref)
+            if image_surface is not None:
+                self._draw_scaled_preview(screen, image_surface, thumb_rect)
+            else:
+                placeholder = font.render("empty", True, (136, 146, 166))
+                screen.blit(placeholder, placeholder.get_rect(center=thumb_rect.center))
 
-            line = f"{role_name.title()}: {width_px} x {height_px} [{status}]"
-            surf = font.render(line, True, (195, 195, 195))
-            screen.blit(surf, (text_x, row_y))
+            text_x = thumb_rect.right + 10
+            text_w = max(40, row_rect.width - 166)
+            label = self._entity_display_label(illustration) or "Untitled Illustration"
+            date = str(illustration.get("date") or "").strip()
+            label_line = label if not date else f"{label} ({date})"
+            title_rect = row.get("title_rect")
+            title_hovered = title_rect is not None and title_rect.collidepoint(pygame.mouse.get_pos())
+            label_color = (204, 224, 255) if title_hovered else (232, 234, 240)
+            label_surface = font.render(label_line, True, label_color)
+            screen.blit(label_surface, (text_x, row_rect.y + 8))
+            if title_hovered:
+                underline_y = row_rect.y + 8 + label_surface.get_height()
+                pygame.draw.line(
+                    screen,
+                    label_color,
+                    (text_x, underline_y),
+                    (min(text_x + label_surface.get_width(), row_rect.right - 10), underline_y),
+                    1,
+                )
 
-            button_rect = buttons_by_role.get(role_name)
+            description = str(illustration.get("description") or "").strip()
+            for line_index, line in enumerate(self._wrap_text_lines(description or "No description", font, text_w)[:2]):
+                color = (178, 186, 202) if description else (136, 146, 166)
+                line_surface = font.render(line, True, color)
+                screen.blit(line_surface, (text_x, row_rect.y + 28 + line_index * self.TEXT_LINE_H))
+
+            button_rect = import_buttons.get(row.get("id"))
             if button_rect is not None:
                 pygame.draw.rect(screen, (58, 64, 78), button_rect)
                 pygame.draw.rect(screen, (200, 200, 210), button_rect, 1)
-                button_text = font.render("Import", True, (245, 245, 245))
-                button_text_rect = button_text.get_rect(center=button_rect.center)
-                screen.blit(button_text, button_text_rect)
+                button_text = font.render("Import image", True, (245, 245, 245))
+                screen.blit(button_text, button_text.get_rect(center=button_rect.center))
 
-            row_y += 20
+    def _draw_temporal_wiki_block(self, screen, font, card, image_rect):
+        pygame.draw.rect(screen, (32, 35, 44), image_rect)
+        pygame.draw.rect(screen, (92, 100, 120), image_rect, 1)
+        inner_rect = image_rect.inflate(-12, -10)
+        wiki_text = self._get_general_wiki_text(card)
+        CardWikiRenderer.draw_content(
+            screen,
+            font,
+            inner_rect,
+            wiki_text,
+            is_editing=False,
+            resolve_link_label=self._resolve_wiki_link_label,
+            section_colors=self._wiki_field_colors(),
+            cursor_index=0,
+            scroll_y=0,
+        )
 
     def _draw_image_block(self, screen, font, card):
         if self._is_general_mode():
@@ -2776,6 +3031,10 @@ class EntityCard:
 
         if self._is_media_mode():
             self._draw_media_block(screen, font, card, image_rect)
+            return
+
+        if self._is_temporal_mode():
+            self._draw_temporal_wiki_block(screen, font, card, image_rect)
             return
 
         image_ref = self._resolve_image_reference()

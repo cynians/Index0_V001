@@ -157,8 +157,7 @@ fields:
 #     - settlement_jurisdiction
 #   predecessor_institutions: []
 #   successor_institutions: []
-#   description: Race for Sol adaptation of the Outer Space Treaty framework for an era of permanent off-world colonies. The treaty largely preserves the original baseline principles of non-total appropriation, but allows states to hold sovereignty within a bounded radius around established colonies.
-#   notes: Intended to regulate the transition from exploration to sustained colonization after 2090. The main adaptation is the recognition of limited territorial sovereignty around colonies, treated analogously to territorial waters rather than full ownership of whole planets or moons.
+#   wiki_entry: Race for Sol adaptation of the Outer Space Treaty framework for an era of permanent off-world colonies. The treaty largely preserves the original baseline principles of non-total appropriation, but allows states to hold sovereignty within a bounded radius around established colonies.
 #   tags:
 #     - institution
 #     - treaty

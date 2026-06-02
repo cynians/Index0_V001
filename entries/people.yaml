@@ -2,27 +2,18 @@
   pretty_name: Biblical Abraham
   name: Biblical Abraham
   type: person
-  wiki_entry: 'Abraham is the traditional patriarch of Judaism, Christianity and Islam, remembered as a founding ancestor figure associated with covenant, mirgration, and the origins of the Israelite lineage.'
+  wiki_entry: |-
+    Abraham is the traditional patriarch of Judaism, Christianity and Islam, remembered as a founding ancestor figure associated with covenant, mirgration, and the origins of the Israelite lineage.
   start_year: -2166
   end_year: -1991
 - id: person_jarem_habil
   pretty_name: Jarem Habil
   name: Jarem Habil
   type: person
-  wiki_entry: ''
   wiki_mentions: []
   card_color: '#182626'
   start_year: 5251
   end_year: 5392
-  description: ''
-  notes: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   derived_from: []
   parents:
@@ -31,14 +22,11 @@
   related: []
   offspring:
   - id: person_alia_habil
-  placeholders: []
   entry_status: ''
-  media_layers: {}
 - id: person_alia_habil
   pretty_name: Alia Habil
   name: Alia Habil
   type: person
-  wiki_entry: ''
   parents:
   - person_jarem_habil
   wiki_mentions: []
@@ -49,7 +37,6 @@
   pretty_name: Ahman Habil
   name: Ahman Habil
   type: person
-  wiki_entry: ''
   offspring:
   - id: person_jarem_habil
     offspring:
@@ -58,29 +45,17 @@
   start_year: 5223
   end_year: 5273
   card_color: '#1c261e'
-  description: ''
-  notes: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   derived_from: []
   parents: []
   related:
   - loc_hemsbrook_l_beck_system
   - loc_l_beck_system
-  placeholders: []
   entry_status: ''
-  media_layers: {}
 - id: person_akkan_akkan
   pretty_name: Akkan Akkan
   name: Akkan Akkan
   type: person
-  wiki_entry: ''
   wiki_mentions: []
   card_color: '#261c25'
   related:
@@ -91,8 +66,27 @@
   pretty_name: Malrib Huub
   name: Malrib Huub
   type: person
-  wiki_entry: ''
   wiki_mentions: []
   card_color: '#187587'
   start_year: 7749
   end_year: 8217
+- id: person_new_001
+  pretty_name: New Person
+  name: New Person
+  type: person
+  wiki_entry: ''
+  offspring: []
+- id: person_new_002
+  pretty_name: New Person
+  name: New Person
+  type: person
+  wiki_entry: ''
+  offspring: []
+- id: person_william_shakespeare
+  pretty_name: William Shakespeare
+  name: William Shakespeare
+  type: person
+  card_color: '#4967c2'
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []

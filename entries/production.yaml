@@ -36,24 +36,12 @@
   kg_per_day: 12000
   start_year: 1850
   entry_status: draft
-  card_image: assets/cards/production/prod_steel_plate_rolling_card.png
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
-  media_layers: {}
 - id: prod_pump_module_assembly
   pretty_name: Pump Module Assembly
   name: Pump Module Assembly
@@ -97,19 +85,7 @@
   entry_status: draft
   parents: []
   related: []
-  placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
   tags: []
   end_year: null
   derived_from: []
-  media_layers: {}
