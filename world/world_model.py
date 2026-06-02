@@ -360,7 +360,15 @@ class WorldModel:
                 end_year = start_year
 
             dataset_name = entity.get("_dataset", entity.get("type", "entity"))
-            label = entity.get("pretty_name") or entity.get("name") or entity_id
+            if dataset_name == "species" or entity.get("type") == "species":
+                common_name = str(entity.get("common_name") or "").strip()
+                binomial_name = str(entity.get("binomial_name") or "").strip()
+                if common_name and binomial_name:
+                    label = f"{common_name} - {binomial_name}"
+                else:
+                    label = common_name or binomial_name or entity.get("pretty_name") or entity.get("name") or entity_id
+            else:
+                label = entity.get("pretty_name") or entity.get("name") or entity_id
             card_color = entity.get("card_color", "")
 
             items.append(

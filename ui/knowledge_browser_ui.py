@@ -63,6 +63,7 @@ class KnowledgeBrowserUI:
     BROWSER_CONTROL_GAP = 6
     PROJECT_ROOT = Path(__file__).resolve().parents[1]
     DRAFT_CACHE_PATH = PROJECT_ROOT / ".cache" / "card_drafts.json"
+    SETTINGS_PATH = PROJECT_ROOT / ".cache" / "knowledge_settings.json"
     ABSTRACT_SCHEMA_NAMES = {"entity_core", "entity_base", "core", "base"}
     TEMPLATE_PICKER_ROW_H = 34
     CARD_TYPE_PICKER_ROW_H = 26
@@ -122,9 +123,12 @@ class KnowledgeBrowserUI:
         self.repository_scope_label = None
         self.header_button = None
         self.random_entry_button = None
-        self.random_unfinished_button = None
         self.random_task_button = None
         self.new_entry_button = None
+        self.clear_canvas_button = None
+        self.contemporary_spawn_decrease_button = None
+        self.contemporary_spawn_value_button = None
+        self.contemporary_spawn_increase_button = None
         self.relation_touch_decrease_button = None
         self.relation_touch_value_button = None
         self.relation_touch_increase_button = None
@@ -156,6 +160,11 @@ class KnowledgeBrowserUI:
         self.relation_tree_touch_degree = 2
         self.relation_tree_min_touch_degree = 1
         self.relation_tree_max_touch_degree = 6
+        self.contemporary_spawn_count = 1
+        self.contemporary_spawn_min = 0
+        self.contemporary_spawn_max = 12
+        self.knowledge_settings = self._load_knowledge_settings()
+        self._apply_knowledge_settings()
         self.relation_tree_neighbor_cache = {}
         self.canvas_relation_edges = []
 
@@ -166,6 +175,7 @@ class KnowledgeBrowserUI:
         self.canvas_zoom = 1.0
         self.canvas_min_zoom = 0.35
         self.canvas_max_zoom = 2.5
+        self.compact_canvas_zoom_threshold = 0.62
         self.active_canvas_pan = False
         self.canvas_pan_start_mouse = None
         self.canvas_pan_start_offset = None
@@ -217,9 +227,12 @@ class KnowledgeBrowserUI:
         self.repository_scope_label = None
         self.header_button = None
         self.random_entry_button = None
-        self.random_unfinished_button = None
         self.random_task_button = None
         self.new_entry_button = None
+        self.clear_canvas_button = None
+        self.contemporary_spawn_decrease_button = None
+        self.contemporary_spawn_value_button = None
+        self.contemporary_spawn_increase_button = None
         self.relation_touch_decrease_button = None
         self.relation_touch_value_button = None
         self.relation_touch_increase_button = None
@@ -232,6 +245,44 @@ class KnowledgeBrowserUI:
         self.template_picker_total_rows = 0
         self.template_picker_search_rect = None
         self.template_picker_search_active = False
+
+    def _load_knowledge_settings(self):
+        try:
+            with open(self.SETTINGS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _write_knowledge_settings(self):
+        os.makedirs(self.SETTINGS_PATH.parent, exist_ok=True)
+        with open(self.SETTINGS_PATH, "w", encoding="utf-8") as f:
+            json.dump(self.knowledge_settings, f, indent=2, sort_keys=True)
+
+    def _apply_knowledge_settings(self):
+        value = self.knowledge_settings.get("contemporary_spawn_count", self.contemporary_spawn_count)
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            value = 1
+        self.contemporary_spawn_count = max(
+            self.contemporary_spawn_min,
+            min(self.contemporary_spawn_max, value),
+        )
+
+    def _set_contemporary_spawn_count(self, value):
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            value = self.contemporary_spawn_count
+        value = max(self.contemporary_spawn_min, min(self.contemporary_spawn_max, value))
+        if value == self.contemporary_spawn_count:
+            return False
+        self.contemporary_spawn_count = value
+        self.knowledge_settings["contemporary_spawn_count"] = value
+        self._write_knowledge_settings()
+        self._build_header_button()
+        return True
 
     def _clamp_timeline_panel_height(self, app_height, timeline_h=None):
         if timeline_h is None:
@@ -754,9 +805,12 @@ class KnowledgeBrowserUI:
         if self.layout is None:
             self.header_button = None
             self.random_entry_button = None
-            self.random_unfinished_button = None
             self.random_task_button = None
             self.new_entry_button = None
+            self.clear_canvas_button = None
+            self.contemporary_spawn_decrease_button = None
+            self.contemporary_spawn_value_button = None
+            self.contemporary_spawn_increase_button = None
             self.relation_touch_decrease_button = None
             self.relation_touch_value_button = None
             self.relation_touch_increase_button = None
@@ -791,14 +845,6 @@ class KnowledgeBrowserUI:
             enabled=True,
         )
         button_right = self.random_task_button.rect.x - button_gap
-        self.random_unfinished_button = UIButton(
-            button_id="knowledge_random_unfinished",
-            label="Random Unfinished",
-            rect=pygame.Rect(button_right - 136, button_y, 136, 28),
-            visible=True,
-            enabled=True,
-        )
-        button_right = self.random_unfinished_button.rect.x - button_gap
         self.random_entry_button = UIButton(
             button_id="knowledge_random_entry",
             label="Random Entry",
@@ -807,6 +853,40 @@ class KnowledgeBrowserUI:
             enabled=True,
         )
         button_right = self.random_entry_button.rect.x - button_gap
+        self.clear_canvas_button = UIButton(
+            button_id="knowledge_clear_canvas",
+            label="Clear Canvas",
+            rect=pygame.Rect(button_right - 112, button_y, 112, 28),
+            visible=True,
+            enabled=True,
+        )
+        button_right = self.clear_canvas_button.rect.x - button_gap
+        contemporary_value_w = 86
+        contemporary_step_w = 28
+        self.contemporary_spawn_increase_button = UIButton(
+            button_id="knowledge_contemporary_spawn_increase",
+            label="+",
+            rect=pygame.Rect(button_right - contemporary_step_w, button_y, contemporary_step_w, 28),
+            visible=True,
+            enabled=self.contemporary_spawn_count < self.contemporary_spawn_max,
+        )
+        button_right = self.contemporary_spawn_increase_button.rect.x - 4
+        self.contemporary_spawn_value_button = UIButton(
+            button_id="knowledge_contemporary_spawn_value",
+            label=f"Contemp {self.contemporary_spawn_count}",
+            rect=pygame.Rect(button_right - contemporary_value_w, button_y, contemporary_value_w, 28),
+            visible=True,
+            enabled=False,
+        )
+        button_right = self.contemporary_spawn_value_button.rect.x - 4
+        self.contemporary_spawn_decrease_button = UIButton(
+            button_id="knowledge_contemporary_spawn_decrease",
+            label="-",
+            rect=pygame.Rect(button_right - contemporary_step_w, button_y, contemporary_step_w, 28),
+            visible=True,
+            enabled=self.contemporary_spawn_count > self.contemporary_spawn_min,
+        )
+        button_right = self.contemporary_spawn_decrease_button.rect.x - button_gap
         touch_value_w = 76
         touch_step_w = 28
         self.relation_touch_increase_button = UIButton(
@@ -2359,17 +2439,45 @@ class KnowledgeBrowserUI:
         right_rect = self.layout["right_rect"]
         zoom = max(0.001, self.canvas_zoom)
         card_font = self._card_font_for_zoom()
+        compact_mode = self._is_compact_canvas_mode()
+        layout_viewport = right_rect.inflate(600, 600)
 
         max_right = 0
         max_bottom = 0
 
         for card in self.cards:
             card_w = max(300, min(900, int(card.get("canvas_w", 420))))
-
-            card_view = card.get("card_view")
             requested_h = int(card.get("canvas_h", 340))
-            auto_canvas_h = bool(card.get("auto_canvas_h", True))
+            card_view = card.get("card_view")
 
+            rect_x = right_rect.x + self.canvas_offset_x + int(card.get("canvas_x", 24) * zoom)
+            rect_y = right_rect.y + self.canvas_offset_y + int(card.get("canvas_y", 84) * zoom)
+
+            if compact_mode:
+                card_h = max(260, min(2400, requested_h))
+                self._layout_compact_card(card, rect_x, rect_y, card_w, card_h, zoom)
+                max_right = max(max_right, card.get("canvas_x", 24) + card_w)
+                max_bottom = max(max_bottom, card.get("canvas_y", 84) + card_h)
+                continue
+
+            approximate_h = max(260, min(2400, requested_h))
+            approximate_rect = pygame.Rect(
+                rect_x,
+                rect_y,
+                max(120, int(round(card_w * zoom))),
+                max(120, int(round(approximate_h * zoom))),
+            )
+            if (
+                not approximate_rect.colliderect(layout_viewport)
+                and card.get("entity_id") != self.active_card_drag_id
+                and not card.get("is_edit_mode", False)
+            ):
+                self._layout_offscreen_card(card, approximate_rect, approximate_h)
+                max_right = max(max_right, card.get("canvas_x", 24) + card_w)
+                max_bottom = max(max_bottom, card.get("canvas_y", 84) + approximate_h)
+                continue
+
+            auto_canvas_h = bool(card.get("auto_canvas_h", True))
             if card_view is not None and self.font_for_layout is not None:
                 minimum_h = card_view.get_minimum_height(card, self.font_for_layout)
             else:
@@ -2384,13 +2492,11 @@ class KnowledgeBrowserUI:
 
             screen_card_w = max(120, int(round(card_w * zoom)))
             screen_card_h = max(120, int(round(card_h * zoom)))
-
-            rect_x = right_rect.x + self.canvas_offset_x + int(card.get("canvas_x", 24) * zoom)
-            rect_y = right_rect.y + self.canvas_offset_y + int(card.get("canvas_y", 84) * zoom)
-
             rect = pygame.Rect(rect_x, rect_y, screen_card_w, screen_card_h)
 
             if card_view is not None:
+                card["is_compact_canvas_card"] = False
+                card["layout_skipped_offscreen"] = False
                 card_view.layout_card(card, rect)
 
             final_rect = card.get("rect", rect)
@@ -2409,6 +2515,61 @@ class KnowledgeBrowserUI:
         self._layout_canvas_relation_controls()
         self._rebuild_canvas_relation_edges()
 
+    def _layout_offscreen_card(self, card, rect, card_h):
+        card["is_compact_canvas_card"] = False
+        card["layout_skipped_offscreen"] = True
+        card["canvas_h"] = card_h
+        card["rect"] = rect
+        card["toolbelt_rect"] = None
+        card["header_drag_rect"] = rect
+        card["close_rect"] = None
+        card["resize_handle_rect"] = pygame.Rect(rect.right - 12, rect.bottom - 12, 10, 10)
+        card["resize_hitboxes"] = []
+        card["corner_handle_rects"] = []
+        card["tab_hitboxes"] = []
+        card["subtab_hitboxes"] = []
+        card["editable_field_hitboxes"] = []
+        card["relation_hitboxes"] = []
+        card["wiki_link_hitboxes"] = []
+        card["wiki_section_hitboxes"] = []
+        card["toolbelt_hitboxes"] = []
+        card["section_hitboxes"] = []
+        card["year_hitboxes"] = []
+        card["media_import_hitboxes"] = []
+        card["media_illustration_link_hitboxes"] = []
+
+    def _is_compact_canvas_mode(self):
+        return self.canvas_zoom <= self.compact_canvas_zoom_threshold
+
+    def _layout_compact_card(self, card, rect_x, rect_y, card_w, card_h, zoom):
+        compact_w = max(150, min(260, int(round(card_w * zoom))))
+        compact_h = 72
+        rect = pygame.Rect(rect_x, rect_y, compact_w, compact_h)
+        close_rect = pygame.Rect(rect.right - 22, rect.y + 6, 16, 16)
+        card["is_compact_canvas_card"] = True
+        card["layout_skipped_offscreen"] = False
+        card["layout_font"] = self.font_for_layout or pygame.font.SysFont("consolas", 14)
+        card["rect"] = rect
+        card["toolbelt_rect"] = None
+        card["header_drag_rect"] = rect
+        card["close_rect"] = close_rect
+        card["resize_handle_rect"] = pygame.Rect(rect.right - 12, rect.bottom - 12, 10, 10)
+        card["resize_hitboxes"] = []
+        card["corner_handle_rects"] = []
+        card["tab_hitboxes"] = []
+        card["subtab_hitboxes"] = []
+        card["editable_field_hitboxes"] = []
+        card["relation_hitboxes"] = []
+        card["wiki_link_hitboxes"] = []
+        card["wiki_section_hitboxes"] = []
+        card["toolbelt_hitboxes"] = []
+        card["media_import_hitboxes"] = []
+        card["media_illustration_link_hitboxes"] = []
+        card["section_hitboxes"] = []
+        card["year_hitboxes"] = []
+        card["canvas_relation_add_rect"] = None
+        card["screen_scale"] = zoom
+
     def _clamp_canvas_offsets(self):
         # The card canvas is intentionally unbounded. Offsets are allowed to
         # move freely so cards dragged into negative space remain recoverable by panning.
@@ -2418,6 +2579,7 @@ class KnowledgeBrowserUI:
         return (
             isinstance(card, dict)
             and card.get("card_kind") != "schema"
+            and not card.get("is_compact_canvas_card", False)
             and bool(card.get("is_edit_mode", False))
             and bool(card.get("entity_id"))
         )
@@ -2447,9 +2609,7 @@ class KnowledgeBrowserUI:
         base_size = 16
         if self.font_for_layout is not None:
             base_size = max(8, int(round(self.font_for_layout.get_linesize() * 0.84)))
-
-        scaled_size = max(8, min(32, int(round(base_size * self.canvas_zoom))))
-        return pygame.font.SysFont("consolas", scaled_size)
+        return pygame.font.SysFont("consolas", base_size)
 
     def _screen_to_canvas_pos(self, mouse_pos):
         if self.layout is None:
@@ -2573,22 +2733,6 @@ class KnowledgeBrowserUI:
             return None
         return random.choice(list(self.world_model.loader.entities.values()))
 
-    def _random_unfinished_entity(self):
-        if self.world_model is None:
-            return None
-
-        unfinished = []
-        for entity in self.world_model.loader.entities.values():
-            if not isinstance(entity, dict) or not entity.get("id"):
-                continue
-            dataset_name = entity.get("_dataset", entity.get("type", ""))
-            if self._entity_missing_scalar_count(entity, dataset_name) > 0:
-                unfinished.append(entity)
-
-        if not unfinished:
-            return None
-        return random.choice(unfinished)
-
     def _startup_entity(self):
         if self.world_model is None:
             return None
@@ -2605,13 +2749,6 @@ class KnowledgeBrowserUI:
 
     def _create_random_entry_card(self):
         entity = self._random_entity()
-        if entity is None:
-            return False
-        self._ensure_card(entity)
-        return True
-
-    def _create_random_unfinished_entry_card(self):
-        entity = self._random_unfinished_entity()
         if entity is None:
             return False
         self._ensure_card(entity)
@@ -2659,6 +2796,20 @@ class KnowledgeBrowserUI:
             return False
 
         self._ensure_card(entity)
+        return True
+
+    def _clear_card_canvas(self):
+        self.cards = []
+        self.selected_entity_id = None
+        self.active_card_drag_id = None
+        self.active_card_resize_id = None
+        self.active_card_color_slider = None
+        self.canvas_relation_link_source_id = None
+        self.canvas_relation_status = ""
+        self.canvas_relation_edges = []
+        self.timeline_ui.set_open_canvas_entity_ids([])
+        self.timeline_ui.rebuild_layout()
+        self._layout_all_cards()
         return True
 
     def _template_entity_type(self, dataset_name, template=None):
@@ -4178,7 +4329,11 @@ class KnowledgeBrowserUI:
                 if len(visited) >= card_limit:
                     break
 
-        for contemporary_id in self._contemporary_entity_ids(root_id, existing_ids=visited, limit=4):
+        for contemporary_id in self._contemporary_entity_ids(
+            root_id,
+            existing_ids=visited,
+            limit=self.contemporary_spawn_count,
+        ):
             if len(visited) >= card_limit:
                 break
             visited.add(contemporary_id)
@@ -5093,6 +5248,10 @@ class KnowledgeBrowserUI:
         if card_view is None:
             return
 
+        if card.get("is_compact_canvas_card", False):
+            self._draw_compact_card(screen, font, card)
+            return
+
         previous_clip = screen.get_clip()
         visual_rect = self._card_visual_rect(card)
         if visual_rect is not None:
@@ -5102,6 +5261,41 @@ class KnowledgeBrowserUI:
             self._draw_card_type_picker(screen, card.get("layout_font", font), card)
         finally:
             screen.set_clip(previous_clip)
+
+    def _draw_compact_card(self, screen, font, card):
+        rect = card.get("rect")
+        if rect is None:
+            return
+
+        entity = self._entity_for_card(card)
+        card_color = (32, 36, 48)
+        if isinstance(entity, dict):
+            card_color = self._coerce_hex_rgb(entity.get("card_color"), fallback=card_color)
+        border = (210, 220, 240) if card.get("entity_id") == self.selected_entity_id else (112, 122, 146)
+        pygame.draw.rect(screen, card_color, rect)
+        pygame.draw.rect(screen, border, rect, 1)
+
+        title = card.get("title") or card.get("entity_id") or "Card"
+        subtitle = card.get("subtitle") or ""
+        title_surface = font.render(self._ellipsize_text(title, font, rect.width - 34), True, (244, 246, 250))
+        subtitle_surface = font.render(self._ellipsize_text(subtitle, font, rect.width - 18), True, (178, 188, 206))
+        screen.blit(title_surface, (rect.x + 8, rect.y + 8))
+        screen.blit(subtitle_surface, (rect.x + 8, rect.y + 28))
+
+        years = card.get("years", [])
+        if years:
+            year_text = str(years[0]) if len(years) == 1 else f"{years[0]}-{years[-1]}"
+        else:
+            year_text = "year missing"
+        year_surface = font.render(self._ellipsize_text(year_text, font, rect.width - 18), True, (206, 214, 230))
+        screen.blit(year_surface, (rect.x + 8, rect.y + 48))
+
+        close_rect = card.get("close_rect")
+        if close_rect is not None:
+            pygame.draw.rect(screen, (70, 44, 50), close_rect)
+            pygame.draw.rect(screen, (190, 130, 140), close_rect, 1)
+            close_surface = font.render("x", True, (250, 230, 234))
+            screen.blit(close_surface, close_surface.get_rect(center=close_rect.center))
 
     def _card_visual_rect(self, card):
         if not isinstance(card, dict):
@@ -6460,6 +6654,20 @@ class KnowledgeBrowserUI:
                 self._close_card_at_index(index)
                 return "__ui_consumed__"
 
+            if card.get("is_compact_canvas_card", False):
+                rect = card.get("rect")
+                if rect is not None and rect.collidepoint(mouse_pos):
+                    card_obj = self._bring_card_to_front(index)
+                    self.active_card_drag_id = card_obj["entity_id"]
+                    canvas_x, canvas_y = self._screen_to_canvas_pos(mouse_pos)
+                    self.card_drag_mouse_offset = (
+                        canvas_x - card_obj.get("canvas_x", 24),
+                        canvas_y - card_obj.get("canvas_y", 84),
+                    )
+                    self._layout_all_cards()
+                    return "__ui_consumed__"
+                continue
+
             if card.get("card_kind") == "schema":
                 schema_result = self._handle_schema_card_click(card, index, mouse_pos)
                 if schema_result is not None:
@@ -7102,12 +7310,18 @@ class KnowledgeBrowserUI:
 
         if self.random_entry_button is not None:
             draw_button_fn(screen, font, self.random_entry_button)
-        if self.random_unfinished_button is not None:
-            draw_button_fn(screen, font, self.random_unfinished_button)
         if self.random_task_button is not None:
             draw_button_fn(screen, font, self.random_task_button)
         if self.new_entry_button is not None:
             draw_button_fn(screen, font, self.new_entry_button)
+        if self.clear_canvas_button is not None:
+            draw_button_fn(screen, font, self.clear_canvas_button)
+        if self.contemporary_spawn_decrease_button is not None:
+            draw_button_fn(screen, font, self.contemporary_spawn_decrease_button)
+        if self.contemporary_spawn_value_button is not None:
+            draw_button_fn(screen, font, self.contemporary_spawn_value_button)
+        if self.contemporary_spawn_increase_button is not None:
+            draw_button_fn(screen, font, self.contemporary_spawn_increase_button)
         if self.relation_touch_decrease_button is not None:
             draw_button_fn(screen, font, self.relation_touch_decrease_button)
         if self.relation_touch_value_button is not None:
@@ -7304,16 +7518,36 @@ class KnowledgeBrowserUI:
             self._create_random_entry_card()
             return "__ui_consumed__"
 
-        if self.random_unfinished_button is not None and self.random_unfinished_button.rect.collidepoint(mouse_pos):
-            self._create_random_unfinished_entry_card()
-            return "__ui_consumed__"
-
         if self.random_task_button is not None and self.random_task_button.rect.collidepoint(mouse_pos):
             self._create_random_task_card()
             return "__ui_consumed__"
 
         if self.new_entry_button is not None and self.new_entry_button.rect.collidepoint(mouse_pos):
             self._open_new_entry_name_prompt()
+            return "__ui_consumed__"
+
+        if self.clear_canvas_button is not None and self.clear_canvas_button.rect.collidepoint(mouse_pos):
+            self._clear_card_canvas()
+            return "__ui_consumed__"
+
+        if (
+            self.contemporary_spawn_decrease_button is not None
+            and self.contemporary_spawn_decrease_button.rect.collidepoint(mouse_pos)
+        ):
+            self._set_contemporary_spawn_count(self.contemporary_spawn_count - 1)
+            return "__ui_consumed__"
+
+        if (
+            self.contemporary_spawn_increase_button is not None
+            and self.contemporary_spawn_increase_button.rect.collidepoint(mouse_pos)
+        ):
+            self._set_contemporary_spawn_count(self.contemporary_spawn_count + 1)
+            return "__ui_consumed__"
+
+        if (
+            self.contemporary_spawn_value_button is not None
+            and self.contemporary_spawn_value_button.rect.collidepoint(mouse_pos)
+        ):
             return "__ui_consumed__"
 
         if (

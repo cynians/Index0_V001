@@ -15,7 +15,7 @@ class TimelineUI:
     * support wheel-based zoom on the visible year range
     """
 
-    HEADER_H = 24
+    HEADER_H = 48
     AXIS_H = 22
     COVERAGE_H = 8
     COVERAGE_GAP = 8
@@ -29,6 +29,15 @@ class TimelineUI:
     BOTTOM_PAD = 8
     LEFT_PAD = 12
     RIGHT_PAD = 12
+    FILTER_GROUPS = [
+        ("general", "General", ["all", "open_canvas", "contemporary"]),
+        ("locations", "Locations", ["locations"]),
+        ("engineering", "Engineering", ["vehicles", "components", "technologies"]),
+        ("human", "Human", ["pops", "people", "cultures", "factions", "institutions"]),
+        ("material", "Material", ["items", "materials", "production", "producers"]),
+        ("world", "World", ["systems", "species", "events", "formations", "spatial_features"]),
+        ("ideas", "Ideas", ["ideas", "tasks", "behaviors", "cultural_aspects", "cladistics", "conflicts"]),
+    ]
 
     ZOOM_IN_FACTOR = 0.80
     ZOOM_OUT_FACTOR = 1.25
@@ -44,8 +53,11 @@ class TimelineUI:
         self.coverage_max_density = 0
         self.layout_font = None
         self.active_category_filter = "all"
+        self.active_filter_group = "general"
+        self.active_filter_mode = "category"
         self.open_canvas_entity_ids = set()
         self.filter_hitboxes = []
+        self.filter_group_hitboxes = []
         self.picker_target_label = None
         self.picker_preview_year = None
         self.year_selection_enabled = False
@@ -79,8 +91,7 @@ class TimelineUI:
         has_focus_item = self._items_have_default_focus_item(self.items)
         if has_focus_item and not had_focus_item:
             self._view_range_initialized = False
-        if self.active_category_filter not in self.get_filter_categories():
-            self.active_category_filter = "all"
+        self._ensure_active_filter_valid()
 
     def set_open_canvas_entity_ids(self, entity_ids):
         self.open_canvas_entity_ids = {
@@ -88,8 +99,7 @@ class TimelineUI:
             for entity_id in (entity_ids or [])
             if str(entity_id or "").strip()
         }
-        if self.active_category_filter not in self.get_filter_categories():
-            self.active_category_filter = "all"
+        self._ensure_active_filter_valid()
 
     def set_year_selection_enabled(self, enabled):
         self.year_selection_enabled = bool(enabled)
@@ -108,6 +118,7 @@ class TimelineUI:
         changed = year != self.selected_year
         self.selected_year = year
         self.selected_year_context_label = context_label
+        self._ensure_active_filter_valid()
 
         if focus:
             self.focus_year(year)
@@ -119,16 +130,35 @@ class TimelineUI:
 
     def set_active_category_filter(self, category_name):
         category_name = category_name or "all"
-        if category_name not in self.get_filter_categories():
+        if category_name not in self._available_filter_categories():
             category_name = "all"
-        changed = category_name != self.active_category_filter
+        changed = category_name != self.active_category_filter or self.active_filter_mode != "category"
         self.active_category_filter = category_name
+        self.active_filter_group = self._group_for_category(category_name) or self.active_filter_group
+        self.active_filter_mode = "category"
         if changed:
             self.rebuild_layout()
         return changed
 
-    def get_filter_categories(self):
-        categories = {"all"}
+    def set_active_filter_group(self, group_id):
+        available_groups = self.get_filter_groups()
+        valid_group_ids = {available_group_id for available_group_id, _, _ in available_groups}
+        if group_id not in valid_group_ids:
+            group_id = available_groups[0][0] if available_groups else "general"
+
+        changed = group_id != self.active_filter_group or self.active_filter_mode != "group"
+        self.active_filter_group = group_id
+        self.active_filter_mode = "group"
+        categories = self._categories_for_group(group_id)
+        if categories and self.active_category_filter not in categories:
+            self.active_category_filter = categories[0]
+            changed = True
+        if changed:
+            self.rebuild_layout()
+        return changed
+
+    def _available_filter_categories(self):
+        categories = {"all", "open_canvas", "contemporary"}
         for item in self.items:
             if item.get("timeline_kind") == "major_period":
                 continue
@@ -136,13 +166,67 @@ class TimelineUI:
             if dataset_name:
                 categories.add(str(dataset_name))
 
-        if self.open_canvas_entity_ids:
-            categories.add("open_canvas")
+        return categories
 
-        preferred_order = ["all", "open_canvas", "locations", "systems", "vehicles", "components", "events"]
-        ordered = [name for name in preferred_order if name in categories]
-        ordered.extend(sorted(name for name in categories if name not in ordered))
-        return ordered
+    def _group_for_category(self, category_name):
+        for group_id, _, category_names in self.FILTER_GROUPS:
+            if category_name in category_names:
+                return group_id
+        for group_id, _, category_names in self.get_filter_groups():
+            if category_name in category_names:
+                return group_id
+        return "ideas"
+
+    def get_filter_groups(self):
+        categories = self._available_filter_categories()
+        groups = []
+        assigned = set()
+        for group_id, group_label, category_names in self.FILTER_GROUPS:
+            group_categories = [name for name in category_names if name in categories]
+            if group_categories:
+                groups.append((group_id, group_label, group_categories))
+                assigned.update(group_categories)
+
+        remaining = sorted(name for name in categories if name not in assigned)
+        if remaining:
+            groups.append(("other", "Other", remaining))
+        return groups
+
+    def _categories_for_group(self, group_id):
+        for available_group_id, _, categories in self.get_filter_groups():
+            if available_group_id == group_id:
+                return categories
+        return []
+
+    def get_filter_categories(self):
+        groups = self.get_filter_groups()
+        valid_group_ids = {group_id for group_id, _, _ in groups}
+        if self.active_filter_group not in valid_group_ids:
+            self.active_filter_group = groups[0][0] if groups else "general"
+
+        for group_id, _, categories in groups:
+            if group_id == self.active_filter_group:
+                if self.active_filter_mode == "category" and self.active_category_filter not in categories:
+                    self.active_category_filter = categories[0] if categories else "all"
+                return categories
+
+        return ["all"]
+
+    def _ensure_active_filter_valid(self):
+        categories = self._available_filter_categories()
+        valid_group_ids = {group_id for group_id, _, _ in self.get_filter_groups()}
+        if self.active_filter_mode == "group" and self.active_filter_group in valid_group_ids:
+            group_categories = self._categories_for_group(self.active_filter_group)
+            if group_categories and self.active_category_filter not in group_categories:
+                self.active_category_filter = group_categories[0]
+            return
+
+        if self.active_category_filter not in categories:
+            self.active_category_filter = "all"
+            self.active_filter_mode = "category"
+
+        self.active_filter_group = self._group_for_category(self.active_category_filter)
+        self.active_filter_mode = "category"
 
     def set_picker_target(self, field_label=None, preview_year=None):
         self.picker_target_label = field_label
@@ -157,6 +241,8 @@ class TimelineUI:
             return "All"
         if category_name == "open_canvas":
             return "Open In Canvas"
+        if category_name == "contemporary":
+            return "Contemporary"
         return str(category_name).replace("_", " ").title()
 
     def _format_selected_year_label(self):
@@ -225,6 +311,20 @@ class TimelineUI:
 
     def _filtered_visible_items(self):
         visible_items = self._visible_items()
+        if self.active_filter_mode == "group":
+            group_categories = set(self._categories_for_group(self.active_filter_group))
+            if "all" in group_categories:
+                return visible_items
+
+            filtered = []
+            for item in visible_items:
+                if item.get("timeline_kind") == "major_period":
+                    filtered.append(item)
+                    continue
+                if item.get("dataset") in group_categories:
+                    filtered.append(item)
+            return filtered
+
         if self.active_category_filter == "all":
             return visible_items
         if self.active_category_filter == "open_canvas":
@@ -232,6 +332,8 @@ class TimelineUI:
                 item for item in visible_items
                 if str(item.get("entity_id") or "") in self.open_canvas_entity_ids
             ]
+        if self.active_category_filter == "contemporary":
+            return self._contemporary_visible_items(visible_items)
 
         filtered = []
         for item in visible_items:
@@ -241,6 +343,53 @@ class TimelineUI:
             if item.get("dataset") == self.active_category_filter:
                 filtered.append(item)
         return filtered
+
+    def _item_year_range(self, item):
+        start_year = item.get("start_year")
+        end_year = item.get("end_year")
+        if start_year is None and end_year is None:
+            return None
+        if start_year is None:
+            start_year = end_year
+        if end_year is None:
+            end_year = start_year
+        return (min(start_year, end_year), max(start_year, end_year))
+
+    def _contemporary_visible_items(self, visible_items):
+        if self.selected_year is not None:
+            return [
+                item for item in visible_items
+                if item.get("timeline_kind") == "major_period"
+                or (
+                    (year_range := self._item_year_range(item)) is not None
+                    and year_range[0] <= self.selected_year <= year_range[1]
+                )
+            ]
+
+        open_ranges = []
+        if self.open_canvas_entity_ids:
+            for item in self.items:
+                if str(item.get("entity_id") or "") not in self.open_canvas_entity_ids:
+                    continue
+                year_range = self._item_year_range(item)
+                if year_range is not None:
+                    open_ranges.append(year_range)
+
+        if not open_ranges:
+            return visible_items
+
+        contemporary = []
+        for item in visible_items:
+            if item.get("timeline_kind") == "major_period":
+                contemporary.append(item)
+                continue
+            year_range = self._item_year_range(item)
+            if year_range is None:
+                continue
+            start_year, end_year = year_range
+            if any(start_year <= open_end and end_year >= open_start for open_start, open_end in open_ranges):
+                contemporary.append(item)
+        return contemporary
 
     def _compute_full_range(self):
         if not self.items:
@@ -685,6 +834,7 @@ class TimelineUI:
 
     def _rebuild_filter_hitboxes(self):
         self.filter_hitboxes = []
+        self.filter_group_hitboxes = []
         if self.layout_font is None:
             return
 
@@ -694,6 +844,16 @@ class TimelineUI:
         gap = 6
         max_right = self.rect.right - 10
 
+        for group_id, group_label, _ in self.get_filter_groups():
+            chip_w = self.layout_font.size(group_label)[0] + 16
+            chip_rect = pygame.Rect(x, y, chip_w, chip_h)
+            if chip_rect.right > max_right:
+                break
+            self.filter_group_hitboxes.append((group_id, group_label, chip_rect))
+            x = chip_rect.right + gap
+
+        x = self.rect.x + 180
+        y = self.rect.y + 28
         for category_name in self.get_filter_categories():
             label = self._format_filter_label(category_name)
             chip_w = self.layout_font.size(label)[0] + 16
@@ -815,6 +975,16 @@ class TimelineUI:
         return None
 
     def handle_filter_click(self, mouse_pos):
+        for group_id, _, hitbox in self.filter_group_hitboxes:
+            if hitbox.collidepoint(mouse_pos):
+                changed = self.set_active_filter_group(group_id)
+                return {
+                    "kind": "filter_group_changed",
+                    "group": group_id,
+                    "category": self.active_category_filter,
+                    "changed": changed,
+                }
+
         for category_name, _, hitbox in self.filter_hitboxes:
             if hitbox.collidepoint(mouse_pos):
                 changed = self.set_active_category_filter(category_name)
@@ -884,8 +1054,22 @@ class TimelineUI:
             title = font.render(self.title, True, (240, 240, 240))
             screen.blit(title, (self.rect.x + 12, self.rect.y + 8))
 
+            for group_id, label, chip_rect in self.filter_group_hitboxes:
+                selected = group_id == self.active_filter_group
+                fill = (56, 66, 90) if selected else (26, 31, 44)
+                border = (190, 204, 230) if selected else (78, 88, 108)
+                text_color = (245, 245, 245) if selected else (166, 176, 196)
+                pygame.draw.rect(screen, fill, chip_rect)
+                pygame.draw.rect(screen, border, chip_rect, 1)
+                chip_text = font.render(label, True, text_color)
+                chip_text_rect = chip_text.get_rect(center=chip_rect.center)
+                screen.blit(chip_text, chip_text_rect)
+
             for category_name, label, chip_rect in self.filter_hitboxes:
-                selected = category_name == self.active_category_filter
+                selected = (
+                    self.active_filter_mode == "category"
+                    and category_name == self.active_category_filter
+                )
                 fill = (64, 84, 122) if selected else (33, 39, 54)
                 border = (210, 220, 240) if selected else (92, 102, 124)
                 text_color = (245, 245, 245) if selected else (190, 198, 214)
