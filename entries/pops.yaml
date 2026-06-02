@@ -1,0 +1,29 @@
+- id: pop_habil_family_of_l_beck
+  pretty_name: Habil Family of Hebsbrook
+  name: Habil Family of Hebsbrook
+  type: pop
+  wiki_entry: ''
+  wiki_mentions: []
+  card_color: '#426a65'
+  offspring:
+  - id: person_jarem_habil
+  - person_alia_habil
+  - person_ahman_habil
+  start_year: 4212
+  end_year: 8201
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  derived_from: []
+  parents: []
+  related: []
+  placeholders: []
+  entry_status: ''
+  media_layers: {}
