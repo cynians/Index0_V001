@@ -3751,8 +3751,7 @@
   related: []
   placeholders: []
   offspring:
-  - body_rhea
-  - body_iapetus
+  - id: body_iapetus
   description: ''
   notes: ''
   wiki_entry: ''
@@ -3764,7 +3763,7 @@
   image_path: ''
   image: ''
   tags: []
-  end_year: null
+  end_year: 5000000000
   derived_from: []
   entry_status: ''
   media_layers: {}

@@ -713,7 +713,7 @@
   card_image_top: ''
   image_path: ''
   image: ''
-  end_year: null
+  end_year: 7260
   derived_from: []
   media_layers: {}
   wiki_mentions: []
@@ -871,3 +871,48 @@
   - prod_paladin_aerospace
   start_year: 9738
   end_year: 10789
+- id: veh_bospor_3_sn_b3_1
+  pretty_name: Bospor 3 - Sn B3-1
+  name: Bospor 3 - Sn B3-1
+  type: vehicle
+  card_color: '#b75c5c'
+  wiki_entry: ''
+  wiki_mentions: []
+  card_header_color: '#825445'
+  parents:
+  - veh_bospor_3_regolith
+  start_year: 7142
+  end_year: 7197
+- id: veh_bospor_2_ouremite
+  pretty_name: Bospor 2 "Ouremite"
+  name: Bospor 2 "Ouremite"
+  type: vehicle
+  wiki_entry: ''
+  wiki_mentions: []
+  card_color: '#622d3e'
+  start_year: 7137
+  end_year: 7156
+  parents:
+  - producer_bospor_automat
+- id: veh_bospor_1_calcetite
+  pretty_name: Bospor 1 "Calcetite"
+  name: Bospor 1 "Calcetite"
+  type: vehicle
+  wiki_entry: ''
+  wiki_mentions: []
+  card_color: '#6d445f'
+  parents:
+  - producer_bospor_automat
+  start_year: 7131
+  end_year: 7159
+- id: veh_bospor_4_basaltite
+  pretty_name: Bospor 4 "Basaltite"
+  name: Bospor 4 "Basaltite"
+  type: vehicle
+  wiki_entry: ''
+  wiki_mentions: []
+  card_color: '#552a32'
+  parents:
+  - producer_bospor_automat
+  start_year: 7154
+  end_year: 7173

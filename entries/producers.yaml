@@ -15,7 +15,10 @@
   parents: []
   related: []
   placeholders: []
-  offspring: []
+  offspring:
+  - id: veh_bospor_3_regolith
+  - veh_bospor_2_ouremite
+  - veh_bospor_1_calcetite
   wiki_entry: ''
   design_image: ''
   card_image_front: ''
