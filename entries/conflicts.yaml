@@ -1,0 +1,30 @@
+- id: conf_borders_rebellion
+  pretty_name: Borders Rebellion
+  name: Borders Rebellion
+  type: conflict
+  card_color: '#923704'
+  end_event: null
+  locations: []
+  start_event: null
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring: []
+  tags: []
+  start_year: 5928
+  end_year: 5956
+  derived_from: []
+  parents: []
+  related: []
+  entry_status: ''
+- id: conf_superpower_wars
+  pretty_name: Superpower Wars
+  name: Superpower Wars
+  type: conflict
+  card_color: '#750f0f'
+  end_event: null
+  locations: []
+  start_event: null
+  wiki_entry: ''
+  wiki_mentions: []
+  offspring:
+  - id: idea_spanish_contribution_to_the_superpower_wars

@@ -1,0 +1,6 @@
+- id: log_new_001
+  pretty_name: New Logistics
+  name: New Logistics
+  type: logistics
+  wiki_entry: ''
+  offspring: []
