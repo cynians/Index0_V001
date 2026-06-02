@@ -17,7 +17,7 @@
   - machinery
   - containers
   processed_by_technology: []
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -56,7 +56,7 @@
   - caskets
   - electrical_parts
   processed_by_technology: []
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []

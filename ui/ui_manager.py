@@ -632,8 +632,13 @@ class UIManager:
                         getattr(active_sim, "can_create_spatial_feature_draft", lambda: False)()
                     )
                     if can_create_selection:
+                        selection_label = getattr(
+                            active_sim,
+                            "get_spatial_feature_draft_button_label",
+                            lambda: "New Region",
+                        )()
                         self.buttons.append(
-                            UIButton("new_map_selection", "New Region",
+                            UIButton("new_map_selection", selection_label,
                                      pygame.Rect(button_x, next_button_y, button_width, button_height))
                         )
                         next_button_y += 40

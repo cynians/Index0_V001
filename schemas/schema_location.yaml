@@ -12,11 +12,36 @@ fields:
     type: string
     optional: true
 
+  building_class:
+    type: string
+    optional: true
+
+  room_class:
+    type: string
+    optional: true
+
+  floor_index:
+    type: number
+    optional: true
+
+  floor_label:
+    type: string
+    optional: true
+
+  room_number:
+    type: string
+    optional: true
+
   region_class:
     type: string
     optional: true
 
   parent_location:
+    type: entity
+    target: locations
+    optional: true
+
+  parent_cluster:
     type: entity
     target: locations
     optional: true
@@ -165,4 +190,42 @@ fields:
 #       broad_biomes:
 #         - cold_desert
 #   start_year: 0
+#   entry_status: canon
+#
+# - id: loc_archive_building
+#   pretty_name: Archive Building
+#   name: Archive Building
+#   type: location
+#   location_class: building
+#   building_class: archive
+#   parent_location: loc_city_core
+#   bounds:
+#     type: polygon
+#     coordinate_space: map_world
+#     points:
+#       - [0, 0]
+#       - [30, 0]
+#       - [30, 18]
+#       - [0, 18]
+#   start_year: 100
+#   entry_status: canon
+#
+# - id: loc_archive_room_reading
+#   pretty_name: Reading Room
+#   name: Reading Room
+#   type: location
+#   location_class: room
+#   location_role: indoor_room
+#   room_class: reading_room
+#   parent_location: loc_archive_building
+#   floor_index: 0
+#   bounds:
+#     type: polygon
+#     coordinate_space: map_world
+#     points:
+#       - [2, 2]
+#       - [14, 2]
+#       - [14, 10]
+#       - [2, 10]
+#   start_year: 100
 #   entry_status: canon

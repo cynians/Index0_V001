@@ -40,6 +40,7 @@ class EntityLoader:
         "derived_from": [],
         "parents": [],
         "related": [],
+        "wiki_mentions": [],
         "offspring": [],
         "placeholders": [],
         "entry_status": "",
@@ -55,6 +56,7 @@ class EntityLoader:
         "derived_from": [],
         "parents": [],
         "related": [],
+        "wiki_mentions": [],
         "offspring": [],
         "placeholders": [],
         "entry_status": "",
@@ -154,6 +156,7 @@ class EntityLoader:
         system_fields = [
             "system_role",
             "system_class",
+            "parent_cluster",
             "star_system",
             "body_class",
             "parent_body",
@@ -553,6 +556,9 @@ class EntityLoader:
                     continue
 
                 self.entities[entity_id] = entity
+                legacy_system_entity_id = entity.get("legacy_system_entity_id")
+                if legacy_system_entity_id:
+                    self.entity_aliases[str(legacy_system_entity_id)] = entity_id
 
         logger.info("Total entities loaded: %s", len(self.entities))
 

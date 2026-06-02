@@ -36,10 +36,7 @@
   name: CoG Breach Route Crew
   type: faction
   faction_class: street_gang
-  description: Mixed late-CoG underclass gang rooted in one quarter but active as
-    a smuggling and scavenging crew across sealed sectors. A member using inherited
-    maintenance-line lore helped uncover the cracked vent route later used as a clandestine
-    exit.
+  description: Mixed late-CoG underclass gang rooted in one quarter but active as a smuggling and scavenging crew across sealed sectors. A member using inherited maintenance-line lore helped uncover the cracked vent route later used as a clandestine exit.
   notes: Historically important but mostly erased from official memory.
   tags:
   - cog
@@ -48,7 +45,7 @@
   - scavengers
   - underclass
   - erased_history
-  start_year: 5742
+  start_year: 5732
   entry_status: stub
   parents: []
   related: []
@@ -62,9 +59,11 @@
   card_image_top: ''
   image_path: ''
   image: ''
-  end_year: null
+  end_year: 5781
   derived_from: []
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#1c2624'
 - id: fac_sov_union
   pretty_name: Soviet Union
   name: Soviet Union
@@ -114,6 +113,135 @@
   related:
   - body_enceladus
   offspring: []
+  placeholders: []
+  entry_status: ''
+  media_layers: {}
+- id: fac_panamericana
+  pretty_name: Panamericana
+  name: Panamericana
+  type: faction
+  wiki_entry: ''
+  related:
+  - fac_new_002
+  - event_panamericana_rockies_f22_discovery
+  - formation_panam_land_forces_53th_mountain_guards
+  parents: []
+  start_year: 2086
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: 2427
+  derived_from: []
+  wiki_mentions: []
+  offspring:
+  - id: idea_new_025
+  placeholders: []
+  entry_status: ''
+  media_layers: {}
+  card_color: '#0d1926'
+- id: fac_transfer_hansa
+  pretty_name: Transfer Hansa
+  name: Transfer Hansa
+  type: faction
+  wiki_entry: ''
+  start_year: 6916
+  end_year: 16729
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  derived_from: []
+  parents: []
+  related: []
+  wiki_mentions: []
+  offspring:
+  - id: culture_transfer_hansa_frontier
+  placeholders: []
+  entry_status: ''
+  media_layers: {}
+  card_color: '#4e6861'
+- id: fac_retronationalis_successor_states
+  pretty_name: Retronationalis Successor States
+  name: Retronationalis Successor States
+  type: faction
+  wiki_entry: ''
+  start_year: 5947
+  end_year: 6122
+  start_event: evt_new_002
+- id: fac_retronationalist_forced_of_the_border_rebellion
+  pretty_name: Retronationalist Forces during Border Rebellion
+  name: Retronationalist Forces during Border Rebellion
+  type: faction
+  wiki_entry: ''
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents: []
+  related: []
+  offspring: []
+  placeholders: []
+  entry_status: ''
+  media_layers: {}
+  wiki_mentions: []
+  card_color: '#2f454a'
+- id: fac_sylph_corp
+  pretty_name: Sylph Corp
+  name: Sylph Corp
+  type: faction
+  wiki_entry: ''
+  wiki_mentions: []
+  card_color: '#4e7e8a'
+  start_year: 2244
+  end_year: 2469
+- id: fac_teutonian_resurgence
+  pretty_name: Teutonian Resurgence
+  name: Teutonian Resurgence
+  type: faction
+  wiki_entry: ''
+  wiki_mentions: []
+  card_color: '#0f1215'
+  parents:
+  - fac_retronationalist_forced_of_the_border_rebellion
+  related:
+  - conf_borders_rebellion
+  start_year: 5794
+  end_year: 6185
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  derived_from: []
+  offspring:
+  - form_teutonian_kaiserheer
   placeholders: []
   entry_status: ''
   media_layers: {}

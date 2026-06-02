@@ -111,7 +111,7 @@ class CelestialSystem:
             "population": {
                 "y0": 0,
             },
-            "start_year": 0,
+            "start_year": None,
         }
 
     def _load_yaml_list(self, path):

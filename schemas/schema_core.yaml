@@ -32,6 +32,21 @@ fields:
     type: text
     optional: true
 
+  card_color:
+    type: string
+    section: Metadata
+    optional: true
+
+  card_header_color:
+    type: string
+    section: Metadata
+    optional: true
+
+  wiki_field_colors:
+    type: dict
+    section: Metadata
+    optional: true
+
   card_image:
     type: string
     optional: true
@@ -69,8 +84,20 @@ fields:
     section: Temporal
     optional: true
 
+  start_event:
+    type: entity
+    target: events
+    section: Temporal
+    optional: true
+
   end_year:
     type: number
+    section: Temporal
+    optional: true
+
+  end_event:
+    type: entity
+    target: events
     section: Temporal
     optional: true
 
@@ -87,6 +114,12 @@ fields:
     optional: true
 
   related:
+    type: entity_list
+    target: entity_core
+    section: Relations
+    optional: true
+
+  wiki_mentions:
     type: entity_list
     target: entity_core
     section: Relations

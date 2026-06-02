@@ -1,6 +1,6 @@
 - id: formation_panam_land_forces_53th_mountain_guards
-  pretty_name: PanAm Land Forces, 53th Mountain Guards
-  name: PanAm Land Forces, 53th Mountain Guards
+  pretty_name: 'PanAm Land Forces, 53th Mountain Guards'
+  name: 'PanAm Land Forces, 53th Mountain Guards'
   type: formation
   formation_class: mountain_guards_formation
   faction: null
@@ -9,11 +9,8 @@
   vehicles: []
   pops: []
   commanding_officers: []
-  description: Panamericana land formation derived from naval infantry and specialized
-    in cliff and mountain fighting.
-  notes: Known for mobile alpine reconnaissance and strike operations, difficult-terrain
-    recovery and expedition escort, and mountain-border guarding in regions such as
-    the Rockies and Andes.
+  description: Panamericana land formation derived from naval infantry and specialized in cliff and mountain fighting.
+  notes: 'Known for mobile alpine reconnaissance and strike operations, difficult-terrain recovery and expedition escort, and mountain-border guarding in regions such as the Rockies and Andes.'
   tags:
   - formation
   - panamericana
@@ -21,9 +18,10 @@
   - alpine
   - border_guard
   - expedition
-  start_year: 0
+  start_year: 2098
   entry_status: draft
-  parents: []
+  parents:
+  - fac_new_003
   related: []
   placeholders: []
   offspring: []
@@ -35,6 +33,8 @@
   card_image_top: ''
   image_path: ''
   image: ''
-  end_year: null
+  end_year: 2253
   derived_from: []
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#364758'

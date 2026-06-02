@@ -1,3 +1,5 @@
+import math
+
 import pygame
 
 
@@ -42,6 +44,7 @@ class TimelineUI:
         self.coverage_max_density = 0
         self.layout_font = None
         self.active_category_filter = "all"
+        self.open_canvas_entity_ids = set()
         self.filter_hitboxes = []
         self.picker_target_label = None
         self.picker_preview_year = None
@@ -54,6 +57,7 @@ class TimelineUI:
 
         self.view_min_year = 0
         self.view_max_year = 1
+        self._view_range_initialized = False
 
         self.period_lane_count = 0
         self.lane_count = 1
@@ -70,7 +74,20 @@ class TimelineUI:
         self.title = str(title or "Timeline")
 
     def set_items(self, items):
+        had_focus_item = self._items_have_default_focus_item(self.items)
         self.items = list(items or [])
+        has_focus_item = self._items_have_default_focus_item(self.items)
+        if has_focus_item and not had_focus_item:
+            self._view_range_initialized = False
+        if self.active_category_filter not in self.get_filter_categories():
+            self.active_category_filter = "all"
+
+    def set_open_canvas_entity_ids(self, entity_ids):
+        self.open_canvas_entity_ids = {
+            str(entity_id)
+            for entity_id in (entity_ids or [])
+            if str(entity_id or "").strip()
+        }
         if self.active_category_filter not in self.get_filter_categories():
             self.active_category_filter = "all"
 
@@ -119,7 +136,10 @@ class TimelineUI:
             if dataset_name:
                 categories.add(str(dataset_name))
 
-        preferred_order = ["all", "locations", "systems", "vehicles", "components", "events"]
+        if self.open_canvas_entity_ids:
+            categories.add("open_canvas")
+
+        preferred_order = ["all", "open_canvas", "locations", "systems", "vehicles", "components", "events"]
         ordered = [name for name in preferred_order if name in categories]
         ordered.extend(sorted(name for name in categories if name not in ordered))
         return ordered
@@ -135,6 +155,8 @@ class TimelineUI:
     def _format_filter_label(self, category_name):
         if category_name == "all":
             return "All"
+        if category_name == "open_canvas":
+            return "Open In Canvas"
         return str(category_name).replace("_", " ").title()
 
     def _format_selected_year_label(self):
@@ -145,6 +167,39 @@ class TimelineUI:
             return str(self.selected_year_context_label)
 
         return f"Selected {self.selected_year}"
+
+    @staticmethod
+    def _coerce_color(value, fallback):
+        if isinstance(value, (list, tuple)) and len(value) >= 3:
+            try:
+                return tuple(max(0, min(255, int(part))) for part in value[:3])
+            except (TypeError, ValueError):
+                return fallback
+        text = str(value or "").strip()
+        if text.startswith("#") and len(text) == 7:
+            try:
+                return (
+                    int(text[1:3], 16),
+                    int(text[3:5], 16),
+                    int(text[5:7], 16),
+                )
+            except ValueError:
+                pass
+        return fallback
+
+    @staticmethod
+    def _mix_color(color, target, ratio):
+        ratio = max(0.0, min(1.0, float(ratio)))
+        return tuple(
+            max(0, min(255, int(round(color[index] * (1.0 - ratio) + target[index] * ratio))))
+            for index in range(3)
+        )
+
+    @staticmethod
+    def _readable_text_color(background):
+        red, green, blue = background[:3]
+        luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255.0
+        return (18, 22, 30) if luminance >= 0.58 else (240, 244, 250)
 
     def _draw_selected_year_marker(self, screen):
         if self.selected_year is None or not self._year_is_in_view(self.selected_year):
@@ -172,6 +227,11 @@ class TimelineUI:
         visible_items = self._visible_items()
         if self.active_category_filter == "all":
             return visible_items
+        if self.active_category_filter == "open_canvas":
+            return [
+                item for item in visible_items
+                if str(item.get("entity_id") or "") in self.open_canvas_entity_ids
+            ]
 
         filtered = []
         for item in visible_items:
@@ -222,6 +282,11 @@ class TimelineUI:
         current_span = self.view_max_year - self.view_min_year
         full_span = self.full_max_year - self.full_min_year
 
+        if not self._view_range_initialized:
+            self._initialize_view_range()
+            self._view_range_initialized = True
+            return
+
         if current_span <= 0:
             self.view_min_year = self.full_min_year
             self.view_max_year = self.full_max_year
@@ -248,6 +313,50 @@ class TimelineUI:
             self.view_min_year = int(round(center - half))
             self.view_max_year = int(round(center + half))
             self._clamp_view_to_full()
+
+    def _default_focus_year(self):
+        if self.selected_year is not None:
+            return self.selected_year
+
+        for item in reversed(self.items):
+            if item.get("timeline_kind") == "major_period":
+                continue
+            start_year = item.get("start_year")
+            end_year = item.get("end_year")
+            if start_year is not None:
+                return int(start_year)
+            if end_year is not None:
+                return int(end_year)
+
+        return None
+
+    def _items_have_default_focus_item(self, items):
+        for item in items or []:
+            if item.get("timeline_kind") == "major_period":
+                continue
+            if item.get("start_year") is not None or item.get("end_year") is not None:
+                return True
+        return False
+
+    def _initialize_view_range(self):
+        full_span = self.full_max_year - self.full_min_year
+        if full_span <= 0:
+            self.view_min_year = self.full_min_year
+            self.view_max_year = self.full_max_year
+            return
+
+        focus_year = self._default_focus_year()
+        if focus_year is None:
+            self.view_min_year = self.full_min_year
+            self.view_max_year = self.full_max_year
+            return
+
+        view_span = max(self.MIN_VIEW_SPAN_YEARS, self.view_max_year - self.view_min_year)
+        view_span = min(full_span, view_span)
+        half_span = view_span / 2.0
+        self.view_min_year = int(round(focus_year - half_span))
+        self.view_max_year = self.view_min_year + int(round(view_span))
+        self._clamp_view_to_full()
 
     def _clamp_view_to_full(self):
         full_span = self.full_max_year - self.full_min_year
@@ -292,6 +401,79 @@ class TimelineUI:
             return False
 
         return self.view_min_year <= year <= self.view_max_year
+
+    def _nice_year_step(self, target_years):
+        target_years = max(1.0, float(target_years))
+        magnitude = 10 ** math.floor(math.log10(target_years))
+        for multiplier in (1, 2, 5, 10):
+            step = int(multiplier * magnitude)
+            if step >= target_years:
+                return max(1, step)
+        return max(1, int(10 * magnitude))
+
+    def _axis_tick_step(self, min_pixel_gap=72):
+        span = max(1, self.view_max_year - self.view_min_year)
+        content_w = max(1, self.content_rect.width)
+        target_years = (span / float(content_w)) * min_pixel_gap
+        return self._nice_year_step(target_years)
+
+    def _axis_ticks(self, font=None):
+        if self.content_rect.width <= 1:
+            return []
+
+        step = self._axis_tick_step()
+        start = self.view_min_year
+        end = self.view_max_year
+        if end < start:
+            start, end = end, start
+
+        first_tick = int(math.ceil(start / float(step)) * step)
+        years = {start, end}
+        year = first_tick
+        guard = 0
+        while year <= end and guard < 1000:
+            years.add(int(year))
+            year += step
+            guard += 1
+
+        ticks = []
+        for year in sorted(years):
+            ticks.append(
+                {
+                    "year": int(year),
+                    "x": self._year_to_x(year),
+                    "is_endpoint": year in {start, end},
+                }
+            )
+
+        if font is None:
+            for tick in ticks:
+                tick["label"] = str(tick["year"])
+            return ticks
+
+        placed_label_rects = []
+        label_candidates = sorted(ticks, key=lambda tick: (0 if tick["is_endpoint"] else 1, tick["x"]))
+        for tick in label_candidates:
+            label = str(tick["year"])
+            label_w, label_h = font.size(label)
+            if tick["year"] == start:
+                label_x = self.content_rect.x
+            elif tick["year"] == end:
+                label_x = self.content_rect.right - label_w
+            else:
+                label_x = tick["x"] - label_w // 2
+                label_x = max(self.content_rect.x, min(label_x, self.content_rect.right - label_w))
+            label_rect = pygame.Rect(label_x, self.content_rect.y, label_w, label_h)
+
+            has_overlap = any(label_rect.inflate(8, 0).colliderect(existing) for existing in placed_label_rects)
+            if has_overlap and not tick["is_endpoint"]:
+                continue
+
+            tick["label"] = label
+            tick["label_rect"] = label_rect
+            placed_label_rects.append(label_rect)
+
+        return ticks
 
     def is_selected_year_marker_hit(self, mouse_pos, tolerance_px=8):
         if self.selected_year is None:
@@ -731,24 +913,17 @@ class TimelineUI:
             axis_right = self.content_rect.right
             pygame.draw.line(screen, (150, 150, 170), (axis_left, self.axis_y), (axis_right, self.axis_y), 1)
 
-            start_text = font.render(str(self.view_min_year), True, (190, 190, 190))
-            mid_year = int((self.view_min_year + self.view_max_year) / 2)
-            mid_text = font.render(str(mid_year), True, (190, 190, 190))
-            end_text = font.render(str(self.view_max_year), True, (190, 190, 190))
-
-            screen.blit(start_text, (axis_left, self.content_rect.y))
-            screen.blit(
-                mid_text,
-                (
-                    axis_left + (self.content_rect.width // 2) - (mid_text.get_width() // 2),
-                    self.content_rect.y,
-                ),
-            )
-            screen.blit(end_text, (axis_right - end_text.get_width(), self.content_rect.y))
-
-            for year in (self.view_min_year, mid_year, self.view_max_year):
-                tick_x = self._year_to_x(year)
-                pygame.draw.line(screen, (120, 120, 140), (tick_x, self.axis_y - 6), (tick_x, self.axis_y + 6), 1)
+            for tick in self._axis_ticks(font):
+                tick_x = tick["x"]
+                tick_color = (148, 150, 172) if tick.get("is_endpoint") else (120, 120, 140)
+                tick_top = self.axis_y - 7 if tick.get("is_endpoint") else self.axis_y - 5
+                tick_bottom = self.axis_y + 7 if tick.get("is_endpoint") else self.axis_y + 5
+                pygame.draw.line(screen, tick_color, (tick_x, tick_top), (tick_x, tick_bottom), 1)
+                label = tick.get("label")
+                label_rect = tick.get("label_rect")
+                if label and label_rect is not None:
+                    label_surface = font.render(label, True, (190, 190, 190))
+                    screen.blit(label_surface, label_rect)
 
             if self.picker_target_label and self.picker_preview_year is not None:
                 picker_x = self._year_to_x(self.picker_preview_year)
@@ -783,12 +958,15 @@ class TimelineUI:
                 x1 = self._year_to_x(item["start_year"])
                 x2 = self._year_to_x(item["end_year"])
                 y = period_base_y + lane * (self.PERIOD_H + self.PERIOD_GAP)
+                fill_color = self._coerce_color(item.get("card_color"), (70, 76, 108))
+                border_color = self._mix_color(fill_color, (240, 230, 180), 0.55)
+                label_color = self._readable_text_color(fill_color)
 
                 bar_rect = pygame.Rect(x1, y, max(8, x2 - x1), self.PERIOD_H)
-                pygame.draw.rect(screen, (70, 76, 108), bar_rect)
-                pygame.draw.rect(screen, (212, 195, 130), bar_rect, 1)
+                pygame.draw.rect(screen, fill_color, bar_rect)
+                pygame.draw.rect(screen, border_color, bar_rect, 1)
 
-                label_surface = font.render(item.get("label", "period"), True, (240, 232, 205))
+                label_surface = font.render(item.get("label", "period"), True, label_color)
                 label_x = max(axis_left, min(bar_rect.x + 6, axis_right - label_surface.get_width()))
                 screen.blit(label_surface, (label_x, y - 2))
 
@@ -813,21 +991,23 @@ class TimelineUI:
                 x1 = self._year_to_x(start_year)
                 x2 = self._year_to_x(end_year)
 
-                color = (110, 140, 220) if is_point else (80, 110, 180)
+                color = self._coerce_color(item.get("card_color"), (110, 140, 220) if is_point else (80, 110, 180))
+                border_color = self._mix_color(color, (210, 225, 255), 0.55)
+                label_color = self._readable_text_color(color)
 
                 if is_point:
                     pygame.draw.line(screen, color, (x1, self.axis_y), (x1, y + self.ITEM_H // 2), 1)
-                    pygame.draw.circle(screen, (170, 190, 255), (x1, y + self.ITEM_H // 2), 4)
+                    pygame.draw.circle(screen, border_color, (x1, y + self.ITEM_H // 2), 4)
                     label_surface = font.render(label, True, (220, 220, 220))
                     screen.blit(label_surface, (x1 + 8, y))
                 else:
                     bar_w = max(6, x2 - x1)
                     bar_rect = pygame.Rect(x1, y, bar_w, self.ITEM_H)
                     pygame.draw.rect(screen, color, bar_rect)
-                    pygame.draw.rect(screen, (170, 190, 255), bar_rect, 1)
+                    pygame.draw.rect(screen, border_color, bar_rect, 1)
 
                     if x1 <= axis_right and x2 >= axis_left:
-                        label_surface = font.render(label, True, (230, 230, 230))
+                        label_surface = font.render(label, True, label_color)
                         label_x = self._get_duration_label_x(x1, x2, label_surface.get_width())
                         screen.blit(label_surface, (label_x, y - 1))
 

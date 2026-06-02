@@ -67,6 +67,7 @@ class MapSimulation:
         "infrastructure_corridors": (138, 118, 170),
         "city_margins": (160, 142, 78),
         "sites": (86, 118, 158),
+        "rooms": (112, 146, 172),
     }
 
     AUTHORABLE_HISTORY_LAYER_KINDS = [REGION_LAYER_KIND]
@@ -111,6 +112,7 @@ class MapSimulation:
         self.draft_hover_map_pos = None
         self.is_editing_spatial_feature_polygon = False
         self.editing_spatial_feature_id = None
+        self.editing_polygon_target_kind = None
         self.editing_spatial_feature_points = []
         self.editing_hover_map_pos = None
         self.is_evolving_spatial_feature_polygon = False
@@ -419,6 +421,14 @@ class MapSimulation:
         coords = root_entity.get("coords") or {}
         bounds = root_entity.get("bounds") or {}
 
+        if root_entity.get("location_class") == "building" and bounds.get("type") not in {"bbox", "polygon"}:
+            return {
+                "min_x": -24.0,
+                "max_x": 24.0,
+                "min_y": -16.0,
+                "max_y": 16.0,
+            }
+
         if bounds.get("type") == "bbox":
             min_x = bounds.get("min_x", -self.DEFAULT_PLANET_WORLD_WIDTH / 2)
             max_x = bounds.get("max_x", self.DEFAULT_PLANET_WORLD_WIDTH / 2)
@@ -431,6 +441,19 @@ class MapSimulation:
                 "min_y": world_bounds["min_y"],
                 "max_y": world_bounds["max_y"],
             }
+
+        if bounds.get("type") == "polygon":
+            points = self._get_geometry_points(bounds)
+            if len(points) >= 3:
+                xs = [point[0] for point in points]
+                ys = [point[1] for point in points]
+                world_bounds = self._map_bbox_to_world_bounds(min(xs), max(xs), min(ys), max(ys))
+                return {
+                    "min_x": world_bounds["min_x"],
+                    "max_x": world_bounds["max_x"],
+                    "min_y": world_bounds["min_y"],
+                    "max_y": world_bounds["max_y"],
+                }
 
         center_x = 0.0
         center_y = 0.0
@@ -486,6 +509,12 @@ class MapSimulation:
         if location_class == "city":
             return (220, 220, 220)
 
+        if location_class == "building":
+            return (202, 184, 136)
+
+        if location_class == "room":
+            return (132, 178, 196)
+
         return (200, 200, 200)
 
     def _map_point_to_world(self, x, y):
@@ -513,6 +542,10 @@ class MapSimulation:
         self._cache_year = None
         self._cache_layer_kind = None
 
+    def _root_is_building(self):
+        root = self.get_root_entity()
+        return isinstance(root, dict) and root.get("location_class") == "building"
+
     def _format_layer_label(self, layer_kind):
         if layer_kind in self.LAYER_LABELS:
             return self.LAYER_LABELS[layer_kind]
@@ -520,19 +553,24 @@ class MapSimulation:
         return str(layer_kind).replace("_", " ").title()
 
     def get_active_layer_kind(self):
+        available = self.get_available_layer_kinds()
+        if available and self.active_layer_kind not in available:
+            self.active_layer_kind = available[0]
         return self.active_layer_kind
 
     def get_active_layer_label(self):
+        self.get_active_layer_kind()
         return self._format_layer_label(self.active_layer_kind)
 
     def get_available_layer_kinds(self):
+        if self._root_is_building():
+            return [self.LOCATION_LAYER_KIND]
         return [self.LOCATION_LAYER_KIND, self.REGION_LAYER_KIND]
 
     def set_active_layer_kind(self, layer_kind):
-        if layer_kind not in {self.LOCATION_LAYER_KIND, self.REGION_LAYER_KIND}:
-            layer_kind = self.REGION_LAYER_KIND
-
         available = self.get_available_layer_kinds()
+        if layer_kind not in set(available):
+            layer_kind = available[0] if available else self.LOCATION_LAYER_KIND
         if layer_kind not in available:
             layer_kind = self.LOCATION_LAYER_KIND
 
@@ -816,7 +854,14 @@ class MapSimulation:
         return target
 
     def can_create_spatial_feature_draft(self):
+        if self._root_is_building():
+            return True
         return self.active_layer_kind == self.REGION_LAYER_KIND
+
+    def get_spatial_feature_draft_button_label(self):
+        if self._root_is_building():
+            return "New Room"
+        return "New Region"
 
     def can_create_map_square_draft(self):
         if self.active_layer_kind != self.LOCATION_LAYER_KIND:
@@ -845,6 +890,7 @@ class MapSimulation:
         self.draft_hover_map_pos = None
         self.is_editing_spatial_feature_polygon = False
         self.editing_spatial_feature_id = None
+        self.editing_polygon_target_kind = None
         self.editing_spatial_feature_points = []
         self.editing_hover_map_pos = None
         self.is_evolving_spatial_feature_polygon = False
@@ -1196,23 +1242,34 @@ class MapSimulation:
         return True
 
     def begin_spatial_feature_polygon_edit(self, target_kind, target_id):
-        if target_kind != "spatial_feature":
+        if target_kind not in {"spatial_feature", "location"}:
             return False
 
-        if not self._is_real_spatial_feature_id(target_id):
-            return False
+        if target_kind == "spatial_feature":
+            if not self._is_real_spatial_feature_id(target_id):
+                return False
 
-        feature = self.get_spatial_feature(target_id)
-        if feature is None:
-            return False
+            feature = self.get_spatial_feature(target_id)
+            if feature is None:
+                return False
+            points = self._get_geometry_points(feature.get("geometry") or feature.get("bounds") or {})
+        else:
+            if not self._can_open_location_inspector(target_id):
+                return False
 
-        points = self._get_geometry_points(feature.get("geometry") or {})
+            feature = self.get_location(target_id)
+            if feature is None:
+                return False
+            points = self._get_geometry_points(feature.get("bounds") or feature.get("geometry") or {})
+
         if len(points) < 3:
             return False
 
         layer_kind = feature.get("layer_kind")
         if layer_kind:
             self.active_layer_kind = layer_kind
+        elif target_kind == "location":
+            self.active_layer_kind = self.LOCATION_LAYER_KIND
 
         self.is_creating_spatial_feature = False
         self.draft_spatial_feature_points = []
@@ -1221,13 +1278,14 @@ class MapSimulation:
         self.evolving_source_spatial_feature_id = None
         self.is_editing_spatial_feature_polygon = True
         self.editing_spatial_feature_id = target_id
+        self.editing_polygon_target_kind = target_kind
         self.editing_spatial_feature_points = list(points)
         self.editing_hover_map_pos = None
         self._draft_last_click_time = None
         self._draft_last_click_screen_pos = None
-        self.selected_entity_id = None
+        self.selected_entity_id = target_id if target_kind == "location" else None
         self.hover_entity_id = None
-        self.selected_spatial_feature_id = target_id
+        self.selected_spatial_feature_id = target_id if target_kind == "spatial_feature" else None
         self.hover_spatial_feature_id = None
         self.hover_screen_pos = None
         self._invalidate_layer_cache()
@@ -1271,6 +1329,7 @@ class MapSimulation:
         self.is_evolving_spatial_feature_polygon = True
         self.evolving_source_spatial_feature_id = target_id
         self.editing_spatial_feature_id = target_id
+        self.editing_polygon_target_kind = "spatial_feature"
         self.editing_spatial_feature_points = list(points)
         self.editing_hover_map_pos = None
         self._draft_last_click_time = None
@@ -1301,6 +1360,7 @@ class MapSimulation:
         self.is_evolving_spatial_feature_polygon = False
         self.evolving_source_spatial_feature_id = None
         self.editing_spatial_feature_id = None
+        self.editing_polygon_target_kind = None
         self.editing_spatial_feature_points = []
         self.editing_hover_map_pos = None
         self._draft_last_click_time = None
@@ -1323,21 +1383,34 @@ class MapSimulation:
             return False
 
         target_id = self.editing_spatial_feature_id
-        if not self._update_spatial_feature_geometry(
-            target_id,
-            self.editing_spatial_feature_points,
-        ):
+        target_kind = self.editing_polygon_target_kind or "spatial_feature"
+        points = self.editing_spatial_feature_points
+        if target_kind == "location":
+            bounds = {
+                "type": "polygon",
+                "coordinate_space": "map_world",
+                "points": list(points),
+            }
+            updated = (
+                self._update_location_bounds(target_id, bounds)
+                and self._update_location_geometry(target_id, points)
+            )
+        else:
+            updated = self._update_spatial_feature_geometry(target_id, points)
+
+        if not updated:
             return False
 
         self.is_editing_spatial_feature_polygon = False
         self.editing_spatial_feature_id = None
+        self.editing_polygon_target_kind = None
         self.editing_spatial_feature_points = []
         self.editing_hover_map_pos = None
         self._draft_last_click_time = None
         self._draft_last_click_screen_pos = None
-        self.selected_entity_id = None
+        self.selected_entity_id = target_id if target_kind == "location" else None
         self.hover_entity_id = None
-        self.selected_spatial_feature_id = target_id
+        self.selected_spatial_feature_id = target_id if target_kind == "spatial_feature" else None
         self.hover_spatial_feature_id = None
         self.hover_screen_pos = None
 
@@ -1375,7 +1448,7 @@ class MapSimulation:
         try:
             if not self._update_spatial_feature_end_year(source_id, source_end_year):
                 return False
-            self._append_spatial_feature_record(evolved_feature)
+            self._append_location_record(evolved_feature)
         except OSError as exc:
             logger.error(
                 f"[MapSimulation] Failed to save spatial feature evolution: {exc}"
@@ -1386,6 +1459,7 @@ class MapSimulation:
         self.is_evolving_spatial_feature_polygon = False
         self.evolving_source_spatial_feature_id = None
         self.editing_spatial_feature_id = None
+        self.editing_polygon_target_kind = None
         self.editing_spatial_feature_points = []
         self.editing_hover_map_pos = None
         self._draft_last_click_time = None
@@ -1558,10 +1632,10 @@ class MapSimulation:
             )
             return False
         if not linked_parent:
-            logger.error(
-                f"[MapSimulation] Failed to link parent offspring for {region['id']}"
+            logger.info(
+                f"[MapSimulation] Saved {region['id']} without parent offspring link "
+                f"parent={self.context.root_entity_id}"
             )
-            return False
 
         self.is_creating_spatial_feature = False
         self.draft_spatial_feature_points = []
@@ -1847,6 +1921,13 @@ class MapSimulation:
     def _allocate_spatial_feature_draft_id(self):
         existing_ids = self._get_existing_entity_ids()
         root_id = self._sanitize_identifier_part(self.context.root_entity_id)
+        if self._root_is_building():
+            index = 1
+            while True:
+                room_id = f"loc_room_{root_id}_{index:03d}"
+                if room_id not in existing_ids:
+                    return room_id, index
+                index += 1
 
         index = 1
         while True:
@@ -1862,7 +1943,7 @@ class MapSimulation:
 
         index = 1
         while True:
-            feature_id = f"sf_hist_{source_id}_y{year_part}_{index:03d}"
+            feature_id = f"loc_region_hist_{source_id}_y{year_part}_{index:03d}"
             if feature_id not in existing_ids:
                 return feature_id, index
             index += 1
@@ -1880,6 +1961,38 @@ class MapSimulation:
 
     def _build_draft_spatial_feature_record(self):
         feature_id, index = self._allocate_spatial_feature_draft_id()
+        if self._root_is_building():
+            root_name = self.get_root_name()
+            name = f"Draft Room {index:03d}"
+            notes = f"Draft room polygon created inside {root_name}."
+            points = list(self.draft_spatial_feature_points)
+            return {
+                "id": feature_id,
+                "pretty_name": name,
+                "name": name,
+                "type": "location",
+                "location_class": "room",
+                "location_role": "indoor_room",
+                "room_class": "room",
+                "layer_kind": "rooms",
+                "notes": notes,
+                "parent_location": self.context.root_entity_id,
+                "parent_entity": self.context.root_entity_id,
+                "parents": [self.context.root_entity_id],
+                "geometry": {
+                    "type": "polygon",
+                    "coordinate_space": "map_world",
+                    "points": points,
+                },
+                "bounds": {
+                    "type": "polygon",
+                    "coordinate_space": "map_world",
+                    "points": points,
+                },
+                "start_year": self.year,
+                "entry_status": "draft",
+            }
+
         layer_label = self.get_active_layer_label()
         root_name = self.get_root_name()
         name = f"Draft {layer_label} Region {index:03d}"
@@ -1938,15 +2051,29 @@ class MapSimulation:
             "id": feature_id,
             "pretty_name": name,
             "name": name,
-            "type": "spatial_feature",
+            "type": "location",
+            "location_class": "region",
+            "location_role": "map_region",
             "notes": notes,
+            "region_class": source_feature.get("region_class") or source_feature.get("layer_kind", self.active_layer_kind),
             "layer_kind": source_feature.get("layer_kind", self.active_layer_kind),
+            "parent_location": (
+                source_feature.get("parent_location")
+                or source_feature.get("parent_entity")
+                or self.context.root_entity_id
+            ),
             "parent_entity": (
                 source_feature.get("parent_entity")
+                or source_feature.get("parent_location")
                 or self.context.root_entity_id
             ),
             "owner_entity": source_feature.get("owner_entity"),
             "geometry": {
+                "type": "polygon",
+                "coordinate_space": "map_world",
+                "points": list(points),
+            },
+            "bounds": {
                 "type": "polygon",
                 "coordinate_space": "map_world",
                 "points": list(points),
@@ -2139,6 +2266,16 @@ class MapSimulation:
         ])
         if location.get("location_role"):
             lines.append(f"  location_role: {location['location_role']}")
+        if location.get("building_class"):
+            lines.append(f"  building_class: {location['building_class']}")
+        if location.get("room_class"):
+            lines.append(f"  room_class: {location['room_class']}")
+        if location.get("floor_index") is not None:
+            lines.append(f"  floor_index: {location['floor_index']}")
+        if location.get("floor_label"):
+            lines.extend(self._format_yaml_field_lines("floor_label", location["floor_label"]))
+        if location.get("room_number"):
+            lines.extend(self._format_yaml_field_lines("room_number", location["room_number"]))
         if location.get("region_class"):
             lines.append(f"  region_class: {location['region_class']}")
         if location.get("layer_kind"):
@@ -2147,6 +2284,8 @@ class MapSimulation:
             lines.append(f"  parent_location: {location['parent_location']}")
         if location.get("parent_entity"):
             lines.append(f"  parent_entity: {location['parent_entity']}")
+        if location.get("owner_entity"):
+            lines.append(f"  owner_entity: {location['owner_entity']}")
         if location.get("parents"):
             lines.extend(self._format_yaml_list_field_lines("parents", location.get("parents")))
         lines.extend(self._format_yaml_field_lines("notes", location["notes"]))
@@ -2158,10 +2297,20 @@ class MapSimulation:
             )
             geometry_lines[0] = "  geometry:"
             lines.extend(geometry_lines)
-        lines.extend([
-            f"  start_year: {location['start_year']}",
-            "  entry_status: draft",
-        ])
+        if location.get("resolution_m_per_pixel") is not None:
+            lines.append(f"  resolution_m_per_pixel: {location['resolution_m_per_pixel']}")
+        if location.get("coverage_mode") is not None:
+            lines.extend(self._format_yaml_field_lines("coverage_mode", location.get("coverage_mode")))
+        if location.get("draw_order") is not None:
+            lines.append(f"  draw_order: {location['draw_order']}")
+        if location.get("derived_from"):
+            lines.extend(self._format_yaml_list_field_lines("derived_from", location.get("derived_from")))
+        if location.get("related"):
+            lines.extend(self._format_yaml_list_field_lines("related", location.get("related")))
+        lines.append(f"  start_year: {location['start_year']}")
+        if location.get("end_year") is not None:
+            lines.append(f"  end_year: {location['end_year']}")
+        lines.append("  entry_status: draft")
 
         return "\n".join(lines) + "\n"
 
@@ -2189,6 +2338,13 @@ class MapSimulation:
             existing_text = entry_path.read_text(encoding="utf-8")
         else:
             existing_text = "# ==================================================\n# LOCATIONS\n# ==================================================\n"
+
+        found = self._find_yaml_entity_block(existing_text, location["id"])
+        if found is not None:
+            block_start, block_end = found
+            updated_text = existing_text[:block_start] + block.lstrip("\n") + existing_text[block_end:].lstrip("\n")
+            entry_path.write_text(updated_text, encoding="utf-8")
+            return
 
         separator = "" if existing_text.endswith("\n") else "\n"
         entry_path.write_text(existing_text + separator + block, encoding="utf-8")
@@ -2863,7 +3019,11 @@ class MapSimulation:
         return True
 
     def _update_spatial_feature_end_year(self, spatial_feature_id, end_year):
-        entry_path = self.SPATIAL_FEATURES_ENTRY_PATH
+        entry_path = (
+            self.LOCATIONS_ENTRY_PATH
+            if self._is_location_backed_region(spatial_feature_id)
+            else self.SPATIAL_FEATURES_ENTRY_PATH
+        )
         if not entry_path.exists():
             return False
 
@@ -3405,6 +3565,29 @@ class MapSimulation:
             "is_virtual_spatial_feature": virtual,
         }
 
+    def _build_default_building_floor_layer(self):
+        if not self._root_is_building():
+            return None
+
+        root_entity = self.get_root_entity()
+        if not root_entity:
+            return None
+
+        points = self._root_bounds_as_polygon()
+        centroid_x, centroid_y = self._polygon_centroid(points)
+        return {
+            "shape": "polygon",
+            "x": centroid_x,
+            "y": centroid_y,
+            "points": points,
+            "name": root_entity.get("name") or root_entity.get("pretty_name") or self.context.root_entity_id,
+            "entity_id": self.context.root_entity_id,
+            "color": self._color_for_entity(root_entity),
+            "area_world": self._polygon_area(points),
+            "draw_order": -2000,
+            "is_virtual_building_floor": True,
+        }
+
     def _build_placement_ancestor_layers(self):
         layers = []
         if not self.is_placing_location_polygon:
@@ -3438,6 +3621,7 @@ class MapSimulation:
         * bbox region  -> rect
         * point place  -> marker
         """
+        self.get_active_layer_kind()
         if self.active_layer_kind != self.LOCATION_LAYER_KIND:
             return self._build_spatial_feature_layers(year, self.active_layer_kind)
 
@@ -3571,9 +3755,18 @@ class MapSimulation:
                 "color": color,
             })
 
+        if self._root_is_building() and not any(
+            layer.get("entity_id") == self.context.root_entity_id
+            for layer in layers
+        ):
+            default_floor_layer = self._build_default_building_floor_layer()
+            if default_floor_layer is not None:
+                layers.insert(0, default_floor_layer)
+
         return layers
 
     def get_layers(self):
+        self.get_active_layer_kind()
         year = self.year
 
         if (

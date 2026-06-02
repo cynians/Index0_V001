@@ -226,7 +226,7 @@
   - borneo
   - terrestrial
   - natural
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -321,3 +321,65 @@
   binomial_name: Cakkuabdra haematocephala
   type: species
   wiki_entry: ''
+- id: spec_pleurodeles_nebulosus
+  common_name: Algerian Ribbet Newt
+  binomial_name: Pleurodeles nebulosus
+  type: species
+  wiki_entry: ''
+- id: spec_phoebastria_immutabilis
+  common_name: Laysan Albatross
+  binomial_name: Phoebastria immutabilis
+  type: species
+  wiki_entry: ''
+- id: spec_mustela_erminea
+  common_name: Eurasian Stoat
+  binomial_name: Mustela erminea
+  type: species
+  wiki_entry: ''
+- id: spec_sphaeralcea_coccinea
+  common_name: Scarlet Globemallow
+  binomial_name: Sphaeralcea coccinea
+  type: species
+  wiki_entry: ''
+  wiki_mentions: []
+  card_color: '#c2472b'
+- id: spec_aenocyon_dirus
+  common_name: Dire Wolf
+  binomial_name: Aenocyon dirus
+  type: species
+  wiki_entry: ''
+  wiki_mentions: []
+- id: spec_carcharhinus_amblyrhynchos
+  common_name: Grey Reef Shark
+  binomial_name: Carcharhinus amblyrhynchos
+  type: species
+  wiki_entry: ''
+  wiki_mentions: []
+  card_color: '#202830'
+- id: spec_dicrurus_macrocerus
+  common_name: Black Drongo
+  binomial_name: Dicrurus macrocerus
+  type: species
+  wiki_entry: ''
+  wiki_mentions: []
+  card_color: '#111318'
+  related:
+  - loc_murtensee
+- id: spec_corvus_corax
+  common_name: Common Raven - Corvus corax
+  binomial_name: Corvus corax
+  type: species
+  wiki_entry: ''
+  wiki_mentions: []
+  card_color: '#0d0f13'
+  start_year: -500000
+  end_year: 506618
+- id: spec_yellow_bellied_water_skink
+  common_name: Yellow Bellied Water Skink
+  binomial_name: ''
+  type: species
+  wiki_entry: ''
+  wiki_mentions: []
+  card_color: '#26261c'
+  start_year: -5000000
+  end_year: 26607

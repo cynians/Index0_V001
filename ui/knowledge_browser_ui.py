@@ -1,5 +1,6 @@
 import json
 import copy
+import colorsys
 import os
 import random
 import re
@@ -13,6 +14,7 @@ from tkinter import filedialog
 
 from ui.ui_types import UIButton
 from ui.card import EntityCard
+from ui.card_wiki import CardWikiRenderer
 from ui.schema_card import SchemaCard
 from ui.timeline_ui import TimelineUI
 from world.schema_loader import SchemaLoader
@@ -30,6 +32,21 @@ class KnowledgeBrowserUI:
     * handle knowledge-layer specific clicks
     * provide a scrollable / navigable card canvas
     """
+
+    CANONICAL_LOCATION_CLASSES = (
+        "cluster",
+        "star_system",
+        "star",
+        "planet",
+        "moon",
+        "continent",
+        "country",
+        "region",
+        "city",
+        "site",
+        "building",
+        "room",
+    )
 
     LINE_HEIGHT = 20
     OUTER_MARGIN = 16
@@ -55,12 +72,18 @@ class KnowledgeBrowserUI:
         "description",
         "notes",
         "wiki_entry",
+        "card_color",
+        "card_header_color",
+        "wiki_field_colors",
         "tags",
         "start_year",
+        "start_event",
         "end_year",
+        "end_event",
         "derived_from",
         "parents",
         "related",
+        "wiki_mentions",
         "offspring",
         "placeholders",
         "entry_status",
@@ -102,12 +125,22 @@ class KnowledgeBrowserUI:
         self.random_unfinished_button = None
         self.random_task_button = None
         self.new_entry_button = None
+        self.relation_touch_decrease_button = None
+        self.relation_touch_value_button = None
+        self.relation_touch_increase_button = None
         self.template_picker_rect = None
         self.template_button_hitboxes = []
         self.template_quick_button_hitboxes = []
+        self.template_picker_visible_rows = []
+        self.template_picker_total_rows = 0
         self.template_picker_status = ""
         self.show_template_picker = False
         self.template_picker_scroll = 0
+        self.template_picker_search_rect = None
+        self.template_picker_search_query = ""
+        self.template_picker_search_active = False
+        self.template_picker_mode = "create"
+        self.template_picker_context = {}
         self.entry_name_prompt = None
         self.pending_new_entry_name = None
         self.schema_entry_templates = self._load_schema_entry_templates()
@@ -120,6 +153,11 @@ class KnowledgeBrowserUI:
         self.relation_link_status = ""
         self.canvas_relation_link_source_id = None
         self.canvas_relation_status = ""
+        self.relation_tree_touch_degree = 2
+        self.relation_tree_min_touch_degree = 1
+        self.relation_tree_max_touch_degree = 6
+        self.relation_tree_neighbor_cache = {}
+        self.canvas_relation_edges = []
 
         self.canvas_offset_x = 0
         self.canvas_offset_y = 0
@@ -134,6 +172,7 @@ class KnowledgeBrowserUI:
 
         self.active_card_drag_id = None
         self.active_card_resize_id = None
+        self.active_card_color_slider = None
         self.card_drag_mouse_offset = (0, 0)
         self.card_resize_start_mouse = None
         self.card_resize_start_size = None
@@ -181,9 +220,18 @@ class KnowledgeBrowserUI:
         self.random_unfinished_button = None
         self.random_task_button = None
         self.new_entry_button = None
+        self.relation_touch_decrease_button = None
+        self.relation_touch_value_button = None
+        self.relation_touch_increase_button = None
+        self.relation_tree_neighbor_cache = {}
+        self.canvas_relation_edges = []
         self.template_picker_rect = None
         self.template_button_hitboxes = []
         self.template_quick_button_hitboxes = []
+        self.template_picker_visible_rows = []
+        self.template_picker_total_rows = 0
+        self.template_picker_search_rect = None
+        self.template_picker_search_active = False
 
     def _clamp_timeline_panel_height(self, app_height, timeline_h=None):
         if timeline_h is None:
@@ -214,6 +262,7 @@ class KnowledgeBrowserUI:
         self.timeline_ui.set_rect(timeline_rect)
         self.timeline_ui.set_font(self.font_for_layout)
         timeline_items = self.world_model.get_timeline_items() if self.world_model is not None else []
+        self.timeline_ui.set_open_canvas_entity_ids(card.get("entity_id") for card in self.cards)
         self.timeline_ui.set_items(timeline_items)
         self.timeline_ui.rebuild_layout()
 
@@ -262,6 +311,82 @@ class KnowledgeBrowserUI:
 
         matches.sort(key=lambda item: (item["pretty_name"].lower(), item["id"]))
         return matches[:12]
+
+    def _known_entities_for_matching(self):
+        loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
+        entities = getattr(loader, "entities", None)
+        if isinstance(entities, dict):
+            return [
+                entity for entity in entities.values()
+                if isinstance(entity, dict)
+            ]
+        return []
+
+    def _entity_match_tokens(self, entity):
+        tokens = []
+        for value in (
+            entity.get("id"),
+            self._entity_display_label(entity, fallback=entity.get("id")),
+            entity.get("pretty_name"),
+            entity.get("name"),
+            entity.get("common_name"),
+            entity.get("binomial_name"),
+        ):
+            text = str(value or "").strip()
+            if text and text.lower() not in tokens:
+                tokens.append(text.lower())
+        return tokens
+
+    def _resolve_wiki_mention_ref(self, link_text):
+        raw_text = str(link_text or "").strip()
+        if not raw_text:
+            return ""
+
+        if self.world_model is not None:
+            entity = self.world_model.get_entity(raw_text)
+            if isinstance(entity, dict) and entity.get("id"):
+                return str(entity["id"])
+
+        normalized = raw_text.lower()
+        for entity in self._known_entities_for_matching():
+            if normalized in self._entity_match_tokens(entity):
+                entity_id = entity.get("id")
+                if entity_id:
+                    return str(entity_id)
+
+        return raw_text
+
+    def _wiki_mentions_from_text(self, wiki_text):
+        mentions = []
+        seen = set()
+        for link_text in CardWikiRenderer.extract_link_refs(wiki_text):
+            mention = self._resolve_wiki_mention_ref(link_text)
+            if not mention or mention in seen:
+                continue
+            seen.add(mention)
+            mentions.append(mention)
+        return mentions
+
+    def _sync_card_wiki_mentions(self, card, wiki_text=None):
+        entity = self._entity_for_card(card)
+        if not isinstance(entity, dict):
+            return False
+
+        if wiki_text is None:
+            if (
+                card is not None
+                and card.get("active_edit_field") == "wiki_entry"
+                and "edit_buffer" in card
+            ):
+                wiki_text = card.get("edit_buffer", "")
+            else:
+                wiki_text = entity.get("wiki_entry", "")
+
+        mentions = self._wiki_mentions_from_text(wiki_text)
+        if entity.get("wiki_mentions") == mentions:
+            return False
+        entity["wiki_mentions"] = mentions
+        return True
 
     def _close_relation_picker(self, card):
         card["relation_picker_open"] = False
@@ -324,8 +449,43 @@ class KnowledgeBrowserUI:
         slug = re.sub(r"[^a-z0-9]+", "_", slug_source).strip("_")
         return f"spec_{slug}" if slug else ""
 
+    def _slug_from_text(self, text):
+        slug_source = str(text or "").strip().lower()
+        return re.sub(r"[^a-z0-9]+", "_", slug_source).strip("_")
+
+    def _sanitize_entity_id(self, entity_id):
+        return self._slug_from_text(entity_id)
+
+    def _entity_id_from_name(self, dataset_name, entity_type, name, template=None):
+        slug = self._slug_from_text(name)
+        if not slug:
+            return ""
+
+        prefix = (
+            template.get("id_prefix")
+            if isinstance(template, dict) and template.get("id_prefix")
+            else self._template_id_prefix(dataset_name, entity_type=entity_type)
+        )
+        prefix = self._sanitize_entity_id(prefix)
+        if prefix and not slug.startswith(f"{prefix}_"):
+            return f"{prefix}_{slug}"
+        return slug
+
+    def _entity_id_from_entity_name(self, entity, template=None):
+        if not isinstance(entity, dict):
+            return ""
+        dataset_name = entity.get("_dataset", entity.get("type"))
+        entity_type = entity.get("type") or self._template_entity_type(dataset_name, template)
+        name = (
+            entity.get("binomial_name")
+            or entity.get("pretty_name")
+            or entity.get("name")
+            or entity.get("common_name")
+        )
+        return self._entity_id_from_name(dataset_name, entity_type, name, template=template)
+
     def _unique_entity_id(self, requested_id, current_id=None):
-        requested_id = str(requested_id or "").strip()
+        requested_id = self._sanitize_entity_id(requested_id)
         if not requested_id:
             return ""
 
@@ -343,6 +503,18 @@ class KnowledgeBrowserUI:
             if candidate not in existing_ids:
                 return candidate
             index += 1
+
+    def _normalize_entity_id_for_save(self, entity, current_id=None, template=None):
+        if not isinstance(entity, dict):
+            return ""
+
+        requested_id = self._sanitize_entity_id(entity.get("id"))
+        if not requested_id:
+            requested_id = self._entity_id_from_entity_name(entity, template=template)
+        if not requested_id:
+            return ""
+
+        return self._unique_entity_id(requested_id, current_id=current_id)
 
     def _normalize_species_entity(self, entity):
         if not self._is_species_entity(entity):
@@ -585,6 +757,9 @@ class KnowledgeBrowserUI:
             self.random_unfinished_button = None
             self.random_task_button = None
             self.new_entry_button = None
+            self.relation_touch_decrease_button = None
+            self.relation_touch_value_button = None
+            self.relation_touch_increase_button = None
             return
 
         header_rect = self.layout["header_rect"]
@@ -631,7 +806,45 @@ class KnowledgeBrowserUI:
             visible=True,
             enabled=True,
         )
+        button_right = self.random_entry_button.rect.x - button_gap
+        touch_value_w = 76
+        touch_step_w = 28
+        self.relation_touch_increase_button = UIButton(
+            button_id="knowledge_relation_touch_increase",
+            label="+",
+            rect=pygame.Rect(button_right - touch_step_w, button_y, touch_step_w, 28),
+            visible=True,
+            enabled=self.relation_tree_touch_degree < self.relation_tree_max_touch_degree,
+        )
+        button_right = self.relation_touch_increase_button.rect.x - 4
+        self.relation_touch_value_button = UIButton(
+            button_id="knowledge_relation_touch_value",
+            label=f"Touch {self.relation_tree_touch_degree}",
+            rect=pygame.Rect(button_right - touch_value_w, button_y, touch_value_w, 28),
+            visible=True,
+            enabled=False,
+        )
+        button_right = self.relation_touch_value_button.rect.x - 4
+        self.relation_touch_decrease_button = UIButton(
+            button_id="knowledge_relation_touch_decrease",
+            label="-",
+            rect=pygame.Rect(button_right - touch_step_w, button_y, touch_step_w, 28),
+            visible=True,
+            enabled=self.relation_tree_touch_degree > self.relation_tree_min_touch_degree,
+        )
         self._build_template_picker_hitboxes()
+
+    def _set_relation_tree_touch_degree(self, value):
+        try:
+            degree = int(value)
+        except (TypeError, ValueError):
+            degree = self.relation_tree_touch_degree
+        degree = max(self.relation_tree_min_touch_degree, min(self.relation_tree_max_touch_degree, degree))
+        if degree == self.relation_tree_touch_degree:
+            return False
+        self.relation_tree_touch_degree = degree
+        self._build_header_button()
+        return True
 
     def _font_line_height(self, font=None):
         font = font or self.font_for_layout
@@ -639,17 +852,40 @@ class KnowledgeBrowserUI:
             return self.LINE_HEIGHT
         return max(self.LINE_HEIGHT, int(font.get_linesize()) + 4)
 
+    def _ellipsize_text(self, text, font, max_width):
+        text = str(text or "")
+        if font is None or font.size(text)[0] <= max_width:
+            return text
+
+        suffix = "..."
+        suffix_w = font.size(suffix)[0]
+        available_w = max(0, max_width - suffix_w)
+        trimmed = text
+        while trimmed and font.size(trimmed)[0] > available_w:
+            trimmed = trimmed[:-1]
+        return f"{trimmed}{suffix}" if trimmed else suffix
+
     def _template_picker_row_height(self):
         line_h = self._font_line_height()
-        return max(self.TEMPLATE_PICKER_ROW_H, line_h * 2 + 8)
+        return max(30, line_h + 12)
+
+    def _template_picker_header_row_height(self):
+        return max(24, self._font_line_height() + 8)
 
     def _template_picker_header_height(self):
-        return max(42, self._font_line_height() + 22) + self._template_picker_quick_row_height()
+        return (
+            max(42, self._font_line_height() + 22)
+            + self.BROWSER_SEARCH_H
+            + self.BROWSER_CONTROL_GAP
+            + self._template_picker_quick_row_height()
+        )
 
     def _template_picker_quick_row_height(self):
         return 30 if self._template_picker_quick_templates() else 0
 
     def _template_picker_quick_templates(self):
+        if self.template_picker_mode == "convert" or self.template_picker_search_query.strip():
+            return []
         by_dataset = {
             template.get("dataset_name"): template
             for template in self.schema_entry_templates
@@ -854,6 +1090,8 @@ class KnowledgeBrowserUI:
                 continue
 
             dataset_name = self._dataset_name_for_schema(schema_name, file_base, existing_datasets)
+            if dataset_name == "spatial_features":
+                continue
             entity_type = self._entity_type_for_schema(schema_name, dataset_name)
             label = self._schema_display_label(entity_type)
             templates.append(
@@ -990,9 +1228,11 @@ class KnowledgeBrowserUI:
         templates = [
             template
             for template in self.schema_entry_templates
-            if template.get("dataset_name") != "ideas"
+            if template.get("dataset_name")
         ]
+        templates.extend(self._existing_subclass_templates(templates))
         preferred = [
+            "ideas",
             "vehicles",
             "locations",
             "systems",
@@ -1011,34 +1251,325 @@ class KnowledgeBrowserUI:
         )
         return templates
 
+    def _template_identity(self, template):
+        return (
+            template.get("dataset_name"),
+            template.get("entity_type"),
+            template.get("subclass_field"),
+            template.get("subclass_value"),
+        )
+
+    def _subclass_fields_for_template(self, template):
+        dataset_name = template.get("dataset_name")
+        entity_type = template.get("entity_type")
+        if dataset_name == "locations":
+            return ["location_class"]
+        if dataset_name == "systems":
+            return ["system_class", "body_class"]
+
+        fields = [
+            f"{self._singularize_name(dataset_name)}_class",
+            f"{entity_type}_class",
+            "vehicle_class",
+            "component_class",
+            "idea_class",
+            "faction_class",
+            "producer_class",
+            "institution_class",
+            "city_class",
+            "event_class",
+            "item_class",
+            "material_class",
+            "species_class",
+        ]
+        deduped = []
+        for field in fields:
+            if field and field != "_class" and field not in deduped:
+                deduped.append(field)
+        return deduped
+
+    def _existing_subclass_templates(self, base_templates):
+        by_dataset = {
+            template.get("dataset_name"): template
+            for template in base_templates
+            if template.get("dataset_name")
+        }
+        variants = []
+        seen = set()
+
+        for dataset_name, template in by_dataset.items():
+            fields = self._subclass_fields_for_template(template)
+            for field_key, subclass_value in self._canonical_subclass_values_for_template(template):
+                identity = (dataset_name, template.get("entity_type"), subclass_value)
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                variants.append(self._subclass_template_variant(template, field_key, subclass_value))
+
+            if self.world_model is None:
+                continue
+
+            entities = self.world_model.get_entities_by_dataset(dataset_name)
+            for entity in entities:
+                if not isinstance(entity, dict):
+                    continue
+                for field_key in fields:
+                    raw_value = entity.get(field_key)
+                    if not isinstance(raw_value, str) or not raw_value.strip():
+                        continue
+                    subclass_value = raw_value.strip()
+                    identity = (dataset_name, template.get("entity_type"), subclass_value)
+                    if identity in seen:
+                        continue
+                    seen.add(identity)
+                    variants.append(self._subclass_template_variant(template, field_key, subclass_value))
+
+        return variants
+
+    def _canonical_subclass_values_for_template(self, template):
+        if template.get("dataset_name") == "locations":
+            return [
+                ("location_class", location_class)
+                for location_class in self.CANONICAL_LOCATION_CLASSES
+            ]
+
+        return []
+
+    def _subclass_template_variant(self, template, field_key, subclass_value):
+        variant = dict(template)
+        variant["label"] = self._schema_display_label(subclass_value)
+        variant["subclass_field"] = field_key
+        variant["subclass_value"] = subclass_value
+        variant["initial_fields"] = {
+            **dict(template.get("initial_fields", {})),
+            field_key: subclass_value,
+        }
+        return variant
+
+    def _template_initial_fields(self, template, extra_fields=None):
+        fields = {}
+        if isinstance(template, dict):
+            fields.update(dict(template.get("initial_fields", {})))
+            subclass_field = template.get("subclass_field")
+            subclass_value = template.get("subclass_value")
+            if subclass_field and subclass_value not in (None, ""):
+                fields[subclass_field] = subclass_value
+        if isinstance(extra_fields, dict):
+            fields.update(extra_fields)
+        return fields
+
+    def _template_picker_source_templates(self):
+        return self._conversion_templates()
+
+    def _template_search_blob(self, template):
+        values = [
+            template.get("label"),
+            template.get("dataset_name"),
+            template.get("entity_type"),
+            template.get("schema_name"),
+            template.get("subclass_field"),
+            template.get("subclass_value"),
+        ]
+        return " ".join(str(value or "").lower() for value in values)
+
+    def _filtered_template_picker_templates(self):
+        templates = self._template_picker_source_templates()
+        query = self.template_picker_search_query.strip().lower()
+        if not query:
+            return templates
+        terms = [term for term in query.split() if term]
+        return [
+            template
+            for template in templates
+            if all(term in self._template_search_blob(template) for term in terms)
+        ]
+
+    def _template_picker_group_label(self, template):
+        dataset_name = template.get("dataset_name")
+        label = template.get("label") or self._schema_display_label(dataset_name)
+        if template.get("subclass_field"):
+            base = self._template_base_for(template)
+            if base is not None:
+                label = base.get("label") or label
+            elif dataset_name:
+                label = self._schema_display_label(dataset_name)
+        return str(label or "Template")
+
+    def _template_base_key(self, template):
+        return (
+            template.get("dataset_name"),
+            template.get("entity_type"),
+            template.get("schema_name"),
+        )
+
+    def _template_base_for(self, variant):
+        variant_key = self._template_base_key(variant)
+        for template in self.schema_entry_templates:
+            if self._template_base_key(template) == variant_key:
+                return template
+        return None
+
+    def _template_picker_option_width(self, label, available_width, font=None):
+        label = str(label or "Template")
+        if font is not None:
+            label_w = font.size(label)[0]
+        elif self.font_for_layout is not None:
+            label_w = self.font_for_layout.size(label)[0]
+        else:
+            label_w = max(36, len(label) * 8)
+
+        full_width_threshold = max(120, int(available_width * 0.58))
+        if label_w > full_width_threshold:
+            return available_width
+        return max(84, min(available_width, label_w + 24))
+
+    def _template_picker_hierarchical_rows(self, templates, available_width=None, font=None):
+        groups = []
+        by_key = {}
+
+        for template in templates:
+            key = self._template_base_key(template)
+            group = by_key.get(key)
+            if group is None:
+                group = {
+                    "label": self._template_picker_group_label(template),
+                    "templates": [],
+                }
+                by_key[key] = group
+                groups.append(group)
+            if not template.get("subclass_field"):
+                group["label"] = template.get("label") or group["label"]
+            group["templates"].append(template)
+
+        rows = []
+        for group in groups:
+            group_templates = sorted(
+                group["templates"],
+                key=lambda template: (
+                    1 if template.get("subclass_field") else 0,
+                    str(template.get("label", "")).lower(),
+                    str(template.get("subclass_value", "")).lower(),
+                ),
+            )
+            rows.append(
+                {
+                    "kind": "header",
+                    "label": group["label"],
+                    "template": None,
+                }
+            )
+            if available_width is None:
+                for template in group_templates:
+                    rows.append(
+                        {
+                            "kind": "template_row",
+                            "items": [
+                                {
+                                    "label": template.get("label", "Template"),
+                                    "template": template,
+                                }
+                            ],
+                        }
+                    )
+                continue
+
+            current_items = []
+            current_width = 0
+            gap = 6
+            for template in group_templates:
+                label = template.get("label", "Template")
+                option_w = self._template_picker_option_width(label, available_width, font=font)
+                item = {
+                    "label": label,
+                    "template": template,
+                    "width": option_w,
+                }
+                is_full_width = option_w >= available_width
+                next_width = option_w if not current_items else current_width + gap + option_w
+                if is_full_width:
+                    if current_items:
+                        rows.append({"kind": "template_row", "items": current_items})
+                        current_items = []
+                        current_width = 0
+                    rows.append({"kind": "template_row", "items": [item]})
+                    continue
+
+                if current_items and next_width > available_width:
+                    rows.append({"kind": "template_row", "items": current_items})
+                    current_items = [item]
+                    current_width = option_w
+                else:
+                    current_items.append(item)
+                    current_width = next_width
+
+            if current_items:
+                rows.append({"kind": "template_row", "items": current_items})
+
+        return rows
+
+    def _card_type_picker_visible_templates(self, card, templates):
+        if not templates:
+            return [], 0, 0
+
+        card_rect = card.get("rect")
+        type_label_rect = card.get("type_label_rect")
+        if card_rect is None or type_label_rect is None:
+            return [], 0, 0
+
+        row_h = self.CARD_TYPE_PICKER_ROW_H
+        available_below = max(row_h, card_rect.bottom - type_label_rect.bottom - 18)
+        max_visible_rows = max(1, min(len(templates), (available_below - 38) // row_h))
+        scroll = int(card.get("type_picker_scroll", 0) or 0)
+        max_scroll = max(0, len(templates) - max_visible_rows)
+        scroll = max(0, min(max_scroll, scroll))
+        card["type_picker_scroll"] = scroll
+        return templates[scroll:scroll + max_visible_rows], scroll, max_scroll
+
     def _build_template_picker_hitboxes(self):
         self.template_button_hitboxes = []
         self.template_quick_button_hitboxes = []
+        self.template_picker_visible_rows = []
+        self.template_picker_total_rows = 0
         self.template_picker_rect = None
+        self.template_picker_search_rect = None
 
         if self.layout is None or not self.show_template_picker:
             return
 
         right_rect = self.layout["right_rect"]
         picker_w = min(360, right_rect.width - 24)
+        source_templates = self._filtered_template_picker_templates()
         quick_templates = self._template_picker_quick_templates()
-        quick_template_ids = {id(template) for template in quick_templates}
+        quick_template_ids = {self._template_identity(template) for template in quick_templates}
         list_templates = [
             template
-            for template in self.schema_entry_templates
-            if id(template) not in quick_template_ids
+            for template in source_templates
+            if self._template_identity(template) not in quick_template_ids
         ]
-        template_count = len(list_templates)
+        content_w = picker_w - 24
+        list_rows = self._template_picker_hierarchical_rows(
+            list_templates,
+            available_width=content_w,
+            font=self.font_for_layout,
+        )
+        self.template_picker_total_rows = len(list_rows)
         max_picker_h = max(96, right_rect.height - 70)
         header_h = self._template_picker_header_height()
         row_h = self._template_picker_row_height()
-        picker_h = min(max_picker_h, header_h + template_count * row_h + 8)
+        picker_h = min(max_picker_h, header_h + self.template_picker_total_rows * row_h + 8)
         picker_x = right_rect.right - picker_w - 12
         picker_y = right_rect.y + 44
         self.template_picker_rect = pygame.Rect(picker_x, picker_y, picker_w, picker_h)
+        search_y = picker_y + max(42, self._font_line_height() + 22)
+        self.template_picker_search_rect = pygame.Rect(
+            picker_x + 12,
+            search_y,
+            picker_w - 24,
+            self.BROWSER_SEARCH_H,
+        )
 
         if quick_templates:
-            quick_y = picker_y + max(42, self._font_line_height() + 22)
+            quick_y = self.template_picker_search_rect.bottom + self.BROWSER_CONTROL_GAP
             button_gap = 8
             button_w = min(96, (picker_w - 24 - button_gap) // max(1, len(quick_templates)))
             button_x = picker_x + 12
@@ -1048,16 +1579,26 @@ class KnowledgeBrowserUI:
                 button_x += button_w + button_gap
 
         visible_rows = max(1, (picker_h - header_h - 8) // row_h)
-        max_scroll = max(0, template_count - visible_rows)
+        max_scroll = max(0, self.template_picker_total_rows - visible_rows)
         self.template_picker_scroll = max(0, min(max_scroll, self.template_picker_scroll))
 
         button_y = picker_y + header_h
-        visible_templates = list_templates[
+        self.template_picker_visible_rows = list_rows[
             self.template_picker_scroll:self.template_picker_scroll + visible_rows
         ]
-        for template in visible_templates:
+        for row in self.template_picker_visible_rows:
             button_rect = pygame.Rect(picker_x + 12, button_y, picker_w - 24, row_h - 6)
-            self.template_button_hitboxes.append((template, template["label"], button_rect))
+            row["rect"] = button_rect
+            if row.get("kind") == "template_row":
+                item_x = button_rect.x
+                for item in row.get("items", []):
+                    item_w = max(40, min(button_rect.width - (item_x - button_rect.x), int(item.get("width", button_rect.width))))
+                    item_rect = pygame.Rect(item_x, button_rect.y, item_w, button_rect.height)
+                    item["rect"] = item_rect
+                    template = item.get("template")
+                    if template is not None:
+                        self.template_button_hitboxes.append((template, item.get("label", ""), item_rect))
+                    item_x = item_rect.right + 6
             button_y += row_h
 
     def _is_expanded(self, entity_id):
@@ -1212,6 +1753,8 @@ class KnowledgeBrowserUI:
             }
         missing = 0
         for field_key, spec in field_specs.items():
+            if field_key in {"card_color", "card_header_color", "wiki_field_colors", "wiki_link_color"}:
+                continue
             field_type = spec.get("type")
             if field_type not in {None, "string", "number", "text"}:
                 continue
@@ -1279,16 +1822,95 @@ class KnowledgeBrowserUI:
             "expanded": expanded,
         }
 
+    def _canonical_location_class_key(self, entity):
+        if not isinstance(entity, dict):
+            return "entity"
+
+        system_role = str(entity.get("system_role") or "").strip().lower()
+        if system_role == "star_system":
+            return "star_system"
+        if system_role == "orbital_body":
+            raw_class = entity.get("body_class") or entity.get("location_class") or "orbital_body"
+        else:
+            raw_class = (
+                entity.get("location_class")
+                or entity.get("system_class")
+                or entity.get("body_class")
+                or entity.get("type")
+                or "entity"
+            )
+
+        class_key = str(raw_class or "entity").strip().lower().replace(" ", "_").replace("-", "_")
+        class_aliases = {
+            "stellar_system": "star_system",
+            "starsystem": "star_system",
+            "star_system": "star_system",
+            "solar_system": "star_system",
+            "orbital_body": "orbital_body",
+            "celestial_body": "orbital_body",
+        }
+        return class_aliases.get(class_key, class_key)
+
+    def _location_class_display_label(self, entity):
+        class_key = self._canonical_location_class_key(entity)
+        display_labels = {
+            "star_system": "Star System",
+            "orbital_body": "Orbital Body",
+            "dwarf_planet": "Dwarf Planet",
+            "island_chain": "Island Chain",
+            "macro_site": "Macro Site",
+            "internal_passage": "Internal Passage",
+            "stellar_cluster": "Stellar Cluster",
+            "galaxy_cluster": "Galaxy Cluster",
+        }
+        return display_labels.get(class_key, class_key.replace("_", " ").title())
+
+    def _location_hierarchy_sort_key(self, entity):
+        class_key = self._canonical_location_class_key(entity)
+        class_rank = {
+            "supercluster": 0,
+            "galaxy_cluster": 5,
+            "cluster": 8,
+            "stellar_cluster": 10,
+            "galaxy": 15,
+            "star_system": 20,
+            "system": 20,
+            "star": 30,
+            "orbital_body": 35,
+            "planet": 40,
+            "dwarf_planet": 41,
+            "moon": 45,
+            "asteroid": 46,
+            "continent": 50,
+            "ocean": 51,
+            "sea": 52,
+            "country": 60,
+            "state": 61,
+            "province": 62,
+            "region": 65,
+            "island_chain": 66,
+            "atoll": 67,
+            "city": 70,
+            "settlement": 71,
+            "site": 80,
+            "macro_site": 80,
+            "internal_passage": 82,
+            "building": 90,
+            "room": 100,
+        }.get(class_key, 75)
+        label = self._entity_display_label(entity, fallback=entity.get("id", "")).lower()
+        return (class_rank, label, str(entity.get("id", "")))
+
     def _build_location_browser_items(self, world_model):
         items = []
 
         if world_model is None:
             return items
 
-        location_entities = world_model.get_entities_by_dataset("locations")
+        raw_location_entities = world_model.get_entities_by_dataset("locations")
         location_by_id = {
             entity.get("id"): entity
-            for entity in location_entities
+            for entity in raw_location_entities
             if isinstance(entity, dict) and entity.get("id")
         }
         alias_to_location_id = {
@@ -1301,87 +1923,93 @@ class KnowledgeBrowserUI:
                 return entity_id
             return alias_to_location_id.get(str(entity_id), str(entity_id))
 
-        system_entities = [
-            entity
-            for entity in location_entities
-            if isinstance(entity, dict) and entity.get("system_role")
-        ]
+        location_entities = list(location_by_id.values())
+        children_by_parent = {}
+        parent_ids_by_child = {}
 
-        star_systems = sorted(
-            [
-                entity for entity in system_entities
-                if entity.get("system_role") == "star_system"
-            ],
-            key=lambda entity: entity.get("name", entity.get("id", ""))
-        )
+        def append_unique(target, value):
+            if value and value not in target:
+                target.append(value)
 
-        bodies = [
-            entity for entity in system_entities
-            if entity.get("system_role") == "orbital_body"
-        ]
-        body_ids = {entity.get("id") for entity in bodies if entity.get("id")}
-        star_system_ids = {entity.get("id") for entity in star_systems if entity.get("id")}
-        other_systems = sorted(
-            [
-                entity for entity in system_entities
-                if entity.get("id") not in body_ids and entity.get("id") not in star_system_ids
-            ],
-            key=lambda entity: self._entity_display_label(entity, fallback=entity.get("id", "")).lower()
-        )
+        def relation_values(value):
+            if value is None:
+                return []
+            if isinstance(value, str):
+                return [value]
+            if isinstance(value, dict):
+                candidate = value.get("id") or value.get("entity_id") or value.get("target")
+                return [candidate] if candidate else []
+            if isinstance(value, (list, tuple, set)):
+                values = []
+                for item in value:
+                    values.extend(relation_values(item))
+                return values
+            return []
 
-        bodies_by_parent = {}
-        roots_by_system = {}
-        locations_by_parent = {}
-        attached_location_ids = set()
+        def structural_parent_ids(entity):
+            entity_id = canonical_location_id(entity.get("id"))
+            parent_ids = []
+            for field_key in ("parent_cluster", "parent_location", "parent_entity", "parent_body"):
+                for parent_id in relation_values(entity.get(field_key)):
+                    parent_id = canonical_location_id(parent_id)
+                    if parent_id and parent_id != entity_id and parent_id in location_by_id:
+                        append_unique(parent_ids, parent_id)
 
-        for body in bodies:
-            parent_body = canonical_location_id(body.get("parent_body"))
-            star_system_id = canonical_location_id(body.get("star_system"))
-            body_id = body.get("id")
+            if not parent_ids and entity.get("system_role") == "orbital_body":
+                for parent_id in relation_values(entity.get("star_system")):
+                    parent_id = canonical_location_id(parent_id)
+                    if parent_id and parent_id != entity_id and parent_id in location_by_id:
+                        append_unique(parent_ids, parent_id)
 
-            if parent_body:
-                bodies_by_parent.setdefault(parent_body, []).append(body)
-            else:
-                roots_by_system.setdefault(star_system_id, []).append(body)
+            if not parent_ids:
+                for parent_id in relation_values(entity.get("parents")):
+                    parent_id = canonical_location_id(parent_id)
+                    if parent_id and parent_id != entity_id and parent_id in location_by_id:
+                        append_unique(parent_ids, parent_id)
 
-        for location in location_entities:
-            if not isinstance(location, dict) or not location.get("id"):
+            return parent_ids
+
+        for entity in location_entities:
+            entity_id = canonical_location_id(entity.get("id"))
+            if not entity_id:
                 continue
+            parent_ids = structural_parent_ids(entity)
+            if parent_ids:
+                parent_ids_by_child[entity_id] = parent_ids
+                for parent_id in parent_ids:
+                    children_by_parent.setdefault(parent_id, []).append(entity)
 
-            parent_location = location.get("parent_location")
-            if parent_location:
-                locations_by_parent.setdefault(
-                    canonical_location_id(parent_location),
-                    [],
-                ).append(location)
-                attached_location_ids.add(location.get("id"))
+        for parent_entity in location_entities:
+            parent_id = canonical_location_id(parent_entity.get("id"))
+            if not parent_id:
+                continue
+            for child_field in ("children", "offspring"):
+                for child_id in relation_values(parent_entity.get(child_field)):
+                    child_id = canonical_location_id(child_id)
+                    child_entity = location_by_id.get(child_id)
+                    if not child_entity or child_id == parent_id:
+                        continue
+                    children = children_by_parent.setdefault(parent_id, [])
+                    if child_entity not in children:
+                        children.append(child_entity)
+                    parent_ids_by_child.setdefault(child_id, [])
+                    append_unique(parent_ids_by_child[child_id], parent_id)
 
-        for child_list in bodies_by_parent.values():
-            child_list.sort(key=lambda entity: entity.get("name", entity.get("id", "")))
-
-        for child_list in roots_by_system.values():
-            child_list.sort(key=lambda entity: entity.get("name", entity.get("id", "")))
-
-        for child_list in locations_by_parent.values():
-            child_list.sort(key=lambda entity: self._entity_display_label(entity, fallback=entity.get("id", "")).lower())
+        for child_list in children_by_parent.values():
+            unique_children = {}
+            for child in child_list:
+                child_id = canonical_location_id(child.get("id"))
+                if child_id:
+                    unique_children[child_id] = child
+            child_list[:] = sorted(unique_children.values(), key=self._location_hierarchy_sort_key)
 
         auto_reveal = self._location_tree_auto_reveal_descendants()
         emitted_ids = set()
 
-        def child_locations_for_parent(parent_id):
-            children = []
-            for location in locations_by_parent.get(canonical_location_id(parent_id), []):
-                if location.get("system_role"):
-                    continue
-                if location.get("id") not in {child.get("id") for child in children}:
-                    children.append(location)
-            children.sort(key=lambda entity: self._entity_display_label(entity, fallback=entity.get("id", "")).lower())
-            return children
-
         def location_subtree_matches(location_entity, seen=None):
             if seen is None:
                 seen = set()
-            location_id = location_entity.get("id")
+            location_id = canonical_location_id(location_entity.get("id"))
             if not location_id or location_id in seen:
                 return False
             seen.add(location_id)
@@ -1389,37 +2017,17 @@ class KnowledgeBrowserUI:
             if self._location_tree_entity_matches(location_entity, "locations"):
                 return True
 
-            for child in locations_by_parent.get(location_id, []):
+            for child in children_by_parent.get(location_id, []):
                 if location_subtree_matches(child, seen=seen):
                     return True
             return False
 
-        def attached_locations_match(parent_id):
-            return any(location_subtree_matches(location) for location in child_locations_for_parent(parent_id))
-
-        def body_subtree_matches(body_entity, seen=None):
-            if seen is None:
-                seen = set()
-            body_id = body_entity.get("id")
-            if not body_id or body_id in seen:
-                return False
-            seen.add(body_id)
-
-            if self._location_tree_entity_matches(body_entity, "locations"):
-                return True
-            if attached_locations_match(body_id):
-                return True
-            for child in bodies_by_parent.get(body_id, []):
-                if body_subtree_matches(child, seen=seen):
-                    return True
-            return False
-
         def add_location_subtree(location_entity, depth):
-            location_id = location_entity.get("id")
+            location_id = canonical_location_id(location_entity.get("id"))
             if not location_id or location_id in emitted_ids:
                 return
 
-            children = locations_by_parent.get(location_id, [])
+            children = children_by_parent.get(location_id, [])
             descendant_match = any(location_subtree_matches(child) for child in children)
             if not self._location_tree_entity_matches(location_entity, "locations") and not descendant_match:
                 return
@@ -1433,7 +2041,7 @@ class KnowledgeBrowserUI:
                     depth,
                     expandable,
                     expanded,
-                    meta_label=f"location: {self._entity_class_label('locations', location_entity)}",
+                    meta_label=self._location_class_display_label(location_entity),
                 )
             )
             emitted_ids.add(location_id)
@@ -1442,84 +2050,20 @@ class KnowledgeBrowserUI:
                 for child in children:
                     add_location_subtree(child, depth + 1)
 
-        def add_attached_locations(parent_id, depth):
-            for location_entity in child_locations_for_parent(parent_id):
-                add_location_subtree(location_entity, depth)
-
-        def add_body_subtree(body_entity, depth):
-            body_id = body_entity.get("id")
-            children = bodies_by_parent.get(body_id, [])
-            attached_locations = child_locations_for_parent(body_id)
-            expandable = bool(children or attached_locations)
-            descendant_match = attached_locations_match(body_id) or any(body_subtree_matches(child) for child in children)
-            if not self._location_tree_entity_matches(body_entity, "locations") and not descendant_match:
-                return
-
-            expanded = self._is_expanded(body_id)
-            meta_label = body_entity.get("body_class", body_entity.get("type", "entity"))
-            if attached_locations:
-                meta_label = f"{meta_label} | locations:{len(attached_locations)}"
-            items.append(
-                self._location_tree_item(
-                    body_entity,
-                    "locations",
-                    depth,
-                    expandable,
-                    expanded,
-                    meta_label=meta_label,
-                )
-            )
-
-            if expandable and (expanded or (auto_reveal and descendant_match)):
-                add_attached_locations(body_id, depth + 1)
-                for child in children:
-                    add_body_subtree(child, depth + 1)
-
-        def add_system_subtree(system_entity):
-            system_id = system_entity.get("id")
-            root_bodies = roots_by_system.get(system_id, [])
-            attached_locations = child_locations_for_parent(system_id)
-            expandable = bool(root_bodies or attached_locations)
-            descendant_match = attached_locations_match(system_id) or any(body_subtree_matches(body) for body in root_bodies)
-            if not self._location_tree_entity_matches(system_entity, "locations") and not descendant_match:
-                return
-
-            expanded = self._is_expanded(system_id)
-            items.append(
-                self._location_tree_item(
-                    system_entity,
-                    "locations",
-                    0,
-                    expandable,
-                    expanded,
-                    meta_label=system_entity.get("system_class") or "system",
-                )
-            )
-
-            if expandable and (expanded or (auto_reveal and descendant_match)):
-                add_attached_locations(system_id, 1)
-                for root_body in root_bodies:
-                    add_body_subtree(root_body, 1)
-
-        for system_entity in star_systems:
-            add_system_subtree(system_entity)
-
-        for system_entity in other_systems:
-            add_system_subtree(system_entity)
-
         root_locations = sorted(
             [
                 location for location in location_entities
-                if location.get("id")
-                and not location.get("parent_location")
-                and not location.get("system_role")
-                and location.get("id") not in attached_location_ids
-                and location.get("id") not in emitted_ids
+                if canonical_location_id(location.get("id"))
+                and canonical_location_id(location.get("id")) not in parent_ids_by_child
             ],
-            key=lambda entity: self._entity_display_label(entity, fallback=entity.get("id", "")).lower()
+            key=self._location_hierarchy_sort_key,
         )
         for location_entity in root_locations:
             add_location_subtree(location_entity, 0)
+
+        for location_entity in sorted(location_entities, key=self._location_hierarchy_sort_key):
+            if canonical_location_id(location_entity.get("id")) not in emitted_ids:
+                add_location_subtree(location_entity, 0)
 
         return items
 
@@ -1528,11 +2072,7 @@ class KnowledgeBrowserUI:
 
     def _entity_class_label(self, dataset_name, entity):
         if dataset_name == "locations":
-            if entity.get("system_role") == "star_system":
-                return entity.get("system_class", entity.get("location_class", entity.get("type", "entity")))
-            if entity.get("system_role") == "orbital_body":
-                return entity.get("body_class", entity.get("location_class", entity.get("type", "entity")))
-            return entity.get("location_class", entity.get("type", "entity"))
+            return self._location_class_display_label(entity)
         if dataset_name == "vehicles":
             return entity.get("vehicle_class", entity.get("type", "entity"))
         if dataset_name == "components":
@@ -1694,14 +2234,12 @@ class KnowledgeBrowserUI:
             years = [start_year, end_year]
         elif start_year is not None:
             years = [start_year]
-        elif end_year is not None:
-            years = [end_year]
         elif point_year is not None:
             years = [point_year]
         else:
-            years = [0]
+            years = []
 
-        selected_year = years[0]
+        selected_year = years[0] if years else None
 
         card_index = len(self.cards)
         spawn_x = 24 + (card_index % 3) * 40
@@ -1739,14 +2277,19 @@ class KnowledgeBrowserUI:
             "relation_picker_matches": [],
             "relation_picker_selected_index": 0,
             "relation_picker_hitboxes": [],
+            "wiki_link_hitboxes": [],
+            "wiki_section_hitboxes": [],
             "toolbelt_hitboxes": [],
             "task_checklist_hitboxes": [],
             "task_checklist_input_active": False,
             "task_checklist_input_buffer": "",
             "type_picker_open": False,
             "type_picker_hitboxes": [],
+            "type_picker_scroll": 0,
+            "type_picker_rect": None,
             "draft_edit_buffers": {},
             "is_draft_entity": False,
+            "delete_confirm_active": False,
             "last_edit_action": None,
         }
         self._apply_cached_draft_to_card(card)
@@ -1806,12 +2349,16 @@ class KnowledgeBrowserUI:
             "relation_picker_matches": [],
             "relation_picker_selected_index": 0,
             "relation_picker_hitboxes": [],
+            "wiki_link_hitboxes": [],
+            "wiki_section_hitboxes": [],
             "toolbelt_hitboxes": [],
             "task_checklist_hitboxes": [],
             "task_checklist_input_active": False,
             "task_checklist_input_buffer": "",
             "type_picker_open": False,
             "type_picker_hitboxes": [],
+            "type_picker_scroll": 0,
+            "type_picker_rect": None,
         }
 
 
@@ -1839,9 +2386,9 @@ class KnowledgeBrowserUI:
                 minimum_h = 260
 
             if auto_canvas_h:
-                card_h = max(260, min(1200, minimum_h))
+                card_h = max(260, min(2400, minimum_h))
             else:
-                card_h = max(260, min(1200, requested_h))
+                card_h = max(260, min(2400, max(requested_h, minimum_h)))
             card["canvas_h"] = card_h
             card["layout_font"] = card_font
 
@@ -1867,7 +2414,10 @@ class KnowledgeBrowserUI:
 
         self.canvas_content_width = max(0, max_right + 24)
         self.canvas_content_height = max(0, max_bottom + 24)
+        self.timeline_ui.set_open_canvas_entity_ids(card.get("entity_id") for card in self.cards)
+        self.timeline_ui.rebuild_layout()
         self._layout_canvas_relation_controls()
+        self._rebuild_canvas_relation_edges()
 
     def _clamp_canvas_offsets(self):
         # The card canvas is intentionally unbounded. Offsets are allowed to
@@ -1958,6 +2508,29 @@ class KnowledgeBrowserUI:
 
         return False
 
+    def _scroll_type_picker_at(self, mouse_pos, wheel_y):
+        for index in range(len(self.cards) - 1, -1, -1):
+            card = self.cards[index]
+            if not card.get("type_picker_open", False):
+                continue
+
+            picker_rect = card.get("type_picker_rect")
+            if picker_rect is None or not picker_rect.collidepoint(mouse_pos):
+                continue
+
+            templates = self._conversion_templates()
+            _, scroll, max_scroll = self._card_type_picker_visible_templates(card, templates)
+            if max_scroll <= 0:
+                return True
+
+            new_scroll = max(0, min(max_scroll, scroll - int(wheel_y)))
+            if new_scroll != scroll:
+                card["type_picker_scroll"] = new_scroll
+                self._relayout_cards()
+            return True
+
+        return False
+
     def _bring_card_to_front(self, index):
         card_obj = self.cards.pop(index)
         self.cards.append(card_obj)
@@ -1990,6 +2563,7 @@ class KnowledgeBrowserUI:
         self._close_relation_picker(closing_card)
         self.active_card_drag_id = None
         self.active_card_resize_id = None
+        self.active_card_color_slider = None
         self._relayout_cards()
         return True
 
@@ -2120,6 +2694,15 @@ class KnowledgeBrowserUI:
                 return candidate
             index += 1
 
+    def _requested_template_entity_id_from_name(self, template, entry_name):
+        if not isinstance(template, dict):
+            return ""
+        dataset_name = template.get("dataset_name")
+        entity_type = template.get("entity_type") or self._template_entity_type(dataset_name, template)
+        return self._unique_entity_id(
+            self._entity_id_from_name(dataset_name, entity_type, entry_name, template=template)
+        )
+
     def _default_value_for_schema_field(self, field_type):
         field_type = str(field_type or "").lower()
         if "list" in field_type:
@@ -2178,18 +2761,26 @@ class KnowledgeBrowserUI:
 
         dataset_name = template.get("dataset_name")
         entity_type = template.get("entity_type") or self._template_entity_type(dataset_name, template)
-        requested_id = str(requested_id or "").strip()
-        requested_id = requested_id.replace(" ", "_")
-        existing_ids = set(self.world_model.loader.entities.keys()) if self.world_model is not None else set()
-        existing_ids.update(self.card_drafts.keys())
+        initial_fields = self._template_initial_fields(template, initial_fields)
+        requested_id = self._sanitize_entity_id(requested_id)
+        if not requested_id:
+            name_source = label
+            name_source = (
+                initial_fields.get("binomial_name")
+                or initial_fields.get("pretty_name")
+                or initial_fields.get("name")
+                or initial_fields.get("common_name")
+                or name_source
+            )
+            requested_id = self._entity_id_from_name(dataset_name, entity_type, name_source, template=template)
         species_binomial = ""
-        if dataset_name == "species" and isinstance(initial_fields, dict):
+        if dataset_name == "species":
             species_binomial = str(initial_fields.get("binomial_name") or "").strip()
         species_requested_id = self._species_id_from_binomial(species_binomial) if dataset_name == "species" else ""
         if species_requested_id:
             requested_id = self._unique_entity_id(species_requested_id)
 
-        entity_id = requested_id if requested_id and requested_id not in existing_ids else self._next_template_entity_id(dataset_name, template=template)
+        entity_id = self._unique_entity_id(requested_id) if requested_id else self._next_template_entity_id(dataset_name, template=template)
         label = label or (
             self._label_from_requested_entity_id(entity_id, entity_type=entity_type)
             if requested_id
@@ -2215,10 +2806,9 @@ class KnowledgeBrowserUI:
                 "wiki_entry": "",
             }
         self._populate_required_schema_fields(entity, template)
-        if isinstance(initial_fields, dict):
-            for field_key, value in initial_fields.items():
-                if field_key not in {"id", "_dataset"}:
-                    entity[field_key] = value
+        for field_key, value in initial_fields.items():
+            if field_key not in {"id", "_dataset"}:
+                entity[field_key] = value
         if dataset_name == "tasks":
             entity.setdefault("entry_status", "incomplete")
             entity.setdefault("checklist", [])
@@ -2253,7 +2843,7 @@ class KnowledgeBrowserUI:
             self._save_card_draft(card)
         return entity
 
-    def _open_entry_name_prompt(self, template, mode="template", context=None, label=None):
+    def _open_entry_name_prompt(self, template, mode="template", context=None, label=None, initial_buffer=""):
         label = label or "Entry"
         if isinstance(template, dict):
             label = template.get("label") or self._schema_display_label(template.get("entity_type"))
@@ -2265,8 +2855,8 @@ class KnowledgeBrowserUI:
             "mode": mode,
             "context": context or {},
             "label": label,
-            "buffer": "",
-            "cursor": 0,
+            "buffer": str(initial_buffer or ""),
+            "cursor": len(str(initial_buffer or "")),
             "rect": None,
             "input_rect": None,
             "create_rect": None,
@@ -2323,12 +2913,107 @@ class KnowledgeBrowserUI:
             label=label,
         )
 
+    @staticmethod
+    def _coerce_hex_rgb(value, fallback=(28, 30, 38)):
+        text = str(value or "").strip()
+        if text.startswith("#") and len(text) == 7:
+            try:
+                return (
+                    int(text[1:3], 16),
+                    int(text[3:5], 16),
+                    int(text[5:7], 16),
+                )
+            except ValueError:
+                pass
+        return fallback
+
+    @staticmethod
+    def _rgb_to_hex(color):
+        red, green, blue = [max(0, min(255, int(part))) for part in color[:3]]
+        return f"#{red:02x}{green:02x}{blue:02x}"
+
+    def _card_color_value(self, entity, role="body", section_id=None):
+        role = str(role or "body").strip().lower()
+        if role == "header":
+            return entity.get("card_header_color") or entity.get("card_color") or EntityCard.CARD_COLOR_DEFAULT
+        if role == "wiki":
+            colors = entity.get("wiki_field_colors")
+            if not isinstance(colors, dict):
+                colors = {}
+            section_id = str(section_id or "").strip()
+            return colors.get(section_id) or colors.get("default") or "#222632"
+        return entity.get("card_color") or entity.get("wiki_link_color") or EntityCard.CARD_COLOR_DEFAULT
+
+    def _card_color_hsv(self, entity, role="body", section_id=None):
+        rgb = self._coerce_hex_rgb(self._card_color_value(entity, role=role, section_id=section_id))
+        return colorsys.rgb_to_hsv(rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0)
+
+    def _set_card_color(self, card, color_hex, persist=True, role=None, section_id=None):
+        entity = self._entity_for_card(card)
+        color_hex = str(color_hex or "").strip()
+        if not isinstance(entity, dict) or not color_hex:
+            return False
+
+        if role is None:
+            role = card.get("active_color_role", "body") if card is not None else "body"
+        role = str(role or "body").strip().lower()
+        if role == "header":
+            entity["card_header_color"] = color_hex
+        elif role == "wiki":
+            section_id = str(section_id or (card or {}).get("active_wiki_section_id") or "default").strip() or "default"
+            colors = entity.get("wiki_field_colors")
+            if not isinstance(colors, dict):
+                colors = {}
+            colors[section_id] = color_hex
+            entity["wiki_field_colors"] = colors
+        else:
+            entity["card_color"] = color_hex
+        entity.pop("wiki_link_color", None)
+        if card is None:
+            return True
+
+        card_view = card.get("card_view")
+        if card_view is not None:
+            card_view.entity = entity
+
+        if persist and not card.get("is_temporary", False):
+            self._save_card_draft(card)
+            if not card.get("is_draft_entity", False):
+                self._persist_card_entity(card)
+            self._refresh_timeline_items()
+        return True
+
+    def _set_card_color_from_slider(self, card, channel, slider_rect, mouse_x, persist=True, role=None, section_id=None):
+        entity = self._entity_for_card(card)
+        if not isinstance(entity, dict) or slider_rect is None:
+            return False
+
+        slider_w = max(1, int(slider_rect.width))
+        value = (mouse_x - slider_rect.x) / slider_w
+        value = max(0.0, min(1.0, value))
+        role = role or (card or {}).get("active_color_role", "body")
+        section_id = section_id or (card or {}).get("active_wiki_section_id")
+        hue, saturation, brightness = self._card_color_hsv(entity, role=role, section_id=section_id)
+        if channel == "h":
+            hue = value
+        elif channel == "s":
+            saturation = value
+        elif channel == "v":
+            brightness = value
+        else:
+            return False
+
+        red, green, blue = colorsys.hsv_to_rgb(hue, saturation, brightness)
+        color_hex = self._rgb_to_hex((round(red * 255), round(green * 255), round(blue * 255)))
+        return self._set_card_color(card, color_hex, persist=persist, role=role, section_id=section_id)
+
     def _close_entry_name_prompt(self):
         self.entry_name_prompt = None
 
     def _create_named_template_entity(self, template, entry_name):
         entity = self._create_and_open_template_entity(
             template,
+            requested_id=self._requested_template_entity_id_from_name(template, entry_name),
             initial_fields={
                 "pretty_name": entry_name,
                 "name": entry_name,
@@ -2355,6 +3040,7 @@ class KnowledgeBrowserUI:
         parent_entity = self.world_model.get_entity(parent_entity_id)
         idea = self._create_template_entity(
             "ideas",
+            requested_id=self._requested_template_entity_id_from_name(self._template_by_dataset("ideas"), entry_name),
             initial_fields={
                 "pretty_name": entry_name,
                 "name": entry_name,
@@ -2381,6 +3067,69 @@ class KnowledgeBrowserUI:
             self._save_card_draft(card)
         return idea
 
+    def _open_relation_note_prompt(self, source_card, relation_info, initial_text=""):
+        if source_card is None or not isinstance(relation_info, dict):
+            return False
+        return self._open_entry_name_prompt(
+            None,
+            mode="relation_note",
+            context={
+                "source_entity_id": source_card.get("entity_id"),
+                "card": source_card,
+                "field_key": relation_info.get("field_key"),
+            },
+            label="Note",
+            initial_buffer=initial_text,
+        )
+
+    def _create_relation_note(self, source_card, field_key, note_text):
+        if self.world_model is None:
+            return None
+        note_text = str(note_text or "").strip()
+        if not note_text:
+            return None
+
+        template = self._template_by_dataset("ideas") or {
+            "dataset_name": "ideas",
+            "entity_type": "idea",
+            "schema_name": "idea",
+        }
+        source_entity_id = source_card.get("entity_id") if source_card is not None else ""
+        note = self._create_and_open_template_entity(
+            template,
+            requested_id=self._requested_template_entity_id_from_name(template, note_text),
+            initial_fields={
+                "pretty_name": note_text,
+                "name": note_text,
+                "idea_class": "note",
+                "wiki_entry": note_text,
+                "related": [source_entity_id] if source_entity_id else [],
+            },
+            label=note_text,
+            place_in_view=True,
+        )
+        if note is None:
+            return None
+
+        note["pretty_name"] = note_text
+        note["name"] = note_text
+        note["idea_class"] = "note"
+        note["wiki_entry"] = note_text
+
+        note_id = str(note.get("id") or "").strip()
+        if source_card is not None and field_key and note_id:
+            self._insert_relation_reference_into_card(source_card, field_key, note_id)
+            if source_card.get("is_draft_entity", False):
+                self._save_card_draft(source_card)
+            else:
+                self._persist_card_entity(source_card)
+
+        self.browser_items = self._build_browser_items(self.world_model)
+        self._refresh_timeline_items()
+        self._rebuild_browser_hitboxes()
+        self._relayout_cards()
+        return note
+
     def _submit_entry_name_prompt(self):
         prompt = self.entry_name_prompt
         if not isinstance(prompt, dict):
@@ -2393,6 +3142,18 @@ class KnowledgeBrowserUI:
 
         mode = prompt.get("mode", "template")
         template = prompt.get("template")
+        if mode == "relation_note":
+            context = prompt.get("context", {})
+            source_card = context.get("card")
+            if source_card not in self.cards:
+                source_card = self._find_card_by_entity_id(context.get("source_entity_id"))
+            note = self._create_relation_note(source_card, context.get("field_key"), entry_name)
+            if note is None:
+                prompt["status"] = "Could not create note"
+                return True
+            self._close_entry_name_prompt()
+            return True
+
         if mode == "idea_from_parent":
             context = prompt.get("context", {})
             idea = self._create_named_idea_from_parent(context.get("parent_entity_id"), entry_name)
@@ -2419,6 +3180,10 @@ class KnowledgeBrowserUI:
             self.pending_new_entry_name = entry_name
             self._close_entry_name_prompt()
             self.schema_entry_templates = self._load_schema_entry_templates()
+            self.template_picker_mode = "create"
+            self.template_picker_context = {}
+            self.template_picker_search_query = ""
+            self.template_picker_search_active = True
             self.show_template_picker = True
             self.template_picker_scroll = 0
             self.template_picker_status = f"Choose type for {entry_name}"
@@ -2505,9 +3270,60 @@ class KnowledgeBrowserUI:
                 return False
             self.show_template_picker = False
             self.template_picker_status = ""
+            self.template_picker_mode = "create"
+            self.template_picker_context = {}
             self._build_template_picker_hitboxes()
             return True
         return self._open_entry_name_prompt(template)
+
+    def _open_card_class_template_picker(self, card):
+        entity = self._entity_for_card(card)
+        if not isinstance(entity, dict):
+            return False
+
+        for open_card in self.cards:
+            self._close_type_picker(open_card)
+
+        self.schema_entry_templates = self._load_schema_entry_templates()
+        self.pending_new_entry_name = None
+        self.template_picker_mode = "convert"
+        self.template_picker_context = {
+            "entity_id": card.get("entity_id"),
+            "card": card,
+        }
+        self.template_picker_search_query = ""
+        self.template_picker_search_active = True
+        self.template_picker_scroll = 0
+        self.template_picker_status = f"Choose class for {card.get('title') or entity.get('id')}"
+        self.show_template_picker = True
+        self._build_template_picker_hitboxes()
+        return True
+
+    def _select_template_picker_template(self, template):
+        if self.template_picker_mode == "convert":
+            entity_id = self.template_picker_context.get("entity_id")
+            card = self.template_picker_context.get("card")
+            if card not in self.cards:
+                card = self._find_card_by_entity_id(entity_id)
+            if card is None:
+                self.template_picker_status = "Card no longer open"
+                return False
+            if not self._convert_card_to_template(card, template):
+                self.template_picker_status = "Could not change class"
+                return False
+            self.show_template_picker = False
+            self.template_picker_search_query = ""
+            self.template_picker_search_active = False
+            self.template_picker_mode = "create"
+            self.template_picker_context = {}
+            self.template_picker_status = ""
+            self._build_template_picker_hitboxes()
+            return True
+
+        if self.template_picker_mode == "relation_create":
+            return self._create_relation_target_from_template_picker(template)
+
+        return self._create_new_entry_from_template(template)
 
     def _handle_template_picker_click(self, mouse_pos):
         if not self.show_template_picker:
@@ -2519,10 +3335,16 @@ class KnowledgeBrowserUI:
             self._build_template_picker_hitboxes()
             return "__ui_consumed__"
 
+        if self.template_picker_search_rect is not None and self.template_picker_search_rect.collidepoint(mouse_pos):
+            self.template_picker_search_active = True
+            return "__ui_consumed__"
+
+        self.template_picker_search_active = False
+
         for template, _, button_rect in self.template_quick_button_hitboxes:
             if button_rect.collidepoint(mouse_pos):
-                created = self._create_new_entry_from_template(template)
-                if not created:
+                created = self._select_template_picker_template(template)
+                if not created and self.template_picker_mode != "convert":
                     self.template_picker_status = "Name entry first"
                     self._open_entry_name_prompt(template)
                 return "__ui_consumed__"
@@ -2531,8 +3353,8 @@ class KnowledgeBrowserUI:
             if not button_rect.collidepoint(mouse_pos):
                 continue
 
-            created = self._create_new_entry_from_template(template)
-            if not created:
+            created = self._select_template_picker_template(template)
+            if not created and self.template_picker_mode != "convert":
                 self.template_picker_status = "Name entry first"
                 self._open_entry_name_prompt(template)
             return "__ui_consumed__"
@@ -2654,6 +3476,7 @@ class KnowledgeBrowserUI:
 
         created_entity = self._create_and_open_template_entity(
             template,
+            requested_id=self._requested_template_entity_id_from_name(template, entry_name),
             initial_fields=initial_fields,
             label=entry_name,
             place_in_view=True,
@@ -2717,6 +3540,7 @@ class KnowledgeBrowserUI:
     def _close_type_picker(self, card):
         card["type_picker_open"] = False
         card["type_picker_hitboxes"] = []
+        card["type_picker_rect"] = None
 
     def _toggle_type_picker(self, card):
         if card is None:
@@ -2726,6 +3550,9 @@ class KnowledgeBrowserUI:
             return False
         card["type_picker_open"] = not bool(card.get("type_picker_open", False))
         card["type_picker_hitboxes"] = []
+        card["type_picker_rect"] = None
+        if card["type_picker_open"]:
+            card["type_picker_scroll"] = 0
         return True
 
     def _remove_entity_from_dataset_index(self, dataset_name, entity_id, entity_obj):
@@ -2756,6 +3583,70 @@ class KnowledgeBrowserUI:
             f.write(updated_text)
         return True
 
+    def _delete_card_entry(self, card):
+        entity = self._entity_for_card(card)
+        if not isinstance(entity, dict):
+            return False
+
+        entity_id = str(entity.get("id") or card.get("entity_id") or "").strip()
+        dataset_name = entity.get("_dataset", entity.get("type", ""))
+        if not entity_id or not dataset_name:
+            return False
+
+        removed = False
+        if card.get("is_draft_entity", False):
+            removed = True
+        else:
+            removed = self._remove_entity_from_repository(dataset_name, entity_id)
+            if not removed:
+                return False
+
+        loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
+        if loader is not None:
+            self._remove_entity_from_dataset_index(dataset_name, entity_id, entity)
+            if getattr(loader, "entities", None) is not None:
+                loader.entities.pop(entity_id, None)
+            aliases = getattr(loader, "entity_aliases", None)
+            if isinstance(aliases, dict):
+                aliases.pop(entity_id, None)
+                for alias, target in list(aliases.items()):
+                    if target == entity_id:
+                        aliases.pop(alias, None)
+
+        self._remove_card_draft(entity_id)
+        self.cards = [open_card for open_card in self.cards if open_card is not card]
+        if self.selected_entity_id == entity_id:
+            self.selected_entity_id = self.cards[-1].get("entity_id") if self.cards else None
+        if self.active_card_drag_id == entity_id:
+            self.active_card_drag_id = None
+        if self.active_card_resize_id == entity_id:
+            self.active_card_resize_id = None
+        if self.canvas_relation_link_source_id == entity_id:
+            self._clear_canvas_relation_link()
+        if (
+            self.relation_link_target is not None
+            and self.relation_link_target.get("source_entity_id") == entity_id
+        ):
+            self.relation_link_target = None
+            self.relation_link_status = ""
+
+        if not card.get("is_draft_entity", False) and self.world_model is not None:
+            refresh = getattr(self.world_model, "refresh", None)
+            if callable(refresh):
+                refresh()
+            else:
+                touch_degrees = getattr(self.world_model, "touch_degrees", None)
+                if hasattr(touch_degrees, "refresh"):
+                    touch_degrees.refresh()
+                if loader is not None and hasattr(loader, "build_reference_graph"):
+                    loader.build_reference_graph()
+
+        self.browser_items = self._build_browser_items(self.world_model)
+        self._refresh_timeline_items()
+        self._rebuild_browser_hitboxes()
+        self._relayout_cards()
+        return removed
+
     def _convert_card_to_template(self, card, template):
         entity = self._entity_for_card(card)
         if not isinstance(entity, dict) or not isinstance(template, dict):
@@ -2768,7 +3659,16 @@ class KnowledgeBrowserUI:
         if not old_id or not new_dataset:
             return False
 
-        new_id = self._next_template_entity_id(new_dataset, template=template)
+        name_source = (
+            entity.get("pretty_name")
+            or entity.get("name")
+            or entity.get("common_name")
+            or old_id
+        )
+        new_id = self._unique_entity_id(
+            self._entity_id_from_name(new_dataset, new_type, name_source, template=template),
+            current_id=old_id,
+        ) or self._next_template_entity_id(new_dataset, template=template)
         if new_dataset == "species":
             converted = {
                 "id": new_id,
@@ -2799,6 +3699,9 @@ class KnowledgeBrowserUI:
         converted["derived_from"] = derived_from
 
         self._populate_required_schema_fields(converted, template)
+        for field_key, value in self._template_initial_fields(template).items():
+            if field_key not in {"id", "_dataset", "pretty_name", "name", "type"}:
+                converted[field_key] = value
 
         entity.clear()
         entity.update(converted)
@@ -2875,15 +3778,15 @@ class KnowledgeBrowserUI:
             years = [start_year, end_year]
         elif start_year is not None:
             years = [start_year]
-        elif end_year is not None:
-            years = [end_year]
         elif point_year is not None:
             years = [point_year]
         else:
-            years = [0]
+            years = []
 
         card["years"] = years
-        if card.get("selected_year") not in years:
+        if not years:
+            card["selected_year"] = None
+        elif card.get("selected_year") not in years:
             card["selected_year"] = years[0]
 
     def _set_timeline_edit_target(self, card_obj, field_key):
@@ -3024,7 +3927,7 @@ class KnowledgeBrowserUI:
         self._clear_timeline_edit_target()
         return False
 
-    def _ensure_card(self, entity):
+    def _ensure_card(self, entity, relayout=True, bring_to_front=True):
         if entity is None:
             return None
 
@@ -3035,17 +3938,193 @@ class KnowledgeBrowserUI:
         for index, card in enumerate(self.cards):
             if card.get("entity_id") == entity_id:
                 self.selected_entity_id = entity_id
-                card_obj = self._bring_card_to_front(index)
-                self._layout_all_cards()
+                card_obj = self._bring_card_to_front(index) if bring_to_front else card
+                if relayout:
+                    self._layout_all_cards()
                 return card_obj
 
         new_card = self._build_card_from_entity(entity)
         if new_card is not None:
             self.cards.append(new_card)
             self.selected_entity_id = entity_id
-            self._relayout_cards()
+            if relayout:
+                self._relayout_cards()
             return new_card
         return None
+
+    def _relation_tree_neighbor_ids(self, entity_id):
+        if self.world_model is None or not entity_id:
+            return []
+
+        entity_id = str(entity_id)
+        cached_neighbors = self.relation_tree_neighbor_cache.get(entity_id)
+        if cached_neighbors is not None:
+            return list(cached_neighbors)
+
+        neighbor_ids = set()
+
+        graph = getattr(self.world_model, "graph", None) or getattr(self.world_model, "touch_degrees", None)
+        if graph is not None and hasattr(graph, "get_neighbors"):
+            for neighbor_id in graph.get_neighbors(entity_id):
+                if neighbor_id and str(neighbor_id) != entity_id:
+                    neighbor_ids.add(str(neighbor_id))
+
+        entity = self.world_model.get_entity(entity_id)
+        if isinstance(entity, dict):
+            entities = getattr(getattr(self.world_model, "loader", None), "entities", {})
+
+            def collect_refs(value):
+                if isinstance(value, str):
+                    stripped = value.strip()
+                    if stripped and stripped in entities and stripped != entity_id:
+                        neighbor_ids.add(stripped)
+                elif isinstance(value, dict):
+                    for nested_value in value.values():
+                        collect_refs(nested_value)
+                elif isinstance(value, (list, tuple, set)):
+                    for item in value:
+                        collect_refs(item)
+
+            for field_key, field_value in entity.items():
+                if field_key in {"id", "pretty_name", "name", "description", "notes", "wiki_entry"}:
+                    continue
+                collect_refs(field_value)
+
+        def sort_key(neighbor_id):
+            entity = self.world_model.get_entity(neighbor_id) if self.world_model is not None else None
+            if isinstance(entity, dict):
+                return self._entity_display_label(entity, fallback=neighbor_id).lower()
+            return str(neighbor_id).lower()
+
+        sorted_neighbors = sorted(neighbor_ids, key=sort_key)
+        self.relation_tree_neighbor_cache[entity_id] = tuple(sorted_neighbors)
+        return sorted_neighbors
+
+    def _entity_temporal_range(self, entity):
+        if not isinstance(entity, dict):
+            return None
+
+        start_year = self._coerce_card_year(entity.get("start_year"))
+        end_year = self._coerce_card_year(entity.get("end_year"))
+        point_year = self._coerce_card_year(entity.get("year"))
+        if point_year is None:
+            point_year = self._coerce_card_year(entity.get("year_number"))
+
+        if start_year is not None and end_year is not None:
+            return (min(start_year, end_year), max(start_year, end_year))
+        if start_year is not None:
+            return (start_year, start_year)
+        if point_year is not None:
+            return (point_year, point_year)
+        return None
+
+    def _contemporary_entity_ids(self, root_id, existing_ids=None, limit=4):
+        if self.world_model is None or not root_id:
+            return []
+
+        root_entity = self.world_model.get_entity(root_id)
+        root_range = self._entity_temporal_range(root_entity)
+        if root_range is None:
+            return []
+
+        existing_ids = set(existing_ids or [])
+        root_start, root_end = root_range
+        root_mid = (root_start + root_end) / 2
+        candidates = []
+        entities = getattr(getattr(self.world_model, "loader", None), "entities", {})
+        for entity_id, entity in entities.items():
+            entity_id = str(entity_id)
+            if entity_id == root_id or entity_id in existing_ids:
+                continue
+            candidate_range = self._entity_temporal_range(entity)
+            if candidate_range is None:
+                continue
+            candidate_start, candidate_end = candidate_range
+            if candidate_start > root_end or candidate_end < root_start:
+                continue
+
+            overlap = min(root_end, candidate_end) - max(root_start, candidate_start)
+            candidate_mid = (candidate_start + candidate_end) / 2
+            label = self._entity_display_label(entity, fallback=entity_id).lower()
+            candidates.append((-overlap, abs(candidate_mid - root_mid), label, entity_id))
+
+        candidates.sort()
+        return [entity_id for _, _, _, entity_id in candidates[:max(0, int(limit))]]
+
+    def _open_relation_tree_for_card(self, source_card):
+        if self.world_model is None or source_card is None or source_card.get("card_kind") == "schema":
+            return False
+
+        root_id = str(source_card.get("entity_id") or "").strip()
+        if not root_id or self.world_model.get_entity(root_id) is None:
+            return False
+
+        card_limit = 72
+        max_depth = max(
+            self.relation_tree_min_touch_degree,
+            min(self.relation_tree_max_touch_degree, int(self.relation_tree_touch_degree)),
+        )
+        queue = [(root_id, 0)]
+        visited = {root_id}
+        ordered_ids = [root_id]
+        levels = {0: [root_id]}
+
+        while queue and len(visited) < card_limit:
+            current_id, depth = queue.pop(0)
+            if depth >= max_depth:
+                continue
+            for neighbor_id in self._relation_tree_neighbor_ids(current_id):
+                if neighbor_id in visited or self.world_model.get_entity(neighbor_id) is None:
+                    continue
+                visited.add(neighbor_id)
+                ordered_ids.append(neighbor_id)
+                levels.setdefault(depth + 1, []).append(neighbor_id)
+                queue.append((neighbor_id, depth + 1))
+                if len(visited) >= card_limit:
+                    break
+
+        for contemporary_id in self._contemporary_entity_ids(root_id, existing_ids=visited, limit=4):
+            if len(visited) >= card_limit:
+                break
+            visited.add(contemporary_id)
+            ordered_ids.append(contemporary_id)
+            levels.setdefault(1, []).append(contemporary_id)
+
+        if len(ordered_ids) <= 1:
+            self._ensure_card(self.world_model.get_entity(root_id))
+            return True
+
+        root_x = float(source_card.get("canvas_x", 24))
+        root_y = float(source_card.get("canvas_y", 84))
+        horizontal_gap = 470
+        vertical_gap = 38
+
+        cards_by_id = {}
+        for entity_id in ordered_ids:
+            entity = self.world_model.get_entity(entity_id)
+            if entity is None:
+                continue
+            card = self._ensure_card(entity, relayout=False, bring_to_front=False)
+            if card is not None:
+                cards_by_id[entity_id] = card
+
+        for depth in sorted(levels):
+            level_ids = [entity_id for entity_id in levels[depth] if entity_id in cards_by_id]
+            current_y = root_y
+            if depth > 0 and len(level_ids) > 1:
+                current_y = root_y - ((len(level_ids) - 1) * 0.5 * 148)
+                current_y = max(0, current_y)
+            for entity_id in level_ids:
+                card = cards_by_id[entity_id]
+                card["canvas_x"] = max(0, root_x + depth * horizontal_gap)
+                card["canvas_y"] = max(0, current_y)
+                card["relation_tree_root_id"] = root_id
+                card["relation_tree_depth"] = depth
+                current_y += max(148, float(card.get("canvas_h", 340)) + vertical_gap)
+
+        self.selected_entity_id = root_id
+        self._layout_all_cards()
+        return True
 
     def _place_new_card_in_canvas_view(self, card):
         if card is None or self.layout is None:
@@ -3294,8 +4373,115 @@ class KnowledgeBrowserUI:
             return {}
         return {key: value for key, value in entity.items() if not key.startswith("_")}
 
+    def _replace_entity_id_reference_value(self, value, old_entity_id, new_entity_id):
+        if isinstance(value, str):
+            if value.strip() == old_entity_id:
+                return new_entity_id, True
+            return value, False
+
+        if isinstance(value, list):
+            changed = False
+            replaced = []
+            for item in value:
+                new_item, item_changed = self._replace_entity_id_reference_value(
+                    item,
+                    old_entity_id,
+                    new_entity_id,
+                )
+                replaced.append(new_item)
+                changed = changed or item_changed
+            return replaced, changed
+
+        if isinstance(value, dict):
+            changed = False
+            replaced = {}
+            for key, item in value.items():
+                new_key = new_entity_id if isinstance(key, str) and key.strip() == old_entity_id else key
+                new_item, item_changed = self._replace_entity_id_reference_value(
+                    item,
+                    old_entity_id,
+                    new_entity_id,
+                )
+                replaced[new_key] = new_item
+                changed = changed or item_changed or new_key != key
+            return replaced, changed
+
+        return value, False
+
+    def _replace_entity_references(self, entity, old_entity_id, new_entity_id):
+        if not isinstance(entity, dict) or not old_entity_id or not new_entity_id:
+            return False
+
+        changed = False
+        for field_key, value in list(entity.items()):
+            if field_key in {"id", "_dataset"}:
+                continue
+            new_value, value_changed = self._replace_entity_id_reference_value(
+                value,
+                old_entity_id,
+                new_entity_id,
+            )
+            if value_changed:
+                entity[field_key] = new_value
+                changed = True
+        return changed
+
+    def _replace_draft_references(self, old_entity_id, new_entity_id):
+        changed = False
+        for draft in self.card_drafts.values():
+            if not isinstance(draft, dict):
+                continue
+            draft_entity = draft.get("entity")
+            if self._replace_entity_references(draft_entity, old_entity_id, new_entity_id):
+                changed = True
+        if changed:
+            self._write_card_drafts()
+        return changed
+
+    def _rewrite_entity_id_references(self, old_entity_id, new_entity_id, renamed_entity_id=None):
+        if (
+            self.world_model is None
+            or not old_entity_id
+            or not new_entity_id
+            or old_entity_id == new_entity_id
+        ):
+            return []
+
+        changed_entities = []
+        for entity in list(self.world_model.loader.entities.values()):
+            if not isinstance(entity, dict):
+                continue
+            if self._replace_entity_references(entity, old_entity_id, new_entity_id):
+                changed_entities.append(entity)
+
+        self._replace_draft_references(old_entity_id, new_entity_id)
+
+        changed_ids = {str(entity.get("id")) for entity in changed_entities if entity.get("id")}
+        for card in self.cards:
+            card_entity = self._entity_for_card(card)
+            if isinstance(card_entity, dict) and str(card_entity.get("id")) in changed_ids:
+                card["subtitle"] = self._card_subtitle_for_entity(card_entity)
+                if card.get("is_draft_entity", False):
+                    self._save_card_draft(card)
+
+        for entity in changed_entities:
+            entity_id = str(entity.get("id") or "")
+            if entity_id:
+                card = self._find_card_by_entity_id(entity_id)
+                if card is not None and card.get("is_draft_entity", False):
+                    continue
+                self._persist_entity_to_repository(entity)
+
+        if hasattr(self.world_model, "touch_degrees"):
+            self.world_model.touch_degrees.refresh()
+        if hasattr(self.world_model.loader, "build_reference_graph"):
+            self.world_model.loader.build_reference_graph()
+
+        return changed_entities
+
     def _save_card_draft(self, card):
         self._sync_species_identity(card)
+        self._sync_card_wiki_mentions(card)
         entity = self._entity_for_card(card)
         if not isinstance(entity, dict) or not entity.get("id"):
             return False
@@ -3534,14 +4720,34 @@ class KnowledgeBrowserUI:
             return False
 
         self._sync_species_identity(card)
+        self._sync_card_wiki_mentions(card)
         entity = self._entity_for_card(card)
+        if not isinstance(entity, dict):
+            return False
+
         id_change = card.get("pending_entity_id_change")
         previous_entity_id = None
         if isinstance(id_change, dict):
             previous_entity_id = id_change.get("old") or None
 
+        current_entity_id = str(card.get("entity_id") or entity.get("id") or "")
+        if previous_entity_id or not str(entity.get("id") or "").strip():
+            normalized_entity_id = self._normalize_entity_id_for_save(
+                entity,
+                current_id=previous_entity_id or current_entity_id,
+            )
+            if normalized_entity_id and normalized_entity_id != str(entity.get("id") or ""):
+                previous_entity_id = previous_entity_id or current_entity_id
+                entity["id"] = normalized_entity_id
+                card["pending_entity_id_change"] = {
+                    "old": previous_entity_id,
+                    "new": normalized_entity_id,
+                }
+
         persisted = self._persist_entity_to_repository(entity, previous_entity_id=previous_entity_id)
         if persisted and isinstance(entity, dict):
+            self.relation_tree_neighbor_cache = {}
+            self.canvas_relation_edges = []
             new_entity_id = str(entity.get("id"))
             old_entity_id = previous_entity_id
 
@@ -3554,6 +4760,11 @@ class KnowledgeBrowserUI:
                 self.selected_entity_id = new_entity_id
                 self.active_card_drag_id = new_entity_id if self.active_card_drag_id == old_entity_id else self.active_card_drag_id
                 self.active_card_resize_id = new_entity_id if self.active_card_resize_id == old_entity_id else self.active_card_resize_id
+                self._rewrite_entity_id_references(
+                    old_entity_id,
+                    new_entity_id,
+                    renamed_entity_id=new_entity_id,
+                )
                 self._remove_card_draft(old_entity_id)
 
             card.pop("pending_entity_id_change", None)
@@ -3906,21 +5117,18 @@ class KnowledgeBrowserUI:
         if not isinstance(entity, dict):
             return []
 
-        values = []
-        for field_key in ("parents", "related"):
-            field_value = entity.get(field_key)
-            if isinstance(field_value, list):
-                values.extend(field_value)
-            elif field_value not in (None, ""):
-                values.append(field_value)
-
         seen = set()
         entity_ids = []
-        for value in values:
-            entity_id = str(value).strip()
+
+        def append_entity_id(value):
+            entity_id = str(value or "").strip()
             if entity_id and entity_id not in seen:
                 seen.add(entity_id)
                 entity_ids.append(entity_id)
+
+        for entity_id in self._relation_tree_neighbor_ids(entity.get("id")):
+            append_entity_id(entity_id)
+
         return entity_ids
 
     def _rect_edge_point_toward(self, rect, target_point):
@@ -3945,12 +5153,36 @@ class KnowledgeBrowserUI:
         pygame.draw.circle(screen, (12, 16, 24), end, 6)
         pygame.draw.circle(screen, color, end, 4)
 
+    def _rebuild_canvas_relation_edges(self):
+        cards_by_id = {
+            str(card.get("entity_id")): card
+            for card in self.cards
+            if card.get("entity_id") and card.get("card_kind") != "schema" and card.get("rect") is not None
+        }
+        if len(cards_by_id) < 2:
+            self.canvas_relation_edges = []
+            return
+
+        drawn_edges = set()
+        edges = []
+        for source_id, source_card in cards_by_id.items():
+            for target_id in self._graph_relation_entity_ids_for_card(source_card):
+                target_id = str(target_id)
+                if target_id == source_id or target_id not in cards_by_id:
+                    continue
+                edge_key = tuple(sorted((source_id, target_id)))
+                if edge_key in drawn_edges:
+                    continue
+                drawn_edges.add(edge_key)
+                edges.append(edge_key)
+        self.canvas_relation_edges = edges
+
     def _draw_canvas_relation_lines(self, screen, right_rect):
         if len(self.cards) < 2:
             return
 
         cards_by_id = {
-            card.get("entity_id"): card
+            str(card.get("entity_id")): card
             for card in self.cards
             if card.get("entity_id") and card.get("card_kind") != "schema" and card.get("rect") is not None
         }
@@ -3960,25 +5192,16 @@ class KnowledgeBrowserUI:
         previous_clip = screen.get_clip()
         screen.set_clip(previous_clip.clip(right_rect))
         try:
-            drawn_edges = set()
-            for source_card in self.cards:
-                source_id = source_card.get("entity_id")
-                source_rect = source_card.get("rect")
-                if source_id not in cards_by_id or source_rect is None:
+            for source_id, target_id in self.canvas_relation_edges:
+                source_card = cards_by_id.get(str(source_id))
+                target_card = cards_by_id.get(str(target_id))
+                if source_card is None or target_card is None:
                     continue
-
-                for target_id in self._graph_relation_entity_ids_for_card(source_card):
-                    target_card = cards_by_id.get(target_id)
-                    if target_card is None or target_id == source_id:
-                        continue
-
-                    target_rect = target_card.get("rect")
-                    edge_key = tuple(sorted((str(source_id), str(target_id))))
-                    if target_rect is None or edge_key in drawn_edges:
-                        continue
-                    drawn_edges.add(edge_key)
-
-                    self._draw_canvas_graph_line(screen, source_rect, target_rect, (232, 190, 92))
+                source_rect = source_card.get("rect")
+                target_rect = target_card.get("rect")
+                if source_rect is None or target_rect is None:
+                    continue
+                self._draw_canvas_graph_line(screen, source_rect, target_rect, (232, 190, 92))
 
             if self.canvas_relation_link_source_id is not None:
                 source_card = self._find_card_by_entity_id(self.canvas_relation_link_source_id)
@@ -4034,11 +5257,15 @@ class KnowledgeBrowserUI:
         through cards above them.
         """
         previous_clip = screen.get_clip()
-        screen.set_clip(previous_clip.clip(right_rect.inflate(-8, -8)))
+        canvas_clip = right_rect.inflate(-8, -8)
+        screen.set_clip(previous_clip.clip(canvas_clip))
         try:
             self._draw_canvas_relation_lines(screen, right_rect)
             self._draw_canvas_relation_target_highlights(screen, right_rect)
             for card in self.cards:
+                visual_rect = self._card_visual_rect(card)
+                if visual_rect is not None and not visual_rect.colliderect(canvas_clip):
+                    continue
                 self._draw_card(screen, font, card)
                 self._draw_canvas_relation_control_for_card(screen, font, card)
         finally:
@@ -4047,32 +5274,40 @@ class KnowledgeBrowserUI:
     def _draw_card_type_picker(self, screen, font, card):
         if not card.get("type_picker_open", False):
             card["type_picker_hitboxes"] = []
+            card["type_picker_rect"] = None
             return
 
         type_label_rect = card.get("type_label_rect")
         card_rect = card.get("rect")
         if type_label_rect is None or card_rect is None:
             card["type_picker_hitboxes"] = []
+            card["type_picker_rect"] = None
             return
 
         templates = self._conversion_templates()
         if not templates:
             card["type_picker_hitboxes"] = []
+            card["type_picker_rect"] = None
             return
 
-        picker_w = min(260, max(160, card_rect.width - 24))
-        visible_templates = templates[:8]
+        visible_templates, scroll, max_scroll = self._card_type_picker_visible_templates(card, templates)
+        picker_w = min(300, max(180, card_rect.width - 24))
         picker_h = 30 + len(visible_templates) * self.CARD_TYPE_PICKER_ROW_H + 8
         picker_x = type_label_rect.x
         picker_y = type_label_rect.bottom + 4
         if picker_x + picker_w > card_rect.right - 8:
             picker_x = card_rect.right - picker_w - 8
         picker_rect = pygame.Rect(picker_x, picker_y, picker_w, picker_h)
+        card["type_picker_rect"] = picker_rect
 
         pygame.draw.rect(screen, (22, 26, 36), picker_rect)
         pygame.draw.rect(screen, (174, 184, 204), picker_rect, 1)
-        title_surface = font.render("Convert Idea To", True, (238, 238, 238))
+        title_surface = font.render("Change Class To", True, (238, 238, 238))
         screen.blit(title_surface, (picker_rect.x + 8, picker_rect.y + 7))
+        if max_scroll > 0:
+            range_text = f"{scroll + 1}-{scroll + len(visible_templates)} / {len(templates)}"
+            range_surface = font.render(range_text, True, (172, 184, 204))
+            screen.blit(range_surface, (picker_rect.right - range_surface.get_width() - 8, picker_rect.y + 7))
 
         card["type_picker_hitboxes"] = []
         row_y = picker_rect.y + 30
@@ -4089,6 +5324,42 @@ class KnowledgeBrowserUI:
             card["type_picker_hitboxes"].append((template, row_rect))
             row_y += self.CARD_TYPE_PICKER_ROW_H
 
+    def _handle_template_picker_keydown(self, event):
+        if not self.show_template_picker:
+            return False
+
+        if event.key == pygame.K_ESCAPE:
+            if self.template_picker_search_active and self.template_picker_search_query:
+                self.template_picker_search_query = ""
+                self.template_picker_scroll = 0
+                self._build_template_picker_hitboxes()
+                return True
+            self.show_template_picker = False
+            self.template_picker_search_active = False
+            self.template_picker_mode = "create"
+            self.template_picker_context = {}
+            self.template_picker_status = ""
+            self._build_template_picker_hitboxes()
+            return True
+
+        if not self.template_picker_search_active:
+            return False
+
+        if event.key == pygame.K_BACKSPACE:
+            self.template_picker_search_query = self.template_picker_search_query[:-1]
+            self.template_picker_scroll = 0
+            self._build_template_picker_hitboxes()
+            return True
+
+        text = getattr(event, "unicode", "")
+        if text and text.isprintable():
+            self.template_picker_search_query += text
+            self.template_picker_scroll = 0
+            self._build_template_picker_hitboxes()
+            return True
+
+        return False
+
     def _handle_keydown_event(self, event):
         if self.entry_name_prompt is not None:
             if self._handle_entry_name_prompt_keydown(event):
@@ -4096,6 +5367,9 @@ class KnowledgeBrowserUI:
             return None
 
         if self._handle_task_checklist_keydown(event):
+            return "__ui_consumed__"
+
+        if self._handle_template_picker_keydown(event):
             return "__ui_consumed__"
 
         if self.canvas_relation_link_source_id is not None and event.key == pygame.K_ESCAPE:
@@ -4119,6 +5393,65 @@ class KnowledgeBrowserUI:
         ):
             self._clear_timeline_edit_target()
             self._relayout_cards()
+            return "__ui_consumed__"
+
+        for index in range(len(self.cards) - 1, -1, -1):
+            card = self.cards[index]
+            card_view = card.get("card_view")
+            if card_view is None or not card.get("is_edit_mode", False):
+                continue
+            if not card.get("active_edit_field"):
+                continue
+
+            if card.get("delete_confirm_active", False) and event.key == pygame.K_ESCAPE:
+                card["delete_confirm_active"] = False
+                self._bring_card_to_front(index)
+                self._relayout_cards()
+                return "__ui_consumed__"
+
+            if (
+                card.get("active_edit_field") == "wiki_entry"
+                and event.key == pygame.K_l
+                and (event.mod & pygame.KMOD_CTRL)
+            ):
+                self._bring_card_to_front(index)
+                self._open_wiki_link_picker(card)
+                self._relayout_cards()
+                return "__ui_consumed__"
+
+            if self._handle_wiki_link_picker_keydown(card, event):
+                self._bring_card_to_front(index)
+                self._relayout_cards()
+                return "__ui_consumed__"
+
+            if self._handle_relation_picker_keydown(card, event):
+                self._bring_card_to_front(index)
+                if card.get("last_edit_action") == "commit":
+                    self._persist_card_entity(card)
+                else:
+                    self._save_card_draft(card)
+                card["last_edit_action"] = None
+                self._sync_card_years_from_entity(card)
+                self._refresh_timeline_items()
+                self._relayout_cards()
+                return "__ui_consumed__"
+
+            if card_view.handle_keydown(card, event):
+                self._bring_card_to_front(index)
+                if not card_view.is_relation_edit_field(card.get("active_edit_field")):
+                    self._close_relation_picker(card)
+                if card.get("last_edit_action") == "commit":
+                    self._persist_card_entity(card)
+                elif card.get("last_edit_action") == "cancel":
+                    card["last_edit_action"] = None
+                else:
+                    self._save_card_draft(card)
+                card["last_edit_action"] = None
+                self._sync_card_years_from_entity(card)
+                self._refresh_timeline_items()
+                self._relayout_cards()
+                return "__ui_consumed__"
+
             return "__ui_consumed__"
 
         if self.browser_search_active:
@@ -4153,6 +5486,12 @@ class KnowledgeBrowserUI:
                 continue
 
             if card.get("is_edit_mode", False):
+                if card.get("delete_confirm_active", False) and event.key == pygame.K_ESCAPE:
+                    card["delete_confirm_active"] = False
+                    self._bring_card_to_front(index)
+                    self._relayout_cards()
+                    return "__ui_consumed__"
+
                 if (
                     card.get("active_edit_field") == "wiki_entry"
                     and event.key == pygame.K_l
@@ -4216,11 +5555,15 @@ class KnowledgeBrowserUI:
             and self.template_picker_rect is not None
             and self.template_picker_rect.collidepoint(mouse_pos)
         ):
-            self.template_picker_scroll = max(0, self.template_picker_scroll - event.y)
+            visible_count = max(1, len(self.template_picker_visible_rows))
+            max_scroll = max(0, self.template_picker_total_rows - visible_count)
+            self.template_picker_scroll = max(0, min(max_scroll, self.template_picker_scroll - event.y))
             self._build_template_picker_hitboxes()
             return "__ui_consumed__"
 
         if right_rect.collidepoint(mouse_pos):
+            if self._scroll_type_picker_at(mouse_pos, event.y):
+                return "__ui_consumed__"
             if self._scroll_card_at(mouse_pos, event.y):
                 return "__ui_consumed__"
             zoom_factor = 1.12 if event.y > 0 else 1 / 1.12
@@ -4238,8 +5581,16 @@ class KnowledgeBrowserUI:
         self.timeline_resize_start_mouse_y = None
         self.timeline_resize_start_height = None
         self.timeline_pan_last_mouse_x = None
+        active_color_slider = self.active_card_color_slider
+        if active_color_slider is not None:
+            card = self._find_card_by_entity_id(active_color_slider.get("entity_id"))
+            if card is not None:
+                self._save_card_draft(card)
+                if not card.get("is_draft_entity", False):
+                    self._persist_card_entity(card)
         self.active_card_drag_id = None
         self.active_card_resize_id = None
+        self.active_card_color_slider = None
         self.active_canvas_pan = False
         self.card_drag_mouse_offset = (0, 0)
         self.card_resize_start_mouse = None
@@ -4269,6 +5620,22 @@ class KnowledgeBrowserUI:
             self.timeline_pan_last_mouse_x = event.pos[0]
             if dx:
                 self.timeline_ui.pan_by_pixels(-dx)
+            return "__ui_consumed__"
+
+        if self.active_card_color_slider is not None:
+            slider = self.active_card_color_slider
+            card = self._find_card_by_entity_id(slider.get("entity_id"))
+            if card is not None:
+                self._set_card_color_from_slider(
+                    card,
+                    slider.get("channel"),
+                    slider.get("slider_rect"),
+                    event.pos[0],
+                    persist=False,
+                    role=slider.get("role"),
+                    section_id=slider.get("section_id"),
+                )
+                self._relayout_cards()
             return "__ui_consumed__"
 
         if self.active_card_drag_id is not None:
@@ -4454,8 +5821,13 @@ class KnowledgeBrowserUI:
         return True
 
     def _find_card_by_entity_id(self, entity_id):
+        entity_id = str(entity_id or "")
         for card in self.cards:
-            if card.get("entity_id") == entity_id:
+            if str(card.get("entity_id") or "") == entity_id:
+                return card
+            card_view = card.get("card_view")
+            entity = getattr(card_view, "entity", None) if card_view is not None else None
+            if isinstance(entity, dict) and str(entity.get("id") or "") == entity_id:
                 return card
         return None
 
@@ -4705,6 +6077,139 @@ class KnowledgeBrowserUI:
         requested_id = relation_info.get("entity_id") if relation_info.get("kind") == "missing" else None
         return self._create_and_open_template_entity(template, requested_id=requested_id)
 
+    def _open_relation_target_template_picker(self, card, relation_info):
+        if card is None or not isinstance(relation_info, dict):
+            return False
+
+        missing_ref = str(relation_info.get("entity_id") or relation_info.get("label") or "").strip()
+        if not missing_ref:
+            return False
+
+        self.schema_entry_templates = self._load_schema_entry_templates()
+        self.pending_new_entry_name = missing_ref
+        self.template_picker_mode = "relation_create"
+        self.template_picker_context = {
+            "source_entity_id": card.get("entity_id"),
+            "card": card,
+            "field_key": relation_info.get("field_key"),
+            "missing_ref": missing_ref,
+        }
+        self.template_picker_search_query = ""
+        self.template_picker_search_active = True
+        self.template_picker_scroll = 0
+        self.template_picker_status = f"Choose type for {missing_ref}"
+        self.show_template_picker = True
+        self._build_template_picker_hitboxes()
+        return True
+
+    def _replace_relation_reference_on_card(self, card, field_key, old_ref, new_ref):
+        entity = self._entity_for_card(card)
+        if not isinstance(entity, dict) or not field_key or not new_ref:
+            return False
+
+        old_ref = str(old_ref or "").strip()
+        new_ref = str(new_ref or "").strip()
+        current_value = entity.get(field_key)
+        values = []
+        if isinstance(current_value, list):
+            values = [
+                str(item.get("id") if isinstance(item, dict) else item).strip()
+                for item in current_value
+            ]
+        elif isinstance(current_value, str) and current_value.strip():
+            values = [current_value.strip()]
+        elif current_value not in (None, "", []):
+            values = [str(current_value).strip()]
+
+        if not values:
+            values = [new_ref]
+
+        replaced = False
+        updated_values = []
+        for value in values:
+            if value == old_ref:
+                value = new_ref
+                replaced = True
+            if value and value not in updated_values:
+                updated_values.append(value)
+
+        if not replaced and new_ref not in updated_values:
+            updated_values.append(new_ref)
+
+        entity[field_key] = updated_values
+        card["subtitle"] = self._card_subtitle_for_entity(entity)
+        if card.get("is_draft_entity", False):
+            self._save_card_draft(card)
+        else:
+            self._persist_card_entity(card)
+        return True
+
+    def _create_relation_target_from_template_picker(self, template):
+        entry_name = str(self.pending_new_entry_name or "").strip()
+        if not entry_name:
+            self.template_picker_status = "Name entry first"
+            return False
+
+        created_entity = self._create_named_template_entity(template, entry_name)
+        if created_entity is None:
+            self.template_picker_status = "Could not create linked entry"
+            return False
+
+        context = dict(self.template_picker_context or {})
+        source_card = context.get("card")
+        if source_card not in self.cards:
+            source_card = self._find_card_by_entity_id(context.get("source_entity_id"))
+
+        created_entity_id = str(created_entity.get("id") or "").strip()
+        if source_card is not None and created_entity_id:
+            self._replace_relation_reference_on_card(
+                source_card,
+                context.get("field_key"),
+                context.get("missing_ref"),
+                created_entity_id,
+            )
+
+        self.pending_new_entry_name = None
+        self.show_template_picker = False
+        self.template_picker_search_query = ""
+        self.template_picker_search_active = False
+        self.template_picker_mode = "create"
+        self.template_picker_context = {}
+        self.template_picker_status = ""
+        self.browser_items = self._build_browser_items(self.world_model)
+        self._rebuild_browser_hitboxes()
+        self._build_template_picker_hitboxes()
+        self._relayout_cards()
+        return True
+
+    def _handle_wiki_link_click(self, card, link_info):
+        if self.world_model is None or card is None or not isinstance(link_info, dict):
+            return False
+        if card.get("is_edit_mode", False):
+            return False
+
+        link_ref = str(link_info.get("ref") or link_info.get("label") or "").strip()
+        if not link_ref:
+            return False
+
+        resolved_ref = self._resolve_wiki_mention_ref(link_ref)
+        entity = self.world_model.get_entity(resolved_ref) if resolved_ref else None
+        if entity is not None:
+            self._ensure_card(entity)
+            return True
+
+        self._sync_card_wiki_mentions(card)
+        return self._open_relation_target_template_picker(
+            card,
+            {
+                "kind": "missing",
+                "field_key": "wiki_mentions",
+                "entity_id": link_ref,
+                "label": link_ref,
+                "target": "entity_core",
+            },
+        )
+
     def _handle_relation_chip_click(self, card, relation_info, mouse_pos=None):
         if self.world_model is None or card is None or not isinstance(relation_info, dict):
             return False
@@ -4722,6 +6227,9 @@ class KnowledgeBrowserUI:
 
         if kind == "link_existing":
             return self._begin_relation_browser_link(card, relation_info)
+
+        if kind == "note":
+            return self._open_relation_note_prompt(card, relation_info)
 
         remove_rect = relation_info.get("remove_rect")
         if (
@@ -4745,6 +6253,9 @@ class KnowledgeBrowserUI:
             if entity is not None:
                 self._ensure_card(entity)
                 return True
+
+        if kind == "missing" and relation_info.get("field_key") == "wiki_mentions":
+            return self._open_relation_target_template_picker(card, relation_info)
 
         created_entity = self._create_relation_target_entity(relation_info)
         if created_entity is None:
@@ -4900,6 +6411,41 @@ class KnowledgeBrowserUI:
 
         return None
 
+    def _handle_editable_field_click(self, card, index, mouse_pos):
+        card_view = card.get("card_view")
+        if card_view is None:
+            return None
+        if not card.get("is_edit_mode", False):
+            card["editable_field_hitboxes"] = []
+            return None
+
+        for field_key, field_rect in card.get("editable_field_hitboxes", []):
+            if not field_rect.collidepoint(mouse_pos):
+                continue
+
+            card_obj = self._bring_card_to_front(index)
+            self.browser_search_active = False
+            card_obj["card_view"].begin_edit_field(card_obj, field_key)
+            if card_obj.get("last_edit_action") == "commit":
+                self._persist_card_entity(card_obj)
+                card_obj["last_edit_action"] = None
+            if field_key == "wiki_entry":
+                card_obj["card_view"].set_edit_cursor_from_pos(card_obj, field_key, mouse_pos, self.font_for_layout)
+            if self._is_temporal_field(field_key):
+                self._set_timeline_edit_target(card_obj, field_key)
+            else:
+                self._clear_timeline_edit_target()
+            if field_key != "wiki_entry":
+                self._close_wiki_link_picker(card_obj)
+            if card_obj["card_view"].is_relation_edit_field(field_key):
+                self._open_relation_picker(card_obj)
+            else:
+                self._close_relation_picker(card_obj)
+            self._relayout_cards()
+            return "__ui_consumed__"
+
+        return None
+
     def _handle_card_canvas_click(self, mouse_pos, right_rect):
         if not right_rect.collidepoint(mouse_pos):
             return None
@@ -4931,6 +6477,19 @@ class KnowledgeBrowserUI:
                 self._relayout_cards()
                 return "__ui_consumed__"
 
+            relation_tree_rect = card.get("relation_tree_rect")
+            if (
+                relation_tree_rect is not None
+                and relation_tree_rect.collidepoint(mouse_pos)
+                and card_view is not None
+                and not card.get("is_edit_mode", False)
+            ):
+                card_obj = self._bring_card_to_front(index)
+                if self._open_relation_tree_for_card(card_obj):
+                    return "__ui_consumed__"
+                self._relayout_cards()
+                return "__ui_consumed__"
+
             for template, type_rect in card.get("type_picker_hitboxes", []):
                 if type_rect.collidepoint(mouse_pos):
                     card_obj = self._bring_card_to_front(index)
@@ -4940,7 +6499,7 @@ class KnowledgeBrowserUI:
             type_label_rect = card.get("type_label_rect")
             if type_label_rect is not None and type_label_rect.collidepoint(mouse_pos) and card_view is not None:
                 card_obj = self._bring_card_to_front(index)
-                if self._toggle_type_picker(card_obj):
+                if self._open_card_class_template_picker(card_obj):
                     self._relayout_cards()
                     return "__ui_consumed__"
 
@@ -4966,9 +6525,34 @@ class KnowledgeBrowserUI:
                 self._relayout_cards()
                 return "__ui_consumed__"
 
+            delete_rect = card.get("delete_rect")
+            if (
+                delete_rect is not None
+                and delete_rect.collidepoint(mouse_pos)
+                and card.get("is_edit_mode", False)
+                and card_view is not None
+            ):
+                card_obj = self._bring_card_to_front(index)
+                if not card_obj.get("delete_confirm_active", False):
+                    card_obj["delete_confirm_active"] = True
+                    card_obj["active_edit_field"] = None
+                    card_obj["edit_buffer"] = ""
+                    card_obj["edit_original_value"] = None
+                    self._clear_timeline_edit_target()
+                    self._close_wiki_link_picker(card_obj)
+                    self._close_relation_picker(card_obj)
+                    self._relayout_cards()
+                    return "__ui_consumed__"
+
+                self._delete_card_entry(card_obj)
+                return "__ui_consumed__"
+
             edit_toggle_rect = card.get("edit_toggle_rect")
             if edit_toggle_rect is not None and edit_toggle_rect.collidepoint(mouse_pos) and card_view is not None:
                 card_obj = self._bring_card_to_front(index)
+                if card_obj.get("is_temporary", False):
+                    self._relayout_cards()
+                    return "__ui_consumed__"
                 if card_obj.get("is_edit_mode", False) and card_obj.get("active_edit_field"):
                     self._save_card_draft(card_obj)
                 card_obj["card_view"].toggle_edit_mode(card_obj)
@@ -4984,7 +6568,14 @@ class KnowledgeBrowserUI:
             for match_index, match_rect in card.get("relation_picker_hitboxes", []):
                 if match_rect.collidepoint(mouse_pos) and card_view is not None:
                     card_obj = self._bring_card_to_front(index)
-                    self._insert_relation_from_picker(card_obj, match_index=match_index)
+                    if match_index == "note":
+                        self._open_relation_note_prompt(
+                            card_obj,
+                            {"field_key": card_obj.get("active_edit_field")},
+                            initial_text=card_obj.get("relation_picker_query", ""),
+                        )
+                    else:
+                        self._insert_relation_from_picker(card_obj, match_index=match_index)
                     self._relayout_cards()
                     return "__ui_consumed__"
 
@@ -4994,6 +6585,32 @@ class KnowledgeBrowserUI:
                     if self._handle_relation_chip_click(card_obj, relation_info, mouse_pos=mouse_pos):
                         return "__ui_consumed__"
 
+            for link_info in card.get("wiki_link_hitboxes", []):
+                link_rect = link_info.get("rect")
+                if link_rect is not None and link_rect.collidepoint(mouse_pos) and card_view is not None:
+                    card_obj = self._bring_card_to_front(index)
+                    if self._handle_wiki_link_click(card_obj, link_info):
+                        self._relayout_cards()
+                        return "__ui_consumed__"
+
+            editable_result = self._handle_editable_field_click(card, index, mouse_pos)
+            if editable_result is not None:
+                return editable_result
+
+            for section_info in card.get("wiki_section_hitboxes", []):
+                section_rect = section_info.get("rect")
+                if (
+                    section_rect is not None
+                    and section_rect.collidepoint(mouse_pos)
+                    and card_view is not None
+                    and card.get("is_edit_mode", False)
+                ):
+                    card_obj = self._bring_card_to_front(index)
+                    card_obj["active_color_role"] = "wiki"
+                    card_obj["active_wiki_section_id"] = section_info.get("section_id")
+                    self._layout_all_cards()
+                    return "__ui_consumed__"
+
             if self._handle_task_checklist_click(card, mouse_pos):
                 self._bring_card_to_front(index)
                 return "__ui_consumed__"
@@ -5001,6 +6618,38 @@ class KnowledgeBrowserUI:
             for tool_info, tool_rect in card.get("toolbelt_hitboxes", []):
                 if tool_rect.collidepoint(mouse_pos) and card_view is not None:
                     card_obj = self._bring_card_to_front(index)
+                    if tool_info.get("kind") == "color_picker":
+                        if tool_info.get("control") == "role":
+                            card_obj["active_color_role"] = tool_info.get("role", "body")
+                            if card_obj["active_color_role"] == "wiki" and not card_obj.get("active_wiki_section_id"):
+                                first_section = next(iter(card_obj.get("wiki_section_hitboxes", [])), None)
+                                if isinstance(first_section, dict):
+                                    card_obj["active_wiki_section_id"] = first_section.get("section_id")
+                            self._layout_all_cards()
+                            return "__ui_consumed__"
+
+                        channel = tool_info.get("channel")
+                        slider_rect = tool_info.get("slider_rect")
+                        role = card_obj.get("active_color_role", "body")
+                        section_id = card_obj.get("active_wiki_section_id")
+                        self._set_card_color_from_slider(
+                            card_obj,
+                            channel,
+                            slider_rect,
+                            mouse_pos[0],
+                            persist=True,
+                            role=role,
+                            section_id=section_id,
+                        )
+                        self.active_card_color_slider = {
+                            "entity_id": card_obj.get("entity_id"),
+                            "channel": channel,
+                            "slider_rect": slider_rect,
+                            "role": role,
+                            "section_id": section_id,
+                        }
+                        self._layout_all_cards()
+                        return "__ui_consumed__"
                     action_id = tool_info.get("action_id")
                     if action_id:
                         self._layout_all_cards()
@@ -5009,28 +6658,6 @@ class KnowledgeBrowserUI:
                             "entity_id": card_obj.get("entity_id"),
                         }
                     self._open_toolbelt_name_prompt(card_obj, tool_info)
-                    return "__ui_consumed__"
-
-            for field_key, field_rect in card.get("editable_field_hitboxes", []):
-                if field_rect.collidepoint(mouse_pos) and card_view is not None:
-                    card_obj = self._bring_card_to_front(index)
-                    card_obj["card_view"].begin_edit_field(card_obj, field_key)
-                    if card_obj.get("last_edit_action") == "commit":
-                        self._persist_card_entity(card_obj)
-                        card_obj["last_edit_action"] = None
-                    if field_key == "wiki_entry":
-                        card_obj["card_view"].set_edit_cursor_from_pos(card_obj, field_key, mouse_pos, self.font_for_layout)
-                    if self._is_temporal_field(field_key):
-                        self._set_timeline_edit_target(card_obj, field_key)
-                    else:
-                        self._clear_timeline_edit_target()
-                    if field_key != "wiki_entry":
-                        self._close_wiki_link_picker(card_obj)
-                    if card_obj["card_view"].is_relation_edit_field(field_key):
-                        self._open_relation_picker(card_obj)
-                    else:
-                        self._close_relation_picker(card_obj)
-                    self._relayout_cards()
                     return "__ui_consumed__"
 
             for resize_edges, hitbox in card.get("resize_hitboxes", []):
@@ -5127,7 +6754,9 @@ class KnowledgeBrowserUI:
         pygame.draw.rect(screen, (24, 28, 40), self.template_picker_rect)
         pygame.draw.rect(screen, (160, 168, 186), self.template_picker_rect, 1)
         pending_name = str(self.pending_new_entry_name or "").strip()
-        if pending_name:
+        if self.template_picker_mode == "convert":
+            title_text = self.template_picker_status or "Choose Class"
+        elif pending_name:
             title_text = f"Choose Entry Type: {pending_name}"
         else:
             title_text = "Create New Entry From Schema"
@@ -5141,6 +6770,16 @@ class KnowledgeBrowserUI:
         )
         screen.blit(picker_title, (self.template_picker_rect.x + 12, title_y))
 
+        if self.template_picker_search_rect is not None:
+            search_fill = (38, 44, 58) if self.template_picker_search_active else (28, 32, 42)
+            search_border = (186, 198, 220) if self.template_picker_search_active else (102, 110, 126)
+            pygame.draw.rect(screen, search_fill, self.template_picker_search_rect)
+            pygame.draw.rect(screen, search_border, self.template_picker_search_rect, 1)
+            search_text = self.template_picker_search_query if self.template_picker_search_query else "Search templates or classes"
+            search_color = (238, 238, 238) if self.template_picker_search_query else (150, 158, 174)
+            search_surface = font.render(search_text, True, search_color)
+            screen.blit(search_surface, (self.template_picker_search_rect.x + 8, self.template_picker_search_rect.y + 4))
+
         for template, label, button_rect in self.template_quick_button_hitboxes:
             hovered = button_rect.collidepoint(pygame.mouse.get_pos())
             fill = (66, 82, 112) if hovered else (48, 58, 78)
@@ -5149,22 +6788,36 @@ class KnowledgeBrowserUI:
             quick_label = font.render(label, True, (244, 246, 250))
             screen.blit(quick_label, quick_label.get_rect(center=button_rect.center))
 
-        for template, label, button_rect in self.template_button_hitboxes:
-            pygame.draw.rect(screen, (44, 50, 64), button_rect)
-            pygame.draw.rect(screen, (132, 142, 160), button_rect, 1)
-            detail = template.get("dataset_name", "")
-            button_text = font.render(label, True, (242, 242, 242))
-            detail_text = font.render(detail, True, (166, 174, 190))
-            line_h = font.get_linesize()
-            text_block_h = line_h * 2
-            text_y = button_rect.y + max(3, (button_rect.height - text_block_h) // 2)
-            screen.blit(button_text, (button_rect.x + 8, text_y))
-            screen.blit(detail_text, (button_rect.x + 8, text_y + line_h))
+        for row in self.template_picker_visible_rows:
+            row_rect = row.get("rect")
+            if row_rect is None:
+                continue
+
+            label = row.get("label", "")
+            if row.get("kind") == "header":
+                header_rect = pygame.Rect(row_rect.x, row_rect.y + 3, row_rect.width, max(20, row_rect.height - 10))
+                pygame.draw.rect(screen, (31, 36, 48), header_rect)
+                header_label = font.render(str(label), True, (188, 202, 226))
+                screen.blit(header_label, (header_rect.x + 8, header_rect.y + 3))
+                continue
+
+            for item in row.get("items", []):
+                item_rect = item.get("rect")
+                if item_rect is None:
+                    continue
+                hovered = item_rect.collidepoint(pygame.mouse.get_pos())
+                fill = (52, 60, 78) if hovered else (44, 50, 64)
+                pygame.draw.rect(screen, fill, item_rect)
+                pygame.draw.rect(screen, (132, 142, 160), item_rect, 1)
+
+                item_label = self._ellipsize_text(str(item.get("label", "Template")), font, item_rect.width - 14)
+                label_surface = font.render(item_label, True, (242, 242, 242))
+                screen.blit(label_surface, (item_rect.x + 7, item_rect.y + max(3, (item_rect.height - label_surface.get_height()) // 2)))
 
         quick_count = len(self.template_quick_button_hitboxes)
-        list_count = len(self.schema_entry_templates) - quick_count
-        if list_count > len(self.template_button_hitboxes):
-            visible_count = max(1, len(self.template_button_hitboxes))
+        list_count = self.template_picker_total_rows
+        if list_count > len(self.template_picker_visible_rows):
+            visible_count = max(1, len(self.template_picker_visible_rows))
             scroll_label = (
                 f"{self.template_picker_scroll + 1}-"
                 f"{self.template_picker_scroll + visible_count} / "
@@ -5180,7 +6833,7 @@ class KnowledgeBrowserUI:
             )
 
         status = str(self.template_picker_status or "").strip()
-        if status and not pending_name:
+        if status and not pending_name and self.template_picker_mode != "convert":
             status_surface = font.render(status, True, (230, 154, 132))
             screen.blit(
                 status_surface,
@@ -5399,6 +7052,12 @@ class KnowledgeBrowserUI:
             draw_button_fn(screen, font, self.random_task_button)
         if self.new_entry_button is not None:
             draw_button_fn(screen, font, self.new_entry_button)
+        if self.relation_touch_decrease_button is not None:
+            draw_button_fn(screen, font, self.relation_touch_decrease_button)
+        if self.relation_touch_value_button is not None:
+            draw_button_fn(screen, font, self.relation_touch_value_button)
+        if self.relation_touch_increase_button is not None:
+            draw_button_fn(screen, font, self.relation_touch_increase_button)
 
         content_top = (
             self.browser_search_rect.bottom
@@ -5599,6 +7258,26 @@ class KnowledgeBrowserUI:
 
         if self.new_entry_button is not None and self.new_entry_button.rect.collidepoint(mouse_pos):
             self._open_new_entry_name_prompt()
+            return "__ui_consumed__"
+
+        if (
+            self.relation_touch_decrease_button is not None
+            and self.relation_touch_decrease_button.rect.collidepoint(mouse_pos)
+        ):
+            self._set_relation_tree_touch_degree(self.relation_tree_touch_degree - 1)
+            return "__ui_consumed__"
+
+        if (
+            self.relation_touch_increase_button is not None
+            and self.relation_touch_increase_button.rect.collidepoint(mouse_pos)
+        ):
+            self._set_relation_tree_touch_degree(self.relation_tree_touch_degree + 1)
+            return "__ui_consumed__"
+
+        if (
+            self.relation_touch_value_button is not None
+            and self.relation_touch_value_button.rect.collidepoint(mouse_pos)
+        ):
             return "__ui_consumed__"
 
         template_picker_result = self._handle_template_picker_click(mouse_pos)

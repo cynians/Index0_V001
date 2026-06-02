@@ -33,3 +33,43 @@
   end_year: 6122
   derived_from: []
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#2b3a32'
+- id: tech_new_001
+  pretty_name: Naval Directed Energy Weapons of the Superpower Wars
+  name: Naval Directed Energy Weapons of the Superpower Wars
+  type: technology
+  wiki_entry: ''
+  start_year: 2054
+  end_year: 2090
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  derived_from: []
+  parents: []
+  related: []
+  wiki_mentions: []
+  offspring: []
+  placeholders: []
+  entry_status: ''
+  media_layers: {}
+  card_color: '#608d8f'
+- id: tech_quantum_entanglement_communication
+  pretty_name: Quantum Entanglement Communication
+  name: Quantum Entanglement Communication
+  type: technology
+  wiki_entry: |
+    Instant Communcation trough Quantum Entanglement. Very rare due to need for finding and capturing Quantum Pairs.
+    
+    Later mass produced, but also very sought after.
+  wiki_mentions: []
+  card_color: '#0f1532'
+  start_year: 8541
+  end_year: 45274

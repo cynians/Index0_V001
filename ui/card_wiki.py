@@ -6,9 +6,194 @@ import pygame
 
 class CardWikiRenderer:
     PARAGRAPH_GAP = 8
+    HEADLINE_GAP = 6
+    SECTION_GAP = 8
+    SECTION_PAD = 8
+    LINK_PAD_X = 6
+    LINK_PAD_Y = 2
     IMAGE_GAP = 10
     EMPTY_HINT = "No general article yet. Add text and embed images with ![caption](path)"
     LINK_PATTERN = re.compile(r"\[\[([^\]]+)\]\]")
+
+    @classmethod
+    def extract_link_refs(cls, wiki_text):
+        refs = []
+        seen = set()
+        for match in cls.LINK_PATTERN.finditer(str(wiki_text or "")):
+            ref = match.group(1).strip()
+            if not ref or ref in seen:
+                continue
+            seen.add(ref)
+            refs.append(ref)
+        return refs
+
+    @staticmethod
+    def _scaled_font(font, scale=1.0, bold=False):
+        size = max(10, int(round(font.get_linesize() * scale)))
+        return pygame.font.SysFont("consolas", size, bold=bold)
+
+    @staticmethod
+    def _coerce_color(value, fallback):
+        if isinstance(value, (list, tuple)) and len(value) >= 3:
+            try:
+                return tuple(max(0, min(255, int(part))) for part in value[:3])
+            except (TypeError, ValueError):
+                return fallback
+
+        text = str(value or "").strip()
+        if text.startswith("#") and len(text) == 7:
+            try:
+                return (
+                    int(text[1:3], 16),
+                    int(text[3:5], 16),
+                    int(text[5:7], 16),
+                )
+            except ValueError:
+                return fallback
+        return fallback
+
+    @classmethod
+    def _text_chunks(cls, text):
+        chunks = re.split(r"(\s+)", str(text or ""))
+        return [chunk for chunk in chunks if chunk]
+
+    @classmethod
+    def _inline_segments(cls, text, resolve_link_label=None):
+        segments = []
+        cursor = 0
+        for match in cls.LINK_PATTERN.finditer(str(text or "")):
+            before = text[cursor:match.start()]
+            for chunk in cls._text_chunks(before):
+                segments.append({"kind": "text", "text": chunk})
+
+            entity_ref = match.group(1).strip()
+            if entity_ref:
+                label = entity_ref
+                if resolve_link_label is not None:
+                    label = resolve_link_label(entity_ref) or entity_ref
+                segments.append({"kind": "link", "text": str(label), "ref": entity_ref})
+            cursor = match.end()
+
+        for chunk in cls._text_chunks(str(text or "")[cursor:]):
+            segments.append({"kind": "text", "text": chunk})
+        return segments
+
+    @classmethod
+    def _layout_inline_segments(cls, text, font, max_width, resolve_link_label=None):
+        max_width = max(20, int(max_width))
+        segments = cls._inline_segments(text, resolve_link_label=resolve_link_label)
+        if not segments:
+            return [[{"kind": "text", "text": "", "width": 0}]]
+
+        lines = []
+        current = []
+        current_w = 0
+        for segment in segments:
+            label = segment["text"]
+            if segment["kind"] == "link":
+                width = font.size(label)[0] + cls.LINK_PAD_X * 2
+            else:
+                width = font.size(label)[0]
+
+            if current and current_w + width > max_width:
+                lines.append(current)
+                current = []
+                current_w = 0
+                if segment["kind"] == "text" and label.isspace():
+                    continue
+
+            if width > max_width and segment["kind"] == "text":
+                remaining = label
+                while remaining:
+                    chunk = remaining
+                    while chunk and font.size(chunk)[0] > max_width:
+                        chunk = chunk[:-1]
+                    if not chunk:
+                        break
+                    if current:
+                        lines.append(current)
+                        current = []
+                        current_w = 0
+                    chunk_w = font.size(chunk)[0]
+                    lines.append([{"kind": "text", "text": chunk, "width": chunk_w}])
+                    remaining = remaining[len(chunk):]
+                continue
+
+            placed = dict(segment)
+            placed["width"] = width
+            current.append(placed)
+            current_w += width
+
+        if current:
+            lines.append(current)
+        return lines or [[{"kind": "text", "text": "", "width": 0}]]
+
+    @classmethod
+    def _measure_inline_text(cls, text, font, max_width, resolve_link_label=None):
+        lines = cls._layout_inline_segments(text, font, max_width, resolve_link_label=resolve_link_label)
+        return len(lines) * max(font.get_linesize(), font.get_linesize() + cls.LINK_PAD_Y * 2)
+
+    @classmethod
+    def _draw_inline_text(cls, screen, font, text, x, y, max_width, color, resolve_link_label=None, link_color=None):
+        lines = cls._layout_inline_segments(text, font, max_width, resolve_link_label=resolve_link_label)
+        line_h = max(font.get_linesize(), font.get_linesize() + cls.LINK_PAD_Y * 2)
+        fill = cls._coerce_color(link_color, (54, 76, 112))
+        border = (
+            min(255, fill[0] + 70),
+            min(255, fill[1] + 70),
+            min(255, fill[2] + 70),
+        )
+        text_color = (242, 247, 255)
+
+        for line in lines:
+            cursor_x = x
+            for segment in line:
+                segment_text = segment.get("text", "")
+                if segment.get("kind") == "link":
+                    box_rect = pygame.Rect(
+                        cursor_x,
+                        y + 1,
+                        int(segment.get("width", 0)),
+                        max(16, font.get_linesize() + cls.LINK_PAD_Y),
+                    )
+                    pygame.draw.rect(screen, fill, box_rect)
+                    pygame.draw.rect(screen, border, box_rect, 1)
+                    surface = font.render(segment_text, True, text_color)
+                    screen.blit(surface, (box_rect.x + cls.LINK_PAD_X, box_rect.y + cls.LINK_PAD_Y - 1))
+                else:
+                    surface = font.render(segment_text, True, color)
+                    screen.blit(surface, (cursor_x, y))
+                cursor_x += int(segment.get("width", 0))
+            y += line_h
+        return y
+
+    @classmethod
+    def _collect_inline_link_rects(cls, text, font, x, y, max_width, resolve_link_label=None):
+        lines = cls._layout_inline_segments(text, font, max_width, resolve_link_label=resolve_link_label)
+        line_h = max(font.get_linesize(), font.get_linesize() + cls.LINK_PAD_Y * 2)
+        hitboxes = []
+
+        for line in lines:
+            cursor_x = x
+            for segment in line:
+                segment_w = int(segment.get("width", 0))
+                if segment.get("kind") == "link":
+                    rect = pygame.Rect(
+                        cursor_x,
+                        y + 1,
+                        segment_w,
+                        max(16, font.get_linesize() + cls.LINK_PAD_Y),
+                    )
+                    hitboxes.append(
+                        {
+                            "ref": segment.get("ref", ""),
+                            "label": segment.get("text", ""),
+                            "rect": rect,
+                        }
+                    )
+                cursor_x += segment_w
+            y += line_h
+        return hitboxes, y
 
     @staticmethod
     def _load_image_surface(image_path):
@@ -170,6 +355,16 @@ class CardWikiRenderer:
                 blocks.append({"kind": "image", "alt": alt_text, "path": path})
                 continue
 
+            if stripped.startswith("!!") and stripped[2:].strip():
+                flush_paragraph()
+                blocks.append({"kind": "headline", "level": 2, "text": stripped[2:].strip()})
+                continue
+
+            if stripped.startswith("!") and stripped[1:].strip():
+                flush_paragraph()
+                blocks.append({"kind": "headline", "level": 1, "text": stripped[1:].strip()})
+                continue
+
             if not stripped:
                 flush_paragraph()
                 continue
@@ -179,31 +374,191 @@ class CardWikiRenderer:
         flush_paragraph()
         return blocks
 
+    @staticmethod
+    def _slug(text):
+        slug = re.sub(r"[^a-z0-9]+", "_", str(text or "").strip().lower()).strip("_")
+        return slug or "section"
+
+    @classmethod
+    def _section_groups(cls, wiki_text):
+        blocks = cls._parse_blocks(wiki_text)
+        groups = []
+        current = {"section_id": "intro", "title": "General", "level": 0, "blocks": []}
+        headline_index = 0
+
+        for block in blocks:
+            if block.get("kind") == "headline":
+                if current["blocks"]:
+                    groups.append(current)
+                headline_index += 1
+                title = str(block.get("text") or f"Section {headline_index}").strip()
+                current = {
+                    "section_id": f"{headline_index}_{cls._slug(title)}",
+                    "title": title,
+                    "level": block.get("level", 1),
+                    "blocks": [block],
+                }
+                continue
+            current["blocks"].append(block)
+
+        if current["blocks"] or not groups:
+            groups.append(current)
+        return groups
+
+    @classmethod
+    def _block_height(cls, block, font, width, resolve_link_label=None):
+        if block["kind"] == "headline":
+            headline_font = cls._scaled_font(font, 1.35 if block.get("level") == 1 else 1.12, bold=True)
+            return cls._measure_inline_text(
+                block["text"],
+                headline_font,
+                width,
+                resolve_link_label=resolve_link_label,
+            )
+        if block["kind"] == "text":
+            return cls._measure_inline_text(
+                block["text"],
+                font,
+                width,
+                resolve_link_label=resolve_link_label,
+            )
+
+        image_surface = cls._load_image_surface(block.get("path"))
+        if image_surface is not None:
+            src_w = max(1, image_surface.get_width())
+            src_h = max(1, image_surface.get_height())
+            scale = min(width / src_w, 240 / src_h)
+            return max(60, int(src_h * scale)) + (font.get_linesize() if block.get("alt") else 0)
+        return font.get_linesize() * 2
+
+    @classmethod
+    def _section_layout(cls, wiki_text, font, rect, resolve_link_label=None, scroll_y=0):
+        inner_rect = rect.inflate(-10, -10)
+        y = inner_rect.y - max(0, int(scroll_y or 0))
+        layouts = []
+        content_width = max(40, inner_rect.width - cls.SECTION_PAD * 2)
+
+        for group in cls._section_groups(wiki_text):
+            content_h = 0
+            for index, block in enumerate(group["blocks"]):
+                content_h += cls._block_height(block, font, content_width, resolve_link_label=resolve_link_label)
+                if index < len(group["blocks"]) - 1:
+                    content_h += cls.HEADLINE_GAP if block.get("kind") == "headline" else cls.PARAGRAPH_GAP
+
+            min_section_h = max(font.get_linesize() + cls.SECTION_PAD * 2, font.get_linesize() + 18)
+            section_h = max(min_section_h, content_h + cls.SECTION_PAD * 2)
+            section_rect = pygame.Rect(inner_rect.x, y, inner_rect.width, section_h)
+            layouts.append(
+                {
+                    **group,
+                    "section_rect": section_rect,
+                    "content_rect": pygame.Rect(
+                        section_rect.x + cls.SECTION_PAD,
+                        section_rect.y + cls.SECTION_PAD,
+                        content_width,
+                        max(1, section_h - cls.SECTION_PAD * 2),
+                    ),
+                }
+            )
+            y = section_rect.bottom + cls.SECTION_GAP
+        return layouts
+
+    @classmethod
+    def section_text(cls, section):
+        lines = []
+        for block in section.get("blocks", []):
+            if block.get("kind") == "headline":
+                marker = "!!" if block.get("level") == 2 else "!"
+                lines.append(f"{marker} {block.get('text', '')}".strip())
+            elif block.get("kind") == "image":
+                lines.append(f"![{block.get('alt', '')}]({block.get('path', '')})")
+            else:
+                lines.append(str(block.get("text", "")))
+        return "\n\n".join(line for line in lines if line)
+
     @classmethod
     def measure_content(cls, wiki_text, font, rect, resolve_link_label=None):
-        blocks = cls._parse_blocks(wiki_text)
-        inner_width = max(80, rect.width - 20)
-        total_height = 0
+        probe_rect = pygame.Rect(0, 0, rect.width, rect.height)
+        layouts = cls._section_layout(wiki_text, font, probe_rect, resolve_link_label=resolve_link_label)
+        if not layouts:
+            return 20
+        return layouts[-1]["section_rect"].bottom - probe_rect.y + 5
 
-        for index, block in enumerate(blocks):
-            if block["kind"] == "text":
-                rendered_text = cls._resolve_link_markup(block["text"], resolve_link_label=resolve_link_label)
-                wrapped_lines = cls._wrap_text_lines(rendered_text, font, inner_width)
-                total_height += max(1, len(wrapped_lines)) * font.get_linesize()
-            else:
-                image_surface = cls._load_image_surface(block.get("path"))
-                if image_surface is not None:
-                    src_w = max(1, image_surface.get_width())
-                    src_h = max(1, image_surface.get_height())
-                    scale = min(inner_width / src_w, 240 / src_h)
-                    total_height += max(60, int(src_h * scale))
+    @classmethod
+    def link_hitboxes(cls, wiki_text, font, rect, resolve_link_label=None, scroll_y=0):
+        if font is None or rect is None:
+            return []
+
+        hitboxes = []
+        inner_rect = rect.inflate(-10, -10)
+        for section in cls._section_layout(
+            wiki_text,
+            font,
+            rect,
+            resolve_link_label=resolve_link_label,
+            scroll_y=scroll_y,
+        ):
+            y = section["content_rect"].y
+            for index, block in enumerate(section["blocks"]):
+                if block["kind"] == "headline":
+                    block_font = cls._scaled_font(font, 1.35 if block.get("level") == 1 else 1.12, bold=True)
+                elif block["kind"] == "text":
+                    block_font = font
                 else:
-                    total_height += font.get_linesize() * 2
+                    y += cls._block_height(block, font, section["content_rect"].width, resolve_link_label=resolve_link_label)
+                    block_font = None
 
-            if index < len(blocks) - 1:
-                total_height += cls.PARAGRAPH_GAP
+                if block_font is not None:
+                    block_hitboxes, y = cls._collect_inline_link_rects(
+                        block["text"],
+                        block_font,
+                        section["content_rect"].x,
+                        y,
+                        section["content_rect"].width,
+                        resolve_link_label=resolve_link_label,
+                    )
+                    for hitbox in block_hitboxes:
+                        hitbox["section_id"] = section["section_id"]
+                    hitboxes.extend(block_hitboxes)
 
-        return total_height + 20
+                if index < len(section["blocks"]) - 1:
+                    y += cls.HEADLINE_GAP if block.get("kind") == "headline" else cls.PARAGRAPH_GAP
+
+        visible_hitboxes = []
+        for hitbox in hitboxes:
+            clipped = hitbox["rect"].clip(inner_rect)
+            if clipped.width <= 0 or clipped.height <= 0:
+                continue
+            item = dict(hitbox)
+            item["rect"] = clipped
+            visible_hitboxes.append(item)
+        return visible_hitboxes
+
+    @classmethod
+    def section_hitboxes(cls, wiki_text, font, rect, resolve_link_label=None, scroll_y=0):
+        if font is None or rect is None:
+            return []
+        inner_rect = rect.inflate(-10, -10)
+        hitboxes = []
+        for section in cls._section_layout(
+            wiki_text,
+            font,
+            rect,
+            resolve_link_label=resolve_link_label,
+            scroll_y=scroll_y,
+        ):
+            clipped = section["section_rect"].clip(inner_rect)
+            if clipped.width <= 0 or clipped.height <= 0:
+                continue
+            hitboxes.append(
+                {
+                    "section_id": section["section_id"],
+                    "title": section["title"],
+                    "text": cls.section_text(section),
+                    "rect": clipped,
+                }
+            )
+        return hitboxes
 
     @classmethod
     def draw_content(
@@ -214,6 +569,9 @@ class CardWikiRenderer:
         wiki_text,
         is_editing=False,
         resolve_link_label=None,
+        link_color=None,
+        section_colors=None,
+        text_color=None,
         cursor_index=None,
         scroll_y=0,
     ):
@@ -238,41 +596,79 @@ class CardWikiRenderer:
                 cls._draw_edit_text(screen, font, edit_rect, wiki_text, cursor_index=cursor_index, show_cursor=show_cursor)
                 return
 
-            blocks = cls._parse_blocks(wiki_text)
-            for index, block in enumerate(blocks):
-                if block["kind"] == "text":
-                    color = (240, 240, 240) if is_editing else (218, 222, 232)
-                    rendered_text = cls._resolve_link_markup(block["text"], resolve_link_label=resolve_link_label)
-                    wrapped_lines = cls._wrap_text_lines(rendered_text, font, inner_rect.width)
-                    for line in wrapped_lines:
-                        line_surface = font.render(line, True, color)
-                        screen.blit(line_surface, (inner_rect.x, y))
-                        y += font.get_linesize()
-                else:
-                    image_surface = cls._load_image_surface(block.get("path"))
-                    if image_surface is not None:
-                        src_w = max(1, image_surface.get_width())
-                        src_h = max(1, image_surface.get_height())
-                        scale = min(inner_rect.width / src_w, 240 / src_h)
-                        target_w = max(1, int(src_w * scale))
-                        target_h = max(60, int(src_h * scale))
-                        scaled = pygame.transform.smoothscale(image_surface, (target_w, target_h))
-                        image_rect = scaled.get_rect(topleft=(inner_rect.x, y))
-                        pygame.draw.rect(screen, (24, 28, 38), image_rect.inflate(6, 6))
-                        pygame.draw.rect(screen, (124, 132, 146), image_rect.inflate(6, 6), 1)
-                        screen.blit(scaled, image_rect)
-                        y = image_rect.bottom + 4
-                        if block.get("alt"):
-                            alt_surface = font.render(block["alt"], True, (188, 192, 202))
-                            screen.blit(alt_surface, (inner_rect.x, y))
-                            y += font.get_linesize()
-                    else:
-                        missing_text = f"[missing image] {block.get('path', '')}"
-                        missing_surface = font.render(missing_text, True, (220, 170, 170))
-                        screen.blit(missing_surface, (inner_rect.x, y))
-                        y += font.get_linesize() * 2
+            section_colors = section_colors if isinstance(section_colors, dict) else {}
+            for section in cls._section_layout(
+                wiki_text,
+                font,
+                rect,
+                resolve_link_label=resolve_link_label,
+                scroll_y=scroll_y,
+            ):
+                section_id = section["section_id"]
+                fill = cls._coerce_color(section_colors.get(section_id) or section_colors.get("default"), (32, 38, 50))
+                border = (
+                    min(255, fill[0] + 60),
+                    min(255, fill[1] + 60),
+                    min(255, fill[2] + 60),
+                )
+                local_text = text_color or ((20, 24, 32) if (0.2126 * fill[0] + 0.7152 * fill[1] + 0.0722 * fill[2]) / 255.0 >= 0.58 else (230, 234, 244))
+                headline_color = local_text
 
-                if index < len(blocks) - 1:
-                    y += cls.PARAGRAPH_GAP
+                pygame.draw.rect(screen, fill, section["section_rect"])
+                pygame.draw.rect(screen, border, section["section_rect"], 1)
+
+                y = section["content_rect"].y
+                for index, block in enumerate(section["blocks"]):
+                    if block["kind"] == "headline":
+                        headline_font = cls._scaled_font(font, 1.35 if block.get("level") == 1 else 1.12, bold=True)
+                        y = cls._draw_inline_text(
+                            screen,
+                            headline_font,
+                            block["text"],
+                            section["content_rect"].x,
+                            y,
+                            section["content_rect"].width,
+                            headline_color,
+                            resolve_link_label=resolve_link_label,
+                            link_color=link_color,
+                        )
+                    elif block["kind"] == "text":
+                        y = cls._draw_inline_text(
+                            screen,
+                            font,
+                            block["text"],
+                            section["content_rect"].x,
+                            y,
+                            section["content_rect"].width,
+                            local_text,
+                            resolve_link_label=resolve_link_label,
+                            link_color=link_color,
+                        )
+                    else:
+                        image_surface = cls._load_image_surface(block.get("path"))
+                        if image_surface is not None:
+                            src_w = max(1, image_surface.get_width())
+                            src_h = max(1, image_surface.get_height())
+                            scale = min(section["content_rect"].width / src_w, 240 / src_h)
+                            target_w = max(1, int(src_w * scale))
+                            target_h = max(60, int(src_h * scale))
+                            scaled = pygame.transform.smoothscale(image_surface, (target_w, target_h))
+                            image_rect = scaled.get_rect(topleft=(section["content_rect"].x, y))
+                            pygame.draw.rect(screen, (24, 28, 38), image_rect.inflate(6, 6))
+                            pygame.draw.rect(screen, border, image_rect.inflate(6, 6), 1)
+                            screen.blit(scaled, image_rect)
+                            y = image_rect.bottom + 4
+                            if block.get("alt"):
+                                alt_surface = font.render(block["alt"], True, local_text)
+                                screen.blit(alt_surface, (section["content_rect"].x, y))
+                                y += font.get_linesize()
+                        else:
+                            missing_text = f"[missing image] {block.get('path', '')}"
+                            missing_surface = font.render(missing_text, True, (220, 170, 170))
+                            screen.blit(missing_surface, (section["content_rect"].x, y))
+                            y += font.get_linesize() * 2
+
+                    if index < len(section["blocks"]) - 1:
+                        y += cls.HEADLINE_GAP if block.get("kind") == "headline" else cls.PARAGRAPH_GAP
         finally:
             screen.set_clip(clip_before)

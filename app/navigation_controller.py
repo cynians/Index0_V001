@@ -8,6 +8,7 @@ from simulations.bioregion.bioregion_simulation import BioregionSimulation
 from simulations.vehicle.vehicle_simulation import VehicleSimulation
 from simulations.person.person_simulation import PersonSimulation
 from simulations.world_gen.world_gen_sim import WorldGenSimulation
+from simulations.building.building_sim import BuildingSimulation
 
 
 class NavigationController:
@@ -271,6 +272,45 @@ class NavigationController:
         self.app.camera_controller.setup_for_sim(new_world_gen_sim)
         return True
 
+    def launch_building_tab(self, building_location_id):
+        """
+        Open or focus a building workspace for room layout authoring.
+        """
+        if not building_location_id:
+            return False
+
+        building = self.app.world_model.get_entity(building_location_id)
+        if not building or building.get("location_class") != "building":
+            return False
+
+        tab_key = ("building", building_location_id)
+        if self.focus_existing_tab_by_key(tab_key):
+            self.app.knowledge_layer_active = False
+            return True
+
+        from world.simulation_context import SimulationContext
+
+        active_sim = self.app.get_active_simulation()
+        year = getattr(active_sim, "year", 2400) if active_sim is not None else 2400
+
+        context = SimulationContext(
+            year=year,
+            root_entity_id=building_location_id,
+            world_model=self.app.world_model,
+        )
+        new_building_sim = BuildingSimulation(context)
+        new_tab = Tab(
+            SimulationInstance(new_building_sim),
+            name=f"Building: {building.get('name', building_location_id)}",
+            tab_key=tab_key,
+        )
+
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+        self.app.camera_controller.setup_for_sim(new_building_sim)
+        return True
+
     def open_region_map_tab(self, entity_id):
         """
         Open a new map simulation tab rooted at the selected entity,
@@ -282,6 +322,15 @@ class NavigationController:
         entity = self.app.world_model.get_entity(entity_id)
         if not entity:
             return
+
+        if entity.get("location_class") == "building":
+            return self.launch_building_tab(entity_id)
+
+        if entity.get("location_class") == "room":
+            parent_location_id = entity.get("parent_location")
+            parent_location = self.app.world_model.get_entity(parent_location_id)
+            if parent_location and parent_location.get("location_class") == "building":
+                return self.launch_building_tab(parent_location_id)
 
         tab_key = ("map", entity_id)
         if self.focus_existing_tab_by_key(tab_key):
@@ -556,12 +605,26 @@ class NavigationController:
 
             dataset_name = entity.get("_dataset")
 
-            if dataset_name == "locations":
+            if (
+                dataset_name == "locations"
+                or entity.get("type") == "location"
+                or entity.get("location_class")
+            ):
                 system_role = entity.get("system_role")
+                location_class = entity.get("location_class")
 
                 if system_role == "star_system":
                     self.launch_space_root_tab(entity_id)
                     return True
+
+                if location_class == "building":
+                    return self.launch_building_tab(entity_id)
+
+                if location_class == "room":
+                    parent_location_id = entity.get("parent_location")
+                    parent_location = self.app.world_model.get_entity(parent_location_id)
+                    if parent_location and parent_location.get("location_class") == "building":
+                        return self.launch_building_tab(parent_location_id)
 
                 if system_role == "orbital_body":
                     body_class = entity.get("body_class") or entity.get("location_class")
@@ -708,7 +771,7 @@ class NavigationController:
         if action_id == "finish_map_selection" and active_sim is not None:
             finished = bool(getattr(active_sim, "finish_map_editor", lambda: False)())
             if not finished:
-                return False
+                return True
 
             return_entity_id = getattr(
                 active_sim,

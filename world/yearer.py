@@ -49,6 +49,9 @@ class Yearer:
 
         return None
 
+    def has_start_year(self, entity):
+        return self.normalize_year(entity.get("start_year")) is not None
+
     # --------------------------------------------------
     # Resolve entity state for a year
     # --------------------------------------------------
@@ -65,6 +68,9 @@ class Yearer:
 
         start = self.normalize_year(entity.get("start_year"))
         end = self.normalize_year(entity.get("end_year"))
+
+        if start is None:
+            return None
 
         if start is not None and year < start:
             return None
@@ -89,6 +95,9 @@ class Yearer:
 
             start = self.normalize_year(entity.get("start_year"))
             end = self.normalize_year(entity.get("end_year"))
+
+            if start is None:
+                continue
 
             if start is not None and year < start:
                 continue

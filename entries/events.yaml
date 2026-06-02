@@ -2,11 +2,8 @@
   pretty_name: Panamericana Rockies F-22 Discovery
   name: Panamericana Rockies F-22 Discovery
   type: event
-  description: In 2164, an inland expedition attached to a Panamericana coastal authority
-    discovered a long-obsolete but still functioning F-22 in a deep storage hangar
-    in the Rockies.
-  notes: Remembered mainly as a symbolic rediscovery of a lost military age, with
-    a smaller but real reverse-engineering and reuse dimension.
+  description: 'In 2164, an inland expedition attached to a Panamericana coastal authority discovered a long-obsolete but still functioning F-22 in a deep storage hangar in the Rockies.'
+  notes: 'Remembered mainly as a symbolic rediscovery of a lost military age, with a smaller but real reverse-engineering and reuse dimension.'
   tags:
   - panamericana
   - f22
@@ -31,17 +28,14 @@
   image: ''
   derived_from: []
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#454a5d'
 - id: event_cog_quarantine_breach_and_crackdown_5742
   pretty_name: CoG Quarantine Breach and Crackdown
   name: CoG Quarantine Breach and Crackdown
   type: event
-  description: In 5742, a late-CoG underclass gang exploited a cracked ventilation
-    shaft to escape the quarantined megastructure. The route was first used for gang
-    escape, then for selected family extractions, later for paid passage, before discovery
-    triggered a major GGO police purge, disappearances into a sealed sector, and later
-    covert regime reuse of the breach route.
-  notes: Historical importance was later largely erased from official memory and survived
-    mostly through rumor, fragmentary reports, and local recollection.
+  description: 'In 5742, a late-CoG underclass gang exploited a cracked ventilation shaft to escape the quarantined megastructure. The route was first used for gang escape, then for selected family extractions, later for paid passage, before discovery triggered a major GGO police purge, disappearances into a sealed sector, and later covert regime reuse of the breach route.'
+  notes: 'Historical importance was later largely erased from official memory and survived mostly through rumor, fragmentary reports, and local recollection.'
   associated_locations:
   - loc_central_asian_steppe_cog
   - loc_cog_breach_vent_tunnel
@@ -67,9 +61,11 @@
   card_image_top: ''
   image_path: ''
   image: ''
-  end_year: null
+  end_year: 5941
   derived_from: []
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#26201c'
 - id: evt_new_001
   pretty_name: French Revolution
   name: French Revolution
@@ -81,3 +77,68 @@
   - idea_new_011
   start_year: 1789
   end_year: 1799
+- id: evt_new_002
+  pretty_name: New Event
+  name: New Event
+  type: event
+  wiki_entry: ''
+- id: evt_new_003
+  pretty_name: Capture of Planetary Defenses by Retronationalist Forces
+  name: Capture of Planetary Defenses by Retronationalist Forces
+  type: event
+  wiki_entry: ''
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents: []
+  related:
+  - form_ggo_planetary_defenses
+  wiki_mentions: []
+  offspring: []
+  placeholders: []
+  entry_status: ''
+  media_layers: {}
+  card_color: '#0e141b'
+- id: evt_new_004
+  pretty_name: Earthen Trinkets become Popular
+  name: Earthen Trinkets become Popular
+  type: event
+  wiki_entry: ''
+  start_year: 2109
+  end_year: 2250
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  derived_from: []
+  parents: []
+  related: []
+  wiki_mentions: []
+  offspring: []
+  placeholders: []
+  entry_status: ''
+  media_layers: {}
+  card_color: '#1e2f4d'
+- id: evt_new_005
+  pretty_name: Castille and Aragon joined under Isabella I and Ferdinand II
+  name: Castille and Aragon joined under Isabella I and Ferdinand II
+  type: event
+  wiki_entry: ''
+  wiki_mentions: []
+  card_color: '#5a6026'

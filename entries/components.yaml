@@ -21,7 +21,7 @@
   - installable
   maintenance_notes: Requires sealing checks and periodic servicing depending on operating
     context.
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -61,7 +61,7 @@
   - installable
   - supports_inventory_use
   maintenance_notes: Low-complexity installed component for organized storage.
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -487,7 +487,7 @@
   - vehicle
   - structure
   - floor_tub
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -509,8 +509,7 @@
   pretty_name: Light Vehicle Bow Nose Panel Set
   name: Light Vehicle Bow Nose Panel Set
   type: component
-  description: Front closure panel set forming the bow or nose structure of a light
-    utility vehicle hull.
+  description: Front closure panel set forming the bow or nose structure of a light utility vehicle hull.
   component_class: body_component
   primary_material: mat_stainless_steel
   secondary_materials: []
@@ -544,7 +543,7 @@
   - body
   - bow
   - nose
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -562,12 +561,13 @@
   end_year: null
   derived_from: []
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#3d4152'
 - id: comp_light_vehicle_rear_body_closure_set
   pretty_name: Light Vehicle Rear Body Closure Set
   name: Light Vehicle Rear Body Closure Set
   type: component
-  description: Rear closure panel set for a light vehicle body, providing structural
-    termination and mounting edges for rear fittings.
+  description: 'Rear closure panel set for a light vehicle body, providing structural termination and mounting edges for rear fittings.'
   component_class: body_component
   primary_material: mat_stainless_steel
   secondary_materials: []
@@ -588,8 +588,7 @@
   descriptive_capabilities:
   - installable
   - weldable_rear_panel_set
-  maintenance_notes: Inspect rear closure surfaces and bracket mounts for cracking
-    and deformation under cargo/towing use.
+  maintenance_notes: Inspect rear closure surfaces and bracket mounts for cracking and deformation under cargo/towing use.
   dimension_x_m: 0.4
   dimension_y_m: 1.42
   dimension_z_m: 0.42
@@ -618,6 +617,8 @@
   end_year: null
   derived_from: []
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#565c75'
 - id: comp_light_vehicle_structural_reinforcement_set
   pretty_name: Light Vehicle Structural Reinforcement Set
   name: Light Vehicle Structural Reinforcement Set
@@ -656,7 +657,7 @@
   - vehicle
   - reinforcement
   - structure
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -712,7 +713,7 @@
   - vehicle
   - access_frame
   - service_cover
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -758,7 +759,7 @@
   - vehicle
   - pressed_panel
   - floor
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -777,6 +778,8 @@
   end_year: null
   derived_from: []
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#919da2'
 - id: comp_pressed_steel_sidewall_panel
   pretty_name: Pressed Steel Sidewall Panel
   name: Pressed Steel Sidewall Panel
@@ -805,7 +808,7 @@
   - vehicle
   - pressed_panel
   - sidewall
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -852,7 +855,7 @@
   - vehicle
   - wheelhouse
   - pressed_panel
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -899,7 +902,7 @@
   - vehicle
   - closing_plate
   - hull
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -918,6 +921,8 @@
   end_year: null
   derived_from: []
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#50535a'
 - id: comp_pressed_steel_bow_plate
   pretty_name: Pressed Steel Bow Plate
   name: Pressed Steel Bow Plate
@@ -946,7 +951,7 @@
   - vehicle
   - bow_plate
   - pressed_panel
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -993,7 +998,7 @@
   - vehicle
   - front_side_panel
   - pressed_panel
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -1012,6 +1017,8 @@
   end_year: null
   derived_from: []
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#5e6265'
 - id: comp_light_bracket_set
   pretty_name: Light Bracket Set
   name: Light Bracket Set
@@ -1040,7 +1047,7 @@
   - vehicle
   - bracket
   - support
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -1087,7 +1094,7 @@
   - vehicle
   - rear_panel
   - pressed_panel
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -1134,7 +1141,7 @@
   - vehicle
   - rear_edge
   - pressed_panel
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -1170,7 +1177,7 @@
   descriptive_capabilities:
   - installable
   - mounting_support_set
-  maintenance_notes: Inspect holes, bends, and attachment faces for wear and cracking.
+  maintenance_notes: 'Inspect holes, bends, and attachment faces for wear and cracking.'
   dimension_x_m: 0.26
   dimension_y_m: 0.18
   dimension_z_m: 0.04
@@ -1181,7 +1188,7 @@
   - vehicle
   - bracket
   - mounting
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -1200,6 +1207,8 @@
   end_year: null
   derived_from: []
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#7f8795'
 - id: comp_suspension_mount_reinforcement_plate
   pretty_name: Suspension Mount Reinforcement Plate
   name: Suspension Mount Reinforcement Plate
@@ -1228,7 +1237,7 @@
   - vehicle
   - reinforcement
   - suspension
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -1275,7 +1284,7 @@
   - vehicle
   - crossmember
   - structure
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -1311,8 +1320,7 @@
   descriptive_capabilities:
   - installable
   - local_heavy_load_support
-  maintenance_notes: Inspect for cracking, elongation, and deformation under towing
-    stress.
+  maintenance_notes: 'Inspect for cracking, elongation, and deformation under towing stress.'
   dimension_x_m: 0.18
   dimension_y_m: 0.14
   dimension_z_m: 0.08
@@ -1323,7 +1331,7 @@
   - vehicle
   - tow_point
   - reinforcement
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -1342,6 +1350,8 @@
   end_year: null
   derived_from: []
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#3b3e50'
 - id: comp_seat_and_load_mount_plate
   pretty_name: Seat and Load Mount Plate
   name: Seat and Load Mount Plate
@@ -1371,7 +1381,7 @@
   - vehicle
   - seat_mount
   - load_mount
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -1418,7 +1428,7 @@
   - vehicle
   - hatch_frame
   - access
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -1465,7 +1475,7 @@
   - vehicle
   - hinge_bracket
   - access_cover
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -1484,6 +1494,8 @@
   end_year: null
   derived_from: []
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#4c4e58'
 - id: comp_sealing_flange_strip
   pretty_name: Sealing Flange Strip
   name: Sealing Flange Strip
@@ -1513,7 +1525,7 @@
   - vehicle
   - flange
   - sealing
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []

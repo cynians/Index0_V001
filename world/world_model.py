@@ -156,7 +156,7 @@ class WorldModel:
         {
             "entity_id": "period_postmodernist",
             "label": "Postmodernist Period",
-            "start_year": 2024,
+            "start_year": 2000,
             "end_year": 2090,
         },
         {
@@ -321,6 +321,7 @@ class WorldModel:
         items = []
 
         for period in self.MAJOR_PERIODS:
+            period_entity = self.loader.entities.get(period["entity_id"], {})
             items.append(
                 {
                     "entity_id": period["entity_id"],
@@ -331,6 +332,7 @@ class WorldModel:
                     "start_year": period["start_year"],
                     "end_year": period["end_year"],
                     "is_point": False,
+                    "card_color": period_entity.get("card_color", ""),
                 }
             )
 
@@ -342,8 +344,8 @@ class WorldModel:
 
         Returns a list of timeline-ready dictionaries with normalized years.
         Minimal prototype rules:
-        * include any entity with start_year and/or end_year
-        * if only one side exists, treat it as a point entry
+        * include any entity with an explicit start_year
+        * if end_year is missing, treat start_year as a point entry
         * keep output flat and UI-friendly
         """
         items = self._get_major_period_timeline_items()
@@ -352,19 +354,14 @@ class WorldModel:
             start_year = self.yearer.normalize_year(entity.get("start_year"))
             end_year = self.yearer.normalize_year(entity.get("end_year"))
 
-            if start_year is None and end_year is None:
-                continue
-
             if start_year is None:
-                start_year = end_year
+                continue
             if end_year is None:
                 end_year = start_year
 
-            if start_year is None and end_year is None:
-                continue
-
             dataset_name = entity.get("_dataset", entity.get("type", "entity"))
             label = entity.get("pretty_name") or entity.get("name") or entity_id
+            card_color = entity.get("card_color", "")
 
             items.append(
                 {
@@ -375,6 +372,7 @@ class WorldModel:
                     "start_year": start_year,
                     "end_year": end_year,
                     "is_point": start_year == end_year,
+                    "card_color": card_color,
                 }
             )
 

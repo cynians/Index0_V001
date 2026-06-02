@@ -2479,16 +2479,16 @@ Description: Normalize repository image-role handling around shared entity image
   - orientation view images
   - later canonical asset storage/writeback workflows
 
-TASK-243
+TASK-249
 Status: TODO
 Difficulty: 3
-Requires: TASK-243
+Requires: TASK-231, TASK-237
 Description: Rework the vehicle design catalog and component repository workflow. First, make the lower Vehicle Design panel vertically resizable by dragging its upper border, similar to an IDE/log panel. Then replace the flat catalog list with a grouped card-based inventory view where card footprint reflects the placed top-down size of the component or assembly. Keep the lower panel as the canonical catalog UI layer and avoid duplicate renderer-side catalog drawing. For repository scaling, keep a single shared component schema but split component data into a small number of broad functional files rather than one giant YAML or many tiny per-vehicle files.
 Use broad buckets such as structural, running gear, powertrain, control/crew, cargo/support, sensors/weapons, and vehicle-specific assemblies. Continue LuAZ-967 component development using a two-phase workflow: first collect candidate components/assemblies and classify them into generic reusable parts versus vehicle-specific assemblies, then produce replacement diffs for the appropriate component data files.
 
 
 TASK-244
-Status: TODO
+Status: PARTIAL
 Difficulty: 4
 Requires: TASK-183, TASK-186, TASK-189
 Description: Split cities from locations at the repository/schema level, including:
@@ -2498,8 +2498,18 @@ Description: Split cities from locations at the repository/schema level, includi
 - Support for city-wide systems, structural zones, embedded sites, and aggregated population at the city layer
 - Foundation for later quarter and site aggregation into city truth
 
+Notes:
+- Current state:
+  - dedicated cities schema and entries file exist
+  - loc_central_asian_steppe_cog remains the physical/map anchor
+  - city_cog links to that location as the first city-layer aggregate
+- Remaining work:
+  - broader migration policy for other urban/location entries
+  - city-aware loader/UI affordances beyond basic repository visibility
+  - later quarter and site aggregation semantics
+
 TASK-245
-Status: TODO
+Status: DONE
 Difficulty: 3
 Requires: TASK-244
 Description: Add the Center of Gravity as the first dedicated city-layer repository entry, including:
@@ -2507,6 +2517,10 @@ Description: Add the Center of Gravity as the first dedicated city-layer reposit
 - A city_cog aggregate entry for the megastructure itself
 - Representation of CoG ring structure, infrastructure belts, utility systems, and orbital interface systems
 - Linkage to existing CoG ideas and later quarter/site concretization
+
+Notes:
+- city_cog is present in entries/cities.yaml.
+- loc_central_asian_steppe_cog is present in entries/locations.yaml as the linked physical/map anchor.
 
 TASK-246
 Status: TODO

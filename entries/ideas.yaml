@@ -43,27 +43,6 @@
   offspring: []
   placeholders: []
   entry_status: ''
-- id: idea_new_005
-  pretty_name: Idea from Venus
-  name: Terraformed Venus
-  type: idea
-  wiki_entry: |
-    Venus is a much better candidate for terraforming when compared to Mars. 
-    
-    The thick atmosphere shields from radiation. The terraforming problem is more about changing and capturing atmosphere, rather than adding onto it.
-    
-    Another important point is Gravity. On [[planet_mars]], it is only 43%. On Venus it is 90%. 
-  description: ''
-  notes: ''
-  tags: []
-  start_year: 6224
-  end_year: null
-  parents:
-  - idea_new_008
-  related: []
-  offspring: []
-  placeholders: []
-  entry_status: ''
 - id: idea_new_006
   pretty_name: New Idea
   name: Atmospheric Sputtering
@@ -100,6 +79,20 @@
   name: Gallilean Moons
   type: idea
   wiki_entry: ''
+  description: ''
+  notes: ''
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents: []
+  related: []
+  wiki_mentions:
+  - Gallileo Gallilei
+  offspring: []
+  placeholders: []
+  entry_status: ''
+  wiki_link_color: '#8a6f2e'
 - id: idea_new_011
   pretty_name: HumHab First Wave Fleets
   name: HumHab First Wave Fleets
@@ -121,3 +114,84 @@
   wiki_entry: ''
   parents:
   - spec_psittacoraptor_versatilis
+  description: ''
+  notes: ''
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  related: []
+  wiki_mentions: []
+  offspring: []
+  placeholders: []
+  entry_status: ''
+  card_color: '#504f31'
+- id: idea_new_025
+  pretty_name: PanAm search for Nuclear Capabilities
+  name: PanAm search for Nuclear Capabilities
+  type: idea
+  wiki_entry: ''
+  parents:
+  - fac_panamericana
+  start_year: 2088
+  end_year: 2145
+  description: ''
+  notes: ''
+  tags: []
+  derived_from: []
+  related: []
+  wiki_mentions: []
+  offspring: []
+  placeholders: []
+  entry_status: ''
+  card_color: '#1f2e3d'
+- id: idea_new_008
+  pretty_name: Life Aboard a Hansa Ship
+  name: Life Aboard a Hansa Ship
+  type: idea
+  wiki_entry: 'This is a document published in '
+  related:
+  - fac_transfer_hansa
+  - veh_th_altona
+  - person_jarem_habil
+  description: ''
+  notes: ''
+  tags: []
+  start_year: 5329
+  end_year: null
+  derived_from: []
+  parents: []
+  wiki_mentions: []
+  offspring: []
+  placeholders: []
+  entry_status: ''
+  card_color: '#2e3838'
+- id: idea_retronationalist_isolation_of_earth
+  pretty_name: Retronationalist Isolation of Earth
+  name: Retronationalist Isolation of Earth
+  type: idea
+  wiki_entry: ''
+  parents:
+  - fac_retronationalis_successor_states
+  start_year: 5960
+  start_event: evt_new_003
+  description: ''
+  notes: ''
+  tags: []
+  end_year: 6714
+  derived_from: []
+  related: []
+  wiki_mentions: []
+  offspring: []
+  placeholders: []
+  entry_status: ''
+- id: idea_csg_seeding_of_akkad
+  pretty_name: CSG Seeding of Akkad
+  name: CSG Seeding of Akkad
+  type: idea
+  wiki_entry: ''
+  parents:
+  - person_malrib_huub
+  wiki_mentions: []
+  start_year: 7771
+  end_year: 7950

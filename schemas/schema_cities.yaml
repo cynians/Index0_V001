@@ -1,14 +1,4 @@
-# ==================================================
-# FULL DIFF
-# Gathered collected changes from this chat
-# ==================================================
-
-
-# --------------------------------------------------
-# NEW FILE: schemas/schema_cities.yaml
-# --------------------------------------------------
-
-schema: cities.yaml
+schema: cities
 
 extends: entity_core
 

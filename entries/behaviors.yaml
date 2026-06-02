@@ -82,7 +82,7 @@
     foragers that search dense ground cover for hard seeds and nuts, occasionally
     supplement diet opportunistically, and rely on rapid retreat into vegetation when
     threatened.
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []

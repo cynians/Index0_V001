@@ -1,4 +1,5 @@
 import os
+import colorsys
 
 import pygame
 
@@ -20,7 +21,17 @@ class EntityCard:
     IMAGE_H = 110
     MEDIA_IMAGE_H = 176
     LAUNCH_H = 24
+    TIMELINE_TO_LAUNCH_GAP = 58
+    RELATED_TIMELINE_OFFSET_Y = 34
+    RELATED_TIMELINE_LABEL_LIMIT = 5
     TOOLBELT_W = 148
+    CARD_COLOR_DEFAULT = "#1c1e26"
+    CARD_COLOR_SLIDERS = [("h", "H"), ("s", "S"), ("v", "B")]
+    CARD_COLOR_ROLES = [
+        ("body", "Body"),
+        ("header", "Banner"),
+        ("wiki", "Wiki"),
+    ]
     RESIZE_HANDLE = 14
     RESIZE_BORDER = 6
     TEXT_LINE_H = 16
@@ -35,6 +46,7 @@ class EntityCard:
         "derived_from",
         "parents",
         "related",
+        "wiki_mentions",
         "offspring",
         "placeholders",
     ]
@@ -47,12 +59,18 @@ class EntityCard:
         "description",
         "notes",
         "wiki_entry",
+        "card_color",
+        "card_header_color",
+        "wiki_field_colors",
         "tags",
         "start_year",
+        "start_event",
         "end_year",
+        "end_event",
         "derived_from",
         "parents",
         "related",
+        "wiki_mentions",
         "offspring",
         "placeholders",
         "entry_status",
@@ -180,7 +198,7 @@ class EntityCard:
             "Classification": False,
             "Dimensions / Scale": False,
             "Temporal": False,
-            "Relations": not self._is_idea_card(),
+            "Relations": False,
             "State / Layout": True,
             "Metadata": False,
         }
@@ -260,6 +278,8 @@ class EntityCard:
         return {}
 
     def is_relation_edit_field(self, field_key):
+        if field_key in self.CORE_RELATION_FIELDS:
+            return True
         spec = self._field_spec(field_key)
         field_type = str(spec.get("type", "")).lower()
         target = str(spec.get("target", "")).strip()
@@ -268,10 +288,14 @@ class EntityCard:
         return "entity" in field_type or field_type in {"idea", "idea_list"}
 
     def _relation_field_allows_many(self, field_key):
+        if field_key in self.CORE_RELATION_FIELDS:
+            return True
         field_type = str(self._field_spec(field_key).get("type", "")).lower()
         return "list" in field_type
 
     def _relation_field_target(self, field_key):
+        if field_key in self.CORE_RELATION_FIELDS:
+            return "entity_core"
         spec = self._field_spec(field_key)
         target = str(spec.get("target", "")).strip()
         if target:
@@ -346,8 +370,15 @@ class EntityCard:
 
     def _toolbelt_items(self):
         match_tokens = self._toolbelt_match_tokens()
-        tools = []
-        seen_ids = set()
+        tools = [
+            {
+                "id": "card_color",
+                "kind": "color_picker",
+                "label": "Card Color",
+                "description": "Card background color.",
+            }
+        ]
+        seen_ids = {"card_color"}
 
         for definition in self.TOOLBELT_TOOL_DEFINITIONS:
             definition_matches = {
@@ -389,6 +420,98 @@ class EntityCard:
     def _uses_toolbelt(self, card):
         return bool(card.get("is_edit_mode", False) and self._toolbelt_items())
 
+    def _active_color_role(self, card=None):
+        role = str((card or {}).get("active_color_role") or "body").strip().lower()
+        if role not in {item[0] for item in self.CARD_COLOR_ROLES}:
+            return "body"
+        return role
+
+    def _active_wiki_section_id(self, card=None):
+        section_id = str((card or {}).get("active_wiki_section_id") or "").strip()
+        return section_id or None
+
+    def _wiki_field_colors(self):
+        colors = self.entity.get("wiki_field_colors")
+        return colors if isinstance(colors, dict) else {}
+
+    def _card_color_hex(self, role="body", section_id=None):
+        role = str(role or "body").strip().lower()
+        if role == "header":
+            value = str(self.entity.get("card_header_color") or "").strip()
+            if value:
+                return value
+            return self._card_color_hex("body")
+        if role == "wiki":
+            section_id = str(section_id or "").strip()
+            colors = self._wiki_field_colors()
+            value = str(colors.get(section_id) or colors.get("default") or "").strip()
+            if value:
+                return value
+            return "#222632"
+
+        value = str(self.entity.get("card_color") or "").strip()
+        legacy_value = str(self.entity.get("wiki_link_color") or "").strip()
+        if value:
+            return value
+        if legacy_value:
+            return legacy_value
+        return self.CARD_COLOR_DEFAULT
+
+    @staticmethod
+    def _coerce_hex_color(value, fallback=(54, 95, 158)):
+        text = str(value or "").strip()
+        if text.startswith("#") and len(text) == 7:
+            try:
+                return (
+                    int(text[1:3], 16),
+                    int(text[3:5], 16),
+                    int(text[5:7], 16),
+                )
+            except ValueError:
+                pass
+        return fallback
+
+    @staticmethod
+    def _rgb_to_hex(color):
+        try:
+            red, green, blue = [max(0, min(255, int(part))) for part in color[:3]]
+        except (TypeError, ValueError):
+            red, green, blue = (28, 30, 38)
+        return f"#{red:02x}{green:02x}{blue:02x}"
+
+    def _card_hsv(self, role="body", section_id=None):
+        red, green, blue = self._card_background_color(role=role, section_id=section_id)
+        return colorsys.rgb_to_hsv(red / 255.0, green / 255.0, blue / 255.0)
+
+    @staticmethod
+    def _hsv_to_rgb(hue, saturation, brightness):
+        red, green, blue = colorsys.hsv_to_rgb(
+            max(0.0, min(1.0, hue)),
+            max(0.0, min(1.0, saturation)),
+            max(0.0, min(1.0, brightness)),
+        )
+        return (int(round(red * 255)), int(round(green * 255)), int(round(blue * 255)))
+
+    @staticmethod
+    def _mix_color(color, target, ratio):
+        ratio = max(0.0, min(1.0, float(ratio)))
+        return tuple(
+            max(0, min(255, int(round(color[index] * (1.0 - ratio) + target[index] * ratio))))
+            for index in range(3)
+        )
+
+    def _card_background_color(self, role="body", section_id=None):
+        return self._coerce_hex_color(self._card_color_hex(role=role, section_id=section_id), fallback=(28, 30, 38))
+
+    @staticmethod
+    def _readable_text_color(background, light=(246, 248, 252), dark=(20, 24, 32)):
+        try:
+            red, green, blue = [float(part) for part in background[:3]]
+        except (TypeError, ValueError):
+            return light
+        luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255.0
+        return dark if luminance >= 0.58 else light
+
     def _ellipsize_text(self, text, font, max_width):
         text = str(text or "")
         if font is None or font.size(text)[0] <= max_width:
@@ -426,6 +549,15 @@ class EntityCard:
                         "label": "Link existing",
                     }
                 )
+                items.append(
+                    {
+                        "kind": "note",
+                        "field_key": field_key,
+                        "entity_id": "",
+                        "target": "ideas",
+                        "label": "Add Note",
+                    }
+                )
             return items
 
         if not edit_mode:
@@ -445,6 +577,13 @@ class EntityCard:
                 "entity_id": "",
                 "target": target,
                 "label": "Link existing",
+            },
+            {
+                "kind": "note",
+                "field_key": field_key,
+                "entity_id": "",
+                "target": "ideas",
+                "label": "Add Note",
             },
         ]
 
@@ -624,6 +763,122 @@ class EntityCard:
                 return binomial_name
 
         return entity.get("pretty_name") or entity.get("name") or entity_ref
+
+    def _coerce_timeline_year(self, value):
+        if value is None or isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped or stripped.lower() in {"none", "null"}:
+                return None
+            try:
+                return int(float(stripped))
+            except ValueError:
+                return None
+        return None
+
+    def _entity_timeline_range(self, entity):
+        if not isinstance(entity, dict):
+            return None
+
+        start_year = self._coerce_timeline_year(entity.get("start_year"))
+        end_year = self._coerce_timeline_year(entity.get("end_year"))
+        point_year = self._coerce_timeline_year(entity.get("year"))
+        if point_year is None:
+            point_year = self._coerce_timeline_year(entity.get("year_number"))
+        if point_year is None:
+            point_year = self._coerce_timeline_year(entity.get("effective_year"))
+
+        if start_year is not None and end_year is not None:
+            return (min(start_year, end_year), max(start_year, end_year))
+        if start_year is not None:
+            return (start_year, start_year)
+        if point_year is not None:
+            return (point_year, point_year)
+        return None
+
+    def _card_timeline_range(self, card):
+        years = [
+            self._coerce_timeline_year(year)
+            for year in card.get("years", [])
+        ]
+        years = [year for year in years if year is not None]
+        if not years:
+            return None
+        return (min(years), max(years))
+
+    def _timeline_duration_label(self, years):
+        timeline_range = self._card_timeline_range({"years": years})
+        if timeline_range is None:
+            return None
+        duration = abs(timeline_range[1] - timeline_range[0])
+        unit = "year" if duration == 1 else "years"
+        return f"{duration} {unit}"
+
+    def _collect_relation_refs_from_value(self, value):
+        refs = []
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped:
+                refs.append(stripped)
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            refs.append(str(value))
+        elif isinstance(value, dict):
+            entity_id = value.get("id")
+            if entity_id:
+                refs.append(str(entity_id).strip())
+            for child in value.get("offspring", []) or []:
+                refs.extend(self._collect_relation_refs_from_value(child))
+        elif isinstance(value, list):
+            for item in value:
+                refs.extend(self._collect_relation_refs_from_value(item))
+        return [ref for ref in refs if ref]
+
+    def _related_timeline_entries(self, card):
+        if self.world_model is None:
+            return []
+
+        card_range = self._card_timeline_range(card)
+        if card_range is None:
+            return []
+
+        start, end = card_range
+        own_id = str(self.entity.get("id") or card.get("entity_id") or "")
+        refs = []
+        for field_key in self.STANDARD_RELATION_FIELDS:
+            if field_key == "placeholders":
+                continue
+            refs.extend(self._collect_relation_refs_from_value(self.entity.get(field_key)))
+
+        entries = []
+        seen = set()
+        for ref in refs:
+            if not ref or ref == own_id or ref in seen:
+                continue
+            seen.add(ref)
+            entity = self.world_model.get_entity(ref)
+            entity_range = self._entity_timeline_range(entity)
+            if entity_range is None:
+                continue
+            entity_start, entity_end = entity_range
+            if entity_start < start or entity_end > end:
+                continue
+            entries.append(
+                {
+                    "entity_id": ref,
+                    "label": self._resolve_wiki_link_label(ref),
+                    "start_year": entity_start,
+                    "end_year": entity_end,
+                    "is_point": entity_start == entity_end,
+                }
+            )
+
+        entries.sort(key=lambda item: (item["start_year"], item["end_year"], item["label"]))
+        return entries
 
     def _schema_name_candidates(self):
         candidates = []
@@ -811,6 +1066,7 @@ class EntityCard:
             "system_role", "system_class", "body_class",
             "dimension_x_m", "dimension_y_m", "dimension_z_m",
             "mass_kg", "power_kw",
+            "card_color", "card_header_color", "wiki_field_colors", "wiki_link_color",
         }
 
         ordered_keys = []
@@ -1012,6 +1268,78 @@ class EntityCard:
     def _line_end_after_cursor(self, buffer_text, cursor):
         return TextEditing.line_end_after_cursor(buffer_text, cursor)
 
+    def _wiki_edit_lines(self, card):
+        general_rect = card.get("general_content_rect")
+        font = card.get("layout_font")
+        if general_rect is None or font is None:
+            return []
+
+        inner_rect = general_rect.inflate(-10, -10)
+        return CardWikiRenderer.wrap_edit_lines(
+            card.get("edit_buffer", ""),
+            font,
+            inner_rect.width,
+        )
+
+    def _wiki_cursor_row_and_column(self, card, lines=None):
+        lines = lines or self._wiki_edit_lines(card)
+        if not lines:
+            return None, 0
+
+        cursor = self._clamp_edit_cursor(card)
+        font = card.get("layout_font")
+        for index, line_info in enumerate(lines):
+            line_start = line_info["start"]
+            line_end = line_info["end"]
+            if line_start <= cursor <= line_end:
+                offset = max(0, min(len(line_info["text"]), cursor - line_start))
+                column_x = font.size(line_info["text"][:offset])[0] if font is not None else offset
+                return index, column_x
+
+        last_index = len(lines) - 1
+        line_info = lines[last_index]
+        return last_index, font.size(line_info["text"])[0] if font is not None else len(line_info["text"])
+
+    def _wiki_cursor_for_row_column(self, card, line_info, column_x):
+        font = card.get("layout_font")
+        line_text = line_info.get("text", "")
+        if font is None:
+            return line_info["start"] + max(0, min(len(line_text), int(column_x)))
+
+        best_offset = 0
+        best_distance = None
+        for offset in range(len(line_text) + 1):
+            width = font.size(line_text[:offset])[0]
+            distance = abs(width - column_x)
+            if best_distance is None or distance < best_distance:
+                best_distance = distance
+                best_offset = offset
+        return line_info["start"] + best_offset
+
+    def _move_wiki_cursor_row(self, card, direction):
+        lines = self._wiki_edit_lines(card)
+        if not lines:
+            return False
+
+        current_row, current_column = self._wiki_cursor_row_and_column(card, lines=lines)
+        if current_row is None:
+            return False
+
+        preferred_column = card.get("edit_preferred_column_x")
+        if preferred_column is None:
+            preferred_column = current_column
+
+        target_row = max(0, min(len(lines) - 1, current_row + direction))
+        if target_row == current_row:
+            return True
+
+        self._set_edit_cursor(card, self._wiki_cursor_for_row_column(card, lines[target_row], preferred_column))
+        card["edit_preferred_column_x"] = preferred_column
+        return True
+
+    def _clear_edit_preferred_column(self, card):
+        card.pop("edit_preferred_column_x", None)
+
     def _parse_edit_lines(self, buffer_text):
         return TextEditing.parse_lines(buffer_text)
 
@@ -1065,6 +1393,7 @@ class EntityCard:
         card["is_edit_mode"] = not currently_enabled
 
         if not card["is_edit_mode"]:
+            card["delete_confirm_active"] = False
             card["active_edit_field"] = None
             card["edit_buffer"] = ""
             card["edit_original_value"] = None
@@ -1111,6 +1440,7 @@ class EntityCard:
 
         card["active_edit_field"] = field_key
         card["edit_original_value"] = value
+        self._clear_edit_preferred_column(card)
         draft_buffer = card.get("draft_edit_buffers", {}).get(field_key)
         if isinstance(draft_buffer, dict) and "text" in draft_buffer:
             card["edit_buffer"] = str(draft_buffer.get("text", ""))
@@ -1151,6 +1481,7 @@ class EntityCard:
         card["edit_buffer"] = ""
         card["edit_original_value"] = None
         card["edit_cursor"] = 0
+        self._clear_edit_preferred_column(card)
         card["last_edit_action"] = "commit"
         return True
 
@@ -1163,6 +1494,7 @@ class EntityCard:
         card["edit_buffer"] = ""
         card["edit_original_value"] = None
         card["edit_cursor"] = 0
+        self._clear_edit_preferred_column(card)
         return True
 
     def handle_keydown(self, card, event):
@@ -1187,7 +1519,18 @@ class EntityCard:
             if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 if event.mod & (pygame.KMOD_CTRL | pygame.KMOD_SHIFT):
                     return self.commit_edit_field(card)
+                self._clear_edit_preferred_column(card)
                 self._insert_edit_text(card, "\n")
+                card["last_edit_action"] = "draft"
+                return True
+
+            if event.key == pygame.K_UP:
+                self._move_wiki_cursor_row(card, -1)
+                card["last_edit_action"] = "draft"
+                return True
+
+            if event.key == pygame.K_DOWN:
+                self._move_wiki_cursor_row(card, 1)
                 card["last_edit_action"] = "draft"
                 return True
 
@@ -1203,6 +1546,7 @@ class EntityCard:
             return self._cycle_edit_field(card, direction=direction)
 
         if event.key == pygame.K_LEFT:
+            self._clear_edit_preferred_column(card)
             cursor = self._clamp_edit_cursor(card)
             if event.mod & pygame.KMOD_CTRL:
                 self._set_edit_cursor(card, self._word_start_before_cursor(card.get("edit_buffer", ""), cursor))
@@ -1212,6 +1556,7 @@ class EntityCard:
             return True
 
         if event.key == pygame.K_RIGHT:
+            self._clear_edit_preferred_column(card)
             cursor = self._clamp_edit_cursor(card)
             if event.mod & pygame.KMOD_CTRL:
                 self._set_edit_cursor(card, self._word_end_after_cursor(card.get("edit_buffer", ""), cursor))
@@ -1221,6 +1566,7 @@ class EntityCard:
             return True
 
         if event.key == pygame.K_HOME:
+            self._clear_edit_preferred_column(card)
             if active_field == "wiki_entry" and not (event.mod & pygame.KMOD_CTRL):
                 self._set_edit_cursor(card, self._line_start_before_cursor(card.get("edit_buffer", ""), self._clamp_edit_cursor(card)))
             else:
@@ -1229,6 +1575,7 @@ class EntityCard:
             return True
 
         if event.key == pygame.K_END:
+            self._clear_edit_preferred_column(card)
             if active_field == "wiki_entry" and not (event.mod & pygame.KMOD_CTRL):
                 self._set_edit_cursor(card, self._line_end_after_cursor(card.get("edit_buffer", ""), self._clamp_edit_cursor(card)))
             else:
@@ -1237,6 +1584,7 @@ class EntityCard:
             return True
 
         if event.key == pygame.K_BACKSPACE:
+            self._clear_edit_preferred_column(card)
             if event.mod & pygame.KMOD_CTRL:
                 self._delete_word_before_cursor(card)
             else:
@@ -1245,6 +1593,7 @@ class EntityCard:
             return True
 
         if event.key == pygame.K_DELETE:
+            self._clear_edit_preferred_column(card)
             if event.mod & pygame.KMOD_CTRL:
                 self._delete_word_after_cursor(card)
             else:
@@ -1254,6 +1603,7 @@ class EntityCard:
 
         text = getattr(event, "unicode", "")
         if text and text.isprintable():
+            self._clear_edit_preferred_column(card)
             self._insert_edit_text(card, text)
             card["last_edit_action"] = "draft"
             return True
@@ -1315,6 +1665,7 @@ class EntityCard:
                 best_offset = offset
 
         self._set_edit_cursor(card, line_info["start"] + best_offset)
+        self._clear_edit_preferred_column(card)
         return True
 
     def _wrap_text_lines(self, text, font, max_width):
@@ -1460,13 +1811,22 @@ class EntityCard:
         return max(self.TEXT_LINE_H, int(font.get_linesize()))
 
     def _measure_table_row(self, font, key, value, key_column_w, value_column_w):
-        rendered_key = f"{key}:"
+        rendered_key = f"{self._field_display_label(key)}:"
         key_lines = self._wrap_text_lines(rendered_key, font, max(20, key_column_w - 12))
         rendered_value = self._format_value(value)
         wrapped_lines = self._wrap_text_lines(rendered_value, font, value_column_w)
         content_h = max(1, len(key_lines), len(wrapped_lines)) * self._table_line_height(font)
         row_h = content_h + self.TABLE_ROW_PAD_Y * 2
         return key_lines, wrapped_lines, row_h
+
+    def _field_display_label(self, field_key):
+        labels = {
+            "start_year": "start year",
+            "end_year": "end year",
+            "start_event": "  related event",
+            "end_event": "  related event",
+        }
+        return labels.get(field_key, str(field_key or ""))
 
     def layout_card(self, card, rect):
         section_hitboxes = []
@@ -1475,6 +1835,8 @@ class EntityCard:
         editable_field_hitboxes = []
         content_editable_field_hitboxes = []
         relation_hitboxes = []
+        wiki_link_hitboxes = []
+        wiki_section_hitboxes = []
         toolbelt_hitboxes = []
         toolbelt_rows = []
         toolbelt_rect = None
@@ -1517,10 +1879,16 @@ class EntityCard:
         close_rect = pygame.Rect(rect.right - 24, rect.y + 12, 18, 18)
         edit_toggle_rect = pygame.Rect(rect.right - 48, rect.y + 12, 20, 20)
         idea_button_rect = pygame.Rect(rect.right - 72, rect.y + 12, 20, 20)
+        relation_tree_rect = None
         time_anchor_rect = None
+        delete_rect = None
         header_reserved_w = 120
         if card.get("is_edit_mode", False):
             time_anchor_rect = pygame.Rect(rect.right - 96, rect.y + 12, 20, 20)
+            delete_rect = pygame.Rect(rect.right - 120, rect.y + 12, 20, 20)
+            header_reserved_w = 168
+        else:
+            relation_tree_rect = pygame.Rect(rect.right - 96, rect.y + 12, 20, 20)
             header_reserved_w = 144
 
         title_edit_rect = pygame.Rect(rect.x + 10, rect.y + 7, max(40, rect.width - header_reserved_w), 20)
@@ -1569,7 +1937,7 @@ class EntityCard:
             rect.width - 24,
             self.LAUNCH_H,
         )
-        center_y = launch_rect.y - 14
+        center_y = launch_rect.y - self.TIMELINE_TO_LAUNCH_GAP
         left_x = rect.x + 20
         right_x = rect.right - 20
         timeline_y = center_y - 10
@@ -1704,6 +2072,26 @@ class EntityCard:
         card["scroll_max_y"] = scroll_max_y
         card["content_viewport_rect"] = content_viewport_rect
 
+        if (
+            self._is_general_mode()
+            and general_content_rect is not None
+            and not (card.get("is_edit_mode", False) and card.get("active_edit_field") == "wiki_entry")
+        ):
+            wiki_link_hitboxes = CardWikiRenderer.link_hitboxes(
+                self._get_general_wiki_text(card),
+                card["layout_font"],
+                general_content_rect,
+                resolve_link_label=self._resolve_wiki_link_label,
+                scroll_y=scroll_y,
+            )
+            wiki_section_hitboxes = CardWikiRenderer.section_hitboxes(
+                self._get_general_wiki_text(card),
+                card["layout_font"],
+                general_content_rect,
+                resolve_link_label=self._resolve_wiki_link_label,
+                scroll_y=scroll_y,
+            )
+
         section_draw_rects = []
         if not self._is_general_mode() and scroll_y:
             if image_rect is not None:
@@ -1800,6 +2188,54 @@ class EntityCard:
             tool_inner_w = toolbelt_rect.width - 16
             line_h = self._table_line_height(card["layout_font"])
             for tool in self._toolbelt_items():
+                if tool.get("kind") == "color_picker":
+                    row_h = 128
+                    row_rect = pygame.Rect(tool_inner_x, tool_y, tool_inner_w, row_h)
+                    preview_rect = pygame.Rect(row_rect.x + 6, row_rect.y + 46, 28, 28)
+                    role_rects = []
+                    role_x = row_rect.x + 6
+                    role_y = row_rect.y + 24
+                    role_gap = 4
+                    role_w = max(30, (row_rect.width - 12 - role_gap * 2) // 3)
+                    for role_id, role_label in self.CARD_COLOR_ROLES:
+                        role_rect = pygame.Rect(role_x, role_y, role_w, 18)
+                        role_info = dict(tool)
+                        role_info["control"] = "role"
+                        role_info["role"] = role_id
+                        role_rects.append({"role": role_id, "label": role_label, "rect": role_rect})
+                        toolbelt_hitboxes.append((role_info, role_rect))
+                        role_x = role_rect.right + role_gap
+                    slider_rects = []
+                    slider_x = row_rect.x + 28
+                    slider_w = row_rect.width - 36
+                    for slider_index, (channel, label) in enumerate(self.CARD_COLOR_SLIDERS):
+                        slider_rect = pygame.Rect(
+                            slider_x,
+                            row_rect.y + 78 + slider_index * 15,
+                            slider_w,
+                            10,
+                        )
+                        slider_info = dict(tool)
+                        slider_info["control"] = "slider"
+                        slider_info["channel"] = channel
+                        slider_info["slider_rect"] = slider_rect
+                        slider_rects.append({"channel": channel, "label": label, "rect": slider_rect})
+                        toolbelt_hitboxes.append((slider_info, slider_rect.inflate(6, 8)))
+
+                    toolbelt_rows.append(
+                        {
+                            "tool": tool,
+                            "row_rect": row_rect,
+                            "button_rect": None,
+                            "preview_rect": preview_rect,
+                            "role_rects": role_rects,
+                            "slider_rects": slider_rects,
+                            "description_lines": [],
+                        }
+                    )
+                    tool_y = row_rect.bottom + 8
+                    continue
+
                 description_lines = self._wrap_text_lines(
                     tool.get("description", ""),
                     card["layout_font"],
@@ -1840,12 +2276,16 @@ class EntityCard:
         card["media_import_hitboxes"] = media_import_hitboxes
         card["editable_field_hitboxes"] = editable_field_hitboxes
         card["relation_hitboxes"] = relation_hitboxes
+        card["wiki_link_hitboxes"] = wiki_link_hitboxes
+        card["wiki_section_hitboxes"] = wiki_section_hitboxes
         card["toolbelt_hitboxes"] = toolbelt_hitboxes
         card["field_rows"] = field_rows
         card["resize_hitboxes"] = resize_hitboxes
         card["edit_toggle_rect"] = edit_toggle_rect
         card["idea_button_rect"] = idea_button_rect
+        card["relation_tree_rect"] = relation_tree_rect
         card["time_anchor_rect"] = time_anchor_rect
+        card["delete_rect"] = delete_rect
         card["close_rect"] = close_rect
         card["title_edit_rect"] = title_edit_rect
         card["type_label_rect"] = type_label_rect
@@ -1878,7 +2318,7 @@ class EntityCard:
             timeline_label_y = self.HEADER_H + self.TAB_H + 20 + general_h + 8
             timeline_y = timeline_label_y + 18
             center_y = timeline_y + 10
-            launch_top = center_y + 24
+            launch_top = center_y + self.TIMELINE_TO_LAUNCH_GAP
             resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
             return max(320, resize_bottom + 8)
 
@@ -1901,19 +2341,26 @@ class EntityCard:
         timeline_label_y = current_y + 8
         timeline_y = timeline_label_y + 18
         center_y = timeline_y + 10
-        launch_top = center_y + 24
+        launch_top = center_y + self.TIMELINE_TO_LAUNCH_GAP
         resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
 
         return max(260, resize_bottom + 8)
 
     def draw_card(self, screen, font, card):
         rect = card["rect"]
+        card_color = self._card_background_color("body")
+        card_header_color = self._card_background_color("header")
+        card_border_color = self._mix_color(card_color, (226, 232, 244), 0.62)
+        body_text_color = self._readable_text_color(card_color)
+        body_muted_color = self._mix_color(body_text_color, card_color, 0.32)
+        header_text_color = self._readable_text_color(card_header_color)
+        header_muted_color = self._mix_color(header_text_color, card_header_color, 0.35)
 
-        pygame.draw.rect(screen, (28, 30, 38), rect)
-        pygame.draw.rect(screen, (170, 170, 170), rect, 1)
+        pygame.draw.rect(screen, card_color, rect)
+        pygame.draw.rect(screen, card_border_color, rect, 1)
 
         header_rect = card["header_drag_rect"]
-        pygame.draw.rect(screen, (34, 38, 48), header_rect)
+        pygame.draw.rect(screen, card_header_color, header_rect)
         pygame.draw.line(
             screen,
             (110, 110, 120),
@@ -1934,8 +2381,8 @@ class EntityCard:
             if title_active:
                 title_text = card.get("edit_buffer", "")
 
-        title_surface = font.render(title_text, True, (245, 245, 245))
-        subtitle_surface = font.render(card["subtitle"], True, (170, 170, 170))
+        title_surface = font.render(title_text, True, header_text_color)
+        subtitle_surface = font.render(card["subtitle"], True, header_muted_color)
         screen.blit(title_surface, (rect.x + 12, rect.y + 10))
         type_label_rect = card.get("type_label_rect")
         if type_label_rect is not None:
@@ -1947,7 +2394,9 @@ class EntityCard:
 
         edit_toggle_rect = card.get("edit_toggle_rect")
         idea_button_rect = card.get("idea_button_rect")
+        relation_tree_rect = card.get("relation_tree_rect")
         time_anchor_rect = card.get("time_anchor_rect")
+        delete_rect = card.get("delete_rect")
         close_rect = card.get("close_rect")
         if idea_button_rect is not None:
             pygame.draw.rect(screen, (52, 60, 48), idea_button_rect)
@@ -1955,6 +2404,13 @@ class EntityCard:
             idea_text = font.render("I", True, (230, 244, 218))
             idea_text_rect = idea_text.get_rect(center=idea_button_rect.center)
             screen.blit(idea_text, idea_text_rect)
+
+        if relation_tree_rect is not None:
+            pygame.draw.rect(screen, (52, 56, 68), relation_tree_rect)
+            pygame.draw.rect(screen, (160, 168, 196), relation_tree_rect, 1)
+            relation_text = font.render("A", True, (232, 236, 252))
+            relation_text_rect = relation_text.get_rect(center=relation_tree_rect.center)
+            screen.blit(relation_text, relation_text_rect)
 
         if edit_toggle_rect is not None:
             edit_enabled = bool(card.get("is_edit_mode", False))
@@ -1978,6 +2434,16 @@ class EntityCard:
             anchor_text_rect = anchor_text.get_rect(center=time_anchor_rect.center)
             screen.blit(anchor_text, anchor_text_rect)
 
+        if delete_rect is not None:
+            delete_confirm = bool(card.get("delete_confirm_active", False))
+            delete_fill = (118, 42, 48) if delete_confirm else (64, 42, 46)
+            delete_border = (246, 166, 176) if delete_confirm else (178, 116, 124)
+            pygame.draw.rect(screen, delete_fill, delete_rect)
+            pygame.draw.rect(screen, delete_border, delete_rect, 1)
+            delete_text = font.render("!" if delete_confirm else "D", True, (255, 226, 230))
+            delete_text_rect = delete_text.get_rect(center=delete_rect.center)
+            screen.blit(delete_text, delete_text_rect)
+
         if close_rect is not None:
             pygame.draw.rect(screen, (58, 44, 48), close_rect)
             pygame.draw.rect(screen, (178, 132, 140), close_rect, 1)
@@ -1987,7 +2453,9 @@ class EntityCard:
 
         if card.get("is_edit_mode", False):
             active_field = card.get("active_edit_field")
-            if card.get("timeline_reanchor_active", False):
+            if card.get("delete_confirm_active", False):
+                edit_status = "Confirm delete | Click ! again to remove this entry | Esc cancel"
+            elif card.get("timeline_reanchor_active", False):
                 edit_status = "Reanchoring card | Click timeline to set | Esc cancel"
             elif active_field:
                 if active_field in self.TEMPORAL_FIELDS:
@@ -2000,7 +2468,7 @@ class EntityCard:
                     edit_status = f"Editing {active_field} | Enter save | Esc cancel | Tab next"
             else:
                 edit_status = "Edit mode | Click a highlighted row, or T then timeline to reanchor"
-            status_surface = font.render(edit_status, True, (190, 205, 230))
+            status_surface = font.render(edit_status, True, header_muted_color)
             status_x = rect.right - 44 - status_surface.get_width()
             status_x = max(rect.x + 150, status_x)
             screen.blit(status_surface, (status_x, rect.y + 30))
@@ -2028,13 +2496,16 @@ class EntityCard:
 
         years = card.get("years", [])
         if len(years) >= 2:
+            duration_label = self._timeline_duration_label(years)
             timeline_label = f"Range: {years[0]}-{years[-1]}"
+            if duration_label:
+                timeline_label += f" ({duration_label})"
         elif len(years) == 1:
             timeline_label = f"Year: {years[0]}"
         else:
-            timeline_label = "Year: 0"
+            timeline_label = "Year: missing"
 
-        timeline_label_surface = font.render(timeline_label, True, (200, 200, 200))
+        timeline_label_surface = font.render(timeline_label, True, body_text_color)
         screen.blit(timeline_label_surface, (rect.x + 12, timeline_label_y))
 
         pygame.draw.line(screen, (170, 170, 170), (left_x, center_y), (right_x, center_y), 1)
@@ -2048,14 +2519,58 @@ class EntityCard:
             pygame.draw.rect(screen, fill, marker_rect)
             pygame.draw.rect(screen, border, marker_rect, 1)
 
-            year_surface = font.render(str(year), True, (230, 230, 230))
+            year_surface = font.render(str(year), True, body_text_color)
             year_rect = year_surface.get_rect(center=(hitbox.centerx, center_y + 22))
             screen.blit(year_surface, year_rect)
+
+        related_entries = self._related_timeline_entries(card)
+        card_range = self._card_timeline_range(card)
+        if related_entries and card_range is not None:
+            range_start, range_end = card_range
+            range_span = max(1, range_end - range_start)
+
+            def related_year_x(year):
+                if range_end == range_start:
+                    return (left_x + right_x) // 2
+                ratio = (year - range_start) / float(range_span)
+                ratio = max(0.0, min(1.0, ratio))
+                return left_x + int(round((right_x - left_x) * ratio))
+
+            related_y = center_y + self.RELATED_TIMELINE_OFFSET_Y
+            pygame.draw.line(screen, (86, 96, 122), (left_x, related_y), (right_x, related_y), 1)
+
+            label_rects = []
+            visible_related = related_entries[:self.RELATED_TIMELINE_LABEL_LIMIT]
+            for entry in visible_related:
+                x1 = related_year_x(entry["start_year"])
+                x2 = related_year_x(entry["end_year"])
+                if entry["is_point"]:
+                    pygame.draw.circle(screen, (196, 172, 112), (x1, related_y), 3)
+                else:
+                    bar_rect = pygame.Rect(min(x1, x2), related_y - 3, max(6, abs(x2 - x1)), 6)
+                    pygame.draw.rect(screen, (166, 136, 92), bar_rect)
+                    pygame.draw.rect(screen, (218, 192, 132), bar_rect, 1)
+
+                label = self._ellipsize_text(entry["label"], font, 82)
+                label_surface = font.render(label, True, (214, 198, 150))
+                label_x = max(left_x, min(x1 - label_surface.get_width() // 2, right_x - label_surface.get_width()))
+                label_rect = pygame.Rect(label_x, related_y + 5, label_surface.get_width(), label_surface.get_height())
+                if any(label_rect.inflate(4, 0).colliderect(existing) for existing in label_rects):
+                    continue
+                screen.blit(label_surface, label_rect)
+                label_rects.append(label_rect)
+
+            hidden_count = len(related_entries) - len(visible_related)
+            if hidden_count > 0:
+                more_surface = font.render(f"+{hidden_count}", True, (214, 198, 150))
+                screen.blit(more_surface, (right_x - more_surface.get_width(), related_y + 5))
 
         launch_rect = card["launch_rect"]
         pygame.draw.rect(screen, (55, 55, 55), launch_rect)
         pygame.draw.rect(screen, (210, 210, 210), launch_rect, 1)
-        launch_text = font.render(f"Launch [{card['selected_year']}]", True, (245, 245, 245))
+        selected_year = card.get("selected_year")
+        launch_label = f"Launch [{selected_year}]" if selected_year is not None else "Launch"
+        launch_text = font.render(launch_label, True, (245, 245, 245))
         launch_text_rect = launch_text.get_rect(center=launch_rect.center)
         screen.blit(launch_text, launch_text_rect)
         self._draw_toolbelt(screen, font, card)
@@ -2081,15 +2596,67 @@ class EntityCard:
         for row in card.get("toolbelt_rows", []):
             row_rect = row.get("row_rect")
             button_rect = row.get("button_rect")
-            if row_rect is None or button_rect is None:
+            if row_rect is None:
                 continue
 
             pygame.draw.rect(screen, (32, 38, 50), row_rect)
             pygame.draw.rect(screen, (82, 98, 124), row_rect, 1)
 
+            tool = row.get("tool", {})
+            if tool.get("kind") == "color_picker":
+                label = self._ellipsize_text(tool.get("label", "Color"), font, row_rect.width - 12)
+                label_surface = font.render(label, True, (230, 236, 246))
+                screen.blit(label_surface, (row_rect.x + 6, row_rect.y + 5))
+                active_role = self._active_color_role(card)
+                active_section_id = self._active_wiki_section_id(card) if active_role == "wiki" else None
+                current_color = self._card_background_color(role=active_role, section_id=active_section_id)
+                hue, saturation, brightness = self._card_hsv(role=active_role, section_id=active_section_id)
+                for role in row.get("role_rects", []):
+                    role_rect = role.get("rect")
+                    if role_rect is None:
+                        continue
+                    selected = role.get("role") == active_role
+                    fill = (64, 84, 122) if selected else (34, 40, 52)
+                    border = (218, 226, 244) if selected else (92, 104, 126)
+                    pygame.draw.rect(screen, fill, role_rect)
+                    pygame.draw.rect(screen, border, role_rect, 1)
+                    role_label = self._ellipsize_text(role.get("label", ""), font, role_rect.width - 6)
+                    role_surface = font.render(role_label, True, (242, 246, 252) if selected else (178, 188, 204))
+                    screen.blit(role_surface, role_surface.get_rect(center=role_rect.center))
+                preview_rect = row.get("preview_rect")
+                if preview_rect is not None:
+                    pygame.draw.rect(screen, current_color, preview_rect)
+                    pygame.draw.rect(screen, (218, 226, 240), preview_rect, 1)
+                hex_label = self._rgb_to_hex(current_color)
+                hex_surface = font.render(hex_label, True, (176, 186, 204))
+                screen.blit(hex_surface, (row_rect.x + 40, row_rect.y + 30))
+                if active_role == "wiki" and active_section_id:
+                    target_label = self._ellipsize_text(active_section_id.replace("_", " "), font, row_rect.width - 44)
+                    target_surface = font.render(target_label, True, (156, 166, 184))
+                    screen.blit(target_surface, (row_rect.x + 40, row_rect.y + 47))
+
+                values = {"h": hue, "s": saturation, "v": brightness}
+                for slider in row.get("slider_rects", []):
+                    slider_rect = slider.get("rect")
+                    channel = slider.get("channel")
+                    if slider_rect is None or channel not in values:
+                        continue
+                    label_surface = font.render(slider.get("label", channel).upper(), True, (204, 212, 228))
+                    screen.blit(label_surface, (row_rect.x + 8, slider_rect.y - 3))
+                    self._draw_color_slider_track(screen, slider_rect, channel, hue, saturation, brightness)
+                    pygame.draw.rect(screen, (28, 32, 42), slider_rect, 1)
+                    knob_x = int(slider_rect.x + values[channel] * max(0, slider_rect.width - 1))
+                    knob_rect = pygame.Rect(knob_x - 2, slider_rect.y - 3, 5, slider_rect.height + 6)
+                    pygame.draw.rect(screen, (244, 248, 255), knob_rect)
+                    pygame.draw.rect(screen, (36, 42, 54), knob_rect, 1)
+                continue
+
+            if button_rect is None:
+                continue
+
             pygame.draw.rect(screen, (46, 70, 96), button_rect)
             pygame.draw.rect(screen, (158, 190, 230), button_rect, 1)
-            label = self._ellipsize_text(row.get("tool", {}).get("label", "Create"), font, button_rect.width - 12)
+            label = self._ellipsize_text(tool.get("label", "Create"), font, button_rect.width - 12)
             label_surface = font.render(label, True, (238, 246, 255))
             screen.blit(label_surface, label_surface.get_rect(center=button_rect.center))
 
@@ -2099,6 +2666,18 @@ class EntityCard:
                 description_surface = font.render(line, True, (164, 174, 194))
                 screen.blit(description_surface, (row_rect.x + 4, line_y))
                 line_y += line_h
+
+    def _draw_color_slider_track(self, screen, rect, channel, hue, saturation, brightness):
+        width = max(1, rect.width)
+        for offset in range(width):
+            value = offset / max(1, width - 1)
+            if channel == "h":
+                color = self._hsv_to_rgb(value, 1.0, 1.0)
+            elif channel == "s":
+                color = self._hsv_to_rgb(hue, value, max(0.25, brightness))
+            else:
+                color = self._hsv_to_rgb(hue, saturation, value)
+            pygame.draw.line(screen, color, (rect.x + offset, rect.y), (rect.x + offset, rect.bottom - 1))
 
     def _draw_tabs(self, screen, font, card):
         for tab_name, tab_rect in card.get("tab_hitboxes", []):
@@ -2403,6 +2982,7 @@ class EntityCard:
             wiki_text,
             is_editing=is_editing,
             resolve_link_label=self._resolve_wiki_link_label,
+            section_colors=self._wiki_field_colors(),
             cursor_index=card.get("edit_cursor", 0),
             scroll_y=card.get("scroll_y", 0),
         )
@@ -2529,7 +3109,7 @@ class EntityCard:
     def _draw_relation_picker(self, screen, font, card, anchor_rect):
         matches = card.get("relation_picker_matches", [])
         picker_w = min(380, max(220, anchor_rect.width))
-        picker_h = 66 + min(6, len(matches)) * 42
+        picker_h = 100 + min(6, len(matches)) * 42
         picker_rect = pygame.Rect(anchor_rect.x, anchor_rect.bottom + 6, picker_w, picker_h)
         card["relation_picker_hitboxes"] = []
 
@@ -2552,6 +3132,13 @@ class EntityCard:
 
         selected_index = card.get("relation_picker_selected_index", 0)
         row_y = query_rect.bottom + 8
+        note_rect = pygame.Rect(picker_rect.x + 10, row_y, picker_rect.width - 20, 28)
+        pygame.draw.rect(screen, (44, 50, 64), note_rect)
+        pygame.draw.rect(screen, (128, 144, 176), note_rect, 1)
+        card["relation_picker_hitboxes"].append(("note", note_rect))
+        note_surface = font.render("Add Note", True, (236, 240, 248))
+        screen.blit(note_surface, (note_rect.x + 8, note_rect.y + 6))
+        row_y += 34
         for index, match in enumerate(matches[:6]):
             row_rect = pygame.Rect(picker_rect.x + 10, row_y, picker_rect.width - 20, 36)
             fill = (54, 64, 82) if index == selected_index else (30, 34, 44)

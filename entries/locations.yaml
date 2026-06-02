@@ -14,7 +14,7 @@
     y0: 8000000000
   card_image_map: assets/cards/locations/planet_earth_map.png
   card_image: assets/cards/locations/planet_earth_map.png
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -33,6 +33,26 @@
   derived_from: []
   entry_status: ''
   media_layers: {}
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: planet
+  parent_body: body_sol
+  location_entity: planet_earth
+  mass_kg: 5.97219e24
+  radius_m: 6371000
+  semi_major_axis_m: 149597870700
+  eccentricity: 0.0167086
+  inclination_deg: 5.0e-05
+  longitude_of_ascending_node_deg: -11.26064
+  argument_of_periapsis_deg: 114.20783
+  mean_anomaly_deg_at_epoch: 358.617
+  display_color:
+  - 100
+  - 140
+  - 255
+  location_role: orbital_body
+  derived_from_system_body: body_earth
+  legacy_system_entity_id: body_earth
 - id: geo_europe
   pretty_name: Europe
   name: Europe
@@ -47,7 +67,7 @@
     max_y: -34
   population:
     y0: 450000000
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -115,7 +135,7 @@
     max_y: -47.2
   population:
     y0: 83000000
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -216,10 +236,13 @@
   population:
     y0: 68000000
   start_year: 1070
-  parents: []
+  parents:
+  - loc_new_idea
   related: []
   placeholders: []
-  offspring: []
+  offspring:
+  - id: evt_new_001
+  - id: city_paris
   description: ''
   notes: ''
   wiki_entry: ''
@@ -235,6 +258,8 @@
   derived_from: []
   entry_status: ''
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#1e3560'
 - id: city_paris
   pretty_name: Paris
   name: Paris
@@ -247,8 +272,17 @@
     y: -48.857
   population:
     y0: 2100000
-  start_year: 0
-  parents: []
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - '[3.56, -49.137]'
+      - '[3.738, -49.208]'
+      - '[3.667, -49.439]'
+      - '[3.418, -49.403]'
+  start_year: -250
+  parents:
+  - geo_france
   related: []
   placeholders: []
   offspring: []
@@ -263,10 +297,12 @@
   image_path: ''
   image: ''
   tags: []
-  end_year: null
+  end_year: 2486
   derived_from: []
   entry_status: ''
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#5f787d'
 - id: planet_mercury
   pretty_name: Mercury
   name: Mercury
@@ -290,9 +326,11 @@
   map_canvas_height_px: 1024
   population:
     y0: 0
-  start_year: 0
-  parents: []
-  related: []
+  start_year: null
+  parents:
+  - body_sol
+  related:
+  - veh_whopco
   placeholders: []
   offspring: []
   description: ''
@@ -310,6 +348,26 @@
   derived_from: []
   entry_status: ''
   media_layers: {}
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: planet
+  parent_body: body_sol
+  location_entity: planet_mercury
+  mass_kg: 3.3011e23
+  radius_m: 2439700
+  semi_major_axis_m: 57909050000
+  eccentricity: 0.20563
+  inclination_deg: 7.005
+  longitude_of_ascending_node_deg: 48.331
+  argument_of_periapsis_deg: 29.124
+  mean_anomaly_deg_at_epoch: 174.796
+  display_color:
+  - 170
+  - 165
+  - 160
+  legacy_system_entity_id: body_mercury
+  wiki_mentions: []
+  card_color: '#422626'
 - id: planet_venus
   pretty_name: Venus
   name: Venus
@@ -333,12 +391,11 @@
   map_canvas_height_px: 2048
   population:
     y0: 0
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
-  offspring:
-  - id: idea_new_005
+  offspring: []
   description: ''
   notes: ''
   wiki_entry: ''
@@ -354,6 +411,26 @@
   derived_from: []
   entry_status: ''
   media_layers: {}
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: planet
+  parent_body: body_sol
+  location_entity: planet_venus
+  mass_kg: 4.8675e24
+  radius_m: 6051800
+  semi_major_axis_m: 108208000000
+  eccentricity: 0.006772
+  inclination_deg: 3.39458
+  longitude_of_ascending_node_deg: 76.68
+  argument_of_periapsis_deg: 54.884
+  mean_anomaly_deg_at_epoch: 50.115
+  display_color:
+  - 210
+  - 190
+  - 140
+  legacy_system_entity_id: body_venus
+  wiki_mentions: []
+  card_color: '#727842'
 - id: planet_mars
   pretty_name: Mars
   name: Mars
@@ -377,12 +454,14 @@
   map_canvas_height_px: 1024
   population:
     y0: 0
-  start_year: 0
+  start_year: null
   parents:
-  - idea_new_007
+  - body_sol
   related: []
   placeholders: []
-  offspring: []
+  offspring:
+  - id: body_phobos
+  - city_lumen_free_city_metropolitan_area
   description: ''
   notes: ''
   wiki_entry: ''
@@ -400,11 +479,31 @@
   media_layers: {}
   controlling_factions:
   - fac_new_001
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: planet
+  parent_body: body_sol
+  location_entity: planet_mars
+  mass_kg: 6.4171e23
+  radius_m: 3389500
+  semi_major_axis_m: 227939200000
+  eccentricity: 0.0934
+  inclination_deg: 1.85
+  longitude_of_ascending_node_deg: 49.558
+  argument_of_periapsis_deg: 286.502
+  mean_anomaly_deg_at_epoch: 19.373
+  display_color:
+  - 210
+  - 120
+  - 90
+  legacy_system_entity_id: body_mars
+  wiki_mentions: []
+  card_color: '#7a4d32'
 - id: planet_vesta
   pretty_name: Vesta
   name: Vesta
   type: location
-  location_class: planet
+  location_class: asteroid
   location_role: planetary_root
   coords:
     type: point
@@ -423,7 +522,7 @@
   map_canvas_height_px: 1024
   population:
     y0: 0
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -443,6 +542,24 @@
   derived_from: []
   entry_status: ''
   media_layers: {}
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: asteroid
+  parent_body: body_sol
+  location_entity: planet_vesta
+  mass_kg: 2.59076e20
+  radius_m: 262700
+  semi_major_axis_m: 353300000000
+  eccentricity: 0.0887
+  inclination_deg: 7.14
+  longitude_of_ascending_node_deg: 103.85
+  argument_of_periapsis_deg: 151.2
+  mean_anomaly_deg_at_epoch: 20.0
+  display_color:
+  - 160
+  - 160
+  - 155
+  legacy_system_entity_id: body_vesta
 - id: planet_jupiter
   pretty_name: Jupiter
   name: Jupiter
@@ -466,7 +583,7 @@
   map_canvas_height_px: 8192
   population:
     y0: 0
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -486,11 +603,29 @@
   derived_from: []
   entry_status: ''
   media_layers: {}
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: planet
+  parent_body: body_sol
+  location_entity: planet_jupiter
+  mass_kg: 1.89813e27
+  radius_m: 69911000
+  semi_major_axis_m: 778570000000
+  eccentricity: 0.0489
+  inclination_deg: 1.304
+  longitude_of_ascending_node_deg: 100.464
+  argument_of_periapsis_deg: 273.867
+  mean_anomaly_deg_at_epoch: 20.02
+  display_color:
+  - 215
+  - 175
+  - 130
+  legacy_system_entity_id: body_jupiter
 - id: planet_titan
   pretty_name: Titan
   name: Titan
   type: location
-  location_class: planet
+  location_class: moon
   location_role: planetary_root
   coords:
     type: point
@@ -509,7 +644,7 @@
   map_canvas_height_px: 1024
   population:
     y0: 0
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -529,11 +664,29 @@
   derived_from: []
   entry_status: ''
   media_layers: {}
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_saturn
+  location_entity: planet_titan
+  mass_kg: 1.3452e23
+  radius_m: 2574700
+  semi_major_axis_m: 1221870000
+  eccentricity: 0.0288
+  inclination_deg: 0.34854
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color:
+  - 210
+  - 170
+  - 110
+  legacy_system_entity_id: body_titan
 - id: planet_enceladus
   pretty_name: Enceladus
   name: Enceladus
   type: location
-  location_class: planet
+  location_class: moon
   location_role: planetary_root
   coords:
     type: point
@@ -552,7 +705,7 @@
   map_canvas_height_px: 1024
   population:
     y0: 0
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -572,6 +725,24 @@
   derived_from: []
   entry_status: ''
   media_layers: {}
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_saturn
+  location_entity: planet_enceladus
+  mass_kg: 1.08022e20
+  radius_m: 252100
+  semi_major_axis_m: 238040000
+  eccentricity: 0.0047
+  inclination_deg: 0.009
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color:
+  - 235
+  - 235
+  - 240
+  legacy_system_entity_id: body_enceladus
 - id: planet_nanhai
   pretty_name: Nanhai
   name: Nanhai
@@ -680,7 +851,7 @@
   pretty_name: Pluto
   name: Pluto
   type: location
-  location_class: planet
+  location_class: dwarf_planet
   location_role: planetary_root
   coords:
     type: point
@@ -699,7 +870,7 @@
   map_canvas_height_px: 1024
   population:
     y0: 0
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -719,11 +890,29 @@
   derived_from: []
   entry_status: ''
   media_layers: {}
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: dwarf_planet
+  parent_body: body_sol
+  location_entity: planet_pluto
+  mass_kg: 1.303e22
+  radius_m: 1188300
+  semi_major_axis_m: 5906440000000
+  eccentricity: 0.2488
+  inclination_deg: 17.16
+  longitude_of_ascending_node_deg: 110.299
+  argument_of_periapsis_deg: 113.834
+  mean_anomaly_deg_at_epoch: 14.53
+  display_color:
+  - 165
+  - 145
+  - 130
+  legacy_system_entity_id: body_pluto
 - id: planet_nereid
   pretty_name: Nereid
   name: Nereid
   type: location
-  location_class: planet
+  location_class: moon
   location_role: planetary_root
   coords:
     type: point
@@ -742,7 +931,7 @@
   map_canvas_height_px: 1024
   population:
     y0: 0
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -762,11 +951,31 @@
   derived_from: []
   entry_status: ''
   media_layers: {}
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_neptune
+  location_entity: planet_nereid
+  mass_kg: 3.1e19
+  radius_m: 170000
+  semi_major_axis_m: 5513400000
+  eccentricity: 0.7507
+  inclination_deg: 7.23
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color:
+  - 150
+  - 150
+  - 160
+  legacy_system_entity_id: body_nereid
+  wiki_mentions: []
+  card_color: '#294160'
 - id: planet_europa
   pretty_name: Europa
   name: Europa
   type: location
-  location_class: planet
+  location_class: moon
   location_role: planetary_root
   coords:
     type: point
@@ -785,7 +994,7 @@
   map_canvas_height_px: 1024
   population:
     y0: 0
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -805,11 +1014,29 @@
   derived_from: []
   entry_status: ''
   media_layers: {}
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: planet_jupiter
+  location_entity: planet_europa
+  mass_kg: 4.7998e22
+  radius_m: 1560800
+  semi_major_axis_m: 671100000
+  eccentricity: 0.0094
+  inclination_deg: 0.466
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color:
+  - 220
+  - 215
+  - 200
+  legacy_system_entity_id: body_europa
 - id: planet_io
   pretty_name: Io
   name: Io
   type: location
-  location_class: planet
+  location_class: moon
   location_role: planetary_root
   coords:
     type: point
@@ -828,7 +1055,7 @@
   map_canvas_height_px: 1024
   population:
     y0: 0
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -848,6 +1075,24 @@
   derived_from: []
   entry_status: ''
   media_layers: {}
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: planet_jupiter
+  location_entity: planet_io
+  mass_kg: 8.9319e22
+  radius_m: 1821600
+  semi_major_axis_m: 421700000
+  eccentricity: 0.0041
+  inclination_deg: 0.036
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color:
+  - 235
+  - 220
+  - 140
+  legacy_system_entity_id: body_io
 - id: sys_metyaki
   pretty_name: Metyaki System
   name: Metyaki System
@@ -861,7 +1106,8 @@
   parents: []
   related: []
   placeholders: []
-  offspring: []
+  offspring:
+  - planet_noyanakh
   description: ''
   notes: ''
   wiki_entry: ''
@@ -877,6 +1123,8 @@
   derived_from: []
   entry_status: ''
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#47604b'
 - id: planet_noyanakh
   pretty_name: Noyanakh
   name: Noyanakh
@@ -941,31 +1189,32 @@
   environment_summary:
     status: placeholder
     tags:
-    - coral_atoll
-    - low_lying_island
-    - protected_ecology
+      - coral_atoll
+      - low_lying_island
+      - protected_ecology
     notes: Placeholder summary for future card-tab content.
   geology_summary:
     status: placeholder
     tags:
-    - coral_formation
-    - reef_structure
+      - coral_formation
+      - reef_structure
     notes: Placeholder geology tab content.
   hydrology_summary:
     status: placeholder
     tags:
-    - lagoon
-    - marine_exchange
+      - lagoon
+      - marine_exchange
     notes: Placeholder hydrology tab content.
   ecology_summary:
     status: placeholder
     tags:
-    - seabird_habitat
-    - marine_ecosystem
-    - conservation_area
+      - seabird_habitat
+      - marine_ecosystem
+      - conservation_area
     notes: Placeholder ecology tab content.
-  start_year: 0
-  parents: []
+  start_year: null
+  parents:
+  - geo_northwestern_hawaiian_islands
   related: []
   placeholders: []
   offspring: []
@@ -982,6 +1231,7 @@
   derived_from: []
   entry_status: ''
   media_layers: {}
+  wiki_mentions: []
 - id: geo_northwestern_hawaiian_islands
   pretty_name: Northwestern Hawaiian Islands
   name: Northwestern Hawaiian Islands
@@ -1001,19 +1251,20 @@
   environment_summary:
     status: placeholder
     tags:
-    - island_chain
-    - coral_and_islet_systems
-    - protected_ecology
+      - island_chain
+      - coral_and_islet_systems
+      - protected_ecology
     notes: Placeholder summary for future card-tab content.
   ecology_summary:
     status: placeholder
     tags:
-    - seabird_habitat
-    - marine_ecosystem
-    - conservation_area
+      - seabird_habitat
+      - marine_ecosystem
+      - conservation_area
     notes: Placeholder ecology tab content.
-  start_year: 0
-  parents: []
+  start_year: null
+  parents:
+  - loc_hawaii
   related: []
   placeholders: []
   offspring: []
@@ -1032,6 +1283,8 @@
   derived_from: []
   entry_status: ''
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#5d8185'
 - id: site_mcas_futenma
   pretty_name: Marine Corps Air Station Futenma
   name: Marine Corps Air Station Futenma
@@ -1179,13 +1432,14 @@
     max_y: -35.8
   population:
     y0: 48000000
-  start_year: 0
+  start_year: 1479
   entry_status: stub
   parents:
   - geo_europe
   related: []
   placeholders: []
-  offspring: []
+  offspring:
+  - id: city_madrid
   description: ''
   notes: ''
   wiki_entry: ''
@@ -1197,9 +1451,12 @@
   image_path: ''
   image: ''
   tags: []
-  end_year: null
+  end_year: 2115
   derived_from: []
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#a5a264'
+  start_event: evt_new_005
 - id: city_madrid
   pretty_name: Madrid
   name: Madrid
@@ -1212,7 +1469,7 @@
     y: -40.417
   population:
     y0: 3300000
-  start_year: 0
+  start_year: null
   entry_status: stub
   parents:
   - geo_spain
@@ -1247,7 +1504,7 @@
     max_y: -35.5
   population:
     y0: 59000000
-  start_year: 0
+  start_year: null
   entry_status: stub
   parents: []
   related: []
@@ -1279,7 +1536,7 @@
     y: -41.903
   population:
     y0: 2800000
-  start_year: 0
+  start_year: null
   entry_status: stub
   parents: []
   related: []
@@ -1313,9 +1570,10 @@
     max_y: -55
   population:
     y0: 10500000
-  start_year: 0
+  start_year: null
   entry_status: stub
-  parents: []
+  parents:
+  - loc_scandinavia
   related: []
   placeholders: []
   offspring: []
@@ -1333,6 +1591,8 @@
   end_year: null
   derived_from: []
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#0a123a'
 - id: city_stockholm
   pretty_name: Stockholm
   name: Stockholm
@@ -1345,7 +1605,7 @@
     y: -59.329
   population:
     y0: 980000
-  start_year: 0
+  start_year: null
   entry_status: stub
   parents: []
   related: []
@@ -1424,6 +1684,8 @@
   end_year: null
   derived_from: []
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#2b3e40'
 - id: loc_draft_geo_spain_001
   pretty_name: Draft Map Area 001
   name: Draft Map Area 001
@@ -1462,17 +1724,37 @@
   type: location
   wiki_entry: Second Largest State in India
   location_class: state
-
-# ---------- loc_draft_loc_central_asian_steppe_cog_001 | Draft Map Area 001 ----------
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents:
+  - loc_india
+  related: []
+  wiki_mentions: []
+  offspring: []
+  placeholders: []
+  entry_status: ''
+  media_layers: {}
+  card_color: '#6f9d33'
 - id: loc_draft_loc_central_asian_steppe_cog_001
-  map_image_fit: 'stretch_to_bounds'
-  map_image_path: 'assets/maps/locations/loc_draft_loc_central_asian_steppe_cog_001/base_map_0.jpg'
-  pretty_name: 'Original CoG Site'
-  name: 'Original CoG Site'
+  map_image_fit: stretch_to_bounds
+  map_image_path: assets/maps/locations/loc_draft_loc_central_asian_steppe_cog_001/base_map_0.jpg
+  pretty_name: Original CoG Site
+  name: Original CoG Site
   type: location
   location_class: region
   parent_location: loc_central_asian_steppe_cog
-  notes: 'Draft rectangle map area created under Central Asian Steppe CoG Site.'
+  notes: Draft rectangle map area created under Central Asian Steppe CoG Site.
   bounds:
     type: bbox
     min_x: -12.42
@@ -1481,28 +1763,6 @@
     max_y: 7.635
   start_year: 2400
   map_image_year: 0
-  entry_status: draft
-- id: loc_new_002
-  pretty_name: New Location
-  name: Test Map
-  type: location
-  wiki_entry: ''
-
-# ---------- loc_draft_loc_new_002_001 | Draft Map Area 001 ----------
-- id: loc_draft_loc_new_002_001
-  pretty_name: 'Test Map Base'
-  name: 'Test Map Base'
-  type: location
-  location_class: region
-  parent_location: loc_new_002
-  notes: 'Draft rectangle map area created under Test Map.'
-  bounds:
-    type: bbox
-    min_x: -2762.8
-    max_x: 4526.997
-    min_y: -2070.435
-    max_y: 1517.876
-  start_year: 2400
   entry_status: draft
 - id: planet_equidorva
   pretty_name: Equidorva
@@ -1527,20 +1787,19 @@
   map_canvas_height_px: 180
   population:
     y0: 0
-  start_year: 0
+  start_year: null
   parents:
   - body_equidorva
   related:
-  - sys_new_002
+  - sys_equidorva
   - body_equidorva_primary
   placeholders: []
   offspring:
-    - id: loc_region_planet_equidorva_001
-    - id: loc_region_planet_equidorva_002
-  description: Empty planetary map root for Equidorva, ready for bottom-up
-    geography generation.
-  notes: Earthlike map frame derived from a 6,371 km radius, rendered as a 2:1
-    equirectangular surface.
+  - id: planet_equidorva_lumen
+  - id: loc_region_planet_equidorva_001
+  - id: loc_region_planet_equidorva_002
+  description: 'Empty planetary map root for Equidorva, ready for bottom-up geography generation.'
+  notes: 'Earthlike map frame derived from a 6,371 km radius, rendered as a 2:1 equirectangular surface.'
   wiki_entry: ''
   card_image: ''
   design_image: ''
@@ -1557,14 +1816,31 @@
   derived_from: []
   entry_status: draft
   media_layers: {}
-
-
-#----------planet_equidorva_lumen----Lumen-----------
+  system_role: orbital_body
+  star_system: sys_equidorva
+  body_class: planet
+  parent_body: body_equidorva_primary
+  location_entity: planet_equidorva
+  mass_kg: 5.97219e24
+  radius_m: 6371000
+  semi_major_axis_m: 149597870700
+  eccentricity: 0.0167
+  inclination_deg: 0.0
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 102.9
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color:
+  - 92
+  - 142
+  - 210
+  legacy_system_entity_id: body_equidorva
+  wiki_mentions: []
+  card_color: '#3d5241'
 - id: planet_equidorva_lumen
-  pretty_name: Lumen
-  name: Lumen
+  pretty_name: 'Lumen, Moon of Equidorva'
+  name: 'Lumen, Moon of Equidorva'
   type: location
-  location_class: planet
+  location_class: moon
   location_role: planetary_root
   coords:
     type: point
@@ -1583,7 +1859,7 @@
   map_canvas_height_px: 1024
   population:
     y0: 0
-  start_year: 0
+  start_year: null
   description: ''
   notes: ''
   wiki_entry: ''
@@ -1604,15 +1880,32 @@
   placeholders: []
   entry_status: ''
   media_layers: {}
-
-# ---------- loc_draft_loc_state_bihar_001 | Draft Map Area 001 ----------
+  system_role: orbital_body
+  star_system: sys_equidorva
+  body_class: moon
+  parent_body: planet_equidorva
+  location_entity: planet_equidorva_lumen
+  mass_kg: 7.1e22
+  radius_m: 1680000
+  semi_major_axis_m: 392000000
+  eccentricity: 0.041
+  inclination_deg: 4.2
+  longitude_of_ascending_node_deg: 38.0
+  argument_of_periapsis_deg: 114.0
+  mean_anomaly_deg_at_epoch: 72.0
+  display_color:
+  - 205
+  - 202
+  - 190
+  legacy_system_entity_id: body_equidorva_lumen
+  wiki_mentions: []
 - id: loc_draft_loc_state_bihar_001
-  pretty_name: 'Bihar State'
-  name: 'Bihar State'
+  pretty_name: Bihar State
+  name: Bihar State
   type: location
   location_class: region
   parent_location: loc_state_bihar
-  notes: 'Draft rectangle map area created under Bihar State, India.'
+  notes: Draft rectangle map area created under Bihar State, India.
   bounds:
     type: bbox
     min_x: -45.333
@@ -1621,14 +1914,11 @@
     max_y: 28.162
   start_year: 2400
   entry_status: draft
-
-
-#----------planet_hygiea----Hygiea-----------
 - id: planet_hygiea
   pretty_name: Hygiea
   name: Hygiea
   type: location
-  location_class: planet
+  location_class: asteroid
   location_role: planetary_root
   coords:
     type: point
@@ -1647,16 +1937,53 @@
   map_canvas_height_px: 1024
   population:
     y0: 0
-  start_year: 0
-
-# ---------- loc_draft_loc_new_004_001 | Draft Map Area 001 ----------
+  start_year: null
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: asteroid
+  parent_body: body_sol
+  location_entity: planet_hygiea
+  mass_kg: 8.32e19
+  radius_m: 217000
+  semi_major_axis_m: 470300000000
+  eccentricity: 0.112
+  inclination_deg: 3.84
+  longitude_of_ascending_node_deg: 283.2
+  argument_of_periapsis_deg: 312.32
+  mean_anomaly_deg_at_epoch: 12.0
+  display_color:
+  - 135
+  - 145
+  - 135
+  legacy_system_entity_id: body_hygiea
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from: []
+  parents: []
+  related: []
+  wiki_mentions: []
+  offspring: []
+  placeholders: []
+  entry_status: ''
+  media_layers: {}
+  card_color: '#0c0d10'
 - id: loc_draft_loc_new_004_001
-  pretty_name: 'Draft Map Area 001'
-  name: 'Draft Map Area 001'
+  pretty_name: Draft Map Area 001
+  name: Draft Map Area 001
   type: location
   location_class: region
   parent_location: loc_new_004
-  notes: 'Draft rectangle map area created under Stutters Steppe.'
+  notes: Draft rectangle map area created under Stutters Steppe.
   bounds:
     type: bbox
     min_x: -159.51
@@ -1665,11 +1992,9 @@
     max_y: 90.263
   start_year: 2400
   entry_status: draft
-
-# ---------- loc_region_planet_equidorva_001 | Draft Regions Region 001 ----------
 - id: loc_region_planet_equidorva_001
-  pretty_name: 'Brothers High Plateau'
-  name: 'Brothers High Plateau'
+  pretty_name: Brothers High Plateau
+  name: Brothers High Plateau
   type: location
   location_class: region
   location_role: map_region
@@ -1678,35 +2003,41 @@
   parent_location: planet_equidorva
   parent_entity: planet_equidorva
   parents:
-    - planet_equidorva
-  notes: 'Draft region polygon created under Equidorva.'
+  - planet_equidorva
+  notes: Draft region polygon created under Equidorva.
   bounds:
     type: polygon
     coordinate_space: map_world
     points:
-      - [52.154, 18.346]
-      - [21.351, -11.16]
-      - [-46.769, -18.269]
-      - [-63.333, 28.5]
-      - [22.41, 51.397]
+    - - 52.154
+      - 18.346
+    - - 21.351
+      - -11.16
+    - - -46.769
+      - -18.269
+    - - -63.333
+      - 28.5
+    - - 22.41
+      - 51.397
   geometry:
     type: polygon
     coordinate_space: map_world
     points:
-      - [52.154, 18.346]
-      - [21.351, -11.16]
-      - [-46.769, -18.269]
-      - [-63.333, 28.5]
-      - [22.41, 51.397]
+    - - 52.154
+      - 18.346
+    - - 21.351
+      - -11.16
+    - - -46.769
+      - -18.269
+    - - -63.333
+      - 28.5
+    - - 22.41
+      - 51.397
   start_year: 2400
   entry_status: draft
-
-# ---------- loc_region_planet_equidorva_002 | Draft Regions Region 002 ----------
-
-# ---------- loc_region_planet_equidorva_002 | Draft Regions Region 002 ----------
 - id: loc_region_planet_equidorva_002
-  pretty_name: 'Algi Sea'
-  name: 'Algi Sea'
+  pretty_name: Algi Sea
+  name: Algi Sea
   type: location
   location_class: region
   location_role: map_region
@@ -1715,47 +2046,2022 @@
   parent_location: planet_equidorva
   parent_entity: planet_equidorva
   parents:
-    - planet_equidorva
-  notes: 'Draft region polygon created under Equidorva.'
+  - planet_equidorva
+  notes: Draft region polygon created under Equidorva.
   bounds:
     type: polygon
     coordinate_space: map_world
     points:
-      - [-46.769, -18.269]
-      - [21.517, -11.24]
-      - [38.486, -33.505]
-      - [40.996, -73.917]
-      - [22.983, -75.367]
-      - [18.635, -61.494]
-      - [7.661, -45.758]
-      - [-14.494, -48.864]
-      - [-22.154, -52.591]
-      - [-27.124, -56.318]
-      - [-30.229, -56.318]
-      - [-39.34, -53.833]
-      - [-50.52, -50.52]
-      - [-54.247, -46.379]
-      - [-60.045, -39.754]
-      - [-56.732, -28.366]
+      - '[-46.769, -18.269]'
+      - '[21.517, -11.24]'
+      - '[38.486, -33.505]'
+      - '[40.996, -73.917]'
+      - '[22.983, -75.367]'
+      - '[18.635, -61.494]'
+      - '[7.661, -45.758]'
+      - '[-14.494, -48.864]'
+      - '[-22.154, -52.591]'
+      - '[-27.124, -56.318]'
+      - '[-30.229, -56.318]'
+      - '[-39.34, -53.833]'
+      - '[-50.52, -50.52]'
+      - '[-54.247, -46.379]'
+      - '[-60.045, -39.754]'
+      - '[-56.732, -28.366]'
   geometry:
     type: polygon
     coordinate_space: map_world
     points:
-      - [-46.769, -18.269]
-      - [21.517, -11.24]
-      - [38.486, -33.505]
-      - [40.996, -73.917]
-      - [22.983, -75.367]
-      - [18.635, -61.494]
-      - [7.661, -45.758]
-      - [-14.494, -48.864]
-      - [-22.154, -52.591]
-      - [-27.124, -56.318]
-      - [-30.229, -56.318]
-      - [-39.34, -53.833]
-      - [-50.52, -50.52]
-      - [-54.247, -46.379]
-      - [-60.045, -39.754]
-      - [-56.732, -28.366]
+      - '[-46.769, -18.269]'
+      - '[21.517, -11.24]'
+      - '[38.486, -33.505]'
+      - '[40.996, -73.917]'
+      - '[22.983, -75.367]'
+      - '[18.635, -61.494]'
+      - '[7.661, -45.758]'
+      - '[-14.494, -48.864]'
+      - '[-22.154, -52.591]'
+      - '[-27.124, -56.318]'
+      - '[-30.229, -56.318]'
+      - '[-39.34, -53.833]'
+      - '[-50.52, -50.52]'
+      - '[-54.247, -46.379]'
+      - '[-60.045, -39.754]'
+      - '[-56.732, -28.366]'
   start_year: 2400
   entry_status: draft
+  description: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from: []
+  related: []
+  wiki_mentions:
+  - planet_equidorva
+  - tech_ceag
+  offspring: []
+  placeholders: []
+  media_layers: {}
+  card_color: '#486d54'
+- id: loc_region_loc_test_building_001
+  pretty_name: 'Draft Regions Region 001'
+  name: 'Draft Regions Region 001'
+  type: location
+  location_class: region
+  location_role: map_region
+  region_class: regions
+  layer_kind: regions
+  parent_location: loc_test_building
+  parent_entity: loc_test_building
+  parents:
+    - loc_test_building
+  notes: 'Draft region polygon created under Test Building.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [9.51, -38.597]
+      - [107.288, -22.597]
+      - [141.066, -66.152]
+      - [120.621, -119.486]
+      - [45.955, -116.375]
+      - [-8.712, -103.486]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [9.51, -38.597]
+      - [107.288, -22.597]
+      - [141.066, -66.152]
+      - [120.621, -119.486]
+      - [45.955, -116.375]
+      - [-8.712, -103.486]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_region_loc_test_building_001 | Draft Regions Region 001 ----------
+- id: loc_region_loc_test_building_001
+  pretty_name: 'Draft Regions Region 001'
+  name: 'Draft Regions Region 001'
+  type: location
+  location_class: region
+  location_role: map_region
+  region_class: regions
+  layer_kind: regions
+  parent_location: loc_test_building
+  parent_entity: loc_test_building
+  parents:
+    - loc_test_building
+  notes: 'Draft region polygon created under Test Building.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [9.51, -38.597]
+      - [107.288, -22.597]
+      - [141.066, -66.152]
+      - [120.621, -119.486]
+      - [45.955, -116.375]
+      - [-8.712, -103.486]
+      - [26.844, -91.93]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [9.51, -38.597]
+      - [107.288, -22.597]
+      - [141.066, -66.152]
+      - [120.621, -119.486]
+      - [45.955, -116.375]
+      - [-8.712, -103.486]
+      - [26.844, -91.93]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_region_loc_test_building_001 | Draft Regions Region 001 ----------
+- id: loc_region_loc_test_building_001
+  pretty_name: 'Draft Regions Region 001'
+  name: 'Draft Regions Region 001'
+  type: location
+  location_class: region
+  location_role: map_region
+  region_class: regions
+  layer_kind: regions
+  parent_location: loc_test_building
+  parent_entity: loc_test_building
+  parents:
+    - loc_test_building
+  notes: 'Draft region polygon created under Test Building.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [9.51, -38.597]
+      - [107.288, -22.597]
+      - [141.066, -66.152]
+      - [120.621, -119.486]
+      - [45.955, -116.375]
+      - [-8.712, -103.486]
+      - [26.844, -91.93]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [9.51, -38.597]
+      - [107.288, -22.597]
+      - [141.066, -66.152]
+      - [120.621, -119.486]
+      - [45.955, -116.375]
+      - [-8.712, -103.486]
+      - [26.844, -91.93]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_region_loc_test_building_001 | Draft Regions Region 001 ----------
+- id: loc_region_loc_test_building_001
+  pretty_name: 'Draft Regions Region 001'
+  name: 'Draft Regions Region 001'
+  type: location
+  location_class: region
+  location_role: map_region
+  region_class: regions
+  layer_kind: regions
+  parent_location: loc_test_building
+  parent_entity: loc_test_building
+  parents:
+    - loc_test_building
+  notes: 'Draft region polygon created under Test Building.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [9.51, -38.597]
+      - [107.288, -22.597]
+      - [141.066, -66.152]
+      - [120.621, -119.486]
+      - [45.955, -116.375]
+      - [-8.712, -103.486]
+      - [26.844, -91.93]
+      - [6.399, -76.375]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [9.51, -38.597]
+      - [107.288, -22.597]
+      - [141.066, -66.152]
+      - [120.621, -119.486]
+      - [45.955, -116.375]
+      - [-8.712, -103.486]
+      - [26.844, -91.93]
+      - [6.399, -76.375]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_region_loc_test_building_001 | Draft Regions Region 001 ----------
+- id: loc_region_loc_test_building_001
+  pretty_name: 'Draft Regions Region 001'
+  name: 'Draft Regions Region 001'
+  type: location
+  location_class: region
+  location_role: map_region
+  region_class: regions
+  layer_kind: regions
+  parent_location: loc_test_building
+  parent_entity: loc_test_building
+  parents:
+    - loc_test_building
+  notes: 'Draft region polygon created under Test Building.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [9.51, -38.597]
+      - [107.288, -22.597]
+      - [141.066, -66.152]
+      - [120.621, -119.486]
+      - [45.955, -116.375]
+      - [-8.712, -103.486]
+      - [26.844, -91.93]
+      - [6.399, -76.375]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [9.51, -38.597]
+      - [107.288, -22.597]
+      - [141.066, -66.152]
+      - [120.621, -119.486]
+      - [45.955, -116.375]
+      - [-8.712, -103.486]
+      - [26.844, -91.93]
+      - [6.399, -76.375]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_region_loc_test_building_001 | Draft Regions Region 001 ----------
+- id: loc_region_loc_test_building_001
+  pretty_name: 'Draft Regions Region 001'
+  name: 'Draft Regions Region 001'
+  type: location
+  location_class: region
+  location_role: map_region
+  region_class: regions
+  layer_kind: regions
+  parent_location: loc_test_building
+  parent_entity: loc_test_building
+  parents:
+    - loc_test_building
+  notes: 'Draft region polygon created under Test Building.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [9.51, -38.597]
+      - [107.288, -22.597]
+      - [141.066, -66.152]
+      - [120.621, -119.486]
+      - [45.955, -116.375]
+      - [-8.712, -103.486]
+      - [26.844, -91.93]
+      - [6.399, -76.375]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [9.51, -38.597]
+      - [107.288, -22.597]
+      - [141.066, -66.152]
+      - [120.621, -119.486]
+      - [45.955, -116.375]
+      - [-8.712, -103.486]
+      - [26.844, -91.93]
+      - [6.399, -76.375]
+  start_year: 2400
+  entry_status: draft
+- id: loc_test_building_4
+  pretty_name: Test Building
+  name: Test Building
+  type: location
+  wiki_entry: ''
+
+# ---------- loc_room_loc_classic_building_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building
+  parent_entity: loc_classic_building
+  parents:
+    - loc_classic_building
+  notes: 'Draft room polygon created inside Classic Building.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [24.442, -10.006]
+      - [53.959, -9.934]
+      - [53.888, 14.079]
+      - [23.942, 15.652]
+      - [24.657, -3.002]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [24.442, -10.006]
+      - [53.959, -9.934]
+      - [53.888, 14.079]
+      - [23.942, 15.652]
+      - [24.657, -3.002]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building
+  parent_entity: loc_classic_building
+  parents:
+    - loc_classic_building
+  notes: 'Draft room polygon created inside Classic Building.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [24.442, -10.006]
+      - [53.959, -9.934]
+      - [53.888, 14.079]
+      - [23.942, 15.652]
+      - [24.657, -3.002]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [24.442, -10.006]
+      - [53.959, -9.934]
+      - [53.888, 14.079]
+      - [23.942, 15.652]
+      - [24.657, -3.002]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building
+  parent_entity: loc_classic_building
+  parents:
+    - loc_classic_building
+  notes: 'Draft room polygon created inside Classic Building.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [24.442, -10.006]
+      - [53.959, -9.934]
+      - [53.888, 14.079]
+      - [23.942, 15.652]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [24.442, -10.006]
+      - [53.959, -9.934]
+      - [53.888, 14.079]
+      - [23.942, 15.652]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building
+  parent_entity: loc_classic_building
+  parents:
+    - loc_classic_building
+  notes: 'Draft room polygon created inside Classic Building.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [24, 16]
+      - [40.952, 15.723]
+      - [40.38, -5.432]
+      - [24.014, -5.36]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [24, 16]
+      - [40.952, 15.723]
+      - [40.38, -5.432]
+      - [24.014, -5.36]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building
+  parent_entity: loc_classic_building
+  parents:
+    - loc_classic_building
+  notes: 'Draft room polygon created inside Classic Building.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-14.079, 16.009]
+      - [0.786, 15.795]
+      - [-0.143, -1.644]
+      - [-14.508, -1.001]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-14.079, 16.009]
+      - [0.786, 15.795]
+      - [-0.143, -1.644]
+      - [-14.508, -1.001]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building
+  parent_entity: loc_classic_building
+  parents:
+    - loc_classic_building
+  notes: 'Draft room polygon created inside Classic Building.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-14.079, 16.009]
+      - [0.786, 15.795]
+      - [-0.143, -1.644]
+      - [-14.508, -1.001]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-14.079, 16.009]
+      - [0.786, 15.795]
+      - [-0.143, -1.644]
+      - [-14.508, -1.001]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building
+  parent_entity: loc_classic_building
+  parents:
+    - loc_classic_building
+  notes: 'Draft room polygon created inside Classic Building.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-14.079, 16.009]
+      - [0.786, 15.795]
+      - [-0.143, -1.644]
+      - [-14.508, -1.001]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-14.079, 16.009]
+      - [0.786, 15.795]
+      - [-0.143, -1.644]
+      - [-14.508, -1.001]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building
+  parent_entity: loc_classic_building
+  parents:
+    - loc_classic_building
+  notes: 'Draft room polygon created inside Classic Building.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-14.079, 16.009]
+      - [0.786, 15.795]
+      - [-0.143, -1.644]
+      - [-14.508, -1.001]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-14.079, 16.009]
+      - [0.786, 15.795]
+      - [-0.143, -1.644]
+      - [-14.508, -1.001]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_2_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_2_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building_2
+  parent_entity: loc_classic_building_2
+  parents:
+    - loc_classic_building_2
+  notes: 'Draft room polygon created inside Classic Building 2.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_2_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_2_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building_2
+  parent_entity: loc_classic_building_2
+  parents:
+    - loc_classic_building_2
+  notes: 'Draft room polygon created inside Classic Building 2.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_2_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_2_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building_2
+  parent_entity: loc_classic_building_2
+  parents:
+    - loc_classic_building_2
+  notes: 'Draft room polygon created inside Classic Building 2.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+      - [13.61, 7.333]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+      - [13.61, 7.333]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_2_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_2_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building_2
+  parent_entity: loc_classic_building_2
+  parents:
+    - loc_classic_building_2
+  notes: 'Draft room polygon created inside Classic Building 2.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_2_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_2_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building_2
+  parent_entity: loc_classic_building_2
+  parents:
+    - loc_classic_building_2
+  notes: 'Draft room polygon created inside Classic Building 2.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+      - [12.989, 6.96]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+      - [12.989, 6.96]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_2_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_2_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building_2
+  parent_entity: loc_classic_building_2
+  parents:
+    - loc_classic_building_2
+  notes: 'Draft room polygon created inside Classic Building 2.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+      - [12.989, 6.96]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+      - [12.989, 6.96]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_2_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_2_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building_2
+  parent_entity: loc_classic_building_2
+  parents:
+    - loc_classic_building_2
+  notes: 'Draft room polygon created inside Classic Building 2.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+      - [12.989, 6.96]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+      - [12.989, 6.96]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_2_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_2_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building_2
+  parent_entity: loc_classic_building_2
+  parents:
+    - loc_classic_building_2
+  notes: 'Draft room polygon created inside Classic Building 2.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_2_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_2_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building_2
+  parent_entity: loc_classic_building_2
+  parents:
+    - loc_classic_building_2
+  notes: 'Draft room polygon created inside Classic Building 2.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_2_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_2_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building_2
+  parent_entity: loc_classic_building_2
+  parents:
+    - loc_classic_building_2
+  notes: 'Draft room polygon created inside Classic Building 2.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_2_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_2_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building_2
+  parent_entity: loc_classic_building_2
+  parents:
+    - loc_classic_building_2
+  notes: 'Draft room polygon created inside Classic Building 2.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_2_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_2_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building_2
+  parent_entity: loc_classic_building_2
+  parents:
+    - loc_classic_building_2
+  notes: 'Draft room polygon created inside Classic Building 2.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_2_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_2_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building_2
+  parent_entity: loc_classic_building_2
+  parents:
+    - loc_classic_building_2
+  notes: 'Draft room polygon created inside Classic Building 2.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_2_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_2_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building_2
+  parent_entity: loc_classic_building_2
+  parents:
+    - loc_classic_building_2
+  notes: 'Draft room polygon created inside Classic Building 2.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_2_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_2_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building_2
+  parent_entity: loc_classic_building_2
+  parents:
+    - loc_classic_building_2
+  notes: 'Draft room polygon created inside Classic Building 2.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_2_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_2_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building_2
+  parent_entity: loc_classic_building_2
+  parents:
+    - loc_classic_building_2
+  notes: 'Draft room polygon created inside Classic Building 2.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+      - [41.701, 4.35]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+      - [41.701, 4.35]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_2_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_2_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building_2
+  parent_entity: loc_classic_building_2
+  parents:
+    - loc_classic_building_2
+  notes: 'Draft room polygon created inside Classic Building 2.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_2_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_2_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building_2
+  parent_entity: loc_classic_building_2
+  parents:
+    - loc_classic_building_2
+  notes: 'Draft room polygon created inside Classic Building 2.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  start_year: 2400
+  entry_status: draft
+
+# ---------- loc_room_loc_classic_building_2_001 | Draft Room 001 ----------
+- id: loc_room_loc_classic_building_2_001
+  pretty_name: 'Draft Room 001'
+  name: 'Draft Room 001'
+  type: location
+  location_class: room
+  location_role: indoor_room
+  room_class: room
+  layer_kind: rooms
+  parent_location: loc_classic_building_2
+  parent_entity: loc_classic_building_2
+  parents:
+    - loc_classic_building_2
+  notes: 'Draft room polygon created inside Classic Building 2.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-4.226, 16.283]
+      - [-4.475, -5.78]
+      - [23.989, -5.842]
+      - [24.051, 16.034]
+  start_year: 2400
+  entry_status: draft
+- id: body_uranus_ariel
+  pretty_name: 'Ariel, Moon of Uranus'
+  name: Ariel
+  type: location
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_uranus
+  location_entity: null
+  mass_kg: 1.353e21
+  radius_m: 578900
+  semi_major_axis_m: 191020000
+  eccentricity: 0.0012
+  inclination_deg: 0.26
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color:
+  - 215
+  - 215
+  - 220
+  start_year: 1851
+  parents:
+  - body_uranus
+  related: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from: []
+  entry_status: ''
+  media_layers: {}
+  wiki_mentions: []
+  location_class: moon
+  location_role: orbital_body
+  card_color: '#606056'
+- id: body_uranus
+  pretty_name: Uranus
+  name: Uranus
+  type: location
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: planet
+  parent_body: body_sol
+  location_entity: null
+  mass_kg: 8.6810e25
+  radius_m: 25362000
+  semi_major_axis_m: 2872460000000
+  eccentricity: 0.046381
+  inclination_deg: 0.773
+  longitude_of_ascending_node_deg: 74.006
+  argument_of_periapsis_deg: 96.998857
+  mean_anomaly_deg_at_epoch: 142.2386
+  display_color:
+  - 170
+  - 225
+  - 230
+  start_year: null
+  parents: []
+  related:
+  - body_uranus_ariel
+  placeholders: []
+  offspring:
+  - body_uranus_ariel
+  - body_miranda
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from: []
+  entry_status: ''
+  media_layers: {}
+  wiki_mentions: []
+  location_class: planet
+  location_role: orbital_body
+  card_color: '#599cb2'
+- id: body_luna
+  pretty_name: Luna
+  name: Luna
+  type: location
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_earth
+  location_entity: null
+  mass_kg: 7.342e22
+  radius_m: 1737400
+  semi_major_axis_m: 384400000
+  eccentricity: 0.0549
+  inclination_deg: 5.145
+  longitude_of_ascending_node_deg: 125.08
+  argument_of_periapsis_deg: 318.15
+  mean_anomaly_deg_at_epoch: 135.27
+  display_color:
+  - 200
+  - 200
+  - 210
+  start_year: null
+  parents:
+  - planet_earth
+  related: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from: []
+  entry_status: ''
+  media_layers: {}
+  wiki_mentions: []
+  location_class: moon
+  location_role: orbital_body
+  card_color: '#2b2f3a'
+- id: body_equidorva_primary
+  pretty_name: Equidorva Primary
+  name: Equidorva Primary
+  type: location
+  wiki_entry: ''
+  system_role: orbital_body
+  star_system: sys_equidorva
+  body_class: star
+  parent_body: null
+  location_entity: null
+  mass_kg: 1.98847e30
+  radius_m: 696340000
+  semi_major_axis_m: 0
+  eccentricity: 0.0
+  inclination_deg: 0.0
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color:
+  - 255
+  - 222
+  - 150
+  parents:
+  - sys_equidorva
+  related:
+  - body_equidorva
+  placeholders: []
+  offspring: []
+  description: G-class main-sequence star used as Equidorva's Earthlike primary.
+  notes: 'Solar analogue baseline, roughly 1 solar mass and luminosity.'
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags:
+  - g_class_star
+  - solar_analogue
+  start_year: null
+  end_year: null
+  derived_from: []
+  entry_status: draft
+  media_layers: {}
+  wiki_mentions: []
+  location_class: star
+  location_role: orbital_body
+  card_color: '#b5b562'
+- id: loc_hawaii
+  pretty_name: Hawaii
+  name: Hawaii
+  type: location
+  wiki_entry: ''
+  wiki_mentions: []
+  derived_from: []
+  location_class: state
+  card_color: '#3e7a8a'
+  parents:
+  - loc_united_states_of_america
+- id: loc_united_states_of_america
+  pretty_name: United States of America
+  name: United States of America
+  type: location
+  wiki_entry: ''
+  wiki_mentions: []
+  derived_from:
+  - idea_new_026
+  location_class: country
+  card_color: '#142e70'
+  parents:
+  - loc_north_america
+- id: loc_north_america
+  pretty_name: North America
+  name: North America
+  type: location
+  card_color: '#394878'
+  wiki_entry: ''
+  wiki_mentions: []
+  derived_from: []
+  location_class: continent
+  parents:
+  - planet_earth
+- id: loc_india
+  pretty_name: India
+  name: India
+  type: location
+  wiki_entry: ''
+  wiki_mentions: []
+  derived_from:
+  - idea_new_027
+  location_class: country
+  card_color: '#235020'
+- id: loc_australia
+  pretty_name: Australia
+  name: Australia
+  type: location
+  wiki_entry: ''
+  wiki_mentions: []
+  derived_from:
+  - idea_new_027
+  location_class: country
+  card_color: '#75361f'
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  start_year: null
+  end_year: null
+  parents:
+  - planet_earth
+  related: []
+  offspring: []
+  placeholders: []
+  entry_status: ''
+  media_layers: {}
+- id: body_miranda
+  pretty_name: 'Miranda, Moon of Uranus'
+  name: Miranda
+  type: location
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_uranus
+  location_entity: null
+  mass_kg: 6.59e19
+  radius_m: 235800
+  semi_major_axis_m: 129390000
+  eccentricity: 0.0013
+  inclination_deg: 4.338
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color:
+  - 185
+  - 185
+  - 180
+  start_year: 1948
+  parents:
+  - body_uranus
+  related: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from: []
+  entry_status: ''
+  media_layers: {}
+  wiki_mentions: []
+  location_class: moon
+  location_role: orbital_body
+  card_color: '#555762'
+- id: loc_hemsbrook_l_beck_system
+  pretty_name: 'Hebsbrook, Lübeck System'
+  name: 'Hebsbrook, Lübeck System'
+  type: location
+  wiki_entry: ''
+  location_class: planet
+  wiki_mentions: []
+  card_color: '#2d5a4c'
+  parents:
+  - loc_l_beck_system
+- id: loc_new_idea
+  pretty_name: Western Europe
+  name: Western Europe
+  type: location
+  wiki_entry: ''
+  wiki_mentions: []
+  derived_from: []
+  location_class: region
+  card_color: '#2d5532'
+  offspring:
+  - geo_france
+  parents:
+  - geo_europe
+- id: sf_draft_ecoregions_geo_central_europe_001
+  pretty_name: France Ecoregion
+  name: France Ecoregion
+  type: location
+  notes: Draft polygon created from the Ecoregions map layer under Central Europe.
+  layer_kind: ecoregions
+  parent_entity: geo_central_europe
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - '[13.18, -46.53]'
+      - '[14.26, -51.98]'
+      - '[18.43, -55.62]'
+      - '[23.56, -54.95]'
+      - '[23.41, -48.0]'
+      - '[23.91, -44.53]'
+      - '[21.91, -42.57]'
+      - '[17.42, -42.69]'
+      - '[13.31, -43.76]'
+      - '[10.62, -45.3]'
+      - '[10.91, -46.39]'
+  start_year: 2400
+  entry_status: draft
+  parents:
+  - geo_france
+  related: []
+  placeholders: []
+  offspring: []
+  description: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from: []
+  media_layers: {}
+  wiki_mentions: []
+  location_class: region
+  location_role: map_region
+  region_class: ecoregions
+  parent_location: geo_central_europe
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - '[13.18, -46.53]'
+      - '[14.26, -51.98]'
+      - '[18.43, -55.62]'
+      - '[23.56, -54.95]'
+      - '[23.41, -48.0]'
+      - '[23.91, -44.53]'
+      - '[21.91, -42.57]'
+      - '[17.42, -42.69]'
+      - '[13.31, -43.76]'
+      - '[10.62, -45.3]'
+      - '[10.91, -46.39]'
+  card_color: '#436536'
+- id: system_sol
+  pretty_name: Sol System
+  name: Sol System
+  type: location
+  system_role: star_system
+  system_class: stellar_system
+  start_year: null
+  parents: []
+  related: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from: []
+  entry_status: ''
+  media_layers: {}
+  wiki_mentions: []
+  location_class: stellar_system
+  location_role: star_system
+  card_color: '#686d49'
+- id: body_rhea
+  pretty_name: Rhea
+  name: Rhea
+  type: location
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_saturn
+  location_entity: null
+  mass_kg: 2.3065e21
+  radius_m: 763800
+  semi_major_axis_m: 527070000
+  eccentricity: 0.001
+  inclination_deg: 0.345
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color:
+  - 185
+  - 185
+  - 182
+  start_year: 1672
+  parents: []
+  related: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from: []
+  entry_status: ''
+  media_layers: {}
+  wiki_mentions: []
+  location_class: moon
+  location_role: orbital_body
+  card_color: '#5f687d'
+- id: body_saturn
+  pretty_name: Saturn
+  name: Saturn
+  type: location
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: planet
+  parent_body: body_sol
+  location_entity: null
+  mass_kg: 5.6834e26
+  radius_m: 58232000
+  semi_major_axis_m: 1433530000000
+  eccentricity: 0.0565
+  inclination_deg: 2.485
+  longitude_of_ascending_node_deg: 113.665
+  argument_of_periapsis_deg: 339.392
+  mean_anomaly_deg_at_epoch: 317.02
+  display_color:
+  - 220
+  - 205
+  - 150
+  start_year: -45000000
+  parents: []
+  related: []
+  placeholders: []
+  offspring:
+  - body_rhea
+  - body_iapetus
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from: []
+  entry_status: ''
+  media_layers: {}
+  wiki_mentions: []
+  location_class: planet
+  location_role: orbital_body
+  card_color: '#9f9776'
+- id: body_neptune
+  pretty_name: Neptune
+  name: Neptune
+  type: location
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: planet
+  parent_body: body_sol
+  location_entity: null
+  mass_kg: 1.02413e26
+  radius_m: 24622000
+  semi_major_axis_m: 4495060000000
+  eccentricity: 0.009456
+  inclination_deg: 1.77
+  longitude_of_ascending_node_deg: 131.784
+  argument_of_periapsis_deg: 273.187
+  mean_anomaly_deg_at_epoch: 259.908
+  display_color:
+  - 90
+  - 130
+  - 230
+  start_year: null
+  parents: []
+  related: []
+  placeholders: []
+  offspring:
+  - id: body_proteus
+  - body_triton
+  - planet_nereid
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from: []
+  entry_status: ''
+  media_layers: {}
+  wiki_mentions: []
+  location_class: planet
+  location_role: orbital_body
+  card_color: '#2c3b6a'
+- id: body_ganymede
+  pretty_name: Ganymede
+  name: Ganymede
+  type: location
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_jupiter
+  location_entity: null
+  mass_kg: 1.4819e23
+  radius_m: 2634100
+  semi_major_axis_m: 1070400000
+  eccentricity: 0.0013
+  inclination_deg: 0.177
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color:
+  - 165
+  - 165
+  - 160
+  start_year: null
+  parents:
+  - planet_jupiter
+  related: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from: []
+  entry_status: ''
+  media_layers: {}
+  wiki_mentions: []
+  location_class: moon
+  location_role: orbital_body
+- id: loc_noarille
+  pretty_name: Noarille
+  name: Noarille
+  type: location
+  wiki_entry: ''
+  location_class: planet
+  wiki_mentions: []
+  card_color: '#100f1d'
+  start_year: 6402
+  end_year: 7559
+  parents:
+  - loc_shinogo_system
+- id: sys_equidorva
+  pretty_name: Equidorva System
+  name: Equidorva System
+  type: location
+  wiki_entry: ''
+  system_role: star_system
+  dataset: null
+  system_class: stellar_system
+  parents: []
+  related:
+  - body_equidorva_primary
+  - body_equidorva
+  placeholders: []
+  offspring:
+  - id: body_equidorva_primary
+  description: 'Earthlike development sandbox centered on Equidorva, a habitable-zone terrestrial planet orbiting a G-class main-sequence star.'
+  notes: Bottom-up planet construction root for Equidorva.
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags:
+  - g_class_star
+  - habitable_zone
+  - earthlike
+  start_year: null
+  end_year: null
+  derived_from: []
+  entry_status: draft
+  media_layers: {}
+  wiki_mentions: []
+  location_class: stellar_system
+  location_role: star_system
+  card_color: '#4e503b'
+- id: loc_castelli_automobiles_plant
+  pretty_name: Castelli Automobiles Plant
+  name: Castelli Automobiles Plant
+  type: location
+  card_color: '#3e3050'
+  location_class: site
+  wiki_entry: ''
+  wiki_mentions: []
+  parents:
+  - city_lumen_free_city_metropolitan_area
+  start_year: 5464
+  end_year: 5640
+- id: body_iapetus
+  pretty_name: Iapetus
+  name: Iapetus
+  type: location
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_saturn
+  location_entity: null
+  mass_kg: 1.8056e21
+  radius_m: 734500
+  semi_major_axis_m: 3560840000
+  eccentricity: 0.0283
+  inclination_deg: 15.47
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color:
+  - 160
+  - 155
+  - 135
+  start_year: null
+  parents:
+  - body_saturn
+  related: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from: []
+  entry_status: ''
+  media_layers: {}
+  wiki_mentions: []
+  location_class: moon
+  location_role: orbital_body
+  card_color: '#474b60'
+- id: body_deimos
+  pretty_name: Deimos
+  name: Deimos
+  type: location
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_mars
+  location_entity: null
+  mass_kg: 1.4762e15
+  radius_m: 6200
+  semi_major_axis_m: 23463000
+  eccentricity: 0.0002
+  inclination_deg: 0.93
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color:
+  - 130
+  - 125
+  - 120
+  start_year: null
+  parents:
+  - planet_mars
+  related: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from: []
+  entry_status: ''
+  media_layers: {}
+  wiki_mentions: []
+  location_class: moon
+  location_role: orbital_body
+  card_color: '#262220'
+- id: body_charon
+  pretty_name: Charon
+  name: Charon
+  type: location
+  system_role: orbital_body
+  star_system: system_sol
+  body_class: moon
+  parent_body: body_pluto
+  location_entity: null
+  mass_kg: 1.586e21
+  radius_m: 606000
+  semi_major_axis_m: 19596000
+  eccentricity: 0.0002
+  inclination_deg: 0.0
+  longitude_of_ascending_node_deg: 0.0
+  argument_of_periapsis_deg: 0.0
+  mean_anomaly_deg_at_epoch: 0.0
+  display_color:
+  - 175
+  - 175
+  - 170
+  start_year: null
+  parents:
+  - planet_pluto
+  related: []
+  placeholders: []
+  offspring: []
+  description: ''
+  notes: ''
+  wiki_entry: |
+    Testholder Charon
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  end_year: null
+  derived_from: []
+  entry_status: ''
+  media_layers: {}
+  wiki_mentions: []
+  location_class: moon
+  location_role: orbital_body
+  card_color: '#2c2c38'

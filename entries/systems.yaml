@@ -3,7 +3,7 @@
   type: system
   system_role: star_system
   system_class: stellar_system
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -44,135 +44,12 @@
   - 255
   - 220
   - 120
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
   offspring: []
   pretty_name: Sol
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
-  tags: []
-  end_year: null
-  derived_from: []
-  entry_status: ''
-  media_layers: {}
-- id: body_mercury
-  name: Mercury
-  type: system
-  system_role: orbital_body
-  star_system: system_sol
-  body_class: planet
-  parent_body: body_sol
-  location_entity: planet_mercury
-  mass_kg: 3.3011e23
-  radius_m: 2439700
-  semi_major_axis_m: 57909050000
-  eccentricity: 0.20563
-  inclination_deg: 7.005
-  longitude_of_ascending_node_deg: 48.331
-  argument_of_periapsis_deg: 29.124
-  mean_anomaly_deg_at_epoch: 174.796
-  display_color:
-  - 170
-  - 165
-  - 160
-  start_year: 0
-  parents: []
-  related: []
-  placeholders: []
-  offspring: []
-  pretty_name: Mercury
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
-  tags: []
-  end_year: null
-  derived_from: []
-  entry_status: ''
-  media_layers: {}
-- id: body_venus
-  name: Venus
-  type: system
-  system_role: orbital_body
-  star_system: system_sol
-  body_class: planet
-  parent_body: body_sol
-  location_entity: planet_venus
-  mass_kg: 4.8675e24
-  radius_m: 6051800
-  semi_major_axis_m: 108208000000
-  eccentricity: 0.006772
-  inclination_deg: 3.39458
-  longitude_of_ascending_node_deg: 76.68
-  argument_of_periapsis_deg: 54.884
-  mean_anomaly_deg_at_epoch: 50.115
-  display_color:
-  - 210
-  - 190
-  - 140
-  start_year: 0
-  parents: []
-  related: []
-  placeholders: []
-  offspring: []
-  pretty_name: Venus
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
-  tags: []
-  end_year: null
-  derived_from: []
-  entry_status: ''
-  media_layers: {}
-- id: body_earth
-  name: Earth
-  type: system
-  system_role: orbital_body
-  star_system: system_sol
-  body_class: planet
-  parent_body: body_sol
-  location_entity: planet_earth
-  mass_kg: 5.97219e24
-  radius_m: 6371000
-  semi_major_axis_m: 149597870700
-  eccentricity: 0.0167086
-  inclination_deg: 5.0e-05
-  longitude_of_ascending_node_deg: -11.26064
-  argument_of_periapsis_deg: 114.20783
-  mean_anomaly_deg_at_epoch: 358.617
-  display_color:
-  - 100
-  - 140
-  - 255
-  start_year: 0
-  parents: []
-  related: []
-  placeholders: []
-  offspring: []
-  pretty_name: Earth
   description: ''
   notes: ''
   wiki_entry: ''
@@ -208,53 +85,12 @@
   - 200
   - 200
   - 210
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
   offspring: []
   pretty_name: Luna
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
-  tags: []
-  end_year: null
-  derived_from: []
-  entry_status: ''
-  media_layers: {}
-- id: body_mars
-  name: Mars
-  type: system
-  system_role: orbital_body
-  star_system: system_sol
-  body_class: planet
-  parent_body: body_sol
-  location_entity: planet_mars
-  mass_kg: 6.4171e23
-  radius_m: 3389500
-  semi_major_axis_m: 227939200000
-  eccentricity: 0.0934
-  inclination_deg: 1.85
-  longitude_of_ascending_node_deg: 49.558
-  argument_of_periapsis_deg: 286.502
-  mean_anomaly_deg_at_epoch: 19.373
-  display_color:
-  - 210
-  - 120
-  - 90
-  start_year: 0
-  parents: []
-  related: []
-  placeholders: []
-  offspring: []
-  pretty_name: Mars
   description: ''
   notes: ''
   wiki_entry: ''
@@ -291,7 +127,7 @@
   - 150
   - 140
   - 135
-  start_year: 0
+  start_year: null
   parents:
   - planet_mars
   related: []
@@ -332,7 +168,7 @@
   - 130
   - 125
   - 120
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -373,53 +209,12 @@
   - 175
   - 175
   - 165
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
   offspring: []
   pretty_name: Ceres
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
-  tags: []
-  end_year: null
-  derived_from: []
-  entry_status: ''
-  media_layers: {}
-- id: body_vesta
-  name: Vesta
-  type: system
-  system_role: orbital_body
-  star_system: system_sol
-  body_class: asteroid
-  parent_body: body_sol
-  location_entity: planet_vesta
-  mass_kg: 2.59076e20
-  radius_m: 262700
-  semi_major_axis_m: 353300000000
-  eccentricity: 0.0887
-  inclination_deg: 7.14
-  longitude_of_ascending_node_deg: 103.85
-  argument_of_periapsis_deg: 151.2
-  mean_anomaly_deg_at_epoch: 20.0
-  display_color:
-  - 160
-  - 160
-  - 155
-  start_year: 0
-  parents: []
-  related: []
-  placeholders: []
-  offspring: []
-  pretty_name: Vesta
   description: ''
   notes: ''
   wiki_entry: ''
@@ -455,176 +250,12 @@
   - 150
   - 155
   - 150
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
   offspring: []
   pretty_name: Pallas
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
-  tags: []
-  end_year: null
-  derived_from: []
-  entry_status: ''
-  media_layers: {}
-- id: body_hygiea
-  name: Hygiea
-  type: system
-  system_role: orbital_body
-  star_system: system_sol
-  body_class: asteroid
-  parent_body: body_sol
-  location_entity: planet_hygiea
-  mass_kg: 8.32e19
-  radius_m: 217000
-  semi_major_axis_m: 470300000000
-  eccentricity: 0.112
-  inclination_deg: 3.84
-  longitude_of_ascending_node_deg: 283.2
-  argument_of_periapsis_deg: 312.32
-  mean_anomaly_deg_at_epoch: 12.0
-  display_color:
-  - 135
-  - 145
-  - 135
-  start_year: 0
-  parents: []
-  related: []
-  placeholders: []
-  offspring: []
-  pretty_name: Hygiea
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
-  tags: []
-  end_year: null
-  derived_from: []
-  entry_status: ''
-  media_layers: {}
-- id: body_jupiter
-  name: Jupiter
-  type: system
-  system_role: orbital_body
-  star_system: system_sol
-  body_class: planet
-  parent_body: body_sol
-  location_entity: planet_jupiter
-  mass_kg: 1.89813e27
-  radius_m: 69911000
-  semi_major_axis_m: 778570000000
-  eccentricity: 0.0489
-  inclination_deg: 1.304
-  longitude_of_ascending_node_deg: 100.464
-  argument_of_periapsis_deg: 273.867
-  mean_anomaly_deg_at_epoch: 20.02
-  display_color:
-  - 215
-  - 175
-  - 130
-  start_year: 0
-  parents: []
-  related: []
-  placeholders: []
-  offspring: []
-  pretty_name: Jupiter
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
-  tags: []
-  end_year: null
-  derived_from: []
-  entry_status: ''
-  media_layers: {}
-- id: body_io
-  name: Io
-  type: system
-  system_role: orbital_body
-  star_system: system_sol
-  body_class: moon
-  parent_body: body_jupiter
-  location_entity: planet_io
-  mass_kg: 8.9319e22
-  radius_m: 1821600
-  semi_major_axis_m: 421700000
-  eccentricity: 0.0041
-  inclination_deg: 0.036
-  longitude_of_ascending_node_deg: 0.0
-  argument_of_periapsis_deg: 0.0
-  mean_anomaly_deg_at_epoch: 0.0
-  display_color:
-  - 235
-  - 220
-  - 140
-  start_year: 0
-  parents: []
-  related: []
-  placeholders: []
-  offspring: []
-  pretty_name: Io
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
-  tags: []
-  end_year: null
-  derived_from: []
-  entry_status: ''
-  media_layers: {}
-- id: body_europa
-  name: Europa
-  type: system
-  system_role: orbital_body
-  star_system: system_sol
-  body_class: moon
-  parent_body: body_jupiter
-  location_entity: planet_europa
-  mass_kg: 4.7998e22
-  radius_m: 1560800
-  semi_major_axis_m: 671100000
-  eccentricity: 0.0094
-  inclination_deg: 0.466
-  longitude_of_ascending_node_deg: 0.0
-  argument_of_periapsis_deg: 0.0
-  mean_anomaly_deg_at_epoch: 0.0
-  display_color:
-  - 220
-  - 215
-  - 200
-  start_year: 0
-  parents: []
-  related: []
-  placeholders: []
-  offspring: []
-  pretty_name: Europa
   description: ''
   notes: ''
   wiki_entry: ''
@@ -660,7 +291,7 @@
   - 165
   - 165
   - 160
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -784,7 +415,7 @@
   - 120
   - 120
   - 115
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -825,7 +456,7 @@
   - 220
   - 205
   - 150
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -866,53 +497,12 @@
   - 180
   - 180
   - 175
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
   offspring: []
   pretty_name: Mimas
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
-  tags: []
-  end_year: null
-  derived_from: []
-  entry_status: ''
-  media_layers: {}
-- id: body_enceladus
-  name: Enceladus
-  type: system
-  system_role: orbital_body
-  star_system: system_sol
-  body_class: moon
-  parent_body: body_saturn
-  location_entity: planet_enceladus
-  mass_kg: 1.08022e20
-  radius_m: 252100
-  semi_major_axis_m: 238040000
-  eccentricity: 0.0047
-  inclination_deg: 0.009
-  longitude_of_ascending_node_deg: 0.0
-  argument_of_periapsis_deg: 0.0
-  mean_anomaly_deg_at_epoch: 0.0
-  display_color:
-  - 235
-  - 235
-  - 240
-  start_year: 0
-  parents: []
-  related: []
-  placeholders: []
-  offspring: []
-  pretty_name: Enceladus
   description: ''
   notes: ''
   wiki_entry: ''
@@ -948,7 +538,7 @@
   - 210
   - 210
   - 205
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -989,7 +579,7 @@
   - 195
   - 195
   - 195
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -1030,53 +620,12 @@
   - 185
   - 185
   - 182
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
   offspring: []
   pretty_name: Rhea
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
-  tags: []
-  end_year: null
-  derived_from: []
-  entry_status: ''
-  media_layers: {}
-- id: body_titan
-  name: Titan
-  type: system
-  system_role: orbital_body
-  star_system: system_sol
-  body_class: moon
-  parent_body: body_saturn
-  location_entity: planet_titan
-  mass_kg: 1.3452e23
-  radius_m: 2574700
-  semi_major_axis_m: 1221870000
-  eccentricity: 0.0288
-  inclination_deg: 0.34854
-  longitude_of_ascending_node_deg: 0.0
-  argument_of_periapsis_deg: 0.0
-  mean_anomaly_deg_at_epoch: 0.0
-  display_color:
-  - 210
-  - 170
-  - 110
-  start_year: 0
-  parents: []
-  related: []
-  placeholders: []
-  offspring: []
-  pretty_name: Titan
   description: ''
   notes: ''
   wiki_entry: ''
@@ -1112,7 +661,7 @@
   - 160
   - 155
   - 135
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -1153,7 +702,7 @@
   - 100
   - 100
   - 105
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -1194,7 +743,7 @@
   - 170
   - 225
   - 230
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -1235,7 +784,7 @@
   - 185
   - 185
   - 180
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -1317,7 +866,7 @@
   - 120
   - 120
   - 125
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -1358,7 +907,7 @@
   - 190
   - 190
   - 200
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -1399,7 +948,7 @@
   - 165
   - 165
   - 170
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -1440,7 +989,7 @@
   - 90
   - 130
   - 230
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -1481,7 +1030,7 @@
   - 205
   - 195
   - 210
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -1502,49 +1051,8 @@
   derived_from: []
   entry_status: ''
   media_layers: {}
-- id: body_nereid
-  name: Nereid
-  type: system
-  system_role: orbital_body
-  star_system: system_sol
-  body_class: moon
-  parent_body: body_neptune
-  location_entity: planet_nereid
-  mass_kg: 3.1e19
-  radius_m: 170000
-  semi_major_axis_m: 5513400000
-  eccentricity: 0.7507
-  inclination_deg: 7.23
-  longitude_of_ascending_node_deg: 0.0
-  argument_of_periapsis_deg: 0.0
-  mean_anomaly_deg_at_epoch: 0.0
-  display_color:
-  - 150
-  - 150
-  - 160
-  start_year: 0
-  parents: []
-  related: []
-  placeholders: []
-  offspring: []
-  pretty_name: Nereid
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
-  tags: []
-  end_year: null
-  derived_from: []
-  entry_status: ''
-  media_layers: {}
 - id: body_proteus
-  pretty_name: 'Proteus, Moon of Neptune'
+  pretty_name: Proteus, Moon of Neptune
   name: Proteus
   type: system
   system_role: orbital_body
@@ -1564,53 +1072,12 @@
   - 110
   - 110
   - 120
-  start_year: 0
+  start_year: null
   parents:
   - body_neptune
   related: []
   placeholders: []
   offspring: []
-  description: ''
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
-  tags: []
-  end_year: null
-  derived_from: []
-  entry_status: ''
-  media_layers: {}
-- id: body_pluto
-  name: Pluto
-  type: system
-  system_role: orbital_body
-  star_system: system_sol
-  body_class: dwarf_planet
-  parent_body: body_sol
-  location_entity: planet_pluto
-  mass_kg: 1.303e22
-  radius_m: 1188300
-  semi_major_axis_m: 5906440000000
-  eccentricity: 0.2488
-  inclination_deg: 17.16
-  longitude_of_ascending_node_deg: 110.299
-  argument_of_periapsis_deg: 113.834
-  mean_anomaly_deg_at_epoch: 14.53
-  display_color:
-  - 165
-  - 145
-  - 130
-  start_year: 0
-  parents: []
-  related: []
-  placeholders: []
-  offspring: []
-  pretty_name: Pluto
   description: ''
   notes: ''
   wiki_entry: ''
@@ -1647,7 +1114,7 @@
   - 175
   - 175
   - 170
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -1689,7 +1156,7 @@
   - 185
   - 185
   - 180
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -1730,7 +1197,7 @@
   - 190
   - 190
   - 190
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -1771,7 +1238,7 @@
   - 120
   - 120
   - 125
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -1812,7 +1279,7 @@
   - 100
   - 100
   - 105
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -1853,7 +1320,7 @@
   - 210
   - 210
   - 220
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -1894,7 +1361,7 @@
   - 185
   - 185
   - 195
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -1935,7 +1402,7 @@
   - 150
   - 150
   - 160
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -1976,7 +1443,7 @@
   - 200
   - 170
   - 150
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -2017,7 +1484,7 @@
   - 140
   - 140
   - 145
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -2058,7 +1525,7 @@
   - 210
   - 210
   - 215
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -2099,7 +1566,7 @@
   - 165
   - 165
   - 175
-  start_year: 0
+  start_year: null
   parents: []
   related: []
   placeholders: []
@@ -2178,7 +1645,7 @@
   - g_class_star
   - habitable_zone
   - earthlike
-  start_year: 0
+  start_year: null
   end_year: null
   derived_from: []
   entry_status: draft
@@ -2223,101 +1690,7 @@
   tags:
   - g_class_star
   - solar_analogue
-  start_year: 0
-  end_year: null
-  derived_from: []
-  entry_status: draft
-  media_layers: {}
-- id: body_equidorva
-  pretty_name: Equidorva
-  name: Equidorva
-  type: system
-  wiki_entry: ''
-  system_role: orbital_body
-  star_system: sys_new_002
-  body_class: planet
-  parent_body: body_equidorva_primary
-  location_entity: planet_equidorva
-  mass_kg: 5.97219e24
-  radius_m: 6371000
-  semi_major_axis_m: 149597870700
-  eccentricity: 0.0167
-  inclination_deg: 0.0
-  longitude_of_ascending_node_deg: 0.0
-  argument_of_periapsis_deg: 102.9
-  mean_anomaly_deg_at_epoch: 0.0
-  display_color:
-  - 92
-  - 142
-  - 210
-  parents:
-  - body_equidorva_primary
-  related:
-  - planet_equidorva
-  - body_equidorva_lumen
-  placeholders: []
-  offspring: []
-  description: Earthlike terrestrial planet in the habitable zone of Equidorva Primary.
-  notes: Baseline assumes roughly Earth mass, Earth radius, and 1 AU orbit for bottom-up
-    planetary development.
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
-  tags:
-  - terrestrial_planet
-  - habitable_zone
-  - earthlike
-  start_year: 0
-  end_year: null
-  derived_from: []
-  entry_status: draft
-  media_layers: {}
-- id: body_equidorva_lumen
-  pretty_name: Lumen
-  name: Lumen
-  type: system
-  wiki_entry: ''
-  system_role: orbital_body
-  star_system: sys_new_002
-  body_class: moon
-  parent_body: body_equidorva
-  location_entity: planet_equidorva_lumen
-  mass_kg: 7.1e22
-  radius_m: 1680000
-  semi_major_axis_m: 392000000
-  eccentricity: 0.041
-  inclination_deg: 4.2
-  longitude_of_ascending_node_deg: 38.0
-  argument_of_periapsis_deg: 114.0
-  mean_anomaly_deg_at_epoch: 72.0
-  display_color:
-  - 205
-  - 202
-  - 190
-  parents:
-  - body_equidorva
-  related:
-  - planet_equidorva
-  placeholders: []
-  offspring: []
-  description: Large natural moon of Equidorva, sized to make the first local planetary-space
-    view useful.
-  notes: Rough Luna analogue with a slightly wider, calmer orbit.
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
-  tags:
-  - natural_moon
-  - luna_analogue
-  start_year: 0
+  start_year: null
   end_year: null
   derived_from: []
   entry_status: draft

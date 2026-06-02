@@ -133,3 +133,28 @@
   name: Human Habitat Project Group
   type: institution
   wiki_entry: ''
+- id: inst_catal_press
+  pretty_name: Catal Press
+  name: Catal Press
+  type: institution
+  wiki_entry: ''
+  wiki_mentions: []
+  card_color: '#9d9d84'
+  start_year: 7506
+  end_year: 8839
+- id: inst_ggop
+  pretty_name: GGO Police Forces
+  name: GGOP
+  type: institution
+  wiki_entry: ''
+  wiki_mentions: []
+  card_color: '#15385a'
+- id: inst_cultural_seeding_group
+  pretty_name: CSG
+  name: CSG
+  type: institution
+  wiki_entry: ''
+  wiki_mentions: []
+  card_color: '#458487'
+  start_year: 4912
+  end_year: 18876

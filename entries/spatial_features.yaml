@@ -21,7 +21,7 @@
       - -72
   resolution_m_per_pixel: 1000
   coverage_mode: replaces_parent
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -63,7 +63,7 @@
       - -51.5
   resolution_m_per_pixel: 100
   coverage_mode: replaces_parent
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents: []
   related: []
@@ -95,7 +95,7 @@
     points: '[[12.0, -36.7], [15.5, -36.8], [15.4, -38.1], [13.5, -38.4], [12.4, -37.6]]'
   resolution_m_per_pixel: 100
   coverage_mode: replaces_parent
-  start_year: 0
+  start_year: null
   entry_status: draft
   parents:
   - geo_italy

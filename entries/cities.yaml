@@ -106,3 +106,25 @@
   image: ''
   end_year: null
   media_layers: {}
+- id: city_ruins_of_the_cog
+  pretty_name: Ruins of the CoG
+  name: Ruins of the CoG
+  type: city
+  wiki_entry: ''
+  location_entity: null
+  start_year: 5917
+  end_year: 6196
+- id: city_lumen_free_city_metropolitan_area
+  pretty_name: Lumen Free City Metropolitan Area
+  name: Lumen Free City Metropolitan Area
+  type: city
+  card_color: '#ca8c65'
+  location_entity: null
+  offspring:
+  - loc_groundworks_district_lumen_free_city
+  parents:
+  - planet_mars
+  wiki_entry: ''
+  wiki_mentions: []
+  start_year: 5334
+  end_year: 7411

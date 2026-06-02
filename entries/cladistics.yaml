@@ -5,3 +5,47 @@
   wiki_entry: ''
   common_name: ''
   binomial_name: ''
+  description: ''
+  notes: ''
+  card_image: ''
+  design_image: ''
+  card_image_front: ''
+  card_image_side: ''
+  card_image_top: ''
+  image_path: ''
+  image: ''
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents: []
+  related: []
+  wiki_mentions: []
+  offspring: []
+  placeholders: []
+  entry_status: ''
+  media_layers: {}
+  card_color: '#172517'
+- id: cladis_otters
+  pretty_name: Otters - Lutrinae
+  name: Otters
+  type: cladistics
+  wiki_entry: ''
+  common_name: ''
+  binomial_name: ''
+  wiki_mentions: []
+  card_color: '#42311b'
+  offspring:
+  - cladis_clawless_otters_aonyx
+- id: cladis_clawless_otters_aonyx
+  pretty_name: Clawless Otters - Aonyx
+  name: Clawless Otters - Aonyx
+  type: cladistics
+  wiki_entry: ''
+  card_color: '#26201c'
+  wiki_mentions: []
+  derived_from: []
+  common_name: ''
+  binomial_name: ''
+  parents:
+  - cladis_otters

@@ -40,6 +40,7 @@ class SelectionInspectorUI:
         self.notes_cursor = 0
         self.active_field = None
         self.target_can_edit_geometry = False
+        self.target_bounds_type = None
         self.time_anchor_preview_year = None
         self.time_anchor_active = False
         self.layout_font = None
@@ -70,6 +71,8 @@ class SelectionInspectorUI:
         self.notes_cursor = len(self.notes_buffer)
         self.active_field = "name"
         self.target_can_edit_geometry = self._can_edit_target_geometry(target_kind, record)
+        bounds = record.get("bounds") if isinstance(record, dict) else {}
+        self.target_bounds_type = bounds.get("type") if isinstance(bounds, dict) else None
         self.time_anchor_preview_year = self._time_anchor_preview_year(record)
         self.time_anchor_active = False
         self.delete_confirm_active = False
@@ -86,6 +89,7 @@ class SelectionInspectorUI:
         self.notes_cursor = 0
         self.active_field = None
         self.target_can_edit_geometry = False
+        self.target_bounds_type = None
         self.time_anchor_preview_year = None
         self.time_anchor_active = False
         self.edit_rect = None
@@ -114,7 +118,7 @@ class SelectionInspectorUI:
 
         if target_kind == "location":
             bounds = record.get("bounds") or {}
-            return bounds.get("type") == "bbox"
+            return bounds.get("type") in {"bbox", "polygon"}
 
         return False
 
@@ -270,7 +274,8 @@ class SelectionInspectorUI:
                     danger=True,
                 )
         elif self.target_kind == "location" and self.target_can_edit_geometry:
-            self._draw_button(screen, font, self.edit_rect, "Edit Rectangle", True)
+            label = "Edit Polygon" if self._target_location_geometry_kind() == "polygon" else "Edit Rectangle"
+            self._draw_button(screen, font, self.edit_rect, label, True)
         if self.delete_confirm_active:
             warning = font.render("Delete region?", True, (240, 176, 152))
             screen.blit(warning, (self.rect.x + 12, self.save_rect.y - font.get_height() - 2))
@@ -479,7 +484,7 @@ class SelectionInspectorUI:
             and self.edit_rect.collidepoint(mouse_pos)
         ):
             action_id = "selection_inspector_edit_polygon"
-            if self.target_kind == "location":
+            if self.target_kind == "location" and self._target_location_geometry_kind() != "polygon":
                 action_id = "selection_inspector_edit_rectangle"
 
             action = {
@@ -547,6 +552,11 @@ class SelectionInspectorUI:
             return "ui_consumed"
 
         return None
+
+    def _target_location_geometry_kind(self):
+        if self.target_kind != "location":
+            return None
+        return self.target_bounds_type
 
     def _handle_keydown(self, event):
         if event.key == pygame.K_ESCAPE:

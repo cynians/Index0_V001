@@ -1,4 +1,5 @@
 - id: aspect_pan_african_identity
+  pretty_name: Pan-African Identity
   name: Pan-African Identity
   type: cultural_aspect
   aspect_class: political_identity
@@ -11,14 +12,10 @@
     regional_cooperation: strong
   realizations:
   - faction_pan_african_union
-  description: 'Cultural identification with a shared African political and historical
-    destiny across national and ethnic boundaries.
-
-    '
-  origin: 'Emerged from historical Pan-African movements and gained institutional
-    form during the formation of the Pan-African Union.
-
-    '
+  description: |
+    Cultural identification with a shared African political and historical destiny across national and ethnic boundaries.
+  origin: |
+    Emerged from historical Pan-African movements and gained institutional form during the formation of the Pan-African Union.
   historical_examples:
   - pan_african_congress_movements
   derived_from:
@@ -27,7 +24,6 @@
   related: []
   placeholders: []
   offspring: []
-  pretty_name: Pan-African Identity
   notes: ''
   wiki_entry: ''
   card_image: ''
@@ -41,6 +37,8 @@
   end_year: null
   entry_status: ''
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#4a4d49'
 - id: aspect_urban_cooperative_economy
   name: Urban Cooperative Economy
   type: cultural_aspect
@@ -69,91 +67,6 @@
   placeholders: []
   offspring: []
   pretty_name: Urban Cooperative Economy
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
-  start_year: null
-  end_year: null
-  entry_status: ''
-  media_layers: {}
-- id: aspect_contract_honor_norm
-  name: Contract Honor Norm
-  type: cultural_aspect
-  aspect_class: economic_ethos
-  tags:
-  - commerce
-  - law
-  - trade
-  behavioural_modifiers:
-    trade_trust: high
-    reputation_enforcement: strong
-  realizations:
-  - faction_transfer_hansa
-  description: 'Cultural expectation that agreements must be honored even when formal
-    enforcement institutions are weak.
-
-    '
-  origin: 'Emerged in long-distance merchant networks where reputation acted as the
-    primary enforcement mechanism.
-
-    '
-  historical_examples:
-  - medieval_merchant_guilds
-  - hanseatic_trade_network
-  derived_from:
-  - IDEA-403
-  parents: []
-  related: []
-  placeholders: []
-  offspring: []
-  pretty_name: Contract Honor Norm
-  notes: ''
-  wiki_entry: ''
-  card_image: ''
-  design_image: ''
-  card_image_front: ''
-  card_image_side: ''
-  card_image_top: ''
-  image_path: ''
-  image: ''
-  start_year: null
-  end_year: null
-  entry_status: ''
-  media_layers: {}
-- id: aspect_mobile_frontier_ethos
-  name: Mobile Frontier Ethos
-  type: cultural_aspect
-  aspect_class: frontier_culture
-  tags:
-  - frontier
-  - exploration
-  - mobility
-  behavioural_modifiers:
-    exploration_drive: high
-    settlement_flexibility: strong
-  realizations:
-  - faction_transfer_hansa
-  description: 'Cultural orientation favoring mobility, exploration and adaptive frontier
-    settlement rather than permanent territorial attachment.
-
-    '
-  origin: 'Developed in interstellar transport networks where mobility and adaptability
-    were essential.
-
-    '
-  derived_from:
-  - IDEA-401
-  parents: []
-  related: []
-  placeholders: []
-  offspring: []
-  pretty_name: Mobile Frontier Ethos
   notes: ''
   wiki_entry: ''
   card_image: ''
@@ -341,3 +254,20 @@
   image: ''
   derived_from: []
   media_layers: {}
+- id: cultasp_earthen_trinkets
+  pretty_name: Earthen Trinkets
+  name: Earthen Trinkets
+  type: cultural_aspect
+  wiki_entry: ''
+  start_year: 2109
+  start_event: evt_new_004
+  end_year: 2876
+- id: cultasp_secundagenesis_movement
+  pretty_name: Secundagenesis Movement
+  name: Secundagenesis Movement
+  type: cultural_aspect
+  wiki_entry: ''
+  wiki_mentions: []
+  card_color: '#1d233a'
+  start_year: 28598
+  end_year: 40359

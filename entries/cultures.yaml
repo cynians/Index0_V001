@@ -55,7 +55,8 @@
   - interstellar
   start_year: 5156
   end_year: 16765
-  parents: []
+  parents:
+  - fac_transfer_hansa
   related: []
   placeholders: []
   offspring: []
@@ -72,7 +73,10 @@
   derived_from: []
   entry_status: ''
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#1c2426'
 - id: culture_csg_crusader_reconstruction
+  pretty_name: CSG Crusader Reconstruction Culture
   name: CSG Crusader Reconstruction Culture
   type: culture
   culture_class: historical_reconstruction
@@ -95,7 +99,6 @@
   related: []
   placeholders: []
   offspring: []
-  pretty_name: CSG Crusader Reconstruction Culture
   description: ''
   notes: ''
   wiki_entry: ''
@@ -109,3 +112,14 @@
   derived_from: []
   entry_status: ''
   media_layers: {}
+  wiki_mentions: []
+  card_color: '#7a735e'
+- id: cult_amami_shintoist_culture
+  pretty_name: Amami Shintoist Culture
+  name: Amami Shintoist Culture
+  type: culture
+  wiki_entry: ''
+  wiki_mentions: []
+  card_color: '#b7000f'
+  start_year: 5844
+  end_year: 6214
