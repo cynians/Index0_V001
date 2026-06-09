@@ -84,3 +84,17 @@
   - inst_ggop
   entry_status: ''
   card_header_color: '#173352'
+- id: form_zouave_light_infantry_regiment
+  pretty_name: Zouave Light Infantry Regiment
+  name: Zouave Light Infantry Regiment
+  type: formation
+  wiki_mentions: []
+  start_year: 1830
+  end_year: 1962
+  offspring: []
+  related:
+  - fac_french_north_africa
+  card_color: '#464836'
+  card_header_color: '#212848'
+  wiki_field_colors:
+    default: '#2b2332'

@@ -23,3 +23,12 @@
   wiki_entry: ''
   wiki_mentions: []
   offspring: []
+- id: pop_broom_family_of_nanhai
+  pretty_name: Broom Family of Nanhai
+  name: Broom Family of Nanhai
+  type: pop
+  wiki_mentions: []
+  card_color: '#162624'
+  parents:
+  - planet_nanhai
+  offspring: []

@@ -24,22 +24,12 @@ class VehicleDesignController:
     VEHICLE_CLASS_PARENTS = {
         "vehicle": [],
         "ground_vehicle": ["vehicle"],
-        "car": ["ground_vehicle"],
-        "urban_taxi": ["car"],
-        "compact_grand_touring_convertible": ["car"],
-        "suv": ["car"],
-        "race_car": ["car"],
-        "amphibious_front_line_transport": ["ground_vehicle"],
-        "naval_vehicle": ["vehicle"],
-        "naval_combat_drone": ["naval_vehicle"],
-        "fleet_destroyer": ["naval_vehicle"],
-        "spacecraft": ["vehicle"],
-        "interplanetary_cargo_transport": ["spacecraft"],
-        "mars_cargo_lander": ["spacecraft"],
-        "communications_cruiser": ["spacecraft"],
-        "artillery": ["vehicle"],
-        "towed_anti_tank_gun": ["artillery"],
-        "stealth_air_dominance_fighter": ["vehicle"],
+        "aircraft": ["vehicle"],
+        "naval_vessel": ["vehicle"],
+        "orbital_spacecraft": ["vehicle"],
+        "planetary_spacecraft": ["vehicle"],
+        "system_spacecraft": ["vehicle"],
+        "interstellar_spacecraft": ["vehicle"],
     }
 
     VEHICLE_CLASS_REQUIREMENTS = {
@@ -49,39 +39,34 @@ class VehicleDesignController:
         ],
         "ground_vehicle": [
             "locomotion_ground",
-        ],
-        "car": [
             "wheels",
             "propulsion_road",
         ],
-        "race_car": [
-            "performance_wheels",
+        "aircraft": [
+            "propulsion_air",
+            "flight_surfaces",
+            "landing_system",
         ],
-        "naval_vehicle": [
+        "naval_vessel": [
             "hull",
             "propulsion_marine",
         ],
-        "spacecraft": [
+        "orbital_spacecraft": [
             "spaceframe",
             "propulsion_space",
         ],
-        "mars_cargo_lander": [
+        "planetary_spacecraft": [
+            "spaceframe",
+            "propulsion_space",
             "landing_system",
-            "cargo_handling",
         ],
-        "communications_cruiser": [
-            "communications_system",
+        "system_spacecraft": [
+            "spaceframe",
+            "propulsion_space",
         ],
-        "interplanetary_cargo_transport": [
-            "cargo_handling",
-        ],
-        "artillery": [
-            "weapon_system",
-            "carriage",
-        ],
-        "stealth_air_dominance_fighter": [
-            "propulsion_air",
-            "flight_surfaces",
+        "interstellar_spacecraft": [
+            "spaceframe",
+            "propulsion_space",
         ],
     }
 

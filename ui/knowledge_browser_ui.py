@@ -18,6 +18,12 @@ from ui.card_wiki import CardWikiRenderer
 from ui.schema_card import SchemaCard
 from ui.timeline_ui import TimelineUI
 from world.schema_loader import SchemaLoader
+from simulations.phylogeny.clade_graph import (
+    clade_id_from_name,
+    clade_label,
+    find_clade_matches,
+    relation_ids,
+)
 
 
 class KnowledgeBrowserUI:
@@ -47,6 +53,34 @@ class KnowledgeBrowserUI:
         "building",
         "room",
     )
+    CANONICAL_VEHICLE_CLASSES = (
+        "ground_vehicle",
+        "aircraft",
+        "naval_vessel",
+        "orbital_spacecraft",
+        "planetary_spacecraft",
+        "system_spacecraft",
+        "interstellar_spacecraft",
+    )
+    ORBIT_LOCATION_CLASS_KEYS = {
+        "asteroid",
+        "celestial_body",
+        "cluster",
+        "comet",
+        "dwarf_planet",
+        "galaxy",
+        "galaxy_cluster",
+        "moon",
+        "orbital_body",
+        "planet",
+        "space_station",
+        "star",
+        "star_system",
+        "stellar_cluster",
+        "station",
+        "system",
+    }
+    SUFFICIENT_SUBCLASS_ENTRY_COUNT = 3
 
     LINE_HEIGHT = 20
     OUTER_MARGIN = 16
@@ -72,6 +106,7 @@ class KnowledgeBrowserUI:
         "name",
         "idea_class",
         "wiki_entry",
+        "three_word_description",
         "description",
         "date",
         "media_path",
@@ -113,6 +148,8 @@ class KnowledgeBrowserUI:
         self.browser_items = []
         self.browser_hitboxes = []
         self.browser_toggle_hitboxes = []
+        self.browser_collapsed = False
+        self.browser_collapse_handle_rect = None
         self.browser_search_rect = None
         self.browser_filter_hitboxes = []
         self.cards = []
@@ -163,10 +200,13 @@ class KnowledgeBrowserUI:
         self.contemporary_spawn_count = 1
         self.contemporary_spawn_min = 0
         self.contemporary_spawn_max = 12
+        self.phylogeny_clade_member_count = 3
+        self.phylogeny_species_relative_count = 4
         self.knowledge_settings = self._load_knowledge_settings()
         self._apply_knowledge_settings()
         self.relation_tree_neighbor_cache = {}
         self.canvas_relation_edges = []
+        self.card_font_cache = {}
 
         self.canvas_offset_x = 0
         self.canvas_offset_y = 0
@@ -220,6 +260,7 @@ class KnowledgeBrowserUI:
         self.browser_items = []
         self.browser_hitboxes = []
         self.browser_toggle_hitboxes = []
+        self.browser_collapse_handle_rect = None
         self.browser_search_rect = None
         self.browser_filter_hitboxes = []
         self.world_model = None
@@ -270,6 +311,17 @@ class KnowledgeBrowserUI:
             min(self.contemporary_spawn_max, value),
         )
 
+        for setting_key, attr_name, default_value in (
+            ("phylogeny_clade_member_count", "phylogeny_clade_member_count", 3),
+            ("phylogeny_species_relative_count", "phylogeny_species_relative_count", 4),
+        ):
+            raw_value = self.knowledge_settings.get(setting_key, default_value)
+            try:
+                raw_value = int(raw_value)
+            except (TypeError, ValueError):
+                raw_value = default_value
+            setattr(self, attr_name, max(1, min(24, raw_value)))
+
     def _set_contemporary_spawn_count(self, value):
         try:
             value = int(value)
@@ -282,6 +334,38 @@ class KnowledgeBrowserUI:
         self.knowledge_settings["contemporary_spawn_count"] = value
         self._write_knowledge_settings()
         self._build_header_button()
+        return True
+
+    def _set_phylogeny_clade_member_count(self, value):
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            value = self.phylogeny_clade_member_count
+        value = max(1, min(24, value))
+        if value == self.phylogeny_clade_member_count:
+            return False
+        self.phylogeny_clade_member_count = value
+        self.knowledge_settings["phylogeny_clade_member_count"] = value
+        self._write_knowledge_settings()
+        for card in self.cards:
+            card["phylogeny_clade_member_limit"] = value
+        self._relayout_cards()
+        return True
+
+    def _set_phylogeny_species_relative_count(self, value):
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            value = self.phylogeny_species_relative_count
+        value = max(1, min(24, value))
+        if value == self.phylogeny_species_relative_count:
+            return False
+        self.phylogeny_species_relative_count = value
+        self.knowledge_settings["phylogeny_species_relative_count"] = value
+        self._write_knowledge_settings()
+        for card in self.cards:
+            card["phylogeny_species_relative_limit"] = value
+        self._relayout_cards()
         return True
 
     def _clamp_timeline_panel_height(self, app_height, timeline_h=None):
@@ -772,11 +856,22 @@ class KnowledgeBrowserUI:
         content_w = app_width - self.OUTER_MARGIN * 2
         content_h = app_height - content_y - self.OUTER_MARGIN
 
-        left_w = int(content_w * self.LEFT_RATIO)
+        if self.browser_search_active:
+            self.browser_collapsed = False
+
+        left_w = 22 if self.browser_collapsed else int(content_w * self.LEFT_RATIO)
         right_w = content_w - left_w - self.INNER_GAP
 
         left_rect = pygame.Rect(content_x, content_y, left_w, content_h)
         right_rect = pygame.Rect(content_x + left_w + self.INNER_GAP, content_y, right_w, content_h)
+        handle_w = 18
+        handle_h = 56
+        self.browser_collapse_handle_rect = pygame.Rect(
+            left_rect.right - handle_w,
+            left_rect.centery - handle_h // 2,
+            handle_w,
+            handle_h,
+        )
 
         timeline_rect = pygame.Rect(
             self.OUTER_MARGIN,
@@ -972,7 +1067,7 @@ class KnowledgeBrowserUI:
         }
         return [
             by_dataset[dataset_name]
-            for dataset_name in ("tasks", "ideas")
+            for dataset_name in ("tasks", "ideas", "species", "cladistics")
             if dataset_name in by_dataset
         ]
 
@@ -1186,7 +1281,7 @@ class KnowledgeBrowserUI:
                 }
             )
 
-        preferred = {"tasks": 0, "ideas": 1}
+        preferred = {"tasks": 0, "ideas": 1, "species": 2, "cladistics": 3}
         templates.sort(
             key=lambda item: (
                 preferred.get(item.get("dataset_name"), 10),
@@ -1313,6 +1408,8 @@ class KnowledgeBrowserUI:
         templates.extend(self._existing_subclass_templates(templates))
         preferred = [
             "ideas",
+            "species",
+            "cladistics",
             "vehicles",
             "locations",
             "systems",
@@ -1323,9 +1420,33 @@ class KnowledgeBrowserUI:
             "materials",
         ]
         preferred_index = {name: index for index, name in enumerate(preferred)}
+
+        subclass_order = {
+            ("vehicles", None, None): 0,
+            ("vehicles", "vehicle_class", "ground_vehicle"): 1,
+            ("vehicles", "vehicle_class", "aircraft"): 2,
+            ("vehicles", "vehicle_class", "naval_vessel"): 3,
+            ("vehicles", "vehicle_class", "orbital_spacecraft"): 4,
+            ("vehicles", "vehicle_class", "planetary_spacecraft"): 5,
+            ("vehicles", "vehicle_class", "system_spacecraft"): 6,
+            ("vehicles", "vehicle_class", "interstellar_spacecraft"): 7,
+        }
+
+        def template_subclass_order(template):
+            dataset_name = template.get("dataset_name")
+            field_key = template.get("subclass_field")
+            subclass_value = template.get("subclass_value")
+            if field_key is None:
+                return subclass_order.get((dataset_name, None, None), 0)
+            return subclass_order.get(
+                (dataset_name, field_key, self._normalize_schema_name(subclass_value)),
+                100,
+            )
+
         templates.sort(
             key=lambda template: (
                 preferred_index.get(template.get("dataset_name"), len(preferred)),
+                template_subclass_order(template),
                 str(template.get("label", "")).lower(),
             )
         )
@@ -1380,7 +1501,11 @@ class KnowledgeBrowserUI:
         for dataset_name, template in by_dataset.items():
             fields = self._subclass_fields_for_template(template)
             for field_key, subclass_value in self._canonical_subclass_values_for_template(template):
-                identity = (dataset_name, template.get("entity_type"), subclass_value)
+                identity = (
+                    dataset_name,
+                    template.get("entity_type"),
+                    self._normalize_schema_name(subclass_value),
+                )
                 if identity in seen:
                     continue
                 seen.add(identity)
@@ -1389,6 +1514,8 @@ class KnowledgeBrowserUI:
             if self.world_model is None:
                 continue
 
+            value_counts = {}
+            field_by_value = {}
             entities = self.world_model.get_entities_by_dataset(dataset_name)
             for entity in entities:
                 if not isinstance(entity, dict):
@@ -1398,19 +1525,111 @@ class KnowledgeBrowserUI:
                     if not isinstance(raw_value, str) or not raw_value.strip():
                         continue
                     subclass_value = raw_value.strip()
-                    identity = (dataset_name, template.get("entity_type"), subclass_value)
-                    if identity in seen:
-                        continue
-                    seen.add(identity)
-                    variants.append(self._subclass_template_variant(template, field_key, subclass_value))
+                    normalized_value = subclass_value.lower()
+                    value_counts[normalized_value] = value_counts.get(normalized_value, 0) + 1
+                    field_by_value.setdefault(normalized_value, (field_key, subclass_value))
+
+            for normalized_value, count in sorted(value_counts.items(), key=lambda item: item[0]):
+                field_key, subclass_value = field_by_value[normalized_value]
+                identity = (dataset_name, template.get("entity_type"), normalized_value)
+                if identity in seen:
+                    continue
+                if not self._keep_subclass_template_variant(dataset_name, field_key, subclass_value, count):
+                    continue
+                seen.add(identity)
+                variants.append(self._subclass_template_variant(template, field_key, subclass_value))
 
         return variants
+
+    def _keep_subclass_template_variant(self, dataset_name, field_key, subclass_value, entry_count=0):
+        normalized_value = self._normalize_schema_name(subclass_value)
+        if not normalized_value:
+            return False
+        allowed_values = self._allowed_subclass_template_values(dataset_name, field_key)
+        if allowed_values is not None:
+            return normalized_value in allowed_values
+        if normalized_value in self._canonical_subclass_value_names(dataset_name, field_key):
+            return True
+        if entry_count >= self.SUFFICIENT_SUBCLASS_ENTRY_COUNT:
+            return True
+        return self._subclass_value_used_in_simulations(field_key, normalized_value)
+
+    def _allowed_subclass_template_values(self, dataset_name, field_key):
+        if dataset_name == "vehicles" and field_key == "vehicle_class":
+            return {
+                self._normalize_schema_name(value)
+                for value in self.CANONICAL_VEHICLE_CLASSES
+            }
+        if dataset_name == "components" and field_key == "component_class":
+            return set()
+        if dataset_name == "locations" and field_key == "location_class":
+            return {
+                self._normalize_schema_name(value)
+                for value in self.CANONICAL_LOCATION_CLASSES
+            }
+        return None
+
+    def _canonical_subclass_value_names(self, dataset_name, field_key):
+        template = self._template_by_dataset(dataset_name) or {}
+        values = set()
+        for canonical_field_key, subclass_value in self._canonical_subclass_values_for_template(template):
+            if canonical_field_key == field_key:
+                values.add(self._normalize_schema_name(subclass_value))
+        return values
+
+    def _simulation_subclass_terms(self):
+        cached = getattr(self, "_simulation_subclass_term_cache", None)
+        if cached is not None:
+            return cached
+
+        terms = set()
+        simulation_dir = self.PROJECT_ROOT / "simulations"
+        if simulation_dir.exists():
+            for path in simulation_dir.rglob("*.py"):
+                try:
+                    text = path.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                for token in re.findall(r"[A-Za-z][A-Za-z0-9_ -]{1,80}", text):
+                    terms.add(self._normalize_schema_name(token))
+
+        self._simulation_subclass_term_cache = terms
+        return terms
+
+    def _subclass_value_used_in_simulations(self, field_key, subclass_value):
+        normalized_value = self._normalize_schema_name(subclass_value)
+        if not normalized_value:
+            return False
+        if field_key == "vehicle_class":
+            try:
+                from simulations.vehicle.vehicle_design import VehicleDesignController
+            except ImportError:
+                return False
+            return normalized_value in {
+                self._normalize_schema_name(value)
+                for value in VehicleDesignController.VEHICLE_CLASS_REQUIREMENTS.keys()
+            }
+        if field_key == "component_class":
+            try:
+                from simulations.vehicle.vehicle_design import VehicleDesignController
+            except ImportError:
+                return False
+            return normalized_value in {
+                self._normalize_schema_name(value)
+                for value in VehicleDesignController.COMPONENT_CATEGORY_HINTS.keys()
+            }
+        return normalized_value in self._simulation_subclass_terms()
 
     def _canonical_subclass_values_for_template(self, template):
         if template.get("dataset_name") == "locations":
             return [
                 ("location_class", location_class)
                 for location_class in self.CANONICAL_LOCATION_CLASSES
+            ]
+        if template.get("dataset_name") == "vehicles":
+            return [
+                ("vehicle_class", vehicle_class)
+                for vehicle_class in self.CANONICAL_VEHICLE_CLASSES
             ]
 
         return []
@@ -1833,7 +2052,13 @@ class KnowledgeBrowserUI:
             }
         missing = 0
         for field_key, spec in field_specs.items():
-            if field_key in {"card_color", "card_header_color", "wiki_field_colors", "wiki_link_color"}:
+            if field_key in {
+                "card_color",
+                "card_header_color",
+                "three_word_description",
+                "wiki_field_colors",
+                "wiki_link_color",
+            }:
                 continue
             field_type = spec.get("type")
             if field_type not in {None, "string", "number", "text"}:
@@ -1945,41 +2170,21 @@ class KnowledgeBrowserUI:
         }
         return display_labels.get(class_key, class_key.replace("_", " ").title())
 
-    def _location_hierarchy_sort_key(self, entity):
+    def _location_browser_domain(self, entity):
+        system_role = str(entity.get("system_role") or "").strip().lower() if isinstance(entity, dict) else ""
+        if system_role in {"star_system", "orbital_body"}:
+            return "orbit"
         class_key = self._canonical_location_class_key(entity)
-        class_rank = {
-            "supercluster": 0,
-            "galaxy_cluster": 5,
-            "cluster": 8,
-            "stellar_cluster": 10,
-            "galaxy": 15,
-            "star_system": 20,
-            "system": 20,
-            "star": 30,
-            "orbital_body": 35,
-            "planet": 40,
-            "dwarf_planet": 41,
-            "moon": 45,
-            "asteroid": 46,
-            "continent": 50,
-            "ocean": 51,
-            "sea": 52,
-            "country": 60,
-            "state": 61,
-            "province": 62,
-            "region": 65,
-            "island_chain": 66,
-            "atoll": 67,
-            "city": 70,
-            "settlement": 71,
-            "site": 80,
-            "macro_site": 80,
-            "internal_passage": 82,
-            "building": 90,
-            "room": 100,
-        }.get(class_key, 75)
+        if class_key in self.ORBIT_LOCATION_CLASS_KEYS:
+            return "orbit"
+        return "surface"
+
+    def _location_browser_domain_label(self, domain):
+        return "Orbit" if domain == "orbit" else "Surface"
+
+    def _location_hierarchy_sort_key(self, entity):
         label = self._entity_display_label(entity, fallback=entity.get("id", "")).lower()
-        return (class_rank, label, str(entity.get("id", "")))
+        return (label, str(entity.get("id", "")))
 
     def _build_location_browser_items(self, world_model):
         items = []
@@ -2096,6 +2301,25 @@ class KnowledgeBrowserUI:
                     return True
             return False
 
+        def child_matches_for_display(child):
+            return self._location_tree_entity_matches(child, "locations") or location_subtree_matches(child)
+
+        def location_supports_orbit_surface_groups(location_entity):
+            if self._location_browser_domain(location_entity) != "orbit":
+                return False
+            class_key = self._canonical_location_class_key(location_entity)
+            return class_key not in {"cluster", "galaxy", "galaxy_cluster", "star_system", "stellar_cluster", "system"}
+
+        def add_group_label(label, depth):
+            items.append(
+                {
+                    "kind": "label",
+                    "text": f"({label})",
+                    "depth": depth,
+                    "location_group": True,
+                }
+            )
+
         def add_location_subtree(location_entity, depth):
             location_id = canonical_location_id(location_entity.get("id"))
             if not location_id or location_id in emitted_ids:
@@ -2106,7 +2330,8 @@ class KnowledgeBrowserUI:
             if not self._location_tree_entity_matches(location_entity, "locations") and not descendant_match:
                 return
 
-            expandable = len(children) > 0
+            visible_children = [child for child in children if child_matches_for_display(child)]
+            expandable = len(visible_children) > 0
             expanded = self._is_expanded(location_id)
             items.append(
                 self._location_tree_item(
@@ -2121,8 +2346,26 @@ class KnowledgeBrowserUI:
             emitted_ids.add(location_id)
 
             if expandable and (expanded or (auto_reveal and descendant_match)):
-                for child in children:
-                    add_location_subtree(child, depth + 1)
+                if location_supports_orbit_surface_groups(location_entity):
+                    orbital_children = [
+                        child for child in visible_children
+                        if self._location_browser_domain(child) == "orbit"
+                    ]
+                    surface_children = [
+                        child for child in visible_children
+                        if self._location_browser_domain(child) == "surface"
+                    ]
+                    if orbital_children:
+                        add_group_label("Orbit", depth + 1)
+                        for child in orbital_children:
+                            add_location_subtree(child, depth + 2)
+                    if surface_children and self.browser_filter_dataset != "systems":
+                        add_group_label("Surface", depth + 1)
+                        for child in surface_children:
+                            add_location_subtree(child, depth + 2)
+                else:
+                    for child in visible_children:
+                        add_location_subtree(child, depth + 1)
 
         root_locations = sorted(
             [
@@ -2168,12 +2411,10 @@ class KnowledgeBrowserUI:
             return items
 
         schema_items = self._build_schema_browser_items()
-        if schema_items:
+        if self.browser_filter_dataset == "schemas":
             items.append({"kind": "section", "text": "Schemas"})
             items.extend(schema_items)
             items.append({"kind": "spacer"})
-
-        if self.browser_filter_dataset == "schemas":
             return items
 
         dataset_names = sorted(world_model.get_dataset_names())
@@ -2236,6 +2477,11 @@ class KnowledgeBrowserUI:
 
             items.append({"kind": "section", "text": self._dataset_display_label(dataset_name)})
             items.extend(dataset_items)
+            items.append({"kind": "spacer"})
+
+        if schema_items:
+            items.append({"kind": "section", "text": "Schemas"})
+            items.extend(schema_items)
             items.append({"kind": "spacer"})
 
         return items
@@ -2347,6 +2593,20 @@ class KnowledgeBrowserUI:
             "relation_picker_matches": [],
             "relation_picker_selected_index": 0,
             "relation_picker_hitboxes": [],
+            "phylogeny_parent_input_active": False,
+            "phylogeny_parent_query": "",
+            "phylogeny_parent_matches": [],
+            "phylogeny_parent_selected_index": 0,
+            "phylogeny_parent_scroll_y": 0,
+            "phylogeny_parent_scroll_max_y": 0,
+            "phylogeny_child_input_active": False,
+            "phylogeny_child_query": "",
+            "phylogeny_child_matches": [],
+            "phylogeny_child_selected_index": 0,
+            "phylogeny_child_sibling_id": "",
+            "phylogeny_clade_member_limit": self.phylogeny_clade_member_count,
+            "phylogeny_species_relative_limit": self.phylogeny_species_relative_count,
+            "phylogeny_status": "",
             "wiki_link_hitboxes": [],
             "wiki_section_hitboxes": [],
             "toolbelt_hitboxes": [],
@@ -2419,6 +2679,20 @@ class KnowledgeBrowserUI:
             "relation_picker_matches": [],
             "relation_picker_selected_index": 0,
             "relation_picker_hitboxes": [],
+            "phylogeny_parent_input_active": False,
+            "phylogeny_parent_query": "",
+            "phylogeny_parent_matches": [],
+            "phylogeny_parent_selected_index": 0,
+            "phylogeny_parent_scroll_y": 0,
+            "phylogeny_parent_scroll_max_y": 0,
+            "phylogeny_child_input_active": False,
+            "phylogeny_child_query": "",
+            "phylogeny_child_matches": [],
+            "phylogeny_child_selected_index": 0,
+            "phylogeny_child_sibling_id": "",
+            "phylogeny_clade_member_limit": self.phylogeny_clade_member_count,
+            "phylogeny_species_relative_limit": self.phylogeny_species_relative_count,
+            "phylogeny_status": "",
             "wiki_link_hitboxes": [],
             "wiki_section_hitboxes": [],
             "toolbelt_hitboxes": [],
@@ -2609,7 +2883,11 @@ class KnowledgeBrowserUI:
         base_size = 16
         if self.font_for_layout is not None:
             base_size = max(8, int(round(self.font_for_layout.get_linesize() * 0.84)))
-        return pygame.font.SysFont("consolas", base_size)
+        cached_font = self.card_font_cache.get(base_size)
+        if cached_font is None:
+            cached_font = pygame.font.SysFont("consolas", base_size)
+            self.card_font_cache[base_size] = cached_font
+        return cached_font
 
     def _screen_to_canvas_pos(self, mouse_pos):
         if self.layout is None:
@@ -2653,6 +2931,33 @@ class KnowledgeBrowserUI:
             new_scroll = max(0, min(max_scroll, old_scroll - int(wheel_y) * line_step))
             if new_scroll != old_scroll:
                 card["scroll_y"] = new_scroll
+                self._relayout_cards()
+            return True
+
+        return False
+
+    def _scroll_phylogeny_parent_at(self, mouse_pos, wheel_y):
+        for index in range(len(self.cards) - 1, -1, -1):
+            card = self.cards[index]
+            card_rect = card.get("rect")
+            panel_rect = card.get("phylogeny_parent_panel_rect")
+            card_view = card.get("card_view")
+            if card_view is None or not getattr(card_view, "_is_phylogeny_mode", lambda: False)():
+                continue
+            if card_rect is None or panel_rect is None:
+                continue
+            if not card_rect.collidepoint(mouse_pos) or not panel_rect.collidepoint(mouse_pos):
+                continue
+
+            max_scroll = max(0, int(card.get("phylogeny_parent_scroll_max_y", 0) or 0))
+            if max_scroll <= 0:
+                return False
+
+            line_step = max(24, self._font_line_height() * 2)
+            old_scroll = max(0, min(max_scroll, int(card.get("phylogeny_parent_scroll_y", 0) or 0)))
+            new_scroll = max(0, min(max_scroll, old_scroll - int(wheel_y) * line_step))
+            if new_scroll != old_scroll:
+                card["phylogeny_parent_scroll_y"] = new_scroll
                 self._relayout_cards()
             return True
 
@@ -2952,6 +3257,7 @@ class KnowledgeBrowserUI:
                 "_dataset": dataset_name,
             }
         self._populate_required_schema_fields(entity, template)
+        entity.setdefault("three_word_description", "")
         for field_key, value in initial_fields.items():
             if field_key not in {"id", "_dataset"}:
                 entity[field_key] = value
@@ -5106,6 +5412,10 @@ class KnowledgeBrowserUI:
             return
 
         left_rect = self.layout["left_rect"]
+        if self.browser_collapsed:
+            self.browser_search_rect = None
+            return
+
         search_y = left_rect.y + 38 + self._browser_header_extra_height()
         self.browser_search_rect = pygame.Rect(left_rect.x + 12, search_y, left_rect.width - 24, self.BROWSER_SEARCH_H)
 
@@ -5564,6 +5874,9 @@ class KnowledgeBrowserUI:
         if self._handle_task_checklist_keydown(event):
             return "__ui_consumed__"
 
+        if self._handle_phylogeny_parent_keydown(event):
+            return "__ui_consumed__"
+
         if self._handle_template_picker_keydown(event):
             return "__ui_consumed__"
 
@@ -5759,6 +6072,8 @@ class KnowledgeBrowserUI:
         if right_rect.collidepoint(mouse_pos):
             if self._scroll_type_picker_at(mouse_pos, event.y):
                 return "__ui_consumed__"
+            if self._scroll_phylogeny_parent_at(mouse_pos, event.y):
+                return "__ui_consumed__"
             if self._scroll_card_at(mouse_pos, event.y):
                 return "__ui_consumed__"
             zoom_factor = 1.12 if event.y > 0 else 1 / 1.12
@@ -5903,8 +6218,20 @@ class KnowledgeBrowserUI:
         if not left_rect.collidepoint(mouse_pos):
             return None
 
+        handle_rect = self.browser_collapse_handle_rect
+        if handle_rect is not None and handle_rect.collidepoint(mouse_pos):
+            self.browser_collapsed = not self.browser_collapsed
+            if self.browser_collapsed:
+                self.browser_search_active = False
+            self._refresh_layout_geometry()
+            return "__ui_consumed__"
+
+        if self.browser_collapsed:
+            return "__ui_consumed__"
+
         if self.browser_search_rect is not None and self.browser_search_rect.collidepoint(mouse_pos):
             self.browser_search_active = True
+            self.browser_collapsed = False
             return "__ui_consumed__"
         self.browser_search_active = False
 
@@ -6176,6 +6503,7 @@ class KnowledgeBrowserUI:
         self.relation_link_status = status
         self.browser_filter_dataset = self._relation_target_dataset_filter(relation_info.get("target", ""))
         self.browser_filter_incomplete_only = False
+        self.browser_collapsed = False
         self.browser_search_active = True
         self.browser_search_query = ""
         self.browser_scroll = 0
@@ -6583,6 +6911,309 @@ class KnowledgeBrowserUI:
             return True
         return True
 
+    def _is_cladistics_card_obj(self, card):
+        entity = self._entity_for_card(card)
+        return isinstance(entity, dict) and (
+            entity.get("_dataset") == "cladistics"
+            or entity.get("type") == "cladistics"
+        )
+
+    def _is_phylogeny_card_obj(self, card):
+        entity = self._entity_for_card(card)
+        return isinstance(entity, dict) and (
+            entity.get("_dataset") in {"cladistics", "species"}
+            or entity.get("type") in {"cladistics", "species"}
+        )
+
+    def _active_phylogeny_parent_card(self):
+        for card in reversed(self.cards):
+            card_view = card.get("card_view")
+            if (
+                card.get("phylogeny_parent_input_active")
+                and card_view is not None
+                and getattr(card_view, "_is_phylogeny_mode", lambda: False)()
+            ):
+                return card
+        return None
+
+    def _active_phylogeny_child_card(self):
+        for card in reversed(self.cards):
+            card_view = card.get("card_view")
+            if (
+                card.get("phylogeny_child_input_active")
+                and card_view is not None
+                and getattr(card_view, "_is_phylogeny_mode", lambda: False)()
+            ):
+                return card
+        return None
+
+    def _clade_is_descendant_of(self, candidate_id, ancestor_id):
+        if not candidate_id or not ancestor_id or self.world_model is None:
+            return False
+        if candidate_id == ancestor_id:
+            return True
+        entity = self.world_model.get_entity(candidate_id)
+        seen = set()
+        stack = list(relation_ids(entity.get("offspring") if isinstance(entity, dict) else []))
+        while stack:
+            child_id = stack.pop()
+            if child_id in seen:
+                continue
+            if child_id == ancestor_id:
+                return True
+            seen.add(child_id)
+            child = self.world_model.get_entity(child_id)
+            if isinstance(child, dict):
+                stack.extend(relation_ids(child.get("offspring")))
+        return False
+
+    def _create_clade_from_name(self, name):
+        name = str(name or "").strip()
+        if not name or self.world_model is None:
+            return None
+        requested_id = clade_id_from_name(name)
+        entity_id = self._unique_entity_id(requested_id)
+        entity = {
+            "id": entity_id,
+            "pretty_name": name,
+            "name": name,
+            "type": "cladistics",
+            "_dataset": "cladistics",
+            "common_name": "",
+            "binomial_name": "",
+            "wiki_mentions": [],
+            "parents": [],
+            "offspring": [],
+        }
+        self.world_model.loader.datasets.setdefault("cladistics", []).append(entity)
+        self.world_model.loader.entities[entity_id] = entity
+        self._persist_entity_to_repository(entity)
+        return entity
+
+    def _add_phylogeny_parent_to_card(self, card, parent_entity):
+        target_id = str(card.get("phylogeny_parent_target_id") or card.get("entity_id") or "").strip()
+        child = self.world_model.get_entity(target_id) if self.world_model is not None else self._entity_for_card(card)
+        if not isinstance(child, dict) or not isinstance(parent_entity, dict):
+            return False
+
+        child_id = str(child.get("id") or "").strip()
+        parent_id = str(parent_entity.get("id") or "").strip()
+        if not child_id or not parent_id or child_id == parent_id:
+            card["phylogeny_status"] = "Choose a different parent clade"
+            return False
+        if self._clade_is_descendant_of(child_id, parent_id):
+            card["phylogeny_status"] = "That would create a loop in the tree"
+            return False
+
+        parents = relation_ids(child.get("parents"))
+        if parent_id not in parents:
+            parents.append(parent_id)
+        child["parents"] = parents
+
+        target_card = self._find_card_by_entity_id(child_id)
+        if target_card is not None:
+            self._persist_card_entity(target_card)
+        else:
+            self._persist_entity_to_repository(child)
+        self._sync_bidirectional_relations(persist=True)
+        card["phylogeny_parent_query"] = ""
+        card["phylogeny_parent_matches"] = []
+        card["phylogeny_parent_selected_index"] = 0
+        card["phylogeny_parent_input_active"] = False
+        card["phylogeny_status"] = f"Added parent {clade_label(parent_entity, parent_id)} to {clade_label(child, child_id)}"
+        self.browser_items = self._build_browser_items(self.world_model)
+        self._rebuild_browser_hitboxes()
+        self._relayout_cards()
+        return True
+
+    def _confirm_phylogeny_parent_input(self, card, match_index=None):
+        if not self._is_phylogeny_card_obj(card):
+            return False
+
+        query = str(card.get("phylogeny_parent_query") or "").strip()
+        if not query:
+            card["phylogeny_parent_input_active"] = False
+            self._relayout_cards()
+            return True
+
+        matches = find_clade_matches(self.world_model, query)
+        card["phylogeny_parent_matches"] = matches
+        if match_index is None:
+            match_index = card.get("phylogeny_parent_selected_index", 0)
+
+        parent_entity = None
+        if matches and isinstance(match_index, int) and 0 <= match_index < len(matches):
+            parent_entity = matches[match_index]
+        else:
+            parent_entity = self._create_clade_from_name(query)
+
+        if parent_entity is None:
+            card["phylogeny_status"] = "Could not create parent clade"
+            self._relayout_cards()
+            return True
+
+        self._add_phylogeny_parent_to_card(card, parent_entity)
+        return True
+
+    def _add_phylogeny_child_to_card(self, card, child_entity):
+        target_id = str(card.get("phylogeny_child_target_id") or card.get("entity_id") or "").strip()
+        parent = self.world_model.get_entity(target_id) if self.world_model is not None else self._entity_for_card(card)
+        if not isinstance(parent, dict) or not isinstance(child_entity, dict):
+            return False
+        if not (
+            parent.get("_dataset") == "cladistics"
+            or parent.get("type") == "cladistics"
+        ):
+            card["phylogeny_status"] = "Only clades can receive child entries"
+            return False
+
+        parent_id = str(parent.get("id") or "").strip()
+        child_id = str(child_entity.get("id") or "").strip()
+        if not parent_id or not child_id or parent_id == child_id:
+            card["phylogeny_status"] = "Choose a different child entry"
+            return False
+        if self._clade_is_descendant_of(child_id, parent_id):
+            card["phylogeny_status"] = "That would create a loop in the tree"
+            return False
+
+        parents = relation_ids(child_entity.get("parents"))
+        if parent_id not in parents:
+            parents.append(parent_id)
+        child_entity["parents"] = parents
+
+        child_card = self._find_card_by_entity_id(child_id)
+        if child_card is not None:
+            self._persist_card_entity(child_card)
+        else:
+            self._persist_entity_to_repository(child_entity)
+        self._sync_bidirectional_relations(persist=True)
+        card["phylogeny_child_query"] = ""
+        card["phylogeny_child_matches"] = []
+        card["phylogeny_child_selected_index"] = 0
+        card["phylogeny_child_input_active"] = False
+        sibling_id = str(card.get("phylogeny_child_sibling_id") or "").strip()
+        sibling = self.world_model.get_entity(sibling_id) if self.world_model is not None and sibling_id else None
+        if sibling_id:
+            card["phylogeny_status"] = f"Added sister {clade_label(child_entity, child_id)} beside {clade_label(sibling, sibling_id)}"
+        else:
+            card["phylogeny_status"] = f"Added child {clade_label(child_entity, child_id)} to {clade_label(parent, parent_id)}"
+        self.browser_items = self._build_browser_items(self.world_model)
+        self._rebuild_browser_hitboxes()
+        self._relayout_cards()
+        return True
+
+    def _phylogeny_child_matches_for_card(self, card, query):
+        parent_id = str(card.get("phylogeny_child_target_id") or "").strip()
+        sibling_id = str(card.get("phylogeny_child_sibling_id") or "").strip()
+        excluded_ids = {entity_id for entity_id in (parent_id, sibling_id) if entity_id}
+        return [
+            match for match in find_clade_matches(self.world_model, query)
+            if str(match.get("id") or "").strip() not in excluded_ids
+        ]
+
+    def _confirm_phylogeny_child_input(self, card, match_index=None):
+        if not self._is_cladistics_card_obj(card):
+            return False
+
+        query = str(card.get("phylogeny_child_query") or "").strip()
+        if not query:
+            card["phylogeny_child_input_active"] = False
+            self._relayout_cards()
+            return True
+
+        matches = self._phylogeny_child_matches_for_card(card, query)
+        card["phylogeny_child_matches"] = matches
+        if match_index is None:
+            match_index = card.get("phylogeny_child_selected_index", 0)
+
+        child_entity = None
+        if matches and isinstance(match_index, int) and 0 <= match_index < len(matches):
+            child_entity = matches[match_index]
+        else:
+            child_entity = self._create_clade_from_name(query)
+
+        if child_entity is None:
+            card["phylogeny_status"] = "Could not create sister clade"
+            self._relayout_cards()
+            return True
+
+        return self._add_phylogeny_child_to_card(card, child_entity)
+
+    def _handle_phylogeny_parent_keydown(self, event):
+        child_card = self._active_phylogeny_child_card()
+        if child_card is not None:
+            query = str(child_card.get("phylogeny_child_query") or "")
+            matches = child_card.get("phylogeny_child_matches") or []
+            if event.key == pygame.K_ESCAPE:
+                child_card["phylogeny_child_input_active"] = False
+                child_card["phylogeny_status"] = ""
+                self._relayout_cards()
+                return True
+            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                return self._confirm_phylogeny_child_input(child_card)
+            if event.key == pygame.K_UP and matches:
+                child_card["phylogeny_child_selected_index"] = max(0, int(child_card.get("phylogeny_child_selected_index", 0)) - 1)
+                self._relayout_cards()
+                return True
+            if event.key == pygame.K_DOWN and matches:
+                child_card["phylogeny_child_selected_index"] = min(len(matches) - 1, int(child_card.get("phylogeny_child_selected_index", 0)) + 1)
+                self._relayout_cards()
+                return True
+            if event.key == pygame.K_BACKSPACE:
+                child_card["phylogeny_child_query"] = query[:-1]
+                child_card["phylogeny_child_matches"] = self._phylogeny_child_matches_for_card(child_card, child_card["phylogeny_child_query"])
+                child_card["phylogeny_child_selected_index"] = 0
+                child_card["phylogeny_status"] = ""
+                self._relayout_cards()
+                return True
+            text = getattr(event, "unicode", "")
+            if text and text.isprintable():
+                child_card["phylogeny_child_query"] = query + text
+                child_card["phylogeny_child_matches"] = self._phylogeny_child_matches_for_card(child_card, child_card["phylogeny_child_query"])
+                child_card["phylogeny_child_selected_index"] = 0
+                child_card["phylogeny_status"] = ""
+                self._relayout_cards()
+                return True
+            return True
+
+        card = self._active_phylogeny_parent_card()
+        if card is None:
+            return False
+
+        query = str(card.get("phylogeny_parent_query") or "")
+        matches = card.get("phylogeny_parent_matches") or []
+        if event.key == pygame.K_ESCAPE:
+            card["phylogeny_parent_input_active"] = False
+            card["phylogeny_status"] = ""
+            self._relayout_cards()
+            return True
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            return self._confirm_phylogeny_parent_input(card)
+        if event.key == pygame.K_UP and matches:
+            card["phylogeny_parent_selected_index"] = max(0, int(card.get("phylogeny_parent_selected_index", 0)) - 1)
+            self._relayout_cards()
+            return True
+        if event.key == pygame.K_DOWN and matches:
+            card["phylogeny_parent_selected_index"] = min(len(matches) - 1, int(card.get("phylogeny_parent_selected_index", 0)) + 1)
+            self._relayout_cards()
+            return True
+        if event.key == pygame.K_BACKSPACE:
+            card["phylogeny_parent_query"] = query[:-1]
+            card["phylogeny_parent_matches"] = find_clade_matches(self.world_model, card["phylogeny_parent_query"])
+            card["phylogeny_parent_selected_index"] = 0
+            card["phylogeny_status"] = ""
+            self._relayout_cards()
+            return True
+        text = getattr(event, "unicode", "")
+        if text and text.isprintable():
+            card["phylogeny_parent_query"] = query + text
+            card["phylogeny_parent_matches"] = find_clade_matches(self.world_model, card["phylogeny_parent_query"])
+            card["phylogeny_parent_selected_index"] = 0
+            card["phylogeny_status"] = ""
+            self._relayout_cards()
+            return True
+        return True
+
     def _handle_schema_card_click(self, card, index, mouse_pos):
         card_view = card.get("card_view")
         if card_view is None:
@@ -6807,6 +7438,89 @@ class KnowledgeBrowserUI:
                     card_obj = self._bring_card_to_front(index)
                     if self._handle_wiki_link_click(card_obj, link_info):
                         self._relayout_cards()
+                        return "__ui_consumed__"
+
+            phylogeny_click_active = (
+                card_view is not None
+                and getattr(card_view, "_is_phylogeny_mode", lambda: False)()
+            )
+            phylogeny_input_rect = card.get("phylogeny_parent_input_rect")
+            if phylogeny_click_active and phylogeny_input_rect is not None and phylogeny_input_rect.collidepoint(mouse_pos):
+                card_obj = self._bring_card_to_front(index)
+                for open_card in self.cards:
+                    open_card["phylogeny_parent_input_active"] = open_card is card_obj
+                    open_card["phylogeny_child_input_active"] = False
+                card_obj.setdefault("phylogeny_parent_query", "")
+                card_obj["phylogeny_parent_matches"] = find_clade_matches(
+                    self.world_model,
+                    card_obj.get("phylogeny_parent_query", ""),
+                )
+                card_obj["phylogeny_parent_selected_index"] = 0
+                self.browser_search_active = False
+                self._relayout_cards()
+                return "__ui_consumed__"
+
+            if phylogeny_click_active:
+                for match_row in card.get("phylogeny_parent_match_rows", []):
+                    match_rect = match_row.get("rect")
+                    if match_rect is not None and match_rect.collidepoint(mouse_pos):
+                        card_obj = self._bring_card_to_front(index)
+                        match_index = match_row.get("index")
+                        if match_index == "create":
+                            match_index = None
+                            card_obj["phylogeny_parent_matches"] = []
+                        self._confirm_phylogeny_parent_input(card_obj, match_index=match_index)
+                        return "__ui_consumed__"
+
+            phylogeny_child_input_rect = card.get("phylogeny_child_input_rect")
+            if phylogeny_click_active and phylogeny_child_input_rect is not None and phylogeny_child_input_rect.collidepoint(mouse_pos):
+                card_obj = self._bring_card_to_front(index)
+                for open_card in self.cards:
+                    open_card["phylogeny_parent_input_active"] = False
+                    open_card["phylogeny_child_input_active"] = open_card is card_obj
+                card_obj.setdefault("phylogeny_child_query", "")
+                card_obj["phylogeny_child_matches"] = self._phylogeny_child_matches_for_card(
+                    card_obj,
+                    card_obj.get("phylogeny_child_query", ""),
+                )
+                card_obj["phylogeny_child_selected_index"] = 0
+                self.browser_search_active = False
+                self._relayout_cards()
+                return "__ui_consumed__"
+
+            if phylogeny_click_active:
+                for match_row in card.get("phylogeny_child_match_rows", []):
+                    match_rect = match_row.get("rect")
+                    if match_rect is not None and match_rect.collidepoint(mouse_pos):
+                        card_obj = self._bring_card_to_front(index)
+                        match_index = match_row.get("index")
+                        if match_index == "create":
+                            match_index = None
+                            card_obj["phylogeny_child_matches"] = []
+                        self._confirm_phylogeny_child_input(card_obj, match_index=match_index)
+                        return "__ui_consumed__"
+
+                for clade_id, node_rect in card.get("phylogeny_node_hitboxes", []):
+                    if node_rect is not None and node_rect.collidepoint(mouse_pos):
+                        self._bring_card_to_front(index)
+                        clade = self.world_model.get_entity(clade_id) if self.world_model is not None else None
+                        if clade is not None:
+                            self._ensure_card(clade)
+                            self._relayout_cards()
+                        return "__ui_consumed__"
+
+                for phylogeny_row in (
+                    list(card.get("phylogeny_parent_tree_rows", []))
+                    + list(card.get("phylogeny_local_tree_rows", []))
+                ):
+                    row_rect = phylogeny_row.get("rect")
+                    target_id = phylogeny_row.get("id")
+                    if row_rect is not None and target_id and row_rect.collidepoint(mouse_pos):
+                        self._bring_card_to_front(index)
+                        target = self.world_model.get_entity(target_id) if self.world_model is not None else None
+                        if target is not None:
+                            self._ensure_card(target)
+                            self._relayout_cards()
                         return "__ui_consumed__"
 
             editable_result = self._handle_editable_field_click(card, index, mouse_pos)
@@ -7253,9 +7967,19 @@ class KnowledgeBrowserUI:
 
         left_title = font.render("Repository Browser", True, (240, 240, 240))
         right_title = font.render("Card Canvas", True, (240, 240, 240))
-        screen.blit(left_title, (left_rect.x + 12, left_rect.y + 10))
+        if not self.browser_collapsed:
+            screen.blit(left_title, (left_rect.x + 12, left_rect.y + 10))
         screen.blit(right_title, (right_rect.x + 12, right_rect.y + 10))
-        if self.relation_link_target is not None:
+
+        handle_rect = self.browser_collapse_handle_rect
+        if handle_rect is not None:
+            handle_fill = (42, 48, 62) if self.browser_collapsed else (34, 40, 52)
+            pygame.draw.rect(screen, handle_fill, handle_rect)
+            pygame.draw.rect(screen, (150, 160, 182), handle_rect, 1)
+            handle_text = font.render("||", True, (226, 232, 244))
+            screen.blit(handle_text, handle_text.get_rect(center=handle_rect.center))
+
+        if self.relation_link_target is not None and not self.browser_collapsed:
             target_label = self._relation_target_label(self.relation_link_target.get("target"))
             field_label = self.relation_link_target.get("field_key") or "relation"
             banner_rect = pygame.Rect(left_rect.x + 10, left_rect.y + 32, left_rect.width - 20, 22)
@@ -7344,7 +8068,7 @@ class KnowledgeBrowserUI:
         text_offset_y = max(0, (line_height - font.get_linesize()) // 2)
         line_y = content_top - self.browser_scroll
 
-        for item in self.browser_items:
+        for item in ([] if self.browser_collapsed else self.browser_items):
             row_top = line_y
             row_bottom = line_y + line_height
 
@@ -7365,9 +8089,14 @@ class KnowledgeBrowserUI:
                 screen.blit(text_surface, (left_rect.x + 12, line_y + text_offset_y))
 
             elif item["kind"] == "label":
-                color = (220, 220, 220)
+                depth = item.get("depth", 0)
+                indent_px = depth * 18
+                if item.get("location_group"):
+                    color = (176, 188, 208)
+                else:
+                    color = (220, 220, 220)
                 text_surface = font.render(item["text"], True, color)
-                screen.blit(text_surface, (left_rect.x + 12, line_y + text_offset_y))
+                screen.blit(text_surface, (left_rect.x + 12 + indent_px, line_y + text_offset_y))
 
             else:
                 entity_id = item["entity_id"]

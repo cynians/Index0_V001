@@ -7,6 +7,13 @@ from engine.scaler import ScaleHelper
 from ui.card_wiki import CardWikiRenderer
 from ui.text_editing import TextEditing
 from world.schema_loader import SchemaLoader
+from simulations.phylogeny.clade_graph import (
+    clade_label,
+    find_clade_matches,
+    get_clade_entities,
+    is_species_entity,
+    phylogeny_graph_context,
+)
 
 
 class EntityCard:
@@ -36,6 +43,7 @@ class EntityCard:
     RESIZE_BORDER = 6
     TEXT_LINE_H = 16
     IMAGE_TEXT_LINE_H = 18
+    PHYLOGENY_PARENT_PANEL_H = 230
     SECTION_GAP = 4
     TABLE_ROW_PAD_Y = 3
     TABLE_COLUMN_GAP = 14
@@ -57,6 +65,7 @@ class EntityCard:
         "type",
         "idea_class",
         "wiki_entry",
+        "three_word_description",
         "description",
         "date",
         "media_path",
@@ -90,6 +99,8 @@ class EntityCard:
     TAB_ORDER = ["general", "overview", "temporal", "relations", "state", "simulation", "media"]
     DATASET_TAB_ORDER = {
         "ideas": ["general", "overview", "temporal", "relations", "media"],
+        "cladistics": ["general", "overview", "phylogeny", "relations", "temporal", "media"],
+        "species": ["general", "overview", "phylogeny", "relations", "temporal", "media"],
         "components": ["general", "overview", "temporal", "relations", "operational", "simulation", "media"],
     }
     TAB_LABELS = {
@@ -97,6 +108,7 @@ class EntityCard:
         "overview": "Overview",
         "temporal": "Temporal",
         "relations": "Relations",
+        "phylogeny": "Phylogeny",
         "state": "State",
         "simulation": "Simulation",
         "operational": "Operational",
@@ -261,6 +273,9 @@ class EntityCard:
             "Simulation / Space Sim": False,
             "Simulation / Map Sim": False,
             "Simulation / World Gen": False,
+            "Phylogeny Parents": False,
+            "Phylogeny Children": False,
+            "Members": False,
         }
 
     def _is_idea_card(self):
@@ -274,6 +289,9 @@ class EntityCard:
 
     def _is_species_card(self):
         return self.dataset_name == "species" or self.entity.get("type") == "species"
+
+    def _is_cladistics_card(self):
+        return self.dataset_name == "cladistics" or self.entity.get("type") == "cladistics"
 
     def _species_name_parts(self):
         common_name = str(self.entity.get("common_name") or "").strip()
@@ -358,6 +376,9 @@ class EntityCard:
 
     def _is_media_mode(self):
         return self.active_tab == "media"
+
+    def _is_phylogeny_mode(self):
+        return self.active_tab == "phylogeny" and (self._is_cladistics_card() or self._is_species_card())
 
     def _is_temporal_mode(self):
         return self.active_tab == "temporal"
@@ -1918,6 +1939,347 @@ class EntityCard:
         value = illustration.get("media_path")
         return value.strip() if isinstance(value, str) else ""
 
+    def _phylogeny_line_height(self, font):
+        return max(16, int(font.get_linesize())) if font is not None else 18
+
+    def _phylogeny_children_count(self, entity_id):
+        world_model = self.world_model
+        clades = get_clade_entities(world_model)
+        entity = clades.get(entity_id)
+        if not isinstance(entity, dict):
+            return 0
+        children = entity.get("offspring") or []
+        if isinstance(children, str):
+            return 1 if children.strip() else 0
+        if isinstance(children, list):
+            return len(children)
+        return 0
+
+    def _layout_phylogeny_tree_rows(self, root, font, x, y, max_width, depth=0, rows=None):
+        rows = rows if rows is not None else []
+        if not isinstance(root, dict):
+            return rows, y
+
+        line_h = self._phylogeny_line_height(font)
+        row_h = line_h + 8
+        indent = depth * 18
+        label = str(root.get("label") or root.get("id") or "Unknown")
+        row_rect = pygame.Rect(x + indent, y, max(40, max_width - indent), row_h)
+        rows.append(
+            {
+                "id": root.get("id"),
+                "label": label,
+                "rect": row_rect,
+                "depth": depth,
+                "highlight": bool(root.get("highlight")),
+                "neighbor": bool(root.get("neighbor")),
+                "species": bool(root.get("species")),
+            }
+        )
+        y = row_rect.bottom + 3
+        for child in root.get("children", []) or []:
+            rows, y = self._layout_phylogeny_tree_rows(child, font, x, y, max_width, depth + 1, rows)
+        return rows, y
+
+    def _summarized_phylogeny_chain_ids(self, chain_ids, top_count=3, tail_count=5):
+        chain_ids = [str(chain_id) for chain_id in chain_ids if chain_id]
+        if len(chain_ids) <= top_count + tail_count + 1:
+            return [(chain_id, False) for chain_id in chain_ids]
+
+        top_ids = chain_ids[:top_count]
+        tail_ids = chain_ids[-tail_count:]
+        return (
+            [(chain_id, False) for chain_id in top_ids]
+            + [(None, True)]
+            + [(chain_id, False) for chain_id in tail_ids]
+        )
+
+    def _layout_phylogeny_chain_rows(self, graph, entity_id, font, x, y, max_width):
+        line_h = self._phylogeny_line_height(font)
+        row_h = max(18, line_h + 2)
+        row_gap = 1
+        rows = []
+        chain_ids = graph.ancestor_chain(entity_id)
+        if not chain_ids and entity_id in graph.phylogeny_entities:
+            chain_ids = [entity_id]
+
+        for display_depth, (chain_id, is_summary) in enumerate(self._summarized_phylogeny_chain_ids(chain_ids)):
+            indent = display_depth * 14
+            row_rect = pygame.Rect(x + indent, y, max(40, max_width - indent), row_h)
+            if is_summary:
+                rows.append(
+                    {
+                        "id": None,
+                        "label": "(...)",
+                        "rect": row_rect,
+                        "depth": display_depth,
+                        "summary": True,
+                    }
+                )
+            else:
+                entity = graph.phylogeny_entities.get(chain_id)
+                rows.append(
+                    {
+                        "id": chain_id,
+                        "label": clade_label(entity, chain_id),
+                        "rect": row_rect,
+                        "depth": display_depth,
+                        "highlight": chain_id == entity_id,
+                        "species": bool(is_species_entity(entity)),
+                    }
+                )
+            y = row_rect.bottom + row_gap
+        return rows, y
+
+    def _clip_phylogeny_rect_to_panel(self, rect, panel_rect):
+        if rect is None or panel_rect is None or not rect.colliderect(panel_rect):
+            return None
+        clipped = rect.clip(panel_rect)
+        if clipped.width <= 0 or clipped.height <= 0:
+            return None
+        return clipped
+
+    def _shift_clip_phylogeny_row(self, row, scroll_y, panel_rect):
+        row_rect = row.get("rect")
+        if row_rect is None:
+            return None
+        shifted_rect = row_rect.move(0, -scroll_y)
+        clipped_rect = self._clip_phylogeny_rect_to_panel(shifted_rect, panel_rect)
+        if clipped_rect is None:
+            return None
+        visible_row = dict(row)
+        visible_row["rect"] = clipped_rect
+        return visible_row
+
+    def _shift_clip_phylogeny_match_rows(self, rows, scroll_y, panel_rect):
+        visible_rows = []
+        for row in rows:
+            shifted = self._shift_clip_phylogeny_row(row, scroll_y, panel_rect)
+            if shifted is not None:
+                visible_rows.append(shifted)
+        return visible_rows
+
+    def _layout_phylogeny_content(self, card, content_left, current_y, text_width):
+        font = card.get("layout_font")
+        line_h = self._phylogeny_line_height(font)
+        entity_id = str(self.entity.get("id") or "")
+        is_clade = self._is_cladistics_card()
+        section_h = self.SECTION_HEADER_H
+        graph = phylogeny_graph_context(self.world_model)
+
+        parent_section_rect = pygame.Rect(content_left, current_y, text_width, section_h)
+        current_y = parent_section_rect.bottom + self.SECTION_GAP
+
+        input_rect = None
+        match_rows = []
+        child_input_rect = None
+        child_match_rows = []
+        parent_tree_rows = []
+        member_rows = []
+        local_node_hitboxes = []
+        parent_panel_rect = None
+        parent_panel_content_rect = None
+        parent_target_id = entity_id
+        child_target_id = entity_id if is_clade else ""
+        child_sibling_id = ""
+
+        if not self.collapsed_sections.get("Phylogeny Parents", False):
+            parent_panel_rect = pygame.Rect(
+                content_left + 4,
+                current_y,
+                max(80, text_width - 8),
+                self.PHYLOGENY_PARENT_PANEL_H,
+            )
+            parent_panel_content_rect = parent_panel_rect.inflate(-14, -14)
+            panel_content_y = parent_panel_content_rect.y
+
+            input_rect = pygame.Rect(
+                parent_panel_content_rect.x,
+                panel_content_y,
+                parent_panel_content_rect.width,
+                26,
+            )
+            panel_content_y = input_rect.bottom + 5
+
+            query = str(card.get("phylogeny_parent_query") or "").strip()
+            matches = card.get("phylogeny_parent_matches")
+            if matches is None:
+                matches = find_clade_matches(self.world_model, query)
+                card["phylogeny_parent_matches"] = matches
+
+            if query:
+                if matches:
+                    for index, match in enumerate(matches[:4]):
+                        row_rect = pygame.Rect(
+                            parent_panel_content_rect.x,
+                            panel_content_y,
+                            parent_panel_content_rect.width,
+                            28,
+                        )
+                        match_rows.append({"index": index, "entity": match, "rect": row_rect})
+                        panel_content_y = row_rect.bottom + 4
+                else:
+                    row_rect = pygame.Rect(
+                        parent_panel_content_rect.x,
+                        panel_content_y,
+                        parent_panel_content_rect.width,
+                        28,
+                    )
+                    match_rows.append({"index": "create", "entity": None, "rect": row_rect})
+                    panel_content_y = row_rect.bottom + 4
+
+            tree = graph.context_tree(entity_id)
+            if tree is not None:
+                parent_tree_rows, panel_content_y = self._layout_phylogeny_chain_rows(
+                    graph,
+                    entity_id,
+                    font,
+                    parent_panel_content_rect.x,
+                    panel_content_y + 4,
+                    parent_panel_content_rect.width,
+                )
+            else:
+                panel_content_y += line_h + 8
+
+            if parent_tree_rows:
+                parent_target_id = str(parent_tree_rows[0].get("id") or entity_id)
+                child_target_id = ""
+                bottom_entry_id = ""
+                for row in reversed(parent_tree_rows):
+                    if row.get("summary"):
+                        continue
+                    row_id = str(row.get("id") or "").strip()
+                    if row_id:
+                        bottom_entry_id = row_id
+                        break
+                if bottom_entry_id:
+                    child_sibling_id = bottom_entry_id
+                    for candidate_parent_id in graph.parents_by_child.get(bottom_entry_id, []):
+                        if candidate_parent_id in graph.clades:
+                            child_target_id = candidate_parent_id
+                            break
+
+            if is_clade and child_target_id:
+                child_input_rect = pygame.Rect(
+                    parent_panel_content_rect.x,
+                    panel_content_y + 2,
+                    parent_panel_content_rect.width,
+                    26,
+                )
+                panel_content_y = child_input_rect.bottom + 5
+
+                child_query = str(card.get("phylogeny_child_query") or "").strip()
+                child_matches = card.get("phylogeny_child_matches")
+                if child_matches is None:
+                    child_matches = find_clade_matches(self.world_model, child_query)
+                    card["phylogeny_child_matches"] = child_matches
+
+                if child_query:
+                    excluded_child_match_ids = {
+                        entity_id,
+                        str(child_target_id or "").strip(),
+                        str(child_sibling_id or "").strip(),
+                    }
+                    visible_child_matches = [
+                        (index, match)
+                        for index, match in enumerate(child_matches)
+                        if str(match.get("id") or "").strip() not in excluded_child_match_ids
+                    ]
+                    for index, match in visible_child_matches[:5]:
+                        row_rect = pygame.Rect(
+                            parent_panel_content_rect.x,
+                            panel_content_y,
+                            parent_panel_content_rect.width,
+                            28,
+                        )
+                        child_match_rows.append({"index": index, "entity": match, "rect": row_rect})
+                        panel_content_y = row_rect.bottom + 4
+                    if not child_match_rows:
+                        row_rect = pygame.Rect(
+                            parent_panel_content_rect.x,
+                            panel_content_y,
+                            parent_panel_content_rect.width,
+                            28,
+                        )
+                        child_match_rows.append({"index": "create", "entity": None, "rect": row_rect})
+                        panel_content_y = row_rect.bottom + 4
+
+            parent_content_h = max(0, panel_content_y - parent_panel_content_rect.y)
+            parent_visible_h = max(1, parent_panel_content_rect.height)
+            parent_scroll_max = max(0, int(parent_content_h - parent_visible_h))
+            parent_scroll_y = max(0, min(parent_scroll_max, int(card.get("phylogeny_parent_scroll_y", 0) or 0)))
+            card["phylogeny_parent_scroll_y"] = parent_scroll_y
+            card["phylogeny_parent_scroll_max_y"] = parent_scroll_max
+
+            input_rect = self._clip_phylogeny_rect_to_panel(input_rect.move(0, -parent_scroll_y), parent_panel_content_rect)
+            child_input_rect = (
+                self._clip_phylogeny_rect_to_panel(child_input_rect.move(0, -parent_scroll_y), parent_panel_content_rect)
+                if child_input_rect is not None
+                else None
+            )
+            match_rows = self._shift_clip_phylogeny_match_rows(match_rows, parent_scroll_y, parent_panel_content_rect)
+            child_match_rows = self._shift_clip_phylogeny_match_rows(child_match_rows, parent_scroll_y, parent_panel_content_rect)
+            parent_tree_rows = [
+                visible_row
+                for row in parent_tree_rows
+                for visible_row in [self._shift_clip_phylogeny_row(row, parent_scroll_y, parent_panel_content_rect)]
+                if visible_row is not None
+            ]
+            current_y = parent_panel_rect.bottom + 8
+        else:
+            card["phylogeny_parent_scroll_y"] = 0
+            card["phylogeny_parent_scroll_max_y"] = 0
+
+        current_y += 8
+        members_section_rect = pygame.Rect(content_left, current_y, text_width, section_h)
+        current_y = members_section_rect.bottom + self.SECTION_GAP
+
+        if not self.collapsed_sections.get("Members", False):
+            if is_clade:
+                limit = max(1, int(card.get("phylogeny_clade_member_limit", 3) or 3))
+                member_ids = graph.distant_species_members(entity_id, limit=limit)
+            else:
+                limit = max(1, int(card.get("phylogeny_species_relative_limit", 4) or 4))
+                member_ids = graph.closest_species_relatives(entity_id, limit=limit)
+
+            for member_id in member_ids:
+                member = graph.phylogeny_entities.get(member_id)
+                distance = graph.graph_distance(entity_id, member_id, max_depth=64)
+                row_rect = pygame.Rect(content_left + 10, current_y + 3, text_width - 20, line_h + 10)
+                label = clade_label(member, member_id)
+                member_rows.append(
+                    {
+                        "id": member_id,
+                        "label": label,
+                        "distance_label": f"{distance} steps" if distance is not None else "?",
+                        "rect": row_rect,
+                        "depth": 0,
+                        "species": True,
+                    }
+                )
+                local_node_hitboxes.append((member_id, row_rect))
+                current_y = row_rect.bottom + 3
+            if not member_ids:
+                current_y += line_h + 10
+
+        card["phylogeny_parent_section_rect"] = parent_section_rect
+        card["phylogeny_parent_panel_rect"] = parent_panel_rect
+        card["phylogeny_parent_panel_content_rect"] = parent_panel_content_rect
+        card["phylogeny_child_section_rect"] = None
+        card["phylogeny_diagram_section_rect"] = members_section_rect
+        card["phylogeny_parent_input_rect"] = input_rect
+        card["phylogeny_child_input_rect"] = child_input_rect
+        card["phylogeny_parent_match_rows"] = match_rows
+        card["phylogeny_child_match_rows"] = child_match_rows
+        card["phylogeny_parent_tree_rows"] = parent_tree_rows
+        card["phylogeny_local_tree_rows"] = member_rows
+        card["phylogeny_node_hitboxes"] = local_node_hitboxes
+        card["phylogeny_members_label"] = "Members" if is_clade else "Relatives"
+        card["phylogeny_parent_target_id"] = parent_target_id
+        card["phylogeny_child_target_id"] = child_target_id
+        card["phylogeny_child_sibling_id"] = child_sibling_id
+        return current_y
+
     def layout_card(self, card, rect):
         section_hitboxes = []
         tab_hitboxes = []
@@ -1951,6 +2313,7 @@ class EntityCard:
             "overview": 78,
             "temporal": 82,
             "relations": 76,
+            "phylogeny": 86,
             "state": 54,
             "simulation": 92,
             "operational": 92,
@@ -2147,7 +2510,33 @@ class EntityCard:
                     task_checklist_rect.width - 36,
                     22,
                 )
+        elif self._is_phylogeny_mode():
+            image_rect = None
+            content_end_y = self._layout_phylogeny_content(card, content_left, current_y, text_width)
+            section_hitboxes.extend(
+                [
+                    ("Phylogeny Parents", card["phylogeny_parent_section_rect"]),
+                ]
+            )
+            if card.get("phylogeny_child_section_rect") is not None:
+                section_hitboxes.append(("Phylogeny Children", card["phylogeny_child_section_rect"]))
+            section_hitboxes.append(("Members", card["phylogeny_diagram_section_rect"]))
         else:
+            for key, value in (
+                ("phylogeny_parent_section_rect", None),
+                ("phylogeny_parent_panel_rect", None),
+                ("phylogeny_parent_panel_content_rect", None),
+                ("phylogeny_child_section_rect", None),
+                ("phylogeny_diagram_section_rect", None),
+                ("phylogeny_parent_input_rect", None),
+                ("phylogeny_child_input_rect", None),
+                ("phylogeny_parent_match_rows", []),
+                ("phylogeny_child_match_rows", []),
+                ("phylogeny_parent_tree_rows", []),
+                ("phylogeny_local_tree_rows", []),
+                ("phylogeny_node_hitboxes", []),
+            ):
+                card[key] = value
             content_end_y = current_y
             if media_content_end_y is not None:
                 content_end_y = max(content_end_y, media_content_end_y + 8)
@@ -2259,6 +2648,45 @@ class EntityCard:
                 for illustration_id, title_rect in media_illustration_link_hitboxes
                 if title_rect.move(0, -scroll_y).colliderect(content_viewport_rect)
             ]
+            if self._is_phylogeny_mode():
+                for rect_key in (
+                    "phylogeny_parent_section_rect",
+                    "phylogeny_parent_panel_rect",
+                    "phylogeny_parent_panel_content_rect",
+                    "phylogeny_child_section_rect",
+                    "phylogeny_diagram_section_rect",
+                    "phylogeny_parent_input_rect",
+                    "phylogeny_child_input_rect",
+                ):
+                    rect_value = card.get(rect_key)
+                    if rect_value is not None:
+                        shifted_rect = rect_value.move(0, -scroll_y)
+                        card[rect_key] = (
+                            shifted_rect.clip(content_viewport_rect)
+                            if shifted_rect.colliderect(content_viewport_rect)
+                            else None
+                        )
+                for collection_key in (
+                    "phylogeny_parent_match_rows",
+                    "phylogeny_child_match_rows",
+                    "phylogeny_parent_tree_rows",
+                    "phylogeny_local_tree_rows",
+                ):
+                    visible_rows = []
+                    for row in card.get(collection_key, []):
+                        row_rect = row.get("rect")
+                        if row_rect is not None:
+                            shifted_rect = row_rect.move(0, -scroll_y)
+                            if not shifted_rect.colliderect(content_viewport_rect):
+                                continue
+                            row["rect"] = shifted_rect.clip(content_viewport_rect)
+                        visible_rows.append(row)
+                    card[collection_key] = visible_rows
+                card["phylogeny_node_hitboxes"] = [
+                    (clade_id, node_rect.move(0, -scroll_y).clip(content_viewport_rect))
+                    for clade_id, node_rect in card.get("phylogeny_node_hitboxes", [])
+                    if node_rect.move(0, -scroll_y).colliderect(content_viewport_rect)
+                ]
 
             shifted_section_hitboxes = []
             for section_name, section_rect in section_hitboxes:
@@ -2300,6 +2728,43 @@ class EntityCard:
                 for illustration_id, title_rect in media_illustration_link_hitboxes
                 if title_rect.colliderect(content_viewport_rect)
             ]
+            if self._is_phylogeny_mode():
+                for rect_key in (
+                    "phylogeny_parent_section_rect",
+                    "phylogeny_parent_panel_rect",
+                    "phylogeny_parent_panel_content_rect",
+                    "phylogeny_child_section_rect",
+                    "phylogeny_diagram_section_rect",
+                    "phylogeny_parent_input_rect",
+                    "phylogeny_child_input_rect",
+                ):
+                    rect_value = card.get(rect_key)
+                    if rect_value is not None:
+                        card[rect_key] = (
+                            rect_value.clip(content_viewport_rect)
+                            if rect_value.colliderect(content_viewport_rect)
+                            else None
+                        )
+                card["phylogeny_node_hitboxes"] = [
+                    (clade_id, node_rect.clip(content_viewport_rect))
+                    for clade_id, node_rect in card.get("phylogeny_node_hitboxes", [])
+                    if node_rect.colliderect(content_viewport_rect)
+                ]
+                for collection_key in (
+                    "phylogeny_parent_match_rows",
+                    "phylogeny_child_match_rows",
+                    "phylogeny_parent_tree_rows",
+                    "phylogeny_local_tree_rows",
+                ):
+                    visible_rows = []
+                    for row in card.get(collection_key, []):
+                        row_rect = row.get("rect")
+                        if row_rect is not None:
+                            if not row_rect.colliderect(content_viewport_rect):
+                                continue
+                            row["rect"] = row_rect.clip(content_viewport_rect)
+                        visible_rows.append(row)
+                    card[collection_key] = visible_rows
             section_hitboxes = [
                 (section_name, section_rect.clip(content_viewport_rect))
                 for section_name, section_rect in section_hitboxes
@@ -2495,6 +2960,27 @@ class EntityCard:
             resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
             return max(320, resize_bottom + 8)
 
+        if self._is_phylogeny_mode():
+            tabs_bottom_y = self.HEADER_H + 6 + self.TAB_H
+            current_y = tabs_bottom_y + 10
+            current_y += self.SECTION_HEADER_H + self.SECTION_GAP
+            if not self.collapsed_sections.get("Phylogeny Parents", False):
+                current_y += self.PHYLOGENY_PARENT_PANEL_H + 16
+            else:
+                current_y += 8
+            current_y += self.SECTION_HEADER_H + self.SECTION_GAP
+            if not self.collapsed_sections.get("Members", False):
+                line_h = self._phylogeny_line_height(font)
+                limit_key = "phylogeny_clade_member_limit" if self._is_cladistics_card() else "phylogeny_species_relative_limit"
+                visible_rows = max(1, int(card.get(limit_key, 3 if self._is_cladistics_card() else 4) or 1))
+                current_y += visible_rows * (line_h + 13)
+            timeline_label_y = current_y + 12
+            timeline_y = timeline_label_y + 18
+            center_y = timeline_y + 10
+            launch_top = center_y + self.TIMELINE_TO_LAUNCH_GAP
+            resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
+            return max(360, resize_bottom + 8)
+
         tabs_bottom_y = self.HEADER_H + 6 + self.TAB_H
         if self._active_subtab_order():
             tabs_bottom_y += 5 + self.SUBTAB_H
@@ -2654,6 +3140,15 @@ class EntityCard:
         self._draw_subtabs(screen, font, card)
         if self._is_general_mode():
             self._draw_general_content(screen, font, card)
+        elif self._is_phylogeny_mode():
+            content_clip = card.get("content_viewport_rect")
+            previous_clip = screen.get_clip()
+            if content_clip is not None:
+                screen.set_clip(previous_clip.clip(content_clip))
+            try:
+                self._draw_phylogeny_content(screen, font, card)
+            finally:
+                screen.set_clip(previous_clip)
         else:
             content_clip = card.get("content_viewport_rect")
             previous_clip = screen.get_clip()
@@ -2671,6 +3166,10 @@ class EntityCard:
         left_x = rect.x + 20
         right_x = rect.right - 20
         center_y = timeline_y + 10
+        launch_rect = card["launch_rect"]
+        font_h = max(1, font.get_linesize())
+        timeline_room_h = max(0, launch_rect.y - timeline_label_y)
+        compact_timeline = rect.width < 320 or timeline_room_h < 62
 
         years = card.get("years", [])
         if len(years) >= 2:
@@ -2683,27 +3182,47 @@ class EntityCard:
         else:
             timeline_label = "Year: missing"
 
-        timeline_label_surface = font.render(timeline_label, True, body_text_color)
-        screen.blit(timeline_label_surface, (rect.x + 12, timeline_label_y))
+        label_fits_above_line = timeline_label_y + font_h <= center_y - 4
+        if label_fits_above_line and rect.width >= 180:
+            timeline_label = self._ellipsize_text(timeline_label, font, rect.width - 24)
+            timeline_label_surface = font.render(timeline_label, True, body_text_color)
+            screen.blit(timeline_label_surface, (rect.x + 12, timeline_label_y))
 
         pygame.draw.line(screen, (170, 170, 170), (left_x, center_y), (right_x, center_y), 1)
 
+        year_label_rects = []
+        year_label_y = center_y + 22
+        show_year_labels = (
+            not compact_timeline
+            and year_label_y + font_h <= launch_rect.y - 4
+            and rect.width >= 260
+        )
+        selected_year = card.get("selected_year")
         for year, hitbox in card["year_hitboxes"]:
             marker_rect = pygame.Rect(hitbox.centerx - 5, center_y - 5, 10, 10)
-            selected = year == card["selected_year"]
+            selected = year == selected_year
 
             fill = (210, 210, 210) if selected else (70, 70, 70)
             border = (240, 240, 240) if selected else (170, 170, 170)
             pygame.draw.rect(screen, fill, marker_rect)
             pygame.draw.rect(screen, border, marker_rect, 1)
 
-            year_surface = font.render(str(year), True, body_text_color)
-            year_rect = year_surface.get_rect(center=(hitbox.centerx, center_y + 22))
-            screen.blit(year_surface, year_rect)
+            if show_year_labels:
+                year_surface = font.render(str(year), True, body_text_color)
+                year_rect = year_surface.get_rect(center=(hitbox.centerx, year_label_y))
+                year_rect.x = max(rect.x + 12, min(year_rect.x, rect.right - 12 - year_rect.width))
+                if not any(year_rect.inflate(8, 0).colliderect(existing) for existing in year_label_rects):
+                    screen.blit(year_surface, year_rect)
+                    year_label_rects.append(year_rect)
 
         related_entries = self._related_timeline_entries(card)
         card_range = self._card_timeline_range(card)
-        if related_entries and card_range is not None:
+        show_related_timeline = (
+            not compact_timeline
+            and center_y + self.RELATED_TIMELINE_OFFSET_Y + font_h + 8 <= launch_rect.y
+            and rect.width >= 300
+        )
+        if show_related_timeline and related_entries and card_range is not None:
             range_start, range_end = card_range
             range_span = max(1, range_end - range_start)
 
@@ -2743,10 +3262,8 @@ class EntityCard:
                 more_surface = font.render(f"+{hidden_count}", True, (214, 198, 150))
                 screen.blit(more_surface, (right_x - more_surface.get_width(), related_y + 5))
 
-        launch_rect = card["launch_rect"]
         pygame.draw.rect(screen, (55, 55, 55), launch_rect)
         pygame.draw.rect(screen, (210, 210, 210), launch_rect, 1)
-        selected_year = card.get("selected_year")
         launch_label = f"Launch [{selected_year}]" if selected_year is not None else "Launch"
         launch_text = font.render(launch_label, True, (245, 245, 245))
         launch_text_rect = launch_text.get_rect(center=launch_rect.center)
@@ -2873,6 +3390,7 @@ class EntityCard:
                 "overview": "Over",
                 "temporal": "Temp",
                 "relations": "Rel",
+                "phylogeny": "Phylo",
                 "state": "State",
                 "simulation": "Sim",
                 "operational": "Ops",
@@ -3083,6 +3601,195 @@ class EntityCard:
             surf = font.render(line, True, (195, 195, 195))
             screen.blit(surf, (image_rect.x + 10, current_y))
             current_y += self.IMAGE_TEXT_LINE_H
+
+    def _draw_phylogeny_section_header(self, screen, font, rect, label, expanded):
+        if rect is None:
+            return
+        pygame.draw.rect(screen, (36, 40, 50), rect)
+        pygame.draw.rect(screen, (110, 110, 120), rect, 1)
+        marker = "v" if expanded else ">"
+        screen.blit(font.render(f"{marker} {label}", True, (235, 235, 235)), (rect.x + 8, rect.y + 3))
+
+    def _draw_phylogeny_rows(self, screen, font, rows, muted=False):
+        line_h = self._phylogeny_line_height(font)
+        for row in rows:
+            row_rect = row.get("rect")
+            if row_rect is None:
+                continue
+            if row.get("summary"):
+                fill = (30, 34, 44)
+                border = (76, 86, 106)
+                text_color = (178, 188, 204)
+            elif row.get("highlight"):
+                fill = (58, 66, 88)
+                border = (190, 210, 246)
+                text_color = (244, 246, 250)
+            elif row.get("neighbor"):
+                fill = (46, 54, 42)
+                border = (164, 188, 124)
+                text_color = (226, 238, 202)
+            elif row.get("species"):
+                fill = (38, 42, 50)
+                border = (118, 132, 156)
+                text_color = (210, 220, 236)
+            else:
+                fill = (32, 36, 46)
+                border = (72, 82, 100)
+                text_color = (184, 192, 208) if muted else (216, 224, 238)
+            pygame.draw.rect(screen, fill, row_rect)
+            pygame.draw.rect(screen, border, row_rect, 1)
+            text_x = row_rect.x + 8
+            available_w = row_rect.width - 18
+            distance_label = str(row.get("distance_label") or "").strip()
+            if distance_label:
+                badge_w = min(64, max(42, row_rect.width // 3))
+                badge_rect = pygame.Rect(row_rect.x + 5, row_rect.y + 4, badge_w, max(14, row_rect.height - 8))
+                pygame.draw.rect(screen, (24, 28, 36), badge_rect)
+                pygame.draw.rect(screen, (132, 148, 174), badge_rect, 1)
+                badge_text = self._ellipsize_text(distance_label, font, badge_rect.width - 8)
+                badge_surface = font.render(badge_text, True, (232, 238, 248))
+                screen.blit(badge_surface, badge_surface.get_rect(center=badge_rect.center))
+                text_x = badge_rect.right + 8
+                available_w = max(20, row_rect.right - text_x - 8)
+            label = self._ellipsize_text(str(row.get("label") or row.get("id") or ""), font, available_w)
+            screen.blit(font.render(label, True, text_color), (text_x, row_rect.y + max(3, (row_rect.height - line_h) // 2)))
+
+    def _draw_phylogeny_parent_scrollbar(self, screen, card):
+        panel_rect = card.get("phylogeny_parent_panel_rect")
+        content_rect = card.get("phylogeny_parent_panel_content_rect")
+        max_scroll = max(0, int(card.get("phylogeny_parent_scroll_max_y", 0) or 0))
+        if panel_rect is None or content_rect is None or max_scroll <= 0:
+            return
+
+        track_rect = pygame.Rect(panel_rect.right - 7, content_rect.y, 3, content_rect.height)
+        pygame.draw.rect(screen, (44, 50, 62), track_rect)
+        visible_h = max(1, content_rect.height)
+        content_h = visible_h + max_scroll
+        thumb_h = max(18, int(round(track_rect.height * visible_h / max(1, content_h))))
+        scroll_y = max(0, min(max_scroll, int(card.get("phylogeny_parent_scroll_y", 0) or 0)))
+        thumb_y = track_rect.y + int(round((track_rect.height - thumb_h) * scroll_y / max(1, max_scroll)))
+        pygame.draw.rect(screen, (132, 146, 170), pygame.Rect(track_rect.x, thumb_y, track_rect.width, thumb_h))
+
+    def _draw_phylogeny_content(self, screen, font, card):
+        parent_expanded = not self.collapsed_sections.get("Phylogeny Parents", False)
+        diagram_expanded = not self.collapsed_sections.get("Members", False)
+        self._draw_phylogeny_section_header(
+            screen,
+            font,
+            card.get("phylogeny_parent_section_rect"),
+            "Phylogeny Parents",
+            parent_expanded,
+        )
+
+        panel_rect = card.get("phylogeny_parent_panel_rect")
+        panel_content_rect = card.get("phylogeny_parent_panel_content_rect")
+        previous_clip = screen.get_clip()
+        if parent_expanded and panel_rect is not None:
+            pygame.draw.rect(screen, (24, 28, 36), panel_rect)
+            pygame.draw.rect(screen, (94, 108, 132), panel_rect, 1)
+            if panel_content_rect is not None:
+                screen.set_clip(previous_clip.clip(panel_content_rect))
+
+        input_rect = card.get("phylogeny_parent_input_rect")
+        try:
+            if parent_expanded and input_rect is not None:
+                active = bool(card.get("phylogeny_parent_input_active"))
+                fill = (40, 48, 64) if active else (30, 35, 44)
+                border = (184, 204, 236) if active else (92, 104, 126)
+                pygame.draw.rect(screen, fill, input_rect)
+                pygame.draw.rect(screen, border, input_rect, 1)
+                query = str(card.get("phylogeny_parent_query") or "")
+                target = self.world_model.get_entity(card.get("phylogeny_parent_target_id")) if self.world_model is not None else None
+                target_label = clade_label(target, card.get("phylogeny_parent_target_id"))
+                placeholder = f"+ parent of {target_label}..."
+                text = query or placeholder
+                color = (238, 240, 246) if query else (144, 154, 172)
+                text = self._ellipsize_text(text, font, input_rect.width - 14)
+                screen.blit(font.render(text, True, color), (input_rect.x + 7, input_rect.y + 4))
+
+                for row in card.get("phylogeny_parent_match_rows", []):
+                    row_rect = row.get("rect")
+                    if row_rect is None:
+                        continue
+                    selected = row.get("index") == card.get("phylogeny_parent_selected_index", 0)
+                    is_create = row.get("index") == "create"
+                    fill = (54, 64, 82) if selected else (32, 36, 46)
+                    border = (194, 206, 228) if selected else (88, 98, 118)
+                    if is_create:
+                        fill = (48, 58, 42) if selected else (36, 44, 34)
+                        border = (168, 196, 128)
+                    pygame.draw.rect(screen, fill, row_rect)
+                    pygame.draw.rect(screen, border, row_rect, 1)
+                    if is_create:
+                        label = f"Create clade: {query}"
+                    else:
+                        label = clade_label(row.get("entity"), "")
+                    label = self._ellipsize_text(label, font, row_rect.width - 14)
+                    screen.blit(font.render(label, True, (238, 242, 246)), (row_rect.x + 7, row_rect.y + 6))
+
+            if parent_expanded:
+                self._draw_phylogeny_rows(screen, font, card.get("phylogeny_parent_tree_rows", []))
+                status = str(card.get("phylogeny_status") or "").strip()
+                if status and input_rect is not None:
+                    status_surface = font.render(status, True, (220, 196, 132))
+                    screen.blit(status_surface, (input_rect.x, input_rect.bottom + 2))
+
+            child_input_rect = card.get("phylogeny_child_input_rect")
+            if parent_expanded and child_input_rect is not None:
+                active = bool(card.get("phylogeny_child_input_active"))
+                fill = (40, 48, 64) if active else (30, 35, 44)
+                border = (184, 204, 236) if active else (92, 104, 126)
+                pygame.draw.rect(screen, fill, child_input_rect)
+                pygame.draw.rect(screen, border, child_input_rect, 1)
+                query = str(card.get("phylogeny_child_query") or "")
+                sibling = self.world_model.get_entity(card.get("phylogeny_child_sibling_id")) if self.world_model is not None else None
+                sibling_label = clade_label(sibling, card.get("phylogeny_child_sibling_id"))
+                placeholder = f"+ sister of {sibling_label}..."
+                text = self._ellipsize_text(query or placeholder, font, child_input_rect.width - 14)
+                color = (238, 240, 246) if query else (144, 154, 172)
+                screen.blit(font.render(text, True, color), (child_input_rect.x + 7, child_input_rect.y + 4))
+
+                for row in card.get("phylogeny_child_match_rows", []):
+                    row_rect = row.get("rect")
+                    if row_rect is None:
+                        continue
+                    selected = row.get("index") == card.get("phylogeny_child_selected_index", 0)
+                    is_create = row.get("index") == "create"
+                    fill = (54, 64, 82) if selected else (32, 36, 46)
+                    border = (194, 206, 228) if selected else (88, 98, 118)
+                    if is_create:
+                        fill = (48, 58, 42) if selected else (36, 44, 34)
+                        border = (168, 196, 128)
+                    pygame.draw.rect(screen, fill, row_rect)
+                    pygame.draw.rect(screen, border, row_rect, 1)
+                    if is_create:
+                        label = f"Create clade: {query}"
+                    else:
+                        entity = row.get("entity")
+                        label = clade_label(entity, "")
+                    label = self._ellipsize_text(label, font, row_rect.width - 14)
+                    screen.blit(font.render(label, True, (238, 242, 246)), (row_rect.x + 7, row_rect.y + 6))
+        finally:
+            screen.set_clip(previous_clip)
+
+        if parent_expanded:
+            self._draw_phylogeny_parent_scrollbar(screen, card)
+
+        self._draw_phylogeny_section_header(
+            screen,
+            font,
+            card.get("phylogeny_diagram_section_rect"),
+            card.get("phylogeny_members_label", "Members"),
+            diagram_expanded,
+        )
+        if diagram_expanded:
+            rows = card.get("phylogeny_local_tree_rows", [])
+            if rows:
+                self._draw_phylogeny_rows(screen, font, rows)
+            else:
+                rect = card.get("phylogeny_diagram_section_rect")
+                if rect is not None:
+                    screen.blit(font.render("No species entries found yet", True, (150, 160, 178)), (rect.x + 8, rect.bottom + 8))
 
     def _draw_sections(self, screen, font, card):
         if self._is_general_mode():

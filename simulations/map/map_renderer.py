@@ -147,12 +147,20 @@ class MapRenderer:
         if is_selected:
             pygame.draw.polygon(screen, (255, 230, 120), screen_points, 4)
 
-        if (max_x - min_x) >= 90 and (max_y - min_y) >= 32:
+        should_draw_label = (max_x - min_x) >= 90 and (max_y - min_y) >= 32
+        if layer.get("is_placement_ancestor"):
+            should_draw_label = (max_x - min_x) >= 220 and (max_y - min_y) >= 90
+        if layer.get("is_ghost_sister"):
+            should_draw_label = False
+
+        if should_draw_label:
             label_pos = camera.world_to_screen((layer.get("x", 0), layer.get("y", 0)))
             if label_pos is None:
                 return
 
-            if layer.get("is_ghost_context"):
+            if layer.get("is_placement_ancestor"):
+                text_color = (148, 162, 182)
+            elif layer.get("is_ghost_context"):
                 text_color = (210, 218, 230)
             else:
                 text_color = (245, 245, 245)

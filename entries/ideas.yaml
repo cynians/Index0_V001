@@ -1,63 +1,3 @@
-- id: idea_new_001
-  pretty_name: New Idea
-  name: New Idea
-  type: idea
-  wiki_entry: |-
-    Starter idea.
-  tags: []
-  start_year: null
-  end_year: null
-  parents: []
-  related: []
-  offspring: []
-  entry_status: ''
-- id: idea_new_002
-  pretty_name: New Idea
-  name: Gold Sector Pseudoreligious Schism
-  type: idea
-  wiki_entry: |-
-    Schism of the Col
-  tags: []
-  start_year: null
-  end_year: null
-  parents: []
-  related: []
-  offspring: []
-  entry_status: ''
-- id: idea_new_003
-  pretty_name: New Idea
-  name: Trifecta Dominion Deep Rust Sector
-  type: idea
-  tags: []
-  start_year: 15303
-  end_year: null
-  parents: []
-  related: []
-  offspring: []
-  entry_status: ''
-- id: idea_new_006
-  pretty_name: New Idea
-  name: Atmospheric Sputtering
-  type: idea
-  tags: []
-  start_year: null
-  end_year: null
-  parents: []
-  related: []
-  offspring: []
-  entry_status: ''
-- id: idea_new_012
-  pretty_name: New Idea
-  name: Satellite Development Trough the Ages
-  type: idea
-  tags: []
-  start_year: null
-  end_year: null
-  derived_from: []
-  parents: []
-  related: []
-  offspring: []
-  entry_status: ''
 - id: idea_gallilean_moons
   pretty_name: Gallilean Moons of Jupiter
   name: Gallilean Moons
@@ -278,45 +218,12 @@
   wiki_entry: ''
   offspring:
   - id: idea_amto_nereidii
-- id: idea_new_004
-  pretty_name: New Idea
-  name: New Idea
-  type: idea
-  wiki_entry: ''
-  wiki_mentions: []
-  offspring: []
-- id: idea_new_005
-  pretty_name: New Idea
-  name: New Idea
-  type: idea
-  wiki_entry: ''
-  wiki_mentions: []
-  offspring:
-  - id: idea_venusian_settlements_during_the_ggo_hegemony_period
-- id: idea_new_007
-  pretty_name: New Idea
-  name: New Idea
-  type: idea
-  wiki_entry: ''
-  offspring: []
-- id: idea_new_009
-  pretty_name: New Idea
-  name: New Idea
-  type: idea
-  wiki_entry: ''
-  offspring: []
 - id: idea_new_013
   pretty_name: Idea from Madrid
   name: Idea from Madrid
   type: idea
   parents:
   - city_madrid
-  wiki_entry: ''
-  offspring: []
-- id: idea_new_014
-  pretty_name: New Idea
-  name: New Idea
-  type: idea
   wiki_entry: ''
   offspring: []
 - id: idea_new_015
@@ -351,20 +258,6 @@
   derived_from: []
   related: []
   entry_status: ''
-- id: idea_new_019
-  pretty_name: New 019
-  name: New 019
-  type: idea
-  wiki_entry: ''
-  wiki_mentions: []
-  offspring: []
-- id: idea_new_020
-  pretty_name: New Idea
-  name: New Idea
-  type: idea
-  wiki_entry: ''
-  wiki_mentions: []
-  offspring: []
 - id: idea_new_021
   pretty_name: High Velocity Battles
   name: High Velocity Battles
@@ -372,6 +265,15 @@
   wiki_entry: ''
   offspring:
   - id: idea_new_022
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents: []
+  related: []
+  wiki_mentions: []
+  entry_status: ''
+  card_color: '#1a2525'
 - id: idea_new_022
   pretty_name: Card Tags
   name: Card Tags
@@ -399,20 +301,6 @@
   related:
   - task_new_023
   wiki_entry: ''
-  offspring: []
-- id: idea_new_026
-  pretty_name: New Idea
-  name: New Idea
-  type: idea
-  wiki_entry: ''
-  wiki_mentions: []
-  offspring: []
-- id: idea_new_027
-  pretty_name: New Idea
-  name: New Idea
-  type: idea
-  wiki_entry: ''
-  wiki_mentions: []
   offspring: []
 - id: idea_perihelion
   pretty_name: Perihelion
@@ -485,3 +373,58 @@
   offspring: []
   related:
   - inst_project_deep_sleep
+  - loc_kellerschacht
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents: []
+  entry_status: ''
+  card_color: '#19191b'
+  wiki_entry: null
+- id: idea_csg_rhetoric_survives_abandonment_due_to_endemic_illness
+  pretty_name: CSG Rhetoric survives abandonment due to endemic illness
+  name: CSG Rhetoric survives abandonment due to endemic illness
+  type: idea
+  wiki_mentions:
+  - inst_cultural_seeding_group
+  card_color: '#186d48'
+  wiki_entry: 'Lgends Remain after unsuccessfull CSG contact due to endemic illness the inhabitants are immune to. [[inst_cultural_seeding_group]] eventually returns, abducting people for medical research. Population mobilizes and discovers the truth by themselves. Alien conspiracies and so on. '
+  offspring: []
+- id: idea_new_001
+  pretty_name: New Idea
+  name: New Idea
+  type: idea
+  wiki_mentions: []
+  offspring: []
+- id: idea_production_and_development_of_the_ggo
+  pretty_name: Production and Development of the GGO
+  name: Production and Development of the GGO
+  type: idea
+  wiki_mentions:
+  - inst_ggo_engineering_groups
+  - inst_ggo_external_production_groups
+  - inst_cog_commodity_quarters
+  card_color: '#1f2126'
+  card_header_color: '#9f6425'
+  wiki_field_colors:
+    default: '#6d737a'
+  parents:
+  - fac_ggo_hegemony
+  offspring: []
+  wiki_entry: |
+    ! [[GGO Engineering Groups]]
+    
+    ! [[inst_ggo_external_production_groups]]
+    
+    ! [[inst_cog_commodity_quarters]]
+- id: idea_new_002
+  pretty_name: New Idea
+  name: New Idea
+  type: idea
+  three_word_description: ''
+  wiki_mentions: []
+  offspring:
+  - id: loc_ukraine
+    offspring:
+      - id: loc_danube_delta

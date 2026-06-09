@@ -90,3 +90,25 @@
   wiki_entry: ''
   wiki_mentions: []
   offspring: []
+- id: person_werner_spatz
+  pretty_name: Werner Spatz
+  name: Werner Spatz
+  type: person
+  wiki_mentions: []
+  offspring: []
+  related:
+  - fac_teutonian_resurgence
+  card_color: '#0d0f13'
+  card_header_color: '#465268'
+  wiki_entry: |
+    Mechanic for the Teutonian Resurgence
+- id: person_alexander_sascha_van_der_bellen
+  pretty_name: Alexander "Sascha" Van der Bellen
+  name: Alexander "Sascha" Van der Bellen
+  type: person
+  wiki_mentions: []
+  start_year: 1944
+  end_year: 2031
+  offspring: []
+  parents:
+  - loc_austria

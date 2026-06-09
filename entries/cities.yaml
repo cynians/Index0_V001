@@ -116,7 +116,6 @@
   card_color: '#ca8c65'
   location_entity: null
   offspring:
-  - id: loc_castelli_automobiles_plant
   - id: loc_groundworks_district_lumen_free_city
   - id: loc_lumen_free_trade_port
   parents:
@@ -142,4 +141,14 @@
   type: city
   location_entity: null
   wiki_entry: ''
+  offspring: []
+- id: city_thom_city_nanhai
+  pretty_name: 'Thom City, Nanhai'
+  name: 'Thom City, Nanhai'
+  type: city
+  location_entity: null
+  wiki_mentions: []
+  card_color: '#1c2625'
+  parents:
+  - planet_nanhai
   offspring: []

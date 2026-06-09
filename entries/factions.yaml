@@ -180,7 +180,8 @@
   name: GGO Hegemony
   type: faction
   card_color: '#bf7212'
-  offspring: []
+  offspring:
+  - id: idea_production_and_development_of_the_ggo
   related:
   - conf_borders_rebellion
   wiki_entry: ''
@@ -238,3 +239,19 @@
   - inst_cultural_seeding_group
   - sys_babylon
   - loc_akkad_babylon_system
+- id: fac_french_north_africa
+  pretty_name: French North Africa
+  name: French North Africa
+  type: faction
+  wiki_mentions: []
+  start_year: 1830
+  end_year: 1962
+  offspring: []
+- id: fac_french_algeria
+  pretty_name: French Algeria
+  name: French Algeria
+  type: faction
+  wiki_mentions: []
+  offspring: []
+  card_color: '#384a58'
+  card_header_color: '#454234'

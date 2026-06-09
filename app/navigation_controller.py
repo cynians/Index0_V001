@@ -9,6 +9,7 @@ from simulations.vehicle.vehicle_simulation import VehicleSimulation
 from simulations.person.person_simulation import PersonSimulation
 from simulations.world_gen.world_gen_sim import WorldGenSimulation
 from simulations.building.building_sim import BuildingSimulation
+from simulations.phylogeny.phylogeny_simulation import PhylogenySimulation
 
 
 class NavigationController:
@@ -235,6 +236,39 @@ class NavigationController:
         self.app.knowledge_layer_active = False
         self.app.camera_controller.setup_for_sim(new_person_sim)
 
+    def launch_phylogeny_tab(self, clade_entity_id):
+        """
+        Open or focus the full cladistics tree view.
+        """
+        if not clade_entity_id:
+            return False
+
+        clade_entity = self.app.world_model.get_entity(clade_entity_id)
+        if not clade_entity or clade_entity.get("_dataset") not in {"cladistics", "species"}:
+            return False
+
+        tab_key = ("phylogeny", clade_entity_id)
+        if self.focus_existing_tab_by_key(tab_key):
+            self.app.knowledge_layer_active = False
+            return True
+
+        clade_name = clade_entity.get("pretty_name") or clade_entity.get("name") or clade_entity_id
+        new_phylogeny_sim = PhylogenySimulation(
+            world_model=self.app.world_model,
+            focus_clade_id=clade_entity_id,
+        )
+        new_tab = Tab(
+            SimulationInstance(new_phylogeny_sim),
+            name=f"Phylogeny: {clade_name}",
+            tab_key=tab_key,
+        )
+
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+        self.app.camera_controller.setup_for_sim(new_phylogeny_sim)
+        return True
+
     def launch_world_gen_tab(self, planet_location_id):
         """
         Open or focus a planetary world-generation workspace.
@@ -384,7 +418,7 @@ class NavigationController:
         if not location or location.get("_dataset") != "locations":
             return False
 
-        parent_entity_id = location.get("parent_location")
+        parent_entity_id = self._structural_location_parent_id(location)
         if not parent_entity_id:
             return False
 
@@ -423,6 +457,45 @@ class NavigationController:
         self.app.knowledge_layer_active = False
         self.app.camera_controller.setup_for_sim(new_map_sim)
         return True
+
+    def _relation_entity_ids(self, value):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, dict):
+            candidate = value.get("id") or value.get("entity_id") or value.get("target")
+            return [candidate] if candidate else []
+        if isinstance(value, (list, tuple, set)):
+            ids = []
+            for item in value:
+                ids.extend(self._relation_entity_ids(item))
+            return ids
+        return []
+
+    def _structural_location_parent_id(self, location):
+        if not isinstance(location, dict):
+            return None
+
+        location_id = location.get("id")
+        for field_key in ("parent_location", "parent_entity", "parent_body"):
+            for parent_id in self._relation_entity_ids(location.get(field_key)):
+                parent = self.app.world_model.get_entity(parent_id)
+                if parent_id and parent_id != location_id and self._is_location_entity(parent):
+                    return parent_id
+
+        for parent_id in self._relation_entity_ids(location.get("parents")):
+            parent = self.app.world_model.get_entity(parent_id)
+            if parent_id and parent_id != location_id and self._is_location_entity(parent):
+                return parent_id
+
+        return None
+
+    def _is_location_entity(self, entity):
+        return isinstance(entity, dict) and (
+            entity.get("_dataset") == "locations"
+            or entity.get("type") == "location"
+        )
 
     def open_map_for_selected_space_body(self, space_sim):
         """
@@ -647,6 +720,12 @@ class NavigationController:
                 self.launch_person_tab(entity_id)
                 return True
 
+            if (
+                dataset_name in {"cladistics", "species"}
+                or entity.get("type") in {"cladistics", "species"}
+            ):
+                return self.launch_phylogeny_tab(entity_id)
+
             if dataset_name == "systems":
                 system_role = entity.get("system_role")
 
@@ -745,6 +824,23 @@ class NavigationController:
             self.app.show_fps = not self.app.show_fps
             self.app.input_controller.show_fps = self.app.show_fps
             return True
+
+        if action_id in {
+            "phylogeny_clade_members_dec",
+            "phylogeny_clade_members_inc",
+            "phylogeny_species_relatives_dec",
+            "phylogeny_species_relatives_inc",
+        }:
+            knowledge_ui = getattr(self.app.ui_manager, "knowledge_ui", None)
+            if knowledge_ui is None:
+                return False
+            if action_id == "phylogeny_clade_members_dec":
+                return bool(knowledge_ui._set_phylogeny_clade_member_count(knowledge_ui.phylogeny_clade_member_count - 1))
+            if action_id == "phylogeny_clade_members_inc":
+                return bool(knowledge_ui._set_phylogeny_clade_member_count(knowledge_ui.phylogeny_clade_member_count + 1))
+            if action_id == "phylogeny_species_relatives_dec":
+                return bool(knowledge_ui._set_phylogeny_species_relative_count(knowledge_ui.phylogeny_species_relative_count - 1))
+            return bool(knowledge_ui._set_phylogeny_species_relative_count(knowledge_ui.phylogeny_species_relative_count + 1))
 
         if action_id == "system_menu_quit":
             self.app.running = False

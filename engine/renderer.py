@@ -3,6 +3,7 @@ from simulations.map.map_renderer import MapRenderer
 from simulations.space.space_renderer import SpaceRenderer
 from simulations.vehicle.vehicle_renderer import VehicleRenderer
 from simulations.world_gen.world_gen_renderer import WorldGenRenderer
+from simulations.phylogeny.phylogeny_renderer import PhylogenyRenderer
 
 
 class Renderer:
@@ -25,6 +26,7 @@ class Renderer:
         self.space_renderer = SpaceRenderer(simulation)
         self.vehicle_renderer = VehicleRenderer(simulation)
         self.world_gen_renderer = WorldGenRenderer(simulation)
+        self.phylogeny_renderer = PhylogenyRenderer(simulation)
 
     # --------------------------------------------------
     # MAIN ENTRY
@@ -68,6 +70,10 @@ class Renderer:
             return
 
         if render_mode == "person":
+            return
+
+        if render_mode == "phylogeny":
+            self.phylogeny_renderer.draw(self.screen, sim)
             return
 
         if hasattr(sim, "system"):

@@ -24,6 +24,10 @@ fields:
     type: text
     optional: true
 
+  three_word_description:
+    type: string
+    optional: true
+
   card_color:
     type: string
     section: Metadata

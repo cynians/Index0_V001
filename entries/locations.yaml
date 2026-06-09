@@ -21,7 +21,7 @@
   - id: loc_north_america
     offspring:
       - id: loc_united_states_of_america
-        offspring: '[{''id'': ''loc_hawaii'', ''offspring'': [{''id'': ''geo_northwestern_hawaiian_islands'', ''offspring'': [{''id'': ''geo_kure_atoll''}]}]}]'
+        offspring: '[{''id'': ''loc_hawaii'', ''offspring'': [{''id'': ''geo_northwestern_hawaiian_islands'', ''offspring'': [{''id'': ''geo_kure_atoll''}]}]}, {''id'': ''loc_california'', ''offspring'': [{''id'': ''loc_sonoma_county_california'', ''offspring'': [{''id'': ''loc_fort_ross_sonoma_county_california''}]}]}, {''id'': ''loc_greater_los_angeles''}]'
   - id: loc_australia
     offspring:
       - id: loc_victoria_state_australia
@@ -31,8 +31,10 @@
         offspring: '[{''id'': ''loc_northeast_greenland_national_park''}]'
   - id: loc_eurasia
     offspring:
-      - id: geo_europe
-        offspring: '[{''id'': ''geo_spain'', ''offspring'': [{''id'': ''idea_spanish_contribution_to_the_superpower_wars''}, {''id'': ''city_madrid'', ''offspring'': [{''id'': ''idea_new_013''}]}]}, {''id'': ''loc_new_idea'', ''offspring'': [{''id'': ''geo_france'', ''offspring'': [{''id'': ''evt_new_001''}, {''id'': ''city_paris''}, {''id'': ''sf_draft_ecoregions_geo_central_europe_001''}]}]}, {''id'': ''loc_scandinavia'', ''offspring'': [{''id'': ''geo_sweden'', ''offspring'': [{''id'': ''prod_saab_ab''}]}]}]'
+      - id: loc_black_sea
+        offspring: '[{''id'': ''loc_danube_delta''}]'
+      - id: loc_europe
+        offspring: '[{''id'': ''geo_central_europe''}, {''id'': ''loc_scandinavia'', ''offspring'': [{''id'': ''geo_sweden'', ''offspring'': [{''id'': ''loc_angermansland_grand_carperies''}, {''id'': ''prod_saab_ab''}]}]}]'
   tags: []
   end_year: null
   derived_from: []
@@ -58,43 +60,6 @@
   derived_from_system_body: body_earth
   legacy_system_entity_id: body_earth
   wiki_mentions: []
-- id: geo_europe
-  pretty_name: Europe
-  name: Europe
-  type: location
-  location_class: continent
-  parent_location: planet_earth
-  bounds:
-    type: bbox
-    min_x: -25
-    max_x: 45
-    min_y: -72
-    max_y: -34
-  population:
-    y0: 450000000
-  start_year: null
-  parents:
-  - loc_eurasia
-  related: []
-  offspring:
-  - id: geo_spain
-    offspring:
-      - id: idea_spanish_contribution_to_the_superpower_wars
-      - id: city_madrid
-        offspring: '[{''id'': ''idea_new_013''}]'
-  - id: loc_new_idea
-    offspring:
-      - id: geo_france
-        offspring: '[{''id'': ''evt_new_001''}, {''id'': ''city_paris''}, {''id'': ''sf_draft_ecoregions_geo_central_europe_001''}]'
-  - id: loc_scandinavia
-    offspring:
-      - id: geo_sweden
-        offspring: '[{''id'': ''prod_saab_ab''}]'
-  tags: []
-  end_year: null
-  derived_from: []
-  entry_status: ''
-  wiki_mentions: []
 - id: geo_central_europe
   pretty_name: Central Europe
   name: Central Europe
@@ -110,13 +75,15 @@
   population:
     y0: 180000000
   start_year: -350000000
-  parents: []
+  parents:
+  - loc_europe
   related: []
   offspring: []
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
+  wiki_mentions: []
 - id: geo_germany
   pretty_name: Germany
   name: Germany
@@ -134,11 +101,13 @@
   start_year: null
   parents: []
   related: []
-  offspring: []
+  offspring:
+  - id: loc_bavaria
   tags: []
   end_year: null
   derived_from: []
   entry_status: ''
+  wiki_mentions: []
 - id: city_berlin
   pretty_name: Berlin
   name: Berlin
@@ -197,11 +166,12 @@
     y0: 68000000
   start_year: 1070
   parents:
-  - loc_new_idea
+  - loc_western_europe
   related: []
   offspring:
   - id: evt_new_001
   - id: city_paris
+  - id: sf_draft_ecoregions_geo_central_europe_001
   tags: []
   end_year: null
   derived_from: []
@@ -409,7 +379,7 @@
   pretty_name: Vesta
   name: Vesta
   type: location
-  location_class: asteroid
+  location_class: orbital_body
   location_role: planetary_root
   coords:
     type: point
@@ -611,13 +581,18 @@
     y6034: 0
   start_year: 6034
   entry_status: draft
-  derived_from:
-  - IDEA-492
-  parents: []
+  derived_from: []
+  parents:
+  - sys_metyaki
   related: []
-  offspring: []
+  offspring:
+  - id: city_thom_city_nanhai
+  - id: loc_telly_village
+  - id: pop_broom_family_of_nanhai
   tags: []
   end_year: null
+  wiki_mentions: []
+  card_color: '#263534'
 - id: city_pontiferrum_harbor
   pretty_name: Pontiferrum Harbor
   name: Pontiferrum Harbor
@@ -684,7 +659,7 @@
   pretty_name: Pluto
   name: Pluto
   type: location
-  location_class: dwarf_planet
+  location_class: orbital_body
   location_role: planetary_root
   coords:
     type: point
@@ -894,7 +869,11 @@
   parents: []
   related: []
   offspring:
-  - planet_noyanakh
+  - id: planet_nanhai
+    offspring:
+      - id: city_thom_city_nanhai
+      - id: loc_telly_village
+      - id: pop_broom_family_of_nanhai
   tags: []
   end_year: null
   derived_from: []
@@ -1247,7 +1226,9 @@
   parents:
   - loc_scandinavia
   related: []
-  offspring: []
+  offspring:
+  - id: loc_angermansland_grand_carperies
+  - id: prod_saab_ab
   tags: []
   end_year: null
   derived_from: []
@@ -1504,7 +1485,7 @@
   pretty_name: Hygiea
   name: Hygiea
   type: location
-  location_class: asteroid
+  location_class: orbital_body
   location_role: planetary_root
   coords:
     type: point
@@ -1551,22 +1532,6 @@
   offspring: []
   entry_status: ''
   card_color: '#0c0d10'
-- id: loc_draft_loc_new_004_001
-  pretty_name: Draft Map Area 001
-  name: Draft Map Area 001
-  type: location
-  wiki_entry: |-
-    Draft rectangle map area created under Stutters Steppe.
-  location_class: region
-  parent_location: loc_new_004
-  bounds:
-    type: bbox
-    min_x: -159.51
-    max_x: 159.545
-    min_y: -91.214
-    max_y: 90.263
-  start_year: 2400
-  entry_status: draft
 - id: loc_region_planet_equidorva_001
   pretty_name: Brothers High Plateau
   name: Brothers High Plateau
@@ -3018,6 +2983,21 @@
   card_color: '#142e70'
   parents:
   - loc_north_america
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  offspring:
+  - id: loc_hawaii
+    offspring:
+      - id: geo_northwestern_hawaiian_islands
+        offspring: '[{''id'': ''geo_kure_atoll''}]'
+  - id: loc_california
+    offspring:
+      - id: loc_sonoma_county_california
+        offspring: '[{''id'': ''loc_fort_ross_sonoma_county_california''}]'
+  - id: loc_greater_los_angeles
+  entry_status: ''
 - id: loc_north_america
   pretty_name: North America
   name: North America
@@ -3028,6 +3008,19 @@
   location_class: continent
   parents:
   - planet_earth
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  offspring:
+  - id: loc_united_states_of_america
+    offspring:
+      - id: loc_hawaii
+        offspring: '[{''id'': ''geo_northwestern_hawaiian_islands'', ''offspring'': [{''id'': ''geo_kure_atoll''}]}]'
+      - id: loc_california
+        offspring: '[{''id'': ''loc_sonoma_county_california'', ''offspring'': [{''id'': ''loc_fort_ross_sonoma_county_california''}]}]'
+      - id: loc_greater_los_angeles
+  entry_status: ''
 - id: loc_india
   pretty_name: India
   name: India
@@ -3090,15 +3083,23 @@
   location_role: orbital_body
   card_color: '#555762'
 - id: loc_hemsbrook_l_beck_system
-  pretty_name: 'Hebsbrook, LÃ¼beck System'
-  name: 'Hebsbrook, LÃ¼beck System'
+  pretty_name: 'Hebsbrook, Luebeck'
+  name: 'Hebsbrook, Luebeck'
   type: location
   location_class: planet
   wiki_mentions: []
   card_color: '#2d5a4c'
   parents:
   - loc_l_beck_system
-- id: loc_new_idea
+  tags: []
+  start_year: 3983
+  end_year: 24022
+  derived_from: []
+  related: []
+  offspring:
+  - id: loc_manford_harbour
+  entry_status: ''
+- id: loc_western_europe
   pretty_name: Western Europe
   name: Western Europe
   type: location
@@ -3107,9 +3108,21 @@
   location_class: region
   card_color: '#2d5532'
   offspring:
-  - geo_france
+  - id: geo_france
+    offspring:
+      - id: evt_new_001
+      - id: city_paris
+      - id: sf_draft_ecoregions_geo_central_europe_001
+  - id: loc_austria
+    offspring:
+      - id: person_alexander_sascha_van_der_bellen
   parents:
   - geo_europe
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: sf_draft_ecoregions_geo_central_europe_001
   pretty_name: France Ecoregion
   name: France Ecoregion
@@ -3180,7 +3193,6 @@
   wiki_mentions: []
   location_class: stellar_system
   location_role: star_system
-  card_color: '#686d49'
 - id: body_rhea
   pretty_name: Rhea
   name: Rhea
@@ -3354,7 +3366,7 @@
   derived_from: []
   entry_status: draft
   wiki_mentions: []
-  location_class: stellar_system
+  location_class: star_system
   location_role: star_system
   card_color: '#4e503b'
 - id: loc_castelli_automobiles_plant
@@ -3479,14 +3491,19 @@
   card_color: '#122426'
   location_class: star_system
   offspring:
-  - loc_hemsbrook_l_beck_system
-  - pop_habil_family_of_l_beck
+  - id: loc_hemsbrook_l_beck_system
+    offspring:
+      - id: loc_manford_harbour
   related:
   - fac_transfer_hansa
   wiki_entry: ''
   wiki_mentions: []
   start_year: 3990
   end_year: 27393
+  tags: []
+  derived_from: []
+  parents: []
+  entry_status: ''
 - id: body_sol
   pretty_name: Sol
   name: Sol
@@ -3556,6 +3573,7 @@
   wiki_entry: ''
   wiki_mentions: []
   offspring:
+  - id: loc_region_loc_akkad_babylon_system_001
   - id: fac_csg_babylon_tribe
   tags: []
   start_year: null
@@ -3572,6 +3590,15 @@
   location_class: site
   wiki_entry: ''
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents:
+  - geo_sweden
+  related: []
+  wiki_mentions: []
+  entry_status: ''
 - id: loc_atlantic_ocean
   pretty_name: Atlantic Ocean
   name: Atlantic Ocean
@@ -3594,14 +3621,21 @@
   wiki_mentions: []
   offspring:
   - id: loc_danube_delta
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents:
+  - loc_eurasia
+  related: []
+  entry_status: ''
 - id: loc_classic_building_2
   pretty_name: Classic Building 2
   name: Classic Building 2
   type: location
   location_class: building
   wiki_entry: ''
-  offspring:
-  - id: loc_room_loc_classic_building_2_001
+  offspring: []
 - id: loc_compost_temple_complex_of_whicker
   pretty_name: Compost Temple Complex of Whicker
   name: Compost Temple Complex of Whicker
@@ -3753,16 +3787,22 @@
   offspring:
   - id: geo_sweden
     offspring:
+      - id: loc_angermansland_grand_carperies
       - id: prod_saab_ab
   parents:
-  - geo_europe
+  - loc_europe
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  related: []
+  entry_status: ''
 - id: loc_shinogo_system
   pretty_name: Shinogo System
   name: Shinogo System
   type: location
   location_class: star_system
-  offspring:
-  - id: loc_noarille
+  offspring: []
   wiki_entry: ''
   wiki_mentions: []
 - id: loc_stutters_steppe
@@ -3784,8 +3824,7 @@
   name: Test Building
   type: location
   wiki_entry: ''
-  offspring:
-  - id: loc_region_loc_test_building_001
+  offspring: []
 - id: loc_test_building_2
   pretty_name: Test Building 2
   name: Test Building 2
@@ -3805,6 +3844,8 @@
   location_class: country
   wiki_entry: ''
   wiki_mentions: []
+  parents:
+  - idea_new_002
   offspring:
   - id: loc_danube_delta
 - id: loc_victoria_state_australia
@@ -3815,9 +3856,15 @@
   location_class: state
   parents:
   - loc_australia
-  wiki_entry: ''
+  wiki_entry: 'Victoria, commonly abbreviated as Vic, is a state in southeastern Australia'
   wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  related: []
+  entry_status: ''
 - id: loc_whicker
   pretty_name: Whicker
   name: Whicker
@@ -3908,7 +3955,7 @@
   - loc_blue_sector
   wiki_mentions: []
   entry_status: ''
-  location_class: system
+  location_class: star_system
   location_role: system
   card_color: '#13172a'
 - id: loc_blue_sector
@@ -3930,11 +3977,366 @@
   parents:
   - planet_earth
   offspring:
-  - id: geo_europe
+  - id: loc_black_sea
     offspring:
-      - id: geo_spain
-        offspring: '[{''id'': ''idea_spanish_contribution_to_the_superpower_wars''}, {''id'': ''city_madrid'', ''offspring'': [{''id'': ''idea_new_013''}]}]'
-      - id: loc_new_idea
-        offspring: '[{''id'': ''geo_france'', ''offspring'': [{''id'': ''evt_new_001''}, {''id'': ''city_paris''}, {''id'': ''sf_draft_ecoregions_geo_central_europe_001''}]}]'
+      - id: loc_danube_delta
+  - id: loc_europe
+    offspring:
+      - id: geo_central_europe
       - id: loc_scandinavia
-        offspring: '[{''id'': ''geo_sweden'', ''offspring'': [{''id'': ''prod_saab_ab''}]}]'
+        offspring: '[{''id'': ''geo_sweden'', ''offspring'': [{''id'': ''loc_angermansland_grand_carperies''}, {''id'': ''prod_saab_ab''}]}]'
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  related: []
+  entry_status: ''
+- id: loc_manford_harbour
+  pretty_name: Manford Harbour
+  name: Manford Harbour
+  type: location
+  location_class: site
+  wiki_mentions: []
+  parents:
+  - loc_hemsbrook_l_beck_system
+  offspring: []
+- id: loc_telly_village
+  pretty_name: Telly Village
+  name: Telly Village
+  type: location
+  location_class: city
+  wiki_mentions: []
+  card_color: '#1c2426'
+  offspring: []
+  parents:
+  - planet_nanhai
+- id: loc_backtome_island
+  pretty_name: Backtome Island
+  name: Backtome Island
+  type: location
+  location_class: continent
+  wiki_mentions: []
+  card_color: '#172626'
+  offspring:
+  - id: loc_crabflats_bioregion
+  related:
+  - planet_nanhai
+- id: loc_crabflats_bioregion
+  pretty_name: Crabflats Bioregion
+  name: Crabflats Bioregion
+  type: location
+  location_class: region
+  wiki_mentions: []
+  parents:
+  - loc_backtome_island
+  offspring: []
+  card_color: '#172526'
+  card_header_color: '#484331'
+  wiki_entry: |
+    Settled with large crustaceans
+- id: loc_austria
+  pretty_name: Austria
+  name: Austria
+  type: location
+  location_class: country
+  wiki_mentions: []
+  parents:
+  - loc_western_europe
+  offspring:
+  - id: person_alexander_sascha_van_der_bellen
+- id: loc_russian_empire
+  pretty_name: Russian Empire
+  name: Russian Empire
+  type: location
+  location_class: country
+  wiki_mentions: []
+  start_year: 1721
+  end_year: 1917
+  offspring:
+  - id: loc_russian_america
+- id: loc_russian_america
+  pretty_name: Russian America
+  name: Russian America
+  type: location
+  location_class: state
+  wiki_mentions: []
+  parents:
+  - loc_russian_empire
+  offspring: []
+  wiki_entry: |
+    Russian Colony of Alaska
+  start_year: 1732
+  end_year: 1867
+- id: loc_fort_ross_sonoma_county_california
+  pretty_name: 'Fort Ross, Sonoma County, California'
+  name: 'Fort Ross, Sonoma County, California'
+  type: location
+  location_class: site
+  wiki_mentions:
+  - loc_russian_america
+  - inst_spanish_missions_in_california
+  related:
+  - loc_russian_america
+  offspring: []
+  parents:
+  - loc_sonoma_county_california
+  tags: []
+  start_year: 1812
+  end_year: 2280
+  derived_from: []
+  entry_status: ''
+  card_color: '#261e1c'
+  wiki_entry: |
+    Former [[loc_russian_america]] establishment.
+    
+    First multi ethnic community north ot the [[inst_spanish_missions_in_california]]
+- id: loc_sonoma_county_california
+  pretty_name: 'Sonoma County, California'
+  name: 'Sonoma County, California'
+  type: location
+  location_class: region
+  wiki_mentions: []
+  offspring:
+  - id: loc_fort_ross_sonoma_county_california
+  parents:
+  - loc_california
+- id: loc_california
+  pretty_name: 'California State, USA'
+  name: 'California State, USA'
+  type: location
+  location_class: state
+  wiki_mentions: []
+  offspring:
+  - id: loc_sonoma_county_california
+    offspring:
+      - id: loc_fort_ross_sonoma_county_california
+  parents:
+  - loc_united_states_of_america
+- id: loc_greater_los_angeles
+  pretty_name: Greater Los Angeles
+  name: Greater Los Angeles
+  type: location
+  location_class: region
+  wiki_mentions: []
+  parents:
+  - loc_united_states_of_america
+  offspring: []
+- id: loc_europe
+  pretty_name: Europe
+  name: Europe
+  type: location
+  derived_from:
+  - geo_europe
+  offspring:
+  - id: geo_central_europe
+  - id: loc_scandinavia
+    offspring:
+      - id: geo_sweden
+        offspring: '[{''id'': ''loc_angermansland_grand_carperies''}, {''id'': ''prod_saab_ab''}]'
+  wiki_mentions: []
+  end_year: null
+  parents:
+  - loc_eurasia
+  tags: []
+  related: []
+  start_year: null
+  entry_status: ''
+  location_class: region
+- id: sf_draft_settlement_extent_planet_earth_001
+  pretty_name: Draft Settlement Extent Selection 001
+  name: Draft Settlement Extent Selection 001
+  type: location
+  wiki_entry: Draft polygon created from the Settlement Extent map layer under Earth.
+  layer_kind: settlement_extent
+  parent_entity: planet_earth
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - '[37.142, -17.392]'
+      - '[3.832, -40.974]'
+      - '[-22.993, -24.761]'
+      - '[-35.963, 3.537]'
+      - '[20.045, 27.709]'
+      - '[55.713, 0.295]'
+      - '[46.28, -9.138]'
+  start_year: 3746
+  entry_status: draft
+  tags: []
+  end_year: null
+  derived_from: []
+  parents: []
+  related: []
+  wiki_mentions: []
+  offspring: []
+  location_class: region
+  location_role: map_region
+  region_class: settlement_extent
+  parent_location: planet_earth
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - '[37.142, -17.392]'
+      - '[3.832, -40.974]'
+      - '[-22.993, -24.761]'
+      - '[-35.963, 3.537]'
+      - '[20.045, 27.709]'
+      - '[55.713, 0.295]'
+      - '[46.28, -9.138]'
+- id: loc_des_1_underways
+  pretty_name: DES-1 "Underways"
+  name: DES-1 "Underways"
+  type: location
+  location_class: city
+  wiki_mentions:
+  - idea_deep_earth_storage
+  - city_cog
+  - inst_project_deep_sleep
+  - inst_ggo_engineering_group_14_earthworking_mining
+  wiki_entry: |
+    The [[idea_deep_earth_storage]] under the [[city_cog]]. Part of [[inst_project_deep_sleep]].
+    
+    
+    Tunneled by [[inst_ggo_engineering_group_14_earthworking_mining]].
+  offspring: []
+  card_color: '#261e1c'
+- id: loc_bavaria
+  pretty_name: Bavaria
+  name: Bavaria
+  type: location
+  three_word_description: ''
+  location_class: region
+  wiki_mentions: []
+  parents:
+  - geo_germany
+  offspring: []
+  card_color: '#2f76ef'
+  card_header_color: '#efe5e5'
+  wiki_field_colors:
+    intro: '#cdc9c9'
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  related: []
+  entry_status: ''
+  parent_location: geo_germany
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - '(6.614319010262003, -47.374638028898104)'
+      - '(6.2956196230910635, -49.286834351923744)'
+      - '(7.6194478467241975, -50.88033128777844)'
+      - '(10.634834356110781, -51.00290797515188)'
+      - '(11.55415951141157, -47.96300612829061)'
+      - '(9.813570550708745, -47.46044171005951)'
+
+# ---------- loc_region_loc_akkad_babylon_system_001 | Draft Regions Region 001 ----------
+- id: loc_region_loc_akkad_babylon_system_001
+  pretty_name: 'Draft Regions Region 001'
+  name: 'Draft Regions Region 001'
+  type: location
+  location_class: region
+  location_role: map_region
+  region_class: regions
+  layer_kind: regions
+  parent_location: loc_akkad_babylon_system
+  parent_entity: loc_akkad_babylon_system
+  parents:
+    - loc_akkad_babylon_system
+  wiki_entry: 'Draft region polygon created under Akkad, Babylon System.'
+  bounds:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-1565.57, -42.313]
+      - [-1191.265, -634.69]
+      - [-582.613, -677.003]
+      - [-328.737, -888.567]
+      - [117.174, -963.427]
+      - [511.007, -849.509]
+      - [764.883, -686.768]
+      - [1005.74, -716.061]
+      - [1246.597, -716.061]
+      - [1409.338, -400.343]
+      - [1357.261, -244.112]
+      - [1158.717, -78.116]
+      - [771.393, -6.51]
+      - [690.022, 227.838]
+      - [722.571, 410.108]
+      - [650.964, 556.575]
+      - [540.301, 488.223]
+      - [514.262, 387.324]
+      - [416.617, 331.992]
+      - [296.189, 364.54]
+      - [231.092, 432.891]
+      - [123.683, 563.084]
+      - [-26.039, 608.652]
+      - [-146.467, 602.142]
+      - [-84.625, 556.575]
+      - [-117.174, 504.497]
+      - [-208.309, 426.382]
+      - [-179.015, 348.266]
+      - [-149.722, 318.973]
+      - [-188.78, 289.679]
+      - [-250.621, 279.915]
+      - [-325.482, 335.247]
+      - [-305.953, 423.127]
+  geometry:
+    type: polygon
+    coordinate_space: map_world
+    points:
+      - [-1565.57, -42.313]
+      - [-1191.265, -634.69]
+      - [-582.613, -677.003]
+      - [-328.737, -888.567]
+      - [117.174, -963.427]
+      - [511.007, -849.509]
+      - [764.883, -686.768]
+      - [1005.74, -716.061]
+      - [1246.597, -716.061]
+      - [1409.338, -400.343]
+      - [1357.261, -244.112]
+      - [1158.717, -78.116]
+      - [771.393, -6.51]
+      - [690.022, 227.838]
+      - [722.571, 410.108]
+      - [650.964, 556.575]
+      - [540.301, 488.223]
+      - [514.262, 387.324]
+      - [416.617, 331.992]
+      - [296.189, 364.54]
+      - [231.092, 432.891]
+      - [123.683, 563.084]
+      - [-26.039, 608.652]
+      - [-146.467, 602.142]
+      - [-84.625, 556.575]
+      - [-117.174, 504.497]
+      - [-208.309, 426.382]
+      - [-179.015, 348.266]
+      - [-149.722, 318.973]
+      - [-188.78, 289.679]
+      - [-250.621, 279.915]
+      - [-325.482, 335.247]
+      - [-305.953, 423.127]
+  start_year: 2400
+  entry_status: draft
+- id: sys_belmont
+  pretty_name: Belmont System
+  name: Belmont System
+  type: location
+  system_role: ''
+  wiki_entry: ''
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents: []
+  related: []
+  wiki_mentions: []
+  entry_status: ''
+  location_class: system
+  location_role: system

@@ -391,18 +391,23 @@ class UIManager:
         if active_sim is None:
             return
 
-        time_info = self._format_sim_time(active_sim)
-        self.timeline_fraction = time_info["timeline_fraction"]
-
-        self.time_lines = [
-            f"Year {time_info['year']} | Day {time_info['day_of_year']}",
-            f"{time_info['hours']:02d}:{time_info['minutes']:02d} | Tick {active_sim.sim_clock.tick}",
-            f"Time Scale x{active_sim.sim_clock.time_scale:.2f}",
-        ]
-
         render_mode = getattr(active_sim, "render_mode", None)
+        show_time_ui = bool(getattr(active_sim, "show_time_ui", True))
 
-        if camera is not None:
+        if show_time_ui:
+            time_info = self._format_sim_time(active_sim)
+            self.timeline_fraction = time_info["timeline_fraction"]
+
+            self.time_lines = [
+                f"Year {time_info['year']} | Day {time_info['day_of_year']}",
+                f"{time_info['hours']:02d}:{time_info['minutes']:02d} | Tick {active_sim.sim_clock.tick}",
+                f"Time Scale x{active_sim.sim_clock.time_scale:.2f}",
+            ]
+        else:
+            self.timeline_fraction = 0.0
+            self.time_lines = []
+
+        if show_time_ui and camera is not None:
             mouse_x, mouse_y = pygame.mouse.get_pos()
             world_x = (mouse_x - app_width / 2) / camera.zoom + camera.x
             world_y = (mouse_y - app_height / 2) / camera.zoom + camera.y
@@ -894,7 +899,7 @@ class UIManager:
             return
 
         panel_w = 320
-        panel_h = 268 if self.system_settings_active else 236
+        panel_h = 380 if self.system_settings_active else 236
         panel_x = (app_width - panel_w) // 2
         panel_y = (app_height - panel_h) // 2
         self.system_menu_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
@@ -906,10 +911,17 @@ class UIManager:
         gap = 14
 
         if self.system_settings_active:
+            clade_count = getattr(self.knowledge_ui, "phylogeny_clade_member_count", 3)
+            species_count = getattr(self.knowledge_ui, "phylogeny_species_relative_count", 4)
+            half_w = (button_w - gap) // 2
             self.system_menu_buttons.extend([
                 UIButton("system_toggle_grid", "Toggle Grid", pygame.Rect(button_x, button_y, button_w, button_h)),
                 UIButton("system_toggle_fps", "Toggle FPS", pygame.Rect(button_x, button_y + (button_h + gap), button_w, button_h)),
-                UIButton("system_menu_back", "Back", pygame.Rect(button_x, button_y + (button_h + gap) * 2, button_w, button_h)),
+                UIButton("phylogeny_clade_members_dec", f"Clade - ({clade_count})", pygame.Rect(button_x, button_y + (button_h + gap) * 2, half_w, button_h)),
+                UIButton("phylogeny_clade_members_inc", "Clade +", pygame.Rect(button_x + half_w + gap, button_y + (button_h + gap) * 2, half_w, button_h)),
+                UIButton("phylogeny_species_relatives_dec", f"Species - ({species_count})", pygame.Rect(button_x, button_y + (button_h + gap) * 3, half_w, button_h)),
+                UIButton("phylogeny_species_relatives_inc", "Species +", pygame.Rect(button_x + half_w + gap, button_y + (button_h + gap) * 3, half_w, button_h)),
+                UIButton("system_menu_back", "Back", pygame.Rect(button_x, button_y + (button_h + gap) * 4, button_w, button_h)),
             ])
             return
 
@@ -1208,7 +1220,7 @@ class UIManager:
         pygame.draw.rect(screen, (210, 210, 210), self.system_menu_rect, 1)
 
         title = "Settings" if self.system_settings_active else "Menu"
-        subtitle = "Display options" if self.system_settings_active else "Simulation paused"
+        subtitle = "Display / phylogeny options" if self.system_settings_active else "Simulation paused"
         title_surface = font.render(title, True, (245, 245, 245))
         subtitle_surface = font.render(subtitle, True, (175, 175, 180))
         screen.blit(title_surface, (self.system_menu_rect.x + 22, self.system_menu_rect.y + 20))

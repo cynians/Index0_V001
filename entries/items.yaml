@@ -12,8 +12,7 @@
   - stackable
   - palletizable
   - containerizable
-  handling_notes: Commonly stored in stacks or on pallets; exact containerization
-    depends on later logistics systems.
+  handling_notes: Commonly stored in stacks or on pallets; exact containerization depends on later logistics systems.
   default_state: loose
   portable: limited
   placeable: true
@@ -30,6 +29,8 @@
   tags: []
   end_year: null
   derived_from: []
+  wiki_mentions: []
+  card_color: '#3e4048'
 - id: item_pump_module
   pretty_name: Pump Module
   name: Pump Module
@@ -113,3 +114,17 @@
   - loc_acapulco_system
   - mkt_planetary_period_markets
   offspring: []
+- id: item_petri_dish
+  pretty_name: Petri Dish
+  name: Petri Dish
+  type: item
+  wiki_mentions: []
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents: []
+  related: []
+  entry_status: ''
+  card_color: '#9196aa'

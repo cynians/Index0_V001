@@ -21,6 +21,10 @@ class CameraController:
             self.camera.x = cx
             self.camera.y = cy
 
+        if hasattr(sim, "get_initial_camera_zoom"):
+            self.camera.zoom = sim.get_initial_camera_zoom(self.screen_w, self.screen_h)
+            return
+
         preferred_zoom = getattr(sim, "preferred_zoom", None)
         if preferred_zoom is not None:
             self.camera.zoom = preferred_zoom
@@ -41,6 +45,9 @@ class CameraController:
 
         # No hard zoom clamping here anymore.
         # Only positional bounds remain, if a simulation explicitly defines them.
+        if getattr(sim, "free_camera_pan", False):
+            return
+
         if hasattr(sim, "bounds"):
             half_w = self.screen_w / (2 * self.camera.zoom)
             half_h = self.screen_h / (2 * self.camera.zoom)

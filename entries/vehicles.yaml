@@ -2,7 +2,7 @@
   pretty_name: Fletcher-class Destroyer
   name: Fletcher-class Destroyer
   type: vehicle
-  vehicle_class: fleet_destroyer
+  vehicle_class: naval_vessel
   produced_by: []
   uses_technology: []
   operated_by: []
@@ -79,7 +79,7 @@
   pretty_name: D-48 Gun
   name: D-48 Gun
   type: vehicle
-  vehicle_class: towed_anti_tank_gun
+  vehicle_class: ground_vehicle
   produced_by: []
   uses_technology: []
   operated_by: []
@@ -148,10 +148,8 @@
   pretty_name: LuAZ-967
   name: LuAZ-967
   type: vehicle
-  vehicle_class: amphibious_front_line_transport
+  vehicle_class: ground_vehicle
   vehicle_class_parents:
-  - utility_vehicle
-  - road_vehicle
   - ground_vehicle
   - vehicle
   required_categories:
@@ -224,7 +222,7 @@
   pretty_name: F-22 Raptor
   name: F-22 Raptor
   type: vehicle
-  vehicle_class: stealth_air_dominance_fighter
+  vehicle_class: aircraft
   produced_by: []
   uses_technology: []
   operated_by: []
@@ -297,7 +295,7 @@
   pretty_name: Panamericana Q3N Stormpetrel
   name: Panamericana Q3N Stormpetrel
   type: vehicle
-  vehicle_class: naval_combat_drone
+  vehicle_class: naval_vessel
   produced_by: []
   uses_technology: []
   operated_by: []
@@ -356,7 +354,7 @@
   name: MDV-3
   type: vehicle
   idea_reference: IDEA-496
-  vehicle_class: interplanetary_cargo_transport
+  vehicle_class: system_spacecraft
   produced_by: []
   uses_technology: []
   operated_by: []
@@ -401,7 +399,7 @@
   name: Taltos-class Mars Cargo Lander
   type: vehicle
   idea_reference: IDEA-502
-  vehicle_class: mars_cargo_lander
+  vehicle_class: planetary_spacecraft
   produced_by: []
   uses_technology: []
   operated_by: []
@@ -419,15 +417,15 @@
   - modular_aerodynamic_configuration
   component_layout_stub:
     major_component_groups:
-    - cargo_hold
-    - main_descent_propulsion
-    - reaction_control_system
-    - detachable_lifting_wing_mounts
-    - landing_gear
-    - avionics_and_guidance
-    - power_and_support_systems
+      - cargo_hold
+      - main_descent_propulsion
+      - reaction_control_system
+      - detachable_lifting_wing_mounts
+      - landing_gear
+      - avionics_and_guidance
+      - power_and_support_systems
     configurable_groups:
-    - detachable_lifting_wings
+      - detachable_lifting_wings
   payload_capacity_t: 45
   service_life_cycles: 50
   tags:
@@ -442,20 +440,20 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
+  wiki_entry: |
     Reusable Mars orbit-to-surface cargo lander used during the Race for Sol for freight delivery between orbital logistics hubs and surface landing pads.
     
     The class is built around repeated cargo descent and unloading operations on Mars. The design uses detachable modular lifting wings that can be removed and remounted in reversed orientation depending on mission profile and servicing state.
   end_year: null
   derived_from: []
+  wiki_mentions: []
+  card_color: '#201111'
 - id: veh_conviction_c1
   pretty_name: Conviction C1
   name: Conviction C1
   type: vehicle
-  vehicle_class: compact_grand_touring_convertible
+  vehicle_class: ground_vehicle
   vehicle_class_parents:
-  - car
-  - road_vehicle
   - ground_vehicle
   - vehicle
   required_categories:
@@ -509,7 +507,7 @@
   pretty_name: Unicorn Class Communications Cruiser
   name: Unicorn Class Communications Cruiser
   type: vehicle
-  vehicle_class: communications_cruiser
+  vehicle_class: system_spacecraft
   produced_by: []
   uses_technology: []
   operated_by: []
@@ -566,7 +564,7 @@
   pretty_name: Bospor 3 "Regolith"
   name: Bospor 3 "Regolith"
   type: vehicle
-  vehicle_class: suv
+  vehicle_class: ground_vehicle
   manufacturer_name: Bospor Automat
   dimension_x_m: 4.8
   dimension_y_m: 1.9
@@ -626,10 +624,8 @@
   name: Octa 35P
   type: vehicle
   idea_reference: IDEA-364
-  vehicle_class: urban_taxi
+  vehicle_class: ground_vehicle
   vehicle_class_parents:
-  - car
-  - road_vehicle
   - ground_vehicle
   - vehicle
   required_categories:
@@ -841,4 +837,13 @@
   - fac_transfer_hansa
   wiki_entry: ''
   wiki_mentions: []
+  offspring: []
+- id: veh_apparat_golem
+  pretty_name: Apparat Golem
+  name: Apparat Golem
+  type: vehicle
+  wiki_mentions: []
+  card_color: '#c4cf81'
+  wiki_entry: |
+    Exoskeleton for Eastern European Jewish Culturals
   offspring: []

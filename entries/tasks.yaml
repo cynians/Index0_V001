@@ -14,10 +14,6 @@
   pretty_name: Timeline T Button Edit Selection Update
   name: Timeline T Button Edit Selection Update
   type: task
-- id: task_new_002
-  pretty_name: New Task Button Upper Right
-  name: New Task
-  type: task
 - id: task_new_004
   pretty_name: Merge System and Locations in one System
   name: Merge System and Locations in one System
@@ -190,3 +186,14 @@
   type: task
   wiki_entry: ''
   offspring: []
+- id: task_add_hierarchy_to_vehicle_repository_browser
+  pretty_name: Add hierarchy to Vehicle Repository Browser
+  name: Add hierarchy to Vehicle Repository Browser
+  type: task
+  entry_status: incomplete
+  checklist:
+  - text: Represent Known Serial Numbers.
+    done: false
+  - text: Families of Vehicles
+    done: false
+  wiki_mentions: []

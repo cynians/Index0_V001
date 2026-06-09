@@ -174,7 +174,60 @@
   pretty_name: Project Deep Sleep
   name: Project Deep Sleep
   type: institution
-  wiki_mentions: []
+  wiki_mentions:
+  - fac_ggo_hegemony
+  - idea_deep_earth_storage
+  - loc_des_1_underways
   related:
   - idea_deep_earth_storage
+  - inst_ggop
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents: []
+  entry_status: ''
+  wiki_entry: |
+    ! General
+    
+    Project Deep Sleep orginated from the concern that centralization was a positive movement as a whole from a whole [[fac_ggo_hegemony]] perspective, however also put all eggs in one basekt.
+    
+    In order to counter the potential for civilizational collapse due to a compromization of the central location, most wares produced by the GGOfoudn themselves present in [[idea_deep_earth_storage]] facilities.
+    
+    ! DES Sites
+    !! [[loc_des_1_underways]]
+  card_color: '#1b1005'
+- id: inst_ggo_engineering_group_14_earthworking_mining
+  pretty_name: 'GGO Engineering Group 14 - Earthworking, Mining'
+  name: 'GGO Engineering Group 14 - Earthworking, Mining'
+  type: institution
+  wiki_mentions: []
+  related:
+  - loc_des_1_underways
+  - inst_project_deep_sleep
+  - fac_ggo_hegemony
+  offspring: []
+- id: inst_spanish_missions_in_california
+  pretty_name: Spanish Missions in California
+  name: Spanish Missions in California
+  type: institution
+  wiki_mentions: []
+  wiki_entry: null
+  offspring: []
+  start_year: 1769
+  end_year: 1833
+  related:
+  - loc_fort_ross_sonoma_county_california
+- id: inst_cog_commodity_quarters
+  pretty_name: CoG Commodity Quarters
+  name: CoG Commodity Quarters
+  type: institution
+  wiki_mentions: []
+  offspring: []
+- id: inst_ggo_engineering_groups
+  pretty_name: GGO Engineering Groups
+  name: GGO Engineering Groups
+  type: institution
+  wiki_mentions: []
   offspring: []

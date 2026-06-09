@@ -273,11 +273,50 @@ class MapSimulation:
             return self.context.root_entity_id
         return root_entity.get("name", self.context.root_entity_id)
 
+    def _relation_entity_ids(self, value):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, dict):
+            candidate = value.get("id") or value.get("entity_id") or value.get("target")
+            return [candidate] if candidate else []
+        if isinstance(value, (list, tuple, set)):
+            ids = []
+            for item in value:
+                ids.extend(self._relation_entity_ids(item))
+            return ids
+        return []
+
+    def _structural_parent_location_id(self, entity):
+        if not isinstance(entity, dict):
+            return None
+
+        entity_id = entity.get("id")
+        for field_key in ("parent_location", "parent_entity", "parent_body"):
+            for parent_id in self._relation_entity_ids(entity.get(field_key)):
+                parent = self.world_model.get_entity(parent_id)
+                if parent_id and parent_id != entity_id and self._is_location_entity(parent):
+                    return parent_id
+
+        for parent_id in self._relation_entity_ids(entity.get("parents")):
+            parent = self.world_model.get_entity(parent_id)
+            if parent_id and parent_id != entity_id and self._is_location_entity(parent):
+                return parent_id
+
+        return None
+
+    def _is_location_entity(self, entity):
+        return isinstance(entity, dict) and (
+            entity.get("_dataset") == "locations"
+            or entity.get("type") == "location"
+        )
+
     def get_parent_root_entity_id(self):
         root_entity = self.get_root_entity()
         if not root_entity:
             return None
-        return root_entity.get("parent_location")
+        return self._structural_parent_location_id(root_entity)
 
     def get_scope_breadcrumb(self):
         """
@@ -295,7 +334,7 @@ class MapSimulation:
             visited.add(entity_id)
             breadcrumb.append(current_entity.get("name", entity_id))
 
-            parent_id = current_entity.get("parent_location")
+            parent_id = self._structural_parent_location_id(current_entity)
             if not parent_id:
                 break
 
@@ -492,6 +531,10 @@ class MapSimulation:
         }
 
     def _color_for_entity(self, entity):
+        card_color = self._coerce_hex_color(entity.get("card_color"))
+        if card_color is not None:
+            return card_color
+
         location_class = entity.get("location_class")
 
         if location_class == "planet":
@@ -516,6 +559,19 @@ class MapSimulation:
             return (132, 178, 196)
 
         return (200, 200, 200)
+
+    def _coerce_hex_color(self, value):
+        if not isinstance(value, str):
+            return None
+        text = value.strip()
+        if text.startswith("#"):
+            text = text[1:]
+        if len(text) != 6:
+            return None
+        try:
+            return tuple(int(text[index:index + 2], 16) for index in (0, 2, 4))
+        except ValueError:
+            return None
 
     def _map_point_to_world(self, x, y):
         """
@@ -551,6 +607,24 @@ class MapSimulation:
             return self.LAYER_LABELS[layer_kind]
 
         return str(layer_kind).replace("_", " ").title()
+
+    def get_initial_camera_zoom(self, screen_w, screen_h):
+        bounds = getattr(self, "bounds", None) or {}
+        try:
+            world_w = abs(float(bounds["max_x"]) - float(bounds["min_x"]))
+            world_h = abs(float(bounds["max_y"]) - float(bounds["min_y"]))
+        except (KeyError, TypeError, ValueError):
+            return self.preferred_zoom
+
+        if world_w <= 0 or world_h <= 0:
+            return self.preferred_zoom
+
+        usable_w = max(120.0, float(screen_w) * 0.72)
+        usable_h = max(120.0, float(screen_h) * 0.62)
+        padding = 1.18 if self.is_placing_location_polygon else 1.32
+        zoom = min(usable_w / (world_w * padding), usable_h / (world_h * padding))
+        zoom = max(float(self.min_zoom), min(float(self.max_zoom), zoom))
+        return zoom
 
     def get_active_layer_kind(self):
         available = self.get_available_layer_kinds()
@@ -1076,7 +1150,7 @@ class MapSimulation:
         if location.get("type") != "location":
             return False
 
-        parent_location = location.get("parent_location")
+        parent_location = self._structural_parent_location_id(location)
         if parent_location != self.context.root_entity_id:
             return False
 
@@ -1111,7 +1185,7 @@ class MapSimulation:
         current = self.world_model.get_entity(parent_location_id)
         while current:
             current_id = current.get("id")
-            parent_id = current.get("parent_location")
+            parent_id = self._structural_parent_location_id(current)
             if not parent_id or parent_id in visited:
                 break
 
@@ -3447,8 +3521,12 @@ class MapSimulation:
             if layer is not None:
                 layer["is_ghost_context"] = True
                 layer["pickable"] = False
-                layer["alpha"] = 34 if index < len(context_entities) - 1 else 52
-                layer["border_alpha"] = 98 if index < len(context_entities) - 1 else 132
+                if self.is_placing_location_polygon:
+                    layer["alpha"] = 4 if index < len(context_entities) - 1 else 10
+                    layer["border_alpha"] = 72 if index < len(context_entities) - 1 else 118
+                else:
+                    layer["alpha"] = 34 if index < len(context_entities) - 1 else 52
+                    layer["border_alpha"] = 98 if index < len(context_entities) - 1 else 132
                 layer["name"] = self._label_for_entity(entity)
                 layers.append(layer)
 
@@ -3486,8 +3564,8 @@ class MapSimulation:
                 layer["is_ghost_context"] = True
                 layer["is_ghost_sister"] = True
                 layer["pickable"] = False
-                layer["alpha"] = 24
-                layer["border_alpha"] = 86
+                layer["alpha"] = 0 if self.is_placing_location_polygon else 24
+                layer["border_alpha"] = 52 if self.is_placing_location_polygon else 86
                 layer["name"] = self._label_for_entity(entity)
                 layers.append(layer)
 
@@ -3593,22 +3671,31 @@ class MapSimulation:
         if not self.is_placing_location_polygon:
             return layers
 
-        colors = [
-            (82, 98, 122),
-            (68, 82, 104),
-            (56, 68, 88),
-        ]
+        context_ids = {
+            entity.get("id")
+            for entity in self._map_context_entities()
+            if isinstance(entity, dict) and entity.get("id")
+        }
+
         for index, entity_id in enumerate(reversed(self.placement_ancestor_entity_ids)):
+            if entity_id in context_ids:
+                continue
             entity = self.get_location(entity_id)
             if not entity:
                 continue
             layer = self._build_location_bounds_layer(
                 entity,
-                colors[min(index, len(colors) - 1)],
+                self._color_for_entity(entity),
                 draw_order=-100 - index,
                 virtual=True,
             )
             if layer is not None:
+                layer["is_ghost_context"] = True
+                layer["is_placement_ancestor"] = True
+                layer["pickable"] = False
+                layer["alpha"] = 0
+                layer["border_alpha"] = 118
+                layer["name"] = self._label_for_entity(entity)
                 layers.append(layer)
         return layers
 

@@ -2,7 +2,7 @@
   pretty_name: Pump Module
   name: Pump Module
   type: component
-  component_class: fluid_system_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials:
   - mat_copper_alloy
@@ -33,7 +33,7 @@
   pretty_name: Storage Rack
   name: Storage Rack
   type: component
-  component_class: storage_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: item_storage_rack
@@ -61,7 +61,7 @@
   pretty_name: Inline Engine
   name: Inline Engine
   type: component
-  component_class: engine_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials:
   - mat_copper_alloy
@@ -108,7 +108,7 @@
   pretty_name: V-Block Engine
   name: V-Block Engine
   type: component
-  component_class: engine_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials:
   - mat_copper_alloy
@@ -157,7 +157,7 @@
   pretty_name: Conviction C1 Touring Body
   name: Conviction C1 Touring Body
   type: assembly
-  component_class: vehicle_body_component
+  component_class: component
   primary_material: null
   secondary_materials: []
   represented_item: null
@@ -208,7 +208,7 @@
   pretty_name: Conviction C1 Open Roof Assembly
   name: Conviction C1 Open Roof Assembly
   type: assembly
-  component_class: roof_system_component
+  component_class: component
   primary_material: null
   secondary_materials: []
   represented_item: null
@@ -230,8 +230,7 @@
   - retractable_or_foldable_roof_system
   - touring_weather_cover
   - refined_open_top_operation
-  maintenance_notes: Roof seals, hinge points, and folding mechanisms should be maintained
-    to preserve quiet cruising quality and open-top usability.
+  maintenance_notes: 'Roof seals, hinge points, and folding mechanisms should be maintained to preserve quiet cruising quality and open-top usability.'
   dimension_x_m: 1.75
   dimension_y_m: 1.48
   dimension_z_m: 0.32
@@ -247,17 +246,18 @@
   start_year: 3184
   entry_status: draft
   parents: []
-  related: []
+  related:
+  - veh_conviction_c1
   offspring: []
-  wiki_entry: |-
-    Convertible roof assembly for the Conviction C1, intended to preserve the car's refined touring character in both open and closed configurations.
+  wiki_entry: 'Convertible roof assembly for the Conviction C1, intended to preserve the car''s refined touring character in both open and closed configurations.'
   end_year: null
   derived_from: []
+  wiki_mentions: []
 - id: asm_conviction_c1_grand_touring_drive_unit
   pretty_name: Conviction C1 Grand Touring Drive Unit
   name: Conviction C1 Grand Touring Drive Unit
   type: assembly
-  component_class: drive_system_component
+  component_class: component
   primary_material: null
   secondary_materials: []
   represented_item: null
@@ -308,7 +308,7 @@
   pretty_name: LuAZ-967 Watertight Hull Tub
   name: LuAZ-967 Watertight Hull Tub
   type: assembly
-  component_class: hull_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
@@ -360,7 +360,7 @@
   pretty_name: Light Vehicle Floor Tub Shell
   name: Light Vehicle Floor Tub Shell
   type: component
-  component_class: body_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
@@ -406,7 +406,7 @@
   pretty_name: Light Vehicle Bow Nose Panel Set
   name: Light Vehicle Bow Nose Panel Set
   type: component
-  component_class: body_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
@@ -454,7 +454,7 @@
   pretty_name: Light Vehicle Rear Body Closure Set
   name: Light Vehicle Rear Body Closure Set
   type: component
-  component_class: body_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
@@ -500,7 +500,7 @@
   pretty_name: Light Vehicle Structural Reinforcement Set
   name: Light Vehicle Structural Reinforcement Set
   type: component
-  component_class: frame_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
@@ -545,7 +545,7 @@
   pretty_name: Light Vehicle Access Cover Frame Set
   name: Light Vehicle Access Cover Frame Set
   type: component
-  component_class: body_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
@@ -590,7 +590,7 @@
   pretty_name: Pressed Steel Floor Pan
   name: Pressed Steel Floor Pan
   type: component
-  component_class: body_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
@@ -627,7 +627,7 @@
   pretty_name: Pressed Steel Sidewall Panel
   name: Pressed Steel Sidewall Panel
   type: component
-  component_class: body_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
@@ -662,7 +662,7 @@
   pretty_name: Pressed Steel Wheelhouse Inner Panel
   name: Pressed Steel Wheelhouse Inner Panel
   type: component
-  component_class: body_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
@@ -697,7 +697,7 @@
   pretty_name: Hull Corner Closing Plate
   name: Hull Corner Closing Plate
   type: component
-  component_class: body_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
@@ -734,7 +734,7 @@
   pretty_name: Pressed Steel Bow Plate
   name: Pressed Steel Bow Plate
   type: component
-  component_class: body_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
@@ -769,7 +769,7 @@
   pretty_name: Pressed Steel Front Side Panel
   name: Pressed Steel Front Side Panel
   type: component
-  component_class: body_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
@@ -806,7 +806,7 @@
   pretty_name: Light Bracket Set
   name: Light Bracket Set
   type: component
-  component_class: frame_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
@@ -837,46 +837,11 @@
   offspring: []
   end_year: null
   derived_from: []
-- id: comp_pressed_steel_rear_panel
-  pretty_name: Pressed Steel Rear Panel
-  name: Pressed Steel Rear Panel
-  type: component
-  component_class: body_component
-  primary_material: mat_stainless_steel
-  secondary_materials: []
-  represented_item: null
-  install_contexts:
-  - vehicle
-  functional_roles:
-  - rear_surface
-  - structural_panel
-  requires_technology: []
-  descriptive_capabilities:
-  - pressed_sheet_part
-  - weldable
-  maintenance_notes: Inspect for cargo-edge damage and seam separation.
-  dimension_x_m: 0.4
-  dimension_y_m: 1.08
-  dimension_z_m: 0.05
-  mass_kg: 6.5
-  power_kw: 0.0
-  tags:
-  - component
-  - vehicle
-  - rear_panel
-  - pressed_panel
-  start_year: null
-  entry_status: draft
-  parents: []
-  related: []
-  offspring: []
-  end_year: null
-  derived_from: []
 - id: comp_pressed_steel_upper_rear_edge_panel
   pretty_name: Pressed Steel Upper Rear Edge Panel
   name: Pressed Steel Upper Rear Edge Panel
   type: component
-  component_class: body_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
@@ -911,7 +876,7 @@
   pretty_name: Mounting Bracket Set
   name: Mounting Bracket Set
   type: component
-  component_class: frame_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
@@ -948,7 +913,7 @@
   pretty_name: Suspension Mount Reinforcement Plate
   name: Suspension Mount Reinforcement Plate
   type: component
-  component_class: frame_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
@@ -983,7 +948,7 @@
   pretty_name: Crossmember Section
   name: Crossmember Section
   type: component
-  component_class: frame_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
@@ -1018,7 +983,7 @@
   pretty_name: Tow Point Reinforcement Block
   name: Tow Point Reinforcement Block
   type: component
-  component_class: frame_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
@@ -1055,7 +1020,7 @@
   pretty_name: Seat and Load Mount Plate
   name: Seat and Load Mount Plate
   type: component
-  component_class: frame_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
@@ -1091,7 +1056,7 @@
   pretty_name: Hatch Frame Ring
   name: Hatch Frame Ring
   type: component
-  component_class: body_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
@@ -1126,7 +1091,7 @@
   pretty_name: Cover Hinge Bracket
   name: Cover Hinge Bracket
   type: component
-  component_class: frame_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null
@@ -1163,7 +1128,7 @@
   pretty_name: Sealing Flange Strip
   name: Sealing Flange Strip
   type: component
-  component_class: body_component
+  component_class: component
   primary_material: mat_stainless_steel
   secondary_materials: []
   represented_item: null

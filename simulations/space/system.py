@@ -162,7 +162,10 @@ class CelestialSystem:
         if (
             body_entity.get("_dataset") == "locations"
             and body_entity.get("type") == "location"
-            and body_entity.get("location_class") in {"planet", "moon", "dwarf_planet", "asteroid"}
+            and (
+                body_entity.get("location_class") in {"planet", "moon"}
+                or body_entity.get("body_class") in {"planet", "moon", "dwarf_planet", "asteroid"}
+            )
         ):
             return body_entity.get("location_entity") or body_entity.get("id"), False
 
