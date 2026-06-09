@@ -153,6 +153,11 @@ class EntityLoader:
             "argument_of_periapsis_deg",
             "mean_anomaly_deg_at_epoch",
             "display_color",
+            "star_class",
+            "spectral_class",
+            "luminosity_solar",
+            "habitable_zone_inner_au",
+            "habitable_zone_outer_au",
         ]
 
         for system_entity in list(system_entities):

@@ -3802,9 +3802,18 @@
   name: Shinogo System
   type: location
   location_class: star_system
-  offspring: []
+  offspring:
+  - id: loc_noarille
   wiki_entry: ''
   wiki_mentions: []
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents: []
+  related: []
+  entry_status: ''
+  card_color: '#523e65'
 - id: loc_stutters_steppe
   pretty_name: Stutters Steppe
   name: Stutters Steppe
@@ -3940,11 +3949,12 @@
   system_role: ''
   wiki_entry: ''
   offspring:
+  - id: fac_house_egibi_of_the_babylon_system
+  - id: fac_csg_babylon_tribe
   - id: loc_akkad_babylon_system
     offspring:
       - id: fac_csg_babylon_tribe
-  - id: fac_house_egibi_of_the_babylon_system
-  - id: fac_csg_babylon_tribe
+      - id: loc_region_loc_akkad_babylon_system_001
   tags: []
   start_year: 8333
   end_year: 12700
@@ -3958,6 +3968,11 @@
   location_class: star_system
   location_role: system
   card_color: '#13172a'
+  stellar_neighbours:
+  - system: system_baas_system
+    distance_ly: 4.2
+  - system: system_klaas_system
+    distance_ly: 7.2
 - id: loc_blue_sector
   pretty_name: Blue Sector
   name: Blue Sector
@@ -3965,9 +3980,15 @@
   location_class: cluster
   wiki_mentions: []
   card_color: '#162758'
-  offspring: []
+  offspring:
+  - id: system_hibuz_system
   start_year: 9559
   end_year: 20777
+  tags: []
+  derived_from: []
+  parents: []
+  related: []
+  entry_status: ''
 - id: loc_eurasia
   pretty_name: Eurasia
   name: Eurasia
@@ -4340,3 +4361,263 @@
   entry_status: ''
   location_class: system
   location_role: system
+- id: star_baas_system_primary
+  pretty_name: Baas System Primary
+  name: Baas System Primary
+  type: location
+  card_color: '#7d5b3b'
+  display_color:
+  - 255
+  - 210
+  - 161
+  location_class: star
+  location_role: orbital_body
+  luminosity_solar: 0.4
+  mass_kg: 1.391929e+30
+  parent_location: system_baas_system
+  radius_m: 556560000.0
+  spectral_class: K
+  star_class: K-Class
+  star_system: system_baas_system
+  three_word_description: ''
+  wiki_mentions: []
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents: []
+  related: []
+  entry_status: ''
+- id: star_g_class_001_primary
+  pretty_name: G-Class System 001 Primary
+  name: G-Class System 001 Primary
+  type: location
+  card_color: '#766944'
+  display_color:
+  - 255
+  - 244
+  - 214
+  location_class: star
+  location_role: orbital_body
+  luminosity_solar: 1.0
+  mass_kg: 1.98847e+30
+  parent_location: system_g_class_001
+  radius_m: 695700000.0
+  spectral_class: G
+  star_class: G-Class
+  star_system: system_g_class_001
+  three_word_description: ''
+  wiki_mentions: []
+  offspring: []
+- id: system_baas_system
+  pretty_name: Baas System
+  name: Baas System
+  type: location
+  card_color: '#7d5b3b'
+  habitable_zone_inner_au: 0.6030226891555273
+  habitable_zone_outer_au: 0.8687444855261388
+  location_class: star_system
+  location_role: star_system
+  luminosity_solar: 0.4
+  offspring: []
+  spectral_class: K
+  star_class: K-Class
+  tags:
+  - empty_system
+  - habitable_zone
+  three_word_description: ''
+  wiki_mentions: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents: []
+  related: []
+  entry_status: ''
+  stellar_neighbours:
+  - system: sys_babylon
+    distance_ly: 4.2
+  - system: system_klaas_system
+    distance_ly: 3.1
+- id: system_g_class_001
+  pretty_name: G-Class System 001
+  name: G-Class System 001
+  type: location
+  card_color: '#766944'
+  habitable_zone_inner_au: 0.9534625892455924
+  habitable_zone_outer_au: 1.37360563948689
+  location_class: star_system
+  location_role: star_system
+  luminosity_solar: 1.0
+  offspring: []
+  spectral_class: G
+  star_class: G-Class
+  tags:
+  - empty_system
+  - habitable_zone
+  three_word_description: ''
+  wiki_mentions: []
+- id: star_klaas_system_primary
+  pretty_name: Klaas System Primary
+  name: Klaas System Primary
+  type: location
+  card_color: '#753f33'
+  display_color:
+  - 255
+  - 166
+  - 116
+  location_class: star
+  location_role: orbital_body
+  luminosity_solar: 0.04
+  mass_kg: 5.96541e+29
+  parent_location: system_klaas_system
+  radius_m: 278280000.0
+  spectral_class: M
+  star_class: M-Class
+  star_system: system_klaas_system
+  three_word_description: ''
+  wiki_mentions: []
+  offspring: []
+- id: system_klaas_system
+  pretty_name: Klaas System
+  name: Klaas System
+  type: location
+  card_color: '#753f33'
+  habitable_zone_inner_au: 0.19069251784911845
+  habitable_zone_outer_au: 0.27472112789737807
+  location_class: star_system
+  location_role: star_system
+  luminosity_solar: 0.04
+  offspring: []
+  spectral_class: M
+  star_class: M-Class
+  tags:
+  - empty_system
+  - habitable_zone
+  three_word_description: ''
+  wiki_mentions: []
+  start_year: null
+  end_year: null
+  derived_from: []
+  parents: []
+  related: []
+  entry_status: ''
+  stellar_neighbours:
+  - system: sys_babylon
+    distance_ly: 7.2
+  - system: system_baas_system
+    distance_ly: 3.1
+- id: star_horusiale_system_primary
+  pretty_name: Horusiale System Primary
+  name: Horusiale System Primary
+  type: location
+  three_word_description: ''
+  location_class: star
+  location_role: orbital_body
+  parent_location: system_horusiale_system
+  star_system: system_horusiale_system
+  star_class: F-Class
+  spectral_class: F
+  luminosity_solar: 4.0
+  mass_kg: 2.783858e+30
+  radius_m: 904410000.0
+  display_color:
+  - 248
+  - 247
+  - 255
+  card_color: '#6d6d79'
+  wiki_mentions: []
+  offspring: []
+- id: system_horusiale_system
+  pretty_name: Horusiale System
+  name: Horusiale System
+  type: location
+  three_word_description: ''
+  location_class: star_system
+  location_role: star_system
+  star_class: F-Class
+  spectral_class: F
+  luminosity_solar: 4.0
+  habitable_zone_inner_au: 1.9069251784911847
+  habitable_zone_outer_au: 2.74721127897378
+  tags:
+  - empty_system
+  - habitable_zone
+  offspring: []
+  card_color: '#6d6d79'
+  wiki_mentions: []
+- id: system_hibuz_system
+  pretty_name: Hibuz System
+  name: Hibuz System
+  type: location
+  three_word_description: ''
+  location_class: star_system
+  location_role: star_system
+  star_class: F-Class
+  spectral_class: F
+  luminosity_solar: 4.0
+  habitable_zone_inner_au: 1.9069251784911847
+  habitable_zone_outer_au: 2.74721127897378
+  tags:
+  - empty_system
+  - habitable_zone
+  offspring: []
+  card_color: '#5f8f77'
+  wiki_mentions:
+  - Biomaton Fleet
+  - loc_blue_sector
+  card_header_color: '#25258f'
+  wiki_entry: |
+    Terraformed by the [[Biomaton Fleet]].
+    
+    Part of the [[Blue Sector]]
+  parents:
+  - loc_blue_sector
+- id: star_hibuz_system_primary
+  pretty_name: Hibuz System Primary
+  name: Hibuz System Primary
+  type: location
+  three_word_description: ''
+  location_class: star
+  location_role: orbital_body
+  parent_location: system_hibuz_system
+  star_system: system_hibuz_system
+  star_class: F-Class
+  spectral_class: F
+  luminosity_solar: 4.0
+  mass_kg: 2.783858e+30
+  radius_m: 904410000.0
+  display_color:
+  - 248
+  - 247
+  - 255
+  card_color: '#6d6d79'
+  wiki_mentions: []
+  offspring: []
+- id: loc_sedlec_ossuary_czech_republic
+  pretty_name: 'Sedlec Ossuary, Czech Republic'
+  name: 'Sedlec Ossuary, Czech Republic'
+  type: location
+  three_word_description: ''
+  location_class: building
+  wiki_mentions: []
+  card_color: '#363b3d'
+  card_header_color: '#653d65'
+  wiki_field_colors:
+    intro: '#422e45'
+  offspring: []
+  parents:
+  - loc_czech_republic
+- id: loc_czech_republic
+  pretty_name: Czech Republic
+  name: Czech Republic
+  type: location
+  three_word_description: ''
+  location_class: country
+  wiki_mentions: []
+  card_color: '#620d2d'
+  card_header_color: '#120d62'
+  wiki_field_colors:
+    intro: '#d2defc'
+  offspring:
+  - id: loc_sedlec_ossuary_czech_republic

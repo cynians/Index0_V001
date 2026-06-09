@@ -125,11 +125,13 @@ class WorldGenRenderer:
 
     def _draw_input_panel(self, screen, sim, payload):
         font = self.app_view.default_font
-        panel = pygame.Rect(20, 42, 392, 214)
+        panel_w = 430
+        panel_h = 232
+        panel = pygame.Rect(20, screen.get_height() - panel_h - 24, panel_w, panel_h)
         pygame.draw.rect(screen, (22, 25, 34), panel)
         pygame.draw.rect(screen, (188, 196, 212), panel, 1)
 
-        title = font.render("World Generation: Orbital Start", True, (244, 244, 244))
+        title = font.render("World Generation: Orbit Draft", True, (244, 244, 244))
         screen.blit(title, (panel.x + 12, panel.y + 10))
 
         field_rects = {}
@@ -149,6 +151,7 @@ class WorldGenRenderer:
             y += 34
 
         sim.set_input_field_rects(field_rects)
+        sim.set_control_panel_rect(panel)
 
         y += 6
         for line in payload.get("summary_lines", []):
@@ -156,8 +159,43 @@ class WorldGenRenderer:
             screen.blit(surface, (panel.x + 12, y))
             y += 22
 
-        hint = font.render("Tab switches fields. Backspace edits. Delete clears.", True, (142, 152, 170))
+        status = payload.get("commit_status") or ""
+        if status:
+            status_surface = font.render(status, True, (178, 210, 244))
+            screen.blit(status_surface, (panel.x + 12, panel.bottom - 52))
+
+        if payload.get("planet_name_prompt_active"):
+            hint_text = "Type planet name. Enter creates planet. Esc cancels."
+        elif payload.get("orbit_pick_stage") == "second":
+            hint_text = "Second click sets ellipse. Click elsewhere to start a new circular draft."
+        else:
+            hint_text = "Click orbit, then Enter to name and create the planet."
+        hint = font.render(hint_text, True, (142, 152, 170))
+        max_hint_w = panel.width - 24
+        if hint.get_width() > max_hint_w:
+            hint_text = "Click once: circular. Second click: ellipse. Tab edits fields."
+            hint = font.render(hint_text, True, (142, 152, 170))
         screen.blit(hint, (panel.x + 12, panel.bottom - 26))
+
+        if payload.get("planet_name_prompt_active"):
+            prompt_w = 360
+            prompt_h = 112
+            prompt = pygame.Rect(
+                (screen.get_width() - prompt_w) // 2,
+                86,
+                prompt_w,
+                prompt_h,
+            )
+            input_rect = pygame.Rect(prompt.x + 18, prompt.y + 56, prompt.width - 36, 28)
+            pygame.draw.rect(screen, (24, 28, 38), prompt)
+            pygame.draw.rect(screen, (188, 196, 212), prompt, 1)
+            title = font.render("Name Planet", True, (244, 244, 244))
+            screen.blit(title, (prompt.x + 14, prompt.y + 12))
+            pygame.draw.rect(screen, (38, 48, 68), input_rect)
+            pygame.draw.rect(screen, (188, 212, 244), input_rect, 1)
+            text = payload.get("planet_name_buffer") or ""
+            surface = font.render(text or "Planet name", True, (238, 238, 238) if text else (128, 138, 154))
+            screen.blit(surface, (input_rect.x + 8, input_rect.y + 5))
 
     def draw(self, screen, sim):
         payload = sim.get_preview_payload()

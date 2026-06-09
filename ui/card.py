@@ -114,9 +114,9 @@ class EntityCard:
         "operational": "Operational",
         "media": "Media",
     }
-    SIMULATION_SUBTAB_ORDER = ["space", "map", "world_gen"]
+    SIMULATION_SUBTAB_ORDER = ["orbital", "map", "world_gen"]
     SIMULATION_SUBTAB_LABELS = {
-        "space": "Space Sim",
+        "orbital": "Orbital",
         "map": "Map Sim",
         "world_gen": "World Gen",
     }
@@ -131,7 +131,7 @@ class EntityCard:
         "media": ["Media"],
     }
     SIMULATION_SUBTAB_SECTIONS = {
-        "space": ["Simulation / Space Sim"],
+        "orbital": ["Simulation / Orbital"],
         "map": ["Simulation / Map Sim"],
         "world_gen": ["Simulation / World Gen"],
     }
@@ -148,6 +148,13 @@ class EntityCard:
     }
     MEDIA_FIELDS = {
         "media_path",
+        "card_image",
+        "card_image_front",
+        "card_image_side",
+        "card_image_top",
+        "image_path",
+        "map_image_path",
+        "media_layers",
     }
     SPACE_SIM_FIELDS = {
         "system_role",
@@ -158,6 +165,12 @@ class EntityCard:
         "location_entity",
         "legacy_system_entity_id",
         "derived_from_system_body",
+        "star_class",
+        "spectral_class",
+        "luminosity_solar",
+        "habitable_zone_inner_au",
+        "habitable_zone_outer_au",
+        "stellar_neighbours",
         "radius_m",
         "semi_major_axis_m",
         "eccentricity",
@@ -235,6 +248,23 @@ class EntityCard:
             ],
         },
         {
+            "match": {"star_system", "stellar_system"},
+            "tools": [
+                {
+                    "id": "stellar_world_gen",
+                    "label": "World Gen",
+                    "description": "Start planetary orbit generation in this star system.",
+                    "action_id": "knowledge_launch_world_gen",
+                },
+                {
+                    "id": "stellar_define_neighbourhood",
+                    "label": "Define Neighbourhood",
+                    "description": "Link another star system with a light-year distance.",
+                    "action_id": "knowledge_define_stellar_neighbourhood",
+                },
+            ],
+        },
+        {
             "match": {"location", "locations"},
             "tools": [
                 {
@@ -242,6 +272,7 @@ class EntityCard:
                     "label": "Place on Parent",
                     "description": "Open parent map placement for this location.",
                     "action_id": "knowledge_place_location_on_parent",
+                    "requires": "surface_location",
                 },
                 {
                     "id": "planet_world_gen",
@@ -260,7 +291,7 @@ class EntityCard:
         self.dataset_name = dataset_name or self.entity.get("_dataset", self.entity.get("type", "entity"))
         self.world_model = world_model
         self.active_tab = "general"
-        self.active_simulation_subtab = "space"
+        self.active_simulation_subtab = "orbital"
         self.collapsed_sections = {
             "Identity": False,
             "Classification": False,
@@ -270,7 +301,7 @@ class EntityCard:
             "State / Layout": True,
             "Metadata": False,
             "Media": False,
-            "Simulation / Space Sim": False,
+            "Simulation / Orbital": False,
             "Simulation / Map Sim": False,
             "Simulation / World Gen": False,
             "Phylogeny Parents": False,
@@ -359,18 +390,18 @@ class EntityCard:
     def _default_simulation_subtab(self):
         keys = set(self.entity.keys())
         if keys & (self.SPACE_SIM_FIELDS | {"mass_kg"}) and self._is_space_sim_context():
-            return "space"
+            return "orbital"
         if keys & self.MAP_SIM_FIELDS:
             return "map"
         if keys & self.WORLD_GEN_SIM_FIELDS:
             return "world_gen"
-        return self.active_simulation_subtab if self.active_simulation_subtab in self.SIMULATION_SUBTAB_ORDER else "space"
+        return self.active_simulation_subtab if self.active_simulation_subtab in self.SIMULATION_SUBTAB_ORDER else "orbital"
 
     def _visible_sections(self):
         if self.active_tab == "simulation":
             return self.SIMULATION_SUBTAB_SECTIONS.get(
                 self.active_simulation_subtab,
-                self.SIMULATION_SUBTAB_SECTIONS["space"],
+                self.SIMULATION_SUBTAB_SECTIONS["orbital"],
             )
         return self.TAB_SECTIONS.get(self.active_tab, self.TAB_SECTIONS["general"])
 
@@ -525,6 +556,20 @@ class EntityCard:
         requirement = tool.get("requires")
         if not requirement:
             return True
+
+        if requirement == "surface_location":
+            location_class = str(self.entity.get("location_class") or "").strip().lower()
+            return location_class not in {
+                "star_system",
+                "stellar_system",
+                "star",
+                "planet",
+                "moon",
+                "dwarf_planet",
+                "asteroid",
+                "comet",
+                "orbital_body",
+            }
 
         if requirement == "planet_without_map":
             if self.entity.get("location_class") != "planet":
@@ -762,14 +807,15 @@ class EntityCard:
             or self.entity.get("star_system")
             or self.entity.get("parent_body")
             or self.entity.get("derived_from_system_body")
+            or self.entity.get("location_class") in {"star_system", "star", "planet", "moon"}
             or self.dataset_name == "systems"
         )
 
     def _simulation_section_for_key(self, key):
         if key in self.SPACE_SIM_FIELDS:
-            return "Simulation / Space Sim"
+            return "Simulation / Orbital"
         if key == "mass_kg" and self._is_space_sim_context():
-            return "Simulation / Space Sim"
+            return "Simulation / Orbital"
         if key in self.MAP_SIM_FIELDS:
             return "Simulation / Map Sim"
         if key in self.WORLD_GEN_SIM_FIELDS:
@@ -1208,7 +1254,7 @@ class EntityCard:
                 continue
 
             simulation_section = self._simulation_section_for_key(key)
-            if simulation_section == "Simulation / Space Sim":
+            if simulation_section == "Simulation / Orbital":
                 space_sim_values.append((key, value))
                 continue
             if simulation_section == "Simulation / Map Sim":
@@ -1254,7 +1300,7 @@ class EntityCard:
 
             metadata_values.append((key, value))
 
-        return {
+        sections = {
             "Identity": identity,
             "Classification": classification,
             "Dimensions / Scale": overview_dims,
@@ -1263,11 +1309,13 @@ class EntityCard:
             "State / Layout": state_values,
             "Metadata": metadata_values,
             "Media": media_values,
-            "Simulation / Space Sim": space_sim_values,
+            "Simulation / Orbital": space_sim_values,
             "Simulation / Map Sim": map_sim_values,
             "Simulation / World Gen": world_gen_sim_values,
             "Operational": dims + operational_values if self._is_component_card() else operational_values,
         }
+        sections["Simulation / Space Sim"] = space_sim_values
+        return sections
 
     def _format_value(self, value):
         if value is None:
@@ -2885,7 +2933,7 @@ class EntityCard:
                         "description_lines": description_lines,
                     }
                 )
-                toolbelt_hitboxes.append((tool, button_rect))
+                toolbelt_hitboxes.append((tool, row_rect))
                 tool_y = row_rect.bottom + 8
 
         card["rect"] = final_rect

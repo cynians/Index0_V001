@@ -47,6 +47,8 @@ class KnowledgeBrowserHarness(KnowledgeBrowserUI):
         self.relation_link_target = None
         self.relation_link_status = ""
         self.entry_name_prompt = None
+        self.stellar_neighbourhood_prompt = None
+        self.layout = None
         self.show_template_picker = False
         self.template_picker_search_active = False
         self.timeline_edit_target = None
@@ -263,6 +265,94 @@ class EntityIdUpdateTests(unittest.TestCase):
         self.assertEqual("__ui_consumed__", result)
         self.assertEqual("a", card["edit_buffer"])
         self.assertEqual("", ui.browser_search_query)
+
+    def test_stellar_neighbour_link_selection_opens_distance_prompt(self):
+        source = {
+            "id": "system_alpha",
+            "type": "location",
+            "_dataset": "locations",
+            "name": "Alpha",
+            "location_class": "star_system",
+        }
+        target = {
+            "id": "system_beta",
+            "type": "location",
+            "_dataset": "locations",
+            "name": "Beta",
+            "location_class": "star_system",
+        }
+        ui = KnowledgeBrowserHarness({"system_alpha": source, "system_beta": target})
+        source_card = {
+            "entity_id": "system_alpha",
+            "card_view": SimpleNamespace(entity=source),
+            "is_edit_mode": True,
+        }
+        ui.cards = [source_card]
+        ui.relation_link_target = {
+            "mode": "stellar_neighbourhood",
+            "source_card": source_card,
+            "source_entity_id": "system_alpha",
+            "field_key": "stellar_neighbours",
+            "target": "star_system",
+        }
+
+        linked = ui._link_relation_from_browser_entity("system_beta")
+
+        self.assertTrue(linked)
+        self.assertIsNone(ui.relation_link_target)
+        self.assertEqual("distance", ui.stellar_neighbourhood_prompt["mode"])
+        self.assertEqual("system_beta", ui.stellar_neighbourhood_prompt["selected_system_id"])
+
+    def test_stellar_neighbour_distance_prompt_survives_rebuild_reset(self):
+        ui = KnowledgeBrowserHarness()
+        ui.stellar_neighbourhood_prompt = {
+            "mode": "distance",
+            "source_entity_id": "system_alpha",
+            "selected_system_id": "system_beta",
+        }
+
+        ui.reset()
+
+        self.assertEqual("distance", ui.stellar_neighbourhood_prompt["mode"])
+        self.assertEqual("system_beta", ui.stellar_neighbourhood_prompt["selected_system_id"])
+
+    def test_stellar_neighbour_distance_confirmation_writes_bidirectional_rows(self):
+        source = {
+            "id": "system_alpha",
+            "type": "location",
+            "_dataset": "locations",
+            "name": "Alpha",
+            "location_class": "star_system",
+        }
+        target = {
+            "id": "system_beta",
+            "type": "location",
+            "_dataset": "locations",
+            "name": "Beta",
+            "location_class": "star_system",
+        }
+        ui = KnowledgeBrowserHarness({"system_alpha": source, "system_beta": target})
+        source_card = {
+            "entity_id": "system_alpha",
+            "card_view": SimpleNamespace(entity=source),
+            "is_edit_mode": True,
+        }
+        ui.cards = [source_card]
+        ui._save_or_persist_card_for_entity_id = lambda entity_id: True
+        ui.stellar_neighbourhood_prompt = {
+            "mode": "distance",
+            "source_card": source_card,
+            "source_entity_id": "system_alpha",
+            "selected_system_id": "system_beta",
+            "distance": "4.2",
+        }
+
+        confirmed = ui._confirm_stellar_neighbourhood_prompt()
+
+        self.assertTrue(confirmed)
+        self.assertEqual([{"system": "system_beta", "distance_ly": 4.2}], source["stellar_neighbours"])
+        self.assertEqual([{"system": "system_alpha", "distance_ly": 4.2}], target["stellar_neighbours"])
+        self.assertIsNone(ui.stellar_neighbourhood_prompt)
 
 
 if __name__ == "__main__":

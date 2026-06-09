@@ -827,3 +827,42 @@
   offspring: []
   parents:
   - cladis_curly_tailed_lizard_leiocephalus
+- id: spec_rosa_woodsii
+  common_name: Woods Rose - Rosa woodsii
+  binomial_name: Rosa woodsii
+  type: species
+  three_word_description: ''
+  wiki_mentions: []
+  card_color: '#b54b94'
+  card_header_color: '#2e602b'
+  wiki_field_colors:
+    default: '#cdcf81'
+  offspring: []
+  parents:
+  - cladis_roses_rosa
+- id: spec_lithobates_clamitans
+  common_name: Green Frog - Lithobates clamitans
+  binomial_name: Lithobates clamitans
+  type: species
+  three_word_description: ''
+  wiki_mentions: []
+  parents:
+  - cladis_lithobates
+  offspring: []
+  card_color: '#4d8d42'
+  card_header_color: '#7a8d42'
+  wiki_field_colors:
+    default: '#223229'
+- id: spec_thera_juniperata
+  common_name: Juniper Carpet - Thera juniperata
+  binomial_name: Thera juniperata
+  type: species
+  three_word_description: ''
+  wiki_mentions: []
+  card_color: '#6a604f'
+  card_header_color: '#6a5736'
+  wiki_field_colors:
+    intro: '#28231c'
+  offspring: []
+  parents:
+  - cladis_thera

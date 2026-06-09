@@ -149,6 +149,10 @@ class SimWindow:
         meters_per_world_unit = self._get_world_units_to_meters()
         value_m = abs(float(value)) * meters_per_world_unit
 
+        light_year_m = 9_460_730_472_580_800.0
+        if value_m >= light_year_m:
+            return f"{value_m / light_year_m:.2f} ly"
+
         if value_m >= 149_597_870_700:
             return f"{value_m / 149_597_870_700:.2f} AU"
 

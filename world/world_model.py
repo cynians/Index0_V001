@@ -231,12 +231,10 @@ class WorldModel:
 
     def get_dataset_names(self):
         names = list(self.loader.datasets.keys())
-        if "locations" in self.loader.datasets and "systems" not in names:
-            names.append("systems")
         return names
 
     def get_entities_by_dataset(self, dataset_name):
-        dataset = self.loader.get_dataset(dataset_name)
+        dataset = self.get_dataset(dataset_name)
 
         if isinstance(dataset, dict):
             return list(dataset.values())

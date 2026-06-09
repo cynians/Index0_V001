@@ -276,8 +276,14 @@ class NavigationController:
         if not planet_location_id:
             return False
 
-        planet = self.app.world_model.get_entity(planet_location_id)
-        if not planet or planet.get("location_class") != "planet":
+        entity = self.app.world_model.get_entity(planet_location_id)
+        if not entity:
+            return False
+
+        location_class = entity.get("location_class")
+        is_star_system = location_class in {"star_system", "stellar_system"} or entity.get("system_role") == "star_system"
+        is_planet = location_class == "planet"
+        if not is_planet and not is_star_system:
             return False
 
         tab_key = ("world_gen", planet_location_id)
@@ -287,16 +293,17 @@ class NavigationController:
 
         active_sim = self.app.get_active_simulation()
         year = getattr(active_sim, "year", 2400) if active_sim is not None else 2400
-        planet_name = planet.get("name", planet_location_id)
+        entity_name = entity.get("name", planet_location_id)
 
         new_world_gen_sim = WorldGenSimulation(
             world_model=self.app.world_model,
-            planet_location_id=planet_location_id,
+            planet_location_id=planet_location_id if is_planet else None,
+            parent_system_id=planet_location_id if is_star_system else None,
             year=year,
         )
         new_tab = Tab(
             SimulationInstance(new_world_gen_sim),
-            name=f"World Gen: {planet_name}",
+            name=f"World Gen: {entity_name}",
             tab_key=tab_key,
         )
 
@@ -686,7 +693,7 @@ class NavigationController:
                 system_role = entity.get("system_role")
                 location_class = entity.get("location_class")
 
-                if system_role == "star_system":
+                if system_role == "star_system" or location_class in {"star_system", "stellar_system"}:
                     self.launch_space_root_tab(entity_id)
                     return True
 
@@ -699,10 +706,34 @@ class NavigationController:
                     if parent_location and parent_location.get("location_class") == "building":
                         return self.launch_building_tab(parent_location_id)
 
-                if system_role == "orbital_body":
+                is_orbital_location = location_class in {
+                    "star",
+                    "planet",
+                    "moon",
+                    "dwarf_planet",
+                    "asteroid",
+                    "comet",
+                    "space_station",
+                    "station",
+                    "spacecraft",
+                    "orbital_spacecraft",
+                    "planetary_spacecraft",
+                    "system_spacecraft",
+                    "interstellar_spacecraft",
+                }
+                if system_role == "orbital_body" or is_orbital_location:
                     body_class = entity.get("body_class") or entity.get("location_class")
                     if body_class == "planet":
                         return self.launch_planet_space_tab(entity_id)
+
+                    star_system_id = entity.get("star_system")
+                    if body_class == "star" and star_system_id:
+                        self.launch_space_root_tab(star_system_id)
+                        return True
+
+                    if star_system_id:
+                        self.launch_space_root_tab(star_system_id)
+                        return True
 
                     location_entity_id = entity.get("location_entity") or entity_id
                     if location_entity_id:

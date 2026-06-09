@@ -182,6 +182,7 @@
   card_color: '#bf7212'
   offspring:
   - id: idea_production_and_development_of_the_ggo
+  - id: idea_corruption_in_the_ggo_hegemony
   related:
   - conf_borders_rebellion
   wiki_entry: ''
@@ -255,3 +256,16 @@
   offspring: []
   card_color: '#384a58'
   card_header_color: '#454234'
+- id: fac_enu
+  pretty_name: European New Union
+  name: ENU
+  type: faction
+  three_word_description: ''
+  wiki_mentions: []
+  card_color: '#152255'
+  offspring: []
+  wiki_field_colors:
+    intro: '#0e1015'
+  card_header_color: '#c5b467'
+  start_year: 2037
+  end_year: 2437

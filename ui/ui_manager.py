@@ -792,16 +792,6 @@ class UIManager:
                          pygame.Rect(button_x, button_y, button_width, button_height))
             )
 
-            model = getattr(active_sim, "planetary_model", {}) or {}
-            eccentricity = model.get("eccentricity")
-            semi_major = model.get("semi_major_axis_au")
-            if semi_major is not None or eccentricity is not None:
-                self.hover_tooltip_lines = [
-                    "World Gen Orbit",
-                    f"a: {semi_major:.3f} AU" if semi_major is not None else "a: n/a",
-                    f"e: {eccentricity:.4f}" if eccentricity is not None else "e: n/a",
-                ]
-                self.hover_tooltip_pos = (24, 270)
             return
 
         if render_mode == "bioregion":

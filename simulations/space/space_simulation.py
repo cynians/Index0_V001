@@ -24,7 +24,7 @@ class SpaceSimulation:
         self.system = CelestialSystem()
         self.sim_manager = SimulationManager(self.sim_clock, self.system)
 
-        self.min_zoom = 1e-13
+        self.min_zoom = 1e-17
         self.max_zoom = 1e-6
         self.preferred_zoom = 1.0e-10
         if self.root_body_id is not None:

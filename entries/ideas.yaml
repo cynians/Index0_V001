@@ -428,3 +428,14 @@
   - id: loc_ukraine
     offspring:
       - id: loc_danube_delta
+- id: idea_corruption_in_the_ggo_hegemony
+  pretty_name: Corruption in the GGO Hegemony
+  name: Corruption in the GGO Hegemony
+  type: idea
+  three_word_description: ''
+  wiki_mentions: []
+  card_color: '#b2955d'
+  card_header_color: '#563775'
+  offspring: []
+  parents:
+  - fac_ggo_hegemony

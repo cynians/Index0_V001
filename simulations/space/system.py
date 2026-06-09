@@ -274,17 +274,79 @@ class CelestialSystem:
 
         raise AttributeError("WorldModel has no supported active-entity API.")
 
+    def _normalize_year(self, value):
+        if value in (None, "", "null"):
+            return None
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        if isinstance(value, str):
+            try:
+                return int(float(value.strip()))
+            except ValueError:
+                return None
+        return None
+
+    def _space_entity_is_active(self, entity, year):
+        """
+        Space anchors without explicit dates are still active.
+
+        The wider repository timeline treats missing start_year as inactive,
+        but stars and legacy orbital parents often omit it. Space sim needs
+        those anchors so dated planets/moons can resolve their hierarchy.
+        """
+        start = self._normalize_year(entity.get("start_year"))
+        end = self._normalize_year(entity.get("end_year"))
+        if start is not None and year < start:
+            return False
+        if end is not None and year > end:
+            return False
+        return True
+
     def _get_active_system_entities(self, world_model, year, root_system_id, root_body_id=None):
         """
         Return active orbital-body location entries for the selected star system.
         """
-        active_entities = list(self._iter_active_entities(world_model, year))
+        if hasattr(world_model, "get_entities_by_dataset"):
+            active_entities = [
+                entity
+                for entity in world_model.get_entities_by_dataset("locations")
+                if self._space_entity_is_active(entity, year)
+            ]
+        else:
+            active_entities = list(self._iter_active_entities(world_model, year))
+
+        orbital_location_classes = {
+            "star",
+            "planet",
+            "moon",
+            "dwarf_planet",
+            "asteroid",
+            "comet",
+            "space_station",
+            "station",
+            "orbital_body",
+            "spacecraft",
+            "orbital_spacecraft",
+            "planetary_spacecraft",
+            "system_spacecraft",
+            "interstellar_spacecraft",
+        }
+
+        def is_orbital_body(entity):
+            if entity.get("system_role") == "orbital_body":
+                return True
+            class_key = str(entity.get("location_class") or "").strip().lower()
+            return class_key in orbital_location_classes and bool(entity.get("star_system"))
 
         bodies = [
             entity for entity in active_entities
             if entity.get("_dataset") == "locations"
             and entity.get("type") == "location"
-            and entity.get("system_role") == "orbital_body"
+            and is_orbital_body(entity)
             and self._resolve_entity_id(world_model, entity.get("star_system"))
             == self._resolve_entity_id(world_model, root_system_id)
         ]
@@ -315,6 +377,38 @@ class CelestialSystem:
         except (TypeError, ValueError):
             return fallback
 
+    def _coerce_hex_color(self, value, fallback=(180, 180, 180)):
+        text = str(value or "").strip()
+        if text.startswith("#"):
+            text = text[1:]
+        if len(text) != 6:
+            return fallback
+        try:
+            return (
+                int(text[0:2], 16),
+                int(text[2:4], 16),
+                int(text[4:6], 16),
+            )
+        except ValueError:
+            return fallback
+
+    def _entity_display_color(self, entity, fallback=(180, 180, 180)):
+        color = self._coerce_color(entity.get("display_color"), fallback=None)
+        if color is not None:
+            return color
+
+        class_key = entity.get("spectral_class") or entity.get("star_class")
+        if entity.get("location_class") == "star" or entity.get("body_class") == "star":
+            try:
+                from simulations.space.stellar import stellar_profile_for_class
+
+                profile = stellar_profile_for_class(class_key)
+                return self._coerce_color(profile.get("display_color"), fallback=fallback)
+            except (ImportError, TypeError, ValueError):
+                pass
+
+        return self._coerce_hex_color(entity.get("card_color"), fallback=fallback)
+
     def _create_layers_for_entity(self, entity):
         """
         Create a minimal MapLayerStack from physical body size and display color.
@@ -323,7 +417,7 @@ class CelestialSystem:
 
         radius_m = float(entity.get("radius_m", 1.0) or 1.0)
         diameter_m = max(radius_m * 2.0, 1.0)
-        color = self._coerce_color(entity.get("display_color"))
+        color = self._entity_display_color(entity)
 
         stack = MapLayerStack(radius_m * 2.2)
         stack.add_layer({
@@ -384,7 +478,7 @@ class CelestialSystem:
 
         Expected entry shape:
         * type: system
-        * system_role: orbital_body
+        * location_class: star/planet/moon/spacecraft/etc.
         * star_system: <root system id>
         * optional root_body_id: include only that body and direct children
         """
@@ -448,9 +542,8 @@ class CelestialSystem:
 
             if stalled_last_round:
                 unresolved_ids = ", ".join(sorted(pending.keys()))
-                raise ValueError(
-                    f"Could not resolve orbital parents in systems dataset: {unresolved_ids}"
-                )
+                print(f"Skipping unresolved orbital bodies: {unresolved_ids}")
+                break
 
             stalled_last_round = True
 
