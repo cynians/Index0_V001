@@ -39,12 +39,13 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    GGO institution through which selected interest groups are granted leeway to establish producers outside the direct internal GGO production structure.
-    
-    Serves as the framework under which externally structured branded producers can exist while remaining tied to the wider GGO order.
+  wiki_entry: 'GGO institution through which selected interest groups are granted
+    leeway to establish producers outside the direct internal GGO production structure.
+
+
+    Serves as the framework under which externally structured branded producers can
+    exist while remaining tied to the wider GGO order.'
   end_year: null
-  derived_from: []
 - id: inst_race_for_sol_outer_space_treaty_adaptation
   pretty_name: Race for Sol Outer Space Treaty Adaptation
   name: Race for Sol Outer Space Treaty Adaptation
@@ -99,39 +100,61 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    Race for Sol adaptation of the Outer Space Treaty framework for an era of permanent off-world colonies. The treaty largely preserves the original baseline principles of non-total appropriation, but allows states to hold sovereignty within a bounded radius around established colonies.
-    
-    Intended to regulate the transition from exploration to sustained colonization after 2090. The main adaptation is the recognition of limited territorial sovereignty around colonies, treated analogously to territorial waters rather than full ownership of whole planets or moons.
-  derived_from: []
+  wiki_entry: 'Race for Sol adaptation of the Outer Space Treaty framework for an
+    era of permanent off-world colonies. The treaty largely preserves the original
+    baseline principles of non-total appropriation, but allows states to hold sovereignty
+    within a bounded radius around established colonies.
+
+
+    Intended to regulate the transition from exploration to sustained colonization
+    after 2090. The main adaptation is the recognition of limited territorial sovereignty
+    around colonies, treated analogously to territorial waters rather than full ownership
+    of whole planets or moons.'
 - id: inst_ggo_humhab
   pretty_name: Human Habitat Project Group
   name: Human Habitat Project Group
   type: institution
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  offspring:
+  - id: idea_new_011
+  - id: veh_humhab_1_1
+  entry_status: ''
 - id: inst_catal_press
   pretty_name: Catal Press
   name: Catal Press
   type: institution
-  wiki_mentions: []
   card_color: '#9d9d84'
   start_year: 7506
   end_year: 8839
+  tags: []
+  parents: []
+  related: []
+  offspring: []
+  entry_status: ''
 - id: inst_ggop
   pretty_name: GGO Police Forces
   name: GGOP
   type: institution
-  wiki_mentions: []
   card_color: '#15385a'
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  offspring: []
+  entry_status: ''
 - id: inst_cultural_seeding_group
   pretty_name: CSG
   name: CSG
   type: institution
-  wiki_mentions: []
   card_color: '#458487'
   start_year: 4912
   end_year: 18876
   tags: []
-  derived_from: []
   parents: []
   related: []
   offspring:
@@ -145,8 +168,12 @@
   parents:
   - fac_transfer_hansa
   wiki_entry: ''
-  wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: inst_omerta_fractata
   pretty_name: Omerta Fractata
   name: Omerta Fractata
@@ -156,8 +183,12 @@
   - pop_castelli_family
   - loc_castelli_automobiles_plant
   wiki_entry: ''
-  wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  entry_status: ''
 - id: inst_transfer_hansa_frontier_charter
   pretty_name: Transfer Hansa Frontier Charter
   name: Transfer Hansa Frontier Charter
@@ -168,66 +199,102 @@
   related:
   - veh_hansa_postman_class_interstellar_one_way_delivery_vehicle
   wiki_entry: ''
-  wiki_mentions: []
-  offspring: []
-- id: inst_project_deep_sleep
-  pretty_name: Project Deep Sleep
-  name: Project Deep Sleep
-  type: institution
-  wiki_mentions:
-  - fac_ggo_hegemony
-  - idea_deep_earth_storage
-  - loc_des_1_underways
-  related:
-  - idea_deep_earth_storage
-  - inst_ggop
   offspring: []
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
+  entry_status: ''
+- id: inst_project_deep_sleep
+  pretty_name: Project Deep Sleep
+  name: Project Deep Sleep
+  type: institution
+  related:
+  - idea_deep_earth_storage
+  - inst_ggop
+  - fac_ggo_hegemony
+  - loc_des_1_underways
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
   parents: []
   entry_status: ''
-  wiki_entry: |
-    ! General
-    
-    Project Deep Sleep orginated from the concern that centralization was a positive movement as a whole from a whole [[fac_ggo_hegemony]] perspective, however also put all eggs in one basekt.
-    
-    In order to counter the potential for civilizational collapse due to a compromization of the central location, most wares produced by the GGOfoudn themselves present in [[idea_deep_earth_storage]] facilities.
-    
+  wiki_entry: '! General
+
+
+    Project Deep Sleep orginated from the concern that centralization was a positive
+    movement as a whole from a whole [[fac_ggo_hegemony]] perspective, however also
+    put all eggs in one basekt.
+
+
+    In order to counter the potential for civilizational collapse due to a compromization
+    of the central location, most wares produced by the GGOfoudn themselves present
+    in [[idea_deep_earth_storage]] facilities.
+
+
     ! DES Sites
+
     !! [[loc_des_1_underways]]
+
+    '
   card_color: '#1b1005'
 - id: inst_ggo_engineering_group_14_earthworking_mining
-  pretty_name: 'GGO Engineering Group 14 - Earthworking, Mining'
-  name: 'GGO Engineering Group 14 - Earthworking, Mining'
+  pretty_name: GGO Engineering Group 14 - Earthworking, Mining
+  name: GGO Engineering Group 14 - Earthworking, Mining
   type: institution
-  wiki_mentions: []
   related:
   - loc_des_1_underways
   - inst_project_deep_sleep
   - fac_ggo_hegemony
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  entry_status: ''
 - id: inst_spanish_missions_in_california
   pretty_name: Spanish Missions in California
   name: Spanish Missions in California
   type: institution
-  wiki_mentions: []
   wiki_entry: null
   offspring: []
   start_year: 1769
   end_year: 1833
   related:
   - loc_fort_ross_sonoma_county_california
+  tags: []
+  parents: []
+  entry_status: ''
 - id: inst_cog_commodity_quarters
   pretty_name: CoG Commodity Quarters
   name: CoG Commodity Quarters
   type: institution
-  wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''
 - id: inst_ggo_engineering_groups
   pretty_name: GGO Engineering Groups
   name: GGO Engineering Groups
   type: institution
-  wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''
+- id: inst_european_space_agency_esa
+  pretty_name: European Space Agency (ESA)
+  name: European Space Agency (ESA)
+  type: institution
+  three_word_description: ''
+  related: []
+  start_year: 1975
+  end_year: 2064
+  offspring: []
+  card_color: '#152d4a'
+  card_header_color: '#f4fffc'

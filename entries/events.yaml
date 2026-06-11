@@ -15,12 +15,13 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    In 2164, an inland expedition attached to a Panamericana coastal authority discovered a long-obsolete but still functioning F-22 in a deep storage hangar in the Rockies.
-    
-    Remembered mainly as a symbolic rediscovery of a lost military age, with a smaller but real reverse-engineering and reuse dimension.
-  derived_from: []
-  wiki_mentions: []
+  wiki_entry: 'In 2164, an inland expedition attached to a Panamericana coastal authority
+    discovered a long-obsolete but still functioning F-22 in a deep storage hangar
+    in the Rockies.
+
+
+    Remembered mainly as a symbolic rediscovery of a lost military age, with a smaller
+    but real reverse-engineering and reuse dimension.'
   card_color: '#454a5d'
 - id: event_cog_quarantine_breach_and_crackdown_5742
   pretty_name: CoG Quarantine Breach and Crackdown
@@ -42,13 +43,16 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    In 5742, a late-CoG underclass gang exploited a cracked ventilation shaft to escape the quarantined megastructure. The route was first used for gang escape, then for selected family extractions, later for paid passage, before discovery triggered a major GGO police purge, disappearances into a sealed sector, and later covert regime reuse of the breach route.
-    
-    Historical importance was later largely erased from official memory and survived mostly through rumor, fragmentary reports, and local recollection.
+  wiki_entry: 'In 5742, a late-CoG underclass gang exploited a cracked ventilation
+    shaft to escape the quarantined megastructure. The route was first used for gang
+    escape, then for selected family extractions, later for paid passage, before discovery
+    triggered a major GGO police purge, disappearances into a sealed sector, and later
+    covert regime reuse of the breach route.
+
+
+    Historical importance was later largely erased from official memory and survived
+    mostly through rumor, fragmentary reports, and local recollection.'
   end_year: 5941
-  derived_from: []
-  wiki_mentions: []
   card_color: '#26201c'
 - id: evt_new_001
   pretty_name: French Revolution
@@ -56,14 +60,24 @@
   type: event
   parents:
   - geo_france
-  derived_from:
-  - idea_new_011
   start_year: 1789
   end_year: 1799
+  tags: []
+  related:
+  - idea_new_011
+  offspring: []
+  entry_status: ''
 - id: evt_new_002
   pretty_name: New Event
   name: New Event
   type: event
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  offspring: []
+  entry_status: ''
 - id: evt_new_003
   pretty_name: Capture of Planetary Defenses by Retronationalist Forces
   name: Capture of Planetary Defenses by Retronationalist Forces
@@ -71,11 +85,9 @@
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   parents: []
   related:
   - form_ggo_planetary_defenses
-  wiki_mentions: []
   offspring: []
   entry_status: ''
   card_color: '#0e141b'
@@ -86,10 +98,8 @@
   start_year: 2109
   end_year: 2250
   tags: []
-  derived_from: []
   parents: []
   related: []
-  wiki_mentions: []
   offspring: []
   entry_status: ''
   card_color: '#1e2f4d'
@@ -97,5 +107,11 @@
   pretty_name: Castille and Aragon joined under Isabella I and Ferdinand II
   name: Castille and Aragon joined under Isabella I and Ferdinand II
   type: event
-  wiki_mentions: []
   card_color: '#5a6026'
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  offspring: []
+  entry_status: ''

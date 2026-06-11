@@ -43,9 +43,13 @@ class InputController:
 
             knowledge_layer_active = getattr(self.simulation, "knowledge_layer_active", False)
 
+            consumed_before_camera = False
+            if hasattr(self.simulation, "handle_pre_camera_event"):
+                consumed_before_camera = bool(self.simulation.handle_pre_camera_event(event))
+
             # --- Forward events ---
-            if not (knowledge_layer_active and event.type == pygame.MOUSEWHEEL):
+            if not consumed_before_camera and not (knowledge_layer_active and event.type == pygame.MOUSEWHEEL):
                 self.camera.handle_event(event)
 
-            if hasattr(self.simulation, "handle_event"):
+            if not consumed_before_camera and hasattr(self.simulation, "handle_event"):
                 self.simulation.handle_event(event)

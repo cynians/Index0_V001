@@ -1,6 +1,6 @@
 - id: formation_panam_land_forces_53th_mountain_guards
-  pretty_name: 'PanAm Land Forces, 53th Mountain Guards'
-  name: 'PanAm Land Forces, 53th Mountain Guards'
+  pretty_name: PanAm Land Forces, 53th Mountain Guards
+  name: PanAm Land Forces, 53th Mountain Guards
   type: formation
   formation_class: mountain_guards_formation
   faction: null
@@ -23,13 +23,16 @@
   related: []
   offspring:
   - id: form_panam_lf_53th_mountain_guards_1st_peak_group
-  wiki_entry: |
-    Panamericana land formation derived from naval infantry and specialized in cliff and mountain fighting.
-    
-    Known for mobile alpine reconnaissance and strike operations, difficult-terrain recovery and expedition escort, and mountain-border guarding in regions such as the Rockies and Andes.
+  wiki_entry: 'Panamericana land formation derived from naval infantry and specialized
+    in cliff and mountain fighting.
+
+
+    Known for mobile alpine reconnaissance and strike operations, difficult-terrain
+    recovery and expedition escort, and mountain-border guarding in regions such as
+    the Rockies and Andes.
+
+    '
   end_year: 2253
-  derived_from: []
-  wiki_mentions: []
   card_color: '#364758'
 - id: form_ggo_planetary_defenses
   pretty_name: GGO Planetary Defenses
@@ -39,8 +42,12 @@
   related:
   - evt_new_003
   wiki_entry: ''
-  wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  entry_status: ''
 - id: form_panam_land_air_service
   pretty_name: PanAm Land Air Service
   name: PanAm Land Air Service
@@ -50,20 +57,27 @@
   - event_panamericana_rockies_f22_discovery
   - veh_f22_raptor
   wiki_entry: ''
-  wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  entry_status: ''
 - id: form_panam_lf_53th_mountain_guards_1st_peak_group
-  pretty_name: 'PanAM LF, 53th Mountain Guards, 1st Peak Group'
-  name: 'PanAM LF, 53th Mountain Guards, 1st Peak Group'
+  pretty_name: PanAM LF, 53th Mountain Guards, 1st Peak Group
+  name: PanAM LF, 53th Mountain Guards, 1st Peak Group
   type: formation
   card_color: '#546372'
-  derived_from:
-  - idea_new_019
   parents:
   - formation_panam_land_forces_53th_mountain_guards
   wiki_entry: ''
-  wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related:
+  - idea_new_019
+  entry_status: ''
 - id: form_teutonian_kaiserheer
   pretty_name: Teutonian Kaiserheer
   name: Teutonian Kaiserheer
@@ -72,12 +86,10 @@
   parents:
   - fac_teutonian_resurgence
   wiki_entry: ''
-  wiki_mentions: []
   offspring: []
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   related:
   - conf_borders_rebellion
   - fac_retronationalist_forced_of_the_border_rebellion
@@ -88,7 +100,6 @@
   pretty_name: Zouave Light Infantry Regiment
   name: Zouave Light Infantry Regiment
   type: formation
-  wiki_mentions: []
   start_year: 1830
   end_year: 1962
   offspring: []
@@ -98,3 +109,6 @@
   card_header_color: '#212848'
   wiki_field_colors:
     default: '#2b2332'
+  tags: []
+  parents: []
+  entry_status: ''

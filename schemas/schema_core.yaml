@@ -69,12 +69,6 @@ fields:
     section: Temporal
     optional: true
 
-  derived_from:
-    type: entity_list
-    target: entity_core
-    section: Relations
-    optional: true
-
   parents:
     type: entity_list
     target: entity_core
@@ -82,12 +76,6 @@ fields:
     optional: true
 
   related:
-    type: entity_list
-    target: entity_core
-    section: Relations
-    optional: true
-
-  wiki_mentions:
     type: entity_list
     target: entity_core
     section: Relations
@@ -116,6 +104,6 @@ fields:
 #     - homeworld
 #     - sol
 #   start_year: 0
-#   derived_from:
+#   related:
 #     - IDEA-001
 #   entry_status: canon

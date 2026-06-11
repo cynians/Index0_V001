@@ -4,13 +4,23 @@
   type: market
   card_color: '#929254'
   wiki_entry: ''
-  wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''
 - id: mkt_planetary_period_markets
   pretty_name: Planetary Period Markets
   name: Planetary Period Markets
   type: market
   card_color: '#0c0b26'
   wiki_entry: ''
-  wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''

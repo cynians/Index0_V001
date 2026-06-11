@@ -228,6 +228,71 @@ fields:
     section: Simulation / World Gen
     optional: true
 
+  world_gen_seed:
+    type: dict
+    section: Simulation / World Gen
+    optional: true
+
+  crust_composition:
+    type: dict
+    section: Simulation / World Gen
+    optional: true
+
+  derived_planet_physics:
+    type: dict
+    section: Simulation / World Gen
+    optional: true
+
+  atmosphere_model:
+    type: dict
+    section: Simulation / World Gen
+    optional: true
+
+  atmosphere_summary:
+    type: dict
+    section: Simulation / World Gen
+    optional: true
+
+  interior_regime_model:
+    type: dict
+    section: Simulation / World Gen
+    optional: true
+
+  surface_process_model:
+    type: dict
+    section: Simulation / World Gen
+    optional: true
+
+  terrain_seed_model:
+    type: dict
+    section: Simulation / World Gen
+    optional: true
+
+  tectonic_model:
+    type: dict
+    section: Simulation / World Gen
+    optional: true
+
+  crater_model:
+    type: dict
+    section: Simulation / World Gen
+    optional: true
+
+  heightmap_model:
+    type: dict
+    section: Simulation / World Gen
+    optional: true
+
+  map_generation_recipe:
+    type: string_list
+    section: Simulation / World Gen
+    optional: true
+
+  map_layers:
+    type: dict_list
+    section: Simulation / World Gen
+    optional: true
+
   geology_summary:
     type: dict
     section: Simulation / World Gen

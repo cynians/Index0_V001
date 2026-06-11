@@ -42,10 +42,18 @@ class InputRouter:
         """
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
+                active_sim = self.app.get_active_simulation()
+                if (
+                    active_sim is not None
+                    and bool(getattr(active_sim, "consumes_global_escape", lambda: False)())
+                    and hasattr(active_sim, "handle_event")
+                ):
+                    active_sim.handle_event(event)
+                    return True
+
                 if not self.app.knowledge_layer_active:
                     if self.app.repository_return_confirm_active:
                         self.app.repository_return_confirm_active = False
-                        active_sim = self.app.get_active_simulation()
                         self.app.navigation.open_repository_workspace(active_sim)
                     else:
                         self.app.repository_return_confirm_active = True

@@ -1,8 +1,12 @@
 import unittest
+import tempfile
+from pathlib import Path
+from types import SimpleNamespace
 
 import pygame
 
 from simulations.space.system import CelestialSystem
+from simulations.phylogeny.phylogeny_renderer import PhylogenyRenderer
 from ui.card import EntityCard
 
 
@@ -56,6 +60,75 @@ class CardMetadataCleanupTests(unittest.TestCase):
         self.assertIn("image_path", media_keys)
         self.assertIn("media_layers", media_keys)
 
+    def test_card_image_loader_resolves_assets_from_project_root(self):
+        previous_root = EntityCard.PROJECT_ROOT
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                asset_path = root / "assets" / "illustrations" / "test_pixel.png"
+                asset_path.parent.mkdir(parents=True, exist_ok=True)
+                if not pygame.display.get_init():
+                    pygame.display.init()
+                if pygame.display.get_surface() is None:
+                    pygame.display.set_mode((1, 1))
+                surface = pygame.Surface((2, 2), pygame.SRCALPHA)
+                surface.fill((255, 0, 0, 255))
+                pygame.image.save(surface, str(asset_path))
+
+                EntityCard.PROJECT_ROOT = str(root)
+                card = EntityCard(
+                    {
+                        "id": "idea_image",
+                        "type": "idea",
+                        "_dataset": "ideas",
+                        "name": "Image",
+                        "media_path": "assets/illustrations/test_pixel.png",
+                    },
+                    dataset_name="ideas",
+                )
+
+                loaded = card._load_card_image_surface("assets/illustrations/test_pixel.png")
+
+                self.assertIsNotNone(loaded)
+                self.assertEqual((2, 2), loaded.get_size())
+        finally:
+            EntityCard.PROJECT_ROOT = previous_root
+
+    def test_card_header_icon_uses_linked_illustration_image(self):
+        pygame.font.init()
+        font = pygame.font.SysFont("consolas", 14)
+        parent = {
+            "id": "vehicle_parent",
+            "type": "vehicle",
+            "_dataset": "vehicles",
+            "name": "Parent Vehicle",
+        }
+        illustration = {
+            "id": "idea_vehicle_picture",
+            "type": "idea",
+            "_dataset": "ideas",
+            "name": "Vehicle Picture",
+            "idea_class": "illustration",
+            "parents": ["vehicle_parent"],
+            "media_path": "assets/illustrations/vehicle_picture.png",
+        }
+        world_model = SimpleNamespace(
+            get_entities_by_dataset=lambda dataset_name: [illustration] if dataset_name == "ideas" else []
+        )
+        card_view = EntityCard(parent, dataset_name="vehicles", world_model=world_model)
+        card = {
+            "entity_id": "vehicle_parent",
+            "is_edit_mode": False,
+            "layout_font": font,
+            "years": [],
+        }
+
+        card_view.layout_card(card, pygame.Rect(0, 0, 420, 340))
+
+        self.assertEqual("assets/illustrations/vehicle_picture.png", card["header_icon_ref"])
+        self.assertIsNotNone(card["header_icon_rect"])
+        self.assertGreater(card["title_edit_rect"].x, 10)
+
     def test_space_sim_fields_are_simulation_rows(self):
         card = EntityCard(
             {
@@ -84,6 +157,36 @@ class CardMetadataCleanupTests(unittest.TestCase):
         self.assertIn("mass_kg", space_keys)
         self.assertIn("mean_anomaly_deg_at_epoch", space_keys)
         self.assertNotIn("mean_anomaly_deg_at_epoch", temporal_keys)
+
+    def test_simulation_tab_layout_uses_orbital_subtab_width(self):
+        pygame.font.init()
+        font = pygame.font.SysFont("consolas", 14)
+        card_view = EntityCard(
+            {
+                "id": "planet_test",
+                "pretty_name": "Test Planet",
+                "name": "Test Planet",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "planet",
+                "mass_kg": 5.0,
+                "radius_m": 10.0,
+                "semi_major_axis_m": 100.0,
+            },
+            dataset_name="locations",
+        )
+        card_view.set_active_tab("simulation")
+        card = {
+            "entity_id": "planet_test",
+            "is_edit_mode": False,
+            "layout_font": font,
+            "years": [],
+        }
+
+        card_view.layout_card(card, pygame.Rect(0, 0, 460, 420))
+
+        subtab_names = [subtab_name for _tab_name, subtab_name, _rect in card["subtab_hitboxes"]]
+        self.assertIn("orbital", subtab_names)
 
     def test_map_and_world_gen_fields_are_simulation_rows(self):
         card = EntityCard(
@@ -160,6 +263,173 @@ class CardMetadataCleanupTests(unittest.TestCase):
         )
 
         self.assertEqual((255, 210, 161), color)
+
+    def test_relation_chip_existing_entry_uses_referenced_card_color(self):
+        target = {
+            "id": "idea_target",
+            "type": "idea",
+            "_dataset": "ideas",
+            "name": "Target",
+            "card_color": "#336699",
+        }
+        world_model = SimpleNamespace(get_entity=lambda entity_id: target if entity_id == "idea_target" else None)
+        card = EntityCard(
+            {
+                "id": "idea_source",
+                "type": "idea",
+                "_dataset": "ideas",
+                "name": "Source",
+                "related": ["idea_target"],
+            },
+            dataset_name="ideas",
+            world_model=world_model,
+        )
+
+        fill, border, text = card._relation_chip_colors({"kind": "existing", "entity_id": "idea_target"})
+
+        self.assertEqual((31, 52, 77), fill)
+        self.assertEqual((102, 141, 180), border)
+        self.assertEqual((238, 244, 252), text)
+
+    def test_wiki_link_color_uses_referenced_card_color(self):
+        target = {
+            "id": "idea_target",
+            "type": "idea",
+            "_dataset": "ideas",
+            "name": "Target",
+            "card_color": "#336699",
+        }
+        world_model = SimpleNamespace(get_entity=lambda entity_id: target if entity_id == "idea_target" else None)
+        card = EntityCard(
+            {
+                "id": "idea_source",
+                "type": "idea",
+                "_dataset": "ideas",
+                "name": "Source",
+            },
+            dataset_name="ideas",
+            world_model=world_model,
+        )
+
+        self.assertEqual((31, 52, 77), card._resolve_wiki_link_color("idea_target"))
+
+    def test_link_palette_uses_referenced_body_header_and_wiki_colors(self):
+        target = {
+            "id": "idea_target",
+            "type": "idea",
+            "_dataset": "ideas",
+            "name": "Target",
+            "card_color": "#336699",
+            "card_header_color": "#993333",
+            "wiki_field_colors": {"default": "#339966"},
+        }
+        world_model = SimpleNamespace(get_entity=lambda entity_id: target if entity_id == "idea_target" else None)
+        card = EntityCard(
+            {
+                "id": "idea_source",
+                "type": "idea",
+                "_dataset": "ideas",
+                "name": "Source",
+            },
+            dataset_name="ideas",
+            world_model=world_model,
+        )
+
+        palette = card._resolve_wiki_link_palette("idea_target")
+
+        self.assertEqual((31, 52, 77), palette["fill"])
+        self.assertEqual((176, 104, 107), palette["border"])
+        self.assertEqual((51, 153, 102), palette["band"])
+
+    def test_phylogeny_rows_use_referenced_card_color(self):
+        target = {
+            "id": "clade_target",
+            "type": "cladistics",
+            "_dataset": "cladistics",
+            "name": "Target Clade",
+            "card_color": "#336699",
+        }
+        world_model = SimpleNamespace(get_entity=lambda entity_id: target if entity_id == "clade_target" else None)
+        card = EntityCard(
+            {
+                "id": "clade_source",
+                "type": "cladistics",
+                "_dataset": "cladistics",
+                "name": "Source",
+            },
+            dataset_name="cladistics",
+            world_model=world_model,
+        )
+
+        fill, border, text = card._phylogeny_row_colors({"id": "clade_target"})
+
+        self.assertEqual((31, 54, 79), fill)
+        self.assertEqual((99, 138, 178), border)
+        self.assertEqual((238, 244, 252), text)
+
+    def test_phylogeny_row_palette_uses_header_border_and_wiki_band(self):
+        target = {
+            "id": "clade_target",
+            "type": "cladistics",
+            "_dataset": "cladistics",
+            "name": "Target Clade",
+            "card_color": "#336699",
+            "card_header_color": "#993333",
+            "wiki_field_colors": {"default": "#339966"},
+        }
+        world_model = SimpleNamespace(get_entity=lambda entity_id: target if entity_id == "clade_target" else None)
+        card = EntityCard(
+            {
+                "id": "clade_source",
+                "type": "cladistics",
+                "_dataset": "cladistics",
+                "name": "Source",
+            },
+            dataset_name="cladistics",
+            world_model=world_model,
+        )
+
+        palette = card._phylogeny_row_palette({"id": "clade_target"})
+
+        self.assertEqual((31, 54, 79), palette["fill"])
+        self.assertEqual((174, 100, 103), palette["border"])
+        self.assertEqual((51, 153, 102), palette["band"])
+
+    def test_phylogeny_renderer_nodes_use_payload_card_color(self):
+        renderer = PhylogenyRenderer(SimpleNamespace())
+
+        fill, border = renderer._node_colors(
+            "clade_target",
+            {"card_color": "#336699"},
+            {"selected_id": "", "hover_id": "", "focus_id": ""},
+        )
+
+        self.assertEqual((31, 54, 79), fill)
+        self.assertEqual((99, 138, 178), border)
+
+    def test_phylogeny_renderer_nodes_use_header_border_and_wiki_band(self):
+        renderer = PhylogenyRenderer(SimpleNamespace())
+
+        fill, border = renderer._node_colors(
+            "clade_target",
+            {
+                "card_color": "#336699",
+                "card_header_color": "#993333",
+                "wiki_field_colors": {"default": "#339966"},
+            },
+            {"selected_id": "", "hover_id": "", "focus_id": ""},
+        )
+        band = renderer._node_band_color(
+            {
+                "card_color": "#336699",
+                "card_header_color": "#993333",
+                "wiki_field_colors": {"default": "#339966"},
+            }
+        )
+
+        self.assertEqual((31, 54, 79), fill)
+        self.assertEqual((174, 100, 103), border)
+        self.assertEqual((51, 153, 102), band)
 
 
 if __name__ == "__main__":

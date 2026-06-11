@@ -782,6 +782,15 @@ class UIManager:
             return
 
         if render_mode == "world_gen":
+            if bool(getattr(active_sim, "is_fullscreen_editor_active", lambda: False)()):
+                self.time_lines = []
+                self.timeline_fraction = 0.0
+                self.mouse_world_label = None
+                self.scope_label = None
+                self.breadcrumb_label = None
+                self.buttons = []
+                return
+
             if hasattr(active_sim, "get_scope_label"):
                 self.scope_label = f"World Gen: {active_sim.get_scope_label()}"
             if hasattr(active_sim, "get_scope_breadcrumb"):

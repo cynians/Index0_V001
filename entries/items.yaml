@@ -12,7 +12,8 @@
   - stackable
   - palletizable
   - containerizable
-  handling_notes: Commonly stored in stacks or on pallets; exact containerization depends on later logistics systems.
+  handling_notes: Commonly stored in stacks or on pallets; exact containerization
+    depends on later logistics systems.
   default_state: loose
   portable: limited
   placeable: true
@@ -28,8 +29,6 @@
   offspring: []
   tags: []
   end_year: null
-  derived_from: []
-  wiki_mentions: []
   card_color: '#3e4048'
 - id: item_pump_module
   pretty_name: Pump Module
@@ -66,7 +65,6 @@
   offspring: []
   tags: []
   end_year: null
-  derived_from: []
 - id: item_storage_rack
   pretty_name: Storage Rack
   name: Storage Rack
@@ -101,7 +99,6 @@
   offspring: []
   tags: []
   end_year: null
-  derived_from: []
 - id: item_alcova_special_brew
   pretty_name: Alcova Special Brew
   name: Alcova Special Brew
@@ -109,21 +106,24 @@
   card_color: '#162526'
   item_class: industrial_good
   wiki_entry: ''
-  wiki_mentions:
-  - prod_aldos_j_brewery
-  - loc_acapulco_system
-  - mkt_planetary_period_markets
-  offspring: []
-- id: item_petri_dish
-  pretty_name: Petri Dish
-  name: Petri Dish
-  type: item
-  wiki_mentions: []
   offspring: []
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
+  parents: []
+  related:
+  - prod_aldos_j_brewery
+  - loc_acapulco_system
+  - mkt_planetary_period_markets
+  entry_status: ''
+- id: item_petri_dish
+  pretty_name: Petri Dish
+  name: Petri Dish
+  type: item
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
   parents: []
   related: []
   entry_status: ''

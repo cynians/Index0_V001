@@ -2,6 +2,12 @@ import math
 
 import pygame
 
+from simulations.world_gen.heightmap import (
+    contour_levels_for_heightmap,
+    display_contour_interval_m,
+    height_marker_interval_m,
+)
+
 
 class WorldGenRenderer:
     """
@@ -75,7 +81,17 @@ class WorldGenRenderer:
             pygame.draw.circle(zone_surface, (150, 196, 138, 120), (int(center[0]), int(center[1])), inner_px, 2)
         screen.blit(zone_surface, (0, 0))
 
-    def _draw_reference_bodies(self, screen, camera, bodies):
+    def _body_position_screen(self, camera, semi_major_au, eccentricity):
+        if semi_major_au is None or eccentricity is None:
+            return None
+        x_au = semi_major_au * (1.0 - eccentricity)
+        return camera.world_to_screen(self._world_point_for_au(x_au, 0.0))
+
+    def _draw_reference_bodies(self, screen, camera, sim, payload):
+        bodies = payload.get("system_bodies", [])
+        selected_id = payload.get("selected_world_gen_planet_id")
+        planet_hitboxes = []
+
         for body in bodies:
             semi_major_m = body.get("semi_major_axis_m")
             eccentricity = body.get("eccentricity", 0.0)
@@ -91,6 +107,26 @@ class WorldGenRenderer:
             orbit_points = self._screen_points_for_orbit(camera, semi_major_au, eccentricity_value, count=120)
             if len(orbit_points) > 2:
                 pygame.draw.lines(screen, (76, 84, 98), True, orbit_points, 1)
+
+            class_key = str(body.get("location_class") or body.get("body_class") or "").lower()
+            if class_key != "planet":
+                continue
+
+            point = self._body_position_screen(camera, semi_major_au, eccentricity_value)
+            if point is None:
+                continue
+
+            entity_id = body.get("id")
+            selected = entity_id == selected_id
+            color = (122, 176, 232) if not selected else (178, 222, 255)
+            radius = 5 if not selected else 7
+            pygame.draw.circle(screen, color, (int(point[0]), int(point[1])), radius)
+            pygame.draw.circle(screen, (214, 236, 255), (int(point[0]), int(point[1])), radius + 2, 1)
+            label = self.app_view.default_font.render(body.get("name", entity_id), True, color)
+            screen.blit(label, (int(point[0]) + 9, int(point[1]) + 7))
+            planet_hitboxes.append((entity_id, pygame.Rect(int(point[0]) - 12, int(point[1]) - 12, 24, 24)))
+
+        sim.set_planet_hitboxes(planet_hitboxes)
 
     def _draw_star(self, screen, camera, payload):
         center = camera.world_to_screen((0.0, 0.0))
@@ -123,8 +159,28 @@ class WorldGenRenderer:
         label = self.app_view.default_font.render("candidate planet", True, (176, 220, 255))
         screen.blit(label, (periapsis[0] + 8, periapsis[1] + 8))
 
-    def _draw_input_panel(self, screen, sim, payload):
+    def _draw_input_panel(self, screen, sim, payload, camera):
         font = self.app_view.default_font
+        selected_planet = payload.get("selected_planet")
+        if selected_planet:
+            if payload.get("editor_stage") == "tectonics":
+                self._draw_tectonics_panel(screen, sim, payload)
+                return
+            if payload.get("editor_stage") == "heightmap":
+                self._draw_heightmap_panel(screen, sim, payload, camera)
+                return
+            if payload.get("editor_stage") == "terrain":
+                self._draw_terrain_panel(screen, sim, payload)
+                return
+            if payload.get("editor_stage") == "regime":
+                self._draw_regime_panel(screen, sim, payload)
+                return
+            if payload.get("editor_stage") == "atmosphere":
+                self._draw_atmosphere_panel(screen, sim, payload)
+                return
+            self._draw_crust_composition_panel(screen, sim, payload)
+            return
+
         panel_w = 430
         panel_h = 232
         panel = pygame.Rect(20, screen.get_height() - panel_h - 24, panel_w, panel_h)
@@ -197,13 +253,951 @@ class WorldGenRenderer:
             surface = font.render(text or "Planet name", True, (238, 238, 238) if text else (128, 138, 154))
             screen.blit(surface, (input_rect.x + 8, input_rect.y + 5))
 
+    def _draw_panel_button(self, screen, font, rect, label, primary=False):
+        fill = (74, 92, 132) if primary else (40, 46, 60)
+        border = (178, 196, 228) if primary else (118, 130, 154)
+        pygame.draw.rect(screen, fill, rect)
+        pygame.draw.rect(screen, border, rect, 1)
+        surface = font.render(label, True, (238, 242, 248))
+        screen.blit(surface, surface.get_rect(center=rect.center))
+
+    def _wrap_text(self, text, font, max_width):
+        words = str(text or "").split()
+        if not words:
+            return [""]
+        lines = []
+        current = words[0]
+        for word in words[1:]:
+            candidate = f"{current} {word}"
+            if font.size(candidate)[0] <= max_width:
+                current = candidate
+            else:
+                lines.append(current)
+                current = word
+        lines.append(current)
+        return lines
+
+    def _draw_crust_composition_panel(self, screen, sim, payload):
+        font = self.app_view.default_font
+        panel = pygame.Rect(34, 74, screen.get_width() - 68, screen.get_height() - 130)
+        pygame.draw.rect(screen, (20, 23, 32), panel)
+        pygame.draw.rect(screen, (188, 196, 212), panel, 1)
+
+        selected_planet = payload.get("selected_planet") or {}
+        title = f"World Generation: {selected_planet.get('name', selected_planet.get('id', 'Planet'))} Crust Composition"
+        title_surface = font.render(title, True, (244, 244, 244))
+        screen.blit(title_surface, (panel.x + 16, panel.y + 12))
+
+        subtitle = "Major crust elements must total 99%; trace elements are implicit unless promoted."
+        subtitle_surface = font.render(subtitle, True, (158, 170, 190))
+        screen.blit(subtitle_surface, (panel.x + 16, panel.y + 34))
+
+        composition = payload.get("crust_composition") or {}
+        elements = list(composition.get("major_elements") or [])
+        slider_rects = {}
+        y = panel.y + 70
+        label_w = 180
+        percent_w = 78
+        slider_x = panel.x + label_w + 32
+        slider_w = max(220, panel.width - label_w - percent_w - 300)
+        row_h = 34
+        target = float(payload.get("crust_target_percent") or 99.0)
+
+        for element in elements:
+            symbol = element.get("symbol", "")
+            name = element.get("name") or symbol
+            try:
+                abundance = float(element.get("abundance_percent", 0.0))
+            except (TypeError, ValueError):
+                abundance = 0.0
+
+            row_rect = pygame.Rect(panel.x + 14, y - 6, panel.width - 320, 28)
+            pygame.draw.rect(screen, (29, 33, 44), row_rect)
+            label = font.render(f"{name} ({symbol})", True, (216, 224, 238))
+            screen.blit(label, (panel.x + 22, y))
+
+            slider_rect = pygame.Rect(slider_x, y + 3, slider_w, 8)
+            slider_rects[symbol] = slider_rect
+            pygame.draw.rect(screen, (55, 61, 76), slider_rect)
+            fill_w = int(slider_rect.width * max(0.0, min(1.0, abundance / target)))
+            if fill_w > 0:
+                pygame.draw.rect(screen, (122, 168, 218), pygame.Rect(slider_rect.x, slider_rect.y, fill_w, slider_rect.height))
+            knob_x = slider_rect.x + fill_w
+            pygame.draw.circle(screen, (220, 232, 248), (knob_x, slider_rect.centery), 7)
+            percent = font.render(f"{abundance:5.2f}%", True, (232, 238, 246))
+            screen.blit(percent, (slider_rect.right + 18, y - 2))
+            y += row_h
+
+        summary_x = panel.right - 280
+        summary = pygame.Rect(summary_x, panel.y + 70, 250, 418)
+        pygame.draw.rect(screen, (25, 29, 40), summary)
+        pygame.draw.rect(screen, (96, 108, 132), summary, 1)
+        physics = payload.get("derived_planet_physics") or {}
+        summary_lines = [
+            f"Explicit total: {payload.get('crust_major_total_percent', 0.0):.2f}%",
+            f"Trace reserve: {payload.get('trace_reserve_percent', 1.0):.2f}%",
+            f"Crust type: {payload.get('crust_type', 'unknown')}",
+            f"Crust density: {payload.get('crust_density_kg_m3', 0.0):.0f} kg/m3",
+            f"Mass: {physics.get('mass_earth', 0.0):.3f} Earth",
+            f"Mean density: {physics.get('mean_density_kg_m3', 0.0):.0f} kg/m3",
+            f"Gravity: {physics.get('surface_gravity_g', 0.0):.2f} g",
+            f"Day length: {physics.get('rotation_period_hours', 0.0):.2f} h",
+            f"Core radius: {physics.get('core_radius_fraction', 0.0) * 100.0:.1f}%",
+            f"Mantle: {physics.get('mantle_radius_fraction', 0.0) * 100.0:.1f}%",
+            f"Crust: {physics.get('crust_radius_fraction', 0.0) * 100.0:.2f}%",
+        ]
+        sy = summary.y + 12
+        for line in summary_lines:
+            surface = font.render(line, True, (196, 210, 228))
+            screen.blit(surface, (summary.x + 12, sy))
+            sy += 22
+
+        seed_field_rects = {}
+        sy += 10
+        seed_title = font.render("Physical Inputs", True, (232, 238, 246))
+        screen.blit(seed_title, (summary.x + 12, sy))
+        sy += 26
+        for field in payload.get("seed_fields", []):
+            field_id = field.get("id")
+            if field_id in {"volatile_inventory", "tectonics_mode"}:
+                continue
+            label_text = str(field.get("label", field_id))
+            if len(label_text) > 19:
+                label_text = label_text[:18]
+            label = font.render(label_text, True, (176, 188, 208))
+            screen.blit(label, (summary.x + 12, sy + 4))
+            input_rect = pygame.Rect(summary.x + 142, sy, 92, 24)
+            seed_field_rects[field_id] = input_rect
+            fill = (38, 48, 68) if field.get("active") else (30, 34, 44)
+            border = (188, 212, 244) if field.get("active") else (92, 102, 122)
+            pygame.draw.rect(screen, fill, input_rect)
+            pygame.draw.rect(screen, border, input_rect, 1)
+            value = str(field.get("text") or "")
+            value_surface = font.render(value or "value", True, (238, 238, 238) if value else (128, 138, 154))
+            screen.blit(value_surface, (input_rect.x + 6, input_rect.y + 4))
+            sy += 30
+
+        add_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 228, 30)
+        save_rect = pygame.Rect(add_rect.right + 12, panel.bottom - 48, 154, 30)
+        self._draw_panel_button(screen, font, add_rect, "Add Abundant Trace Element")
+        self._draw_panel_button(screen, font, save_rect, "Save Composition", primary=True)
+
+        status = payload.get("commit_status") or ""
+        if status:
+            status_surface = font.render(status, True, (178, 210, 244))
+            screen.blit(status_surface, (save_rect.right + 18, panel.bottom - 41))
+
+        hint = font.render("Drag sliders. Enter saves. Esc exits selected planet. Click empty space to draft another orbit.", True, (142, 152, 170))
+        screen.blit(hint, (panel.x + 16, panel.bottom - 76))
+
+        periodic_rect, element_rects = self._draw_periodic_table_popup(screen, font, payload, elements)
+        sim.set_crust_ui_rects(
+            slider_rects=slider_rects,
+            add_trace_rect=add_rect,
+            save_rect=save_rect,
+            periodic_rect=periodic_rect,
+            element_rects=element_rects,
+        )
+        sim.set_seed_field_rects(seed_field_rects)
+        sim.set_control_panel_rect(panel)
+
+    def _draw_periodic_table_popup(self, screen, font, payload, current_elements):
+        if not payload.get("periodic_table_open"):
+            return None, {}
+
+        rows = payload.get("periodic_table_rows") or []
+        cell_w = 42
+        cell_h = 32
+        gap = 4
+        popup_w = 18 * cell_w + 19 * gap
+        popup_h = len(rows) * cell_h + (len(rows) + 1) * gap + 58
+        popup = pygame.Rect(
+            (screen.get_width() - popup_w) // 2,
+            (screen.get_height() - popup_h) // 2,
+            popup_w,
+            popup_h,
+        )
+
+        overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 130))
+        screen.blit(overlay, (0, 0))
+        pygame.draw.rect(screen, (24, 28, 38), popup)
+        pygame.draw.rect(screen, (190, 200, 220), popup, 1)
+        title = font.render("Select Trace Element To Promote", True, (244, 244, 244))
+        screen.blit(title, (popup.x + 14, popup.y + 12))
+        note = font.render("Elements already explicit are dimmed. Esc closes.", True, (154, 166, 188))
+        screen.blit(note, (popup.x + 14, popup.y + 34))
+
+        explicit_symbols = {element.get("symbol") for element in current_elements}
+        element_rects = {}
+        grid_y = popup.y + 60
+        for row_index, row in enumerate(rows):
+            for col_index, symbol in enumerate(row):
+                if not symbol:
+                    continue
+                rect = pygame.Rect(
+                    popup.x + gap + col_index * (cell_w + gap),
+                    grid_y + gap + row_index * (cell_h + gap),
+                    cell_w,
+                    cell_h,
+                )
+                disabled = symbol in explicit_symbols
+                fill = (36, 42, 54) if not disabled else (30, 31, 36)
+                border = (118, 146, 184) if not disabled else (70, 74, 86)
+                text_color = (222, 234, 248) if not disabled else (102, 108, 124)
+                pygame.draw.rect(screen, fill, rect)
+                pygame.draw.rect(screen, border, rect, 1)
+                surface = font.render(symbol, True, text_color)
+                screen.blit(surface, surface.get_rect(center=rect.center))
+                if not disabled:
+                    element_rects[symbol] = rect
+
+        return popup, element_rects
+
+    def _draw_atmosphere_panel(self, screen, sim, payload):
+        font = self.app_view.default_font
+        panel = pygame.Rect(34, 74, screen.get_width() - 68, screen.get_height() - 130)
+        pygame.draw.rect(screen, (20, 23, 32), panel)
+        pygame.draw.rect(screen, (188, 196, 212), panel, 1)
+
+        selected_planet = payload.get("selected_planet") or {}
+        atmosphere = payload.get("atmosphere_model") or {}
+        title = f"World Generation: {selected_planet.get('name', selected_planet.get('id', 'Planet'))} Atmosphere"
+        screen.blit(font.render(title, True, (244, 244, 244)), (panel.x + 16, panel.y + 12))
+        subtitle = "Atmosphere is constrained by stellar flux, gravity, molecule mass, volatile inventory, and condensation."
+        screen.blit(font.render(subtitle, True, (158, 170, 190)), (panel.x + 16, panel.y + 34))
+
+        left = pygame.Rect(panel.x + 16, panel.y + 70, (panel.width - 58) // 2, panel.height - 150)
+        right = pygame.Rect(left.right + 26, left.y, panel.right - left.right - 42, left.height)
+        pygame.draw.rect(screen, (25, 29, 40), left)
+        pygame.draw.rect(screen, (96, 108, 132), left, 1)
+        pygame.draw.rect(screen, (25, 29, 40), right)
+        pygame.draw.rect(screen, (96, 108, 132), right, 1)
+
+        lines = [
+            f"Equilibrium temp: {atmosphere.get('equilibrium_temperature_k', 0.0):.1f} K",
+            f"Surface temp est.: {atmosphere.get('estimated_surface_temperature_k', 0.0):.1f} K",
+            f"Greenhouse delta: {atmosphere.get('greenhouse_delta_k', 0.0):.1f} K",
+            f"Volatile supply: {atmosphere.get('volatile_supply_bar', 0.0):.2f} bar",
+            f"Retained column: {atmosphere.get('retained_column_fraction', 0.0) * 100.0:.1f}%",
+            f"Pressure estimate: {atmosphere.get('surface_pressure_bar', 0.0):.3f} bar",
+            f"Escape velocity: {atmosphere.get('escape_velocity_m_s', 0.0):.0f} m/s",
+            f"Exobase temp: {atmosphere.get('exobase_temperature_k', 0.0):.1f} K",
+        ]
+        y = left.y + 14
+        screen.blit(font.render("Thermal / Retention Model", True, (232, 238, 246)), (left.x + 12, y))
+        y += 30
+        for line in lines:
+            screen.blit(font.render(line, True, (196, 210, 228)), (left.x + 12, y))
+            y += 24
+
+        y += 12
+        screen.blit(font.render("Molecule Retention", True, (232, 238, 246)), (left.x + 12, y))
+        y += 26
+        for row in atmosphere.get("retention", [])[:10]:
+            molecule = row.get("molecule")
+            status = row.get("status")
+            ratio = row.get("escape_speed_ratio", 0.0)
+            text = f"{molecule:<4} {status:<6} escape/rms {ratio:.1f}"
+            color = (188, 220, 188) if status == "stable" else ((228, 202, 142) if status == "leaky" else (220, 150, 150))
+            screen.blit(font.render(text, True, color), (left.x + 12, y))
+            y += 22
+
+        y = right.y + 14
+        screen.blit(font.render("Estimated Composition", True, (232, 238, 246)), (right.x + 12, y))
+        y += 30
+        bar_x = right.x + 118
+        bar_w = max(160, right.width - 210)
+        for item in atmosphere.get("composition", [])[:8]:
+            molecule = item.get("molecule")
+            percent = float(item.get("percent", 0.0))
+            screen.blit(font.render(molecule, True, (216, 224, 238)), (right.x + 12, y))
+            bar = pygame.Rect(bar_x, y + 5, bar_w, 8)
+            pygame.draw.rect(screen, (55, 61, 76), bar)
+            fill_w = int(bar.width * max(0.0, min(1.0, percent / 100.0)))
+            if fill_w:
+                pygame.draw.rect(screen, (122, 168, 218), pygame.Rect(bar.x, bar.y, fill_w, bar.height))
+            screen.blit(font.render(f"{percent:5.2f}%", True, (232, 238, 246)), (bar.right + 12, y - 1))
+            y += 30
+
+        y += 14
+        for note in atmosphere.get("notes", [])[:4]:
+            for wrapped in self._wrap_text(note, font, right.width - 24):
+                screen.blit(font.render(wrapped, True, (154, 166, 188)), (right.x + 12, y))
+                y += 20
+                if y > right.bottom - 28:
+                    break
+            if y > right.bottom - 28:
+                break
+
+        save_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 164, 30)
+        self._draw_panel_button(screen, font, save_rect, "Save Atmosphere", primary=True)
+        status = payload.get("commit_status") or ""
+        if status:
+            screen.blit(font.render(status, True, (178, 210, 244)), (save_rect.right + 18, panel.bottom - 41))
+        hint = font.render("Enter saves atmosphere. Esc exits selected planet. Later: atmospheric chemistry and climate iteration.", True, (142, 152, 170))
+        screen.blit(hint, (panel.x + 16, panel.bottom - 76))
+
+        sim.set_crust_ui_rects(save_rect=save_rect)
+        sim.set_seed_field_rects({})
+        sim.set_control_panel_rect(panel)
+
+    def _draw_status_row(self, screen, font, rect, label, value, color=(196, 210, 228)):
+        screen.blit(font.render(str(label), True, (154, 166, 188)), (rect.x, rect.y))
+        value_text = self._wrap_text(str(value), font, rect.width - 190)
+        y = rect.y
+        for line in value_text[:2]:
+            screen.blit(font.render(line, True, color), (rect.x + 190, y))
+            y += 20
+        return max(rect.y + 24, y + 2)
+
+    def _draw_regime_panel(self, screen, sim, payload):
+        font = self.app_view.default_font
+        panel = pygame.Rect(34, 74, screen.get_width() - 68, screen.get_height() - 130)
+        pygame.draw.rect(screen, (20, 23, 32), panel)
+        pygame.draw.rect(screen, (188, 196, 212), panel, 1)
+
+        selected_planet = payload.get("selected_planet") or {}
+        regime = payload.get("interior_regime_model") or {}
+        interior = regime.get("interior") or {}
+        surface = regime.get("surface_processes") or {}
+        title = f"World Generation: {selected_planet.get('name', selected_planet.get('id', 'Planet'))} Interior / Surface Regime"
+        screen.blit(font.render(title, True, (244, 244, 244)), (panel.x + 16, panel.y + 12))
+        subtitle = "This determines which terrain, erosion, hydrology, and crater processes the map generator may use."
+        screen.blit(font.render(subtitle, True, (158, 170, 190)), (panel.x + 16, panel.y + 34))
+
+        left = pygame.Rect(panel.x + 16, panel.y + 70, (panel.width - 58) // 2, panel.height - 150)
+        right = pygame.Rect(left.right + 26, left.y, panel.right - left.right - 42, left.height)
+        for box in (left, right):
+            pygame.draw.rect(screen, (25, 29, 40), box)
+            pygame.draw.rect(screen, (96, 108, 132), box, 1)
+
+        y = left.y + 14
+        screen.blit(font.render("Interior Engine", True, (232, 238, 246)), (left.x + 12, y))
+        y += 32
+        interior_rows = [
+            ("Differentiated", "yes" if interior.get("differentiated") else "no"),
+            ("Mantle present", "yes" if interior.get("mantle_present") else "no"),
+            ("Core radius", f"{float(interior.get('core_radius_fraction', 0.0)) * 100.0:.1f}%"),
+            ("Mantle radius", f"{float(interior.get('mantle_radius_fraction', 0.0)) * 100.0:.1f}%"),
+            ("Crust", f"{float(interior.get('crust_thickness_km', 0.0)):.1f} km | {interior.get('crust_type', 'unknown')}"),
+            ("Internal heat", f"{float(interior.get('internal_heat_w_m2', 0.0)):.3f} W/m2"),
+            ("Tectonics", interior.get("tectonic_regime", "unknown")),
+            ("Volcanism", interior.get("volcanic_activity", "unknown")),
+        ]
+        for label, value in interior_rows:
+            row_rect = pygame.Rect(left.x + 12, y, left.width - 24, 24)
+            y = self._draw_status_row(screen, font, row_rect, label, value)
+
+        y = right.y + 14
+        screen.blit(font.render("Surface Process Permissions", True, (232, 238, 246)), (right.x + 12, y))
+        y += 32
+        process_rows = [
+            ("Pressure", f"{float(surface.get('surface_pressure_bar', 0.0)):.3f} bar"),
+            ("Temperature", f"{float(surface.get('surface_temperature_k', 0.0)):.1f} K"),
+            ("Liquid water", "possible" if surface.get("liquid_water_possible") else "not stable"),
+            ("Hydrology", surface.get("hydrologic_cycle", "unknown")),
+            ("Wind erosion", surface.get("aeolian_activity", "unknown")),
+            ("Crater retention", surface.get("crater_retention", "unknown")),
+            ("Topography seed", surface.get("primary_topography", "unknown")),
+        ]
+        for label, value in process_rows:
+            row_rect = pygame.Rect(right.x + 12, y, right.width - 24, 24)
+            y = self._draw_status_row(screen, font, row_rect, label, value)
+
+        y += 8
+        erosion = ", ".join(surface.get("erosion_processes") or [])
+        for wrapped in self._wrap_text(f"Erosion: {erosion or 'none'}", font, right.width - 24):
+            screen.blit(font.render(wrapped, True, (196, 210, 228)), (right.x + 12, y))
+            y += 20
+
+        y += 8
+        screen.blit(font.render("Next Map Recipe", True, (232, 238, 246)), (right.x + 12, y))
+        y += 24
+        for step in (regime.get("map_recipe") or [])[:7]:
+            text = step.replace("_", " ")
+            screen.blit(font.render(f"- {text}", True, (154, 166, 188)), (right.x + 18, y))
+            y += 20
+            if y > right.bottom - 24:
+                break
+
+        save_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 188, 30)
+        self._draw_panel_button(screen, font, save_rect, "Save Regime", primary=True)
+        status = payload.get("commit_status") or ""
+        if status:
+            screen.blit(font.render(status, True, (178, 210, 244)), (save_rect.right + 18, panel.bottom - 41))
+        hint = font.render("Enter saves regime. Esc exits selected planet. Next: generate first heightfield/map layers.", True, (142, 152, 170))
+        screen.blit(hint, (panel.x + 16, panel.bottom - 76))
+
+        sim.set_crust_ui_rects(save_rect=save_rect)
+        sim.set_seed_field_rects({})
+        sim.set_control_panel_rect(panel)
+
+    def _draw_terrain_panel(self, screen, sim, payload):
+        font = self.app_view.default_font
+        panel = pygame.Rect(34, 74, screen.get_width() - 68, screen.get_height() - 130)
+        pygame.draw.rect(screen, (20, 23, 32), panel)
+        pygame.draw.rect(screen, (188, 196, 212), panel, 1)
+
+        selected_planet = payload.get("selected_planet") or {}
+        terrain = payload.get("terrain_seed_model") or {}
+        heightfield = terrain.get("heightfield") or {}
+        tectonics = terrain.get("tectonics") or {}
+        cratering = terrain.get("cratering") or {}
+        erosion = terrain.get("erosion") or {}
+        hydrology = terrain.get("hydrology") or {}
+        canvas = terrain.get("map_canvas") or {}
+        title = f"World Generation: {selected_planet.get('name', selected_planet.get('id', 'Planet'))} Terrain Seed"
+        screen.blit(font.render(title, True, (244, 244, 244)), (panel.x + 16, panel.y + 12))
+        subtitle = "This creates the first global map scaffold: elevation bounds, water mask, tectonic/crater layers, and erosion masks."
+        screen.blit(font.render(subtitle, True, (158, 170, 190)), (panel.x + 16, panel.y + 34))
+
+        col_gap = 24
+        col_w = (panel.width - 48 - col_gap * 2) // 3
+        columns = [
+            pygame.Rect(panel.x + 16, panel.y + 70, col_w, panel.height - 150),
+            pygame.Rect(panel.x + 16 + col_w + col_gap, panel.y + 70, col_w, panel.height - 150),
+            pygame.Rect(panel.x + 16 + (col_w + col_gap) * 2, panel.y + 70, col_w, panel.height - 150),
+        ]
+        for box in columns:
+            pygame.draw.rect(screen, (25, 29, 40), box)
+            pygame.draw.rect(screen, (96, 108, 132), box, 1)
+
+        y = columns[0].y + 14
+        screen.blit(font.render("Heightfield Canvas", True, (232, 238, 246)), (columns[0].x + 12, y))
+        y += 32
+        height_rows = [
+            ("Projection", canvas.get("projection", "unknown")),
+            ("Canvas", f"{canvas.get('width_px', 0)} x {canvas.get('height_px', 0)}"),
+            ("Relief driver", heightfield.get("relief_driver", "unknown")),
+            ("Topography", heightfield.get("primary_topography", "unknown")),
+            ("Min elevation", f"{float(heightfield.get('min_elevation_m', 0.0)):.0f} m"),
+            ("Max elevation", f"{float(heightfield.get('max_elevation_m', 0.0)):.0f} m"),
+            ("Roughness", f"{float(heightfield.get('roughness', 0.0)):.2f}"),
+            ("Ocean target", f"{float(heightfield.get('target_ocean_fraction', 0.0)) * 100.0:.1f}%"),
+        ]
+        for label, value in height_rows:
+            row_rect = pygame.Rect(columns[0].x + 12, y, columns[0].width - 24, 24)
+            y = self._draw_status_row(screen, font, row_rect, label, value)
+
+        y = columns[1].y + 14
+        screen.blit(font.render("Surface Drivers", True, (232, 238, 246)), (columns[1].x + 12, y))
+        y += 32
+        driver_rows = [
+            ("Tectonics", "enabled" if tectonics.get("enabled") else "disabled"),
+            ("Regime", tectonics.get("regime", "unknown")),
+            ("Plate count", tectonics.get("plate_count", 0)),
+            ("Boundary style", tectonics.get("boundary_style", "unknown")),
+            ("Cratering", f"{cratering.get('retention', 'unknown')} | {float(cratering.get('density', 0.0)):.2f}"),
+            ("Max crater", f"{float(cratering.get('max_crater_diameter_km', 0.0)):.1f} km"),
+            ("Hydrology", hydrology.get("cycle", "unknown")),
+            ("Drainage", "enabled" if hydrology.get("drainage_enabled") else "disabled"),
+        ]
+        for label, value in driver_rows:
+            row_rect = pygame.Rect(columns[1].x + 12, y, columns[1].width - 24, 24)
+            y = self._draw_status_row(screen, font, row_rect, label, value)
+
+        y += 8
+        erosion_text = ", ".join(erosion.get("processes") or [])
+        for wrapped in self._wrap_text(f"Erosion: {erosion_text or 'none'}", font, columns[1].width - 24):
+            screen.blit(font.render(wrapped, True, (196, 210, 228)), (columns[1].x + 12, y))
+            y += 20
+
+        y = columns[2].y + 14
+        screen.blit(font.render("Map Layers", True, (232, 238, 246)), (columns[2].x + 12, y))
+        y += 30
+        for layer in (terrain.get("map_layers") or [])[:10]:
+            label = f"{layer.get('id', 'layer')} | {layer.get('kind', 'layer')}"
+            for wrapped in self._wrap_text(label, font, columns[2].width - 30):
+                screen.blit(font.render(wrapped, True, (196, 210, 228)), (columns[2].x + 18, y))
+                y += 19
+            if y > columns[2].bottom - 100:
+                break
+
+        y += 8
+        screen.blit(font.render("Recipe Tail", True, (232, 238, 246)), (columns[2].x + 12, y))
+        y += 24
+        for step in (terrain.get("map_recipe") or [])[-5:]:
+            text = step.replace("_", " ")
+            for wrapped in self._wrap_text(f"- {text}", font, columns[2].width - 30):
+                screen.blit(font.render(wrapped, True, (154, 166, 188)), (columns[2].x + 18, y))
+                y += 19
+            if y > columns[2].bottom - 20:
+                break
+
+        save_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 180, 30)
+        self._draw_panel_button(screen, font, save_rect, "Save Terrain", primary=True)
+        status = payload.get("commit_status") or ""
+        if status:
+            screen.blit(font.render(status, True, (178, 210, 244)), (save_rect.right + 18, panel.bottom - 41))
+        hint = font.render("Enter saves terrain seed. Esc exits selected planet. Next: preview/render map layers.", True, (142, 152, 170))
+        screen.blit(hint, (panel.x + 16, panel.bottom - 76))
+
+        sim.set_crust_ui_rects(save_rect=save_rect)
+        sim.set_seed_field_rects({})
+        sim.set_control_panel_rect(panel)
+
+    def _plate_color(self, index, plate_type):
+        palette = [
+            (66, 102, 132),
+            (78, 122, 96),
+            (128, 106, 72),
+            (112, 82, 126),
+            (118, 118, 76),
+            (72, 118, 126),
+            (128, 84, 84),
+            (90, 104, 146),
+        ]
+        base = palette[index % len(palette)]
+        if plate_type == "oceanic":
+            return (max(26, base[0] - 28), max(40, base[1] - 10), min(170, base[2] + 26))
+        if plate_type == "continental":
+            return (min(160, base[0] + 32), min(155, base[1] + 24), max(54, base[2] - 6))
+        return base
+
+    def _draw_arrow(self, screen, start, vector, color, scale=1.0, width=1):
+        sx, sy = start
+        vx, vy = vector
+        ex = sx + vx * scale
+        ey = sy + vy * scale
+        pygame.draw.line(screen, color, (int(sx), int(sy)), (int(ex), int(ey)), width)
+        angle = math.atan2(ey - sy, ex - sx)
+        head = 6
+        left = (ex - math.cos(angle - 0.55) * head, ey - math.sin(angle - 0.55) * head)
+        right = (ex - math.cos(angle + 0.55) * head, ey - math.sin(angle + 0.55) * head)
+        pygame.draw.line(screen, color, (int(ex), int(ey)), (int(left[0]), int(left[1])), width)
+        pygame.draw.line(screen, color, (int(ex), int(ey)), (int(right[0]), int(right[1])), width)
+
+    def _draw_tectonic_map(self, screen, font, rect, tectonic_model):
+        grid = tectonic_model.get("sample_grid") if isinstance(tectonic_model.get("sample_grid"), dict) else {}
+        owners = grid.get("owners") if isinstance(grid.get("owners"), list) else []
+        plates = list(tectonic_model.get("plates") or [])
+        sample_h = int(grid.get("height", len(owners)) or len(owners))
+        sample_w = int(grid.get("width", len(owners[0]) if owners else 0) or 0)
+        if sample_w < 2 or sample_h < 2 or not plates:
+            return
+
+        previous_clip = screen.get_clip()
+        screen.set_clip(rect)
+        try:
+            cell_w = rect.width / max(1, sample_w)
+            cell_h = rect.height / max(1, sample_h)
+            for row_index, owner_row in enumerate(owners[:sample_h]):
+                for col_index, owner in enumerate(owner_row[:sample_w]):
+                    plate = plates[int(owner) % len(plates)]
+                    color = self._plate_color(int(owner), plate.get("plate_type"))
+                    cell = pygame.Rect(
+                        int(rect.x + col_index * cell_w),
+                        int(rect.y + row_index * cell_h),
+                        max(1, int(math.ceil(cell_w))),
+                        max(1, int(math.ceil(cell_h))),
+                    )
+                    pygame.draw.rect(screen, color, cell)
+
+            for segment in tectonic_model.get("boundary_segments") or []:
+                x1 = rect.x + float(segment.get("x1", 0.0)) * rect.width
+                y1 = rect.y + float(segment.get("y1", 0.0)) * rect.height
+                x2 = rect.x + float(segment.get("x2", 0.0)) * rect.width
+                y2 = rect.y + float(segment.get("y2", 0.0)) * rect.height
+                pygame.draw.line(screen, (220, 228, 236), (int(x1), int(y1)), (int(x2), int(y2)), 1)
+
+            # Draw current arrows separately so they read above plate ownership.
+            for current in tectonic_model.get("mantle_currents") or []:
+                x = rect.x + float(current.get("pos_x", 0.0)) * rect.width
+                y = rect.y + float(current.get("pos_y", 0.0)) * rect.height
+                self._draw_arrow(
+                    screen,
+                    (x, y),
+                    (float(current.get("dir_x", 0.0)), float(current.get("dir_y", 0.0))),
+                    (118, 206, 220),
+                    scale=22,
+                    width=2,
+                )
+
+            for index, plate in enumerate(plates):
+                x = rect.x + float(plate.get("center_x", 0.0)) * rect.width
+                y = rect.y + float(plate.get("center_y", 0.0)) * rect.height
+                pygame.draw.circle(screen, (16, 18, 24), (int(x), int(y)), 5)
+                pygame.draw.circle(screen, (236, 238, 244), (int(x), int(y)), 5, 1)
+                self._draw_arrow(
+                    screen,
+                    (x, y),
+                    (float(plate.get("velocity_x_cm_year", 0.0)), float(plate.get("velocity_y_cm_year", 0.0))),
+                    (246, 218, 126),
+                    scale=4,
+                    width=1,
+                )
+        finally:
+            screen.set_clip(previous_clip)
+
+    def _draw_tectonics_panel(self, screen, sim, payload):
+        font = self.app_view.default_font
+        panel = pygame.Rect(34, 74, screen.get_width() - 68, screen.get_height() - 130)
+        pygame.draw.rect(screen, (18, 21, 28), panel)
+        pygame.draw.rect(screen, (188, 196, 212), panel, 1)
+
+        selected_planet = payload.get("selected_planet") or {}
+        tectonic_model = payload.get("tectonic_model") or {}
+        title = f"World Generation: {selected_planet.get('name', selected_planet.get('id', 'Planet'))} Tectonics"
+        screen.blit(font.render(title, True, (244, 244, 244)), (panel.x + 16, panel.y + 12))
+        subtitle = "Mantle currents drive plate motion. Advancing turns boundaries into mountains, trenches, basins, and erosion state."
+        screen.blit(font.render(subtitle, True, (158, 170, 190)), (panel.x + 16, panel.y + 34))
+
+        sidebar_w = 330
+        preview = pygame.Rect(panel.x + 16, panel.y + 70, panel.width - sidebar_w - 48, panel.height - 150)
+        sidebar = pygame.Rect(preview.right + 24, preview.y, sidebar_w, preview.height)
+        pygame.draw.rect(screen, (7, 10, 14), preview)
+        pygame.draw.rect(screen, (104, 116, 138), preview, 1)
+        self._draw_tectonic_map(screen, font, preview, tectonic_model)
+        pygame.draw.rect(screen, (25, 29, 40), sidebar)
+        pygame.draw.rect(screen, (96, 108, 132), sidebar, 1)
+
+        y = sidebar.y + 14
+        screen.blit(font.render("Plate State", True, (232, 238, 246)), (sidebar.x + 12, y))
+        y += 32
+        boundary_counts = {}
+        for boundary in tectonic_model.get("boundaries") or []:
+            kind = boundary.get("kind", "passive")
+            boundary_counts[kind] = boundary_counts.get(kind, 0) + 1
+        rows = [
+            ("Status", tectonic_model.get("status", "unknown")),
+            ("Age", f"{float(tectonic_model.get('age_myr', 0.0)):.1f} Myr"),
+            ("Plates", tectonic_model.get("plate_count", 0)),
+            ("Convergent", boundary_counts.get("collision", 0) + boundary_counts.get("subduction", 0)),
+            ("Divergent", boundary_counts.get("divergent", 0)),
+            ("Transform", boundary_counts.get("transform", 0)),
+            ("Passive", boundary_counts.get("passive", 0)),
+        ]
+        for label, value in rows:
+            row_rect = pygame.Rect(sidebar.x + 12, y, sidebar.width - 24, 24)
+            y = self._draw_status_row(screen, font, row_rect, label, value)
+
+        y += 14
+        screen.blit(font.render("Legend", True, (232, 238, 246)), (sidebar.x + 12, y))
+        y += 26
+        for text, color in [
+            ("plate areas", (126, 156, 116)),
+            ("white boundaries", (220, 228, 236)),
+            ("cyan mantle currents", (118, 206, 220)),
+            ("gold plate vectors", (246, 218, 126)),
+        ]:
+            pygame.draw.rect(screen, color, pygame.Rect(sidebar.x + 12, y + 5, 18, 8))
+            screen.blit(font.render(text, True, (176, 188, 208)), (sidebar.x + 38, y))
+            y += 22
+
+        save_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 188, 30)
+        self._draw_panel_button(screen, font, save_rect, "Advance Tectonics", primary=True)
+        status = payload.get("commit_status") or ""
+        if status:
+            screen.blit(font.render(status, True, (178, 210, 244)), (save_rect.right + 18, panel.bottom - 41))
+        hint = font.render("Enter advances 25 Myr. Esc exits selected planet. Next: heightmap from uplift, basins, and erosion.", True, (142, 152, 170))
+        screen.blit(hint, (panel.x + 16, panel.bottom - 76))
+
+        sim.set_crust_ui_rects(save_rect=save_rect)
+        sim.set_seed_field_rects({})
+        sim.set_control_panel_rect(panel)
+
+    def _heightmap_contour_segments(self, heightmap, level):
+        grid = heightmap.get("sample_grid") if isinstance(heightmap.get("sample_grid"), dict) else {}
+        rows = grid.get("rows") if isinstance(grid.get("rows"), list) else []
+        sample_h = int(grid.get("height", len(rows)) or len(rows))
+        sample_w = int(grid.get("width", len(rows[0]) if rows else 0) or 0)
+        if sample_w < 2 or sample_h < 2 or len(rows) < sample_h:
+            return []
+
+        def edge_point(edge, col, row, v_a, v_b):
+            denom = v_b - v_a
+            t = 0.5 if abs(denom) < 1e-9 else (level - v_a) / denom
+            t = max(0.0, min(1.0, t))
+            if edge == "top":
+                return col + t, row
+            if edge == "right":
+                return col + 1, row + t
+            if edge == "bottom":
+                return col + t, row + 1
+            return col, row + t
+
+        segments = []
+        for row in range(sample_h - 1):
+            if row + 1 >= len(rows):
+                break
+            for col in range(sample_w - 1):
+                try:
+                    v00 = float(rows[row][col])
+                    v10 = float(rows[row][col + 1])
+                    v01 = float(rows[row + 1][col])
+                    v11 = float(rows[row + 1][col + 1])
+                except (IndexError, TypeError, ValueError):
+                    continue
+
+                points = []
+                if (v00 <= level <= v10) or (v10 <= level <= v00):
+                    if v00 != v10:
+                        points.append(edge_point("top", col, row, v00, v10))
+                if (v10 <= level <= v11) or (v11 <= level <= v10):
+                    if v10 != v11:
+                        points.append(edge_point("right", col, row, v10, v11))
+                if (v01 <= level <= v11) or (v11 <= level <= v01):
+                    if v01 != v11:
+                        points.append(edge_point("bottom", col, row, v01, v11))
+                if (v00 <= level <= v01) or (v01 <= level <= v00):
+                    if v00 != v01:
+                        points.append(edge_point("left", col, row, v00, v01))
+
+                if len(points) == 2:
+                    segments.append((points[0], points[1], level))
+                elif len(points) == 4:
+                    segments.append((points[0], points[1], level))
+                    segments.append((points[2], points[3], level))
+        return segments
+
+    def _draw_heightmap_contours(self, screen, font, map_rect, clip_rect, heightmap, interval_m):
+        grid = heightmap.get("sample_grid") if isinstance(heightmap.get("sample_grid"), dict) else {}
+        sample_w = int(grid.get("width", 0) or 0)
+        sample_h = int(grid.get("height", 0) or 0)
+        if sample_w < 2 or sample_h < 2:
+            return
+
+        levels = contour_levels_for_heightmap(heightmap, interval_m, max_levels=18)
+        scale_x = map_rect.width / max(1, sample_w - 1)
+        scale_y = map_rect.height / max(1, sample_h - 1)
+        previous_clip = screen.get_clip()
+        screen.set_clip(clip_rect)
+        try:
+            for level in levels:
+                is_zero = abs(level) < interval_m * 0.45
+                is_major = level % max(interval_m * 5, 1) == 0
+                if is_zero:
+                    color = (128, 190, 240)
+                    width = 2
+                elif is_major:
+                    color = (178, 190, 206)
+                    width = 1
+                elif level < 0:
+                    color = (72, 92, 116)
+                    width = 1
+                else:
+                    color = (118, 128, 142)
+                    width = 1
+                for p1, p2, _ in self._heightmap_contour_segments(heightmap, level):
+                    screen_p1 = (int(map_rect.x + p1[0] * scale_x), int(map_rect.y + p1[1] * scale_y))
+                    screen_p2 = (int(map_rect.x + p2[0] * scale_x), int(map_rect.y + p2[1] * scale_y))
+                    pygame.draw.line(screen, color, screen_p1, screen_p2, width)
+        finally:
+            screen.set_clip(previous_clip)
+
+        sea_level = heightmap.get("sea_level_m")
+        label = "0 m datum" if sea_level is None else "0 m sea level"
+        label_surface = font.render(label, True, (164, 204, 238))
+        screen.blit(label_surface, (clip_rect.x + 10, clip_rect.y + 10))
+
+    def _draw_heightmap_land_ocean(self, screen, map_rect, clip_rect, heightmap):
+        grid = heightmap.get("sample_grid") if isinstance(heightmap.get("sample_grid"), dict) else {}
+        rows = grid.get("rows") if isinstance(grid.get("rows"), list) else []
+        sample_h = int(grid.get("height", len(rows)) or len(rows))
+        sample_w = int(grid.get("width", len(rows[0]) if rows else 0) or 0)
+        if sample_w < 2 or sample_h < 2:
+            return
+
+        sea_level = heightmap.get("sea_level_m")
+        sea_level = 0.0 if sea_level is None else float(sea_level)
+        min_elevation = float(heightmap.get("min_elevation_m", -4000.0) or -4000.0)
+        max_elevation = float(heightmap.get("max_elevation_m", 4000.0) or 4000.0)
+        land_span = max(1.0, max_elevation - sea_level)
+        ocean_span = max(1.0, sea_level - min_elevation)
+        cell_w = map_rect.width / max(1, sample_w - 1)
+        cell_h = map_rect.height / max(1, sample_h - 1)
+
+        previous_clip = screen.get_clip()
+        screen.set_clip(clip_rect)
+        try:
+            for row_index, row in enumerate(rows[:sample_h - 1]):
+                for col_index, value in enumerate(row[:sample_w - 1]):
+                    try:
+                        elevation = float(value)
+                    except (TypeError, ValueError):
+                        continue
+                    if elevation < sea_level:
+                        depth = min(1.0, (sea_level - elevation) / ocean_span)
+                        color = (
+                            int(8 + depth * 12),
+                            int(26 + depth * 34),
+                            int(48 + depth * 72),
+                        )
+                    else:
+                        height = min(1.0, (elevation - sea_level) / land_span)
+                        color = (
+                            int(28 + height * 38),
+                            int(40 + height * 48),
+                            int(34 + height * 26),
+                        )
+                    rect = pygame.Rect(
+                        int(map_rect.x + col_index * cell_w),
+                        int(map_rect.y + row_index * cell_h),
+                        max(1, int(math.ceil(cell_w))),
+                        max(1, int(math.ceil(cell_h))),
+                    )
+                    pygame.draw.rect(screen, color, rect)
+        finally:
+            screen.set_clip(previous_clip)
+
+    def _draw_heightmap_panel(self, screen, sim, payload, camera):
+        font = self.app_view.default_font
+        panel = pygame.Rect(34, 74, screen.get_width() - 68, screen.get_height() - 130)
+        pygame.draw.rect(screen, (18, 21, 28), panel)
+        pygame.draw.rect(screen, (188, 196, 212), panel, 1)
+
+        selected_planet = payload.get("selected_planet") or {}
+        heightmap = payload.get("heightmap_model") or {}
+        terrain = payload.get("terrain_seed_model") or {}
+        title = f"World Generation: {selected_planet.get('name', selected_planet.get('id', 'Planet'))} Heightmap"
+        screen.blit(font.render(title, True, (244, 244, 244)), (panel.x + 16, panel.y + 12))
+        subtitle = "Height markers are contour lines from the saved heightfield seed; marker interval tightens as zoom increases."
+        screen.blit(font.render(subtitle, True, (158, 170, 190)), (panel.x + 16, panel.y + 34))
+
+        sidebar_w = 330
+        preview = pygame.Rect(panel.x + 16, panel.y + 70, panel.width - sidebar_w - 48, panel.height - 150)
+        sidebar = pygame.Rect(preview.right + 24, preview.y, sidebar_w, preview.height)
+        pygame.draw.rect(screen, (6, 8, 12), preview)
+        pygame.draw.rect(screen, (104, 116, 138), preview, 1)
+        pygame.draw.rect(screen, (25, 29, 40), sidebar)
+        pygame.draw.rect(screen, (96, 108, 132), sidebar, 1)
+
+        canvas_w = max(1, int(heightmap.get("width_px", 2048) or 2048))
+        canvas_h = max(1, int(heightmap.get("height_px", 1024) or 1024))
+        preview_scale = min(preview.width / canvas_w, preview.height / canvas_h)
+        preview_zoom = max(1.0, float(getattr(sim, "heightmap_preview_zoom", 1.0) or 1.0))
+        requested_interval = height_marker_interval_m(preview_scale * preview_zoom)
+        interval = display_contour_interval_m(heightmap, requested_interval, max_levels=18)
+
+        map_w = int(canvas_w * preview_scale * preview_zoom)
+        map_h = int(canvas_h * preview_scale * preview_zoom)
+        map_rect = pygame.Rect(0, 0, map_w, map_h)
+        map_rect.center = preview.center
+        previous_clip = screen.get_clip()
+        screen.set_clip(preview)
+        pygame.draw.rect(screen, (10, 13, 18), map_rect)
+        screen.set_clip(previous_clip)
+        self._draw_heightmap_land_ocean(screen, map_rect, preview, heightmap)
+        previous_clip = screen.get_clip()
+        screen.set_clip(preview)
+        pygame.draw.rect(screen, (74, 86, 106), map_rect, 1)
+        screen.set_clip(previous_clip)
+        self._draw_heightmap_contours(screen, font, map_rect, preview, heightmap, interval)
+
+        y = sidebar.y + 14
+        screen.blit(font.render("Heightfield Storage", True, (232, 238, 246)), (sidebar.x + 12, y))
+        y += 32
+        storage = heightmap.get("storage") if isinstance(heightmap.get("storage"), dict) else {}
+        sample = heightmap.get("sample_grid") if isinstance(heightmap.get("sample_grid"), dict) else {}
+        hypsometry = heightmap.get("hypsometry_summary") if isinstance(heightmap.get("hypsometry_summary"), dict) else {}
+        rows = [
+            ("Projection", heightmap.get("projection", "unknown")),
+            ("Canvas", f"{canvas_w} x {canvas_h} px"),
+            ("Samples", f"{sample.get('width', 0)} x {sample.get('height', 0)}"),
+            ("Chunks", f"{storage.get('chunk_cols', 0)} x {storage.get('chunk_rows', 0)}"),
+            ("Chunk size", f"{storage.get('chunk_width_px', 0)} x {storage.get('chunk_height_px', 0)} px"),
+            ("Elevation", f"{float(heightmap.get('min_elevation_m', 0.0)):.0f} to {float(heightmap.get('max_elevation_m', 0.0)):.0f} m"),
+            ("Land", f"{float(hypsometry.get('land_fraction', 0.0)) * 100.0:.0f}%"),
+            ("Ocean", f"{float(hypsometry.get('ocean_fraction', 0.0)) * 100.0:.0f}%"),
+            ("Broad plains", f"{float(hypsometry.get('broad_plain_fraction', 0.0)) * 100.0:.0f}%"),
+            ("Mountains", f"{float(hypsometry.get('mountain_fraction_above_2000m', 0.0)) * 100.0:.0f}% >2km"),
+            ("Preview zoom", f"x{preview_zoom:.2f}"),
+            ("Marker interval", f"{interval} m"),
+            ("Requested", f"{requested_interval} m"),
+        ]
+        for label, value in rows:
+            row_rect = pygame.Rect(sidebar.x + 12, y, sidebar.width - 24, 24)
+            y = self._draw_status_row(screen, font, row_rect, label, value)
+
+        y += 12
+        screen.blit(font.render("Reuse Contract", True, (232, 238, 246)), (sidebar.x + 12, y))
+        y += 28
+        contract = storage.get("consumer_contract", "chunks are addressed by projection pixel bbox")
+        for wrapped in self._wrap_text(contract, font, sidebar.width - 24):
+            screen.blit(font.render(wrapped, True, (154, 166, 188)), (sidebar.x + 12, y))
+            y += 20
+
+        y += 12
+        recipe = terrain.get("map_recipe") if isinstance(terrain.get("map_recipe"), list) else []
+        screen.blit(font.render("Next", True, (232, 238, 246)), (sidebar.x + 12, y))
+        y += 26
+        for step in recipe[-4:]:
+            for wrapped in self._wrap_text(f"- {str(step).replace('_', ' ')}", font, sidebar.width - 30):
+                screen.blit(font.render(wrapped, True, (154, 166, 188)), (sidebar.x + 18, y))
+                y += 19
+
+        can_advance_tectonics = bool(getattr(sim, "_heightmap_can_advance_tectonics", lambda: False)())
+        button_label = "Advance Tectonics" if can_advance_tectonics else "Refresh Heightmap"
+        save_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 188, 30)
+        self._draw_panel_button(screen, font, save_rect, button_label, primary=True)
+        status = payload.get("commit_status") or ""
+        if status:
+            screen.blit(font.render(status, True, (178, 210, 244)), (save_rect.right + 18, panel.bottom - 41))
+        if can_advance_tectonics:
+            hint_text = "Enter advances tectonics 25 Myr. Mouse wheel over preview zooms heightmap. Esc exits selected planet."
+        else:
+            hint_text = "Mouse wheel over preview zooms heightmap. Marker density follows preview zoom. Esc exits selected planet."
+        hint = font.render(hint_text, True, (142, 152, 170))
+        screen.blit(hint, (panel.x + 16, panel.bottom - 76))
+
+        sim.set_crust_ui_rects(save_rect=save_rect)
+        sim.set_seed_field_rects({})
+        sim.set_control_panel_rect(panel)
+        sim.set_heightmap_preview_rect(preview)
+
+    def _draw_seed_panel_fields(self, screen, sim, payload, panel):
+        font = self.app_view.default_font
+        field_rects = {}
+        y = panel.y + 46
+        for field in payload.get("seed_fields", []):
+            label = font.render(field["label"], True, (190, 200, 216))
+            screen.blit(label, (panel.x + 12, y))
+            input_rect = pygame.Rect(panel.x + 196, y - 4, 170, 24)
+            field_rects[field["id"]] = input_rect
+            fill = (38, 48, 68) if field.get("active") else (30, 34, 44)
+            border = (188, 212, 244) if field.get("active") else (92, 102, 122)
+            pygame.draw.rect(screen, fill, input_rect)
+            pygame.draw.rect(screen, border, input_rect, 1)
+            value = field.get("text") or ""
+            placeholder = "value"
+            value_surface = font.render(value or placeholder, True, (238, 238, 238) if value else (128, 138, 154))
+            screen.blit(value_surface, (input_rect.x + 6, input_rect.y + 4))
+            y += 32
+
+        sim.set_seed_field_rects(field_rects)
+        sim.set_control_panel_rect(panel)
+
+        selected_planet = payload.get("selected_planet") or {}
+        orbit_bits = []
+        if selected_planet.get("periapsis_au") is not None:
+            orbit_bits.append(f"peri {float(selected_planet.get('periapsis_au')):.3f} AU")
+        if selected_planet.get("apoapsis_au") is not None:
+            orbit_bits.append(f"apo {float(selected_planet.get('apoapsis_au')):.3f} AU")
+        orbit_text = " | ".join(orbit_bits) if orbit_bits else "Orbit locked"
+        orbit_surface = font.render(orbit_text, True, (196, 210, 226))
+        screen.blit(orbit_surface, (panel.x + 12, panel.bottom - 84))
+
+        status = payload.get("commit_status") or ""
+        if status:
+            status_surface = font.render(status, True, (178, 210, 244))
+            screen.blit(status_surface, (panel.x + 12, panel.bottom - 58))
+
+        hint_text = "Enter saves seed. Esc returns to orbit draft. Click empty space to place another planet."
+        hint = font.render(hint_text, True, (142, 152, 170))
+        max_hint_w = panel.width - 24
+        if hint.get_width() > max_hint_w:
+            hint_text = "Enter saves seed. Esc returns. Click empty space for another planet."
+            hint = font.render(hint_text, True, (142, 152, 170))
+        screen.blit(hint, (panel.x + 12, panel.bottom - 28))
+
     def draw(self, screen, sim):
         payload = sim.get_preview_payload()
         model = payload.get("model", {})
         camera = self.app_view.camera
 
         self._draw_habitable_zone(screen, camera, model)
-        self._draw_reference_bodies(screen, camera, payload.get("system_bodies", []))
+        self._draw_reference_bodies(screen, camera, sim, payload)
         self._draw_candidate_orbit(screen, camera, model)
         self._draw_star(screen, camera, payload)
-        self._draw_input_panel(screen, sim, payload)
+        self._draw_input_panel(screen, sim, payload, camera)

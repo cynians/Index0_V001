@@ -17,7 +17,52 @@
   - faction_global_government_organization
   associated_institutions:
   - institution_engineering_group_0
-  derived_from:
+  tags:
+  - cog
+  - earth
+  - megastructure
+  - ring_city
+  - ggo
+  - orbital_interface
+  - administrative_center
+  urban_structure:
+    structure_type: concentric_ring_megastructure
+    original_ring_count: 5
+    central_district: cog_central_core_district
+    outer_boundary: cog_outer_wall
+    primary_structural_zones:
+    - cog_ring_1
+    - cog_ring_2
+    - cog_ring_3
+    - cog_ring_4
+    - cog_ring_5
+    - cog_infrastructure_belts
+    later_expansion: true
+    later_expansion_notes: Additional outer habitation and production districts were
+      added beyond the original five-ring structure.
+  city_systems:
+    transport_systems:
+    - sys_cog_high_speed_ring_rail_network
+    - sys_cog_leveling_access_structure
+    utility_systems:
+    - sys_cog_infrastructure
+    - sys_cog_water_system
+    - sys_cog_energy_system
+    logistics_and_production_systems:
+    - sys_cog_commodity_quarters
+    orbital_interface_systems:
+    - sys_central_cog_space_elevator
+    - station_upper_cog
+    - site_cog_orbital_launch_fields
+  cultural_features:
+  - aspect_cog_interior_hobby_agriculture
+  - aspect_late_cog_quarantine_regime
+  embedded_sites:
+  - loc_cog_breach_vent_tunnel
+  start_year: 2884
+  entry_status: stub
+  parents: []
+  related:
   - IDEA-452
   - IDEA-453
   - IDEA-454
@@ -38,58 +83,22 @@
   - IDEA-476
   - IDEA-479
   - IDEA-480
-  tags:
-  - cog
-  - earth
-  - megastructure
-  - ring_city
-  - ggo
-  - orbital_interface
-  - administrative_center
-  urban_structure:
-    structure_type: concentric_ring_megastructure
-    original_ring_count: 5
-    central_district: cog_central_core_district
-    outer_boundary: cog_outer_wall
-    primary_structural_zones:
-      - cog_ring_1
-      - cog_ring_2
-      - cog_ring_3
-      - cog_ring_4
-      - cog_ring_5
-      - cog_infrastructure_belts
-    later_expansion: true
-    later_expansion_notes: Additional outer habitation and production districts were added beyond the original five-ring structure.
-  city_systems:
-    transport_systems:
-      - sys_cog_high_speed_ring_rail_network
-      - sys_cog_leveling_access_structure
-    utility_systems:
-      - sys_cog_infrastructure
-      - sys_cog_water_system
-      - sys_cog_energy_system
-    logistics_and_production_systems:
-      - sys_cog_commodity_quarters
-    orbital_interface_systems:
-      - sys_central_cog_space_elevator
-      - station_upper_cog
-      - site_cog_orbital_launch_fields
-  cultural_features:
-  - aspect_cog_interior_hobby_agriculture
-  - aspect_late_cog_quarantine_regime
-  embedded_sites:
-  - loc_cog_breach_vent_tunnel
-  start_year: 2884
-  entry_status: stub
-  parents: []
-  related: []
   offspring: []
-  wiki_entry: |
-    Massive terrestrial megastructure city constructed by the Global Government Organization in the Central Asian steppes. During the GGO Hegemony it became the primary population and administrative center of Earth. The original complex consisted of five concentric urban rings surrounding the central core district, separated by inhabited infrastructure belts and enclosed by the CoG Outer Wall. Later phases expanded beyond the original structure into additional outer habitation and production districts.
-    
-    City-layer aggregate entry. Geography remains on the linked location entry. Urban systems, structural districts, social organization, and internal city capabilities are represented here.
+  wiki_entry: 'Massive terrestrial megastructure city constructed by the Global Government
+    Organization in the Central Asian steppes. During the GGO Hegemony it became the
+    primary population and administrative center of Earth. The original complex consisted
+    of five concentric urban rings surrounding the central core district, separated
+    by inhabited infrastructure belts and enclosed by the CoG Outer Wall. Later phases
+    expanded beyond the original structure into additional outer habitation and production
+    districts.
+
+
+    City-layer aggregate entry. Geography remains on the linked location entry. Urban
+    systems, structural districts, social organization, and internal city capabilities
+    are represented here.
+
+    '
   end_year: 5917
-  wiki_mentions: []
   card_color: '#26231b'
   card_header_color: '#b56f26'
 - id: city_ruins_of_the_cog
@@ -100,12 +109,10 @@
   start_year: 5917
   end_year: 6196
   tags: []
-  derived_from: []
   parents: []
   related:
   - city_cog
   - city_late_decline_cog
-  wiki_mentions: []
   offspring: []
   entry_status: ''
   card_color: '#2a2827'
@@ -116,15 +123,14 @@
   card_color: '#ca8c65'
   location_entity: null
   offspring:
+  - id: loc_castelli_automobiles_plant
   - id: loc_groundworks_district_lumen_free_city
   - id: loc_lumen_free_trade_port
   parents:
   - planet_mars
-  wiki_mentions: []
   start_year: 5334
   end_year: 7411
   tags: []
-  derived_from: []
   related: []
   entry_status: ''
 - id: city_late_decline_cog
@@ -133,8 +139,13 @@
   type: city
   location_entity: null
   wiki_entry: ''
-  wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''
 - id: city_new_001
   pretty_name: Bogota City
   name: Bogota City
@@ -142,13 +153,23 @@
   location_entity: null
   wiki_entry: ''
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''
 - id: city_thom_city_nanhai
-  pretty_name: 'Thom City, Nanhai'
-  name: 'Thom City, Nanhai'
+  pretty_name: Thom City, Nanhai
+  name: Thom City, Nanhai
   type: city
   location_entity: null
-  wiki_mentions: []
   card_color: '#1c2625'
   parents:
   - planet_nanhai
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''

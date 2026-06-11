@@ -27,10 +27,8 @@ class EntityLoader:
         "tags": [],
         "start_year": None,
         "end_year": None,
-        "derived_from": [],
         "parents": [],
         "related": [],
-        "wiki_mentions": [],
         "offspring": [],
         "entry_status": "",
     }
@@ -38,10 +36,8 @@ class EntityLoader:
         "tags": [],
         "start_year": None,
         "end_year": None,
-        "derived_from": [],
         "parents": [],
         "related": [],
-        "wiki_mentions": [],
         "offspring": [],
         "entry_status": "",
     }
@@ -63,7 +59,7 @@ class EntityLoader:
         "media_layers",
     }
     CORE_RELATION_RENAMES = {
-        "derived_from_ideas": "derived_from",
+        "derived_from_ideas": "related",
         "parent_ideas": "parents",
         "related_ideas": "related",
     }
@@ -96,6 +92,46 @@ class EntityLoader:
                 continue
             if field not in target or self._is_blank_value(target.get(field)):
                 target[field] = source.get(field)
+
+    def _merge_relation_values(self, entity, source_field, target_field="related", remove_source=True):
+        if source_field not in entity:
+            return False
+
+        source_value = entity.get(source_field)
+        if isinstance(source_value, list):
+            source_values = list(source_value)
+        elif source_value in (None, "", []):
+            source_values = []
+        else:
+            source_values = [source_value]
+
+        target_value = entity.get(target_field)
+        if isinstance(target_value, list):
+            target_values = list(target_value)
+        elif target_value in (None, "", []):
+            target_values = []
+        else:
+            target_values = [target_value]
+
+        changed = False
+        for value in source_values:
+            if not isinstance(value, str):
+                continue
+            value = value.strip()
+            if value and value not in target_values:
+                target_values.append(value)
+                changed = True
+
+        if target_values or target_field in entity:
+            if entity.get(target_field) != target_values:
+                entity[target_field] = target_values
+                changed = True
+
+        if remove_source:
+            entity.pop(source_field, None)
+            changed = True
+
+        return changed
 
     def _converted_system_location_class(self, entity):
         system_role = entity.get("system_role")
@@ -310,6 +346,14 @@ class EntityLoader:
                         new_value.append(item)
             entity.pop(old_field, None)
             changed = True
+
+        for obsolete_relation_field in ("derived_from", "wiki_mentions"):
+            changed = self._merge_relation_values(
+                entity,
+                obsolete_relation_field,
+                target_field="related",
+                remove_source=True,
+            ) or changed
 
         is_idea = dataset_name == "ideas" or entity.get("type") == "idea"
         defaults = self.IDEA_DEFAULTS if is_idea else self.CORE_DEFAULTS

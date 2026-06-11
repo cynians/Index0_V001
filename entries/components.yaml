@@ -28,7 +28,6 @@
   offspring: []
   tags: []
   end_year: null
-  derived_from: []
 - id: comp_storage_rack
   pretty_name: Storage Rack
   name: Storage Rack
@@ -56,7 +55,6 @@
   offspring: []
   tags: []
   end_year: null
-  derived_from: []
 - id: comp_engine_inline_compact
   pretty_name: Inline Engine
   name: Inline Engine
@@ -84,7 +82,8 @@
   - installable
   - compact_engine_module
   - provides_vehicle_propulsion
-  maintenance_notes: Compact engine block intended for light vehicle layouts and simple early design testing.
+  maintenance_notes: Compact engine block intended for light vehicle layouts and simple
+    early design testing.
   dimension_x_m: 2.2
   dimension_y_m: 1.2
   dimension_z_m: 1.4
@@ -100,10 +99,9 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: Compact inline engine module used as a small vehicle propulsion block for the vehicle design prototype.
+  wiki_entry: Compact inline engine module used as a small vehicle propulsion block
+    for the vehicle design prototype.
   end_year: null
-  derived_from: []
-  wiki_mentions: []
 - id: comp_engine_vblock_heavy
   pretty_name: V-Block Engine
   name: V-Block Engine
@@ -149,10 +147,9 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    Larger heavy engine module used as a high-output propulsion block for the vehicle design prototype.
+  wiki_entry: Larger heavy engine module used as a high-output propulsion block for
+    the vehicle design prototype.
   end_year: null
-  derived_from: []
 - id: asm_conviction_c1_touring_body
   pretty_name: Conviction C1 Touring Body
   name: Conviction C1 Touring Body
@@ -200,10 +197,10 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    Streamlined 2-door convertible body structure for the Conviction C1, shaped for refined leisure touring with a slightly sporty but still elegant exterior profile.
+  wiki_entry: Streamlined 2-door convertible body structure for the Conviction C1,
+    shaped for refined leisure touring with a slightly sporty but still elegant exterior
+    profile.
   end_year: null
-  derived_from: []
 - id: asm_conviction_c1_open_roof_assembly
   pretty_name: Conviction C1 Open Roof Assembly
   name: Conviction C1 Open Roof Assembly
@@ -230,7 +227,8 @@
   - retractable_or_foldable_roof_system
   - touring_weather_cover
   - refined_open_top_operation
-  maintenance_notes: 'Roof seals, hinge points, and folding mechanisms should be maintained to preserve quiet cruising quality and open-top usability.'
+  maintenance_notes: Roof seals, hinge points, and folding mechanisms should be maintained
+    to preserve quiet cruising quality and open-top usability.
   dimension_x_m: 1.75
   dimension_y_m: 1.48
   dimension_z_m: 0.32
@@ -249,10 +247,9 @@
   related:
   - veh_conviction_c1
   offspring: []
-  wiki_entry: 'Convertible roof assembly for the Conviction C1, intended to preserve the car''s refined touring character in both open and closed configurations.'
+  wiki_entry: Convertible roof assembly for the Conviction C1, intended to preserve
+    the car's refined touring character in both open and closed configurations.
   end_year: null
-  derived_from: []
-  wiki_mentions: []
 - id: asm_conviction_c1_grand_touring_drive_unit
   pretty_name: Conviction C1 Grand Touring Drive Unit
   name: Conviction C1 Grand Touring Drive Unit
@@ -300,10 +297,9 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    Refined drive unit for the Conviction C1, tuned for smooth quiet cruising with enough touring performance for relaxed long-distance leisure travel.
+  wiki_entry: Refined drive unit for the Conviction C1, tuned for smooth quiet cruising
+    with enough touring performance for relaxed long-distance leisure travel.
   end_year: null
-  derived_from: []
 - id: asm_luaz_967_watertight_hull_tub
   pretty_name: LuAZ-967 Watertight Hull Tub
   name: LuAZ-967 Watertight Hull Tub
@@ -352,10 +348,9 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    Welded watertight lower hull/body tub forming the main amphibious structural shell of the LuAZ-967 family.
+  wiki_entry: Welded watertight lower hull/body tub forming the main amphibious structural
+    shell of the LuAZ-967 family.
   end_year: null
-  derived_from: []
 - id: comp_light_vehicle_floor_tub_shell
   pretty_name: Light Vehicle Floor Tub Shell
   name: Light Vehicle Floor Tub Shell
@@ -398,10 +393,9 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    Pressed and welded lower floor-basin shell used as the core tub section in small light-vehicle and amphibious utility hulls.
+  wiki_entry: Pressed and welded lower floor-basin shell used as the core tub section
+    in small light-vehicle and amphibious utility hulls.
   end_year: null
-  derived_from: []
 - id: comp_light_vehicle_bow_nose_panel_set
   pretty_name: Light Vehicle Bow Nose Panel Set
   name: Light Vehicle Bow Nose Panel Set
@@ -444,11 +438,9 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    Front closure panel set forming the bow or nose structure of a light utility vehicle hull.
+  wiki_entry: Front closure panel set forming the bow or nose structure of a light
+    utility vehicle hull.
   end_year: null
-  derived_from: []
-  wiki_mentions: []
   card_color: '#3d4152'
 - id: comp_light_vehicle_rear_body_closure_set
   pretty_name: Light Vehicle Rear Body Closure Set
@@ -474,7 +466,8 @@
   descriptive_capabilities:
   - installable
   - weldable_rear_panel_set
-  maintenance_notes: Inspect rear closure surfaces and bracket mounts for cracking and deformation under cargo/towing use.
+  maintenance_notes: Inspect rear closure surfaces and bracket mounts for cracking
+    and deformation under cargo/towing use.
   dimension_x_m: 0.4
   dimension_y_m: 1.42
   dimension_z_m: 0.42
@@ -490,11 +483,9 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    Rear closure panel set for a light vehicle body, providing structural termination and mounting edges for rear fittings.
+  wiki_entry: Rear closure panel set for a light vehicle body, providing structural
+    termination and mounting edges for rear fittings.
   end_year: null
-  derived_from: []
-  wiki_mentions: []
   card_color: '#565c75'
 - id: comp_light_vehicle_structural_reinforcement_set
   pretty_name: Light Vehicle Structural Reinforcement Set
@@ -537,10 +528,9 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    Reinforcement plates and local support members for suspension, towing, seat, and load-bearing points in a light vehicle hull.
+  wiki_entry: Reinforcement plates and local support members for suspension, towing,
+    seat, and load-bearing points in a light vehicle hull.
   end_year: null
-  derived_from: []
 - id: comp_light_vehicle_access_cover_frame_set
   pretty_name: Light Vehicle Access Cover Frame Set
   name: Light Vehicle Access Cover Frame Set
@@ -582,10 +572,9 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    Frame and flange set for service openings, covers, and sealing edges in a light vehicle hull or body shell.
+  wiki_entry: Frame and flange set for service openings, covers, and sealing edges
+    in a light vehicle hull or body shell.
   end_year: null
-  derived_from: []
 - id: comp_pressed_steel_floor_pan
   pretty_name: Pressed Steel Floor Pan
   name: Pressed Steel Floor Pan
@@ -620,8 +609,6 @@
   related: []
   offspring: []
   end_year: null
-  derived_from: []
-  wiki_mentions: []
   card_color: '#919da2'
 - id: comp_pressed_steel_sidewall_panel
   pretty_name: Pressed Steel Sidewall Panel
@@ -657,7 +644,6 @@
   related: []
   offspring: []
   end_year: null
-  derived_from: []
 - id: comp_pressed_steel_wheelhouse_inner_panel
   pretty_name: Pressed Steel Wheelhouse Inner Panel
   name: Pressed Steel Wheelhouse Inner Panel
@@ -692,7 +678,6 @@
   related: []
   offspring: []
   end_year: null
-  derived_from: []
 - id: comp_hull_corner_closing_plate
   pretty_name: Hull Corner Closing Plate
   name: Hull Corner Closing Plate
@@ -727,8 +712,6 @@
   related: []
   offspring: []
   end_year: null
-  derived_from: []
-  wiki_mentions: []
   card_color: '#50535a'
 - id: comp_pressed_steel_bow_plate
   pretty_name: Pressed Steel Bow Plate
@@ -764,7 +747,6 @@
   related: []
   offspring: []
   end_year: null
-  derived_from: []
 - id: comp_pressed_steel_front_side_panel
   pretty_name: Pressed Steel Front Side Panel
   name: Pressed Steel Front Side Panel
@@ -799,8 +781,6 @@
   related: []
   offspring: []
   end_year: null
-  derived_from: []
-  wiki_mentions: []
   card_color: '#5e6265'
 - id: comp_light_bracket_set
   pretty_name: Light Bracket Set
@@ -836,7 +816,6 @@
   related: []
   offspring: []
   end_year: null
-  derived_from: []
 - id: comp_pressed_steel_upper_rear_edge_panel
   pretty_name: Pressed Steel Upper Rear Edge Panel
   name: Pressed Steel Upper Rear Edge Panel
@@ -871,7 +850,6 @@
   related: []
   offspring: []
   end_year: null
-  derived_from: []
 - id: comp_mounting_bracket_set
   pretty_name: Mounting Bracket Set
   name: Mounting Bracket Set
@@ -889,7 +867,7 @@
   descriptive_capabilities:
   - installable
   - mounting_support_set
-  maintenance_notes: 'Inspect holes, bends, and attachment faces for wear and cracking.'
+  maintenance_notes: Inspect holes, bends, and attachment faces for wear and cracking.
   dimension_x_m: 0.26
   dimension_y_m: 0.18
   dimension_z_m: 0.04
@@ -906,8 +884,6 @@
   related: []
   offspring: []
   end_year: null
-  derived_from: []
-  wiki_mentions: []
   card_color: '#7f8795'
 - id: comp_suspension_mount_reinforcement_plate
   pretty_name: Suspension Mount Reinforcement Plate
@@ -943,7 +919,6 @@
   related: []
   offspring: []
   end_year: null
-  derived_from: []
 - id: comp_crossmember_section
   pretty_name: Crossmember Section
   name: Crossmember Section
@@ -978,7 +953,6 @@
   related: []
   offspring: []
   end_year: null
-  derived_from: []
 - id: comp_tow_point_reinforcement_block
   pretty_name: Tow Point Reinforcement Block
   name: Tow Point Reinforcement Block
@@ -996,7 +970,8 @@
   descriptive_capabilities:
   - installable
   - local_heavy_load_support
-  maintenance_notes: 'Inspect for cracking, elongation, and deformation under towing stress.'
+  maintenance_notes: Inspect for cracking, elongation, and deformation under towing
+    stress.
   dimension_x_m: 0.18
   dimension_y_m: 0.14
   dimension_z_m: 0.08
@@ -1013,8 +988,6 @@
   related: []
   offspring: []
   end_year: null
-  derived_from: []
-  wiki_mentions: []
   card_color: '#3b3e50'
 - id: comp_seat_and_load_mount_plate
   pretty_name: Seat and Load Mount Plate
@@ -1051,7 +1024,6 @@
   related: []
   offspring: []
   end_year: null
-  derived_from: []
 - id: comp_hatch_frame_ring
   pretty_name: Hatch Frame Ring
   name: Hatch Frame Ring
@@ -1086,7 +1058,6 @@
   related: []
   offspring: []
   end_year: null
-  derived_from: []
 - id: comp_cover_hinge_bracket
   pretty_name: Cover Hinge Bracket
   name: Cover Hinge Bracket
@@ -1121,8 +1092,6 @@
   related: []
   offspring: []
   end_year: null
-  derived_from: []
-  wiki_mentions: []
   card_color: '#4c4e58'
 - id: comp_sealing_flange_strip
   pretty_name: Sealing Flange Strip
@@ -1159,16 +1128,27 @@
   related: []
   offspring: []
   end_year: null
-  derived_from: []
 - id: comp_mult_range_gear
   pretty_name: Multi Range Gearbox
   name: Multi Range Gearbox
   type: component
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  offspring: []
+  entry_status: ''
 - id: comp_wirkkern_exoskeleton_cores
   pretty_name: Wirkkern Exoskeleton Cores
   name: Wirkkern Exoskeleton Cores
   type: component
-  wiki_mentions: []
   card_color: '#080808'
   card_header_color: '#654422'
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''

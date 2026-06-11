@@ -132,6 +132,60 @@ class BuildingSimulationTests(unittest.TestCase):
         self.assertEqual("room", room["location_class"])
         self.assertEqual("loc_test_building", room["parent_location"])
 
+    def test_map_sim_exposes_planet_heightmap_as_base_layer(self):
+        planet = {
+            "id": "loc_planet_blue",
+            "name": "Blue Planet",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "bounds": {
+                "type": "bbox",
+                "min_x": -180,
+                "max_x": 180,
+                "min_y": -90,
+                "max_y": 90,
+            },
+            "heightmap_model": {
+                "status": "heightmap_seeded",
+                "projection": "equirectangular",
+                "wrap_x": True,
+                "wrap_y": False,
+                "sample_grid": {
+                    "width": 3,
+                    "height": 3,
+                    "wrap_x": True,
+                    "rows": [
+                        [0.0, 100.0, 0.0],
+                        [-500.0, 1200.0, -500.0],
+                        [0.0, 50.0, 0.0],
+                    ],
+                },
+            },
+            "start_year": 2400,
+        }
+        world_model = FakeWorldModel([planet])
+        sim = MapSimulation(SimulationContext(
+            year=2400,
+            root_entity_id=planet["id"],
+            world_model=world_model,
+        ))
+
+        base_layer = sim.get_heightmap_base_layer()
+        layers = sim.get_layers()
+
+        self.assertIsNotNone(base_layer)
+        self.assertEqual("heightmap_base", base_layer["shape"])
+        self.assertEqual("loc_planet_blue", base_layer["entity_id"])
+        self.assertEqual(360, base_layer["width_world"])
+        self.assertEqual(180, base_layer["height_world"])
+        planet_rect = next(
+            layer
+            for layer in layers
+            if layer.get("shape") == "map_rect" and layer.get("entity_id") == "loc_planet_blue"
+        )
+        self.assertTrue(planet_rect["has_heightmap_base"])
+
     def test_building_sim_drafts_rooms_as_location_polygons(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             sim = self._building_sim(temp_dir)

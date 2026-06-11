@@ -2,16 +2,14 @@
   pretty_name: Habil Family of Hebsbrook
   name: Habil Family of Hebsbrook
   type: pop
-  wiki_mentions: []
   card_color: '#426a65'
   offspring:
   - id: person_jarem_habil
-  - person_alia_habil
-  - person_ahman_habil
+    offspring:
+    - id: person_alia_habil
   start_year: 4212
   end_year: 8201
   tags: []
-  derived_from: []
   parents: []
   related: []
   entry_status: ''
@@ -21,14 +19,23 @@
   type: pop
   card_color: '#644e78'
   wiki_entry: ''
-  wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''
 - id: pop_broom_family_of_nanhai
   pretty_name: Broom Family of Nanhai
   name: Broom Family of Nanhai
   type: pop
-  wiki_mentions: []
   card_color: '#162624'
   parents:
   - planet_nanhai
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''

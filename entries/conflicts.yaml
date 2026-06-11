@@ -7,12 +7,10 @@
   locations: []
   start_event: null
   wiki_entry: ''
-  wiki_mentions: []
   offspring: []
   tags: []
   start_year: 5928
   end_year: 5956
-  derived_from: []
   parents: []
   related: []
   entry_status: ''
@@ -25,9 +23,14 @@
   locations: []
   start_event: null
   wiki_entry: ''
-  wiki_mentions: []
   offspring:
   - id: idea_spanish_contribution_to_the_superpower_wars
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''
 - id: conf_algerian_war
   pretty_name: Algerian War
   name: Algerian War
@@ -35,10 +38,12 @@
   locations: []
   start_event: null
   end_event: null
-  wiki_mentions: []
   offspring: []
   start_year: 1954
   end_year: 1962
   related:
   - fac_french_north_africa
   - fac_french_algeria
+  tags: []
+  parents: []
+  entry_status: ''

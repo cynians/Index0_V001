@@ -24,11 +24,10 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    Broad authored ecoregion coverage for the Europe map layer. More detailed child polygons refine this coverage where they exist.
+  wiki_entry: Broad authored ecoregion coverage for the Europe map layer. More detailed
+    child polygons refine this coverage where they exist.
   tags: []
   end_year: null
-  derived_from: []
 - id: sf_eco_central_germany_draft
   pretty_name: Central Germany Draft Ecoregion
   name: Central Germany Draft Ecoregion
@@ -56,11 +55,9 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    Draft planning polygon for a future central German ecoregion entity.
+  wiki_entry: Draft planning polygon for a future central German ecoregion entity.
   tags: []
   end_year: null
-  derived_from: []
 - id: sf_eco_sicily_draft
   pretty_name: Sicily Draft Ecoregion
   name: Sicily Draft Ecoregion
@@ -80,11 +77,10 @@
   related:
   - geo_italy
   offspring: []
-  wiki_entry: |-
-    Draft planning polygon for a future Sicilian ecoregion entity. Parent remains Italy until a dedicated Sicily location exists.
+  wiki_entry: Draft planning polygon for a future Sicilian ecoregion entity. Parent
+    remains Italy until a dedicated Sicily location exists.
   tags: []
   end_year: null
-  derived_from: []
 - id: sf_draft_ecoregions_geo_central_europe_001
   pretty_name: France Ecoregion
   name: France Ecoregion
@@ -122,11 +118,9 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    Draft polygon created from the Ecoregions map layer under Central Europe.
+  wiki_entry: Draft polygon created from the Ecoregions map layer under Central Europe.
   tags: []
   end_year: null
-  derived_from: []
 - id: sf_draft_ecoregions_geo_europe_001
   pretty_name: Draft Ecoregions Selection 001
   name: Draft Ecoregions Selection 001
@@ -154,11 +148,9 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    Draft polygon created from the Ecoregions map layer under Europe.
+  wiki_entry: Draft polygon created from the Ecoregions map layer under Europe.
   tags: []
   end_year: null
-  derived_from: []
 - id: sf_draft_ecoregions_geo_europe_002
   pretty_name: Draft Ecoregions Selection 002
   name: Draft Ecoregions Selection 002
@@ -188,271 +180,383 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    Draft polygon created from the Ecoregions map layer under Europe.
+  wiki_entry: Draft polygon created from the Ecoregions map layer under Europe.
   tags: []
   end_year: null
-  derived_from: []
 - id: sf_draft_settlement_extent_planet_earth_001
-  pretty_name: 'Draft Settlement Extent Selection 001'
-  name: 'Draft Settlement Extent Selection 001'
+  pretty_name: Draft Settlement Extent Selection 001
+  name: Draft Settlement Extent Selection 001
   type: spatial_feature
-  wiki_entry: |-
-    Draft polygon created from the Settlement Extent map layer under Earth.
+  wiki_entry: Draft polygon created from the Settlement Extent map layer under Earth.
   layer_kind: settlement_extent
   parent_entity: planet_earth
   geometry:
     type: polygon
     coordinate_space: map_world
     points:
-      - [37.142, -17.392]
-      - [3.832, -40.974]
-      - [-22.993, -24.761]
-      - [-35.963, 3.537]
-      - [20.045, 27.709]
-      - [55.713, 0.295]
-      - [46.28, -9.138]
+    - - 37.142
+      - -17.392
+    - - 3.832
+      - -40.974
+    - - -22.993
+      - -24.761
+    - - -35.963
+      - 3.537
+    - - 20.045
+      - 27.709
+    - - 55.713
+      - 0.295
+    - - 46.28
+      - -9.138
   start_year: 3746
   entry_status: draft
-
-# ---------- sf_draft_settlement_extent_geo_france_001 | Draft Settlement Extent Selection 001 ----------
+  tags: []
+  end_year: null
+  parents: []
+  related: []
+  offspring: []
 - id: sf_draft_settlement_extent_geo_france_001
-  pretty_name: 'France Test One'
-  name: 'France Test One'
+  pretty_name: France Test One
+  name: France Test One
   type: spatial_feature
-  wiki_entry: |-
-    This is the first test entry for Franke
+  wiki_entry: This is the first test entry for Franke
   layer_kind: settlement_extent
   parent_entity: geo_france
   geometry:
     type: polygon
     coordinate_space: map_world
     points:
-      - [5.38, -46.843]
-      - [1.57, -50.026]
-      - [-1.404, -48.121]
-      - [-2.124, -45.287]
-      - [2.22, -44.404]
+    - - 5.38
+      - -46.843
+    - - 1.57
+      - -50.026
+    - - -1.404
+      - -48.121
+    - - -2.124
+      - -45.287
+    - - 2.22
+      - -44.404
   start_year: 9
   end_year: 9
   entry_status: draft
-
-# ---------- sf_hist_sf_draft_settlement_extent_geo_france_001_y10_001 | France Test One (10) ----------
+  tags: []
+  parents: []
+  related: []
+  offspring: []
 - id: sf_hist_sf_draft_settlement_extent_geo_france_001_y10_001
-  pretty_name: 'France Test One (10)'
-  name: 'France Test One (10)'
+  pretty_name: France Test One (10)
+  name: France Test One (10)
   type: spatial_feature
-  wiki_entry: |-
-    Historical slice evolved from sf_draft_settlement_extent_geo_france_001 at Year 10.
+  wiki_entry: Historical slice evolved from sf_draft_settlement_extent_geo_france_001
+    at Year 10.
   layer_kind: settlement_extent
   parent_entity: geo_france
   geometry:
     type: polygon
     coordinate_space: map_world
     points:
-      - [5.38, -46.843]
-      - [5.577, -47.507]
-      - [5.243, -48.127]
-      - [4.349, -48.246]
-      - [3.682, -48.651]
-      - [2.585, -49.378]
-      - [0.654, -49.39]
-      - [-1.373, -48.556]
-      - [-2.374, -46.374]
-      - [-1.921, -45.397]
-      - [-0.205, -44.359]
-      - [2.752, -44.658]
-      - [3.3, -45.742]
-      - [5.017, -46.219]
-      - [5.518, -46.78]
+    - - 5.38
+      - -46.843
+    - - 5.577
+      - -47.507
+    - - 5.243
+      - -48.127
+    - - 4.349
+      - -48.246
+    - - 3.682
+      - -48.651
+    - - 2.585
+      - -49.378
+    - - 0.654
+      - -49.39
+    - - -1.373
+      - -48.556
+    - - -2.374
+      - -46.374
+    - - -1.921
+      - -45.397
+    - - -0.205
+      - -44.359
+    - - 2.752
+      - -44.658
+    - - 3.3
+      - -45.742
+    - - 5.017
+      - -46.219
+    - - 5.518
+      - -46.78
   start_year: 10
-  derived_from:
-    - sf_draft_settlement_extent_geo_france_001
   related:
-    - sf_draft_settlement_extent_geo_france_001
+  - sf_draft_settlement_extent_geo_france_001
   end_year: 10
   entry_status: draft
-
-# ---------- sf_hist_sf_hist_sf_draft_settlement_extent_geo_france_001_y10_001_y11_001 | France Test One (10) (11) ----------
+  tags: []
+  parents: []
+  offspring: []
 - id: sf_hist_sf_hist_sf_draft_settlement_extent_geo_france_001_y10_001_y11_001
-  pretty_name: 'France Test One (10) (11)'
-  name: 'France Test One (10) (11)'
+  pretty_name: France Test One (10) (11)
+  name: France Test One (10) (11)
   type: spatial_feature
-  wiki_entry: |-
-    Historical slice evolved from sf_hist_sf_draft_settlement_extent_geo_france_001_y10_001 at Year 11.
+  wiki_entry: Historical slice evolved from sf_hist_sf_draft_settlement_extent_geo_france_001_y10_001
+    at Year 11.
   layer_kind: settlement_extent
   parent_entity: geo_france
   geometry:
     type: polygon
     coordinate_space: map_world
     points:
-      - [5.38, -46.843]
-      - [5.577, -47.507]
-      - [5.243, -48.127]
-      - [4.349, -48.246]
-      - [3.682, -48.651]
-      - [2.585, -49.378]
-      - [0.654, -49.39]
-      - [-1.373, -48.556]
-      - [-2.374, -46.374]
-      - [-1.921, -45.397]
-      - [-0.205, -44.359]
-      - [2.752, -44.658]
-      - [3.3, -45.742]
-      - [4.364, -45.836]
-      - [5.04, -46.02]
-      - [5.366, -46.535]
+    - - 5.38
+      - -46.843
+    - - 5.577
+      - -47.507
+    - - 5.243
+      - -48.127
+    - - 4.349
+      - -48.246
+    - - 3.682
+      - -48.651
+    - - 2.585
+      - -49.378
+    - - 0.654
+      - -49.39
+    - - -1.373
+      - -48.556
+    - - -2.374
+      - -46.374
+    - - -1.921
+      - -45.397
+    - - -0.205
+      - -44.359
+    - - 2.752
+      - -44.658
+    - - 3.3
+      - -45.742
+    - - 4.364
+      - -45.836
+    - - 5.04
+      - -46.02
+    - - 5.366
+      - -46.535
   start_year: 11
-  derived_from:
-    - sf_hist_sf_draft_settlement_extent_geo_france_001_y10_001
   related:
-    - sf_draft_settlement_extent_geo_france_001
-    - sf_hist_sf_draft_settlement_extent_geo_france_001_y10_001
+  - sf_draft_settlement_extent_geo_france_001
+  - sf_hist_sf_draft_settlement_extent_geo_france_001_y10_001
   entry_status: draft
-
-# ---------- sf_draft_settlement_extent_city_stockholm_001 | Draft Settlement Extent Selection 001 ----------
+  tags: []
+  end_year: null
+  parents: []
+  offspring: []
 - id: sf_draft_settlement_extent_city_stockholm_001
-  pretty_name: 'Stockholm New Metropolitan Area'
-  name: 'Stockholm New Metropolitan Area'
+  pretty_name: Stockholm New Metropolitan Area
+  name: Stockholm New Metropolitan Area
   type: spatial_feature
-  wiki_entry: |-
-    Draft polygon created from the Settlement Extent map layer under Stockholm.
+  wiki_entry: Draft polygon created from the Settlement Extent map layer under Stockholm.
   layer_kind: settlement_extent
   parent_entity: city_stockholm
   geometry:
     type: polygon
     coordinate_space: map_world
     points:
-      - [-437.5, -62.879]
-      - [-474.182, 185.613]
-      - [16.142, 428.152]
-      - [459.306, 231.618]
-      - [490.135, -140.255]
-      - [472.794, -427.348]
-      - [208.822, -521.761]
-      - [-134.148, -471.664]
-      - [-394.266, -325.228]
+    - - -437.5
+      - -62.879
+    - - -474.182
+      - 185.613
+    - - 16.142
+      - 428.152
+    - - 459.306
+      - 231.618
+    - - 490.135
+      - -140.255
+    - - 472.794
+      - -427.348
+    - - 208.822
+      - -521.761
+    - - -134.148
+      - -471.664
+    - - -394.266
+      - -325.228
   start_year: 2124
   entry_status: draft
-
-# ---------- sf_draft_political_control_loc_new_002_001 | Draft Political Control Selection 001 ----------
+  tags: []
+  end_year: null
+  parents: []
+  related: []
+  offspring: []
 - id: sf_draft_political_control_loc_new_002_001
-  pretty_name: 'Draft Political Control Selection 001'
-  name: 'Draft Political Control Selection 001'
+  pretty_name: Draft Political Control Selection 001
+  name: Draft Political Control Selection 001
   type: spatial_feature
-  wiki_entry: |-
-    Draft polygon created from the Political Control map layer under Test Map.
+  wiki_entry: Draft polygon created from the Political Control map layer under Test
+    Map.
   layer_kind: political_control
   parent_entity: loc_new_002
   geometry:
     type: polygon
     coordinate_space: map_world
     points:
-      - [1782.629, -1397.493]
-      - [1760.621, -720.754]
-      - [1947.687, 869.307]
-      - [2574.908, 1177.415]
-      - [4142.962, 418.148]
-      - [4032.923, -973.844]
-      - [3015.064, -896.816]
-      - [2327.321, -1336.972]
+    - - 1782.629
+      - -1397.493
+    - - 1760.621
+      - -720.754
+    - - 1947.687
+      - 869.307
+    - - 2574.908
+      - 1177.415
+    - - 4142.962
+      - 418.148
+    - - 4032.923
+      - -973.844
+    - - 3015.064
+      - -896.816
+    - - 2327.321
+      - -1336.972
   start_year: 2400
   entry_status: draft
-
-# ---------- sf_draft_political_control_loc_new_002_002 | Draft Political Control Selection 002 ----------
+  tags: []
+  end_year: null
+  parents: []
+  related: []
+  offspring: []
 - id: sf_draft_political_control_loc_new_002_002
-  pretty_name: 'Draft Political Control Selection 002'
-  name: 'Draft Political Control Selection 002'
+  pretty_name: Draft Political Control Selection 002
+  name: Draft Political Control Selection 002
   type: spatial_feature
-  wiki_entry: |-
-    Draft polygon created from the Political Control map layer under Test Map.
+  wiki_entry: Draft polygon created from the Political Control map layer under Test
+    Map.
   layer_kind: political_control
   parent_entity: loc_new_002
   geometry:
     type: polygon
     coordinate_space: map_world
     points:
-      - [1771.625, -1386.489]
-      - [1744.115, -742.762]
-      - [1947.687, 863.805]
-      - [2591.414, 1171.913]
-      - [1447.011, 1848.652]
-      - [-2717.959, 1287.454]
-      - [-3785.335, -841.797]
-      - [-1716.606, -2266.8]
-      - [242.085, -2580.41]
-      - [1771.625, -2013.71]
+    - - 1771.625
+      - -1386.489
+    - - 1744.115
+      - -742.762
+    - - 1947.687
+      - 863.805
+    - - 2591.414
+      - 1171.913
+    - - 1447.011
+      - 1848.652
+    - - -2717.959
+      - 1287.454
+    - - -3785.335
+      - -841.797
+    - - -1716.606
+      - -2266.8
+    - - 242.085
+      - -2580.41
+    - - 1771.625
+      - -2013.71
   start_year: 2400
   entry_status: draft
-
-# ---------- sf_draft_political_control_loc_new_002_003 | Draft Political Control Selection 003 ----------
+  tags: []
+  end_year: null
+  parents: []
+  related: []
+  offspring: []
 - id: sf_draft_political_control_loc_new_002_003
-  pretty_name: 'Draft Political Control Selection 003'
-  name: 'Draft Political Control Selection 003'
+  pretty_name: Draft Political Control Selection 003
+  name: Draft Political Control Selection 003
   type: spatial_feature
-  wiki_entry: |-
-    Draft polygon created from the Political Control map layer under Test Map.
+  wiki_entry: Draft polygon created from the Political Control map layer under Test
+    Map.
   layer_kind: political_control
   parent_entity: loc_new_002
   geometry:
     type: polygon
     coordinate_space: map_world
     points:
-      - [-836.295, -500.677]
-      - [-247.587, -313.611]
-      - [330.116, -825.291]
-      - [154.054, -1303.96]
-      - [-649.229, -1270.948]
-      - [-979.346, -841.797]
+    - - -836.295
+      - -500.677
+    - - -247.587
+      - -313.611
+    - - 330.116
+      - -825.291
+    - - 154.054
+      - -1303.96
+    - - -649.229
+      - -1270.948
+    - - -979.346
+      - -841.797
   start_year: 2400
   entry_status: draft
-
-# ---------- sf_draft_political_control_loc_new_002_004 | Draft Political Control Selection 004 ----------
+  tags: []
+  end_year: null
+  parents: []
+  related: []
+  offspring: []
 - id: sf_draft_political_control_loc_new_002_004
-  pretty_name: 'Draft Political Control Selection 004'
-  name: 'Draft Political Control Selection 004'
+  pretty_name: Draft Political Control Selection 004
+  name: Draft Political Control Selection 004
   type: spatial_feature
-  wiki_entry: |-
-    Draft polygon created from the Political Control map layer under Test Map.
+  wiki_entry: Draft polygon created from the Political Control map layer under Test
+    Map.
   layer_kind: political_control
   parent_entity: loc_new_002
   geometry:
     type: polygon
     coordinate_space: map_world
     points:
-      - [1774.833, -1407.921]
-      - [2355.067, -1331.125]
-      - [3003.564, -913.015]
-      - [4061.638, -981.278]
-      - [8596.213, -2846.173]
-      - [7576.975, -6557.737]
-      - [3211.56, -6557.737]
-      - [1269.239, -4923.111]
-      - [673.082, -3615.409]
-      - [692.312, -2980.79]
-      - [961.545, -2326.939]
-      - [1865.397, -2019.245]
+    - - 1774.833
+      - -1407.921
+    - - 2355.067
+      - -1331.125
+    - - 3003.564
+      - -913.015
+    - - 4061.638
+      - -981.278
+    - - 8596.213
+      - -2846.173
+    - - 7576.975
+      - -6557.737
+    - - 3211.56
+      - -6557.737
+    - - 1269.239
+      - -4923.111
+    - - 673.082
+      - -3615.409
+    - - 692.312
+      - -2980.79
+    - - 961.545
+      - -2326.939
+    - - 1865.397
+      - -2019.245
   start_year: 2400
   entry_status: draft
-
-# ---------- sf_draft_regions_planet_equidorva_001 | Draft Regions Selection 001 ----------
+  tags: []
+  end_year: null
+  parents: []
+  related: []
+  offspring: []
 - id: sf_draft_regions_planet_equidorva_001
-  pretty_name: 'Elbac Dry Savannah'
-  name: 'Elbac Dry Savannah'
+  pretty_name: Elbac Dry Savannah
+  name: Elbac Dry Savannah
   type: spatial_feature
-  wiki_entry: |-
-    Draft polygon created from the Regions map layer under Equidorva.
+  wiki_entry: Draft polygon created from the Regions map layer under Equidorva.
   layer_kind: regions
   parent_entity: planet_equidorva
   geometry:
     type: polygon
     coordinate_space: map_world
     points:
-      - [38.529, -33.342]
-      - [79.28, -42.604]
-      - [115.586, -18.153]
-      - [106.325, 11.114]
-      - [52.236, 18.153]
-      - [21.487, -11.114]
+    - - 38.529
+      - -33.342
+    - - 79.28
+      - -42.604
+    - - 115.586
+      - -18.153
+    - - 106.325
+      - 11.114
+    - - 52.236
+      - 18.153
+    - - 21.487
+      - -11.114
   start_year: 2400
   entry_status: draft
+  tags: []
+  end_year: null
+  parents: []
+  related: []
+  offspring: []

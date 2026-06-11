@@ -105,6 +105,16 @@ class TemporalFilteringTests(unittest.TestCase):
 
         self.assertEqual(2000, postmodernist["start_year"])
 
+    def test_repository_period_filter_keeps_open_ended_entries(self):
+        ui = KnowledgeBrowserUI()
+        ui.browser_period_filter = (100, 200)
+
+        self.assertTrue(ui._matches_browser_filters({"id": "open", "start_year": 50}, "ideas"))
+        self.assertTrue(ui._matches_browser_filters({"id": "overlap", "start_year": 150, "end_year": 250}, "ideas"))
+        self.assertTrue(ui._matches_browser_filters({"id": "point", "year": 175}, "ideas"))
+        self.assertFalse(ui._matches_browser_filters({"id": "ended", "start_year": 10, "end_year": 90}, "ideas"))
+        self.assertFalse(ui._matches_browser_filters({"id": "missing_start", "end_year": 150}, "ideas"))
+
 
 if __name__ == "__main__":
     unittest.main()

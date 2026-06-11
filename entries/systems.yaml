@@ -10,7 +10,6 @@
   pretty_name: Sol System
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_sol
   name: Sol
@@ -39,7 +38,6 @@
   pretty_name: Sol
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_luna
   name: Luna
@@ -68,7 +66,6 @@
   pretty_name: Luna
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_phobos
   pretty_name: Phobos
@@ -98,7 +95,6 @@
   offspring: []
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_deimos
   name: Deimos
@@ -127,7 +123,6 @@
   pretty_name: Deimos
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_ceres
   name: Ceres
@@ -156,7 +151,6 @@
   pretty_name: Ceres
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_pallas
   name: Pallas
@@ -185,7 +179,6 @@
   pretty_name: Pallas
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_ganymede
   name: Ganymede
@@ -214,7 +207,6 @@
   pretty_name: Ganymede
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_callisto
   pretty_name: Callisto
@@ -243,7 +235,6 @@
   offspring: []
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_amalthea
   pretty_name: Amalthea
@@ -273,7 +264,6 @@
   offspring: []
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_himalia
   name: Himalia
@@ -302,7 +292,6 @@
   pretty_name: Himalia
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_saturn
   name: Saturn
@@ -331,7 +320,6 @@
   pretty_name: Saturn
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_mimas
   name: Mimas
@@ -360,7 +348,6 @@
   pretty_name: Mimas
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_tethys
   name: Tethys
@@ -389,7 +376,6 @@
   pretty_name: Tethys
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_dione
   name: Dione
@@ -418,7 +404,6 @@
   pretty_name: Dione
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_rhea
   name: Rhea
@@ -447,7 +432,6 @@
   pretty_name: Rhea
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_iapetus
   name: Iapetus
@@ -476,7 +460,6 @@
   pretty_name: Iapetus
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_phoebe
   name: Phoebe
@@ -505,7 +488,6 @@
   pretty_name: Phoebe
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_uranus
   name: Uranus
@@ -534,7 +516,6 @@
   pretty_name: Uranus
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_miranda
   name: Miranda
@@ -563,7 +544,6 @@
   pretty_name: Miranda
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_uranus_ariel
   pretty_name: Ariel, Moon of Uranus
@@ -592,7 +572,6 @@
   offspring: []
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_umbriel
   name: Umbriel
@@ -621,7 +600,6 @@
   pretty_name: Umbriel
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_titania
   name: Titania
@@ -650,7 +628,6 @@
   pretty_name: Titania
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_oberon
   name: Oberon
@@ -679,7 +656,6 @@
   pretty_name: Oberon
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_neptune
   name: Neptune
@@ -708,7 +684,6 @@
   pretty_name: Neptune
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_triton
   name: Triton
@@ -737,7 +712,6 @@
   pretty_name: Triton
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_proteus
   pretty_name: Proteus, Moon of Neptune
@@ -767,7 +741,6 @@
   offspring: []
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_charon
   pretty_name: Charon
@@ -794,11 +767,9 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    Testholder Charon
+  wiki_entry: Testholder Charon
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_nix
   name: Nix
@@ -827,7 +798,6 @@
   pretty_name: Nix
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_hydra
   name: Hydra
@@ -856,7 +826,6 @@
   pretty_name: Hydra
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_kerberos
   name: Kerberos
@@ -885,7 +854,6 @@
   pretty_name: Kerberos
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_styx
   name: Styx
@@ -914,7 +882,6 @@
   pretty_name: Styx
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_haumea
   name: Haumea
@@ -943,7 +910,6 @@
   pretty_name: Haumea
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_hiiaka
   name: Hiʻiaka
@@ -972,7 +938,6 @@
   pretty_name: Hiʻiaka
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_namaka
   name: Namaka
@@ -1001,7 +966,6 @@
   pretty_name: Namaka
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_makemake
   name: Makemake
@@ -1030,7 +994,6 @@
   pretty_name: Makemake
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_mk2
   name: MK2
@@ -1059,7 +1022,6 @@
   pretty_name: MK2
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_eris
   name: Eris
@@ -1088,7 +1050,6 @@
   pretty_name: Eris
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: body_dysnomia
   name: Dysnomia
@@ -1117,7 +1078,6 @@
   pretty_name: Dysnomia
   tags: []
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: sys_new_001
   pretty_name: New System
@@ -1129,21 +1089,28 @@
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: sys_barycor
   pretty_name: Barycor System
   name: Barycor System
   type: system
   system_role: ''
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  offspring: []
+  entry_status: ''
 - id: sys_new_002
   pretty_name: Equidorva System
   name: Equidorva System
   type: system
-  wiki_entry: |-
-    Earthlike development sandbox centered on Equidorva, a habitable-zone terrestrial planet orbiting a G-class main-sequence star.
-    
-    Bottom-up planet construction root for Equidorva.
+  wiki_entry: 'Earthlike development sandbox centered on Equidorva, a habitable-zone
+    terrestrial planet orbiting a G-class main-sequence star.
+
+
+    Bottom-up planet construction root for Equidorva.'
   system_role: star_system
   dataset: null
   system_class: stellar_system
@@ -1158,16 +1125,15 @@
   - earthlike
   start_year: null
   end_year: null
-  derived_from: []
   entry_status: draft
 - id: body_equidorva_primary
   pretty_name: Equidorva Primary
   name: Equidorva Primary
   type: system
-  wiki_entry: |-
-    G-class main-sequence star used as Equidorva's Earthlike primary.
-    
-    Solar analogue baseline, roughly 1 solar mass and luminosity.
+  wiki_entry: 'G-class main-sequence star used as Equidorva''s Earthlike primary.
+
+
+    Solar analogue baseline, roughly 1 solar mass and luminosity.'
   system_role: orbital_body
   star_system: sys_new_002
   body_class: star
@@ -1195,7 +1161,6 @@
   - solar_analogue
   start_year: null
   end_year: null
-  derived_from: []
   entry_status: draft
 - id: sys_belmont
   pretty_name: Belmont
@@ -1204,6 +1169,12 @@
   system_role: ''
   wiki_entry: ''
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''
 - id: sys_new_003
   pretty_name: Babylon System
   name: Babylon System
@@ -1211,6 +1182,12 @@
   system_role: ''
   wiki_entry: ''
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''
 - id: sys_new_004
   pretty_name: Spinosaurus mirabilis
   name: Spinosaurus mirabilis
@@ -1218,3 +1195,9 @@
   system_role: ''
   wiki_entry: ''
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''

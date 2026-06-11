@@ -27,7 +27,9 @@
   - retreat_to_trees
   - avoid_open_ground
   - low_energy_patch_feeding
-  simulation_notes: 'Reusable behavior profile for mostly solitary tree-based foragers that move cautiously, feed selectively, and prefer retreat into arboreal cover when disturbed.'
+  simulation_notes: Reusable behavior profile for mostly solitary tree-based foragers
+    that move cautiously, feed selectively, and prefer retreat into arboreal cover
+    when disturbed.
   start_year: -305000000
   entry_status: draft
   parents: []
@@ -35,7 +37,6 @@
   offspring: []
   tags: []
   end_year: null
-  derived_from: []
 - id: beh_solitary_forest_floor_hard_seed_foraging
   pretty_name: Solitary Forest-Floor Hard-Seed Foraging
   name: Solitary Forest-Floor Hard-Seed Foraging
@@ -77,4 +78,3 @@
   offspring: []
   tags: []
   end_year: null
-  derived_from: []

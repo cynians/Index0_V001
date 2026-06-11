@@ -38,10 +38,10 @@
   entry_status: draft
   parents: []
   related: []
-  offspring: []
+  offspring:
+  - id: illust_steel_plate_rolling_card
   tags: []
   end_year: null
-  derived_from: []
 - id: prod_pump_module_assembly
   pretty_name: Pump Module Assembly
   name: Pump Module Assembly
@@ -88,4 +88,3 @@
   offspring: []
   tags: []
   end_year: null
-  derived_from: []

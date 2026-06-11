@@ -91,7 +91,7 @@ class CardWikiRenderer:
         for segment in segments:
             label = segment["text"]
             if segment["kind"] == "link":
-                width = font.size(label)[0] + cls.LINK_PAD_X * 2
+                width = font.size(label)[0] + cls.LINK_PAD_X * 2 + 5
             else:
                 width = font.size(label)[0]
 
@@ -134,15 +134,22 @@ class CardWikiRenderer:
         return len(lines) * max(font.get_linesize(), font.get_linesize() + cls.LINK_PAD_Y * 2)
 
     @classmethod
-    def _draw_inline_text(cls, screen, font, text, x, y, max_width, color, resolve_link_label=None, link_color=None):
+    def _draw_inline_text(
+        cls,
+        screen,
+        font,
+        text,
+        x,
+        y,
+        max_width,
+        color,
+        resolve_link_label=None,
+        link_color=None,
+        resolve_link_color=None,
+        resolve_link_palette=None,
+    ):
         lines = cls._layout_inline_segments(text, font, max_width, resolve_link_label=resolve_link_label)
         line_h = max(font.get_linesize(), font.get_linesize() + cls.LINK_PAD_Y * 2)
-        fill = cls._coerce_color(link_color, (54, 76, 112))
-        border = (
-            min(255, fill[0] + 70),
-            min(255, fill[1] + 70),
-            min(255, fill[2] + 70),
-        )
         text_color = (242, 247, 255)
 
         for line in lines:
@@ -150,6 +157,23 @@ class CardWikiRenderer:
             for segment in line:
                 segment_text = segment.get("text", "")
                 if segment.get("kind") == "link":
+                    palette = None
+                    if resolve_link_palette is not None:
+                        palette = resolve_link_palette(segment.get("ref", ""))
+                    color_value = link_color
+                    if palette is None and resolve_link_color is not None:
+                        resolved_color = resolve_link_color(segment.get("ref", ""))
+                        if resolved_color is not None:
+                            color_value = resolved_color
+                    fill = cls._coerce_color((palette or {}).get("fill") if isinstance(palette, dict) else color_value, (54, 76, 112))
+                    border = cls._coerce_color((palette or {}).get("border") if isinstance(palette, dict) else None, None)
+                    if border is None:
+                        border = (
+                            min(255, fill[0] + 70),
+                            min(255, fill[1] + 70),
+                            min(255, fill[2] + 70),
+                        )
+                    band = cls._coerce_color((palette or {}).get("band") if isinstance(palette, dict) else None, None)
                     box_rect = pygame.Rect(
                         cursor_x,
                         y + 1,
@@ -157,9 +181,13 @@ class CardWikiRenderer:
                         max(16, font.get_linesize() + cls.LINK_PAD_Y),
                     )
                     pygame.draw.rect(screen, fill, box_rect)
+                    if band is not None:
+                        pygame.draw.rect(screen, band, pygame.Rect(box_rect.x, box_rect.y, min(5, box_rect.width), box_rect.height))
                     pygame.draw.rect(screen, border, box_rect, 1)
-                    surface = font.render(segment_text, True, text_color)
-                    screen.blit(surface, (box_rect.x + cls.LINK_PAD_X, box_rect.y + cls.LINK_PAD_Y - 1))
+                    segment_text_color = cls._coerce_color((palette or {}).get("text") if isinstance(palette, dict) else None, text_color)
+                    surface = font.render(segment_text, True, segment_text_color)
+                    text_x = box_rect.x + cls.LINK_PAD_X + (5 if band is not None else 0)
+                    screen.blit(surface, (text_x, box_rect.y + cls.LINK_PAD_Y - 1))
                 else:
                     surface = font.render(segment_text, True, color)
                     screen.blit(surface, (cursor_x, y))
@@ -570,6 +598,8 @@ class CardWikiRenderer:
         is_editing=False,
         resolve_link_label=None,
         link_color=None,
+        resolve_link_color=None,
+        resolve_link_palette=None,
         section_colors=None,
         text_color=None,
         cursor_index=None,
@@ -631,6 +661,8 @@ class CardWikiRenderer:
                             headline_color,
                             resolve_link_label=resolve_link_label,
                             link_color=link_color,
+                            resolve_link_color=resolve_link_color,
+                            resolve_link_palette=resolve_link_palette,
                         )
                     elif block["kind"] == "text":
                         y = cls._draw_inline_text(
@@ -643,6 +675,8 @@ class CardWikiRenderer:
                             local_text,
                             resolve_link_label=resolve_link_label,
                             link_color=link_color,
+                            resolve_link_color=resolve_link_color,
+                            resolve_link_palette=resolve_link_palette,
                         )
                     else:
                         image_surface = cls._load_image_surface(block.get("path"))

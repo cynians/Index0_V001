@@ -7,6 +7,7 @@ from engine.scaler import ScaleHelper
 from ui.card_wiki import CardWikiRenderer
 from ui.text_editing import TextEditing
 from world.schema_loader import SchemaLoader
+from simulations.space.stellar import STELLAR_CLASS_HELP, is_valid_stellar_class
 from simulations.phylogeny.clade_graph import (
     clade_label,
     find_clade_matches,
@@ -17,6 +18,7 @@ from simulations.phylogeny.clade_graph import (
 
 
 class EntityCard:
+    PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     """
     Reusable renderer + interaction helper for one repository entity card.
     """
@@ -51,10 +53,8 @@ class EntityCard:
     TABLE_MAX_KEY_W = 260
     TABLE_MIN_VALUE_W = 120
     STANDARD_RELATION_FIELDS = [
-        "derived_from",
         "parents",
         "related",
-        "wiki_mentions",
         "offspring",
     ]
     CORE_RELATION_FIELDS = set(STANDARD_RELATION_FIELDS)
@@ -77,10 +77,8 @@ class EntityCard:
         "start_event",
         "end_year",
         "end_event",
-        "derived_from",
         "parents",
         "related",
-        "wiki_mentions",
         "offspring",
         "entry_status",
     }
@@ -196,6 +194,19 @@ class EntityCard:
         "map_canvas_height_px",
     }
     WORLD_GEN_SIM_FIELDS = {
+        "world_gen_seed",
+        "crust_composition",
+        "derived_planet_physics",
+        "atmosphere_model",
+        "atmosphere_summary",
+        "interior_regime_model",
+        "surface_process_model",
+        "terrain_seed_model",
+        "tectonic_model",
+        "crater_model",
+        "heightmap_model",
+        "map_generation_recipe",
+        "map_layers",
         "environment_summary",
         "geology_summary",
         "hydrology_summary",
@@ -497,6 +508,134 @@ class EntityCard:
         elif item.get("kind") == "create":
             prefix = "+ "
         return f"{prefix}{item.get('label', '')}".strip()
+
+    def _relation_chip_colors(self, item, is_relation_link_target=False):
+        kind = item.get("kind") if isinstance(item, dict) else ""
+        if kind == "existing":
+            palette = self._relation_chip_palette(item)
+            if palette is not None:
+                return palette["fill"], palette["border"], palette["text"]
+            return (38, 58, 54), (122, 190, 170), (222, 244, 236)
+
+        if kind == "missing":
+            return (64, 48, 38), (218, 152, 104), (250, 222, 190)
+        if kind == "link_existing":
+            if is_relation_link_target:
+                return (42, 62, 92), (178, 206, 244), (218, 230, 250)
+            return (34, 44, 64), (124, 154, 210), (218, 230, 250)
+        return (44, 48, 56), (132, 142, 160), (204, 214, 228)
+
+    def _relation_chip_palette(self, item, is_relation_link_target=False):
+        kind = item.get("kind") if isinstance(item, dict) else ""
+        if kind != "existing":
+            fill, border, text = self._relation_chip_colors(item, is_relation_link_target=is_relation_link_target)
+            return {"fill": fill, "border": border, "text": text, "band": None}
+        if self.world_model is None:
+            return None
+        return self._entity_link_palette(self.world_model.get_entity(item.get("entity_id")))
+
+    def _entity_card_color(self, entity_or_id, fallback=None):
+        entity = entity_or_id
+        if isinstance(entity_or_id, str) and self.world_model is not None:
+            entity = self.world_model.get_entity(entity_or_id)
+        if not isinstance(entity, dict):
+            return fallback
+        color_value = entity.get("card_color") or entity.get("wiki_link_color")
+        if not color_value:
+            return fallback
+        return self._coerce_hex_color(color_value, fallback=fallback)
+
+    def _coerce_color_value(self, value, fallback=None):
+        if isinstance(value, (list, tuple)) and len(value) >= 3:
+            try:
+                return tuple(max(0, min(255, int(part))) for part in value[:3])
+            except (TypeError, ValueError):
+                return fallback
+        return self._coerce_hex_color(value, fallback=fallback)
+
+    def _entity_wiki_band_color(self, entity):
+        colors = entity.get("wiki_field_colors") if isinstance(entity, dict) else None
+        if not isinstance(colors, dict):
+            return None
+        value = colors.get("default")
+        if not value:
+            for candidate in colors.values():
+                if candidate:
+                    value = candidate
+                    break
+        return self._coerce_color_value(value, fallback=None)
+
+    def _entity_link_palette(self, entity_or_id, fallback_body=(38, 58, 54)):
+        entity = entity_or_id
+        if isinstance(entity_or_id, str) and self.world_model is not None:
+            entity = self.world_model.get_entity(entity_or_id)
+        if not isinstance(entity, dict):
+            return None
+
+        body = self._coerce_color_value(
+            entity.get("card_color") or entity.get("wiki_link_color") or entity.get("display_color"),
+            fallback=fallback_body,
+        )
+        if body is None:
+            return None
+        header = self._coerce_color_value(entity.get("card_header_color"), fallback=None)
+        band = self._entity_wiki_band_color(entity)
+
+        fill = self._mix_color(body, (18, 22, 30), 0.62)
+        border_source = header if header is not None else body
+        border = self._mix_color(border_source, (234, 240, 250), 0.28)
+        text = self._readable_text_color(fill, light=(238, 244, 252), dark=(20, 24, 32))
+        band_color = band if band is not None else (header if header is not None else None)
+        return {
+            "fill": fill,
+            "border": border,
+            "text": text,
+            "band": band_color,
+            "body": body,
+            "header": header,
+            "wiki": band,
+        }
+
+    def _phylogeny_row_colors(self, row, muted=False):
+        if row.get("summary"):
+            return (30, 34, 44), (76, 86, 106), (178, 188, 204)
+
+        palette = self._phylogeny_row_palette(row, muted=muted)
+        if palette is not None:
+            return palette["fill"], palette["border"], palette["text"]
+
+        if row.get("highlight"):
+            return (58, 66, 88), (190, 210, 246), (244, 246, 250)
+        if row.get("neighbor"):
+            return (46, 54, 42), (164, 188, 124), (226, 238, 202)
+        if row.get("species"):
+            return (38, 42, 50), (118, 132, 156), (210, 220, 236)
+        return (32, 36, 46), (72, 82, 100), (184, 192, 208) if muted else (216, 224, 238)
+
+    def _phylogeny_row_palette(self, row, muted=False):
+        if row.get("summary"):
+            return {"fill": (30, 34, 44), "border": (76, 86, 106), "text": (178, 188, 204), "band": None}
+
+        palette = self._entity_link_palette(row.get("id"), fallback_body=None)
+        if palette is None and isinstance(row.get("entity"), dict):
+            palette = self._entity_link_palette(row.get("entity"), fallback_body=None)
+        if palette is not None:
+            base = palette["body"]
+            fill = self._mix_color(base, (18, 22, 30), 0.60)
+            border_source = palette["header"] if palette.get("header") is not None else base
+            border = self._mix_color(border_source, (234, 240, 250), 0.26)
+            if row.get("highlight"):
+                fill = self._mix_color(base, (58, 66, 88), 0.35)
+                border = self._mix_color(border_source, (244, 246, 250), 0.12)
+            elif row.get("neighbor"):
+                fill = self._mix_color(base, (46, 54, 42), 0.35)
+                border = self._mix_color(border_source, (230, 242, 204), 0.24)
+            text = self._readable_text_color(fill, light=(238, 244, 252), dark=(20, 24, 32))
+            if muted:
+                text = self._mix_color(text, fill, 0.18)
+            palette.update({"fill": fill, "border": border, "text": text})
+            return palette
+        return None
 
     def _relation_target_label(self, target):
         normalized = str(target or "").strip().lower()
@@ -913,6 +1052,24 @@ class EntityCard:
                 return binomial_name
 
         return entity.get("pretty_name") or entity.get("name") or entity_ref
+
+    def _resolve_wiki_link_color(self, entity_ref):
+        if self.world_model is None:
+            return None
+
+        entity = self.world_model.get_entity(entity_ref)
+        if not isinstance(entity, dict):
+            return None
+
+        palette = self._entity_link_palette(entity, fallback_body=None)
+        if palette is None:
+            return None
+        return palette["fill"]
+
+    def _resolve_wiki_link_palette(self, entity_ref):
+        if self.world_model is None:
+            return None
+        return self._entity_link_palette(self.world_model.get_entity(entity_ref), fallback_body=None)
 
     def _coerce_timeline_year(self, value):
         if value is None or isinstance(value, bool):
@@ -1621,6 +1778,13 @@ class EntityCard:
 
         original_value = card.get("edit_original_value", self.entity.get(field_key))
         new_value = self._coerce_edit_buffer(field_key, original_value, card.get("edit_buffer", ""))
+        if field_key in {"star_class", "spectral_class"} and str(new_value or "").strip():
+            if not is_valid_stellar_class(new_value):
+                card["edit_validation_message"] = f"Invalid stellar class. {STELLAR_CLASS_HELP}"
+                card["last_edit_action"] = "invalid"
+                return True
+
+        card.pop("edit_validation_message", None)
         self.entity[field_key] = new_value
         if field_key == "name" and not self._is_species_card():
             self.entity["pretty_name"] = new_value
@@ -1645,6 +1809,7 @@ class EntityCard:
         card["edit_cursor"] = 0
         self._clear_edit_preferred_column(card)
         card["last_edit_action"] = "commit"
+        card["last_committed_field"] = field_key
         return True
 
     def cancel_edit_field(self, card):
@@ -1652,6 +1817,7 @@ class EntityCard:
             return False
 
         card["last_edit_action"] = "cancel"
+        card.pop("edit_validation_message", None)
         card["active_edit_field"] = None
         card["edit_buffer"] = ""
         card["edit_original_value"] = None
@@ -1883,6 +2049,18 @@ class EntityCard:
         value = self.entity.get("media_path")
         return value.strip() if isinstance(value, str) and value.strip() else None
 
+    def _resolve_card_icon_reference(self):
+        for key in ("media_path", "card_image", "card_image_front", "image_path", "map_image_path"):
+            value = self.entity.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        for illustration in self._media_illustrations():
+            value = self._illustration_media_path(illustration)
+            if value:
+                return value
+        return None
+
     def _load_card_image_surface(self, image_path):
         if not image_path:
             return None
@@ -1892,6 +2070,7 @@ class EntityCard:
         candidate_paths = [normalized_path]
         if not os.path.isabs(normalized_path):
             candidate_paths.append(os.path.normpath(os.path.join(os.getcwd(), normalized_path)))
+            candidate_paths.append(os.path.normpath(os.path.join(self.PROJECT_ROOT, normalized_path)))
 
         for candidate in candidate_paths:
             if not os.path.exists(candidate):
@@ -1965,7 +2144,11 @@ class EntityCard:
         if not parent_id or self.world_model is None:
             return []
 
-        ideas = self.world_model.get_entities_by_dataset("ideas")
+        get_entities = getattr(self.world_model, "get_entities_by_dataset", None)
+        if not callable(get_entities):
+            return []
+
+        ideas = get_entities("ideas")
         illustrations = []
         for idea in ideas:
             if not self._is_illustration_entity(idea):
@@ -2333,6 +2516,7 @@ class EntityCard:
         tab_hitboxes = []
         subtab_hitboxes = []
         media_import_hitboxes = []
+        media_pixel_art_hitboxes = []
         media_add_illustration_rect = None
         media_illustration_rows = []
         media_illustration_link_hitboxes = []
@@ -2390,7 +2574,7 @@ class EntityCard:
             subtab_x = rect.x + 12
             subtab_gap = 5
             subtab_widths = {
-                "space": 86,
+                "orbital": 86,
                 "map": 72,
                 "world_gen": 82,
             }
@@ -2425,8 +2609,11 @@ class EntityCard:
             relation_tree_rect = pygame.Rect(rect.right - 96, rect.y + 12, 20, 20)
             header_reserved_w = 144
 
-        title_edit_rect = pygame.Rect(rect.x + 10, rect.y + 7, max(40, rect.width - header_reserved_w), 20)
-        type_label_rect = pygame.Rect(rect.x + 10, rect.y + 28, max(40, rect.width - header_reserved_w), 18)
+        header_icon_ref = self._resolve_card_icon_reference()
+        header_icon_rect = pygame.Rect(rect.x + 10, rect.y + 8, 34, 34) if header_icon_ref else None
+        title_x = rect.x + (52 if header_icon_ref else 10)
+        title_edit_rect = pygame.Rect(title_x, rect.y + 7, max(40, rect.right - header_reserved_w - title_x), 20)
+        type_label_rect = pygame.Rect(title_x, rect.y + 28, max(40, rect.right - header_reserved_w - title_x), 18)
         if card.get("is_edit_mode", False):
             editable_field_hitboxes.append((self._title_edit_field(), title_edit_rect))
 
@@ -2446,19 +2633,22 @@ class EntityCard:
             button_h = 22
             for illustration in self._media_illustrations():
                 row_rect = pygame.Rect(image_rect.x + 8, row_y, image_rect.width - 16, row_h)
-                import_rect = pygame.Rect(row_rect.right - button_w - 8, row_rect.y + 18, button_w, button_h)
-                title_rect = pygame.Rect(row_rect.x + 60, row_rect.y + 6, max(40, row_rect.width - 166), self.TEXT_LINE_H + 4)
+                pixel_rect = pygame.Rect(row_rect.right - button_w - 8, row_rect.y + 18, button_w, button_h)
+                import_rect = pygame.Rect(pixel_rect.x - button_w - 6, row_rect.y + 18, button_w, button_h)
+                title_rect = pygame.Rect(row_rect.x + 60, row_rect.y + 6, max(40, row_rect.width - 264), self.TEXT_LINE_H + 4)
                 illustration_id = str(illustration.get("id") or "").strip()
                 if illustration_id and not self._illustration_media_path(illustration):
                     media_import_hitboxes.append((illustration_id, import_rect))
                 if illustration_id:
                     media_illustration_link_hitboxes.append((illustration_id, title_rect))
+                    media_pixel_art_hitboxes.append((illustration_id, pixel_rect))
                 media_illustration_rows.append(
                     {
                         "id": illustration_id,
                         "entity": illustration,
                         "row_rect": row_rect,
                         "import_rect": import_rect,
+                        "pixel_rect": pixel_rect,
                         "title_rect": title_rect,
                     }
                 )
@@ -2681,6 +2871,11 @@ class EntityCard:
                 for illustration_id, button_rect in media_import_hitboxes
                 if button_rect.move(0, -scroll_y).colliderect(content_viewport_rect)
             ]
+            media_pixel_art_hitboxes = [
+                (illustration_id, button_rect.move(0, -scroll_y).clip(content_viewport_rect))
+                for illustration_id, button_rect in media_pixel_art_hitboxes
+                if button_rect.move(0, -scroll_y).colliderect(content_viewport_rect)
+            ]
             if media_add_illustration_rect is not None:
                 shifted_add_rect = media_add_illustration_rect.move(0, -scroll_y)
                 media_add_illustration_rect = (
@@ -2763,6 +2958,11 @@ class EntityCard:
             media_import_hitboxes = [
                 (illustration_id, button_rect.clip(content_viewport_rect))
                 for illustration_id, button_rect in media_import_hitboxes
+                if button_rect.colliderect(content_viewport_rect)
+            ]
+            media_pixel_art_hitboxes = [
+                (illustration_id, button_rect.clip(content_viewport_rect))
+                for illustration_id, button_rect in media_pixel_art_hitboxes
                 if button_rect.colliderect(content_viewport_rect)
             ]
             if media_add_illustration_rect is not None:
@@ -2956,6 +3156,7 @@ class EntityCard:
         card["section_hitboxes"] = section_hitboxes
         card["section_draw_rects"] = section_draw_rects
         card["media_import_hitboxes"] = media_import_hitboxes
+        card["media_pixel_art_hitboxes"] = media_pixel_art_hitboxes
         card["media_add_illustration_rect"] = media_add_illustration_rect
         card["media_illustration_rows"] = media_illustration_rows
         card["media_illustration_link_hitboxes"] = media_illustration_link_hitboxes
@@ -2969,6 +3170,8 @@ class EntityCard:
         card["edit_toggle_rect"] = edit_toggle_rect
         card["idea_button_rect"] = idea_button_rect
         card["relation_tree_rect"] = relation_tree_rect
+        card["header_icon_ref"] = header_icon_ref
+        card["header_icon_rect"] = header_icon_rect
         card["time_anchor_rect"] = time_anchor_rect
         card["delete_rect"] = delete_rect
         card["close_rect"] = close_rect
@@ -3092,16 +3295,37 @@ class EntityCard:
             if title_active:
                 title_text = card.get("edit_buffer", "")
 
-        title_surface = font.render(title_text, True, header_text_color)
-        subtitle_surface = font.render(card["subtitle"], True, header_muted_color)
-        screen.blit(title_surface, (rect.x + 12, rect.y + 10))
+        title_x = rect.x + 12
+        subtitle_x = rect.x + 12
+        icon_rect = card.get("header_icon_rect")
+        icon_ref = card.get("header_icon_ref")
+        if icon_rect is not None and icon_ref:
+            pygame.draw.rect(screen, (18, 20, 26), icon_rect)
+            pygame.draw.rect(screen, self._mix_color(header_text_color, card_header_color, 0.45), icon_rect, 1)
+            icon_surface = self._load_card_image_surface(icon_ref)
+            if icon_surface is not None:
+                self._draw_scaled_preview(screen, icon_surface, icon_rect.inflate(4, 4))
+            title_x = icon_rect.right + 8
+            subtitle_x = icon_rect.right + 8
+
         type_label_rect = card.get("type_label_rect")
+        title_max_w = max(30, rect.right - 156 - title_x)
+        if type_label_rect is not None:
+            title_max_w = max(30, type_label_rect.right - title_x)
+        title_surface = font.render(self._ellipsize_text(title_text, font, title_max_w), True, header_text_color)
+        subtitle_max_w = title_max_w
+        subtitle_surface = font.render(
+            self._ellipsize_text(card["subtitle"], font, subtitle_max_w),
+            True,
+            header_muted_color,
+        )
+        screen.blit(title_surface, (title_x, rect.y + 10))
         if type_label_rect is not None:
             hover_pos = pygame.mouse.get_pos()
             if type_label_rect.collidepoint(hover_pos):
                 pygame.draw.rect(screen, (42, 48, 62), type_label_rect)
                 pygame.draw.rect(screen, (130, 150, 190), type_label_rect, 1)
-        screen.blit(subtitle_surface, (rect.x + 12, rect.y + 30))
+        screen.blit(subtitle_surface, (subtitle_x, rect.y + 30))
 
         edit_toggle_rect = card.get("edit_toggle_rect")
         idea_button_rect = card.get("idea_button_rect")
@@ -3169,12 +3393,17 @@ class EntityCard:
             elif card.get("timeline_reanchor_active", False):
                 edit_status = "Reanchoring card | Click timeline to set | Esc cancel"
             elif active_field:
-                if active_field in self.TEMPORAL_FIELDS:
+                validation_message = str(card.get("edit_validation_message") or "")
+                if validation_message:
+                    edit_status = validation_message
+                elif active_field in self.TEMPORAL_FIELDS:
                     edit_status = f"Editing {active_field} | Click timeline to set | Enter save | Esc cancel"
                 elif active_field == "wiki_entry":
                     edit_status = "Editing wiki_entry | Enter newline | Ctrl+Enter save | Ctrl+L link"
                 elif self.is_relation_edit_field(active_field):
                     edit_status = f"Editing {active_field} | Search relations | Enter insert | Ctrl+Enter save"
+                elif active_field in {"star_class", "spectral_class"}:
+                    edit_status = STELLAR_CLASS_HELP
                 else:
                     edit_status = f"Editing {active_field} | Enter save | Esc cancel | Tab next"
             else:
@@ -3513,6 +3742,10 @@ class EntityCard:
             illustration_id: button_rect
             for illustration_id, button_rect in card.get("media_import_hitboxes", [])
         }
+        pixel_buttons = {
+            illustration_id: button_rect
+            for illustration_id, button_rect in card.get("media_pixel_art_hitboxes", [])
+        }
 
         for row in rows:
             row_rect = row.get("row_rect")
@@ -3538,7 +3771,7 @@ class EntityCard:
                 screen.blit(placeholder, placeholder.get_rect(center=thumb_rect.center))
 
             text_x = thumb_rect.right + 10
-            text_w = max(40, row_rect.width - 166)
+            text_w = max(40, row_rect.width - 264)
             label = self._entity_display_label(illustration) or "Untitled Illustration"
             date = str(illustration.get("date") or "").strip()
             label_line = label if not date else f"{label} ({date})"
@@ -3570,6 +3803,15 @@ class EntityCard:
                 button_text = font.render("Import image", True, (245, 245, 245))
                 screen.blit(button_text, button_text.get_rect(center=button_rect.center))
 
+            pixel_rect = pixel_buttons.get(row.get("id"))
+            if pixel_rect is not None:
+                mouse_pos = pygame.mouse.get_pos()
+                fill = (66, 78, 104) if pixel_rect.collidepoint(mouse_pos) else (52, 58, 78)
+                pygame.draw.rect(screen, fill, pixel_rect)
+                pygame.draw.rect(screen, (186, 202, 232), pixel_rect, 1)
+                pixel_text = font.render("Pixel Art", True, (245, 245, 245))
+                screen.blit(pixel_text, pixel_text.get_rect(center=pixel_rect.center))
+
     def _draw_temporal_wiki_block(self, screen, font, card, image_rect):
         pygame.draw.rect(screen, (32, 35, 44), image_rect)
         pygame.draw.rect(screen, (92, 100, 120), image_rect, 1)
@@ -3582,6 +3824,8 @@ class EntityCard:
             wiki_text,
             is_editing=False,
             resolve_link_label=self._resolve_wiki_link_label,
+            resolve_link_color=self._resolve_wiki_link_color,
+            resolve_link_palette=self._resolve_wiki_link_palette,
             section_colors=self._wiki_field_colors(),
             cursor_index=0,
             scroll_y=0,
@@ -3664,30 +3908,20 @@ class EntityCard:
             row_rect = row.get("rect")
             if row_rect is None:
                 continue
-            if row.get("summary"):
-                fill = (30, 34, 44)
-                border = (76, 86, 106)
-                text_color = (178, 188, 204)
-            elif row.get("highlight"):
-                fill = (58, 66, 88)
-                border = (190, 210, 246)
-                text_color = (244, 246, 250)
-            elif row.get("neighbor"):
-                fill = (46, 54, 42)
-                border = (164, 188, 124)
-                text_color = (226, 238, 202)
-            elif row.get("species"):
-                fill = (38, 42, 50)
-                border = (118, 132, 156)
-                text_color = (210, 220, 236)
+            palette = self._phylogeny_row_palette(row, muted=muted)
+            if palette is None:
+                fill, border, text_color = self._phylogeny_row_colors(row, muted=muted)
+                band = None
             else:
-                fill = (32, 36, 46)
-                border = (72, 82, 100)
-                text_color = (184, 192, 208) if muted else (216, 224, 238)
+                fill, border, text_color = palette["fill"], palette["border"], palette["text"]
+                band = palette.get("band")
             pygame.draw.rect(screen, fill, row_rect)
+            if band is not None:
+                band_rect = pygame.Rect(row_rect.x, row_rect.y, min(5, row_rect.width), row_rect.height)
+                pygame.draw.rect(screen, band, band_rect)
             pygame.draw.rect(screen, border, row_rect, 1)
-            text_x = row_rect.x + 8
-            available_w = row_rect.width - 18
+            text_x = row_rect.x + (11 if band is not None else 8)
+            available_w = row_rect.right - text_x - 8
             distance_label = str(row.get("distance_label") or "").strip()
             if distance_label:
                 badge_w = min(64, max(42, row_rect.width // 3))
@@ -3761,19 +3995,41 @@ class EntityCard:
                         continue
                     selected = row.get("index") == card.get("phylogeny_parent_selected_index", 0)
                     is_create = row.get("index") == "create"
-                    fill = (54, 64, 82) if selected else (32, 36, 46)
-                    border = (194, 206, 228) if selected else (88, 98, 118)
+                    row_palette = self._phylogeny_row_palette(
+                        {
+                            "id": (row.get("entity") or {}).get("id") if isinstance(row.get("entity"), dict) else "",
+                            "entity": row.get("entity"),
+                            "highlight": selected,
+                        }
+                    )
+                    if row_palette is None:
+                        fill, border, text_color = self._phylogeny_row_colors(
+                            {
+                                "id": (row.get("entity") or {}).get("id") if isinstance(row.get("entity"), dict) else "",
+                                "entity": row.get("entity"),
+                                "highlight": selected,
+                            }
+                        )
+                        band = None
+                    else:
+                        fill, border, text_color = row_palette["fill"], row_palette["border"], row_palette["text"]
+                        band = row_palette.get("band")
                     if is_create:
                         fill = (48, 58, 42) if selected else (36, 44, 34)
                         border = (168, 196, 128)
+                        text_color = (238, 242, 246)
+                        band = None
                     pygame.draw.rect(screen, fill, row_rect)
+                    if band is not None:
+                        pygame.draw.rect(screen, band, pygame.Rect(row_rect.x, row_rect.y, min(5, row_rect.width), row_rect.height))
                     pygame.draw.rect(screen, border, row_rect, 1)
                     if is_create:
                         label = f"Create clade: {query}"
                     else:
                         label = clade_label(row.get("entity"), "")
-                    label = self._ellipsize_text(label, font, row_rect.width - 14)
-                    screen.blit(font.render(label, True, (238, 242, 246)), (row_rect.x + 7, row_rect.y + 6))
+                    text_x = row_rect.x + (11 if band is not None else 7)
+                    label = self._ellipsize_text(label, font, row_rect.right - text_x - 7)
+                    screen.blit(font.render(label, True, text_color), (text_x, row_rect.y + 6))
 
             if parent_expanded:
                 self._draw_phylogeny_rows(screen, font, card.get("phylogeny_parent_tree_rows", []))
@@ -3803,20 +4059,42 @@ class EntityCard:
                         continue
                     selected = row.get("index") == card.get("phylogeny_child_selected_index", 0)
                     is_create = row.get("index") == "create"
-                    fill = (54, 64, 82) if selected else (32, 36, 46)
-                    border = (194, 206, 228) if selected else (88, 98, 118)
+                    row_palette = self._phylogeny_row_palette(
+                        {
+                            "id": (row.get("entity") or {}).get("id") if isinstance(row.get("entity"), dict) else "",
+                            "entity": row.get("entity"),
+                            "highlight": selected,
+                        }
+                    )
+                    if row_palette is None:
+                        fill, border, text_color = self._phylogeny_row_colors(
+                            {
+                                "id": (row.get("entity") or {}).get("id") if isinstance(row.get("entity"), dict) else "",
+                                "entity": row.get("entity"),
+                                "highlight": selected,
+                            }
+                        )
+                        band = None
+                    else:
+                        fill, border, text_color = row_palette["fill"], row_palette["border"], row_palette["text"]
+                        band = row_palette.get("band")
                     if is_create:
                         fill = (48, 58, 42) if selected else (36, 44, 34)
                         border = (168, 196, 128)
+                        text_color = (238, 242, 246)
+                        band = None
                     pygame.draw.rect(screen, fill, row_rect)
+                    if band is not None:
+                        pygame.draw.rect(screen, band, pygame.Rect(row_rect.x, row_rect.y, min(5, row_rect.width), row_rect.height))
                     pygame.draw.rect(screen, border, row_rect, 1)
                     if is_create:
                         label = f"Create clade: {query}"
                     else:
                         entity = row.get("entity")
                         label = clade_label(entity, "")
-                    label = self._ellipsize_text(label, font, row_rect.width - 14)
-                    screen.blit(font.render(label, True, (238, 242, 246)), (row_rect.x + 7, row_rect.y + 6))
+                    text_x = row_rect.x + (11 if band is not None else 7)
+                    label = self._ellipsize_text(label, font, row_rect.right - text_x - 7)
+                    screen.blit(font.render(label, True, text_color), (text_x, row_rect.y + 6))
         finally:
             screen.set_clip(previous_clip)
 
@@ -3933,37 +4211,34 @@ class EntityCard:
                 if relation_chips and not is_active_field:
                     for chip in relation_chips:
                         chip_rect = chip["rect"]
-                        kind = chip.get("kind")
-                        if kind == "existing":
-                            chip_fill = (38, 58, 54)
-                            chip_border = (122, 190, 170)
-                            chip_text_color = (222, 244, 236)
-                        elif kind == "missing":
-                            chip_fill = (64, 48, 38)
-                            chip_border = (218, 152, 104)
-                            chip_text_color = (250, 222, 190)
-                        elif kind == "link_existing":
-                            chip_fill = (42, 62, 92) if is_relation_link_target else (34, 44, 64)
-                            chip_border = (178, 206, 244) if is_relation_link_target else (124, 154, 210)
-                            chip_text_color = (218, 230, 250)
-                        else:
-                            chip_fill = (44, 48, 56)
-                            chip_border = (132, 142, 160)
-                            chip_text_color = (204, 214, 228)
+                        chip_fill, chip_border, chip_text_color = self._relation_chip_colors(
+                            chip,
+                            is_relation_link_target=is_relation_link_target,
+                        )
+                        chip_palette = self._relation_chip_palette(
+                            chip,
+                            is_relation_link_target=is_relation_link_target,
+                        )
+                        chip_band = chip_palette.get("band") if chip_palette is not None else None
 
                         pygame.draw.rect(screen, chip_fill, chip_rect)
+                        if chip_band is not None:
+                            pygame.draw.rect(screen, chip_band, pygame.Rect(chip_rect.x, chip_rect.y, min(5, chip_rect.width), chip_rect.height))
                         pygame.draw.rect(screen, chip_border, chip_rect, 1)
                         remove_rect = chip.get("remove_rect")
                         text_max_w = chip_rect.width - 10
+                        text_x = chip_rect.x + (11 if chip_band is not None else 6)
                         if remove_rect is not None:
-                            text_max_w = max(12, remove_rect.x - chip_rect.x - 10)
+                            text_max_w = max(12, remove_rect.x - text_x - 4)
+                        else:
+                            text_max_w = max(12, chip_rect.right - text_x - 4)
                         label = self._ellipsize_text(
                             chip.get("display_label", ""),
                             font,
                             text_max_w,
                         )
                         chip_surface = font.render(label, True, chip_text_color)
-                        screen.blit(chip_surface, (chip_rect.x + 6, chip_rect.y + max(2, (chip_rect.height - line_h) // 2)))
+                        screen.blit(chip_surface, (text_x, chip_rect.y + max(2, (chip_rect.height - line_h) // 2)))
                         if remove_rect is not None:
                             pygame.draw.rect(screen, chip_border, remove_rect, 1)
                             remove_surface = font.render("x", True, chip_text_color)
@@ -3996,6 +4271,8 @@ class EntityCard:
             wiki_text,
             is_editing=is_editing,
             resolve_link_label=self._resolve_wiki_link_label,
+            resolve_link_color=self._resolve_wiki_link_color,
+            resolve_link_palette=self._resolve_wiki_link_palette,
             section_colors=self._wiki_field_colors(),
             cursor_index=card.get("edit_cursor", 0),
             scroll_y=card.get("scroll_y", 0),

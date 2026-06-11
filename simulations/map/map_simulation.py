@@ -2155,9 +2155,10 @@ class MapSimulation:
             "start_year": selected_year,
             "end_year": self._normalize_year_value(source_feature.get("end_year")),
             "entry_status": "draft",
-            "derived_from": [source_id] if source_id else [],
             "related": related,
         }
+        if source_id and source_id not in evolved["related"]:
+            evolved["related"].append(source_id)
 
         for key in (
             "resolution_m_per_pixel",
@@ -2284,13 +2285,6 @@ class MapSimulation:
             )
         if feature.get("draw_order") is not None:
             lines.append(f"  draw_order: {feature['draw_order']}")
-        if feature.get("derived_from"):
-            lines.extend(
-                self._format_yaml_list_field_lines(
-                    "derived_from",
-                    feature.get("derived_from"),
-                )
-            )
         if feature.get("related"):
             lines.extend(
                 self._format_yaml_list_field_lines(
@@ -2377,8 +2371,6 @@ class MapSimulation:
             lines.extend(self._format_yaml_field_lines("coverage_mode", location.get("coverage_mode")))
         if location.get("draw_order") is not None:
             lines.append(f"  draw_order: {location['draw_order']}")
-        if location.get("derived_from"):
-            lines.extend(self._format_yaml_list_field_lines("derived_from", location.get("derived_from")))
         if location.get("related"):
             lines.extend(self._format_yaml_list_field_lines("related", location.get("related")))
         lines.append(f"  start_year: {location['start_year']}")
@@ -3777,6 +3769,7 @@ class MapSimulation:
                     "color": color,
                     "location_class": location_class,
                     "label_position": "below_right",
+                    "has_heightmap_base": isinstance(entity.get("heightmap_model"), dict),
                 })
                 continue
 
@@ -3851,6 +3844,36 @@ class MapSimulation:
                 layers.insert(0, default_floor_layer)
 
         return layers
+
+    def get_heightmap_base_layer(self):
+        root_entity = self.get_root_entity()
+        if not isinstance(root_entity, dict):
+            return None
+
+        if root_entity.get("location_class") not in {"planet", "moon"}:
+            return None
+
+        heightmap = root_entity.get("heightmap_model")
+        if not isinstance(heightmap, dict):
+            return None
+
+        sample_grid = heightmap.get("sample_grid")
+        if not isinstance(sample_grid, dict) or not sample_grid.get("rows"):
+            return None
+
+        rect = self._planet_rect_from_entity(root_entity)
+        return {
+            "shape": "heightmap_base",
+            "x": rect["x"],
+            "y": rect["y"],
+            "width_world": rect["width_world"],
+            "height_world": rect["height_world"],
+            "canvas_width_px": rect["canvas_width_px"],
+            "canvas_height_px": rect["canvas_height_px"],
+            "heightmap_model": heightmap,
+            "name": root_entity.get("name"),
+            "entity_id": root_entity.get("id"),
+        }
 
     def get_layers(self):
         self.get_active_layer_kind()
@@ -3930,7 +3953,6 @@ class MapSimulation:
             "locations",
             "related",
             "parents",
-            "derived_from",
         )
         references = []
 

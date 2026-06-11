@@ -1,7 +1,9 @@
 import re
+import tempfile
 import unittest
 from pathlib import Path
 
+from world.entity_loader import EntityLoader
 from world.world_model import WorldModel
 
 
@@ -75,6 +77,34 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
         model = WorldModel()
         self.assertEqual("planet_earth", model.get_entity("body_earth").get("id"))
+
+    def test_loader_collapses_obsolete_relations_into_related(self):
+        try:
+            import yaml
+        except ModuleNotFoundError:
+            self.skipTest("PyYAML is not installed in this interpreter")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            entries_dir = Path(temp_dir)
+            (entries_dir / "ideas.yaml").write_text(
+                "- id: idea_source\n"
+                "  type: idea\n"
+                "  name: Source\n"
+                "  related:\n"
+                "    - idea_existing\n"
+                "  derived_from:\n"
+                "    - idea_derived\n"
+                "  wiki_mentions:\n"
+                "    - idea_wiki\n",
+                encoding="utf-8",
+            )
+            loader = EntityLoader(entries_directory=entries_dir)
+
+            entity = loader.entities["idea_source"]
+
+            self.assertEqual(["idea_existing", "idea_derived", "idea_wiki"], entity["related"])
+            self.assertNotIn("derived_from", entity)
+            self.assertNotIn("wiki_mentions", entity)
 
 
 if __name__ == "__main__":

@@ -17,6 +17,8 @@ class TimelineUI:
 
     HEADER_H = 48
     AXIS_H = 22
+    PERIOD_FILTER_H = 10
+    PERIOD_FILTER_GAP = 8
     COVERAGE_H = 8
     COVERAGE_GAP = 8
     PERIOD_H = 12
@@ -54,10 +56,14 @@ class TimelineUI:
         self.layout_font = None
         self.active_category_filter = "all"
         self.active_filter_group = "general"
+        self.active_filter_groups = {"general"}
         self.active_filter_mode = "category"
         self.open_canvas_entity_ids = set()
         self.filter_hitboxes = []
         self.filter_group_hitboxes = []
+        self.period_filter_range = None
+        self.period_filter_pending_start = None
+        self.period_filter_rect = pygame.Rect(0, 0, 0, 0)
         self.picker_target_label = None
         self.picker_preview_year = None
         self.year_selection_enabled = False
@@ -135,6 +141,7 @@ class TimelineUI:
         changed = category_name != self.active_category_filter or self.active_filter_mode != "category"
         self.active_category_filter = category_name
         self.active_filter_group = self._group_for_category(category_name) or self.active_filter_group
+        self.active_filter_groups = {self.active_filter_group}
         self.active_filter_mode = "category"
         if changed:
             self.rebuild_layout()
@@ -146,8 +153,9 @@ class TimelineUI:
         if group_id not in valid_group_ids:
             group_id = available_groups[0][0] if available_groups else "general"
 
-        changed = group_id != self.active_filter_group or self.active_filter_mode != "group"
+        changed = group_id != self.active_filter_group or self.active_filter_mode != "group" or self.active_filter_groups != {group_id}
         self.active_filter_group = group_id
+        self.active_filter_groups = {group_id}
         self.active_filter_mode = "group"
         categories = self._categories_for_group(group_id)
         if categories and self.active_category_filter not in categories:
@@ -156,6 +164,47 @@ class TimelineUI:
         if changed:
             self.rebuild_layout()
         return changed
+
+    def toggle_active_filter_group(self, group_id):
+        available_groups = self.get_filter_groups()
+        valid_group_ids = {available_group_id for available_group_id, _, _ in available_groups}
+        if group_id not in valid_group_ids:
+            return False
+
+        old_groups = set(self.active_filter_groups)
+        if group_id == "general":
+            self.active_filter_groups = {"general"}
+        else:
+            self.active_filter_groups.discard("general")
+            if group_id in self.active_filter_groups:
+                self.active_filter_groups.remove(group_id)
+            else:
+                self.active_filter_groups.add(group_id)
+            if not self.active_filter_groups:
+                self.active_filter_groups = {"general"}
+
+        self.active_filter_group = sorted(self.active_filter_groups)[0]
+        self.active_filter_mode = "group"
+        categories = self._categories_for_group(self.active_filter_group)
+        if categories and self.active_category_filter not in categories:
+            self.active_category_filter = categories[0]
+
+        changed = old_groups != self.active_filter_groups
+        if changed:
+            self.rebuild_layout()
+        return changed
+
+    def set_period_filter(self, start_year=None, end_year=None, pending_start=None):
+        old_range = self.period_filter_range
+        old_pending = self.period_filter_pending_start
+        if start_year is None or end_year is None:
+            self.period_filter_range = None
+        else:
+            start_year = int(start_year)
+            end_year = int(end_year)
+            self.period_filter_range = (min(start_year, end_year), max(start_year, end_year))
+        self.period_filter_pending_start = None if pending_start is None else int(pending_start)
+        return old_range != self.period_filter_range or old_pending != self.period_filter_pending_start
 
     def _available_filter_categories(self):
         categories = {"all", "open_canvas", "contemporary"}
@@ -203,6 +252,9 @@ class TimelineUI:
         valid_group_ids = {group_id for group_id, _, _ in groups}
         if self.active_filter_group not in valid_group_ids:
             self.active_filter_group = groups[0][0] if groups else "general"
+        self.active_filter_groups = {
+            group_id for group_id in self.active_filter_groups if group_id in valid_group_ids
+        } or {self.active_filter_group}
 
         for group_id, _, categories in groups:
             if group_id == self.active_filter_group:
@@ -216,6 +268,9 @@ class TimelineUI:
         categories = self._available_filter_categories()
         valid_group_ids = {group_id for group_id, _, _ in self.get_filter_groups()}
         if self.active_filter_mode == "group" and self.active_filter_group in valid_group_ids:
+            self.active_filter_groups = {
+                group_id for group_id in self.active_filter_groups if group_id in valid_group_ids
+            } or {self.active_filter_group}
             group_categories = self._categories_for_group(self.active_filter_group)
             if group_categories and self.active_category_filter not in group_categories:
                 self.active_category_filter = group_categories[0]
@@ -226,6 +281,7 @@ class TimelineUI:
             self.active_filter_mode = "category"
 
         self.active_filter_group = self._group_for_category(self.active_category_filter)
+        self.active_filter_groups = {self.active_filter_group}
         self.active_filter_mode = "category"
 
     def set_picker_target(self, field_label=None, preview_year=None):
@@ -312,7 +368,9 @@ class TimelineUI:
     def _filtered_visible_items(self):
         visible_items = self._visible_items()
         if self.active_filter_mode == "group":
-            group_categories = set(self._categories_for_group(self.active_filter_group))
+            group_categories = set()
+            for group_id in self.active_filter_groups:
+                group_categories.update(self._categories_for_group(group_id))
             if "all" in group_categories:
                 return visible_items
 
@@ -969,6 +1027,10 @@ class TimelineUI:
         if filter_action is not None:
             return filter_action
 
+        period_filter_action = self.handle_period_filter_click(mouse_pos)
+        if period_filter_action is not None:
+            return period_filter_action
+
         if self.year_selection_enabled:
             return self.select_year_from_pos(mouse_pos)
 
@@ -977,11 +1039,11 @@ class TimelineUI:
     def handle_filter_click(self, mouse_pos):
         for group_id, _, hitbox in self.filter_group_hitboxes:
             if hitbox.collidepoint(mouse_pos):
-                changed = self.set_active_filter_group(group_id)
+                changed = self.toggle_active_filter_group(group_id)
                 return {
                     "kind": "filter_group_changed",
                     "group": group_id,
-                    "category": self.active_category_filter,
+                    "groups": sorted(self.active_filter_groups),
                     "changed": changed,
                 }
 
@@ -991,6 +1053,27 @@ class TimelineUI:
                 return {"kind": "filter_changed", "category": category_name, "changed": changed}
 
         return None
+
+    def handle_period_filter_click(self, mouse_pos):
+        if self.period_filter_rect is None or not self.period_filter_rect.collidepoint(mouse_pos):
+            return None
+        year = int(round(self._x_to_year(mouse_pos[0])))
+        if self.period_filter_pending_start is None:
+            self.set_period_filter(pending_start=year)
+            return {
+                "kind": "period_filter_started",
+                "year": year,
+                "changed": True,
+            }
+
+        start_year = self.period_filter_pending_start
+        self.set_period_filter(start_year, year)
+        return {
+            "kind": "period_filter_changed",
+            "start_year": min(start_year, year),
+            "end_year": max(start_year, year),
+            "changed": True,
+        }
 
     def select_year_from_pos(self, mouse_pos):
         picked_year = self.pick_year_from_pos(mouse_pos)
@@ -1029,7 +1112,7 @@ class TimelineUI:
         return int(round(self._x_to_year(mouse_pos[0])))
 
     def get_minimum_height(self):
-        coverage_h = self.COVERAGE_H + self.COVERAGE_GAP
+        coverage_h = self.PERIOD_FILTER_H + self.PERIOD_FILTER_GAP + self.COVERAGE_H + self.COVERAGE_GAP
         period_h = 0
         if self.period_lane_count > 0:
             period_h = (
@@ -1055,7 +1138,7 @@ class TimelineUI:
             screen.blit(title, (self.rect.x + 12, self.rect.y + 8))
 
             for group_id, label, chip_rect in self.filter_group_hitboxes:
-                selected = group_id == self.active_filter_group
+                selected = self.active_filter_mode == "group" and group_id in self.active_filter_groups
                 fill = (56, 66, 90) if selected else (26, 31, 44)
                 border = (190, 204, 230) if selected else (78, 88, 108)
                 text_color = (245, 245, 245) if selected else (166, 176, 196)
@@ -1113,7 +1196,29 @@ class TimelineUI:
                 picker_x = self._year_to_x(self.picker_preview_year)
                 pygame.draw.line(screen, (232, 210, 148), (picker_x, self.content_rect.y), (picker_x, self.rect.bottom - 10), 1)
 
-            coverage_y = self.axis_y + 10
+            period_filter_y = self.axis_y + 10
+            period_filter_label = font.render("Period Filter", True, (166, 174, 190))
+            screen.blit(period_filter_label, (axis_left, period_filter_y - 16))
+            self.period_filter_rect = pygame.Rect(axis_left, period_filter_y, self.content_rect.width, self.PERIOD_FILTER_H)
+            pygame.draw.rect(screen, (22, 26, 38), self.period_filter_rect)
+            pygame.draw.rect(screen, (82, 90, 110), self.period_filter_rect, 1)
+            if self.period_filter_range is not None:
+                start_year, end_year = self.period_filter_range
+                x1 = self._year_to_x(start_year)
+                x2 = self._year_to_x(end_year)
+                selected_rect = pygame.Rect(min(x1, x2), period_filter_y + 1, max(2, abs(x2 - x1)), max(1, self.PERIOD_FILTER_H - 2))
+                pygame.draw.rect(screen, (92, 128, 176), selected_rect)
+                pygame.draw.line(screen, (230, 238, 252), (x1, period_filter_y - 3), (x1, self.period_filter_rect.bottom + 3), 1)
+                pygame.draw.line(screen, (230, 238, 252), (x2, period_filter_y - 3), (x2, self.period_filter_rect.bottom + 3), 1)
+            elif self.period_filter_pending_start is not None:
+                pending_x = self._year_to_x(self.period_filter_pending_start)
+                pygame.draw.line(screen, (232, 210, 148), (pending_x, period_filter_y - 3), (pending_x, self.period_filter_rect.bottom + 3), 2)
+            else:
+                hint_surface = font.render("click start, click end", True, (116, 126, 146))
+                if hint_surface.get_width() < self.period_filter_rect.width - 8:
+                    screen.blit(hint_surface, (self.period_filter_rect.x + 6, self.period_filter_rect.y - 2))
+
+            coverage_y = self.period_filter_rect.bottom + self.PERIOD_FILTER_GAP
             coverage_label = font.render("Coverage", True, (166, 174, 190))
             screen.blit(coverage_label, (axis_left, coverage_y - 16))
 

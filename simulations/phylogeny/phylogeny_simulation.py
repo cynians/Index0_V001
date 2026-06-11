@@ -113,6 +113,9 @@ class PhylogenySimulation:
                 "height": self.NODE_H,
                 "label": clade_label(phylogeny_entities.get(clade_id), clade_id),
                 "species": (phylogeny_entities.get(clade_id) or {}).get("_dataset") == "species",
+                "card_color": (phylogeny_entities.get(clade_id) or {}).get("card_color"),
+                "card_header_color": (phylogeny_entities.get(clade_id) or {}).get("card_header_color"),
+                "wiki_field_colors": (phylogeny_entities.get(clade_id) or {}).get("wiki_field_colors"),
             }
             return next_y
 

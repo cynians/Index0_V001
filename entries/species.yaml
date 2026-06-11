@@ -40,7 +40,10 @@
   representative_body_mass_kg: 9.5
   reproduction_type: egg_laying
   metabolism_class: endothermic
-  lifecycle_notes: 'The original release form was a microraptor-like gliding omnivore somewhat larger than a turkey, equipped with enlarged grasping claws and a modified beak suited to broad opportunistic feeding. Later CEAG-guided divergence produced both more specialized predator branches and highly adaptable generalist branches.'
+  lifecycle_notes: The original release form was a microraptor-like gliding omnivore
+    somewhat larger than a turkey, equipped with enlarged grasping claws and a modified
+    beak suited to broad opportunistic feeding. Later CEAG-guided divergence produced
+    both more specialized predator branches and highly adaptable generalist branches.
   behavioural_traits:
   - intelligent
   - opportunistic
@@ -52,7 +55,9 @@
   - microraptor_like_gliding_planform
   - turkey_plus_body_size
   simulation_tier_default: species_population
-  population_notes: 'Particularly successful on lower-diversity Earth-like seeded worlds, where it expanded into many available niches and became one of the dominant engineered vertebrate lineages.'
+  population_notes: Particularly successful on lower-diversity Earth-like seeded worlds,
+    where it expanded into many available niches and became one of the dominant engineered
+    vertebrate lineages.
   tags:
   - species
   - bioengineered
@@ -69,10 +74,12 @@
   related: []
   offspring:
   - id: idea_distrib_psittacoraptor_versa
-  wiki_entry: 'Bioengineered parrot-derived theropod lineage created by the Terran BDP during the Planetary Period as an omnivorous generalist. On at least one seeded Earth-like world with reduced biodiversity, later exposure to CEAG drove rapid diversification into predator and generalist branches across nearly all major ecosystems.'
+  wiki_entry: Bioengineered parrot-derived theropod lineage created by the Terran
+    BDP during the Planetary Period as an omnivorous generalist. On at least one seeded
+    Earth-like world with reduced biodiversity, later exposure to CEAG drove rapid
+    diversification into predator and generalist branches across nearly all major
+    ecosystems.
   end_year: 31761
-  derived_from: []
-  wiki_mentions: []
 - id: spec_ailurus_fulgens
   common_name: Red Panda
   binomial_name: Ailurus fulgens
@@ -111,7 +118,8 @@
   representative_body_mass_kg: 5.5
   reproduction_type: live_birth
   metabolism_class: endothermic
-  lifecycle_notes: Solitary and mostly crepuscular mammal with low-energy feeding behavior centered on bamboo-rich upland forests.
+  lifecycle_notes: Solitary and mostly crepuscular mammal with low-energy feeding
+    behavior centered on bamboo-rich upland forests.
   behavioural_traits:
   - solitary
   - arboreal
@@ -124,7 +132,8 @@
   - semi_retractile_claws
   - false_thumb
   simulation_tier_default: species_population
-  population_notes: Best modeled as a low-density forest specialist vulnerable to habitat fragmentation and environmental disruption.
+  population_notes: Best modeled as a low-density forest specialist vulnerable to
+    habitat fragmentation and environmental disruption.
   tags:
   - species
   - mammal
@@ -138,10 +147,11 @@
   - cladis_ailurini
   related: []
   offspring: []
-  wiki_entry: 'Small arboreal mammal native to the temperate montane forests of the eastern Himalayas and southwestern China. Red pandas are specialized climbers and foragers that spend much of their time in trees, feeding primarily on bamboo alongside fruits, eggs, and small animals.'
+  wiki_entry: Small arboreal mammal native to the temperate montane forests of the
+    eastern Himalayas and southwestern China. Red pandas are specialized climbers
+    and foragers that spend much of their time in trees, feeding primarily on bamboo
+    alongside fruits, eggs, and small animals.
   end_year: null
-  derived_from: []
-  wiki_mentions: []
 - id: spec_rheithrosciurus_macrotis
   common_name: Tufted Ground Squirrel
   binomial_name: Rheithrosciurus macrotis
@@ -181,7 +191,9 @@
   representative_body_mass_kg: 1.8
   reproduction_type: live_birth
   metabolism_class: endothermic
-  lifecycle_notes: 'Solitary forest mammal spending much of its active time on the ground in dense tropical forest, using powerful dentition to process very hard food items and retreating into cover when disturbed.'
+  lifecycle_notes: Solitary forest mammal spending much of its active time on the
+    ground in dense tropical forest, using powerful dentition to process very hard
+    food items and retreating into cover when disturbed.
   behavioural_traits:
   - solitary
   - cautious
@@ -193,7 +205,8 @@
   - robust_incisors
   - dense_dark_fur
   simulation_tier_default: species_population
-  population_notes: Best represented as a low-density tropical forest specialist dependent on intact rainforest structure and vulnerable to habitat fragmentation.
+  population_notes: Best represented as a low-density tropical forest specialist dependent
+    on intact rainforest structure and vulnerable to habitat fragmentation.
   tags:
   - species
   - mammal
@@ -208,10 +221,11 @@
   - cladis_sciurini
   related: []
   offspring: []
-  wiki_entry: 'Large terrestrial squirrel native to the lowland forests of Borneo, known for its extremely bushy tail and powerful jaws. Despite its common name, it is primarily a forest-floor rodent that forages among dense vegetation and fallen material for hard seeds, nuts, and other food items.'
+  wiki_entry: Large terrestrial squirrel native to the lowland forests of Borneo,
+    known for its extremely bushy tail and powerful jaws. Despite its common name,
+    it is primarily a forest-floor rodent that forages among dense vegetation and
+    fallen material for hard seeds, nuts, and other food items.
   end_year: null
-  derived_from: []
-  wiki_mentions: []
 - id: spec_pygoscelis_antarcticus
   common_name: Chinstrap Penguin
   binomial_name: Pygoscelis antarcticus
@@ -219,11 +233,9 @@
   start_year: -3470000
   tags: []
   end_year: null
-  derived_from: []
   parents:
   - cladis_brush_tailed_penguins_pygoscelis
   related: []
-  wiki_mentions: []
   offspring: []
   entry_status: ''
 - id: spec_pygoscelis_antarcticus
@@ -231,6 +243,12 @@
   binomial_name: Pygoscelis antarcticus
   type: species
   start_year: -3470000
+  tags: []
+  end_year: null
+  parents: []
+  related: []
+  offspring: []
+  entry_status: ''
 - id: spec_marmota_marmota
   common_name: Alpine Marmot
   binomial_name: Marmota marmota
@@ -238,14 +256,12 @@
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   parents:
   - geo_alps
   - cladis_marmots_marmota
   related: []
   offspring: []
   entry_status: ''
-  wiki_mentions: []
 - id: spec_pterocles_senegallus
   common_name: Spotted Sandgrouse
   binomial_name: Pterocles senegallus
@@ -253,11 +269,9 @@
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   parents:
   - cladis_pterocles
   related: []
-  wiki_mentions: []
   offspring: []
   entry_status: ''
 - id: spec_cakkuabdra_haematocephala
@@ -267,11 +281,9 @@
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   parents:
   - cladis_calliandra
   related: []
-  wiki_mentions: []
   offspring: []
   entry_status: ''
 - id: spec_pleurodeles_nebulosus
@@ -281,11 +293,9 @@
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   parents:
   - cladis_pleurodeles
   related: []
-  wiki_mentions: []
   offspring: []
   entry_status: ''
 - id: spec_phoebastria_immutabilis
@@ -295,11 +305,9 @@
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   parents:
   - cladis_north_pacific_albatrosses_phoebastria
   related: []
-  wiki_mentions: []
   offspring: []
   entry_status: ''
 - id: spec_mustela_erminea
@@ -309,23 +317,19 @@
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   parents:
   - cladis_weasels_mustela
   related: []
-  wiki_mentions: []
   offspring: []
   entry_status: ''
 - id: spec_sphaeralcea_coccinea
   common_name: Scarlet Globemallow
   binomial_name: Sphaeralcea coccinea
   type: species
-  wiki_mentions: []
   card_color: '#c2472b'
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   parents:
   - cladis_globemellows_sphaeralcea
   related: []
@@ -335,11 +339,9 @@
   common_name: Dire Wolf
   binomial_name: Aenocyon dirus
   type: species
-  wiki_mentions: []
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   parents:
   - cladis_wolf_like_canids_canina
   related: []
@@ -349,12 +351,10 @@
   common_name: Grey Reef Shark
   binomial_name: Carcharhinus amblyrhynchos
   type: species
-  wiki_mentions: []
   card_color: '#202830'
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   parents:
   - cladis_carcharhinus
   related: []
@@ -364,14 +364,12 @@
   common_name: Black Drongo
   binomial_name: Dicrurus macrocerus
   type: species
-  wiki_mentions: []
   card_color: '#111318'
   related:
   - loc_murtensee
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   parents:
   - cladis_drongos_dicruridae
   offspring: []
@@ -380,12 +378,10 @@
   common_name: Common Raven - Corvus corax
   binomial_name: Corvus corax
   type: species
-  wiki_mentions: []
   card_color: '#0d0f13'
   start_year: -500000
   end_year: 506618
   tags: []
-  derived_from: []
   parents:
   - cladis_corvus
   related: []
@@ -397,6 +393,12 @@
   type: species
   wiki_entry: ''
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''
 - id: spec_furnarius_figulus
   common_name: Band Tailed Hornero
   binomial_name: Furnarius figulus
@@ -408,11 +410,9 @@
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   parents:
   - cladis_hornero_furnarius
   related: []
-  wiki_mentions: []
   entry_status: ''
   card_color: '#4a250d'
   card_header_color: '#6d604c'
@@ -426,24 +426,20 @@
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   parents:
   - cladis_spinosaurus
   related: []
-  wiki_mentions: []
   entry_status: ''
 - id: spec_pardalotus_punctatus
   common_name: Spotted Pardalote - Pardalotus punctatus
   binomial_name: Pardalotus punctatus
   type: species
-  wiki_mentions: []
   parents:
   - cladis_peep_wrens_pardalotidae
   offspring: []
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   related: []
   entry_status: ''
   card_color: '#6a573b'
@@ -454,178 +450,249 @@
   common_name: Panderichthys rhombolepis
   binomial_name: ''
   type: species
-  wiki_mentions: []
   parents:
   - cladis_elipsostegalia
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_cicinnurus_regius
   common_name: King Bird of Paradise - Cicinnurus regius
   binomial_name: Cicinnurus regius
   type: species
-  wiki_mentions: []
   parents:
   - cladis_birds_of_paradise_paradisaeidae
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_lanius_excubitor
   common_name: Great Grey Shrike - Lanius excubitor
   binomial_name: Lanius excubitor
   type: species
-  wiki_mentions: []
   parents:
   - cladis_typical_shrikes_lanius
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_lanius_collurio
   common_name: Red Backed Shrike - Lanius collurio
   binomial_name: Lanius collurio
   type: species
-  wiki_mentions: []
   parents:
   - cladis_typical_shrikes_lanius
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_catopsilia_pomona
   common_name: Lemon Migrant - Catopsilia pomona
   binomial_name: Catopsilia pomona
   type: species
-  wiki_mentions: []
   parents:
   - cladis_emigrant_butterflies_catopsilia
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_triops_longicaudatus
   common_name: American Tadpole Shrimp - Triops longicaudatus
   binomial_name: Triops longicaudatus
   type: species
-  wiki_mentions: []
   parents:
   - cladis_triops
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_mantis_religiosa
   common_name: European Mantis - Mantis religiosa
   binomial_name: Mantis religiosa
   type: species
-  wiki_mentions: []
   parents:
   - cladis_mantis
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_pelagornis_miocaenus
   common_name: Oceanic Barracudabird
   binomial_name: Pelagornis miocaenus
   type: species
-  wiki_mentions: []
   parents:
   - cladis_bony_toothed_birds_pelagornithidae
   offspring: []
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   related: []
   entry_status: ''
 - id: spec_gigantornis_eaglesomei
   common_name: Gigantornis eaglesomei
   binomial_name: ''
   type: species
-  wiki_mentions: []
   parents:
   - cladis_bony_toothed_birds_pelagornithidae
   offspring: []
   start_year: -56000000
   end_year: -33900000
+  tags: []
+  related: []
+  entry_status: ''
 - id: spec_espadarana_prosoblepon
   common_name: Emerald Grass Frog - Espadarana prosoblepon
   binomial_name: Espadarana prosoblepon
   type: species
-  wiki_mentions: []
   parents:
   - cladis_espadarana
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_homarus_gammarus
   common_name: European Lobster - Homarus gammarus
   binomial_name: Homarus gammarus
   type: species
-  wiki_mentions: []
   parents:
   - cladis_homarus
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_procambarus_clarkii
   common_name: Lousiana Crawfish - Procambarus clarkii
   binomial_name: Procambarus clarkii
   type: species
-  wiki_mentions: []
   parents:
   - cladis_procambarus
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_aetideidae
   common_name: Aetideidae Zooplankton - Aetideidae
   binomial_name: Aetideidae
   type: species
-  wiki_mentions: []
   parents:
   - cladis_calanoida
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_edaphosaurus_pogonias
   common_name: Edaphosaurus - Edaphosaurus pogonias
   binomial_name: Edaphosaurus pogonias
   type: species
-  wiki_mentions: []
   parents:
   - cladis_edaphosauridae
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_vulpes_vulpes
   common_name: Red Fox - Vulpes vulpes
   binomial_name: Vulpes vulpes
   type: species
-  wiki_mentions: []
   parents:
   - cladis_true_foxes_vulpes
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_dinemellia_dinemelli
   common_name: White Headed Buffalo Weaver - Dinemellia dinemelli
   binomial_name: Dinemellia dinemelli
   type: species
-  wiki_mentions: []
   card_color: '#dff1ff'
   offspring: []
   parents:
   - cladis_weaverbirds_ploceidae
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_protorothyris_archeri
   common_name: Protorothyris archeri
   binomial_name: ''
   type: species
-  wiki_mentions: []
   parents:
   - cladis_protorothyrididae
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_taricha_sierrae
   common_name: Sierra Newt - Taricha sierrae
   binomial_name: Taricha sierrae
   type: species
-  wiki_mentions: []
   parents:
   - cladis_pacific_newts_taricha
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_ambystoma_tigrinum
   common_name: Tiger Salamander - Ambystoma tigrinum
   binomial_name: Ambystoma tigrinum
   type: species
-  wiki_mentions: []
   parents:
   - cladis_mole_salamanders_ambystoma
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_falco_cenchroides
   common_name: Nankeen Kestrel - Falco cenchroides
   binomial_name: Falco cenchroides
   type: species
-  wiki_mentions: []
   card_color: '#583226'
   card_header_color: '#1b100c'
   offspring: []
   parents:
   - cladis_falcons_falco
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_eupoecila_australasiae
   common_name: Fiddler Beetle - Eupoecila australasiae
   binomial_name: Eupoecila australasiae
   type: species
-  wiki_mentions: []
   card_color: '#a5a537'
   card_header_color: '#300e0e'
   offspring: []
@@ -633,19 +700,27 @@
     intro: '#0f1218'
   parents:
   - cladis_eupoecila
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_barnardius_zonarius
   common_name: Australian Ringneck - Barnardius zonarius
   binomial_name: Barnardius zonarius
   type: species
-  wiki_mentions: []
   parents:
   - cladis_broad_tailed_parrots_platycercini
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_pardalotus_striatus
   common_name: Striated Pardalote - Pardalotus striatus
   binomial_name: Pardalotus striatus
   type: species
-  wiki_mentions: []
   parents:
   - cladis_peep_wrens_pardalotidae
   offspring: []
@@ -653,11 +728,15 @@
   card_header_color: '#8f5e18'
   wiki_field_colors:
     intro: '#0e0e13'
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_todiramphus_sanctus
   common_name: Sacred Kingfisher - Todiramphus sanctus
   binomial_name: Todiramphus sanctus
   type: species
-  wiki_mentions: []
   card_color: '#17453f'
   card_header_color: '#604d2e'
   wiki_field_colors:
@@ -665,27 +744,39 @@
   offspring: []
   parents:
   - cladis_todiramphus
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_dromaius_novaehollandiae
   common_name: Emu - Dromaius novaehollandiae
   binomial_name: Dromaius novaehollandiae
   type: species
-  wiki_mentions: []
   parents:
   - cladis_dromaius
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_spinosaurus_aegyptiacus
   common_name: Terrible Sailfisher - Spinosaurus aegyptiacus
   binomial_name: Spinosaurus aegyptiacus
   type: species
-  wiki_mentions: []
   parents:
   - cladis_spinosaurus
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_carnotaurus_sastrei
   common_name: Fleshbull - Carnotaurus sastrei
   binomial_name: Carnotaurus sastrei
   type: species
-  wiki_mentions: []
   card_color: '#18130e'
   card_header_color: '#2a1009'
   wiki_field_colors:
@@ -693,25 +784,32 @@
   offspring: []
   parents:
   - cladis_carnotaurus
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_chthamalus_stellatus
   common_name: Polis Stellate Barnacle
   binomial_name: Chthamalus stellatus
   type: species
   offspring: []
-  wiki_mentions: []
   card_header_color: '#b7a286'
   wiki_field_colors:
     intro: '#eae4c1'
   card_color: '#705e40'
-  derived_from:
-  - cladis_polis_stellate_barnacle
   parents:
   - cladis_chthamalus
+  tags: []
+  start_year: null
+  end_year: null
+  related:
+  - cladis_polis_stellate_barnacle
+  entry_status: ''
 - id: spec_branta_canadensis
   common_name: Canada Goose - Branta canadensis
   binomial_name: Branta canadensis
   type: species
-  wiki_mentions: []
   card_color: '#3a312b'
   card_header_color: '#0d0b09'
   wiki_field_colors:
@@ -719,11 +817,15 @@
   offspring: []
   parents:
   - cladis_black_geese_branta
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_poliolimnas_cinereus
   common_name: White Browed Crake - Poliolimnas cinereus
   binomial_name: Poliolimnas cinereus
   type: species
-  wiki_mentions: []
   card_color: '#262216'
   wiki_field_colors:
     intro: '#726c64'
@@ -731,11 +833,15 @@
   offspring: []
   parents:
   - cladis_rails_rallidae
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_titanoboa_cerrejonensis
   common_name: Titan Boa - Titanoboa cerrejonensis
   binomial_name: Titanoboa cerrejonensis
   type: species
-  wiki_mentions: []
   parents:
   - cladis_titanoboa
   offspring: []
@@ -743,11 +849,15 @@
   card_header_color: '#42554b'
   wiki_field_colors:
     default: '#42241c'
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_nypa_fruticans
   common_name: Nipa Palm - Nypa fruticans
   binomial_name: Nypa fruticans
   type: species
-  wiki_mentions: []
   card_color: '#4aaf45'
   card_header_color: '#6be240'
   wiki_field_colors:
@@ -755,11 +865,15 @@
   offspring: []
   parents:
   - cladis_palms_arecaceae
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_brachylophus_vitiensis
   common_name: Fiji Crested Iguana - Brachylophus vitiensis
   binomial_name: Brachylophus vitiensis
   type: species
-  wiki_mentions: []
   card_color: '#5f755a'
   card_header_color: '#bccdbe'
   wiki_field_colors:
@@ -767,11 +881,15 @@
   offspring: []
   parents:
   - cladis_brachylophus
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_amblyrhynchus_cristatus
   common_name: Marine Iguana - Amblyrhynchus cristatus
   binomial_name: Amblyrhynchus cristatus
   type: species
-  wiki_mentions: []
   card_color: '#0f1115'
   card_header_color: '#6a3a2a'
   wiki_field_colors:
@@ -779,11 +897,15 @@
   offspring: []
   parents:
   - cladis_amblyrhynchus
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_conolophus_marthae
   common_name: Galapagos Pink Land Iguana - Conolophus marthae
   binomial_name: Conolophus marthae
   type: species
-  wiki_mentions: []
   card_color: '#846b87'
   card_header_color: '#322d32'
   wiki_field_colors:
@@ -791,11 +913,15 @@
   offspring: []
   parents:
   - cladis_galapagos_land_iguanas_conolophus
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_ctenosaura_pectinata
   common_name: Western Spiny Tailed Iguana - Ctenosaura pectinata
   binomial_name: Ctenosaura pectinata
   type: species
-  wiki_mentions: []
   card_color: '#121512'
   card_header_color: '#494d49'
   wiki_field_colors:
@@ -803,11 +929,15 @@
   offspring: []
   parents:
   - cladis_spinytail_iguanas_ctenosaura
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_basiliscus_plumifrons
   common_name: Plumed Basilisk - Basiliscus plumifrons
   binomial_name: Basiliscus plumifrons
   type: species
-  wiki_mentions: []
   card_color: '#116a38'
   card_header_color: '#16a27f'
   wiki_field_colors:
@@ -815,11 +945,15 @@
   offspring: []
   parents:
   - cladis_basilisks_basiliscus
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_leiocephalus_personatus
   common_name: Hispaniolan Masked Curly Tailed Lizard - Leiocephalus personatus
   binomial_name: Leiocephalus personatus
   type: species
-  wiki_mentions: []
   card_color: '#924838'
   card_header_color: '#921900'
   wiki_field_colors:
@@ -827,12 +961,24 @@
   offspring: []
   parents:
   - cladis_curly_tailed_lizard_leiocephalus
+  tags: []
+  start_year: null
+  end_year: null
+  related:
+  - cladis_basilisks_basiliscus
+  - spec_basiliscus_plumifrons
+  entry_status: ''
+  wiki_entry: '[[cladis_basilisks_basiliscus]]
+
+
+    [[spec_basiliscus_plumifrons]]
+
+    '
 - id: spec_rosa_woodsii
   common_name: Woods Rose - Rosa woodsii
   binomial_name: Rosa woodsii
   type: species
   three_word_description: ''
-  wiki_mentions: []
   card_color: '#b54b94'
   card_header_color: '#2e602b'
   wiki_field_colors:
@@ -840,12 +986,16 @@
   offspring: []
   parents:
   - cladis_roses_rosa
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_lithobates_clamitans
   common_name: Green Frog - Lithobates clamitans
   binomial_name: Lithobates clamitans
   type: species
   three_word_description: ''
-  wiki_mentions: []
   parents:
   - cladis_lithobates
   offspring: []
@@ -853,12 +1003,16 @@
   card_header_color: '#7a8d42'
   wiki_field_colors:
     default: '#223229'
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: spec_thera_juniperata
   common_name: Juniper Carpet - Thera juniperata
   binomial_name: Thera juniperata
   type: species
   three_word_description: ''
-  wiki_mentions: []
   card_color: '#6a604f'
   card_header_color: '#6a5736'
   wiki_field_colors:
@@ -866,3 +1020,232 @@
   offspring: []
   parents:
   - cladis_thera
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
+- id: spec_pentatoma_rufipes
+  common_name: Red Legged Shieldbug - Pentatoma rufipes
+  binomial_name: Pentatoma rufipes
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_pentatomini
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
+- id: spec_erigeron_annuus
+  common_name: Annual Fleabane - Erigeron annuus
+  binomial_name: Erigeron annuus
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_berufkraut_erigeron
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
+- id: spec_amblyospiza_albifrons
+  common_name: Grosbeak Weaver - Amblyospiza albifrons
+  binomial_name: Amblyospiza albifrons
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_weaverbirds_ploceidae
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
+- id: spec_sporopipes_frontalis
+  common_name: Speckle Fronted Weaver - Sporopipes frontalis
+  binomial_name: Sporopipes frontalis
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_sporopipes
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
+- id: spec_euplectes_afer
+  common_name: Yellow Crowned Bishop - Euplectes afer
+  binomial_name: Euplectes afer
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_bishops_euplectes
+  offspring: []
+  card_color: '#080b0d'
+  card_header_color: '#dacc0f'
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
+- id: spec_euplectes_gierowii
+  common_name: Black Bishop - Euplectes gierowii
+  binomial_name: Euplectes gierowii
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_bishops_euplectes
+  offspring: []
+  card_color: '#0b0d10'
+  card_header_color: '#dc8310'
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
+- id: spec_passer_montanus
+  common_name: Eurasian Tree Sparrow - Passer montanus
+  binomial_name: Passer montanus
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#857e6d'
+  card_header_color: '#382915'
+  offspring: []
+  parents:
+  - cladis_true_sparrows_passer
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
+- id: spec_peucedramus_taeniatus
+  common_name: Olive Warbler - Peucedramus taeniatus
+  binomial_name: Peucedramus taeniatus
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#242624'
+  card_header_color: '#8d4012'
+  wiki_field_colors:
+    default: '#2e322a'
+  offspring: []
+  parents:
+  - cladis_passerida
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
+- id: spec_asilisaurus_kongwe
+  common_name: Asili - Asilisaurus kongwe
+  binomial_name: Asilisaurus kongwe
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_silesauridae
+  offspring: []
+  card_color: '#353a33'
+  card_header_color: '#2c3a26'
+  wiki_field_colors:
+    default: '#2b4a58'
+- id: spec_borealopelta_markmitchelli
+  common_name: Suncor Plateback - Borealopelta markmitchelli
+  binomial_name: Borealopelta markmitchelli
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#1f231f'
+  card_header_color: '#182321'
+  wiki_field_colors:
+    intro: '#515251'
+  offspring: []
+  parents:
+  - cladis_borealopelta
+- id: spec_triceratops_horridus
+  common_name: Trike - Triceratops horridus
+  binomial_name: Triceratops horridus
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_triceratops
+  offspring: []
+- id: spec_lagosuchus_talampayensis
+  common_name: Lagosuchus - Lagosuchus talampayensis
+  binomial_name: Lagosuchus talampayensis
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_lagosuchia
+  offspring: []
+- id: spec_sinosauropteryx_prima
+  common_name: Stripehead Flysnap - Sinosauropteryx prima
+  binomial_name: Sinosauropteryx prima
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_compsognathidae
+  offspring: []
+- id: spec_apatosaurus_ajax
+  common_name: Apatosaurus - Apatosaurus ajax
+  binomial_name: Apatosaurus ajax
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_apatosaurinae
+  offspring: []
+- id: spec_chrysaora_melanaster
+  common_name: Northern Sea Nettle - Chrysaora melanaster
+  binomial_name: Chrysaora melanaster
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_sea_nettles_chrysaora
+  offspring: []
+- id: spec_egretta_rufescens
+  common_name: Reddish Egret - Egretta rufescens
+  binomial_name: Egretta rufescens
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#453e3e'
+  card_header_color: '#453333'
+  wiki_field_colors:
+    intro: '#204860'
+  offspring: []
+  parents:
+  - cladis_egretta
+- id: spec_hemidactylus_platycephalus
+  common_name: Baobab Gecko - Hemidactylus platycephalus
+  binomial_name: Hemidactylus platycephalus
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#301717'
+  card_header_color: '#546060'
+  wiki_field_colors:
+    intro: '#6a3d38'
+  offspring: []
+  parents:
+  - cladis_house_geckos_hemidactylus
+- id: spec_lecanora_muralis
+  common_name: Wall Lichen - Lecanora muralis
+  binomial_name: Lecanora muralis
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#555d4c'
+  card_header_color: '#595d45'
+  wiki_field_colors:
+    intro: '#322922'
+  offspring: []
+  parents:
+  - cladis_rim_lichens_lecanora

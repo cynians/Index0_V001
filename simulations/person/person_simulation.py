@@ -24,7 +24,6 @@ class PersonSimulation:
         "participated_events",
         "parents",
         "related",
-        "derived_from",
         "offspring",
     )
 

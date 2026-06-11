@@ -13,15 +13,19 @@
   related: []
   offspring:
   - id: veh_bospor_3_regolith
-  - veh_bospor_2_ouremite
-  - veh_bospor_1_calcetite
-  wiki_entry: |-
-    Automobile producer of the Planetary Period operating in the Sol-near Metyaki System and associated with vehicle production on Noyanakh.
-    
-    Initial repository entry for Bospor vehicle-line integration. Internal structure, ownership, and production footprint remain placeholder for later refinement.
+    offspring:
+    - id: illust_bospor_3_regolith_front
+    - id: veh_bospor_3_sn_b3_1
+  - id: veh_bospor_2_ouremite
+  - id: veh_bospor_1_calcetite
+  - id: veh_bospor_4_basaltite
+  wiki_entry: 'Automobile producer of the Planetary Period operating in the Sol-near
+    Metyaki System and associated with vehicle production on Noyanakh.
+
+
+    Initial repository entry for Bospor vehicle-line integration. Internal structure,
+    ownership, and production footprint remain placeholder for later refinement.'
   tags: []
-  derived_from: []
-  wiki_mentions: []
   card_color: '#af2839'
 - id: producer_stacklingen_consolidated_industries
   pretty_name: Stacklingen Consolidated Industries
@@ -36,13 +40,15 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    Local producer associated with vehicle manufacturing in the Stacklinger urban-industrial zone on Patina during the Planetary Period.
-    
-    Inferred repository producer entry created to anchor the Octa 35P / Patina Surface Taxi concept. Broader industrial portfolio, ownership structure, and production scale remain open for later refinement.
+  wiki_entry: 'Local producer associated with vehicle manufacturing in the Stacklinger
+    urban-industrial zone on Patina during the Planetary Period.
+
+
+    Inferred repository producer entry created to anchor the Octa 35P / Patina Surface
+    Taxi concept. Broader industrial portfolio, ownership structure, and production
+    scale remain open for later refinement.'
   tags: []
   end_year: null
-  derived_from: []
 - id: producer_conviction_automobiles
   pretty_name: Conviction Automobiles
   name: Conviction Automobiles
@@ -71,35 +77,45 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    External GGO-era automobile producer known for sleek, luxurious road vehicles and a compact alphanumeric naming style such as Conviction C1 and Conviction C2.
-    
-    Established as one of the branded producers permitted under the GGO External Production framework. Intended as a classically styled prestige manufacturer rather than a general industrial mass producer.
+  wiki_entry: 'External GGO-era automobile producer known for sleek, luxurious road
+    vehicles and a compact alphanumeric naming style such as Conviction C1 and Conviction
+    C2.
+
+
+    Established as one of the branded producers permitted under the GGO External Production
+    framework. Intended as a classically styled prestige manufacturer rather than
+    a general industrial mass producer.'
   end_year: null
-  derived_from: []
-  wiki_mentions: []
   card_color: '#824227'
 - id: prod_paladin_aerospace
   pretty_name: Paladin Aerospace
   name: Paladin Aerospace
   type: producer
-  wiki_mentions: []
   card_color: '#14284a'
   start_year: 9558
   end_year: 10072
+  tags: []
+  parents: []
+  related: []
+  offspring:
+  - id: veh_plowshare_class_combat_tug
+  entry_status: ''
 - id: prod_saab_ab
   pretty_name: Saab AB
   name: Saab AB
   type: producer
-  wiki_entry: |-
-    ! Production
-    !!
-  wiki_mentions: []
+  wiki_entry: '! Production
+
+    !!'
   card_color: '#191e42'
   parents:
   - geo_sweden
   start_year: 1937
   end_year: 2079
+  tags: []
+  related: []
+  offspring: []
+  entry_status: ''
 - id: prod_aldos_j_brewery
   pretty_name: Aldos J. Brewery
   name: Aldos J. Brewery
@@ -109,13 +125,32 @@
   - mkt_planetary_period_markets
   - item_alcova_special_brew
   wiki_entry: ''
-  wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  entry_status: ''
 - id: prod_new_001
   pretty_name: LocoMotion
   name: LocoMotion
   type: producer
   card_color: '#250b20'
   wiki_entry: ''
-  wiki_mentions: []
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''
+- id: prod_european_consolidated_manufacturing_ecm
+  pretty_name: European Consolidated Manufacturing (ECM)
+  name: European Consolidated Manufacturing (ECM)
+  type: producer
+  three_word_description: ''
+  related: []
+  card_color: '#29356a'
+  start_year: 2046
+  end_year: 2482
   offspring: []

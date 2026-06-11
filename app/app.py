@@ -83,6 +83,15 @@ class App(SimWindow):
     def handle_event(self, event):
         self.input_router.route_event(event)
 
+    def handle_pre_camera_event(self, event):
+        active_sim = self.get_active_simulation()
+        if active_sim is None:
+            return False
+        handler = getattr(active_sim, "handle_pre_camera_event", None)
+        if handler is None:
+            return False
+        return bool(handler(event))
+
     def draw(self):
         if not self.knowledge_layer_active:
             super().draw_background()

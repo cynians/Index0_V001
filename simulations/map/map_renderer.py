@@ -87,6 +87,90 @@ class MapRenderer:
             )
             screen.blit(text, (rect.x + 6, rect.y + 6))
 
+    def _heightmap_color(self, elevation, heightmap):
+        sea_level = heightmap.get("sea_level_m")
+        sea_level = 0.0 if sea_level is None else float(sea_level or 0.0)
+        min_elevation = float(heightmap.get("min_elevation_m", -4000.0) or -4000.0)
+        max_elevation = float(heightmap.get("max_elevation_m", 4000.0) or 4000.0)
+
+        elevation = float(elevation or 0.0)
+        if elevation < sea_level:
+            depth = min(1.0, (sea_level - elevation) / max(1.0, sea_level - min_elevation))
+            return (
+                int(14 + 18 * (1.0 - depth)),
+                int(42 + 35 * (1.0 - depth)),
+                int(72 + 78 * (1.0 - depth)),
+            )
+
+        relief = min(1.0, (elevation - sea_level) / max(1.0, max_elevation - sea_level))
+        if relief < 0.24:
+            t = relief / 0.24
+            return (int(50 + 30 * t), int(82 + 48 * t), int(55 + 28 * t))
+        if relief < 0.62:
+            t = (relief - 0.24) / 0.38
+            return (int(80 + 76 * t), int(130 + 42 * t), int(83 + 12 * t))
+        t = (relief - 0.62) / 0.38
+        value = int(156 + 68 * t)
+        return (value, value, int(150 + 72 * t))
+
+    def _draw_heightmap_base_layer(self, screen, layer, camera):
+        heightmap = layer.get("heightmap_model") if isinstance(layer, dict) else None
+        sample_grid = heightmap.get("sample_grid") if isinstance(heightmap, dict) else None
+        rows = sample_grid.get("rows") if isinstance(sample_grid, dict) else None
+        if not rows or len(rows) < 2 or len(rows[0]) < 2:
+            return
+
+        center = camera.world_to_screen((layer["x"], layer["y"]))
+        if center is None:
+            return
+
+        pixel_w = max(1, int(layer.get("width_world", 1) * camera.zoom))
+        pixel_h = max(1, int(layer.get("height_world", 1) * camera.zoom))
+        rect = pygame.Rect(
+            int(center[0] - pixel_w / 2),
+            int(center[1] - pixel_h / 2),
+            pixel_w,
+            pixel_h,
+        )
+        if (
+            rect.right < 0
+            or rect.left > self.app_view.width
+            or rect.bottom < 0
+            or rect.top > self.app_view.height
+        ):
+            return
+
+        cell_cols = max(1, min(len(row) for row in rows) - 1)
+        cell_rows = max(1, len(rows) - 1)
+        clip = screen.get_clip()
+        screen.set_clip(rect.clip(screen.get_rect()))
+        for row_index in range(cell_rows):
+            row_a = rows[row_index]
+            row_b = rows[min(row_index + 1, len(rows) - 1)]
+            y0 = rect.y + int(row_index * rect.height / cell_rows)
+            y1 = rect.y + int((row_index + 1) * rect.height / cell_rows)
+            for col_index in range(cell_cols):
+                x0 = rect.x + int(col_index * rect.width / cell_cols)
+                x1 = rect.x + int((col_index + 1) * rect.width / cell_cols)
+                values = (
+                    row_a[col_index],
+                    row_a[min(col_index + 1, len(row_a) - 1)],
+                    row_b[col_index],
+                    row_b[min(col_index + 1, len(row_b) - 1)],
+                )
+                elevation = sum(float(value or 0.0) for value in values) / 4.0
+                pygame.draw.rect(
+                    screen,
+                    self._heightmap_color(elevation, heightmap),
+                    pygame.Rect(x0, y0, max(1, x1 - x0), max(1, y1 - y0)),
+                )
+        screen.set_clip(clip)
+
+        pygame.draw.rect(screen, (75, 92, 112), rect, 1)
+        if heightmap.get("wrap_x"):
+            pygame.draw.line(screen, (120, 190, 230), (rect.x, rect.y), (rect.x, rect.bottom), 1)
+            pygame.draw.line(screen, (120, 190, 230), (rect.right - 1, rect.y), (rect.right - 1, rect.bottom), 1)
+
     def _draw_polygon_layer(self, screen, layer, camera, is_selected, is_hovered):
         screen_points = []
 
@@ -364,6 +448,11 @@ class MapRenderer:
         selected_spatial_feature_id = getattr(sim, "selected_spatial_feature_id", None)
         hover_spatial_feature_id = getattr(sim, "hover_spatial_feature_id", None)
 
+        if hasattr(sim, "get_heightmap_base_layer"):
+            heightmap_base_layer = sim.get_heightmap_base_layer()
+            if heightmap_base_layer is not None:
+                self._draw_heightmap_base_layer(screen, heightmap_base_layer, camera)
+
         for layer in sim.get_layers():
             shape = layer.get("shape", "marker")
             entity_id = layer.get("entity_id")
@@ -416,7 +505,8 @@ class MapRenderer:
                 ):
                     continue
 
-                pygame.draw.rect(screen, layer["color"], rect)
+                if not (shape == "map_rect" and layer.get("has_heightmap_base")):
+                    pygame.draw.rect(screen, layer["color"], rect)
 
                 if shape == "map_rect":
                     pygame.draw.rect(screen, (220, 220, 220), rect, 3)

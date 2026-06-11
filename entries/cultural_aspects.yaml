@@ -12,21 +12,21 @@
     regional_cooperation: strong
   realizations:
   - faction_pan_african_union
-  origin: |
-    Emerged from historical Pan-African movements and gained institutional form during the formation of the Pan-African Union.
+  origin: 'Emerged from historical Pan-African movements and gained institutional
+    form during the formation of the Pan-African Union.
+
+    '
   historical_examples:
   - pan_african_congress_movements
-  derived_from:
-  - IDEA-???
   parents: []
-  related: []
+  related:
+  - IDEA-???
   offspring: []
-  wiki_entry: |-
-    Cultural identification with a shared African political and historical destiny across national and ethnic boundaries.
+  wiki_entry: Cultural identification with a shared African political and historical
+    destiny across national and ethnic boundaries.
   start_year: null
   end_year: null
   entry_status: ''
-  wiki_mentions: []
   card_color: '#4a4d49'
 - id: aspect_urban_cooperative_economy
   name: Urban Cooperative Economy
@@ -45,14 +45,13 @@
     models.
 
     '
-  derived_from:
-  - IDEA-???
   parents: []
-  related: []
+  related:
+  - IDEA-???
   offspring: []
   pretty_name: Urban Cooperative Economy
-  wiki_entry: |-
-    Economic model emphasizing cooperative ownership, urban production networks and shared infrastructure.
+  wiki_entry: Economic model emphasizing cooperative ownership, urban production networks
+    and shared infrastructure.
   start_year: null
   end_year: null
   entry_status: ''
@@ -73,14 +72,13 @@
     Seeding Group experimental societies.
 
     '
-  derived_from:
-  - IDEA-571
   parents: []
-  related: []
+  related:
+  - IDEA-571
   offspring: []
   pretty_name: Crusader Zeal
-  wiki_entry: |-
-    Religious belief that warfare in defense of sacred territory is spiritually justified.
+  wiki_entry: Religious belief that warfare in defense of sacred territory is spiritually
+    justified.
   start_year: null
   end_year: null
   entry_status: ''
@@ -117,11 +115,11 @@
   related: []
   offspring: []
   pretty_name: Asahachi Kōno Photographic Pictorialism
-  wiki_entry: |-
-    Photographic art style derived from the work of Asahachi Kōno, emphasizing pictorialist softness, atmospheric composition, tonal delicacy, and a refined, emotionally shaped image surface over strict documentary sharpness.
+  wiki_entry: Photographic art style derived from the work of Asahachi Kōno, emphasizing
+    pictorialist softness, atmospheric composition, tonal delicacy, and a refined,
+    emotionally shaped image surface over strict documentary sharpness.
   start_year: null
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: aspect_lindsdale_fencing
   name: Lindsdale Fencing
@@ -152,11 +150,12 @@
   related: []
   offspring: []
   pretty_name: Lindsdale Fencing
-  wiki_entry: |-
-    Fighting sport of the 42nd century centered on the use of a hooked stick or cane. Initially seen as slightly goofy because of its strange movement rules and footwork, it later evolved into an elite and highly technical competitive discipline.
+  wiki_entry: Fighting sport of the 42nd century centered on the use of a hooked stick
+    or cane. Initially seen as slightly goofy because of its strange movement rules
+    and footwork, it later evolved into an elite and highly technical competitive
+    discipline.
   start_year: null
   end_year: null
-  derived_from: []
   entry_status: ''
 - id: aspect_late_cog_quarantine_regime
   pretty_name: Late CoG Quarantine Regime
@@ -170,16 +169,18 @@
   - movement_control
   start_year: 5714
   entry_status: stub
-  wiki_entry: |-
-    Late-decline social and administrative regime within the Center of Gravity characterized by sealed sectors, movement restriction, contamination fear, checkpointing, infrastructural isolation, and coercive inward control.
-    
-    Represents the lived quarantine culture of the declining CoG rather than only a formal administrative policy.
+  wiki_entry: 'Late-decline social and administrative regime within the Center of
+    Gravity characterized by sealed sectors, movement restriction, contamination fear,
+    checkpointing, infrastructural isolation, and coercive inward control.
+
+
+    Represents the lived quarantine culture of the declining CoG rather than only
+    a formal administrative policy.'
   end_year: 5785
   parents:
   - loc_central_asian_steppe_cog
   related: []
   offspring: []
-  derived_from: []
 - id: cultasp_earthen_trinkets
   pretty_name: Earthen Trinkets
   name: Earthen Trinkets
@@ -187,23 +188,35 @@
   start_year: 2109
   start_event: evt_new_004
   end_year: 2876
+  tags: []
+  parents: []
+  related: []
+  offspring: []
+  entry_status: ''
 - id: cultasp_secundagenesis_movement
   pretty_name: Secundagenesis Movement
   name: Secundagenesis Movement
   type: cultural_aspect
-  wiki_mentions: []
   card_color: '#1d233a'
   start_year: 28598
   end_year: 40359
+  tags: []
+  parents: []
+  related: []
+  offspring: []
+  entry_status: ''
 - id: cultasp_earthworm_god_of_the_harvest_of_whicker
   pretty_name: Earthworm God of the Harvest of Whicker
   name: Earthworm God of the Harvest of Whicker
   type: cultural_aspect
   card_color: '#312932'
-  derived_from: []
   parents:
   - loc_whicker
   - loc_compost_temple_complex_of_whicker
   wiki_entry: ''
-  wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''

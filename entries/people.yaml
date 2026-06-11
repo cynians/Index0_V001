@@ -2,20 +2,24 @@
   pretty_name: Biblical Abraham
   name: Biblical Abraham
   type: person
-  wiki_entry: |-
-    Abraham is the traditional patriarch of Judaism, Christianity and Islam, remembered as a founding ancestor figure associated with covenant, mirgration, and the origins of the Israelite lineage.
+  wiki_entry: Abraham is the traditional patriarch of Judaism, Christianity and Islam,
+    remembered as a founding ancestor figure associated with covenant, mirgration,
+    and the origins of the Israelite lineage.
   start_year: -2166
   end_year: -1991
+  tags: []
+  parents: []
+  related: []
+  offspring: []
+  entry_status: ''
 - id: person_jarem_habil
   pretty_name: Jarem Habil
   name: Jarem Habil
   type: person
-  wiki_mentions: []
   card_color: '#182626'
   start_year: 5251
   end_year: 5392
   tags: []
-  derived_from: []
   parents:
   - pop_habil_family_of_l_beck
   - person_ahman_habil
@@ -29,10 +33,13 @@
   type: person
   parents:
   - person_jarem_habil
-  wiki_mentions: []
   card_color: '#274a30'
   start_year: 5284
   end_year: 5410
+  tags: []
+  related: []
+  offspring: []
+  entry_status: ''
 - id: person_ahman_habil
   pretty_name: Ahman Habil
   name: Ahman Habil
@@ -40,13 +47,11 @@
   offspring:
   - id: person_jarem_habil
     offspring:
-      - id: person_alia_habil
-  wiki_mentions: []
+    - id: person_alia_habil
   start_year: 5223
   end_year: 5273
   card_color: '#1c261e'
   tags: []
-  derived_from: []
   parents: []
   related:
   - loc_hemsbrook_l_beck_system
@@ -56,59 +61,91 @@
   pretty_name: Akkan Akkan
   name: Akkan Akkan
   type: person
-  wiki_mentions: []
   card_color: '#261c25'
   related:
   - veh_plowshare_class_combat_tug
   start_year: 10137
   end_year: 10225
+  tags: []
+  parents: []
+  offspring: []
+  entry_status: ''
 - id: person_malrib_huub
   pretty_name: Malrib Huub
   name: Malrib Huub
   type: person
-  wiki_mentions: []
   card_color: '#187587'
   start_year: 7749
   end_year: 8217
+  tags: []
+  parents: []
+  related: []
+  offspring:
+  - id: idea_csg_seeding_of_akkad
+  entry_status: ''
 - id: person_new_001
   pretty_name: New Person
   name: New Person
   type: person
   wiki_entry: ''
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''
 - id: person_new_002
   pretty_name: New Person
   name: New Person
   type: person
   wiki_entry: ''
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''
 - id: person_william_shakespeare
   pretty_name: William Shakespeare
   name: William Shakespeare
   type: person
   card_color: '#4967c2'
   wiki_entry: ''
-  wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''
 - id: person_werner_spatz
   pretty_name: Werner Spatz
   name: Werner Spatz
   type: person
-  wiki_mentions: []
   offspring: []
   related:
   - fac_teutonian_resurgence
   card_color: '#0d0f13'
   card_header_color: '#465268'
-  wiki_entry: |
-    Mechanic for the Teutonian Resurgence
+  wiki_entry: 'Mechanic for the Teutonian Resurgence
+
+    '
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  entry_status: ''
 - id: person_alexander_sascha_van_der_bellen
   pretty_name: Alexander "Sascha" Van der Bellen
   name: Alexander "Sascha" Van der Bellen
   type: person
-  wiki_mentions: []
   start_year: 1944
   end_year: 2031
   offspring: []
   parents:
   - loc_austria
+  tags: []
+  related: []
+  entry_status: ''

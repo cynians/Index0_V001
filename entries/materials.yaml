@@ -24,7 +24,6 @@
   offspring: []
   tags: []
   end_year: null
-  derived_from: []
 - id: mat_copper_alloy
   pretty_name: Copper Alloy
   name: Copper Alloy
@@ -51,4 +50,3 @@
   offspring: []
   tags: []
   end_year: null
-  derived_from: []

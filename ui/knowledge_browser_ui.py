@@ -1,6 +1,7 @@
 import json
 import copy
 import colorsys
+import io
 import math
 import os
 import random
@@ -119,10 +120,8 @@ class KnowledgeBrowserUI:
         "start_event",
         "end_year",
         "end_event",
-        "derived_from",
         "parents",
         "related",
-        "wiki_mentions",
         "offspring",
         "entry_status",
     }
@@ -185,6 +184,8 @@ class KnowledgeBrowserUI:
         self.template_picker_context = {}
         self.entry_name_prompt = None
         self.stellar_neighbourhood_prompt = None
+        self.pixel_art_editor = None
+        self.pixel_art_painting = False
         self.pending_new_entry_name = None
         self.schema_entry_templates = self._load_schema_entry_templates()
         self.browser_scroll = 0
@@ -192,6 +193,8 @@ class KnowledgeBrowserUI:
         self.browser_search_active = False
         self.browser_filter_dataset = "all"
         self.browser_filter_incomplete_only = False
+        self.browser_period_filter = None
+        self.browser_period_filter_clear_rect = None
         self.relation_link_target = None
         self.relation_link_status = ""
         self.canvas_relation_link_source_id = None
@@ -265,6 +268,7 @@ class KnowledgeBrowserUI:
         self.browser_collapse_handle_rect = None
         self.browser_search_rect = None
         self.browser_filter_hitboxes = []
+        self.browser_period_filter_clear_rect = None
         self.world_model = None
         self.repository_scope_entity_id = None
         self.repository_scope_label = None
@@ -400,6 +404,8 @@ class KnowledgeBrowserUI:
         self.timeline_ui.set_font(self.font_for_layout)
         timeline_items = self.world_model.get_timeline_items() if self.world_model is not None else []
         self.timeline_ui.set_open_canvas_entity_ids(card.get("entity_id") for card in self.cards)
+        if self.browser_period_filter:
+            self.timeline_ui.set_period_filter(*self.browser_period_filter)
         self.timeline_ui.set_items(timeline_items)
         self.timeline_ui.rebuild_layout()
 
@@ -817,10 +823,47 @@ class KnowledgeBrowserUI:
                 wiki_text = entity.get("wiki_entry", "")
 
         mentions = self._wiki_mentions_from_text(wiki_text)
-        if entity.get("wiki_mentions") == mentions:
-            return False
-        entity["wiki_mentions"] = mentions
-        return True
+        changed = False
+
+        related = entity.get("related")
+        if isinstance(related, list):
+            related_values = [
+                str(value).strip()
+                for value in related
+                if isinstance(value, str) and str(value).strip()
+            ]
+        elif related in (None, "", []):
+            related_values = []
+        else:
+            related_values = [str(related).strip()]
+
+        for legacy_field in ("derived_from", "wiki_mentions"):
+            legacy_value = entity.pop(legacy_field, None)
+            if legacy_value is None:
+                continue
+            changed = True
+            if isinstance(legacy_value, list):
+                legacy_values = legacy_value
+            elif legacy_value in ("", []):
+                legacy_values = []
+            else:
+                legacy_values = [legacy_value]
+            for value in legacy_values:
+                if not isinstance(value, str):
+                    continue
+                value = value.strip()
+                if value and value not in related_values:
+                    related_values.append(value)
+
+        for mention in mentions:
+            if mention not in related_values:
+                related_values.append(mention)
+                changed = True
+
+        if entity.get("related") != related_values:
+            entity["related"] = related_values
+            changed = True
+        return changed
 
     def _close_relation_picker(self, card):
         card["relation_picker_open"] = False
@@ -1627,7 +1670,10 @@ class KnowledgeBrowserUI:
         return self._template_by_dataset(self._pluralize_name(normalized)) or self._template_by_dataset(normalized)
 
     def _browser_header_extra_height(self):
-        return 24 if self.relation_link_target is not None else 0
+        extra_h = 24 if self.relation_link_target is not None else 0
+        if self.browser_period_filter:
+            extra_h += 24
+        return extra_h
 
     def _relation_target_dataset_filter(self, target):
         if self.world_model is None:
@@ -2221,8 +2267,35 @@ class KnowledgeBrowserUI:
             return "All"
         return str(filter_name).replace("_", " ").title()
 
+    def _entity_exists_during_browser_period(self, entity):
+        if not self.browser_period_filter:
+            return True
+        if not isinstance(entity, dict):
+            return False
+
+        filter_start, filter_end = self.browser_period_filter
+        start_year = self._coerce_card_year(entity.get("start_year"))
+        end_year = self._coerce_card_year(entity.get("end_year"))
+
+        if start_year is not None:
+            if end_year is None:
+                end_year = filter_end
+            entity_start = min(start_year, end_year)
+            entity_end = max(start_year, end_year)
+            return entity_start <= filter_end and entity_end >= filter_start
+
+        for point_key in ("year", "year_number", "effective_year"):
+            point_year = self._coerce_card_year(entity.get(point_key))
+            if point_year is not None:
+                return filter_start <= point_year <= filter_end
+
+        return False
+
     def _matches_browser_filters(self, entity, dataset_name):
         if entity is None:
+            return False
+
+        if not self._entity_exists_during_browser_period(entity):
             return False
 
         if self.browser_filter_dataset != "all" and dataset_name != self.browser_filter_dataset:
@@ -2250,6 +2323,9 @@ class KnowledgeBrowserUI:
         return True
 
     def _matches_schema_browser_filters(self, schema_name, schema):
+        if self.browser_period_filter and self.browser_filter_dataset != "schemas":
+            return False
+
         if self.browser_filter_dataset not in {"all", "schemas"}:
             return False
 
@@ -2367,6 +2443,9 @@ class KnowledgeBrowserUI:
 
     def _location_tree_entity_matches(self, entity, dataset_name):
         if entity is None:
+            return False
+
+        if not self._entity_exists_during_browser_period(entity):
             return False
 
         is_system_like = bool(entity.get("system_role"))
@@ -3105,6 +3184,7 @@ class KnowledgeBrowserUI:
         card["section_hitboxes"] = []
         card["year_hitboxes"] = []
         card["media_import_hitboxes"] = []
+        card["media_pixel_art_hitboxes"] = []
         card["media_illustration_link_hitboxes"] = []
 
     def _is_compact_canvas_mode(self):
@@ -3133,6 +3213,7 @@ class KnowledgeBrowserUI:
         card["wiki_section_hitboxes"] = []
         card["toolbelt_hitboxes"] = []
         card["media_import_hitboxes"] = []
+        card["media_pixel_art_hitboxes"] = []
         card["media_illustration_link_hitboxes"] = []
         card["section_hitboxes"] = []
         card["year_hitboxes"] = []
@@ -3327,6 +3408,37 @@ class KnowledgeBrowserUI:
 
     def _focus_timeline_year(self, year):
         return self.timeline_ui.focus_year(year)
+
+    def _apply_timeline_action(self, timeline_action):
+        if not isinstance(timeline_action, dict):
+            return False
+        action_kind = timeline_action.get("kind")
+        if action_kind == "period_filter_started":
+            self.timeline_ui.set_period_filter(pending_start=timeline_action.get("year"))
+            return True
+        if action_kind == "period_filter_changed":
+            start_year = timeline_action.get("start_year")
+            end_year = timeline_action.get("end_year")
+            try:
+                self.browser_period_filter = (int(start_year), int(end_year))
+            except (TypeError, ValueError):
+                return False
+            self.timeline_ui.set_period_filter(*self.browser_period_filter)
+            self.browser_items = self._build_browser_items(self.world_model)
+            self.browser_scroll = 0
+            self._rebuild_browser_hitboxes()
+            return True
+        return True
+
+    def _clear_browser_period_filter(self):
+        if not self.browser_period_filter and self.timeline_ui.period_filter_pending_start is None:
+            return False
+        self.browser_period_filter = None
+        self.timeline_ui.set_period_filter()
+        self.browser_items = self._build_browser_items(self.world_model)
+        self.browser_scroll = 0
+        self._rebuild_browser_hitboxes()
+        return True
 
     def _random_entity(self):
         if self.world_model is None or not self.world_model.loader.entities:
@@ -3610,10 +3722,14 @@ class KnowledgeBrowserUI:
             "rect": None,
             "input_rect": None,
             "description_rect": None,
+            "suggestion_hitboxes": [],
+            "suggestion_selected_index": 0,
+            "suggestion_keyboard_active": False,
             "create_rect": None,
             "cancel_rect": None,
             "status": "",
         }
+        self._refresh_entry_name_prompt_suggestions()
         self.show_template_picker = False
         self.template_picker_status = ""
         self._build_template_picker_hitboxes()
@@ -3621,7 +3737,131 @@ class KnowledgeBrowserUI:
 
     def _open_new_entry_name_prompt(self):
         self.pending_new_entry_name = None
-        return self._open_entry_name_prompt(None, mode="new_entry")
+        return self._open_entry_name_prompt(
+            None,
+            mode="new_entry",
+            context=self._relation_tab_new_entry_context(),
+        )
+
+    def _relation_tab_new_entry_context(self):
+        for card in reversed(self.cards):
+            card_view = card.get("card_view") if isinstance(card, dict) else None
+            if card_view is None or getattr(card_view, "active_tab", "") != "relations":
+                continue
+            entity_id = str(card.get("entity_id") or "").strip()
+            if not entity_id or card.get("card_kind") == "schema":
+                continue
+
+            field_key = str(card.get("active_relation_link_field") or card.get("active_edit_field") or "").strip()
+            if not field_key or not hasattr(card_view, "is_relation_edit_field") or not card_view.is_relation_edit_field(field_key):
+                field_key = "related"
+            return {
+                "link_source_entity_id": entity_id,
+                "link_field_key": field_key,
+            }
+        return {}
+
+    def _entry_name_prompt_uses_suggestions(self, prompt=None):
+        prompt = prompt or self.entry_name_prompt
+        return isinstance(prompt, dict) and prompt.get("mode") == "new_entry"
+
+    def _entry_name_prompt_matches(self, query_text, limit=7):
+        if self.world_model is None or getattr(self.world_model, "loader", None) is None:
+            return []
+
+        normalized_query = str(query_text or "").strip().lower()
+        if not normalized_query:
+            return []
+
+        entities = getattr(self.world_model.loader, "entities", {}) or {}
+        matches = []
+        for entity in entities.values():
+            if not isinstance(entity, dict):
+                continue
+            entity_id = str(entity.get("id") or "").strip()
+            if not entity_id:
+                continue
+
+            label = self._entity_display_label(entity, fallback=entity_id)
+            dataset = str(entity.get("_dataset") or entity.get("dataset") or "")
+            entity_type = str(entity.get("type") or "entry")
+            haystack = " ".join(
+                [
+                    str(label),
+                    entity_id,
+                    str(entity.get("common_name", "")),
+                    str(entity.get("binomial_name", "")),
+                    str(entity.get("pretty_name", "")),
+                    str(entity.get("name", "")),
+                    entity_type,
+                    dataset,
+                ]
+            ).lower()
+            if normalized_query not in haystack:
+                continue
+
+            label_l = str(label).lower()
+            id_l = entity_id.lower()
+            if label_l == normalized_query or id_l == normalized_query:
+                rank = 0
+            elif label_l.startswith(normalized_query) or id_l.startswith(normalized_query):
+                rank = 1
+            else:
+                rank = 2
+            matches.append(
+                {
+                    "id": entity_id,
+                    "label": str(label),
+                    "subtitle": " | ".join(part for part in (dataset, entity_type) if part),
+                    "card_color": entity.get("card_color") or entity.get("wiki_link_color") or "",
+                    "rank": rank,
+                }
+            )
+
+        matches.sort(key=lambda item: (item["rank"], item["label"].lower(), item["id"]))
+        return matches[:limit]
+
+    def _refresh_entry_name_prompt_suggestions(self):
+        prompt = self.entry_name_prompt
+        if not self._entry_name_prompt_uses_suggestions(prompt):
+            return
+
+        matches = self._entry_name_prompt_matches(prompt.get("buffer", ""))
+        prompt["suggestion_matches"] = matches
+        prompt["suggestion_hitboxes"] = []
+        if not matches:
+            prompt["suggestion_selected_index"] = 0
+            prompt["suggestion_keyboard_active"] = False
+            return
+
+        selected = max(0, min(int(prompt.get("suggestion_selected_index", 0)), len(matches) - 1))
+        prompt["suggestion_selected_index"] = selected
+
+    def _select_entry_name_prompt_suggestion(self, index=None, link_from_context=True):
+        prompt = self.entry_name_prompt
+        if not self._entry_name_prompt_uses_suggestions(prompt):
+            return False
+
+        matches = prompt.get("suggestion_matches") or []
+        if not matches:
+            return False
+
+        if index is None:
+            index = int(prompt.get("suggestion_selected_index", 0))
+        index = max(0, min(int(index), len(matches) - 1))
+        entity_id = str(matches[index].get("id") or "").strip()
+        if not entity_id or self.world_model is None:
+            return False
+
+        context = dict(prompt.get("context") or {})
+        entity = self.world_model.get_entity(entity_id)
+        self._close_entry_name_prompt()
+        if entity is not None:
+            if link_from_context:
+                self._link_entry_name_prompt_result(entity_id, context)
+            self._ensure_card(entity)
+            return True
+        return False
 
     def _open_idea_name_prompt(self, parent_card):
         if parent_card is None:
@@ -3813,9 +4053,9 @@ class KnowledgeBrowserUI:
         if self.world_model is None:
             return None
 
-        from simulations.space.stellar import parse_star_class_key, stellar_profile_for_class
+        from simulations.space.stellar import is_valid_stellar_class, stellar_profile_for_class
 
-        if parse_star_class_key(star_class_text) is None:
+        if not is_valid_stellar_class(star_class_text):
             return None
 
         system_name = str(system_name or "").strip()
@@ -3836,7 +4076,7 @@ class KnowledgeBrowserUI:
                 "location_class": "star_system",
                 "location_role": "star_system",
                 "star_class": class_label,
-                "spectral_class": profile.get("class_key"),
+                "spectral_class": profile.get("spectral_class", profile.get("class_key")),
                 "luminosity_solar": profile.get("luminosity_solar"),
                 "habitable_zone_inner_au": profile.get("habitable_zone_inner_au"),
                 "habitable_zone_outer_au": profile.get("habitable_zone_outer_au"),
@@ -3861,7 +4101,7 @@ class KnowledgeBrowserUI:
                 "parent_location": system_id,
                 "star_system": system_id,
                 "star_class": class_label,
-                "spectral_class": profile.get("class_key"),
+                "spectral_class": profile.get("spectral_class", profile.get("class_key")),
                 "luminosity_solar": profile.get("luminosity_solar"),
                 "mass_kg": profile.get("mass_kg"),
                 "radius_m": profile.get("radius_m"),
@@ -3917,6 +4157,29 @@ class KnowledgeBrowserUI:
             self._save_card_draft(card)
 
         return entity
+
+    def _link_entry_name_prompt_result(self, entity_id, context):
+        context = context if isinstance(context, dict) else {}
+        source_entity_id = str(context.get("link_source_entity_id") or "").strip()
+        field_key = str(context.get("link_field_key") or "related").strip()
+        entity_id = str(entity_id or "").strip()
+        if not source_entity_id or not field_key or not entity_id or source_entity_id == entity_id:
+            return False
+
+        source_card = self._find_card_by_entity_id(source_entity_id)
+        if source_card is None and self.world_model is not None:
+            source_entity = self.world_model.get_entity(source_entity_id)
+            source_card = self._ensure_card(source_entity, bring_to_front=False) if source_entity is not None else None
+        if source_card is None:
+            return False
+
+        linked = self._insert_relation_reference_into_card(source_card, field_key, entity_id)
+        if linked:
+            source_card["relation_link_status"] = f"Linked {entity_id}"
+            self.browser_items = self._build_browser_items(self.world_model)
+            self._rebuild_browser_hitboxes()
+            self._relayout_cards()
+        return linked
 
     def _create_named_idea_from_parent(self, parent_entity_id, entry_name):
         if self.world_model is None or not parent_entity_id:
@@ -4118,17 +4381,19 @@ class KnowledgeBrowserUI:
             system_name = str(context.get("system_name") or "").strip()
             created = self._create_star_system_from_class(template, system_name, entry_name)
             if created is None:
-                prompt["status"] = "Use class O, B, A, F, G, K, or M"
+                prompt["status"] = "Valid: O/B/A/F/G/K/M + optional 0-9 + Ia/Ib/II/III/IV/V (e.g. G2V)"
                 return True
+            self._link_entry_name_prompt_result(created.get("id"), context)
             self._close_entry_name_prompt()
             return True
 
         if mode == "new_entry" or template is None:
             self.pending_new_entry_name = entry_name
+            context = dict(prompt.get("context") or {})
             self._close_entry_name_prompt()
             self.schema_entry_templates = self._load_schema_entry_templates()
             self.template_picker_mode = "create"
-            self.template_picker_context = {}
+            self.template_picker_context = context
             self.template_picker_search_query = ""
             self.template_picker_search_active = True
             self.show_template_picker = True
@@ -4138,11 +4403,12 @@ class KnowledgeBrowserUI:
             return True
 
         if self._is_star_system_template(template):
+            context = dict(prompt.get("context") or {})
             self._close_entry_name_prompt()
             return self._open_entry_name_prompt(
                 template,
                 mode="star_system_class",
-                context={"system_name": entry_name},
+                context={"system_name": entry_name, **context},
                 label=f"Star Class for {entry_name}",
             )
 
@@ -4151,6 +4417,7 @@ class KnowledgeBrowserUI:
             prompt["status"] = "Could not create entry"
             return True
 
+        self._link_entry_name_prompt_result(entity.get("id"), prompt.get("context"))
         self._close_entry_name_prompt()
         return True
 
@@ -4169,7 +4436,26 @@ class KnowledgeBrowserUI:
         cursor = max(0, min(int(prompt.get(cursor_key, len(buffer_text))), len(buffer_text)))
 
         if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            if (
+                active_field == "name"
+                and self._entry_name_prompt_uses_suggestions(prompt)
+                and prompt.get("suggestion_keyboard_active")
+                and prompt.get("suggestion_matches")
+            ):
+                return self._select_entry_name_prompt_suggestion()
             return self._submit_entry_name_prompt()
+        if (
+            active_field == "name"
+            and self._entry_name_prompt_uses_suggestions(prompt)
+            and event.key in (pygame.K_UP, pygame.K_DOWN)
+        ):
+            matches = prompt.get("suggestion_matches") or []
+            if matches:
+                selected = int(prompt.get("suggestion_selected_index", 0))
+                selected += -1 if event.key == pygame.K_UP else 1
+                prompt["suggestion_selected_index"] = selected % len(matches)
+                prompt["suggestion_keyboard_active"] = True
+            return True
         if event.key == pygame.K_TAB and prompt.get("mode") == "illustration_from_parent":
             prompt["active_prompt_field"] = "name" if active_field == "description" else "description"
             return True
@@ -4181,11 +4467,15 @@ class KnowledgeBrowserUI:
                 prompt[buffer_key] = buffer_text[:cursor - 1] + buffer_text[cursor:]
                 prompt[cursor_key] = cursor - 1
                 prompt["status"] = ""
+                prompt["suggestion_keyboard_active"] = False
+                self._refresh_entry_name_prompt_suggestions()
             return True
         if event.key == pygame.K_DELETE:
             if cursor < len(buffer_text):
                 prompt[buffer_key] = buffer_text[:cursor] + buffer_text[cursor + 1:]
                 prompt["status"] = ""
+                prompt["suggestion_keyboard_active"] = False
+                self._refresh_entry_name_prompt_suggestions()
             return True
         if event.key == pygame.K_LEFT:
             prompt[cursor_key] = max(0, cursor - 1)
@@ -4205,6 +4495,8 @@ class KnowledgeBrowserUI:
             prompt[buffer_key] = buffer_text[:cursor] + text + buffer_text[cursor:]
             prompt[cursor_key] = cursor + len(text)
             prompt["status"] = ""
+            prompt["suggestion_keyboard_active"] = False
+            self._refresh_entry_name_prompt_suggestions()
             return True
 
         return True
@@ -4213,6 +4505,12 @@ class KnowledgeBrowserUI:
         prompt = self.entry_name_prompt
         if not isinstance(prompt, dict):
             return False
+
+        for index, hitbox in prompt.get("suggestion_hitboxes", []):
+            if hitbox.collidepoint(mouse_pos):
+                prompt["suggestion_selected_index"] = index
+                prompt["suggestion_keyboard_active"] = True
+                return self._select_entry_name_prompt_suggestion(index)
 
         cancel_rect = prompt.get("cancel_rect")
         if cancel_rect is not None and cancel_rect.collidepoint(mouse_pos):
@@ -4238,6 +4536,7 @@ class KnowledgeBrowserUI:
     def _create_new_entry_from_template(self, template):
         entry_name = str(self.pending_new_entry_name or "").strip()
         if entry_name:
+            context = dict(self.template_picker_context or {})
             self.pending_new_entry_name = None
             if self._is_star_system_template(template):
                 self.show_template_picker = False
@@ -4248,13 +4547,14 @@ class KnowledgeBrowserUI:
                 return self._open_entry_name_prompt(
                     template,
                     mode="star_system_class",
-                    context={"system_name": entry_name},
+                    context={"system_name": entry_name, **context},
                     label=f"Star Class for {entry_name}",
                 )
             entity = self._create_named_template_entity(template, entry_name)
             if entity is None:
                 self.template_picker_status = "Could not create entry"
                 return False
+            self._link_entry_name_prompt_result(entity.get("id"), context)
             self.show_template_picker = False
             self.template_picker_status = ""
             self.template_picker_mode = "create"
@@ -4554,6 +4854,31 @@ class KnowledgeBrowserUI:
             if item is not entity_obj and item.get("id") != entity_id
         ]
 
+    def _dataset_name_for_entity(self, entity):
+        if not isinstance(entity, dict):
+            return ""
+        dataset_name = str(entity.get("_dataset") or "").strip()
+        if dataset_name:
+            return dataset_name
+
+        entity_id = str(entity.get("id") or "").strip()
+        loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
+        datasets = getattr(loader, "datasets", None)
+        if entity_id and isinstance(datasets, dict):
+            for candidate_name, dataset in datasets.items():
+                if any(item is entity or (isinstance(item, dict) and item.get("id") == entity_id) for item in dataset or []):
+                    return candidate_name
+
+        entity_type = str(entity.get("type") or "").strip()
+        if entity_type.endswith("s"):
+            return entity_type
+        if entity_type:
+            plural_guess = f"{entity_type}s"
+            if isinstance(datasets, dict) and plural_guess in datasets:
+                return plural_guess
+            return entity_type
+        return ""
+
     def _remove_entity_from_repository(self, dataset_name, entity_id):
         entry_path = self._entry_file_path_for_dataset(dataset_name)
         if not entry_path or not os.path.exists(entry_path):
@@ -4578,7 +4903,7 @@ class KnowledgeBrowserUI:
             return False
 
         entity_id = str(entity.get("id") or card.get("entity_id") or "").strip()
-        dataset_name = entity.get("_dataset", entity.get("type", ""))
+        dataset_name = self._dataset_name_for_entity(entity)
         if not entity_id or not dataset_name:
             return False
 
@@ -4588,7 +4913,15 @@ class KnowledgeBrowserUI:
         else:
             removed = self._remove_entity_from_repository(dataset_name, entity_id)
             if not removed:
-                return False
+                loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
+                loader_entities = getattr(loader, "entities", {}) if loader is not None else {}
+                removed = (
+                    entity_id in loader_entities
+                    or entity_id in self.card_drafts
+                    or any(open_card is card for open_card in self.cards)
+                )
+                if not removed:
+                    return False
 
         loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
         if loader is not None:
@@ -4680,12 +5013,12 @@ class KnowledgeBrowserUI:
             if field_key in entity:
                 converted[field_key] = entity[field_key]
 
-        derived_from = converted.get("derived_from")
-        if not isinstance(derived_from, list):
-            derived_from = []
-        if old_id not in derived_from:
-            derived_from.append(old_id)
-        converted["derived_from"] = derived_from
+        related = converted.get("related")
+        if not isinstance(related, list):
+            related = []
+        if old_id not in related:
+            related.append(old_id)
+        converted["related"] = related
 
         self._populate_required_schema_fields(converted, template)
         for field_key, value in self._template_initial_fields(template).items():
@@ -5707,10 +6040,20 @@ class KnowledgeBrowserUI:
             changed_entity_ids.update(loader.populate_offspring())
 
         if changed_entity_ids and persist:
+            failed_persist_ids = []
             for entity_id in sorted(changed_entity_ids):
                 entity = entities.get(entity_id)
                 if isinstance(entity, dict):
-                    self._persist_entity_to_repository(entity)
+                    try:
+                        self._persist_entity_to_repository(entity)
+                    except OSError:
+                        failed_persist_ids.append(entity_id)
+            if failed_persist_ids:
+                self.relation_link_status = (
+                    "Relation sync skipped repository writes for "
+                    + ", ".join(failed_persist_ids[:3])
+                    + ("..." if len(failed_persist_ids) > 3 else "")
+                )
 
         if changed_entity_ids:
             self.relation_tree_neighbor_cache = {}
@@ -5730,6 +6073,8 @@ class KnowledgeBrowserUI:
         entity = self._entity_for_card(card)
         if not isinstance(entity, dict):
             return False
+        self._sync_stellar_class_profile(card, entity)
+        card.pop("last_committed_field", None)
 
         id_change = card.get("pending_entity_id_change")
         previous_entity_id = None
@@ -5790,6 +6135,36 @@ class KnowledgeBrowserUI:
                 self._remove_card_draft(entity.get("id"))
         return persisted
 
+    def _sync_stellar_class_profile(self, card, entity):
+        committed_field = card.get("last_committed_field")
+        if committed_field not in {"star_class", "spectral_class"}:
+            return False
+
+        location_class = str(entity.get("location_class") or entity.get("body_class") or "").strip().lower()
+        if location_class not in {"star", "star_system"}:
+            return False
+
+        class_text = entity.get(committed_field) or entity.get("spectral_class") or entity.get("star_class")
+        from simulations.space.stellar import is_valid_stellar_class, stellar_profile_for_class
+
+        if not class_text or not is_valid_stellar_class(class_text):
+            return False
+
+        profile = stellar_profile_for_class(class_text)
+        entity["star_class"] = profile.get("star_class")
+        entity["spectral_class"] = profile.get("spectral_class", profile.get("class_key"))
+        entity["luminosity_solar"] = profile.get("luminosity_solar")
+        entity["habitable_zone_inner_au"] = profile.get("habitable_zone_inner_au")
+        entity["habitable_zone_outer_au"] = profile.get("habitable_zone_outer_au")
+        entity["card_color"] = profile.get("card_color")
+
+        if location_class == "star":
+            entity["display_color"] = list(profile.get("display_color", []))
+            entity["mass_kg"] = profile.get("mass_kg")
+            entity["radius_m"] = profile.get("radius_m")
+
+        return True
+
     def _build_canonical_illustration_path(self, illustration_id, source_path):
         _, ext = os.path.splitext(source_path)
         ext = ext.lower() if ext else ".png"
@@ -5839,6 +6214,469 @@ class KnowledgeBrowserUI:
 
         canonical_path = self._copy_to_canonical_illustration_asset(illustration_id, image_path)
         return self.assign_illustration_image(illustration_id, canonical_path)
+
+    def _parent_entity_for_illustration(self, illustration):
+        if self.world_model is None or not isinstance(illustration, dict):
+            return None
+        parent_ids = illustration.get("parents")
+        if isinstance(parent_ids, str):
+            parent_ids = [parent_ids]
+        if not isinstance(parent_ids, list):
+            return None
+        for parent_id in parent_ids:
+            parent = self.world_model.get_entity(parent_id)
+            if isinstance(parent, dict):
+                return parent
+        return None
+
+    def _pixel_canvas_size_for_entity(self, entity, metric_size_m):
+        metric_size_m = max(0.0, float(metric_size_m or 0.0))
+        entity = entity if isinstance(entity, dict) else {}
+        entity_type = str(entity.get("type") or entity.get("_dataset") or "").strip().lower()
+        location_class = str(entity.get("location_class") or "").strip().lower()
+        vehicle_class = str(entity.get("vehicle_class") or "").strip().lower()
+
+        if location_class in {"planet", "moon", "star"}:
+            return 128, 128
+        if location_class in {"continent", "country", "region"}:
+            return 160, 120
+        if location_class in {"city", "site", "building"}:
+            return 120, 80
+        if vehicle_class or entity_type in {"vehicle", "vehicles"}:
+            if metric_size_m <= 1.0:
+                return 50, 50
+            if metric_size_m <= 8:
+                return 80, 50
+            if metric_size_m <= 60:
+                return 120, 60
+            return 160, 80
+        if metric_size_m <= 1.0:
+            return 50, 50
+        if metric_size_m <= 5.0:
+            return 75, 75
+        if metric_size_m <= 20.0:
+            return 100, 100
+        if metric_size_m <= 200.0:
+            return 150, 150
+        return 200, 200
+
+    def _open_pixel_art_editor(self, illustration_id):
+        if self.world_model is None or not illustration_id:
+            return False
+        illustration = self.world_model.get_entity(illustration_id)
+        if not isinstance(illustration, dict):
+            return False
+        if str(illustration.get("idea_class") or "").strip().lower() != "illustration":
+            return False
+
+        parent = self._parent_entity_for_illustration(illustration)
+        existing_size = illustration.get("depicted_size_m") or illustration.get("metric_size_m")
+        size_text = "" if existing_size in (None, "") else str(existing_size)
+        self.pixel_art_editor = {
+            "stage": "size",
+            "illustration_id": illustration_id,
+            "illustration": illustration,
+            "parent_entity": parent,
+            "metric_size_buffer": size_text,
+            "metric_size_cursor": len(size_text),
+            "status": "Enter depicted size in meters",
+            "color": (236, 240, 246),
+            "hsv": colorsys.rgb_to_hsv(236 / 255.0, 240 / 255.0, 246 / 255.0),
+            "pixels": [],
+            "canvas_width": 0,
+            "canvas_height": 0,
+            "tool": "brush",
+            "brush_size": 1,
+            "active_slider": None,
+            "tool_hitboxes": {},
+            "brush_size_hitboxes": {},
+            "clear_rect": None,
+            "reference_surface": None,
+            "reference_rect": None,
+        }
+        self.pixel_art_painting = False
+        return True
+
+    def _close_pixel_art_editor(self):
+        self.pixel_art_editor = None
+        self.pixel_art_painting = False
+        return True
+
+    def _pixel_editor_metric_size(self):
+        editor = self.pixel_art_editor if isinstance(self.pixel_art_editor, dict) else {}
+        try:
+            return max(0.0, float(str(editor.get("metric_size_buffer") or "").replace(",", ".")))
+        except ValueError:
+            return None
+
+    def _begin_pixel_art_canvas(self):
+        editor = self.pixel_art_editor
+        if not isinstance(editor, dict):
+            return False
+        metric_size_m = self._pixel_editor_metric_size()
+        if metric_size_m is None or metric_size_m <= 0:
+            editor["status"] = "Size must be a positive meter value"
+            return True
+
+        parent = editor.get("parent_entity")
+        width, height = self._pixel_canvas_size_for_entity(parent, metric_size_m)
+        editor["stage"] = "canvas"
+        editor["canvas_width"] = width
+        editor["canvas_height"] = height
+        editor["pixels"] = [[None for _ in range(width)] for _ in range(height)]
+        editor["status"] = f"{width} x {height} px canvas"
+        return True
+
+    def _set_pixel_editor_color_from_hsv(self, channel, value):
+        editor = self.pixel_art_editor
+        if not isinstance(editor, dict):
+            return False
+        hue, saturation, brightness = editor.get("hsv", (0.0, 0.0, 1.0))
+        value = max(0.0, min(1.0, float(value)))
+        if channel == "h":
+            hue = value
+        elif channel == "s":
+            saturation = value
+        elif channel == "v":
+            brightness = value
+        red, green, blue = colorsys.hsv_to_rgb(hue, saturation, brightness)
+        editor["hsv"] = (hue, saturation, brightness)
+        editor["color"] = (
+            int(round(red * 255)),
+            int(round(green * 255)),
+            int(round(blue * 255)),
+        )
+        return True
+
+    def _set_pixel_editor_color_rgb(self, color):
+        editor = self.pixel_art_editor
+        if not isinstance(editor, dict):
+            return False
+        try:
+            red, green, blue = [max(0, min(255, int(part))) for part in color[:3]]
+        except (TypeError, ValueError):
+            return False
+        editor["color"] = (red, green, blue)
+        editor["hsv"] = colorsys.rgb_to_hsv(red / 255.0, green / 255.0, blue / 255.0)
+        return True
+
+    def _set_pixel_editor_tool(self, tool):
+        editor = self.pixel_art_editor
+        if not isinstance(editor, dict):
+            return False
+        if tool not in {"brush", "eraser"}:
+            return False
+        editor["tool"] = tool
+        editor["status"] = "Brush selected" if tool == "brush" else "Eraser selected"
+        return True
+
+    def _set_pixel_editor_brush_size(self, brush_size):
+        editor = self.pixel_art_editor
+        if not isinstance(editor, dict):
+            return False
+        try:
+            brush_size = int(brush_size)
+        except (TypeError, ValueError):
+            return False
+        brush_size = max(1, min(16, brush_size))
+        editor["brush_size"] = brush_size
+        editor["status"] = f"Brush size {brush_size} px"
+        return True
+
+    def _clear_pixel_art_canvas(self):
+        editor = self.pixel_art_editor
+        if not isinstance(editor, dict) or editor.get("stage") != "canvas":
+            return False
+        width = int(editor.get("canvas_width") or 0)
+        height = int(editor.get("canvas_height") or 0)
+        if width <= 0 or height <= 0:
+            return False
+        editor["pixels"] = [[None for _ in range(width)] for _ in range(height)]
+        editor["status"] = "Canvas cleared"
+        return True
+
+    def _pixel_editor_set_slider_from_mouse(self, slider_info, mouse_x):
+        rect = slider_info.get("rect") if isinstance(slider_info, dict) else None
+        if rect is None or rect.width <= 0:
+            return False
+        value = (mouse_x - rect.x) / max(1, rect.width)
+        return self._set_pixel_editor_color_from_hsv(slider_info.get("channel"), value)
+
+    def _surface_from_image_bytes(self, data):
+        if not data:
+            return None
+        if isinstance(data, str):
+            data = data.encode("utf-8", errors="ignore")
+        try:
+            return pygame.image.load(io.BytesIO(data)).convert_alpha()
+        except (pygame.error, OSError, ValueError):
+            pass
+
+        # Windows clipboard bitmaps are often DIB data without a BMP file header.
+        try:
+            header_size = int.from_bytes(data[:4], "little")
+            bit_count = int.from_bytes(data[14:16], "little") if len(data) >= 16 else 32
+            colors_used = int.from_bytes(data[32:36], "little") if len(data) >= 36 else 0
+            palette_size = (colors_used or (1 << bit_count if bit_count <= 8 else 0)) * 4
+            pixel_offset = 14 + header_size + palette_size
+            file_size = 14 + len(data)
+            bmp_header = (
+                b"BM"
+                + file_size.to_bytes(4, "little")
+                + (0).to_bytes(4, "little")
+                + pixel_offset.to_bytes(4, "little")
+            )
+            return pygame.image.load(io.BytesIO(bmp_header + data)).convert_alpha()
+        except (pygame.error, OSError, ValueError, OverflowError):
+            return None
+
+    def _load_pixel_reference_from_clipboard(self):
+        editor = self.pixel_art_editor
+        if not isinstance(editor, dict):
+            return False
+        try:
+            if not pygame.scrap.get_init():
+                pygame.scrap.init()
+        except pygame.error:
+            editor["status"] = "Clipboard image support is unavailable"
+            return True
+
+        surface = None
+        for scrap_type in (getattr(pygame, "SCRAP_BMP", "image/bmp"),):
+            try:
+                data = pygame.scrap.get(scrap_type)
+            except pygame.error:
+                data = None
+            surface = self._surface_from_image_bytes(data)
+            if surface is not None:
+                break
+
+        if surface is None:
+            try:
+                text_data = pygame.scrap.get(getattr(pygame, "SCRAP_TEXT", "text/plain"))
+            except pygame.error:
+                text_data = None
+            if text_data:
+                try:
+                    text = text_data.decode("utf-8", errors="ignore").strip().strip("\x00").strip('"')
+                except AttributeError:
+                    text = str(text_data).strip().strip('"')
+                if text and os.path.exists(text):
+                    try:
+                        surface = pygame.image.load(text).convert_alpha()
+                    except (pygame.error, OSError):
+                        surface = None
+
+        if surface is None:
+            editor["status"] = "Ctrl+V found no image or image path"
+            return True
+
+        editor["reference_surface"] = surface
+        editor["status"] = f"Reference loaded: {surface.get_width()} x {surface.get_height()} px"
+        return True
+
+    def _sample_pixel_reference_at(self, mouse_pos):
+        editor = self.pixel_art_editor
+        if not isinstance(editor, dict):
+            return False
+        surface = editor.get("reference_surface")
+        rect = editor.get("reference_rect")
+        if surface is None or rect is None or not rect.collidepoint(mouse_pos):
+            return False
+        ref_x = int((mouse_pos[0] - rect.x) * surface.get_width() / max(1, rect.width))
+        ref_y = int((mouse_pos[1] - rect.y) * surface.get_height() / max(1, rect.height))
+        ref_x = max(0, min(surface.get_width() - 1, ref_x))
+        ref_y = max(0, min(surface.get_height() - 1, ref_y))
+        color = surface.get_at((ref_x, ref_y))
+        self._set_pixel_editor_color_rgb(color)
+        editor["status"] = f"Picked #{color.r:02x}{color.g:02x}{color.b:02x} from reference"
+        return True
+
+    def _paint_pixel_editor_at(self, mouse_pos):
+        editor = self.pixel_art_editor
+        if not isinstance(editor, dict) or editor.get("stage") != "canvas":
+            return False
+        canvas_rect = editor.get("canvas_rect")
+        if canvas_rect is None or not canvas_rect.collidepoint(mouse_pos):
+            return False
+        width = int(editor.get("canvas_width") or 0)
+        height = int(editor.get("canvas_height") or 0)
+        if width <= 0 or height <= 0:
+            return False
+        pixel_x = int((mouse_pos[0] - canvas_rect.x) * width / max(1, canvas_rect.width))
+        pixel_y = int((mouse_pos[1] - canvas_rect.y) * height / max(1, canvas_rect.height))
+        pixel_x = max(0, min(width - 1, pixel_x))
+        pixel_y = max(0, min(height - 1, pixel_y))
+        pixels = editor.get("pixels")
+        if not isinstance(pixels, list) or pixel_y >= len(pixels):
+            return False
+        brush_size = max(1, min(16, int(editor.get("brush_size") or 1)))
+        start_x = pixel_x - brush_size // 2
+        start_y = pixel_y - brush_size // 2
+        paint_color = None if editor.get("tool") == "eraser" else tuple(editor.get("color", (236, 240, 246)))
+        for y in range(start_y, start_y + brush_size):
+            if y < 0 or y >= height or y >= len(pixels):
+                continue
+            row = pixels[y]
+            if not isinstance(row, list):
+                continue
+            for x in range(start_x, start_x + brush_size):
+                if 0 <= x < width and x < len(row):
+                    row[x] = paint_color
+        return True
+
+    def _pixel_art_asset_path(self, illustration_id):
+        safe_id = self._sanitize_entity_id(illustration_id) or "illustration"
+        return os.path.join("assets", "illustrations", f"{safe_id}_pixel.png").replace("\\", "/")
+
+    def _save_pixel_art_editor(self):
+        editor = self.pixel_art_editor
+        if not isinstance(editor, dict) or editor.get("stage") != "canvas":
+            if isinstance(editor, dict):
+                editor["status"] = "Create the canvas before saving"
+            return False
+        illustration_id = str(editor.get("illustration_id") or "").strip()
+        illustration = self.world_model.get_entity(illustration_id) if self.world_model is not None else None
+        if not isinstance(illustration, dict):
+            editor["status"] = "Could not find illustration entry"
+            return False
+        width = int(editor.get("canvas_width") or 0)
+        height = int(editor.get("canvas_height") or 0)
+        pixels = editor.get("pixels")
+        if width <= 0 or height <= 0 or not isinstance(pixels, list):
+            editor["status"] = "Pixel canvas is missing"
+            return False
+
+        rel_path = self._pixel_art_asset_path(illustration_id)
+        abs_path = os.path.normpath(str(self.PROJECT_ROOT / rel_path))
+        try:
+            os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+            surface = pygame.Surface((width, height), pygame.SRCALPHA)
+            surface.fill((0, 0, 0, 0))
+            for y, row in enumerate(pixels[:height]):
+                if not isinstance(row, list):
+                    continue
+                for x, color in enumerate(row[:width]):
+                    if color is None:
+                        continue
+                    surface.set_at((x, y), (*tuple(color[:3]), 255))
+            pygame.image.save(surface, abs_path)
+        except (pygame.error, OSError, ValueError) as exc:
+            editor["status"] = f"Could not save PNG: {exc}"
+            return False
+
+        metric_size_m = self._pixel_editor_metric_size()
+        illustration["depicted_size_m"] = metric_size_m
+        illustration["pixel_canvas_width"] = width
+        illustration["pixel_canvas_height"] = height
+        illustration["pixel_art_source"] = "in_engine_pixel_editor"
+        illustration["media_path"] = rel_path
+        if not self.assign_illustration_image(illustration_id, rel_path):
+            editor["status"] = "PNG saved, but illustration entry was not updated"
+            return False
+        self._close_pixel_art_editor()
+        return True
+
+    def _handle_pixel_art_editor_keydown(self, event):
+        editor = self.pixel_art_editor
+        if not isinstance(editor, dict):
+            return False
+        if event.key == pygame.K_ESCAPE:
+            self._close_pixel_art_editor()
+            return True
+        if (
+            editor.get("stage") == "canvas"
+            and event.key == pygame.K_v
+            and (getattr(event, "mod", 0) & pygame.KMOD_CTRL)
+        ):
+            return self._load_pixel_reference_from_clipboard()
+        if editor.get("stage") == "canvas":
+            if event.key == pygame.K_b:
+                return self._set_pixel_editor_tool("brush")
+            if event.key == pygame.K_e:
+                return self._set_pixel_editor_tool("eraser")
+            if event.key in (pygame.K_LEFTBRACKET, pygame.K_MINUS):
+                return self._set_pixel_editor_brush_size(int(editor.get("brush_size") or 1) - 1)
+            if event.key in (pygame.K_RIGHTBRACKET, pygame.K_EQUALS, getattr(pygame, "K_PLUS", pygame.K_EQUALS)):
+                return self._set_pixel_editor_brush_size(int(editor.get("brush_size") or 1) + 1)
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            if editor.get("stage") == "size":
+                return self._begin_pixel_art_canvas()
+            return self._save_pixel_art_editor()
+        if editor.get("stage") != "size":
+            return True
+
+        buffer_text = str(editor.get("metric_size_buffer") or "")
+        cursor = max(0, min(int(editor.get("metric_size_cursor", len(buffer_text)) or 0), len(buffer_text)))
+        if event.key == pygame.K_BACKSPACE:
+            if cursor > 0:
+                editor["metric_size_buffer"] = buffer_text[:cursor - 1] + buffer_text[cursor:]
+                editor["metric_size_cursor"] = cursor - 1
+            return True
+        if event.key == pygame.K_DELETE:
+            if cursor < len(buffer_text):
+                editor["metric_size_buffer"] = buffer_text[:cursor] + buffer_text[cursor + 1:]
+            return True
+        if event.key == pygame.K_LEFT:
+            editor["metric_size_cursor"] = max(0, cursor - 1)
+            return True
+        if event.key == pygame.K_RIGHT:
+            editor["metric_size_cursor"] = min(len(buffer_text), cursor + 1)
+            return True
+        text = getattr(event, "unicode", "")
+        if text and text in "0123456789.,":
+            editor["metric_size_buffer"] = buffer_text[:cursor] + text + buffer_text[cursor:]
+            editor["metric_size_cursor"] = cursor + len(text)
+            return True
+        return True
+
+    def _handle_pixel_art_editor_click(self, mouse_pos):
+        editor = self.pixel_art_editor
+        if not isinstance(editor, dict):
+            return False
+        for key in ("close_rect", "cancel_rect"):
+            rect = editor.get(key)
+            if rect is not None and rect.collidepoint(mouse_pos):
+                self._close_pixel_art_editor()
+                return True
+        primary_rect = editor.get("primary_rect")
+        if primary_rect is not None and primary_rect.collidepoint(mouse_pos):
+            if editor.get("stage") == "size":
+                return self._begin_pixel_art_canvas()
+            return self._save_pixel_art_editor()
+        if editor.get("stage") == "canvas":
+            for tool, rect in (editor.get("tool_hitboxes") or {}).items():
+                if rect is not None and rect.collidepoint(mouse_pos):
+                    return self._set_pixel_editor_tool(tool)
+            for delta, rect in (editor.get("brush_size_hitboxes") or {}).items():
+                if rect is not None and rect.collidepoint(mouse_pos):
+                    return self._set_pixel_editor_brush_size(int(editor.get("brush_size") or 1) + int(delta))
+            clear_rect = editor.get("clear_rect")
+            if clear_rect is not None and clear_rect.collidepoint(mouse_pos):
+                return self._clear_pixel_art_canvas()
+            if self._sample_pixel_reference_at(mouse_pos):
+                return True
+            for slider in editor.get("slider_hitboxes", []):
+                rect = slider.get("rect")
+                if rect is not None and rect.inflate(8, 10).collidepoint(mouse_pos):
+                    self._pixel_editor_set_slider_from_mouse(slider, mouse_pos[0])
+                    editor["active_slider"] = slider
+                    return True
+            if self._paint_pixel_editor_at(mouse_pos):
+                self.pixel_art_painting = True
+                return True
+        return True
+
+    def _handle_pixel_art_editor_motion(self, mouse_pos):
+        editor = self.pixel_art_editor
+        if not isinstance(editor, dict):
+            return False
+        active_slider = editor.get("active_slider")
+        if active_slider is not None:
+            return self._pixel_editor_set_slider_from_mouse(active_slider, mouse_pos[0])
+        if self.pixel_art_painting:
+            return self._paint_pixel_editor_at(mouse_pos)
+        return True
 
     def _rebuild_browser_hitboxes(self):
         self.browser_hitboxes = []
@@ -6303,6 +7141,11 @@ class KnowledgeBrowserUI:
         return False
 
     def _handle_keydown_event(self, event):
+        if getattr(self, "pixel_art_editor", None) is not None:
+            if self._handle_pixel_art_editor_keydown(event):
+                return "__ui_consumed__"
+            return None
+
         if getattr(self, "stellar_neighbourhood_prompt", None) is not None:
             if self._handle_stellar_neighbourhood_prompt_keydown(event):
                 return "__ui_consumed__"
@@ -6669,6 +7512,13 @@ class KnowledgeBrowserUI:
             return "__ui_consumed__"
 
         if self.browser_collapsed:
+            return "__ui_consumed__"
+
+        if (
+            self.browser_period_filter_clear_rect is not None
+            and self.browser_period_filter_clear_rect.collidepoint(mouse_pos)
+        ):
+            self._clear_browser_period_filter()
             return "__ui_consumed__"
 
         if self.browser_search_rect is not None and self.browser_search_rect.collidepoint(mouse_pos):
@@ -7179,7 +8029,7 @@ class KnowledgeBrowserUI:
             card,
             {
                 "kind": "missing",
-                "field_key": "wiki_mentions",
+                "field_key": "related",
                 "entity_id": link_ref,
                 "label": link_ref,
                 "target": "entity_core",
@@ -7230,7 +8080,7 @@ class KnowledgeBrowserUI:
                 self._ensure_card(entity)
                 return True
 
-        if kind == "missing" and relation_info.get("field_key") == "wiki_mentions":
+        if kind == "missing" and relation_info.get("field_key") == "related":
             return self._open_relation_target_template_picker(card, relation_info)
 
         created_entity = self._create_relation_target_entity(relation_info)
@@ -7434,7 +8284,6 @@ class KnowledgeBrowserUI:
             "_dataset": "cladistics",
             "common_name": "",
             "binomial_name": "",
-            "wiki_mentions": [],
             "parents": [],
             "offspring": [],
         }
@@ -8100,6 +8949,13 @@ class KnowledgeBrowserUI:
                         self._relayout_cards()
                     return "__ui_consumed__"
 
+            for illustration_id, button_rect in card.get("media_pixel_art_hitboxes", []):
+                if button_rect.collidepoint(mouse_pos):
+                    self._bring_card_to_front(index)
+                    self._open_pixel_art_editor(illustration_id)
+                    self._relayout_cards()
+                    return "__ui_consumed__"
+
             for illustration_id, button_rect in card.get("media_import_hitboxes", []):
                 if button_rect.collidepoint(mouse_pos):
                     card_obj = self._bring_card_to_front(index)
@@ -8260,7 +9116,11 @@ class KnowledgeBrowserUI:
         right_rect = self.layout["right_rect"]
         prompt_w = min(420, max(300, right_rect.width - 48))
         is_illustration_prompt = prompt.get("mode") == "illustration_from_parent"
-        prompt_h = 194 if is_illustration_prompt else 148
+        is_star_class_prompt = prompt.get("mode") == "star_system_class"
+        suggestion_matches = prompt.get("suggestion_matches") or []
+        suggestion_count = len(suggestion_matches) if self._entry_name_prompt_uses_suggestions(prompt) else 0
+        suggestion_h = suggestion_count * 30 + (10 if suggestion_count else 0)
+        prompt_h = 194 if is_illustration_prompt else (196 if is_star_class_prompt else 148 + suggestion_h)
         prompt_x = right_rect.right - prompt_w - 12
         prompt_y = right_rect.y + 44
         prompt_rect = pygame.Rect(prompt_x, prompt_y, prompt_w, prompt_h)
@@ -8277,6 +9137,7 @@ class KnowledgeBrowserUI:
         prompt["description_rect"] = description_rect
         prompt["cancel_rect"] = cancel_rect
         prompt["create_rect"] = create_rect
+        prompt["suggestion_hitboxes"] = []
 
         pygame.draw.rect(screen, (28, 30, 38), prompt_rect)
         pygame.draw.rect(screen, (170, 170, 170), prompt_rect, 1)
@@ -8337,8 +9198,38 @@ class KnowledgeBrowserUI:
                     1,
                 )
 
-        name_placeholder = "O, B, A, F, G, K, or M" if prompt.get("mode") == "star_system_class" else "Entry name"
+        name_placeholder = "G2V, K5V, M3V, or O/B/A/F/G/K/M" if prompt.get("mode") == "star_system_class" else "Entry name"
         draw_prompt_input(input_rect, "buffer", "cursor", name_placeholder, "name")
+
+        if suggestion_matches:
+            selected_index = max(0, min(int(prompt.get("suggestion_selected_index", 0)), len(suggestion_matches) - 1))
+            row_y = input_rect.bottom + 8
+            for index, match in enumerate(suggestion_matches):
+                row_rect = pygame.Rect(input_rect.x, row_y, input_rect.width, 26)
+                color = self._coerce_hex_rgb(match.get("card_color"), fallback=(54, 70, 96))
+                fill = EntityCard._mix_color(color, (22, 25, 34), 0.68)
+                border = EntityCard._mix_color(color, (228, 234, 246), 0.35)
+                if index == selected_index and prompt.get("suggestion_keyboard_active"):
+                    fill = EntityCard._mix_color(color, (64, 92, 134), 0.36)
+                    border = EntityCard._mix_color(color, (238, 242, 250), 0.18)
+                pygame.draw.rect(screen, fill, row_rect)
+                pygame.draw.rect(screen, border, row_rect, 1)
+
+                label = self._ellipsize_text(match.get("label", ""), font, row_rect.width - 124)
+                subtitle = self._ellipsize_text(match.get("subtitle", ""), font, 104)
+                text_color = (246, 248, 252)
+                muted_color = (176, 188, 208)
+                screen.blit(font.render(label, True, text_color), (row_rect.x + 8, row_rect.y + 5))
+                if subtitle:
+                    subtitle_surface = font.render(subtitle, True, muted_color)
+                    screen.blit(subtitle_surface, (row_rect.right - subtitle_surface.get_width() - 8, row_rect.y + 5))
+                prompt["suggestion_hitboxes"].append((index, row_rect))
+                row_y += 30
+
+        if is_star_class_prompt:
+            help_text = "Valid: OBAFGKM + 0-9 + Ia/Ib/II/III/IV/V/VI/VII. Example: G2V."
+            help_surface = font.render(help_text, True, (158, 170, 190))
+            screen.blit(help_surface, (input_rect.x, input_rect.bottom + 6))
 
         if description_rect is not None:
             description_label = font.render("description", True, (188, 196, 212))
@@ -8354,7 +9245,7 @@ class KnowledgeBrowserUI:
         status = str(prompt.get("status") or "")
         if status:
             status_surface = font.render(status, True, (230, 154, 132))
-            status_y = (description_rect.bottom if description_rect is not None else input_rect.bottom) + 6
+            status_y = (description_rect.bottom if description_rect is not None else input_rect.bottom) + (24 if is_star_class_prompt else 6)
             screen.blit(status_surface, (prompt_rect.x + 18, status_y))
 
         mouse_pos = pygame.mouse.get_pos()
@@ -8370,6 +9261,219 @@ class KnowledgeBrowserUI:
             pygame.draw.rect(screen, (164, 176, 198), rect, 1)
             label_surface = font.render(label, True, (244, 244, 244))
             screen.blit(label_surface, label_surface.get_rect(center=rect.center))
+
+    def _draw_pixel_art_editor(self, screen, font):
+        editor = self.pixel_art_editor
+        if not isinstance(editor, dict) or self.layout is None:
+            return
+
+        right_rect = self.layout["right_rect"]
+        stage = editor.get("stage")
+        modal_w = min(760, max(420, right_rect.width - 72))
+        modal_h = 260 if stage == "size" else min(720, max(520, right_rect.height - 72))
+        modal_rect = pygame.Rect(
+            right_rect.centerx - modal_w // 2,
+            right_rect.centery - modal_h // 2,
+            modal_w,
+            modal_h,
+        )
+        header_rect = pygame.Rect(modal_rect.x, modal_rect.y, modal_rect.width, 48)
+        close_rect = pygame.Rect(modal_rect.right - 38, modal_rect.y + 12, 24, 24)
+        cancel_rect = pygame.Rect(modal_rect.right - 210, modal_rect.bottom - 42, 90, 28)
+        primary_rect = pygame.Rect(modal_rect.right - 112, modal_rect.bottom - 42, 94, 28)
+        editor["rect"] = modal_rect
+        editor["close_rect"] = close_rect
+        editor["cancel_rect"] = cancel_rect
+        editor["primary_rect"] = primary_rect
+        editor["slider_hitboxes"] = []
+        editor["tool_hitboxes"] = {}
+        editor["brush_size_hitboxes"] = {}
+        editor["clear_rect"] = None
+
+        overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 120))
+        screen.blit(overlay, (0, 0))
+        pygame.draw.rect(screen, (20, 23, 31), modal_rect)
+        pygame.draw.rect(screen, (176, 184, 202), modal_rect, 1)
+        pygame.draw.rect(screen, (32, 37, 50), header_rect)
+        pygame.draw.line(screen, (94, 104, 124), (header_rect.x, header_rect.bottom), (header_rect.right, header_rect.bottom), 1)
+
+        illustration = editor.get("illustration") if isinstance(editor.get("illustration"), dict) else {}
+        title = self._ellipsize_text(
+            f"Pixel Art: {illustration.get('name') or illustration.get('pretty_name') or editor.get('illustration_id')}",
+            font,
+            modal_rect.width - 74,
+        )
+        screen.blit(font.render(title, True, (242, 244, 248)), (modal_rect.x + 14, modal_rect.y + 14))
+        pygame.draw.rect(screen, (74, 44, 52), close_rect)
+        pygame.draw.rect(screen, (218, 154, 164), close_rect, 1)
+        close_surface = font.render("x", True, (255, 232, 236))
+        screen.blit(close_surface, close_surface.get_rect(center=close_rect.center))
+
+        if stage == "size":
+            input_rect = pygame.Rect(modal_rect.x + 24, modal_rect.y + 94, min(240, modal_rect.width - 48), 32)
+            editor["metric_size_rect"] = input_rect
+            screen.blit(font.render("depicted size in meters", True, (184, 194, 214)), (input_rect.x, input_rect.y - 20))
+            pygame.draw.rect(screen, (35, 40, 54), input_rect)
+            pygame.draw.rect(screen, (190, 204, 234), input_rect, 1)
+            text = str(editor.get("metric_size_buffer") or "")
+            display_text = text or "1.0"
+            text_color = (240, 242, 248) if text else (130, 140, 158)
+            screen.blit(font.render(display_text, True, text_color), (input_rect.x + 8, input_rect.y + 7))
+            cursor = max(0, min(int(editor.get("metric_size_cursor", len(text)) or 0), len(text)))
+            cursor_x = input_rect.x + 8 + font.size(text[:cursor])[0]
+            pygame.draw.line(screen, (240, 242, 248), (cursor_x, input_rect.y + 7), (cursor_x, input_rect.bottom - 7), 1)
+
+            size_value = self._pixel_editor_metric_size()
+            suggested = self._pixel_canvas_size_for_entity(editor.get("parent_entity"), size_value or 1.0)
+            y = input_rect.bottom + 18
+            for line in (
+                f"Suggested canvas: {suggested[0]} x {suggested[1]} px",
+                "Canvas size is derived from entry class and depicted metric size.",
+                "Enter creates the canvas. Esc cancels.",
+            ):
+                screen.blit(font.render(line, True, (166, 176, 196)), (modal_rect.x + 24, y))
+                y += self.LINE_HEIGHT
+            primary_label = "Create"
+        else:
+            canvas_w = max(1, int(editor.get("canvas_width") or 1))
+            canvas_h = max(1, int(editor.get("canvas_height") or 1))
+            side_w = min(310, max(240, modal_rect.width // 3))
+            canvas_area = pygame.Rect(modal_rect.x + 24, modal_rect.y + 68, modal_rect.width - side_w - 54, modal_rect.height - 128)
+            scale = max(1, min(canvas_area.width // canvas_w, canvas_area.height // canvas_h))
+            canvas_rect = pygame.Rect(
+                canvas_area.x + (canvas_area.width - canvas_w * scale) // 2,
+                canvas_area.y + (canvas_area.height - canvas_h * scale) // 2,
+                canvas_w * scale,
+                canvas_h * scale,
+            )
+            editor["canvas_rect"] = canvas_rect
+            pygame.draw.rect(screen, (14, 16, 22), canvas_area)
+            pygame.draw.rect(screen, (84, 94, 116), canvas_area, 1)
+            pixels = editor.get("pixels") or []
+            checker = [(34, 38, 48), (42, 47, 58)]
+            for y in range(canvas_h):
+                row = pixels[y] if y < len(pixels) and isinstance(pixels[y], list) else []
+                for x in range(canvas_w):
+                    cell = pygame.Rect(canvas_rect.x + x * scale, canvas_rect.y + y * scale, scale, scale)
+                    pygame.draw.rect(screen, checker[(x + y) % 2], cell)
+                    color = row[x] if x < len(row) else None
+                    if color is not None:
+                        pygame.draw.rect(screen, color, cell)
+            if scale >= 6:
+                grid_color = (54, 62, 76)
+                for x in range(canvas_w + 1):
+                    px = canvas_rect.x + x * scale
+                    pygame.draw.line(screen, grid_color, (px, canvas_rect.y), (px, canvas_rect.bottom), 1)
+                for y in range(canvas_h + 1):
+                    py = canvas_rect.y + y * scale
+                    pygame.draw.line(screen, grid_color, (canvas_rect.x, py), (canvas_rect.right, py), 1)
+            pygame.draw.rect(screen, (186, 198, 224), canvas_rect, 1)
+
+            side_rect = pygame.Rect(modal_rect.right - side_w - 18, modal_rect.y + 68, side_w, modal_rect.height - 128)
+            pygame.draw.rect(screen, (27, 31, 42), side_rect)
+            pygame.draw.rect(screen, (86, 98, 122), side_rect, 1)
+            color = tuple(editor.get("color", (236, 240, 246)))
+            preview_rect = pygame.Rect(side_rect.x + 14, side_rect.y + 18, 42, 42)
+            pygame.draw.rect(screen, color, preview_rect)
+            pygame.draw.rect(screen, (210, 218, 234), preview_rect, 1)
+            screen.blit(font.render(f"{canvas_w} x {canvas_h}", True, (226, 232, 242)), (preview_rect.right + 12, preview_rect.y + 3))
+            active_tool = str(editor.get("tool") or "brush")
+            tool_hint = "left click erases" if active_tool == "eraser" else "left click paints"
+            screen.blit(font.render(tool_hint, True, (156, 166, 186)), (preview_rect.right + 12, preview_rect.y + 24))
+
+            tool_y = preview_rect.bottom + 18
+            screen.blit(font.render("Tool", True, (194, 204, 224)), (side_rect.x + 14, tool_y + 4))
+            button_x = side_rect.x + 58
+            tool_buttons = (
+                ("brush", "Brush", pygame.Rect(button_x, tool_y, 68, 24)),
+                ("eraser", "Eraser", pygame.Rect(button_x + 74, tool_y, 74, 24)),
+            )
+            for tool_name, label, button_rect in tool_buttons:
+                selected = active_tool == tool_name
+                hovered = button_rect.collidepoint(pygame.mouse.get_pos())
+                fill = (76, 96, 138) if selected else (42, 48, 62)
+                if hovered:
+                    fill = (90, 110, 152) if selected else (56, 64, 82)
+                pygame.draw.rect(screen, fill, button_rect)
+                pygame.draw.rect(screen, (190, 204, 234) if selected else (132, 144, 170), button_rect, 1)
+                label_surface = font.render(label, True, (242, 246, 252))
+                screen.blit(label_surface, label_surface.get_rect(center=button_rect.center))
+                editor["tool_hitboxes"][tool_name] = button_rect
+
+            size_y = tool_y + 34
+            brush_size = max(1, min(16, int(editor.get("brush_size") or 1)))
+            screen.blit(font.render("Size", True, (194, 204, 224)), (side_rect.x + 14, size_y + 4))
+            dec_rect = pygame.Rect(button_x, size_y, 28, 24)
+            value_rect = pygame.Rect(dec_rect.right + 6, size_y, 50, 24)
+            inc_rect = pygame.Rect(value_rect.right + 6, size_y, 28, 24)
+            clear_rect = pygame.Rect(inc_rect.right + 8, size_y, 50, 24)
+            for rect_button, label in ((dec_rect, "-"), (inc_rect, "+"), (clear_rect, "Clear")):
+                pygame.draw.rect(screen, (42, 48, 62), rect_button)
+                pygame.draw.rect(screen, (132, 144, 170), rect_button, 1)
+                label_surface = font.render(label, True, (242, 246, 252))
+                screen.blit(label_surface, label_surface.get_rect(center=rect_button.center))
+            pygame.draw.rect(screen, (26, 30, 40), value_rect)
+            pygame.draw.rect(screen, (132, 144, 170), value_rect, 1)
+            value_surface = font.render(f"{brush_size}px", True, (230, 236, 248))
+            screen.blit(value_surface, value_surface.get_rect(center=value_rect.center))
+            editor["brush_size_hitboxes"] = {-1: dec_rect, 1: inc_rect}
+            editor["clear_rect"] = clear_rect
+
+            hue, saturation, brightness = editor.get("hsv", (0.0, 0.0, 1.0))
+            slider_y = size_y + 42
+            for channel, label, value in (("h", "Hue", hue), ("s", "Sat", saturation), ("v", "Val", brightness)):
+                screen.blit(font.render(label, True, (194, 204, 224)), (side_rect.x + 14, slider_y - 4))
+                slider_rect = pygame.Rect(side_rect.x + 58, slider_y, side_rect.width - 74, 10)
+                if channel == "h":
+                    for offset in range(slider_rect.width):
+                        hue_color = colorsys.hsv_to_rgb(offset / max(1, slider_rect.width - 1), 1.0, 1.0)
+                        pygame.draw.line(screen, tuple(int(part * 255) for part in hue_color), (slider_rect.x + offset, slider_rect.y), (slider_rect.x + offset, slider_rect.bottom - 1))
+                else:
+                    pygame.draw.rect(screen, (82, 96, 126), slider_rect)
+                pygame.draw.rect(screen, (184, 196, 222), slider_rect, 1)
+                knob_x = slider_rect.x + int(max(0.0, min(1.0, value)) * slider_rect.width)
+                pygame.draw.circle(screen, (236, 240, 248), (knob_x, slider_rect.centery), 5)
+                editor["slider_hitboxes"].append({"channel": channel, "rect": slider_rect})
+                slider_y += 32
+
+            ref_label_y = slider_y + 8
+            screen.blit(font.render("Reference", True, (194, 204, 224)), (side_rect.x + 14, ref_label_y))
+            ref_area = pygame.Rect(side_rect.x + 14, ref_label_y + 22, side_rect.width - 28, max(80, side_rect.bottom - ref_label_y - 34))
+            pygame.draw.rect(screen, (18, 21, 29), ref_area)
+            pygame.draw.rect(screen, (82, 94, 118), ref_area, 1)
+            reference_surface = editor.get("reference_surface")
+            editor["reference_rect"] = None
+            if reference_surface is not None:
+                src_w = max(1, reference_surface.get_width())
+                src_h = max(1, reference_surface.get_height())
+                scale_ref = min(ref_area.width / src_w, ref_area.height / src_h)
+                target_w = max(1, int(src_w * scale_ref))
+                target_h = max(1, int(src_h * scale_ref))
+                scaled = pygame.transform.smoothscale(reference_surface, (target_w, target_h))
+                ref_rect = scaled.get_rect(center=ref_area.center)
+                screen.blit(scaled, ref_rect)
+                pygame.draw.rect(screen, (196, 210, 238), ref_rect, 1)
+                editor["reference_rect"] = ref_rect
+            else:
+                for index, line in enumerate(("Ctrl+V reference", "Click image to pick color")):
+                    line_surface = font.render(line, True, (140, 150, 170))
+                    screen.blit(line_surface, (ref_area.x + 10, ref_area.y + 14 + index * self.LINE_HEIGHT))
+            primary_label = "Save PNG"
+
+        mouse_pos = pygame.mouse.get_pos()
+        for rect, label, primary in ((cancel_rect, "Cancel", False), (primary_rect, primary_label, True)):
+            hovered = rect.collidepoint(mouse_pos)
+            fill = (78, 98, 142) if primary else (56, 62, 76)
+            if hovered:
+                fill = (94, 116, 164) if primary else (70, 78, 96)
+            pygame.draw.rect(screen, fill, rect)
+            pygame.draw.rect(screen, (192, 208, 240) if primary else (176, 184, 202), rect, 1)
+            surface = font.render(label, True, (246, 248, 252))
+            screen.blit(surface, surface.get_rect(center=rect.center))
+        status = str(editor.get("status") or "").strip()
+        if status:
+            screen.blit(font.render(status, True, (204, 218, 242)), (modal_rect.x + 24, modal_rect.bottom - 34))
 
     def _draw_stellar_neighbourhood_prompt(self, screen, font):
         prompt = getattr(self, "stellar_neighbourhood_prompt", None)
@@ -8583,6 +9687,22 @@ class KnowledgeBrowserUI:
                 label = f"Link {field_label}: {target_label}"
                 link_surface = font.render(label, True, (166, 204, 236))
             screen.blit(link_surface, (banner_rect.x + 6, banner_rect.y + 3))
+
+        self.browser_period_filter_clear_rect = None
+        if self.browser_period_filter is not None and not self.browser_collapsed:
+            period_y = left_rect.y + 32 + (24 if self.relation_link_target is not None else 0)
+            period_rect = pygame.Rect(left_rect.x + 10, period_y, left_rect.width - 20, 22)
+            clear_rect = pygame.Rect(period_rect.right - 24, period_rect.y + 3, 18, 16)
+            self.browser_period_filter_clear_rect = clear_rect
+            start_year, end_year = self.browser_period_filter
+            pygame.draw.rect(screen, (42, 36, 26), period_rect)
+            pygame.draw.rect(screen, (196, 164, 108), period_rect, 1)
+            label = self._ellipsize_text(f"Period: {start_year} to {end_year}", font, period_rect.width - 40)
+            screen.blit(font.render(label, True, (238, 214, 166)), (period_rect.x + 6, period_rect.y + 3))
+            pygame.draw.rect(screen, (72, 48, 42), clear_rect)
+            pygame.draw.rect(screen, (210, 150, 130), clear_rect, 1)
+            clear_surface = font.render("x", True, (248, 228, 220))
+            screen.blit(clear_surface, clear_surface.get_rect(center=clear_rect.center))
         zoom_label = font.render(f"{int(self.canvas_zoom * 100)}%", True, (170, 180, 200))
         screen.blit(zoom_label, (right_rect.x + 118, right_rect.y + 10))
         if self.canvas_relation_link_source_id is not None:
@@ -8769,6 +9889,7 @@ class KnowledgeBrowserUI:
         self._draw_template_picker(screen, font)
         self._draw_entry_name_prompt(screen, font)
         self._draw_stellar_neighbourhood_prompt(screen, font)
+        self._draw_pixel_art_editor(screen, font)
 
     def handle_event(self, event):
         if self.layout is None:
@@ -8781,6 +9902,21 @@ class KnowledgeBrowserUI:
 
         if event.type == pygame.KEYDOWN:
             return self._handle_keydown_event(event)
+
+        if getattr(self, "pixel_art_editor", None) is not None:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                self._handle_pixel_art_editor_click(event.pos)
+                return "__ui_consumed__"
+            if event.type == pygame.MOUSEBUTTONUP:
+                self.pixel_art_painting = False
+                if isinstance(self.pixel_art_editor, dict):
+                    self.pixel_art_editor["active_slider"] = None
+                return "__ui_consumed__"
+            if event.type == pygame.MOUSEMOTION:
+                self._handle_pixel_art_editor_motion(event.pos)
+                return "__ui_consumed__"
+            if event.type == pygame.MOUSEWHEEL:
+                return "__ui_consumed__"
 
         if getattr(self, "stellar_neighbourhood_prompt", None) is not None:
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -8823,6 +9959,7 @@ class KnowledgeBrowserUI:
         if timeline_rect.collidepoint(mouse_pos):
             timeline_action = self.timeline_ui.handle_click(mouse_pos)
             if timeline_action is not None:
+                self._apply_timeline_action(timeline_action)
                 return "__ui_consumed__"
 
             if self.timeline_edit_target is not None:

@@ -5,10 +5,8 @@
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   parents: []
-  related: []
-  wiki_mentions:
+  related:
   - Gallileo Gallilei
   offspring: []
   entry_status: ''
@@ -19,6 +17,12 @@
   type: idea
   parents:
   - inst_ggo_humhab
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  offspring: []
+  entry_status: ''
 - id: idea_barycor_gold_sector
   pretty_name: Barycor System as a Part of the Gold Sector
   name: Barycor System as a Part of the Gold Sector
@@ -28,10 +32,8 @@
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   related:
   - fac_gold_sector
-  wiki_mentions: []
   offspring: []
   entry_status: ''
 - id: idea_distrib_psittacoraptor_versa
@@ -43,9 +45,7 @@
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   related: []
-  wiki_mentions: []
   offspring: []
   entry_status: ''
   card_color: '#504f31'
@@ -58,9 +58,7 @@
   start_year: 2088
   end_year: 2145
   tags: []
-  derived_from: []
   related: []
-  wiki_mentions: []
   offspring: []
   entry_status: ''
   card_color: '#1f2e3d'
@@ -68,8 +66,7 @@
   pretty_name: Life Aboard a Hansa Ship
   name: Life Aboard a Hansa Ship
   type: idea
-  wiki_entry: |-
-    This is a document published in
+  wiki_entry: This is a document published in
   related:
   - fac_transfer_hansa
   - veh_th_altona
@@ -77,9 +74,7 @@
   tags: []
   start_year: 5329
   end_year: null
-  derived_from: []
   parents: []
-  wiki_mentions: []
   offspring: []
   entry_status: ''
   card_color: '#2e3838'
@@ -93,9 +88,7 @@
   start_event: evt_new_003
   tags: []
   end_year: 6714
-  derived_from: []
   related: []
-  wiki_mentions: []
   offspring: []
   entry_status: ''
 - id: idea_csg_seeding_of_akkad
@@ -104,9 +97,12 @@
   type: idea
   parents:
   - person_malrib_huub
-  wiki_mentions: []
   start_year: 7771
   end_year: 7950
+  tags: []
+  related: []
+  offspring: []
+  entry_status: ''
 - id: idea_local_gulden_emerges
   pretty_name: Local Gulden Emerges
   name: Local Gulden Emerges
@@ -115,8 +111,12 @@
   wiki_entry: Local Gulden Emerges
   related:
   - idea_hanseatic_local_gulden
-  wiki_mentions: []
   start_year: 7120
+  tags: []
+  end_year: null
+  parents: []
+  offspring: []
+  entry_status: ''
 - id: idea_hanseatic_local_gulden
   pretty_name: Hanseatic Local Gulden
   name: Hanseatic Local Gulden
@@ -128,10 +128,12 @@
   - inst_hansa_kontor_ports
   wiki_entry: ''
   card_color: '#475a43'
-  wiki_mentions: []
   start_event: idea_local_gulden_emerges
   start_year: 7119
   end_year: 15405
+  tags: []
+  offspring: []
+  entry_status: ''
 - id: illust_planet_earth_map
   pretty_name: Earth Map Illustration
   name: Earth Map Illustration
@@ -146,6 +148,9 @@
   related: []
   offspring: []
   entry_status: ''
+  tags: []
+  start_year: null
+  end_year: null
 - id: illust_original_cog_site_map
   pretty_name: Original CoG Site Map Illustration
   name: Original CoG Site Map Illustration
@@ -160,6 +165,9 @@
   related: []
   offspring: []
   entry_status: ''
+  tags: []
+  start_year: null
+  end_year: null
 - id: illust_steel_plate_rolling_card
   pretty_name: Steel Plate Rolling Illustration
   name: Steel Plate Rolling Illustration
@@ -174,6 +182,9 @@
   related: []
   offspring: []
   entry_status: ''
+  tags: []
+  start_year: null
+  end_year: null
 - id: illust_bospor_3_regolith_front
   pretty_name: Bospor 3 Regolith Front Illustration
   name: Bospor 3 Regolith Front Illustration
@@ -188,19 +199,28 @@
   related: []
   offspring: []
   entry_status: ''
+  tags: []
+  start_year: null
+  end_year: null
 - id: illust_transfer_hansa_frontier_logo
   pretty_name: Transfer Hansa Frontier Logo
   name: Transfer Hansa Frontier Logo
   type: idea
   idea_class: illustration
-  description: 'The Logo of the TH Frontier Service, widespread on items distributed by the Forntier Charter'
-  wiki_entry: 'The Logo of the TH Frontier Service, widespread on items distributed by the Forntier Charter'
+  description: The Logo of the TH Frontier Service, widespread on items distributed
+    by the Forntier Charter
+  wiki_entry: The Logo of the TH Frontier Service, widespread on items distributed
+    by the Forntier Charter
   date: 5156
   parents:
   - culture_transfer_hansa_frontier
   media_path: assets/illustrations/illust_transfer_hansa_frontier_logo.jpg
   entry_status: ''
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
 - id: idea_amto_nereidii
   pretty_name: Amto Nereidii
   name: Amto Nereidii
@@ -209,6 +229,11 @@
   - idea_nereidii_family
   wiki_entry: ''
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: idea_nereidii_family
   pretty_name: Nereidii Family
   name: Nereidii Family
@@ -218,6 +243,11 @@
   wiki_entry: ''
   offspring:
   - id: idea_amto_nereidii
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: idea_new_013
   pretty_name: Idea from Madrid
   name: Idea from Madrid
@@ -226,6 +256,11 @@
   - city_madrid
   wiki_entry: ''
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: idea_new_015
   pretty_name: Idea from Sicily Draft Ecoregion
   name: Idea from Sicily Draft Ecoregion
@@ -234,6 +269,11 @@
   - sf_eco_sicily_draft
   wiki_entry: ''
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: idea_new_016
   pretty_name: Idea from Mars
   name: Idea from Mars
@@ -242,6 +282,11 @@
   - planet_mars
   wiki_entry: ''
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: idea_new_018
   pretty_name: Idea from Band Tailed Hornero
   name: Idea from Band Tailed Hornero
@@ -249,14 +294,12 @@
   parents:
   - spec_furnarius_figulus
   wiki_entry: ''
-  wiki_mentions:
-  - Horneros
   offspring: []
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
-  related: []
+  related:
+  - Horneros
   entry_status: ''
 - id: idea_new_021
   pretty_name: High Velocity Battles
@@ -268,10 +311,8 @@
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   parents: []
   related: []
-  wiki_mentions: []
   entry_status: ''
   card_color: '#1a2525'
 - id: idea_new_022
@@ -282,6 +323,11 @@
   - idea_new_021
   wiki_entry: ''
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: idea_new_023
   pretty_name: Geigengeist Group buys Bospor Automat Vehicle
   name: Geigengeist Group buys Bospor Automat Vehicle
@@ -290,8 +336,12 @@
   parents:
   - fac_geigengeist
   wiki_entry: ''
-  wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: idea_new_024
   pretty_name: Self Interest Pseudo-Faction for each Person
   name: Self Interest Pseudo-Faction for each Person
@@ -302,13 +352,22 @@
   - task_new_023
   wiki_entry: ''
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: idea_perihelion
   pretty_name: Perihelion
   name: Perihelion
   type: idea
   wiki_entry: ''
-  wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''
 - id: idea_spanish_contribution_to_the_superpower_wars
   pretty_name: Spanish Contribution to the Superpower Wars
   name: Spanish Contribution to the Superpower Wars
@@ -318,8 +377,12 @@
   - geo_spain
   - conf_superpower_wars
   wiki_entry: ''
-  wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: idea_spinosaurus_minisculus
   pretty_name: Spinosaurus minisculus
   name: Spinosaurus minisculus
@@ -328,6 +391,11 @@
   - spec_new_002
   wiki_entry: ''
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: idea_test_subregion
   pretty_name: Test Subregion
   name: Test Subregion
@@ -335,8 +403,12 @@
   parents:
   - loc_draft_geo_europe_001
   wiki_entry: ''
-  wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: idea_venusian_settlements_during_the_ggo_hegemony_period
   pretty_name: Venusian Settlements during the GGO Hegemony Period
   name: Venusian Settlements during the GGO Hegemony Period
@@ -345,13 +417,23 @@
   - idea_new_005
   wiki_entry: ''
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
 - id: loc_new_003
   pretty_name: Loc New 003
   name: Loc New 003
   type: idea
   wiki_entry: ''
-  wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''
 - id: illust_band_tailed_hornero_in_habitat
   pretty_name: Band Tailed Hornero in Habitat
   name: Band Tailed Hornero in Habitat
@@ -365,11 +447,14 @@
   media_path: ''
   entry_status: ''
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
 - id: idea_deep_earth_storage
   pretty_name: Deep Earth Storage
   name: Deep Earth Storage
   type: idea
-  wiki_mentions: []
   offspring: []
   related:
   - inst_project_deep_sleep
@@ -377,7 +462,6 @@
   tags: []
   start_year: null
   end_year: null
-  derived_from: []
   parents: []
   entry_status: ''
   card_color: '#19191b'
@@ -386,25 +470,34 @@
   pretty_name: CSG Rhetoric survives abandonment due to endemic illness
   name: CSG Rhetoric survives abandonment due to endemic illness
   type: idea
-  wiki_mentions:
-  - inst_cultural_seeding_group
   card_color: '#186d48'
-  wiki_entry: 'Lgends Remain after unsuccessfull CSG contact due to endemic illness the inhabitants are immune to. [[inst_cultural_seeding_group]] eventually returns, abducting people for medical research. Population mobilizes and discovers the truth by themselves. Alien conspiracies and so on. '
+  wiki_entry: 'Lgends Remain after unsuccessfull CSG contact due to endemic illness
+    the inhabitants are immune to. [[inst_cultural_seeding_group]] eventually returns,
+    abducting people for medical research. Population mobilizes and discovers the
+    truth by themselves. Alien conspiracies and so on. '
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related:
+  - inst_cultural_seeding_group
+  entry_status: ''
 - id: idea_new_001
   pretty_name: New Idea
   name: New Idea
   type: idea
-  wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''
 - id: idea_production_and_development_of_the_ggo
   pretty_name: Production and Development of the GGO
   name: Production and Development of the GGO
   type: idea
-  wiki_mentions:
-  - inst_ggo_engineering_groups
-  - inst_ggo_external_production_groups
-  - inst_cog_commodity_quarters
   card_color: '#1f2126'
   card_header_color: '#9f6425'
   wiki_field_colors:
@@ -412,30 +505,134 @@
   parents:
   - fac_ggo_hegemony
   offspring: []
-  wiki_entry: |
-    ! [[GGO Engineering Groups]]
-    
+  wiki_entry: '! [[GGO Engineering Groups]]
+
+
     ! [[inst_ggo_external_production_groups]]
-    
+
+
     ! [[inst_cog_commodity_quarters]]
+
+    '
+  tags: []
+  start_year: null
+  end_year: null
+  related:
+  - inst_ggo_engineering_groups
+  - inst_ggo_external_production_groups
+  - inst_cog_commodity_quarters
+  entry_status: ''
 - id: idea_new_002
   pretty_name: New Idea
   name: New Idea
   type: idea
   three_word_description: ''
-  wiki_mentions: []
   offspring:
   - id: loc_ukraine
     offspring:
-      - id: loc_danube_delta
+    - id: loc_danube_delta
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''
 - id: idea_corruption_in_the_ggo_hegemony
   pretty_name: Corruption in the GGO Hegemony
   name: Corruption in the GGO Hegemony
   type: idea
   three_word_description: ''
-  wiki_mentions: []
   card_color: '#b2955d'
   card_header_color: '#563775'
   offspring: []
   parents:
   - fac_ggo_hegemony
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  entry_status: ''
+- id: idea_terran_bdp_arks
+  pretty_name: Terran BDP Arks
+  name: Terran BDP Arks
+  type: idea
+  three_word_description: ''
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''
+- id: idea_new_003
+  pretty_name: New Idea
+  name: New Idea
+  type: idea
+  three_word_description: ''
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''
+- id: illust_european_new_union_flag
+  pretty_name: European New Union Flag
+  name: European New Union Flag
+  type: idea
+  three_word_description: ''
+  idea_class: illustration
+  description: Like the Star one, but with a central rising star symbolizing the new,
+    more centralized power
+  wiki_entry: Like the Star one, but with a central rising star symbolizing the new,
+    more centralized power
+  date: 2037
+  parents:
+  - fac_enu
+  media_path: assets/illustrations/illust_european_new_union_flag.jpg
+  entry_status: ''
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+- id: illust_olive_warbler_portrait
+  pretty_name: Olive Warbler Portrait
+  name: Olive Warbler Portrait
+  type: idea
+  three_word_description: ''
+  idea_class: illustration
+  description: ''
+  wiki_entry: ''
+  date: ''
+  parents:
+  - spec_peucedramus_taeniatus
+  media_path: assets/illustrations/illust_olive_warbler_portrait_pixel.png
+  entry_status: ''
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+  offspring: []
+  depicted_size_m: 0.1
+  pixel_canvas_width: 50
+  pixel_canvas_height: 50
+  pixel_art_source: in_engine_pixel_editor
+- id: illust_proteus_profile
+  pretty_name: Proteus Profile
+  name: Proteus Profile
+  type: idea
+  three_word_description: ''
+  idea_class: illustration
+  description: ''
+  wiki_entry: ''
+  date: ''
+  parents:
+  - body_proteus
+  media_path: assets/illustrations/illust_proteus_profile_pixel.png
+  entry_status: ''
+  offspring: []
+  depicted_size_m: 10.0
+  pixel_canvas_width: 128
+  pixel_canvas_height: 128
+  pixel_art_source: in_engine_pixel_editor

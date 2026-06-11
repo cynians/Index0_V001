@@ -19,11 +19,10 @@
   parents: []
   related: []
   offspring: []
-  wiki_entry: |-
-    CEAG is a Terran BDP-developed biotechnology used to accelerate evolutionary processes in a semi-guided manner, increasing the speed of adaptive divergence in seeded organisms under controlled or partially controlled ecological conditions.
+  wiki_entry: CEAG is a Terran BDP-developed biotechnology used to accelerate evolutionary
+    processes in a semi-guided manner, increasing the speed of adaptive divergence
+    in seeded organisms under controlled or partially controlled ecological conditions.
   end_year: 6122
-  derived_from: []
-  wiki_mentions: []
   card_color: '#2b3a32'
 - id: tech_new_001
   pretty_name: Naval Directed Energy Weapons of the Superpower Wars
@@ -32,10 +31,8 @@
   start_year: 2054
   end_year: 2090
   tags: []
-  derived_from: []
   parents: []
   related: []
-  wiki_mentions: []
   offspring: []
   entry_status: ''
   card_color: '#608d8f'
@@ -43,17 +40,27 @@
   pretty_name: Quantum Entanglement Communication
   name: Quantum Entanglement Communication
   type: technology
-  wiki_entry: |-
-    Instant Communcation trough Quantum Entanglement. Very rare due to need for finding and capturing Quantum Pairs.
-    
-    Later mass produced, but also very sought after.
-  wiki_mentions: []
+  wiki_entry: 'Instant Communcation trough Quantum Entanglement. Very rare due to
+    need for finding and capturing Quantum Pairs.
+
+
+    Later mass produced, but also very sought after.'
   card_color: '#0f1532'
   start_year: 8541
   end_year: 45274
+  tags: []
+  parents: []
+  related: []
+  offspring: []
+  entry_status: ''
 - id: tech_exoskeleton_technology
   pretty_name: Exoskeleton Technology
   name: Exoskeleton Technology
   type: technology
-  wiki_mentions: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  related: []
+  entry_status: ''

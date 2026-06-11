@@ -92,6 +92,44 @@ class TimelineTickTests(unittest.TestCase):
         self.assertLessEqual(timeline.view_min_year, 1900)
         self.assertGreaterEqual(timeline.view_max_year, 1900)
 
+    def test_group_filters_toggle_multiple_top_level_categories(self):
+        timeline = TimelineUI()
+        timeline.set_rect(pygame.Rect(0, 0, 500, 180))
+        timeline.view_min_year = 1900
+        timeline.view_max_year = 2100
+        timeline._view_range_initialized = True
+        timeline.set_items(
+            [
+                {"entity_id": "loc_one", "dataset": "locations", "start_year": 1950, "end_year": 1960},
+                {"entity_id": "veh_one", "dataset": "vehicles", "start_year": 1950, "end_year": 1960},
+                {"entity_id": "idea_one", "dataset": "ideas", "start_year": 1950, "end_year": 1960},
+            ]
+        )
+
+        self.assertTrue(timeline.toggle_active_filter_group("locations"))
+        self.assertTrue(timeline.toggle_active_filter_group("engineering"))
+
+        visible_ids = {
+            item["entity_id"]
+            for item in timeline._filtered_visible_items()
+            if item.get("timeline_kind") != "major_period"
+        }
+
+        self.assertEqual({"loc_one", "veh_one"}, visible_ids)
+        self.assertEqual({"engineering", "locations"}, timeline.active_filter_groups)
+
+    def test_period_filter_bar_uses_two_click_range(self):
+        timeline = self._timeline(1900, 2000, width=100)
+        timeline.rect = pygame.Rect(0, 0, 160, 100)
+        timeline.period_filter_rect = pygame.Rect(20, 70, 100, 10)
+
+        started = timeline.handle_click((40, 75))
+        finished = timeline.handle_click((90, 75))
+
+        self.assertEqual("period_filter_started", started["kind"])
+        self.assertEqual("period_filter_changed", finished["kind"])
+        self.assertEqual((1920, 1970), timeline.period_filter_range)
+
 
 if __name__ == "__main__":
     unittest.main()
