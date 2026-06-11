@@ -1249,3 +1249,270 @@
   offspring: []
   parents:
   - cladis_rim_lichens_lecanora
+- id: spec_subergorgia_mollis
+  common_name: Annella mollis - Subergorgia mollis
+  binomial_name: Subergorgia mollis
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#dab3d3'
+  card_header_color: '#d8dab3'
+  wiki_field_colors:
+    intro: '#fbffda'
+  offspring: []
+  parents:
+  - cladis_annella
+- id: spec_porolepis_posnaniensis
+  common_name: Porolepis posnaniensis
+  binomial_name: ''
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_porolepiformes
+  offspring: []
+  card_color: '#2a352a'
+  card_header_color: '#2b483e'
+  wiki_field_colors:
+    default: '#322711'
+  start_year: -409100000
+  tags: []
+  end_year: -402500000
+  entry_status: ''
+- id: spec_karaurus_sharovi
+  common_name: Headtail Salamander - Karaurus sharovi
+  binomial_name: Karaurus sharovi
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#58543b'
+  card_header_color: '#3d3915'
+  wiki_field_colors:
+    intro: '#2f3229'
+  offspring: []
+  parents:
+  - cladis_karauridae
+  start_year: -161200000
+  end_year: -150800000
+- id: spec_diplocaulus_salamandroides
+  common_name: Diplocaulus salamandroides
+  binomial_name: ''
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#26241c'
+  card_header_color: '#684018'
+  wiki_field_colors:
+    default: '#321212'
+  offspring: []
+  parents:
+  - cladis_diplocaulidae
+- id: spec_myrmarachne_melanocephala
+  common_name: Bicolor Ant Mimicking Jumping Spider - Myrmarachne melanocephala
+  binomial_name: Myrmarachne melanocephala
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#482621'
+  card_header_color: '#282121'
+  wiki_field_colors:
+    intro: '#1d1614'
+  offspring: []
+  parents:
+  - cladis_ant_mimic_spiders_myrmarachne
+- id: spec_graphocephala_coccinea
+  common_name: Red Banded Leafhopper - Graphocephala coccinea
+  binomial_name: Graphocephala coccinea
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#c24800'
+  card_header_color: '#0092c2'
+  wiki_field_colors:
+    intro: '#c3c544'
+  offspring: []
+  parents:
+  - cladis_graphocephala
+- id: spec_oxycera_rara
+  common_name: Four Barred Major - Oxycera rara
+  binomial_name: Oxycera rara
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#130e0e'
+  card_header_color: '#8a8a2f'
+  wiki_field_colors:
+    intro: '#6d6a3d'
+  offspring:
+  - id: illust_oxycera_rara_profile
+  parents:
+  - cladis_oxycera
+- id: spec_rossbeevera_pachydermis
+  common_name: Bluewhite Bolleta - Rossbeevera pachydermis
+  binomial_name: Rossbeevera pachydermis
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#ced6f7'
+  card_header_color: '#4f99bf'
+  wiki_field_colors:
+    intro: '#78977d'
+  offspring: []
+  parents:
+  - cladis_rossbeevera
+- id: spec_chrysochus_auratus
+  common_name: Dogbane Leaf Beetle - Chrysochus auratus
+  binomial_name: Chrysochus auratus
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#013000'
+  card_header_color: '#006e87'
+  wiki_field_colors:
+    intro: '#1b5532'
+  offspring: []
+  parents:
+  - cladis_chrysochus
+- id: spec_cantharis_fusca
+  common_name: Dark Sailor Beetle - Cantharis fusca
+  binomial_name: Cantharis fusca
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_cantharis
+  offspring: []
+  card_color: '#130905'
+  card_header_color: '#30180d'
+  wiki_field_colors:
+    default: '#50390e'
+- id: spec_cervus_elaphus
+  common_name: Red Deer - Cervus elaphus
+  binomial_name: Cervus elaphus
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#261311'
+  card_header_color: '#322927'
+  wiki_field_colors:
+    intro: '#321f18'
+  offspring: []
+  parents:
+  - cladis_cervus
+- id: spec_rutilus_rutilus
+  common_name: Common Roach - Rutilus rutilus
+  binomial_name: Rutilus rutilus
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#7a7c8f'
+  card_header_color: '#c4c7e2'
+  wiki_field_colors:
+    intro: '#7d3222'
+  offspring: []
+  parents:
+  - cladis_rutilus
+- id: spec_euphorbia_dulcis
+  common_name: Sweet Spurge - Euphorbia dulcis
+  binomial_name: Euphorbia dulcis
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_spurge_euphorbia
+  offspring: []
+  card_color: '#175226'
+  card_header_color: '#699f49'
+  wiki_field_colors:
+    default: '#52203c'
+- id: spec_scirpus_sylvaticus
+  common_name: Wood Club Rush - Scirpus sylvaticus
+  binomial_name: Scirpus sylvaticus
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#2c6223'
+  card_header_color: '#348726'
+  wiki_field_colors:
+    intro: '#c5eab9'
+  offspring: []
+  parents:
+  - cladis_club_rush_scirpus
+- id: spec_hypomecis_punctinalis
+  common_name: Pale Oak Beauty - Hypomecis punctinalis
+  binomial_name: Hypomecis punctinalis
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#756a4a'
+  card_header_color: '#c5b07f'
+  wiki_field_colors:
+    intro: '#232012'
+  offspring: []
+  parents:
+  - cladis_hypomecis
+- id: spec_comostola_pyrrhogona
+  common_name: Comostola pyrrhogona
+  binomial_name: ''
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#356368'
+  card_header_color: '#681010'
+  wiki_field_colors:
+    intro: '#876329'
+  offspring: []
+  parents:
+  - cladis_comostola
+- id: spec_aesculus_hippocastanum
+  common_name: Horse Chestnut - Aesculus hippocastanum
+  binomial_name: Aesculus hippocastanum
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#3c5820'
+  card_header_color: '#3d2110'
+  wiki_field_colors:
+    default: '#875e87'
+  offspring: []
+  parents:
+  - cladis_soapberry_family_sapindaceae
+- id: spec_torilis_japonica
+  common_name: Upright Hedge Parsley - Torilis japonica
+  binomial_name: Torilis japonica
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#3d582e'
+  card_header_color: '#35601f'
+  wiki_field_colors:
+    intro: '#cddccd'
+  offspring: []
+  parents:
+  - cladis_hedge_parsleys_torilis
+- id: spec_daphnis_nerii
+  common_name: Oleander Hawkmoth - Daphnis nerii
+  binomial_name: Daphnis nerii
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#38503b'
+  card_header_color: '#4b3f50'
+  wiki_field_colors:
+    intro: '#1e2d1d'
+  parents:
+  - cladis_daphnis
+  offspring: []
+- id: spec_ochotona_princeps
+  common_name: American Pika - Ochotona princeps
+  binomial_name: Ochotona princeps
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#262419'
+  card_header_color: '#484431'
+  wiki_field_colors:
+    default: '#1f2019'
+  offspring: []
+  parents:
+  - cladis_pika_pika

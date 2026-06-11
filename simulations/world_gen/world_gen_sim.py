@@ -25,6 +25,7 @@ from simulations.world_gen.tectonics import (
     derive_crater_model,
     derive_tectonic_model,
 )
+from world.year_utils import parse_year
 
 
 class WorldGenSimulation:
@@ -215,20 +216,7 @@ class WorldGenSimulation:
         return aliases.get(entity_id, entity_id)
 
     def _normalize_year(self, value):
-        if value in (None, "", "null"):
-            return None
-        if isinstance(value, bool):
-            return None
-        if isinstance(value, int):
-            return value
-        if isinstance(value, float):
-            return int(value)
-        if isinstance(value, str):
-            try:
-                return int(float(value.strip()))
-            except ValueError:
-                return None
-        return None
+        return parse_year(value)
 
     def _orbital_entity_is_active(self, entity):
         start = self._normalize_year(entity.get("start_year"))

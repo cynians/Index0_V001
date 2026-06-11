@@ -7,6 +7,7 @@ from engine.scaler import ScaleHelper
 from ui.card_wiki import CardWikiRenderer
 from ui.text_editing import TextEditing
 from world.schema_loader import SchemaLoader
+from world.year_utils import parse_year
 from simulations.space.stellar import STELLAR_CLASS_HELP, is_valid_stellar_class
 from simulations.phylogeny.clade_graph import (
     clade_label,
@@ -1280,6 +1281,10 @@ class EntityCard:
             return True
         return False
 
+    def _is_year_value_field(self, field_key):
+        key = str(field_key or "").lower()
+        return key in {"year", "year_number", "start_year", "end_year", "effective_year"} or key.endswith("_year")
+
     def _is_field_editable(self, field_key, value, schema_field_specs):
         if field_key in {"name", "common_name"}:
             return True
@@ -1665,6 +1670,15 @@ class EntityCard:
     def _coerce_edit_buffer(self, field_key, original_value, buffer_text):
         text = str(buffer_text or "")
         field_type = self._field_spec(field_key).get("type")
+
+        if self._is_year_value_field(field_key):
+            parsed_year = parse_year(text)
+            if parsed_year is not None:
+                return parsed_year
+            if text.strip().lower() in {"", "none", "null"}:
+                return None
+            if isinstance(original_value, (int, float)) and not isinstance(original_value, bool):
+                return original_value
 
         if field_type == "entity_list" or isinstance(original_value, list):
             return self._parse_edit_lines(text)

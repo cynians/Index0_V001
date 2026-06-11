@@ -1,6 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
+from ui.card import EntityCard
 from ui.knowledge_browser_ui import KnowledgeBrowserUI
 from world.world_model import WorldModel
 from world.yearer import Yearer
@@ -45,6 +46,18 @@ class TemporalFilteringTests(unittest.TestCase):
 
         self.assertIsNone(yearer.resolve("missing_start", 0))
         self.assertIsNotNone(yearer.resolve("explicit_zero", 0))
+
+    def test_mya_year_values_are_years_ago(self):
+        yearer = Yearer(DummyLoader())
+
+        self.assertEqual(-9000000, yearer.normalize_year("9MYA"))
+        self.assertEqual(-9000000, yearer.normalize_year("9 mya ago"))
+        self.assertEqual(-2500000, yearer.normalize_year("2.5mya"))
+
+    def test_card_edit_accepts_mya_for_year_fields(self):
+        card_view = EntityCard({"id": "test", "type": "test", "start_year": 0})
+
+        self.assertEqual(-9000000, card_view._coerce_edit_buffer("start_year", 0, "9MYA"))
 
     def test_timeline_items_require_explicit_start_year(self):
         model = WorldModel.__new__(WorldModel)

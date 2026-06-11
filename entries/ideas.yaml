@@ -636,3 +636,17 @@
   pixel_canvas_width: 128
   pixel_canvas_height: 128
   pixel_art_source: in_engine_pixel_editor
+- id: illust_oxycera_rara_profile
+  pretty_name: Oxycera rara profile
+  name: Oxycera rara profile
+  type: idea
+  three_word_description: ''
+  idea_class: illustration
+  description: ''
+  wiki_entry: ''
+  date: ''
+  parents:
+  - spec_oxycera_rara
+  media_path: ''
+  entry_status: ''
+  offspring: []

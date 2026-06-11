@@ -4,6 +4,7 @@ from pathlib import Path
 from engine.clock import Clock
 from engine.logger import logger
 from engine.simulation_manager import SimulationManager
+from world.year_utils import parse_year
 
 
 class PersonSimulation:
@@ -207,10 +208,7 @@ class PersonSimulation:
             if normalized is not None:
                 return normalized
 
-        try:
-            return int(float(value))
-        except (TypeError, ValueError):
-            return None
+        return parse_year(value)
 
     def save_selection_inspector_updates(self, target_kind, target_id, updates):
         if target_kind != "person" or target_id != self.person_entity_id:

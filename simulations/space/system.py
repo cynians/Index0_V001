@@ -2,6 +2,8 @@ from pathlib import Path
 import math
 import yaml
 
+from world.year_utils import parse_year
+
 
 class CelestialSystem:
     """
@@ -275,20 +277,7 @@ class CelestialSystem:
         raise AttributeError("WorldModel has no supported active-entity API.")
 
     def _normalize_year(self, value):
-        if value in (None, "", "null"):
-            return None
-        if isinstance(value, bool):
-            return None
-        if isinstance(value, int):
-            return value
-        if isinstance(value, float):
-            return int(value)
-        if isinstance(value, str):
-            try:
-                return int(float(value.strip()))
-            except ValueError:
-                return None
-        return None
+        return parse_year(value)
 
     def _space_entity_is_active(self, entity, year):
         """

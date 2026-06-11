@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 from engine.logger import logger
+from world.year_utils import parse_year
 
 
 class MapSimulation:
@@ -259,10 +260,7 @@ class MapSimulation:
         if yearer is not None and hasattr(yearer, "normalize_year"):
             return yearer.normalize_year(value)
 
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return None
+        return parse_year(value)
 
     def get_root_entity(self):
         return self.world_model.get_entity(self.context.root_entity_id)

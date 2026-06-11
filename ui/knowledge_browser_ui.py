@@ -20,6 +20,7 @@ from ui.card_wiki import CardWikiRenderer
 from ui.schema_card import SchemaCard
 from ui.timeline_ui import TimelineUI
 from world.schema_loader import SchemaLoader
+from world.year_utils import parse_year
 from simulations.phylogeny.clade_graph import (
     clade_id_from_name,
     clade_label,
@@ -2897,28 +2898,9 @@ class KnowledgeBrowserUI:
         if point_year is None:
             point_year = entity.get("year_number")
 
-        def _coerce_year(value):
-            if value is None:
-                return None
-            if isinstance(value, bool):
-                return None
-            if isinstance(value, int):
-                return value
-            if isinstance(value, float):
-                return int(value)
-            if isinstance(value, str):
-                stripped = value.strip()
-                if not stripped or stripped.lower() in {"none", "null"}:
-                    return None
-                try:
-                    return int(float(stripped))
-                except ValueError:
-                    return None
-            return None
-
-        start_year = _coerce_year(start_year)
-        end_year = _coerce_year(end_year)
-        point_year = _coerce_year(point_year)
+        start_year = parse_year(start_year)
+        end_year = parse_year(end_year)
+        point_year = parse_year(point_year)
 
         if start_year is not None and end_year is not None and end_year >= start_year and end_year != start_year:
             years = [start_year, end_year]
@@ -5066,21 +5048,7 @@ class KnowledgeBrowserUI:
         return field_key in {"year", "year_number", "start_year", "end_year", "effective_year"}
 
     def _coerce_card_year(self, value):
-        if value is None or isinstance(value, bool):
-            return None
-        if isinstance(value, int):
-            return value
-        if isinstance(value, float):
-            return int(value)
-        if isinstance(value, str):
-            stripped = value.strip()
-            if not stripped or stripped.lower() in {"none", "null"}:
-                return None
-            try:
-                return int(float(stripped))
-            except ValueError:
-                return None
-        return None
+        return parse_year(value)
 
     def _sync_card_years_from_entity(self, card):
         card_view = card.get("card_view")
