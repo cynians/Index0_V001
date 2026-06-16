@@ -468,8 +468,25 @@
   tags: []
   start_year: null
   end_year: null
-  related: []
+  related:
+  - cladis_eupasserine_birds_eupasserine
+  - cladis_arthropod
   entry_status: ''
+  card_color: '#600712'
+  card_header_color: '#2a0409'
+  wiki_field_colors:
+    intro: '#dce7ff'
+  wiki_entry: |
+    The King Bird of paradise is a [[cladis_eupasserine_birds_eupasserine]] Bird. 
+    
+    ! Desription
+    
+    Length: 16-19cm
+    Weight: 36-59g (f), 45-64g (m)
+    
+    ! Diet
+    
+    Mostly fruit and [[cladis_arthropod]]
 - id: spec_lanius_excubitor
   common_name: Great Grey Shrike - Lanius excubitor
   binomial_name: Lanius excubitor
@@ -610,10 +627,14 @@
   - cladis_edaphosauridae
   offspring: []
   tags: []
-  start_year: null
-  end_year: null
+  start_year: -303400000
+  end_year: -272500000
   related: []
   entry_status: ''
+  card_color: '#222622'
+  card_header_color: '#406240'
+  wiki_field_colors:
+    default: '#176868'
 - id: spec_vulpes_vulpes
   common_name: Red Fox - Vulpes vulpes
   binomial_name: Vulpes vulpes
@@ -1132,7 +1153,8 @@
   card_header_color: '#8d4012'
   wiki_field_colors:
     default: '#2e322a'
-  offspring: []
+  offspring:
+  - id: illust_olive_warbler_portrait
   parents:
   - cladis_passerida
   tags: []
@@ -1152,6 +1174,10 @@
   card_header_color: '#2c3a26'
   wiki_field_colors:
     default: '#2b4a58'
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_borealopelta_markmitchelli
   common_name: Suncor Plateback - Borealopelta markmitchelli
   binomial_name: Borealopelta markmitchelli
@@ -1165,6 +1191,10 @@
   offspring: []
   parents:
   - cladis_borealopelta
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_triceratops_horridus
   common_name: Trike - Triceratops horridus
   binomial_name: Triceratops horridus
@@ -1174,6 +1204,10 @@
   parents:
   - cladis_triceratops
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_lagosuchus_talampayensis
   common_name: Lagosuchus - Lagosuchus talampayensis
   binomial_name: Lagosuchus talampayensis
@@ -1183,6 +1217,10 @@
   parents:
   - cladis_lagosuchia
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_sinosauropteryx_prima
   common_name: Stripehead Flysnap - Sinosauropteryx prima
   binomial_name: Sinosauropteryx prima
@@ -1192,6 +1230,10 @@
   parents:
   - cladis_compsognathidae
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_apatosaurus_ajax
   common_name: Apatosaurus - Apatosaurus ajax
   binomial_name: Apatosaurus ajax
@@ -1201,6 +1243,10 @@
   parents:
   - cladis_apatosaurinae
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_chrysaora_melanaster
   common_name: Northern Sea Nettle - Chrysaora melanaster
   binomial_name: Chrysaora melanaster
@@ -1210,6 +1256,10 @@
   parents:
   - cladis_sea_nettles_chrysaora
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_egretta_rufescens
   common_name: Reddish Egret - Egretta rufescens
   binomial_name: Egretta rufescens
@@ -1223,6 +1273,10 @@
   offspring: []
   parents:
   - cladis_egretta
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_hemidactylus_platycephalus
   common_name: Baobab Gecko - Hemidactylus platycephalus
   binomial_name: Hemidactylus platycephalus
@@ -1236,6 +1290,10 @@
   offspring: []
   parents:
   - cladis_house_geckos_hemidactylus
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_lecanora_muralis
   common_name: Wall Lichen - Lecanora muralis
   binomial_name: Lecanora muralis
@@ -1249,6 +1307,10 @@
   offspring: []
   parents:
   - cladis_rim_lichens_lecanora
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_subergorgia_mollis
   common_name: Annella mollis - Subergorgia mollis
   binomial_name: Subergorgia mollis
@@ -1262,6 +1324,10 @@
   offspring: []
   parents:
   - cladis_annella
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_porolepis_posnaniensis
   common_name: Porolepis posnaniensis
   binomial_name: ''
@@ -1294,6 +1360,8 @@
   - cladis_karauridae
   start_year: -161200000
   end_year: -150800000
+  tags: []
+  entry_status: ''
 - id: spec_diplocaulus_salamandroides
   common_name: Diplocaulus salamandroides
   binomial_name: ''
@@ -1307,6 +1375,10 @@
   offspring: []
   parents:
   - cladis_diplocaulidae
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_myrmarachne_melanocephala
   common_name: Bicolor Ant Mimicking Jumping Spider - Myrmarachne melanocephala
   binomial_name: Myrmarachne melanocephala
@@ -1320,6 +1392,10 @@
   offspring: []
   parents:
   - cladis_ant_mimic_spiders_myrmarachne
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_graphocephala_coccinea
   common_name: Red Banded Leafhopper - Graphocephala coccinea
   binomial_name: Graphocephala coccinea
@@ -1333,6 +1409,10 @@
   offspring: []
   parents:
   - cladis_graphocephala
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_oxycera_rara
   common_name: Four Barred Major - Oxycera rara
   binomial_name: Oxycera rara
@@ -1347,6 +1427,10 @@
   - id: illust_oxycera_rara_profile
   parents:
   - cladis_oxycera
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_rossbeevera_pachydermis
   common_name: Bluewhite Bolleta - Rossbeevera pachydermis
   binomial_name: Rossbeevera pachydermis
@@ -1360,6 +1444,10 @@
   offspring: []
   parents:
   - cladis_rossbeevera
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_chrysochus_auratus
   common_name: Dogbane Leaf Beetle - Chrysochus auratus
   binomial_name: Chrysochus auratus
@@ -1373,6 +1461,10 @@
   offspring: []
   parents:
   - cladis_chrysochus
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_cantharis_fusca
   common_name: Dark Sailor Beetle - Cantharis fusca
   binomial_name: Cantharis fusca
@@ -1386,6 +1478,10 @@
   card_header_color: '#30180d'
   wiki_field_colors:
     default: '#50390e'
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_cervus_elaphus
   common_name: Red Deer - Cervus elaphus
   binomial_name: Cervus elaphus
@@ -1399,6 +1495,10 @@
   offspring: []
   parents:
   - cladis_cervus
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_rutilus_rutilus
   common_name: Common Roach - Rutilus rutilus
   binomial_name: Rutilus rutilus
@@ -1412,6 +1512,10 @@
   offspring: []
   parents:
   - cladis_rutilus
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_euphorbia_dulcis
   common_name: Sweet Spurge - Euphorbia dulcis
   binomial_name: Euphorbia dulcis
@@ -1425,6 +1529,10 @@
   card_header_color: '#699f49'
   wiki_field_colors:
     default: '#52203c'
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_scirpus_sylvaticus
   common_name: Wood Club Rush - Scirpus sylvaticus
   binomial_name: Scirpus sylvaticus
@@ -1438,6 +1546,10 @@
   offspring: []
   parents:
   - cladis_club_rush_scirpus
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_hypomecis_punctinalis
   common_name: Pale Oak Beauty - Hypomecis punctinalis
   binomial_name: Hypomecis punctinalis
@@ -1451,6 +1563,10 @@
   offspring: []
   parents:
   - cladis_hypomecis
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_comostola_pyrrhogona
   common_name: Comostola pyrrhogona
   binomial_name: ''
@@ -1464,6 +1580,10 @@
   offspring: []
   parents:
   - cladis_comostola
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_aesculus_hippocastanum
   common_name: Horse Chestnut - Aesculus hippocastanum
   binomial_name: Aesculus hippocastanum
@@ -1477,6 +1597,10 @@
   offspring: []
   parents:
   - cladis_soapberry_family_sapindaceae
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_torilis_japonica
   common_name: Upright Hedge Parsley - Torilis japonica
   binomial_name: Torilis japonica
@@ -1490,6 +1614,10 @@
   offspring: []
   parents:
   - cladis_hedge_parsleys_torilis
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_daphnis_nerii
   common_name: Oleander Hawkmoth - Daphnis nerii
   binomial_name: Daphnis nerii
@@ -1503,6 +1631,10 @@
   parents:
   - cladis_daphnis
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
 - id: spec_ochotona_princeps
   common_name: American Pika - Ochotona princeps
   binomial_name: Ochotona princeps
@@ -1516,3 +1648,334 @@
   offspring: []
   parents:
   - cladis_pika_pika
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
+- id: spec_elasmosaurus_platyurus
+  common_name: Elasmo - Elasmosaurus platyurus
+  binomial_name: Elasmosaurus platyurus
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#445b6d'
+  card_header_color: '#2a4f6d'
+  wiki_field_colors:
+    intro: '#3d4670'
+  offspring: []
+  parents:
+  - cladis_elasmosaurinae
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
+- id: spec_corcodylus_niloticus
+  common_name: Nile Crocodile - Corcodylus niloticus
+  binomial_name: Corcodylus niloticus
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_crocodylus
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
+- id: spec_statilia_apicalis
+  common_name: Bluespot Mantis - Statilia apicalis
+  binomial_name: Statilia apicalis
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#9f6656'
+  card_header_color: '#9f4c33'
+  wiki_field_colors:
+    intro: '#0f2b7d'
+  offspring: []
+  parents:
+  - cladis_statilia
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
+- id: spec_myrmarachne_spissa
+  common_name: Black Ant Mimmick - Myrmarachne spissa
+  binomial_name: Myrmarachne spissa
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_ant_mimic_spiders_myrmarachne
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
+- id: spec_sequoia_sempervirens
+  common_name: Coastal Redwood - Sequoia sempervirens
+  binomial_name: Sequoia sempervirens
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#35160f'
+  card_header_color: '#1e3014'
+  wiki_field_colors:
+    intro: '#29402a'
+  offspring: []
+  parents:
+  - cladis_sequoia
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
+- id: spec_anthrenus_verbasci
+  common_name: Veried Carpet Beetle - anthrenus verbasci
+  binomial_name: anthrenus verbasci
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_nathrenus
+  offspring: []
+  card_color: '#504c3b'
+  card_header_color: '#655235'
+  wiki_field_colors:
+    default: '#0c1015'
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
+- id: spec_cyperus_polystachyos
+  common_name: Manyspike Flatsedge - Cyperus polystachyos
+  binomial_name: Cyperus polystachyos
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_cyperus
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
+- id: spec_marasuchus_lilloensis
+  common_name: Marasuchus lilloensis
+  binomial_name: ''
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_marasuchus
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  entry_status: ''
+- id: spec_pithocephaga_jefferyi
+  common_name: Monkey Eating Eagle - Pithocephaga jefferyi
+  binomial_name: Pithocephaga jefferyi
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_circaetinae
+  offspring: []
+- id: spec_anthropopithecophaga_kestrelli
+  common_name: Great Plains Primate Eagle - Anthropopithecophaga kestrelli
+  binomial_name: Anthropopithecophaga kestrelli
+  type: species
+  three_word_description: ''
+  related:
+  - loc_kestrellis
+  - tech_ceag
+  wiki_entry: |
+    A giant maneating eagle found on [[Kestrellis]].
+    
+    A result of [[tech_ceag]].
+  offspring: []
+  parents:
+  - cladis_accipitridae
+  card_color: '#383120'
+  card_header_color: '#70706f'
+  wiki_field_colors:
+    default: '#707270'
+- id: spec_helicoprion_bessonowi
+  common_name: Circlesaw Shark - Helicoprion bessonowi
+  binomial_name: Helicoprion bessonowi
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_helicoprionidae
+  offspring: []
+  card_color: '#3d404a'
+  card_header_color: '#212328'
+  wiki_field_colors:
+    default: '#6a6a75'
+  start_year: -290000000
+  end_year: -270000000
+- id: spec_moschorhinus_kitchingi
+  common_name: Karoo Saberdog - Moschorhinus kitchingi
+  binomial_name: Moschorhinus kitchingi
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#6d5d43'
+  card_header_color: '#785f35'
+  wiki_field_colors:
+    intro: '#282826'
+  offspring: []
+  parents:
+  - cladis_akidnognathidae
+- id: spec_gobiconodon_ostromi
+  common_name: Gwaing Toothed Gobicon - Gobiconodon ostromi
+  binomial_name: Gobiconodon ostromi
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#231913'
+  card_header_color: '#522715'
+  wiki_field_colors:
+    default: '#6a380f'
+  offspring: []
+  parents:
+  - cladis_gobiconodontidae
+- id: spec_cyprinus_carpio
+  common_name: Common Carp - Cyprinus carpio
+  binomial_name: Cyprinus carpio
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#757a75'
+  card_header_color: '#535546'
+  wiki_field_colors:
+    intro: '#5b5d3e'
+  offspring: []
+  parents:
+  - cladis_typical_carps_cyprinus
+- id: spec_polypterus_senegalus
+  common_name: Senegal bichir - Polypterus senegalus
+  binomial_name: Polypterus senegalus
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_polypterus
+  offspring: []
+  card_color: '#696d5d'
+  card_header_color: '#6d656b'
+  wiki_field_colors:
+    default: '#374032'
+- id: spec_acipenser_oxyrinchus
+  common_name: Atlantic Sturgeon - Acipenser oxyrinchus
+  binomial_name: Acipenser oxyrinchus
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_acipenser
+  offspring: []
+  card_color: '#3b464a'
+  card_header_color: '#8da2a5'
+  wiki_field_colors:
+    default: '#4f656a'
+- id: spec_taeniopygia_castanotis
+  common_name: Australian Zebra Finch - Taeniopygia castanotis
+  binomial_name: Taeniopygia castanotis
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#303135'
+  card_header_color: '#cd652d'
+  wiki_field_colors:
+    intro: '#5a4e35'
+  offspring: []
+  parents:
+  - cladis_zebra_finch_taeniopygia
+- id: spec_romerodus_orodontus
+  common_name: Romeroid Shark - Romerodus orodontus
+  binomial_name: Romerodus orodontus
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#253838'
+  card_header_color: '#4d5555'
+  offspring: []
+  parents:
+  - cladis_caseodontidae
+- id: spec_pteroplatytrygon_violacea
+  common_name: Pelagic stingray - Pteroplatytrygon violacea
+  binomial_name: Pteroplatytrygon violacea
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_whiptail_stingrays_dasyatidae
+  offspring: []
+  card_color: '#43434d'
+- id: spec_aetobatus_narinari
+  common_name: Spotted Eagle Ray - Aetobatus narinari
+  binomial_name: Aetobatus narinari
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#4c4d52'
+  card_header_color: '#b1b2bd'
+  wiki_field_colors:
+    default: '#d1d7e7'
+  offspring: []
+  parents:
+  - cladis_aetobatus
+- id: spec_paradisaea_raggiana
+  common_name: Raggiana Bird of Paradise - Paradisaea raggiana
+  binomial_name: Paradisaea raggiana
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_paradisaea
+  offspring: []
+  card_color: '#753d4d'
+  card_header_color: '#1c402e'
+  wiki_field_colors:
+    default: '#adad6e'
+- id: spec_sphyraena_barracuda
+  common_name: Great Barracuda - Sphyraena barracuda
+  binomial_name: Sphyraena barracuda
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#4e687a'
+  card_header_color: '#355d7a'
+  wiki_field_colors:
+    intro: '#6f7780'
+  offspring: []
+  parents:
+  - cladis_barracudas_sphyraena
+- id: spec_polycarpa_aurata
+  common_name: Ox Heart Ascidian - Polycarpa aurata
+  binomial_name: Polycarpa aurata
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#c5ab3a'
+  card_header_color: '#481552'
+  wiki_field_colors:
+    intro: '#ada3a3'
+  offspring: []
+  parents:
+  - cladis_polycarpa
+- id: spec_chiniquodon_theotonicus
+  common_name: Teutonian Cynodont - Chiniquodon theotonicus
+  binomial_name: Chiniquodon theotonicus
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#403a31'
+  card_header_color: '#403620'
+  wiki_field_colors:
+    intro: '#2d2f32'
+  offspring: []
+  parents:
+  - cladis_chiniquodontidae

@@ -20,9 +20,12 @@
   tags: []
   start_year: null
   end_year: null
-  related: []
+  related:
+  - inst_ggo_humhab
+  - veh_humhab_1_1
   offspring: []
   entry_status: ''
+  wiki_entry: 'The first wave of the [[inst_ggo_humhab]], consisting of [[veh_humhab_1_1]]'
 - id: idea_barycor_gold_sector
   pretty_name: Barycor System as a Part of the Gold Sector
   name: Barycor System as a Part of the Gold Sector
@@ -636,6 +639,10 @@
   pixel_canvas_width: 128
   pixel_canvas_height: 128
   pixel_art_source: in_engine_pixel_editor
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
 - id: illust_oxycera_rara_profile
   pretty_name: Oxycera rara profile
   name: Oxycera rara profile
@@ -650,3 +657,19 @@
   media_path: ''
   entry_status: ''
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  related: []
+- id: idea_new_004
+  pretty_name: New Idea
+  name: New Idea
+  type: idea
+  three_word_description: ''
+  related: []
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  entry_status: ''

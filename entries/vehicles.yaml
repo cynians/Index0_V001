@@ -723,10 +723,13 @@
   tags: []
   start_year: null
   end_year: null
-  related:
-  - idea_new_016
+  related: []
   offspring: []
   entry_status: ''
+  card_color: '#04071b'
+  card_header_color: '#924b16'
+  wiki_field_colors:
+    intro: '#0a0a13'
 - id: veh_new_001
   pretty_name: Helsing CA-15
   name: Helsing CA-15
@@ -780,10 +783,12 @@
   related: []
   offspring: []
   entry_status: ''
-  wiki_entry: |
-    Initial production prototype of the Bospor 3.
-    
+  wiki_entry: 'Initial production prototype of the Bospor 3.
+
+
     Landed in a museum
+
+    '
 - id: veh_bospor_2_ouremite
   pretty_name: Bospor 2 "Ouremite"
   name: Bospor 2 "Ouremite"
@@ -941,3 +946,32 @@
     intro: '#4e5e7a'
   start_year: 2083
   end_year: 2184
+  tags: []
+  parents: []
+  entry_status: ''
+- id: veh_bell_mv_75_cheyenne_ii
+  pretty_name: Bell MV-75 Cheyenne II
+  name: Bell MV-75 Cheyenne II
+  type: vehicle
+  three_word_description: ''
+  vehicle_class: aircraft
+  related:
+  - Bell Textron Inc
+  - fac_united_states_army
+  start_year: 2017
+  end_year: 2075
+  offspring: []
+  wiki_entry: |
+    The Bell MV-75 Cheyenne II is a tiltrotor developed by [[Bell Textron Inc]] for the [[United States Army]]
+- id: veh_agt_1_geeling_turboprop_aircraft
+  pretty_name: AGT-1 Geeling - Turboprop Aircraft
+  name: AGT-1 Geeling - Turboprop Aircraft
+  type: vehicle
+  three_word_description: ''
+  vehicle_class: aircraft
+  related: []
+  card_color: '#211c26'
+  card_header_color: '#444843'
+  offspring: []
+  parents:
+  - prod_abra_gee_transport_agt

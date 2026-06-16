@@ -154,3 +154,33 @@
   start_year: 2046
   end_year: 2482
   offspring: []
+  tags: []
+  parents: []
+  entry_status: ''
+- id: prod_abra_gee_transport_agt
+  pretty_name: Abra Gee Transport AGT
+  name: Abra Gee Transport AGT
+  type: producer
+  three_word_description: ''
+  related:
+  - veh_agt_1_geeling_turboprop_aircraft
+  - AGT-2 Abra Geeling - Twin Engine Turboprop
+  - ATG-3 Filling - Specialized Cargo Aircraft
+  card_color: '#58624c'
+  card_header_color: '#312440'
+  wiki_field_colors:
+    default: '#2d2632'
+  offspring:
+  - id: veh_agt_1_geeling_turboprop_aircraft
+  start_year: 7513
+  end_year: 9228
+  wiki_entry: |
+    ! Products
+    
+    !! [[AGT-1 Geeling - Turboprop Aircraft]]
+    
+    !! [[AGT-2 Abra Geeling - Twin Engine Turboprop]]
+    
+    !! [[ATG-3 Filling - Specialized Cargo Aircraft]]
+    
+    !!

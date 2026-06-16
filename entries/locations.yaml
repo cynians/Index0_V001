@@ -20,41 +20,21 @@
   - id: body_luna
   - id: loc_north_america
     offspring:
-    - id: loc_united_states_of_america
-      offspring:
-      - id: loc_hawaii
-        offspring:
-        - id: geo_northwestern_hawaiian_islands
-          offspring:
-          - id: geo_kure_atoll
-      - id: loc_california
-        offspring:
-        - id: loc_sonoma_county_california
-          offspring:
-          - id: loc_fort_ross_sonoma_county_california
-      - id: loc_greater_los_angeles
+      - id: loc_united_states_of_america
+        offspring: '[{''id'': ''loc_hawaii'', ''offspring'': [{''id'': ''geo_northwestern_hawaiian_islands'', ''offspring'': [{''id'': ''geo_kure_atoll''}]}]}, {''id'': ''loc_california'', ''offspring'': [{''id'': ''loc_sonoma_county_california'', ''offspring'': [{''id'': ''loc_fort_ross_sonoma_county_california''}]}]}, {''id'': ''loc_greater_los_angeles''}, {''id'': ''fac_united_states_army''}]'
   - id: loc_australia
     offspring:
-    - id: loc_victoria_state_australia
+      - id: loc_victoria_state_australia
   - id: loc_atlantic_ocean
     offspring:
-    - id: loc_greenland
-      offspring:
-      - id: loc_northeast_greenland_national_park
+      - id: loc_greenland
+        offspring: '[{''id'': ''loc_northeast_greenland_national_park''}]'
   - id: loc_eurasia
     offspring:
-    - id: loc_black_sea
-      offspring:
-      - id: loc_danube_delta
-    - id: loc_europe
-      offspring:
-      - id: geo_central_europe
-      - id: loc_scandinavia
-        offspring:
-        - id: geo_sweden
-          offspring:
-          - id: loc_angermansland_grand_carperies
-          - id: prod_saab_ab
+      - id: loc_black_sea
+        offspring: '[{''id'': ''loc_danube_delta''}]'
+      - id: loc_europe
+        offspring: '[{''id'': ''geo_central_europe''}, {''id'': ''loc_scandinavia'', ''offspring'': [{''id'': ''geo_sweden'', ''offspring'': [{''id'': ''loc_angermansland_grand_carperies''}, {''id'': ''prod_saab_ab''}]}]}]'
   tags: []
   end_year: null
   entry_status: ''
@@ -1708,53 +1688,6 @@
       - 14.079
     - - 23.942
       - 15.652
-    - - 24.657
-      - -3.002
-  geometry:
-    type: polygon
-    coordinate_space: map_world
-    points:
-    - - 24.442
-      - -10.006
-    - - 53.959
-      - -9.934
-    - - 53.888
-      - 14.079
-    - - 23.942
-      - 15.652
-    - - 24.657
-      - -3.002
-  start_year: 2400
-  entry_status: draft
-  tags: []
-  end_year: null
-  related: []
-  offspring: []
-- id: loc_room_loc_classic_building_001
-  pretty_name: Draft Room 001
-  name: Draft Room 001
-  type: location
-  wiki_entry: Draft room polygon created inside Classic Building.
-  location_class: room
-  location_role: indoor_room
-  room_class: room
-  layer_kind: rooms
-  parent_location: loc_classic_building
-  parent_entity: loc_classic_building
-  parents:
-  - loc_classic_building
-  bounds:
-    type: polygon
-    coordinate_space: map_world
-    points:
-    - - 24.442
-      - -10.006
-    - - 53.959
-      - -9.934
-    - - 53.888
-      - 14.079
-    - - 23.942
-      - 15.652
   geometry:
     type: polygon
     coordinate_space: map_world
@@ -2995,15 +2928,14 @@
   offspring:
   - id: loc_hawaii
     offspring:
-    - id: geo_northwestern_hawaiian_islands
-      offspring:
-      - id: geo_kure_atoll
+      - id: geo_northwestern_hawaiian_islands
+        offspring: '[{''id'': ''geo_kure_atoll''}]'
   - id: loc_california
     offspring:
-    - id: loc_sonoma_county_california
-      offspring:
-      - id: loc_fort_ross_sonoma_county_california
+      - id: loc_sonoma_county_california
+        offspring: '[{''id'': ''loc_fort_ross_sonoma_county_california''}]'
   - id: loc_greater_los_angeles
+  - id: fac_united_states_army
   entry_status: ''
 - id: loc_north_america
   pretty_name: North America
@@ -3020,17 +2952,12 @@
   offspring:
   - id: loc_united_states_of_america
     offspring:
-    - id: loc_hawaii
-      offspring:
-      - id: geo_northwestern_hawaiian_islands
-        offspring:
-        - id: geo_kure_atoll
-    - id: loc_california
-      offspring:
-      - id: loc_sonoma_county_california
-        offspring:
-        - id: loc_fort_ross_sonoma_county_california
-    - id: loc_greater_los_angeles
+      - id: loc_hawaii
+        offspring: '[{''id'': ''geo_northwestern_hawaiian_islands'', ''offspring'': [{''id'': ''geo_kure_atoll''}]}]'
+      - id: loc_california
+        offspring: '[{''id'': ''loc_sonoma_county_california'', ''offspring'': [{''id'': ''loc_fort_ross_sonoma_county_california''}]}]'
+      - id: loc_greater_los_angeles
+      - id: fac_united_states_army
   entry_status: ''
 - id: loc_india
   pretty_name: India
@@ -3286,7 +3213,7 @@
   offspring:
   - id: body_proteus
     offspring:
-      - id: illust_proteus_profile
+    - id: illust_proteus_profile
   tags: []
   end_year: null
   entry_status: ''
@@ -6398,7 +6325,7 @@
   name: Test Building
   type: location
   wiki_entry: ''
-  offspring:
+  offspring: []
   tags: []
   start_year: null
   end_year: null
@@ -32899,6 +32826,10 @@
   offspring: []
   card_color: '#776642'
   related: []
+  start_year: null
+  end_year: null
+  parents: []
+  entry_status: ''
 - id: star_test_system_primary
   pretty_name: Test System Primary
   name: Test System Primary
@@ -32920,8 +32851,13 @@
   card_color: '#776642'
   related: []
   offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents: []
+  entry_status: ''
 - id: body_proteus
-  pretty_name: 'Proteus, Moon of Neptune'
+  pretty_name: Proteus, Moon of Neptune
   name: Proteus
   type: location
   system_role: orbital_body
@@ -32952,3 +32888,15 @@
   entry_status: ''
   location_class: moon
   location_role: orbital_body
+- id: loc_kestrellis
+  pretty_name: Kestrellis
+  name: Kestrellis
+  type: location
+  three_word_description: ''
+  location_class: planet
+  related:
+  - spec_anthropopithecophaga_kestrelli
+  wiki_entry: |
+    Slightly lower gravity, slightly denser atmosphere, Kestrellis was a CEAG site for a variety of large birds, with the surface being settled primarily by Primate derivedanimals.
+    
+  offspring: []

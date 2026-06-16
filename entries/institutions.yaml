@@ -115,14 +115,18 @@
   name: Human Habitat Project Group
   type: institution
   tags: []
-  start_year: null
-  end_year: null
+  start_year: 2661
+  end_year: 3146
   parents: []
-  related: []
+  related:
+  - veh_humhab_1_1
+  - idea_new_011
   offspring:
   - id: idea_new_011
   - id: veh_humhab_1_1
   entry_status: ''
+  card_color: '#3d200b'
+  card_header_color: '#0b183d'
 - id: inst_catal_press
   pretty_name: Catal Press
   name: Catal Press
@@ -298,3 +302,6 @@
   offspring: []
   card_color: '#152d4a'
   card_header_color: '#f4fffc'
+  tags: []
+  parents: []
+  entry_status: ''

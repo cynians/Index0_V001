@@ -293,3 +293,13 @@
   parents: []
   related: []
   entry_status: ''
+- id: fac_united_states_army
+  pretty_name: United States Army
+  name: United States Army
+  type: faction
+  three_word_description: ''
+  related: []
+  parents:
+  - loc_united_states_of_america
+  offspring: []
+  card_color: '#40483c'
