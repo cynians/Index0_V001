@@ -64,3 +64,18 @@
   parents: []
   related: []
   entry_status: ''
+- id: tech_fleischmann_pons_cold_fusion
+  pretty_name: Fleischmann Pons Cold Fusion
+  name: Fleischmann Pons Cold Fusion
+  type: technology
+  three_word_description: ''
+  related: []
+  card_color: '#5b8b9d'
+  card_header_color: '#766e9d'
+  wiki_field_colors:
+    intro: '#77e0ea'
+  offspring: []
+  wiki_entry: |
+    Hypothized type of nuclear reaction that could occur at or around room temperature.
+    
+  start_year: 2153

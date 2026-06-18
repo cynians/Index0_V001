@@ -1979,3 +1979,38 @@
   offspring: []
   parents:
   - cladis_chiniquodontidae
+- id: spec_ornithosuchus_woodwardi
+  common_name: Lauferdile - Ornithosuchus woodwardi
+  binomial_name: Ornithosuchus woodwardi
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#394038'
+  card_header_color: '#2b4028'
+  wiki_field_colors:
+    intro: '#4e5539'
+  offspring: []
+  parents:
+  - cladis_ornithosuchidae
+- id: spec_redondasaurus_gregorii
+  common_name: Hookhead Phytosaur - Redondasaurus gregorii
+  binomial_name: Redondasaurus gregorii
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#355235'
+  card_header_color: '#343d1a'
+  wiki_field_colors:
+    intro: '#7c8d61'
+  offspring: []
+  parents:
+  - cladis_mystriosuchini
+- id: spec_paratypothorax_andressi
+  common_name: Paratypothorax andressi
+  binomial_name: ''
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_paratypothoracini
+  offspring: []

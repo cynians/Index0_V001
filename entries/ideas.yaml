@@ -673,3 +673,11 @@
   end_year: null
   parents: []
   entry_status: ''
+- id: idea_new_005
+  pretty_name: New Idea
+  name: New Idea
+  type: idea
+  three_word_description: ''
+  related: []
+  offspring:
+  - id: idea_venusian_settlements_during_the_ggo_hegemony_period

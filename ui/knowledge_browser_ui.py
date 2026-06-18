@@ -1,8 +1,6 @@
 import json
 import copy
 import colorsys
-import io
-import math
 import os
 import random
 import re
@@ -17,7 +15,15 @@ from tkinter import filedialog
 from ui.ui_types import UIButton
 from ui.card import EntityCard
 from ui.card_wiki import CardWikiRenderer
+from ui.entry_name_prompt_ui import EntryNamePromptUI
+from ui.knowledge_browser_model import KnowledgeBrowserModel
+from ui.knowledge_canvas_controller import KnowledgeCanvasController
+from ui.knowledge_link_picker import KnowledgeLinkPickerMixin
+from ui.knowledge_repository_service import KnowledgeRepositoryService
+from ui.knowledge_template_picker import KnowledgeTemplatePickerMixin
+from ui.pixel_art_editor_ui import PixelArtEditorUI
 from ui.schema_card import SchemaCard
+from ui.stellar_neighbour_prompt_ui import StellarNeighbourPromptUI
 from ui.timeline_ui import TimelineUI
 from world.schema_loader import SchemaLoader
 from world.year_utils import parse_year
@@ -29,7 +35,7 @@ from simulations.phylogeny.clade_graph import (
 )
 
 
-class KnowledgeBrowserUI:
+class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin):
     """
     Knowledge-layer workspace UI.
 
@@ -410,462 +416,60 @@ class KnowledgeBrowserUI:
         self.timeline_ui.set_items(timeline_items)
         self.timeline_ui.rebuild_layout()
 
-    def _close_wiki_link_picker(self, card):
-        card["wiki_link_picker_open"] = False
-        card["wiki_link_query"] = ""
-        card["wiki_link_matches"] = []
-        card["wiki_link_selected_index"] = 0
-        card["wiki_link_replace_range"] = None
-
-    def _build_wiki_link_matches(self, query_text):
-        if self.world_model is None:
-            return []
-
-        normalized_query = (query_text or "").strip().lower()
-        matches = []
-
-        for entity in self.world_model.loader.entities.values():
-            entity_id = entity.get("id")
-            if not entity_id:
-                continue
-
-            pretty_name = self._entity_display_label(entity, fallback=entity_id)
-            haystack = " ".join(
-                [
-                    str(pretty_name),
-                    str(entity_id),
-                    str(entity.get("common_name", "")),
-                    str(entity.get("binomial_name", "")),
-                    str(entity.get("name", "")),
-                ]
-            ).lower()
-            if normalized_query and normalized_query not in haystack:
-                continue
-
-            matches.append(
-                {
-                    "id": entity_id,
-                    "pretty_name": str(pretty_name),
-                    "dataset": entity.get("_dataset", ""),
-                    "entity_type": entity.get("type", "entity"),
-                    "start_year": self._coerce_card_year(entity.get("start_year") if entity.get("start_year") is not None else entity.get("year")),
-                    "end_year": self._coerce_card_year(entity.get("end_year")),
-                }
-            )
-
-        matches.sort(key=lambda item: (item["pretty_name"].lower(), item["id"]))
-        return matches[:12]
+    def _stellar_neighbour_prompt_controller(self):
+        controller = getattr(self, "_stellar_neighbour_prompt_ui", None)
+        if controller is None:
+            controller = StellarNeighbourPromptUI(self)
+            self._stellar_neighbour_prompt_ui = controller
+        return controller
 
     def _is_star_system_entity(self, entity):
-        if not isinstance(entity, dict):
-            return False
-        class_key = str(entity.get("location_class") or entity.get("system_class") or "").strip().lower()
-        return (
-            class_key in {"star_system", "stellar_system"}
-            or entity.get("system_role") == "star_system"
-        )
+        return self._stellar_neighbour_prompt_controller()._is_star_system_entity(entity)
 
     def _build_stellar_system_matches(self, query_text, exclude_entity_id=None):
-        if self.world_model is None:
-            return []
-
-        normalized_query = str(query_text or "").strip().lower()
-        matches = []
-        for entity in self.world_model.get_entities_by_dataset("locations"):
-            if not self._is_star_system_entity(entity):
-                continue
-            entity_id = entity.get("id")
-            if not entity_id or entity_id == exclude_entity_id:
-                continue
-            label = self._entity_display_label(entity, fallback=entity_id)
-            haystack = f"{label} {entity_id} {entity.get('name', '')}".lower()
-            if normalized_query and normalized_query not in haystack:
-                continue
-            matches.append({
-                "id": entity_id,
-                "pretty_name": label,
-                "entity": entity,
-            })
-        matches.sort(key=lambda item: (item["pretty_name"].lower(), item["id"]))
-        return matches[:12]
+        return self._stellar_neighbour_prompt_controller()._build_stellar_system_matches(
+            query_text,
+            exclude_entity_id=exclude_entity_id,
+        )
 
     def _open_stellar_neighbourhood_prompt(self, card):
-        entity = self._entity_for_card(card)
-        if not self._is_star_system_entity(entity):
-            return False
-
-        self.stellar_neighbourhood_prompt = {
-            "source_entity_id": entity.get("id"),
-            "query": "",
-            "distance": "",
-            "active_field": "system",
-            "matches": self._build_stellar_system_matches("", exclude_entity_id=entity.get("id")),
-            "selected_index": 0,
-            "selected_system_id": None,
-            "status": "",
-            "rect": None,
-            "system_rect": None,
-            "distance_rect": None,
-            "create_rect": None,
-            "cancel_rect": None,
-            "match_hitboxes": [],
-        }
-        self.show_template_picker = False
-        self.entry_name_prompt = None
-        self._build_template_picker_hitboxes()
-        self._relayout_cards()
-        return True
+        return self._stellar_neighbour_prompt_controller()._open_stellar_neighbourhood_prompt(card)
 
     def _open_stellar_neighbour_distance_prompt(self, source_card, target_id):
-        source_entity = self._entity_for_card(source_card)
-        target = self.world_model.get_entity(target_id) if self.world_model is not None else None
-        if not self._is_star_system_entity(source_entity) or not self._is_star_system_entity(target):
-            return False
-
-        self._clear_relation_browser_link()
-        self.stellar_neighbourhood_prompt = {
-            "mode": "distance",
-            "source_card": source_card,
-            "source_entity_id": source_entity.get("id"),
-            "target_entity_id": target_id,
-            "query": self._entity_display_label(target, fallback=target_id),
-            "distance": "",
-            "active_field": "distance",
-            "matches": [],
-            "selected_index": 0,
-            "selected_system_id": target_id,
-            "status": "",
-            "rect": None,
-            "system_rect": None,
-            "distance_rect": None,
-            "create_rect": None,
-            "cancel_rect": None,
-            "match_hitboxes": [],
-        }
-        self.show_template_picker = False
-        self.entry_name_prompt = None
-        self.browser_search_active = False
-        self._build_template_picker_hitboxes()
-        self._relayout_cards()
-        return True
+        return self._stellar_neighbour_prompt_controller()._open_stellar_neighbour_distance_prompt(
+            source_card,
+            target_id,
+        )
 
     def _close_stellar_neighbourhood_prompt(self):
-        self.stellar_neighbourhood_prompt = None
+        return self._stellar_neighbour_prompt_controller()._close_stellar_neighbourhood_prompt()
 
     def _set_stellar_prompt_query(self, text):
-        prompt = self.stellar_neighbourhood_prompt
-        if not isinstance(prompt, dict):
-            return
-        prompt["query"] = str(text or "")
-        prompt["matches"] = self._build_stellar_system_matches(
-            prompt["query"],
-            exclude_entity_id=prompt.get("source_entity_id"),
-        )
-        prompt["selected_index"] = 0
-        prompt["selected_system_id"] = None
-        prompt["status"] = ""
+        return self._stellar_neighbour_prompt_controller()._set_stellar_prompt_query(text)
 
     def _select_stellar_prompt_match(self, match_index=None):
-        prompt = self.stellar_neighbourhood_prompt
-        if not isinstance(prompt, dict):
-            return False
-        matches = prompt.get("matches") or []
-        if not matches:
-            return False
-        if match_index is None:
-            match_index = prompt.get("selected_index", 0)
-        match_index = max(0, min(int(match_index), len(matches) - 1))
-        match = matches[match_index]
-        prompt["selected_index"] = match_index
-        prompt["selected_system_id"] = match.get("id")
-        prompt["query"] = match.get("pretty_name") or match.get("id") or ""
-        prompt["active_field"] = "distance"
-        prompt["status"] = ""
-        return True
+        return self._stellar_neighbour_prompt_controller()._select_stellar_prompt_match(match_index)
 
     def _upsert_stellar_neighbour(self, entity, target_id, distance_ly):
-        rows = entity.get("stellar_neighbours")
-        if not isinstance(rows, list):
-            rows = []
-        updated = False
-        for row in rows:
-            if isinstance(row, dict) and row.get("system") == target_id:
-                row["distance_ly"] = distance_ly
-                updated = True
-                break
-        if not updated:
-            rows.append({"system": target_id, "distance_ly": distance_ly})
-        rows.sort(key=lambda row: str(row.get("system", "")) if isinstance(row, dict) else "")
-        entity["stellar_neighbours"] = rows
+        return self._stellar_neighbour_prompt_controller()._upsert_stellar_neighbour(
+            entity,
+            target_id,
+            distance_ly,
+        )
 
     def _arrange_stellar_neighbour_cards(self, source_id):
-        source_card = self._find_card_by_entity_id(source_id)
-        source_entity = self.world_model.get_entity(source_id) if self.world_model is not None else None
-        if source_card is None or not isinstance(source_entity, dict):
-            return
-        rows = [
-            row for row in source_entity.get("stellar_neighbours", []) or []
-            if isinstance(row, dict) and row.get("system")
-        ]
-        count = max(1, len(rows))
-        radius = 520
-        for index, row in enumerate(rows):
-            target_entity = self.world_model.get_entity(row.get("system")) if self.world_model is not None else None
-            if not isinstance(target_entity, dict):
-                continue
-            target_card = self._ensure_card(target_entity, relayout=False, bring_to_front=False)
-            if target_card is None:
-                continue
-            distance = 1.0
-            try:
-                distance = max(0.2, float(row.get("distance_ly") or 1.0))
-            except (TypeError, ValueError):
-                pass
-            angle = (index / count) * 6.283185307179586
-            scaled_radius = radius * min(2.2, max(0.55, distance / 5.0))
-            target_card["canvas_x"] = source_card.get("canvas_x", 24) + math.cos(angle) * scaled_radius
-            target_card["canvas_y"] = source_card.get("canvas_y", 84) + math.sin(angle) * scaled_radius
+        return self._stellar_neighbour_prompt_controller()._arrange_stellar_neighbour_cards(source_id)
 
     def _confirm_stellar_neighbourhood_prompt(self):
-        prompt = self.stellar_neighbourhood_prompt
-        if not isinstance(prompt, dict) or self.world_model is None:
-            return False
-        source_id = prompt.get("source_entity_id")
-        source_card = prompt.get("source_card")
-        if not isinstance(source_card, dict):
-            source_card = self._find_card_by_entity_id(source_id)
-        source = self._entity_for_card(source_card) if source_card is not None else self.world_model.get_entity(source_id)
-        target_id = prompt.get("selected_system_id")
-        if not target_id:
-            if not self._select_stellar_prompt_match():
-                prompt["status"] = "Choose an existing star system"
-                return True
-            target_id = prompt.get("selected_system_id")
-        target = self.world_model.get_entity(target_id)
-        if not self._is_star_system_entity(source) or not self._is_star_system_entity(target):
-            prompt["status"] = "Choose an existing star system"
-            return True
-        try:
-            distance_ly = float(str(prompt.get("distance") or "").strip())
-        except ValueError:
-            prompt["status"] = "Enter distance in light years"
-            return True
-        if distance_ly <= 0:
-            prompt["status"] = "Distance must be greater than 0"
-            return True
-
-        self._upsert_stellar_neighbour(source, target_id, distance_ly)
-        self._upsert_stellar_neighbour(target, source_id, distance_ly)
-        self._save_or_persist_card_for_entity_id(source_id)
-        target_card = self._find_card_by_entity_id(target_id)
-        if target_card is not None:
-            self._save_or_persist_card_for_entity_id(target_id)
-        else:
-            self._persist_entity_to_repository(target)
-        self._arrange_stellar_neighbour_cards(source_id)
-        self._refresh_timeline_items()
-        self._rebuild_browser_hitboxes()
-        self._relayout_cards()
-        self._close_stellar_neighbourhood_prompt()
-        return True
+        return self._stellar_neighbour_prompt_controller()._confirm_stellar_neighbourhood_prompt()
 
     def _begin_stellar_neighbourhood_link(self, card):
-        entity = self._entity_for_card(card)
-        if not self._is_star_system_entity(entity):
-            return False
-
-        self.relation_link_target = {
-            "mode": "stellar_neighbourhood",
-            "source_card": card,
-            "source_entity_id": card.get("entity_id"),
-            "field_key": "stellar_neighbours",
-            "target": "star_system",
-        }
-        status = "Choose an existing star system, then enter distance"
-        card["active_relation_link_field"] = "stellar_neighbours"
-        card["relation_link_status"] = status
-        self.relation_link_status = status
-        self.browser_filter_dataset = "locations"
-        self.browser_filter_incomplete_only = False
-        self.browser_collapsed = False
-        self.browser_search_active = True
-        self.browser_search_query = ""
-        self.browser_scroll = 0
-        self.browser_items = self._build_browser_items(self.world_model)
-        self.show_template_picker = False
-        self.entry_name_prompt = None
-        self._build_template_picker_hitboxes()
-        self._rebuild_browser_hitboxes()
-        self._relayout_cards()
-        return True
+        return self._stellar_neighbour_prompt_controller()._begin_stellar_neighbourhood_link(card)
 
     def _handle_stellar_neighbourhood_prompt_keydown(self, event):
-        prompt = self.stellar_neighbourhood_prompt
-        if not isinstance(prompt, dict):
-            return False
-        distance_only = prompt.get("mode") == "distance"
-        active_field = prompt.get("active_field", "system")
-        if event.key == pygame.K_ESCAPE:
-            self._close_stellar_neighbourhood_prompt()
-            self._relayout_cards()
-            return True
-        if event.key == pygame.K_TAB:
-            prompt["active_field"] = "distance" if distance_only else ("distance" if active_field == "system" else "system")
-            self._relayout_cards()
-            return True
-        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-            if active_field == "system" and prompt.get("selected_system_id") is None:
-                self._select_stellar_prompt_match()
-                self._relayout_cards()
-                return True
-            return self._confirm_stellar_neighbourhood_prompt()
-        if active_field == "system":
-            matches = prompt.get("matches") or []
-            if event.key == pygame.K_UP and matches:
-                prompt["selected_index"] = max(0, int(prompt.get("selected_index", 0)) - 1)
-                self._relayout_cards()
-                return True
-            if event.key == pygame.K_DOWN and matches:
-                prompt["selected_index"] = min(len(matches) - 1, int(prompt.get("selected_index", 0)) + 1)
-                self._relayout_cards()
-                return True
-            if event.key == pygame.K_BACKSPACE:
-                self._set_stellar_prompt_query(str(prompt.get("query") or "")[:-1])
-                self._relayout_cards()
-                return True
-            text = getattr(event, "unicode", "")
-            if text and text.isprintable():
-                self._set_stellar_prompt_query(str(prompt.get("query") or "") + text)
-                self._relayout_cards()
-                return True
-            return True
-
-        if event.key == pygame.K_BACKSPACE:
-            prompt["distance"] = str(prompt.get("distance") or "")[:-1]
-            prompt["status"] = ""
-            self._relayout_cards()
-            return True
-        text = getattr(event, "unicode", "")
-        if text and text in "0123456789.":
-            prompt["distance"] = str(prompt.get("distance") or "") + text
-            prompt["status"] = ""
-            self._relayout_cards()
-            return True
-        return True
-
-    def _known_entities_for_matching(self):
-        loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
-        entities = getattr(loader, "entities", None)
-        if isinstance(entities, dict):
-            return [
-                entity for entity in entities.values()
-                if isinstance(entity, dict)
-            ]
-        return []
-
-    def _entity_match_tokens(self, entity):
-        tokens = []
-        for value in (
-            entity.get("id"),
-            self._entity_display_label(entity, fallback=entity.get("id")),
-            entity.get("pretty_name"),
-            entity.get("name"),
-            entity.get("common_name"),
-            entity.get("binomial_name"),
-        ):
-            text = str(value or "").strip()
-            if text and text.lower() not in tokens:
-                tokens.append(text.lower())
-        return tokens
-
-    def _resolve_wiki_mention_ref(self, link_text):
-        raw_text = str(link_text or "").strip()
-        if not raw_text:
-            return ""
-
-        if self.world_model is not None:
-            entity = self.world_model.get_entity(raw_text)
-            if isinstance(entity, dict) and entity.get("id"):
-                return str(entity["id"])
-
-        normalized = raw_text.lower()
-        for entity in self._known_entities_for_matching():
-            if normalized in self._entity_match_tokens(entity):
-                entity_id = entity.get("id")
-                if entity_id:
-                    return str(entity_id)
-
-        return raw_text
-
-    def _wiki_mentions_from_text(self, wiki_text):
-        mentions = []
-        seen = set()
-        for link_text in CardWikiRenderer.extract_link_refs(wiki_text):
-            mention = self._resolve_wiki_mention_ref(link_text)
-            if not mention or mention in seen:
-                continue
-            seen.add(mention)
-            mentions.append(mention)
-        return mentions
-
-    def _sync_card_wiki_mentions(self, card, wiki_text=None):
-        entity = self._entity_for_card(card)
-        if not isinstance(entity, dict):
-            return False
-
-        if wiki_text is None:
-            if (
-                card is not None
-                and card.get("active_edit_field") == "wiki_entry"
-                and "edit_buffer" in card
-            ):
-                wiki_text = card.get("edit_buffer", "")
-            else:
-                wiki_text = entity.get("wiki_entry", "")
-
-        mentions = self._wiki_mentions_from_text(wiki_text)
-        changed = False
-
-        related = entity.get("related")
-        if isinstance(related, list):
-            related_values = [
-                str(value).strip()
-                for value in related
-                if isinstance(value, str) and str(value).strip()
-            ]
-        elif related in (None, "", []):
-            related_values = []
-        else:
-            related_values = [str(related).strip()]
-
-        for legacy_field in ("derived_from", "wiki_mentions"):
-            legacy_value = entity.pop(legacy_field, None)
-            if legacy_value is None:
-                continue
-            changed = True
-            if isinstance(legacy_value, list):
-                legacy_values = legacy_value
-            elif legacy_value in ("", []):
-                legacy_values = []
-            else:
-                legacy_values = [legacy_value]
-            for value in legacy_values:
-                if not isinstance(value, str):
-                    continue
-                value = value.strip()
-                if value and value not in related_values:
-                    related_values.append(value)
-
-        for mention in mentions:
-            if mention not in related_values:
-                related_values.append(mention)
-                changed = True
-
-        if entity.get("related") != related_values:
-            entity["related"] = related_values
-            changed = True
-        return changed
-
+        return self._stellar_neighbour_prompt_controller()._handle_stellar_neighbourhood_prompt_keydown(
+            event
+        )
     def _close_relation_picker(self, card):
         card["relation_picker_open"] = False
         card["relation_picker_query"] = ""
@@ -1102,94 +706,6 @@ class KnowledgeBrowserUI:
 
         return False
 
-    def _open_wiki_link_picker(self, card):
-        query_text, replace_start, replace_end = self._wiki_link_seed_from_cursor(card)
-        card["wiki_link_picker_open"] = True
-        card["wiki_link_query"] = query_text
-        card["wiki_link_replace_range"] = (replace_start, replace_end)
-        card["wiki_link_matches"] = self._build_wiki_link_matches(query_text)
-        card["wiki_link_selected_index"] = 0
-
-    def _wiki_link_seed_from_cursor(self, card):
-        buffer_text = str(card.get("edit_buffer", ""))
-        cursor = max(0, min(len(buffer_text), int(card.get("edit_cursor", len(buffer_text)))))
-        start = cursor
-        while start > 0 and (buffer_text[start - 1].isalnum() or buffer_text[start - 1] in {"_", "-"}):
-            start -= 1
-        end = cursor
-        while end < len(buffer_text) and (buffer_text[end].isalnum() or buffer_text[end] in {"_", "-"}):
-            end += 1
-
-        query = buffer_text[start:end].strip()
-        if not query:
-            start = cursor
-            end = cursor
-        return query, start, end
-
-    def _insert_wiki_link_from_picker(self, card):
-        matches = card.get("wiki_link_matches", [])
-        if not matches:
-            return False
-
-        selected_index = max(0, min(card.get("wiki_link_selected_index", 0), len(matches) - 1))
-        entity_id = matches[selected_index]["id"]
-        insertion = f"[[{entity_id}]]"
-        current_buffer = str(card.get("edit_buffer", ""))
-        cursor = max(0, min(len(current_buffer), int(card.get("edit_cursor", len(current_buffer)))))
-        replace_range = card.get("wiki_link_replace_range", (cursor, cursor))
-        try:
-            replace_start, replace_end = replace_range
-        except (TypeError, ValueError):
-            replace_start, replace_end = cursor, cursor
-        replace_start = max(0, min(len(current_buffer), int(replace_start)))
-        replace_end = max(replace_start, min(len(current_buffer), int(replace_end)))
-
-        before = current_buffer[:replace_start]
-        after = current_buffer[replace_end:]
-        leading_space = " " if before and not before.endswith((" ", "\n")) else ""
-        trailing_space = " " if after and not after.startswith((" ", "\n", ".", ",", ";", ":", ")", "]")) else ""
-        card["edit_buffer"] = f"{before}{leading_space}{insertion}{trailing_space}{after}"
-        card["edit_cursor"] = len(before) + len(leading_space) + len(insertion) + len(trailing_space)
-        card["last_edit_action"] = "draft"
-        self._save_card_draft(card)
-        self._close_wiki_link_picker(card)
-        return True
-
-    def _handle_wiki_link_picker_keydown(self, card, event):
-        if not card.get("wiki_link_picker_open", False):
-            return False
-
-        if event.key == pygame.K_ESCAPE:
-            self._close_wiki_link_picker(card)
-            return True
-
-        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-            return self._insert_wiki_link_from_picker(card)
-
-        matches = card.get("wiki_link_matches", [])
-        if event.key == pygame.K_UP and matches:
-            card["wiki_link_selected_index"] = max(0, card.get("wiki_link_selected_index", 0) - 1)
-            return True
-
-        if event.key == pygame.K_DOWN and matches:
-            card["wiki_link_selected_index"] = min(len(matches) - 1, card.get("wiki_link_selected_index", 0) + 1)
-            return True
-
-        if event.key == pygame.K_BACKSPACE:
-            card["wiki_link_query"] = card.get("wiki_link_query", "")[:-1]
-            card["wiki_link_matches"] = self._build_wiki_link_matches(card["wiki_link_query"])
-            card["wiki_link_selected_index"] = 0
-            return True
-
-        text = getattr(event, "unicode", "")
-        if text and text.isprintable():
-            card["wiki_link_query"] = card.get("wiki_link_query", "") + text
-            card["wiki_link_matches"] = self._build_wiki_link_matches(card["wiki_link_query"])
-            card["wiki_link_selected_index"] = 0
-            return True
-
-        return False
-
     def _build_layout(self, app_width, app_height):
         timeline_h = self._clamp_timeline_panel_height(app_height)
         self.timeline_panel_height = timeline_h
@@ -1382,37 +898,6 @@ class KnowledgeBrowserUI:
         while trimmed and font.size(trimmed)[0] > available_w:
             trimmed = trimmed[:-1]
         return f"{trimmed}{suffix}" if trimmed else suffix
-
-    def _template_picker_row_height(self):
-        line_h = self._font_line_height()
-        return max(30, line_h + 12)
-
-    def _template_picker_header_row_height(self):
-        return max(24, self._font_line_height() + 8)
-
-    def _template_picker_header_height(self):
-        return (
-            max(42, self._font_line_height() + 22)
-            + self.BROWSER_SEARCH_H
-            + self.BROWSER_CONTROL_GAP
-            + self._template_picker_quick_row_height()
-        )
-
-    def _template_picker_quick_row_height(self):
-        return 30 if self._template_picker_quick_templates() else 0
-
-    def _template_picker_quick_templates(self):
-        if self.template_picker_mode == "convert" or self.template_picker_search_query.strip():
-            return []
-        by_dataset = {
-            template.get("dataset_name"): template
-            for template in self.schema_entry_templates
-        }
-        return [
-            by_dataset[dataset_name]
-            for dataset_name in ("tasks", "ideas", "species", "cladistics")
-            if dataset_name in by_dataset
-        ]
 
     def _schema_display_label(self, name):
         text = str(name or "entry").replace(".yaml", "")
@@ -1999,868 +1484,81 @@ class KnowledgeBrowserUI:
             fields.update(extra_fields)
         return fields
 
-    def _template_picker_source_templates(self):
-        return self._conversion_templates()
+    def _browser_model(self):
+        model = getattr(self, "_knowledge_browser_model", None)
+        if model is None:
+            model = KnowledgeBrowserModel(self)
+            self._knowledge_browser_model = model
+        return model
 
-    def _template_search_blob(self, template):
-        values = [
-            template.get("label"),
-            template.get("dataset_name"),
-            template.get("entity_type"),
-            template.get("schema_name"),
-            template.get("subclass_field"),
-            template.get("subclass_value"),
-        ]
-        return " ".join(str(value or "").lower() for value in values)
+    def _is_expanded(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_is_expanded")(*args, **kwargs)
 
-    def _filtered_template_picker_templates(self):
-        templates = self._template_picker_source_templates()
-        query = self.template_picker_search_query.strip().lower()
-        if not query:
-            return templates
-        terms = [term for term in query.split() if term]
-        return [
-            template
-            for template in templates
-            if all(term in self._template_search_blob(template) for term in terms)
-        ]
+    def _set_expanded(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_set_expanded")(*args, **kwargs)
 
-    def _template_picker_group_label(self, template):
-        dataset_name = template.get("dataset_name")
-        label = template.get("label") or self._schema_display_label(dataset_name)
-        if template.get("subclass_field"):
-            base = self._template_base_for(template)
-            if base is not None:
-                label = base.get("label") or label
-            elif dataset_name:
-                label = self._schema_display_label(dataset_name)
-        return str(label or "Template")
+    def _browser_dataset_filters(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_browser_dataset_filters")(*args, **kwargs)
 
-    def _template_base_key(self, template):
-        return (
-            template.get("dataset_name"),
-            template.get("entity_type"),
-            template.get("schema_name"),
-        )
+    def _format_browser_filter_label(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_format_browser_filter_label")(*args, **kwargs)
 
-    def _template_base_for(self, variant):
-        variant_key = self._template_base_key(variant)
-        for template in self.schema_entry_templates:
-            if self._template_base_key(template) == variant_key:
-                return template
-        return None
+    def _entity_exists_during_browser_period(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_entity_exists_during_browser_period")(*args, **kwargs)
 
-    def _template_picker_option_width(self, label, available_width, font=None):
-        label = str(label or "Template")
-        if font is not None:
-            label_w = font.size(label)[0]
-        elif self.font_for_layout is not None:
-            label_w = self.font_for_layout.size(label)[0]
-        else:
-            label_w = max(36, len(label) * 8)
+    def _matches_browser_filters(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_matches_browser_filters")(*args, **kwargs)
 
-        full_width_threshold = max(120, int(available_width * 0.58))
-        if label_w > full_width_threshold:
-            return available_width
-        return max(84, min(available_width, label_w + 24))
+    def _matches_schema_browser_filters(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_matches_schema_browser_filters")(*args, **kwargs)
 
-    def _template_picker_hierarchical_rows(self, templates, available_width=None, font=None):
-        groups = []
-        by_key = {}
+    def _build_schema_browser_items(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_build_schema_browser_items")(*args, **kwargs)
 
-        for template in templates:
-            key = self._template_base_key(template)
-            group = by_key.get(key)
-            if group is None:
-                group = {
-                    "label": self._template_picker_group_label(template),
-                    "templates": [],
-                }
-                by_key[key] = group
-                groups.append(group)
-            if not template.get("subclass_field"):
-                group["label"] = template.get("label") or group["label"]
-            group["templates"].append(template)
+    def _resolve_schema_for_entity(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_resolve_schema_for_entity")(*args, **kwargs)
 
-        rows = []
-        for group in groups:
-            group_templates = sorted(
-                group["templates"],
-                key=lambda template: (
-                    1 if template.get("subclass_field") else 0,
-                    str(template.get("label", "")).lower(),
-                    str(template.get("subclass_value", "")).lower(),
-                ),
-            )
-            rows.append(
-                {
-                    "kind": "header",
-                    "label": group["label"],
-                    "template": None,
-                }
-            )
-            if available_width is None:
-                for template in group_templates:
-                    rows.append(
-                        {
-                            "kind": "template_row",
-                            "items": [
-                                {
-                                    "label": template.get("label", "Template"),
-                                    "template": template,
-                                }
-                            ],
-                        }
-                    )
-                continue
+    def _collect_schema_fields(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_collect_schema_fields")(*args, **kwargs)
 
-            current_items = []
-            current_width = 0
-            gap = 6
-            for template in group_templates:
-                label = template.get("label", "Template")
-                option_w = self._template_picker_option_width(label, available_width, font=font)
-                item = {
-                    "label": label,
-                    "template": template,
-                    "width": option_w,
-                }
-                is_full_width = option_w >= available_width
-                next_width = option_w if not current_items else current_width + gap + option_w
-                if is_full_width:
-                    if current_items:
-                        rows.append({"kind": "template_row", "items": current_items})
-                        current_items = []
-                        current_width = 0
-                    rows.append({"kind": "template_row", "items": [item]})
-                    continue
+    def _entity_missing_scalar_count(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_entity_missing_scalar_count")(*args, **kwargs)
 
-                if current_items and next_width > available_width:
-                    rows.append({"kind": "template_row", "items": current_items})
-                    current_items = [item]
-                    current_width = option_w
-                else:
-                    current_items.append(item)
-                    current_width = next_width
+    def _location_tree_entity_matches(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_location_tree_entity_matches")(*args, **kwargs)
 
-            if current_items:
-                rows.append({"kind": "template_row", "items": current_items})
+    def _location_tree_auto_reveal_descendants(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_location_tree_auto_reveal_descendants")(*args, **kwargs)
 
-        return rows
+    def _location_tree_item(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_location_tree_item")(*args, **kwargs)
 
-    def _card_type_picker_visible_templates(self, card, templates):
-        if not templates:
-            return [], 0, 0
+    def _canonical_location_class_key(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_canonical_location_class_key")(*args, **kwargs)
 
-        card_rect = card.get("rect")
-        type_label_rect = card.get("type_label_rect")
-        if card_rect is None or type_label_rect is None:
-            return [], 0, 0
+    def _location_class_display_label(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_location_class_display_label")(*args, **kwargs)
 
-        row_h = self.CARD_TYPE_PICKER_ROW_H
-        available_below = max(row_h, card_rect.bottom - type_label_rect.bottom - 18)
-        max_visible_rows = max(1, min(len(templates), (available_below - 38) // row_h))
-        scroll = int(card.get("type_picker_scroll", 0) or 0)
-        max_scroll = max(0, len(templates) - max_visible_rows)
-        scroll = max(0, min(max_scroll, scroll))
-        card["type_picker_scroll"] = scroll
-        return templates[scroll:scroll + max_visible_rows], scroll, max_scroll
+    def _location_browser_domain(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_location_browser_domain")(*args, **kwargs)
 
-    def _build_template_picker_hitboxes(self):
-        self.template_button_hitboxes = []
-        self.template_quick_button_hitboxes = []
-        self.template_picker_visible_rows = []
-        self.template_picker_total_rows = 0
-        self.template_picker_rect = None
-        self.template_picker_search_rect = None
+    def _location_browser_domain_label(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_location_browser_domain_label")(*args, **kwargs)
 
-        if self.layout is None or not self.show_template_picker:
-            return
+    def _location_hierarchy_sort_key(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_location_hierarchy_sort_key")(*args, **kwargs)
 
-        right_rect = self.layout["right_rect"]
-        picker_w = min(360, right_rect.width - 24)
-        source_templates = self._filtered_template_picker_templates()
-        quick_templates = self._template_picker_quick_templates()
-        quick_template_ids = {self._template_identity(template) for template in quick_templates}
-        list_templates = [
-            template
-            for template in source_templates
-            if self._template_identity(template) not in quick_template_ids
-        ]
-        content_w = picker_w - 24
-        list_rows = self._template_picker_hierarchical_rows(
-            list_templates,
-            available_width=content_w,
-            font=self.font_for_layout,
-        )
-        self.template_picker_total_rows = len(list_rows)
-        max_picker_h = max(96, right_rect.height - 70)
-        header_h = self._template_picker_header_height()
-        row_h = self._template_picker_row_height()
-        picker_h = min(max_picker_h, header_h + self.template_picker_total_rows * row_h + 8)
-        picker_x = right_rect.right - picker_w - 12
-        picker_y = right_rect.y + 44
-        self.template_picker_rect = pygame.Rect(picker_x, picker_y, picker_w, picker_h)
-        search_y = picker_y + max(42, self._font_line_height() + 22)
-        self.template_picker_search_rect = pygame.Rect(
-            picker_x + 12,
-            search_y,
-            picker_w - 24,
-            self.BROWSER_SEARCH_H,
-        )
+    def _build_location_browser_items(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_build_location_browser_items")(*args, **kwargs)
 
-        if quick_templates:
-            quick_y = self.template_picker_search_rect.bottom + self.BROWSER_CONTROL_GAP
-            button_gap = 8
-            button_w = min(96, (picker_w - 24 - button_gap) // max(1, len(quick_templates)))
-            button_x = picker_x + 12
-            for template in quick_templates:
-                button_rect = pygame.Rect(button_x, quick_y, button_w, 24)
-                self.template_quick_button_hitboxes.append((template, template["label"], button_rect))
-                button_x += button_w + button_gap
+    def _dataset_display_label(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_dataset_display_label")(*args, **kwargs)
 
-        visible_rows = max(1, (picker_h - header_h - 8) // row_h)
-        max_scroll = max(0, self.template_picker_total_rows - visible_rows)
-        self.template_picker_scroll = max(0, min(max_scroll, self.template_picker_scroll))
+    def _entity_class_label(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_entity_class_label")(*args, **kwargs)
 
-        button_y = picker_y + header_h
-        self.template_picker_visible_rows = list_rows[
-            self.template_picker_scroll:self.template_picker_scroll + visible_rows
-        ]
-        for row in self.template_picker_visible_rows:
-            button_rect = pygame.Rect(picker_x + 12, button_y, picker_w - 24, row_h - 6)
-            row["rect"] = button_rect
-            if row.get("kind") == "template_row":
-                item_x = button_rect.x
-                for item in row.get("items", []):
-                    item_w = max(40, min(button_rect.width - (item_x - button_rect.x), int(item.get("width", button_rect.width))))
-                    item_rect = pygame.Rect(item_x, button_rect.y, item_w, button_rect.height)
-                    item["rect"] = item_rect
-                    template = item.get("template")
-                    if template is not None:
-                        self.template_button_hitboxes.append((template, item.get("label", ""), item_rect))
-                    item_x = item_rect.right + 6
-            button_y += row_h
-
-    def _is_expanded(self, entity_id):
-        location_state = self.browser_tree_state.setdefault("locations", {})
-        legacy_state = self.browser_tree_state.get("systems", {})
-        if entity_id in legacy_state and entity_id not in location_state:
-            location_state[entity_id] = legacy_state[entity_id]
-        return location_state.get(entity_id, False)
-
-    def _set_expanded(self, entity_id, expanded):
-        self.browser_tree_state.setdefault("locations", {})[entity_id] = expanded
-
-    def _browser_dataset_filters(self):
-        if self.world_model is None:
-            return ["all", "schemas"]
-        preferred = ["all", "schemas", "locations", "systems", "vehicles", "components", "events"]
-        names = ["all"] + sorted(name for name in self.world_model.get_dataset_names() if name != "all")
-        if "schemas" not in names:
-            names.append("schemas")
-        ordered = [name for name in preferred if name in names]
-        ordered.extend(name for name in names if name not in ordered)
-        return ordered
-
-    def _format_browser_filter_label(self, filter_name):
-        if filter_name == "all":
-            return "All"
-        return str(filter_name).replace("_", " ").title()
-
-    def _entity_exists_during_browser_period(self, entity):
-        if not self.browser_period_filter:
-            return True
-        if not isinstance(entity, dict):
-            return False
-
-        filter_start, filter_end = self.browser_period_filter
-        start_year = self._coerce_card_year(entity.get("start_year"))
-        end_year = self._coerce_card_year(entity.get("end_year"))
-
-        if start_year is not None:
-            if end_year is None:
-                end_year = filter_end
-            entity_start = min(start_year, end_year)
-            entity_end = max(start_year, end_year)
-            return entity_start <= filter_end and entity_end >= filter_start
-
-        for point_key in ("year", "year_number", "effective_year"):
-            point_year = self._coerce_card_year(entity.get(point_key))
-            if point_year is not None:
-                return filter_start <= point_year <= filter_end
-
-        return False
-
-    def _matches_browser_filters(self, entity, dataset_name):
-        if entity is None:
-            return False
-
-        if not self._entity_exists_during_browser_period(entity):
-            return False
-
-        if self.browser_filter_dataset != "all" and dataset_name != self.browser_filter_dataset:
-            return False
-
-        if self.browser_filter_incomplete_only and not self._entity_missing_scalar_count(entity, dataset_name):
-            return False
-
-        query = self.browser_search_query.strip().lower()
-        if query:
-            haystack = " ".join(
-                [
-                    self._entity_display_label(entity),
-                    str(entity.get("common_name", "")),
-                    str(entity.get("binomial_name", "")),
-                    str(entity.get("pretty_name", "")),
-                    str(entity.get("name", "")),
-                    str(entity.get("id", "")),
-                    str(entity.get("type", "")),
-                ]
-            ).lower()
-            if query not in haystack:
-                return False
-
-        return True
-
-    def _matches_schema_browser_filters(self, schema_name, schema):
-        if self.browser_period_filter and self.browser_filter_dataset != "schemas":
-            return False
-
-        if self.browser_filter_dataset not in {"all", "schemas"}:
-            return False
-
-        query = self.browser_search_query.strip().lower()
-        if not query:
-            return True
-
-        fields = schema.get("fields", {}) if isinstance(schema, dict) else {}
-        haystack = " ".join(
-            [
-                str(schema_name),
-                str(schema.get("schema", "")) if isinstance(schema, dict) else "",
-                str(schema.get("extends", "")) if isinstance(schema, dict) else "",
-                " ".join(str(field_name) for field_name in fields.keys()),
-            ]
-        ).lower()
-        return query in haystack
-
-    def _build_schema_browser_items(self):
-        items = []
-
-        for schema_name, schema in sorted(self.schema_loader.schemas.items()):
-            if not self._matches_schema_browser_filters(schema_name, schema):
-                continue
-
-            field_count = len(schema.get("fields", {}) if isinstance(schema, dict) else {})
-            items.append(
-                {
-                    "kind": "schema",
-                    "entity_id": self._schema_card_id(schema_name),
-                    "schema_name": schema_name,
-                    "text": f"  {schema_name} [{field_count} fields]",
-                    "missing_count": 0,
-                    "is_incomplete": False,
-                }
-            )
-
-        return items
-
-    def _resolve_schema_for_entity(self, entity, dataset_name):
-        candidates = []
-        entity_type = entity.get("type")
-        for name in (entity_type, dataset_name):
-            if not name:
-                continue
-            normalized = str(name).strip().lower()
-            if normalized and normalized not in candidates:
-                candidates.append(normalized)
-            if normalized.endswith("s"):
-                singular = normalized[:-1]
-                if singular and singular not in candidates:
-                    candidates.append(singular)
-            else:
-                plural = f"{normalized}s"
-                if plural not in candidates:
-                    candidates.append(plural)
-
-        for candidate in candidates:
-            schema = self.schema_loader.get_schema(candidate)
-            if schema:
-                return schema
-        return None
-
-    def _collect_schema_fields(self, schema, seen=None):
-        if not schema:
-            return {}
-        if seen is None:
-            seen = set()
-        schema_name = schema.get("schema")
-        if schema_name in seen:
-            return {}
-        if schema_name:
-            seen.add(schema_name)
-        fields = {}
-        extends_name = schema.get("extends")
-        if extends_name:
-            fields.update(self._collect_schema_fields(self.schema_loader.get_schema(extends_name), seen=seen))
-        fields.update(schema.get("fields", {}))
-        return fields
-
-    def _entity_missing_scalar_count(self, entity, dataset_name):
-        schema = self._resolve_schema_for_entity(entity, dataset_name)
-        field_specs = self._collect_schema_fields(schema)
-        if dataset_name == "ideas":
-            field_specs = {
-                key: value
-                for key, value in field_specs.items()
-                if key in self.IDEA_GENERIC_FIELDS or key in {"id", "type"}
-            }
-        if dataset_name == "species":
-            field_specs = {
-                key: value
-                for key, value in field_specs.items()
-                if key not in {"pretty_name", "name"}
-            }
-        missing = 0
-        for field_key, spec in field_specs.items():
-            if field_key in {
-                "card_color",
-                "card_header_color",
-                "three_word_description",
-                "wiki_field_colors",
-                "wiki_link_color",
-            }:
-                continue
-            field_type = spec.get("type")
-            if field_type not in {None, "string", "number", "text"}:
-                continue
-            value = entity.get(field_key)
-            if value is None:
-                missing += 1
-            elif isinstance(value, str) and not value.strip():
-                missing += 1
-        return missing
-
-    def _location_tree_entity_matches(self, entity, dataset_name):
-        if entity is None:
-            return False
-
-        if not self._entity_exists_during_browser_period(entity):
-            return False
-
-        is_system_like = bool(entity.get("system_role"))
-        if self.browser_filter_dataset == "systems" and not is_system_like:
-            return False
-
-        if self.browser_filter_dataset not in {"all", "locations", "systems"}:
-            return False
-
-        if self.browser_filter_incomplete_only and not self._entity_missing_scalar_count(entity, dataset_name):
-            return False
-
-        query = self.browser_search_query.strip().lower()
-        if query:
-            haystack = " ".join(
-                [
-                    self._entity_display_label(entity),
-                    str(entity.get("common_name", "")),
-                    str(entity.get("binomial_name", "")),
-                    str(entity.get("pretty_name", "")),
-                    str(entity.get("name", "")),
-                    str(entity.get("id", "")),
-                    str(entity.get("type", "")),
-                    str(entity.get("system_role", "")),
-                    str(entity.get("system_class", "")),
-                    str(entity.get("body_class", "")),
-                    str(entity.get("location_class", "")),
-                    str(entity.get("location_role", "")),
-                ]
-            ).lower()
-            if query not in haystack:
-                return False
-
-        return True
-
-    def _location_tree_auto_reveal_descendants(self):
-        return bool(self.browser_search_query.strip() or self.browser_filter_incomplete_only)
-
-    def _location_tree_item(self, entity, dataset_name, depth, expandable, expanded, meta_label=None):
-        label = self._entity_display_label(entity, fallback=entity.get("id", "unknown"))
-        entity_class = meta_label or self._entity_class_label(dataset_name, entity)
-        missing_count = self._entity_missing_scalar_count(entity, dataset_name)
-        return {
-            "kind": "tree_entity",
-            "entity_id": entity.get("id"),
-            "dataset_name": dataset_name,
-            "text": label,
-            "meta_text": f"[{entity_class}]",
-            "missing_count": missing_count,
-            "is_incomplete": missing_count > 0,
-            "depth": depth,
-            "expandable": expandable,
-            "expanded": expanded,
-        }
-
-    def _canonical_location_class_key(self, entity):
-        if not isinstance(entity, dict):
-            return "entity"
-
-        system_role = str(entity.get("system_role") or "").strip().lower()
-        if system_role == "star_system":
-            return "star_system"
-        if system_role == "orbital_body":
-            raw_class = entity.get("body_class") or entity.get("location_class") or "orbital_body"
-        else:
-            raw_class = (
-                entity.get("location_class")
-                or entity.get("system_class")
-                or entity.get("body_class")
-                or entity.get("type")
-                or "entity"
-            )
-
-        class_key = str(raw_class or "entity").strip().lower().replace(" ", "_").replace("-", "_")
-        class_aliases = {
-            "stellar_system": "star_system",
-            "starsystem": "star_system",
-            "star_system": "star_system",
-            "solar_system": "star_system",
-            "orbital_body": "orbital_body",
-            "celestial_body": "orbital_body",
-        }
-        return class_aliases.get(class_key, class_key)
-
-    def _location_class_display_label(self, entity):
-        class_key = self._canonical_location_class_key(entity)
-        display_labels = {
-            "star_system": "Star System",
-            "orbital_body": "Orbital Body",
-            "dwarf_planet": "Dwarf Planet",
-            "island_chain": "Island Chain",
-            "macro_site": "Macro Site",
-            "internal_passage": "Internal Passage",
-            "stellar_cluster": "Stellar Cluster",
-            "galaxy_cluster": "Galaxy Cluster",
-        }
-        return display_labels.get(class_key, class_key.replace("_", " ").title())
-
-    def _location_browser_domain(self, entity):
-        system_role = str(entity.get("system_role") or "").strip().lower() if isinstance(entity, dict) else ""
-        if system_role in {"star_system", "orbital_body"}:
-            return "orbit"
-        class_key = self._canonical_location_class_key(entity)
-        if class_key in self.ORBIT_LOCATION_CLASS_KEYS:
-            return "orbit"
-        return "surface"
-
-    def _location_browser_domain_label(self, domain):
-        return "Orbit" if domain == "orbit" else "Surface"
-
-    def _location_hierarchy_sort_key(self, entity):
-        label = self._entity_display_label(entity, fallback=entity.get("id", "")).lower()
-        return (label, str(entity.get("id", "")))
-
-    def _build_location_browser_items(self, world_model):
-        items = []
-
-        if world_model is None:
-            return items
-
-        raw_location_entities = world_model.get_entities_by_dataset("locations")
-        location_by_id = {
-            entity.get("id"): entity
-            for entity in raw_location_entities
-            if isinstance(entity, dict) and entity.get("id")
-        }
-        alias_to_location_id = {
-            str(alias): str(canonical_id)
-            for alias, canonical_id in getattr(world_model.loader, "entity_aliases", {}).items()
-        }
-
-        def canonical_location_id(entity_id):
-            if not entity_id:
-                return entity_id
-            return alias_to_location_id.get(str(entity_id), str(entity_id))
-
-        location_entities = list(location_by_id.values())
-        children_by_parent = {}
-        parent_id_by_child = {}
-
-        def relation_values(value):
-            if value is None:
-                return []
-            if isinstance(value, str):
-                return [value]
-            if isinstance(value, dict):
-                candidate = value.get("id") or value.get("entity_id") or value.get("target")
-                return [candidate] if candidate else []
-            if isinstance(value, (list, tuple, set)):
-                values = []
-                for item in value:
-                    values.extend(relation_values(item))
-                return values
-            return []
-
-        def structural_parent_id(entity):
-            entity_id = canonical_location_id(entity.get("id"))
-            for field_key in ("parent_cluster", "parent_location", "parent_entity", "parent_body"):
-                for parent_id in relation_values(entity.get(field_key)):
-                    parent_id = canonical_location_id(parent_id)
-                    if parent_id and parent_id != entity_id and parent_id in location_by_id:
-                        return parent_id
-
-            if entity.get("system_role") == "orbital_body":
-                for parent_id in relation_values(entity.get("star_system")):
-                    parent_id = canonical_location_id(parent_id)
-                    if parent_id and parent_id != entity_id and parent_id in location_by_id:
-                        return parent_id
-
-            for parent_id in relation_values(entity.get("parents")):
-                parent_id = canonical_location_id(parent_id)
-                if parent_id and parent_id != entity_id and parent_id in location_by_id:
-                    return parent_id
-
-            return None
-
-        for entity in location_entities:
-            entity_id = canonical_location_id(entity.get("id"))
-            if not entity_id:
-                continue
-            parent_id = structural_parent_id(entity)
-            if parent_id:
-                parent_id_by_child[entity_id] = parent_id
-                children_by_parent.setdefault(parent_id, []).append(entity)
-
-        for parent_entity in location_entities:
-            parent_id = canonical_location_id(parent_entity.get("id"))
-            if not parent_id:
-                continue
-            for child_field in ("children", "offspring"):
-                for child_id in relation_values(parent_entity.get(child_field)):
-                    child_id = canonical_location_id(child_id)
-                    child_entity = location_by_id.get(child_id)
-                    if not child_entity or child_id == parent_id:
-                        continue
-                    if child_id in parent_id_by_child:
-                        continue
-                    parent_id_by_child[child_id] = parent_id
-                    children = children_by_parent.setdefault(parent_id, [])
-                    if child_entity not in children:
-                        children.append(child_entity)
-
-        for child_list in children_by_parent.values():
-            unique_children = {}
-            for child in child_list:
-                child_id = canonical_location_id(child.get("id"))
-                if child_id:
-                    unique_children[child_id] = child
-            child_list[:] = sorted(unique_children.values(), key=self._location_hierarchy_sort_key)
-
-        auto_reveal = self._location_tree_auto_reveal_descendants()
-        emitted_ids = set()
-
-        def location_subtree_matches(location_entity, seen=None):
-            if seen is None:
-                seen = set()
-            location_id = canonical_location_id(location_entity.get("id"))
-            if not location_id or location_id in seen:
-                return False
-            seen.add(location_id)
-
-            if self._location_tree_entity_matches(location_entity, "locations"):
-                return True
-
-            for child in children_by_parent.get(location_id, []):
-                if location_subtree_matches(child, seen=seen):
-                    return True
-            return False
-
-        def child_matches_for_display(child):
-            return self._location_tree_entity_matches(child, "locations") or location_subtree_matches(child)
-
-        def location_supports_orbit_surface_groups(location_entity):
-            if self._location_browser_domain(location_entity) != "orbit":
-                return False
-            class_key = self._canonical_location_class_key(location_entity)
-            return class_key not in {"cluster", "galaxy", "galaxy_cluster", "star_system", "stellar_cluster", "system"}
-
-        def add_group_label(label, depth):
-            items.append(
-                {
-                    "kind": "label",
-                    "text": f"({label})",
-                    "depth": depth,
-                    "location_group": True,
-                }
-            )
-
-        def add_location_subtree(location_entity, depth):
-            location_id = canonical_location_id(location_entity.get("id"))
-            if not location_id or location_id in emitted_ids:
-                return
-
-            children = children_by_parent.get(location_id, [])
-            descendant_match = any(location_subtree_matches(child) for child in children)
-            if not self._location_tree_entity_matches(location_entity, "locations") and not descendant_match:
-                return
-
-            visible_children = [child for child in children if child_matches_for_display(child)]
-            expandable = len(visible_children) > 0
-            expanded = self._is_expanded(location_id)
-            items.append(
-                self._location_tree_item(
-                    location_entity,
-                    "locations",
-                    depth,
-                    expandable,
-                    expanded,
-                    meta_label=self._location_class_display_label(location_entity),
-                )
-            )
-            emitted_ids.add(location_id)
-
-            if expandable and (expanded or (auto_reveal and descendant_match)):
-                if location_supports_orbit_surface_groups(location_entity):
-                    orbital_children = [
-                        child for child in visible_children
-                        if self._location_browser_domain(child) == "orbit"
-                    ]
-                    surface_children = [
-                        child for child in visible_children
-                        if self._location_browser_domain(child) == "surface"
-                    ]
-                    if orbital_children:
-                        add_group_label("Orbit", depth + 1)
-                        for child in orbital_children:
-                            add_location_subtree(child, depth + 2)
-                    if surface_children and self.browser_filter_dataset != "systems":
-                        add_group_label("Surface", depth + 1)
-                        for child in surface_children:
-                            add_location_subtree(child, depth + 2)
-                else:
-                    for child in visible_children:
-                        add_location_subtree(child, depth + 1)
-
-        root_locations = sorted(
-            [
-                location for location in location_entities
-                if canonical_location_id(location.get("id"))
-                and canonical_location_id(location.get("id")) not in parent_id_by_child
-            ],
-            key=self._location_hierarchy_sort_key,
-        )
-        for location_entity in root_locations:
-            add_location_subtree(location_entity, 0)
-
-        return items
-
-    def _dataset_display_label(self, dataset_name):
-        return dataset_name.replace("_", " ").title()
-
-    def _entity_class_label(self, dataset_name, entity):
-        if dataset_name == "locations":
-            return self._location_class_display_label(entity)
-        if dataset_name == "vehicles":
-            return entity.get("vehicle_class", entity.get("type", "entity"))
-        if dataset_name == "components":
-            return entity.get("component_class", entity.get("type", "entity"))
-        if dataset_name == "ideas":
-            return entity.get("idea_class", entity.get("type", "entity"))
-        if dataset_name == "species":
-            return entity.get("species_class", entity.get("type", "entity"))
-        if dataset_name == "systems":
-            if entity.get("system_role") == "star_system":
-                return entity.get("system_class", entity.get("type", "entity"))
-            if entity.get("system_role") == "orbital_body":
-                return entity.get("body_class", entity.get("type", "entity"))
-        return entity.get("type", "entity")
-
-    def _build_browser_items(self, world_model):
-        items = [
-            {"kind": "label", "text": "Grouping: hierarchy preview"},
-            {"kind": "spacer"},
-        ]
-
-        if world_model is None:
-            return items
-
-        schema_items = self._build_schema_browser_items()
-        if self.browser_filter_dataset == "schemas":
-            items.append({"kind": "section", "text": "Schemas"})
-            items.extend(schema_items)
-            items.append({"kind": "spacer"})
-            return items
-
-        dataset_names = sorted(world_model.get_dataset_names())
-
-        preferred_order = [
-            "ideas",
-            "locations",
-            "vehicles",
-            "components",
-        ]
-        ordered_names = [name for name in preferred_order if name in dataset_names]
-        ordered_names += [name for name in dataset_names if name not in ordered_names]
-        hide_empty_sections = bool(self.browser_search_query.strip())
-
-        for dataset_name in ordered_names:
-            if dataset_name == "systems":
-                continue
-
-            if dataset_name == "locations":
-                if self.browser_filter_dataset not in {"all", "locations", "systems"}:
-                    continue
-                dataset_items = self._build_location_browser_items(world_model)
-                if hide_empty_sections and not dataset_items:
-                    continue
-                items.append({"kind": "section", "text": "Locations / Systems"})
-                items.extend(dataset_items)
-                items.append({"kind": "spacer"})
-                continue
-
-            if self.browser_filter_dataset != "all" and dataset_name != self.browser_filter_dataset:
-                continue
-
-            dataset_items = []
-            entities = sorted(
-                world_model.get_entities_by_dataset(dataset_name),
-                key=lambda entity: self._entity_display_label(entity, fallback=entity.get("id", "")).lower()
-            )
-
-            for entity in entities:
-                if not self._matches_browser_filters(entity, dataset_name):
-                    continue
-
-                label = self._entity_display_label(entity, fallback=entity.get("id", "unknown"))
-                entity_class = self._entity_class_label(dataset_name, entity)
-                missing_count = self._entity_missing_scalar_count(entity, dataset_name)
-
-                dataset_items.append(
-                    {
-                        "kind": "entity",
-                        "entity_id": entity.get("id"),
-                        "dataset_name": dataset_name,
-                        "text": f"  {label} [{entity_class}]",
-                        "missing_count": missing_count,
-                        "is_incomplete": missing_count > 0,
-                    }
-                )
-
-            if hide_empty_sections and not dataset_items:
-                continue
-
-            items.append({"kind": "section", "text": self._dataset_display_label(dataset_name)})
-            items.extend(dataset_items)
-            items.append({"kind": "spacer"})
-
-        if schema_items:
-            items.append({"kind": "section", "text": "Schemas"})
-            items.extend(schema_items)
-            items.append({"kind": "spacer"})
-
-        return items
-
+    def _build_browser_items(self, *args, **kwargs):
+        return getattr(self._browser_model(), "_build_browser_items")(*args, **kwargs)
     def _build_card_from_entity(self, entity):
         if entity is None or self.layout is None:
             return None
@@ -3062,332 +1760,63 @@ class KnowledgeBrowserUI:
         }
 
 
-    def _layout_all_cards(self):
-        if self.layout is None:
-            return
+    def _canvas_controller(self):
+        controller = getattr(self, "_knowledge_canvas_controller", None)
+        if controller is None:
+            controller = KnowledgeCanvasController(self)
+            self._knowledge_canvas_controller = controller
+        return controller
 
-        right_rect = self.layout["right_rect"]
-        zoom = max(0.001, self.canvas_zoom)
-        card_font = self._card_font_for_zoom()
-        compact_mode = self._is_compact_canvas_mode()
-        layout_viewport = right_rect.inflate(600, 600)
+    def _layout_all_cards(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_layout_all_cards")(*args, **kwargs)
 
-        max_right = 0
-        max_bottom = 0
+    def _layout_offscreen_card(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_layout_offscreen_card")(*args, **kwargs)
 
-        for card in self.cards:
-            card_w = max(300, min(900, int(card.get("canvas_w", 420))))
-            requested_h = int(card.get("canvas_h", 340))
-            card_view = card.get("card_view")
+    def _is_compact_canvas_mode(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_is_compact_canvas_mode")(*args, **kwargs)
 
-            rect_x = right_rect.x + self.canvas_offset_x + int(card.get("canvas_x", 24) * zoom)
-            rect_y = right_rect.y + self.canvas_offset_y + int(card.get("canvas_y", 84) * zoom)
+    def _layout_compact_card(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_layout_compact_card")(*args, **kwargs)
 
-            if compact_mode:
-                card_h = max(260, min(2400, requested_h))
-                self._layout_compact_card(card, rect_x, rect_y, card_w, card_h, zoom)
-                max_right = max(max_right, card.get("canvas_x", 24) + card_w)
-                max_bottom = max(max_bottom, card.get("canvas_y", 84) + card_h)
-                continue
+    def _clamp_canvas_offsets(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_clamp_canvas_offsets")(*args, **kwargs)
 
-            approximate_h = max(260, min(2400, requested_h))
-            approximate_rect = pygame.Rect(
-                rect_x,
-                rect_y,
-                max(120, int(round(card_w * zoom))),
-                max(120, int(round(approximate_h * zoom))),
-            )
-            if (
-                not approximate_rect.colliderect(layout_viewport)
-                and card.get("entity_id") != self.active_card_drag_id
-                and not card.get("is_edit_mode", False)
-            ):
-                self._layout_offscreen_card(card, approximate_rect, approximate_h)
-                max_right = max(max_right, card.get("canvas_x", 24) + card_w)
-                max_bottom = max(max_bottom, card.get("canvas_y", 84) + approximate_h)
-                continue
+    def _card_accepts_canvas_relation(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_card_accepts_canvas_relation")(*args, **kwargs)
 
-            auto_canvas_h = bool(card.get("auto_canvas_h", True))
-            if card_view is not None and self.font_for_layout is not None:
-                minimum_h = card_view.get_minimum_height(card, self.font_for_layout)
-            else:
-                minimum_h = 260
+    def _layout_canvas_relation_controls(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_layout_canvas_relation_controls")(*args, **kwargs)
 
-            if auto_canvas_h:
-                card_h = max(260, min(2400, minimum_h))
-            else:
-                card_h = max(260, min(2400, max(requested_h, minimum_h)))
-            card["canvas_h"] = card_h
-            card["layout_font"] = card_font
+    def _relayout_cards(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_relayout_cards")(*args, **kwargs)
 
-            screen_card_w = max(120, int(round(card_w * zoom)))
-            screen_card_h = max(120, int(round(card_h * zoom)))
-            rect = pygame.Rect(rect_x, rect_y, screen_card_w, screen_card_h)
+    def _card_font_for_zoom(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_card_font_for_zoom")(*args, **kwargs)
 
-            if card_view is not None:
-                card["is_compact_canvas_card"] = False
-                card["layout_skipped_offscreen"] = False
-                card_view.layout_card(card, rect)
+    def _screen_to_canvas_pos(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_screen_to_canvas_pos")(*args, **kwargs)
 
-            final_rect = card.get("rect", rect)
-            toolbelt_rect = card.get("toolbelt_rect")
-            visual_right = final_rect.right
-            if toolbelt_rect is not None:
-                visual_right = max(visual_right, toolbelt_rect.right)
+    def _set_canvas_zoom_at(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_set_canvas_zoom_at")(*args, **kwargs)
 
-            max_right = max(max_right, card.get("canvas_x", 24) + (visual_right - final_rect.x) / zoom)
-            max_bottom = max(max_bottom, card.get("canvas_y", 84) + final_rect.height / zoom)
+    def _scroll_card_at(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_scroll_card_at")(*args, **kwargs)
 
-        self.canvas_content_width = max(0, max_right + 24)
-        self.canvas_content_height = max(0, max_bottom + 24)
-        self.timeline_ui.set_open_canvas_entity_ids(card.get("entity_id") for card in self.cards)
-        self.timeline_ui.rebuild_layout()
-        self._layout_canvas_relation_controls()
-        self._rebuild_canvas_relation_edges()
+    def _scroll_phylogeny_parent_at(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_scroll_phylogeny_parent_at")(*args, **kwargs)
 
-    def _layout_offscreen_card(self, card, rect, card_h):
-        card["is_compact_canvas_card"] = False
-        card["layout_skipped_offscreen"] = True
-        card["canvas_h"] = card_h
-        card["rect"] = rect
-        card["toolbelt_rect"] = None
-        card["header_drag_rect"] = rect
-        card["close_rect"] = None
-        card["resize_handle_rect"] = pygame.Rect(rect.right - 12, rect.bottom - 12, 10, 10)
-        card["resize_hitboxes"] = []
-        card["corner_handle_rects"] = []
-        card["tab_hitboxes"] = []
-        card["subtab_hitboxes"] = []
-        card["editable_field_hitboxes"] = []
-        card["relation_hitboxes"] = []
-        card["wiki_link_hitboxes"] = []
-        card["wiki_section_hitboxes"] = []
-        card["toolbelt_hitboxes"] = []
-        card["section_hitboxes"] = []
-        card["year_hitboxes"] = []
-        card["media_import_hitboxes"] = []
-        card["media_pixel_art_hitboxes"] = []
-        card["media_illustration_link_hitboxes"] = []
+    def _scroll_type_picker_at(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_scroll_type_picker_at")(*args, **kwargs)
 
-    def _is_compact_canvas_mode(self):
-        return self.canvas_zoom <= self.compact_canvas_zoom_threshold
+    def _bring_card_to_front(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_bring_card_to_front")(*args, **kwargs)
 
-    def _layout_compact_card(self, card, rect_x, rect_y, card_w, card_h, zoom):
-        compact_w = max(150, min(260, int(round(card_w * zoom))))
-        compact_h = 72
-        rect = pygame.Rect(rect_x, rect_y, compact_w, compact_h)
-        close_rect = pygame.Rect(rect.right - 22, rect.y + 6, 16, 16)
-        card["is_compact_canvas_card"] = True
-        card["layout_skipped_offscreen"] = False
-        card["layout_font"] = self.font_for_layout or pygame.font.SysFont("consolas", 14)
-        card["rect"] = rect
-        card["toolbelt_rect"] = None
-        card["header_drag_rect"] = rect
-        card["close_rect"] = close_rect
-        card["resize_handle_rect"] = pygame.Rect(rect.right - 12, rect.bottom - 12, 10, 10)
-        card["resize_hitboxes"] = []
-        card["corner_handle_rects"] = []
-        card["tab_hitboxes"] = []
-        card["subtab_hitboxes"] = []
-        card["editable_field_hitboxes"] = []
-        card["relation_hitboxes"] = []
-        card["wiki_link_hitboxes"] = []
-        card["wiki_section_hitboxes"] = []
-        card["toolbelt_hitboxes"] = []
-        card["media_import_hitboxes"] = []
-        card["media_pixel_art_hitboxes"] = []
-        card["media_illustration_link_hitboxes"] = []
-        card["section_hitboxes"] = []
-        card["year_hitboxes"] = []
-        card["canvas_relation_add_rect"] = None
-        card["screen_scale"] = zoom
+    def _close_card_at_index(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_close_card_at_index")(*args, **kwargs)
 
-    def _clamp_canvas_offsets(self):
-        # The card canvas is intentionally unbounded. Offsets are allowed to
-        # move freely so cards dragged into negative space remain recoverable by panning.
-        return
-
-    def _card_accepts_canvas_relation(self, card):
-        return (
-            isinstance(card, dict)
-            and card.get("card_kind") != "schema"
-            and not card.get("is_compact_canvas_card", False)
-            and bool(card.get("is_edit_mode", False))
-            and bool(card.get("entity_id"))
-        )
-
-    def _layout_canvas_relation_controls(self):
-        for card in self.cards:
-            card["canvas_relation_add_rect"] = None
-            if not self._card_accepts_canvas_relation(card):
-                continue
-
-            rect = card.get("rect")
-            if rect is None:
-                continue
-
-            size = 28
-            card["canvas_relation_add_rect"] = pygame.Rect(
-                rect.right - size - 6,
-                rect.centery - size // 2,
-                size,
-                size,
-            )
-
-    def _relayout_cards(self):
-        self._layout_all_cards()
-
-    def _card_font_for_zoom(self):
-        base_size = 16
-        if self.font_for_layout is not None:
-            base_size = max(8, int(round(self.font_for_layout.get_linesize() * 0.84)))
-        cached_font = self.card_font_cache.get(base_size)
-        if cached_font is None:
-            cached_font = pygame.font.SysFont("consolas", base_size)
-            self.card_font_cache[base_size] = cached_font
-        return cached_font
-
-    def _screen_to_canvas_pos(self, mouse_pos):
-        if self.layout is None:
-            return (0, 0)
-
-        right_rect = self.layout["right_rect"]
-        zoom = max(0.001, self.canvas_zoom)
-        return (
-            (mouse_pos[0] - right_rect.x - self.canvas_offset_x) / zoom,
-            (mouse_pos[1] - right_rect.y - self.canvas_offset_y) / zoom,
-        )
-
-    def _set_canvas_zoom_at(self, mouse_pos, zoom_factor):
-        if self.layout is None:
-            return
-
-        right_rect = self.layout["right_rect"]
-        before_x, before_y = self._screen_to_canvas_pos(mouse_pos)
-        new_zoom = max(self.canvas_min_zoom, min(self.canvas_max_zoom, self.canvas_zoom * zoom_factor))
-        if abs(new_zoom - self.canvas_zoom) < 0.001:
-            return
-
-        self.canvas_zoom = new_zoom
-        self.canvas_offset_x = mouse_pos[0] - right_rect.x - before_x * self.canvas_zoom
-        self.canvas_offset_y = mouse_pos[1] - right_rect.y - before_y * self.canvas_zoom
-        self._layout_all_cards()
-
-    def _scroll_card_at(self, mouse_pos, wheel_y):
-        for index in range(len(self.cards) - 1, -1, -1):
-            card = self.cards[index]
-            card_rect = card.get("rect")
-            if card_rect is None or not card_rect.collidepoint(mouse_pos):
-                continue
-
-            max_scroll = max(0, int(card.get("scroll_max_y", 0) or 0))
-            if max_scroll <= 0:
-                return True
-
-            line_step = max(24, self._font_line_height() * 2)
-            old_scroll = max(0, min(max_scroll, int(card.get("scroll_y", 0) or 0)))
-            new_scroll = max(0, min(max_scroll, old_scroll - int(wheel_y) * line_step))
-            if new_scroll != old_scroll:
-                card["scroll_y"] = new_scroll
-                self._relayout_cards()
-            return True
-
-        return False
-
-    def _scroll_phylogeny_parent_at(self, mouse_pos, wheel_y):
-        for index in range(len(self.cards) - 1, -1, -1):
-            card = self.cards[index]
-            card_rect = card.get("rect")
-            panel_rect = card.get("phylogeny_parent_panel_rect")
-            card_view = card.get("card_view")
-            if card_view is None or not getattr(card_view, "_is_phylogeny_mode", lambda: False)():
-                continue
-            if card_rect is None or panel_rect is None:
-                continue
-            if not card_rect.collidepoint(mouse_pos) or not panel_rect.collidepoint(mouse_pos):
-                continue
-
-            max_scroll = max(0, int(card.get("phylogeny_parent_scroll_max_y", 0) or 0))
-            if max_scroll <= 0:
-                return False
-
-            line_step = max(24, self._font_line_height() * 2)
-            old_scroll = max(0, min(max_scroll, int(card.get("phylogeny_parent_scroll_y", 0) or 0)))
-            new_scroll = max(0, min(max_scroll, old_scroll - int(wheel_y) * line_step))
-            if new_scroll != old_scroll:
-                card["phylogeny_parent_scroll_y"] = new_scroll
-                self._relayout_cards()
-            return True
-
-        return False
-
-    def _scroll_type_picker_at(self, mouse_pos, wheel_y):
-        for index in range(len(self.cards) - 1, -1, -1):
-            card = self.cards[index]
-            if not card.get("type_picker_open", False):
-                continue
-
-            picker_rect = card.get("type_picker_rect")
-            if picker_rect is None or not picker_rect.collidepoint(mouse_pos):
-                continue
-
-            templates = self._conversion_templates()
-            _, scroll, max_scroll = self._card_type_picker_visible_templates(card, templates)
-            if max_scroll <= 0:
-                return True
-
-            new_scroll = max(0, min(max_scroll, scroll - int(wheel_y)))
-            if new_scroll != scroll:
-                card["type_picker_scroll"] = new_scroll
-                self._relayout_cards()
-            return True
-
-        return False
-
-    def _bring_card_to_front(self, index):
-        card_obj = self.cards.pop(index)
-        self.cards.append(card_obj)
-        self.selected_entity_id = card_obj.get("entity_id")
-        return card_obj
-
-    def _close_card_at_index(self, index):
-        if index < 0 or index >= len(self.cards):
-            return False
-
-        closing_card = self.cards.pop(index)
-        closing_entity_id = closing_card.get("entity_id")
-
-        if self.selected_entity_id == closing_entity_id:
-            self.selected_entity_id = self.cards[-1].get("entity_id") if self.cards else None
-
-        if (
-            self.relation_link_target is not None
-            and self.relation_link_target.get("source_entity_id") == closing_entity_id
-        ):
-            self.relation_link_target = None
-            self.relation_link_status = ""
-
-        if self.canvas_relation_link_source_id == closing_entity_id:
-            self.canvas_relation_link_source_id = None
-            self.canvas_relation_status = ""
-
-        self._clear_timeline_edit_target()
-        self._close_wiki_link_picker(closing_card)
-        self._close_relation_picker(closing_card)
-        self.active_card_drag_id = None
-        self.active_card_resize_id = None
-        self.active_card_color_slider = None
-        self._relayout_cards()
-        return True
-
-    def _begin_card_resize(self, card_obj, mouse_pos, resize_edges):
-        self.active_card_resize_id = card_obj["entity_id"]
-        card_obj["auto_canvas_h"] = False
-        self.card_resize_start_mouse = mouse_pos
-        self.card_resize_start_size = (card_obj.get("canvas_w", 420), card_obj.get("canvas_h", 340))
-        self.card_resize_start_position = (card_obj.get("canvas_x", 24), card_obj.get("canvas_y", 84))
-        self.card_resize_edges = resize_edges
-
+    def _begin_card_resize(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_begin_card_resize")(*args, **kwargs)
     def _focus_timeline_year(self, year):
         return self.timeline_ui.focus_year(year)
 
@@ -3684,167 +2113,45 @@ class KnowledgeBrowserUI:
             self._save_card_draft(card)
         return entity
 
+    def _entry_name_prompt_controller(self):
+        controller = getattr(self, "_entry_name_prompt_ui", None)
+        if controller is None:
+            controller = EntryNamePromptUI(self)
+            self._entry_name_prompt_ui = controller
+        return controller
+
     def _open_entry_name_prompt(self, template, mode="template", context=None, label=None, initial_buffer=""):
-        label = label or "Entry"
-        if isinstance(template, dict):
-            label = template.get("label") or self._schema_display_label(template.get("entity_type"))
-        elif mode == "idea_from_parent":
-            label = "Idea"
-
-        self.entry_name_prompt = {
-            "template": template,
-            "mode": mode,
-            "context": context or {},
-            "label": label,
-            "buffer": str(initial_buffer or ""),
-            "cursor": len(str(initial_buffer or "")),
-            "description_buffer": "",
-            "description_cursor": 0,
-            "active_prompt_field": "name",
-            "rect": None,
-            "input_rect": None,
-            "description_rect": None,
-            "suggestion_hitboxes": [],
-            "suggestion_selected_index": 0,
-            "suggestion_keyboard_active": False,
-            "create_rect": None,
-            "cancel_rect": None,
-            "status": "",
-        }
-        self._refresh_entry_name_prompt_suggestions()
-        self.show_template_picker = False
-        self.template_picker_status = ""
-        self._build_template_picker_hitboxes()
-        return True
-
-    def _open_new_entry_name_prompt(self):
-        self.pending_new_entry_name = None
-        return self._open_entry_name_prompt(
-            None,
-            mode="new_entry",
-            context=self._relation_tab_new_entry_context(),
+        return self._entry_name_prompt_controller()._open_entry_name_prompt(
+            template,
+            mode=mode,
+            context=context,
+            label=label,
+            initial_buffer=initial_buffer,
         )
 
-    def _relation_tab_new_entry_context(self):
-        for card in reversed(self.cards):
-            card_view = card.get("card_view") if isinstance(card, dict) else None
-            if card_view is None or getattr(card_view, "active_tab", "") != "relations":
-                continue
-            entity_id = str(card.get("entity_id") or "").strip()
-            if not entity_id or card.get("card_kind") == "schema":
-                continue
+    def _open_new_entry_name_prompt(self):
+        return self._entry_name_prompt_controller()._open_new_entry_name_prompt()
 
-            field_key = str(card.get("active_relation_link_field") or card.get("active_edit_field") or "").strip()
-            if not field_key or not hasattr(card_view, "is_relation_edit_field") or not card_view.is_relation_edit_field(field_key):
-                field_key = "related"
-            return {
-                "link_source_entity_id": entity_id,
-                "link_field_key": field_key,
-            }
-        return {}
+    def _relation_tab_new_entry_context(self):
+        return self._entry_name_prompt_controller()._relation_tab_new_entry_context()
 
     def _entry_name_prompt_uses_suggestions(self, prompt=None):
-        prompt = prompt or self.entry_name_prompt
-        return isinstance(prompt, dict) and prompt.get("mode") == "new_entry"
+        return self._entry_name_prompt_controller()._entry_name_prompt_uses_suggestions(prompt)
 
     def _entry_name_prompt_matches(self, query_text, limit=7):
-        if self.world_model is None or getattr(self.world_model, "loader", None) is None:
-            return []
-
-        normalized_query = str(query_text or "").strip().lower()
-        if not normalized_query:
-            return []
-
-        entities = getattr(self.world_model.loader, "entities", {}) or {}
-        matches = []
-        for entity in entities.values():
-            if not isinstance(entity, dict):
-                continue
-            entity_id = str(entity.get("id") or "").strip()
-            if not entity_id:
-                continue
-
-            label = self._entity_display_label(entity, fallback=entity_id)
-            dataset = str(entity.get("_dataset") or entity.get("dataset") or "")
-            entity_type = str(entity.get("type") or "entry")
-            haystack = " ".join(
-                [
-                    str(label),
-                    entity_id,
-                    str(entity.get("common_name", "")),
-                    str(entity.get("binomial_name", "")),
-                    str(entity.get("pretty_name", "")),
-                    str(entity.get("name", "")),
-                    entity_type,
-                    dataset,
-                ]
-            ).lower()
-            if normalized_query not in haystack:
-                continue
-
-            label_l = str(label).lower()
-            id_l = entity_id.lower()
-            if label_l == normalized_query or id_l == normalized_query:
-                rank = 0
-            elif label_l.startswith(normalized_query) or id_l.startswith(normalized_query):
-                rank = 1
-            else:
-                rank = 2
-            matches.append(
-                {
-                    "id": entity_id,
-                    "label": str(label),
-                    "subtitle": " | ".join(part for part in (dataset, entity_type) if part),
-                    "card_color": entity.get("card_color") or entity.get("wiki_link_color") or "",
-                    "rank": rank,
-                }
-            )
-
-        matches.sort(key=lambda item: (item["rank"], item["label"].lower(), item["id"]))
-        return matches[:limit]
+        return self._entry_name_prompt_controller()._entry_name_prompt_matches(
+            query_text,
+            limit=limit,
+        )
 
     def _refresh_entry_name_prompt_suggestions(self):
-        prompt = self.entry_name_prompt
-        if not self._entry_name_prompt_uses_suggestions(prompt):
-            return
-
-        matches = self._entry_name_prompt_matches(prompt.get("buffer", ""))
-        prompt["suggestion_matches"] = matches
-        prompt["suggestion_hitboxes"] = []
-        if not matches:
-            prompt["suggestion_selected_index"] = 0
-            prompt["suggestion_keyboard_active"] = False
-            return
-
-        selected = max(0, min(int(prompt.get("suggestion_selected_index", 0)), len(matches) - 1))
-        prompt["suggestion_selected_index"] = selected
+        return self._entry_name_prompt_controller()._refresh_entry_name_prompt_suggestions()
 
     def _select_entry_name_prompt_suggestion(self, index=None, link_from_context=True):
-        prompt = self.entry_name_prompt
-        if not self._entry_name_prompt_uses_suggestions(prompt):
-            return False
-
-        matches = prompt.get("suggestion_matches") or []
-        if not matches:
-            return False
-
-        if index is None:
-            index = int(prompt.get("suggestion_selected_index", 0))
-        index = max(0, min(int(index), len(matches) - 1))
-        entity_id = str(matches[index].get("id") or "").strip()
-        if not entity_id or self.world_model is None:
-            return False
-
-        context = dict(prompt.get("context") or {})
-        entity = self.world_model.get_entity(entity_id)
-        self._close_entry_name_prompt()
-        if entity is not None:
-            if link_from_context:
-                self._link_entry_name_prompt_result(entity_id, context)
-            self._ensure_card(entity)
-            return True
-        return False
-
+        return self._entry_name_prompt_controller()._select_entry_name_prompt_suggestion(
+            index=index,
+            link_from_context=link_from_context,
+        )
     def _open_idea_name_prompt(self, parent_card):
         if parent_card is None:
             return False
@@ -4006,8 +2313,7 @@ class KnowledgeBrowserUI:
         return self._set_card_color(card, color_hex, persist=persist, role=role, section_id=section_id)
 
     def _close_entry_name_prompt(self):
-        self.entry_name_prompt = None
-
+        return self._entry_name_prompt_controller()._close_entry_name_prompt()
     def _is_star_system_template(self, template):
         if not isinstance(template, dict) or template.get("dataset_name") != "locations":
             return False
@@ -4236,20 +2542,11 @@ class KnowledgeBrowserUI:
         return illustration
 
     def _open_relation_note_prompt(self, source_card, relation_info, initial_text=""):
-        if source_card is None or not isinstance(relation_info, dict):
-            return False
-        return self._open_entry_name_prompt(
-            None,
-            mode="relation_note",
-            context={
-                "source_entity_id": source_card.get("entity_id"),
-                "card": source_card,
-                "field_key": relation_info.get("field_key"),
-            },
-            label="Note",
-            initial_buffer=initial_text,
+        return self._entry_name_prompt_controller()._open_relation_note_prompt(
+            source_card,
+            relation_info,
+            initial_text=initial_text,
         )
-
     def _create_relation_note(self, source_card, field_key, note_text):
         if self.world_model is None:
             return None
@@ -4404,117 +2701,10 @@ class KnowledgeBrowserUI:
         return True
 
     def _handle_entry_name_prompt_keydown(self, event):
-        prompt = self.entry_name_prompt
-        if not isinstance(prompt, dict):
-            return False
-
-        active_field = "description" if (
-            prompt.get("mode") == "illustration_from_parent"
-            and prompt.get("active_prompt_field") == "description"
-        ) else "name"
-        buffer_key = "description_buffer" if active_field == "description" else "buffer"
-        cursor_key = "description_cursor" if active_field == "description" else "cursor"
-        buffer_text = str(prompt.get(buffer_key, ""))
-        cursor = max(0, min(int(prompt.get(cursor_key, len(buffer_text))), len(buffer_text)))
-
-        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-            if (
-                active_field == "name"
-                and self._entry_name_prompt_uses_suggestions(prompt)
-                and prompt.get("suggestion_keyboard_active")
-                and prompt.get("suggestion_matches")
-            ):
-                return self._select_entry_name_prompt_suggestion()
-            return self._submit_entry_name_prompt()
-        if (
-            active_field == "name"
-            and self._entry_name_prompt_uses_suggestions(prompt)
-            and event.key in (pygame.K_UP, pygame.K_DOWN)
-        ):
-            matches = prompt.get("suggestion_matches") or []
-            if matches:
-                selected = int(prompt.get("suggestion_selected_index", 0))
-                selected += -1 if event.key == pygame.K_UP else 1
-                prompt["suggestion_selected_index"] = selected % len(matches)
-                prompt["suggestion_keyboard_active"] = True
-            return True
-        if event.key == pygame.K_TAB and prompt.get("mode") == "illustration_from_parent":
-            prompt["active_prompt_field"] = "name" if active_field == "description" else "description"
-            return True
-        if event.key == pygame.K_ESCAPE:
-            self._close_entry_name_prompt()
-            return True
-        if event.key == pygame.K_BACKSPACE:
-            if cursor > 0:
-                prompt[buffer_key] = buffer_text[:cursor - 1] + buffer_text[cursor:]
-                prompt[cursor_key] = cursor - 1
-                prompt["status"] = ""
-                prompt["suggestion_keyboard_active"] = False
-                self._refresh_entry_name_prompt_suggestions()
-            return True
-        if event.key == pygame.K_DELETE:
-            if cursor < len(buffer_text):
-                prompt[buffer_key] = buffer_text[:cursor] + buffer_text[cursor + 1:]
-                prompt["status"] = ""
-                prompt["suggestion_keyboard_active"] = False
-                self._refresh_entry_name_prompt_suggestions()
-            return True
-        if event.key == pygame.K_LEFT:
-            prompt[cursor_key] = max(0, cursor - 1)
-            return True
-        if event.key == pygame.K_RIGHT:
-            prompt[cursor_key] = min(len(buffer_text), cursor + 1)
-            return True
-        if event.key == pygame.K_HOME:
-            prompt[cursor_key] = 0
-            return True
-        if event.key == pygame.K_END:
-            prompt[cursor_key] = len(buffer_text)
-            return True
-
-        text = getattr(event, "unicode", "")
-        if text and text.isprintable():
-            prompt[buffer_key] = buffer_text[:cursor] + text + buffer_text[cursor:]
-            prompt[cursor_key] = cursor + len(text)
-            prompt["status"] = ""
-            prompt["suggestion_keyboard_active"] = False
-            self._refresh_entry_name_prompt_suggestions()
-            return True
-
-        return True
+        return self._entry_name_prompt_controller()._handle_entry_name_prompt_keydown(event)
 
     def _handle_entry_name_prompt_click(self, mouse_pos):
-        prompt = self.entry_name_prompt
-        if not isinstance(prompt, dict):
-            return False
-
-        for index, hitbox in prompt.get("suggestion_hitboxes", []):
-            if hitbox.collidepoint(mouse_pos):
-                prompt["suggestion_selected_index"] = index
-                prompt["suggestion_keyboard_active"] = True
-                return self._select_entry_name_prompt_suggestion(index)
-
-        cancel_rect = prompt.get("cancel_rect")
-        if cancel_rect is not None and cancel_rect.collidepoint(mouse_pos):
-            self._close_entry_name_prompt()
-            return True
-
-        create_rect = prompt.get("create_rect")
-        if create_rect is not None and create_rect.collidepoint(mouse_pos):
-            return self._submit_entry_name_prompt()
-
-        input_rect = prompt.get("input_rect")
-        if input_rect is not None and input_rect.collidepoint(mouse_pos):
-            prompt["active_prompt_field"] = "name"
-            return True
-
-        description_rect = prompt.get("description_rect")
-        if description_rect is not None and description_rect.collidepoint(mouse_pos):
-            prompt["active_prompt_field"] = "description"
-            return True
-
-        return True
-
+        return self._entry_name_prompt_controller()._handle_entry_name_prompt_click(mouse_pos)
     def _create_new_entry_from_template(self, template):
         entry_name = str(self.pending_new_entry_name or "").strip()
         if entry_name:
@@ -4827,130 +3017,23 @@ class KnowledgeBrowserUI:
         return True
 
     def _remove_entity_from_dataset_index(self, dataset_name, entity_id, entity_obj):
-        if self.world_model is None or not dataset_name:
-            return
-        dataset = self.world_model.loader.datasets.get(dataset_name, [])
-        self.world_model.loader.datasets[dataset_name] = [
-            item
-            for item in dataset
-            if item is not entity_obj and item.get("id") != entity_id
-        ]
+        return self._repository_service()._remove_entity_from_dataset_index(
+            dataset_name,
+            entity_id,
+            entity_obj,
+        )
 
     def _dataset_name_for_entity(self, entity):
-        if not isinstance(entity, dict):
-            return ""
-        dataset_name = str(entity.get("_dataset") or "").strip()
-        if dataset_name:
-            return dataset_name
-
-        entity_id = str(entity.get("id") or "").strip()
-        loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
-        datasets = getattr(loader, "datasets", None)
-        if entity_id and isinstance(datasets, dict):
-            for candidate_name, dataset in datasets.items():
-                if any(item is entity or (isinstance(item, dict) and item.get("id") == entity_id) for item in dataset or []):
-                    return candidate_name
-
-        entity_type = str(entity.get("type") or "").strip()
-        if entity_type.endswith("s"):
-            return entity_type
-        if entity_type:
-            plural_guess = f"{entity_type}s"
-            if isinstance(datasets, dict) and plural_guess in datasets:
-                return plural_guess
-            return entity_type
-        return ""
+        return self._repository_service()._dataset_name_for_entity(entity)
 
     def _remove_entity_from_repository(self, dataset_name, entity_id):
-        entry_path = self._entry_file_path_for_dataset(dataset_name)
-        if not entry_path or not os.path.exists(entry_path):
-            return False
-
-        with open(entry_path, "r", encoding="utf-8") as f:
-            text = f.read()
-
-        found = self._find_yaml_entity_block(text, entity_id)
-        if found is None:
-            return False
-
-        block_start, block_end = found
-        updated_text = text[:block_start] + text[block_end:].lstrip("\n")
-        with open(entry_path, "w", encoding="utf-8") as f:
-            f.write(updated_text)
-        return True
+        return self._repository_service()._remove_entity_from_repository(
+            dataset_name,
+            entity_id,
+        )
 
     def _delete_card_entry(self, card):
-        entity = self._entity_for_card(card)
-        if not isinstance(entity, dict):
-            return False
-
-        entity_id = str(entity.get("id") or card.get("entity_id") or "").strip()
-        dataset_name = self._dataset_name_for_entity(entity)
-        if not entity_id or not dataset_name:
-            return False
-
-        removed = False
-        if card.get("is_draft_entity", False):
-            removed = True
-        else:
-            removed = self._remove_entity_from_repository(dataset_name, entity_id)
-            if not removed:
-                loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
-                loader_entities = getattr(loader, "entities", {}) if loader is not None else {}
-                removed = (
-                    entity_id in loader_entities
-                    or entity_id in self.card_drafts
-                    or any(open_card is card for open_card in self.cards)
-                )
-                if not removed:
-                    return False
-
-        loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
-        if loader is not None:
-            self._remove_entity_from_dataset_index(dataset_name, entity_id, entity)
-            if getattr(loader, "entities", None) is not None:
-                loader.entities.pop(entity_id, None)
-            aliases = getattr(loader, "entity_aliases", None)
-            if isinstance(aliases, dict):
-                aliases.pop(entity_id, None)
-                for alias, target in list(aliases.items()):
-                    if target == entity_id:
-                        aliases.pop(alias, None)
-
-        self._remove_card_draft(entity_id)
-        self.cards = [open_card for open_card in self.cards if open_card is not card]
-        if self.selected_entity_id == entity_id:
-            self.selected_entity_id = self.cards[-1].get("entity_id") if self.cards else None
-        if self.active_card_drag_id == entity_id:
-            self.active_card_drag_id = None
-        if self.active_card_resize_id == entity_id:
-            self.active_card_resize_id = None
-        if self.canvas_relation_link_source_id == entity_id:
-            self._clear_canvas_relation_link()
-        if (
-            self.relation_link_target is not None
-            and self.relation_link_target.get("source_entity_id") == entity_id
-        ):
-            self.relation_link_target = None
-            self.relation_link_status = ""
-
-        if not card.get("is_draft_entity", False) and self.world_model is not None:
-            refresh = getattr(self.world_model, "refresh", None)
-            if callable(refresh):
-                refresh()
-            else:
-                touch_degrees = getattr(self.world_model, "touch_degrees", None)
-                if hasattr(touch_degrees, "refresh"):
-                    touch_degrees.refresh()
-                if loader is not None and hasattr(loader, "build_reference_graph"):
-                    loader.build_reference_graph()
-
-        self.browser_items = self._build_browser_items(self.world_model)
-        self._refresh_timeline_items()
-        self._rebuild_browser_hitboxes()
-        self._relayout_cards()
-        return removed
-
+        return self._repository_service()._delete_card_entry(card)
     def _convert_card_to_template(self, card, template):
         entity = self._entity_for_card(card)
         if not isinstance(entity, dict) or not isinstance(template, dict):
@@ -5612,497 +3695,90 @@ class KnowledgeBrowserUI:
             root.destroy()
         return selected
 
+    def _repository_service(self):
+        service = getattr(self, "_knowledge_repository_service", None)
+        if service is None:
+            service = KnowledgeRepositoryService(self)
+            self._knowledge_repository_service = service
+        return service
+
     def _entry_file_path_for_dataset(self, dataset_name):
-        if not dataset_name:
-            return None
-        return str(self.PROJECT_ROOT / "entries" / f"{dataset_name}.yaml")
+        return self._repository_service()._entry_file_path_for_dataset(dataset_name)
 
     def _load_card_drafts(self):
-        try:
-            with open(self.DRAFT_CACHE_PATH, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, json.JSONDecodeError):
-            return {}
-
-        if not isinstance(data, dict):
-            return {}
-        drafts = data.get("drafts", data)
-        return drafts if isinstance(drafts, dict) else {}
+        return self._repository_service()._load_card_drafts()
 
     def _write_card_drafts(self):
-        os.makedirs(os.path.dirname(str(self.DRAFT_CACHE_PATH)), exist_ok=True)
-        payload = {"drafts": self.card_drafts}
-        with open(self.DRAFT_CACHE_PATH, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2, sort_keys=True)
+        return self._repository_service()._write_card_drafts()
 
     def _entity_for_card(self, card):
-        if card is None:
-            return None
-
-        card_view = card.get("card_view")
-        if card_view is not None:
-            entity = getattr(card_view, "entity", None)
-            if entity is not None:
-                return entity
-
-        if self.world_model is not None:
-            return self.world_model.get_entity(card.get("entity_id"))
-        return None
+        return self._repository_service()._entity_for_card(card)
 
     def _draft_entity_snapshot(self, entity):
-        if not isinstance(entity, dict):
-            return {}
-        return {key: value for key, value in entity.items() if not key.startswith("_")}
+        return self._repository_service()._draft_entity_snapshot(entity)
 
     def _replace_entity_id_reference_value(self, value, old_entity_id, new_entity_id):
-        if isinstance(value, str):
-            if value.strip() == old_entity_id:
-                return new_entity_id, True
-            return value, False
-
-        if isinstance(value, list):
-            changed = False
-            replaced = []
-            for item in value:
-                new_item, item_changed = self._replace_entity_id_reference_value(
-                    item,
-                    old_entity_id,
-                    new_entity_id,
-                )
-                replaced.append(new_item)
-                changed = changed or item_changed
-            return replaced, changed
-
-        if isinstance(value, dict):
-            changed = False
-            replaced = {}
-            for key, item in value.items():
-                new_key = new_entity_id if isinstance(key, str) and key.strip() == old_entity_id else key
-                new_item, item_changed = self._replace_entity_id_reference_value(
-                    item,
-                    old_entity_id,
-                    new_entity_id,
-                )
-                replaced[new_key] = new_item
-                changed = changed or item_changed or new_key != key
-            return replaced, changed
-
-        return value, False
+        return self._repository_service()._replace_entity_id_reference_value(
+            value,
+            old_entity_id,
+            new_entity_id,
+        )
 
     def _replace_entity_references(self, entity, old_entity_id, new_entity_id):
-        if not isinstance(entity, dict) or not old_entity_id or not new_entity_id:
-            return False
-
-        changed = False
-        for field_key, value in list(entity.items()):
-            if field_key in {"id", "_dataset"}:
-                continue
-            new_value, value_changed = self._replace_entity_id_reference_value(
-                value,
-                old_entity_id,
-                new_entity_id,
-            )
-            if value_changed:
-                entity[field_key] = new_value
-                changed = True
-        return changed
+        return self._repository_service()._replace_entity_references(
+            entity,
+            old_entity_id,
+            new_entity_id,
+        )
 
     def _replace_draft_references(self, old_entity_id, new_entity_id):
-        changed = False
-        for draft in self.card_drafts.values():
-            if not isinstance(draft, dict):
-                continue
-            draft_entity = draft.get("entity")
-            if self._replace_entity_references(draft_entity, old_entity_id, new_entity_id):
-                changed = True
-        if changed:
-            self._write_card_drafts()
-        return changed
+        return self._repository_service()._replace_draft_references(
+            old_entity_id,
+            new_entity_id,
+        )
 
     def _rewrite_entity_id_references(self, old_entity_id, new_entity_id, renamed_entity_id=None):
-        if (
-            self.world_model is None
-            or not old_entity_id
-            or not new_entity_id
-            or old_entity_id == new_entity_id
-        ):
-            return []
-
-        changed_entities = []
-        for entity in list(self.world_model.loader.entities.values()):
-            if not isinstance(entity, dict):
-                continue
-            if self._replace_entity_references(entity, old_entity_id, new_entity_id):
-                changed_entities.append(entity)
-
-        self._replace_draft_references(old_entity_id, new_entity_id)
-
-        changed_ids = {str(entity.get("id")) for entity in changed_entities if entity.get("id")}
-        for card in self.cards:
-            card_entity = self._entity_for_card(card)
-            if isinstance(card_entity, dict) and str(card_entity.get("id")) in changed_ids:
-                card["subtitle"] = self._card_subtitle_for_entity(card_entity)
-                if card.get("is_draft_entity", False):
-                    self._save_card_draft(card)
-
-        for entity in changed_entities:
-            entity_id = str(entity.get("id") or "")
-            if entity_id:
-                card = self._find_card_by_entity_id(entity_id)
-                if card is not None and card.get("is_draft_entity", False):
-                    continue
-                self._persist_entity_to_repository(entity)
-
-        if hasattr(self.world_model, "touch_degrees"):
-            self.world_model.touch_degrees.refresh()
-        if hasattr(self.world_model.loader, "build_reference_graph"):
-            self.world_model.loader.build_reference_graph()
-
-        return changed_entities
+        return self._repository_service()._rewrite_entity_id_references(
+            old_entity_id,
+            new_entity_id,
+            renamed_entity_id=renamed_entity_id,
+        )
 
     def _save_card_draft(self, card):
-        self._sync_species_identity(card)
-        self._sync_card_wiki_mentions(card)
-        entity = self._entity_for_card(card)
-        if not isinstance(entity, dict) or not entity.get("id"):
-            return False
-
-        entity_id = str(entity["id"])
-        id_change = card.get("pending_entity_id_change")
-        if isinstance(id_change, dict):
-            old_entity_id = id_change.get("old")
-            if old_entity_id and old_entity_id != entity_id:
-                self.card_drafts.pop(old_entity_id, None)
-                if self.world_model is not None:
-                    self.world_model.loader.entities.pop(old_entity_id, None)
-                    self.world_model.loader.entities[entity_id] = entity
-                card["entity_id"] = entity_id
-                card.pop("pending_entity_id_change", None)
-
-        active_field = card.get("active_edit_field")
-        draft = dict(self.card_drafts.get(entity_id, {}))
-        draft["entity"] = self._draft_entity_snapshot(entity)
-        draft["dataset"] = entity.get("_dataset", entity.get("type", ""))
-        draft["is_new_entry"] = bool(card.get("is_draft_entity", False) or draft.get("is_new_entry", False))
-
-        edit_buffers = dict(draft.get("edit_buffers", {}))
-        if active_field:
-            edit_buffers[active_field] = {
-                "text": card.get("edit_buffer", ""),
-                "cursor": int(card.get("edit_cursor", 0)),
-            }
-        card["draft_edit_buffers"] = edit_buffers
-        draft["edit_buffers"] = edit_buffers
-        self.card_drafts[entity_id] = draft
-        self._write_card_drafts()
-        return True
+        return self._repository_service()._save_card_draft(card)
 
     def _remove_card_draft(self, entity_id):
-        if not entity_id or entity_id not in self.card_drafts:
-            return False
-        del self.card_drafts[entity_id]
-        self._write_card_drafts()
-        return True
+        return self._repository_service()._remove_card_draft(entity_id)
 
     def _apply_cached_draft_to_card(self, card):
-        entity_id = card.get("entity_id")
-        draft = self.card_drafts.get(entity_id)
-        if not isinstance(draft, dict):
-            return False
-
-        edit_buffers = draft.get("edit_buffers", {})
-        card["draft_edit_buffers"] = edit_buffers if isinstance(edit_buffers, dict) else {}
-        card["is_draft_entity"] = bool(draft.get("is_new_entry", False))
-        return True
+        return self._repository_service()._apply_cached_draft_to_card(card)
 
     def _hydrate_draft_entities(self, world_model):
-        if world_model is None:
-            return
-
-        for entity_id, draft in self.card_drafts.items():
-            if not isinstance(draft, dict) or not draft.get("is_new_entry", False):
-                continue
-            if world_model.get_entity(entity_id) is not None:
-                continue
-
-            entity = dict(draft.get("entity", {}))
-            if not entity:
-                continue
-            entity["id"] = entity_id
-            dataset_name = draft.get("dataset") or entity.get("type")
-            if dataset_name == "ideas":
-                for field_key in self.LEGACY_IDEA_FIELDS:
-                    entity.pop(field_key, None)
-            if dataset_name:
-                entity["_dataset"] = dataset_name
-                world_model.loader.datasets.setdefault(dataset_name, []).append(entity)
-            world_model.loader.entities[entity_id] = entity
+        return self._repository_service()._hydrate_draft_entities(world_model)
 
     def _format_yaml_scalar(self, value):
-        if value is None:
-            return "null"
-        if isinstance(value, bool):
-            return "true" if value else "false"
-        if isinstance(value, (int, float)):
-            return str(value)
-
-        text = str(value)
-        if "\n" in text:
-            lines = text.splitlines()
-            if not lines:
-                return "''"
-            return "|\n" + "\n".join(f"    {line}" for line in lines)
-
-        if text == "":
-            return "''"
-
-        needs_quote = (
-            text.strip() != text
-            or text.lower() in {"null", "none", "true", "false", "yes", "no"}
-            or any(ch in text for ch in [":", "#", "{", "}", "[", "]", ","])
-        )
-        if needs_quote:
-            return "'" + text.replace("'", "''") + "'"
-        return text
+        return self._repository_service()._format_yaml_scalar(value)
 
     def _format_yaml_value_lines(self, key, value, prefix):
-        if isinstance(value, list):
-            if not value:
-                return [f"{prefix}{key}: []"]
-
-            lines = [f"{prefix}{key}:"]
-            for item in value:
-                if isinstance(item, dict):
-                    item_keys = list(item.keys())
-                    if not item_keys:
-                        lines.append("  - {}")
-                        continue
-
-                    first_key = item_keys[0]
-                    lines.append(f"  - {first_key}: {self._format_yaml_scalar(item.get(first_key))}")
-                    for child_key in item_keys[1:]:
-                        child_value = item.get(child_key)
-                        if isinstance(child_value, list):
-                            if not child_value:
-                                lines.append(f"    {child_key}: []")
-                            else:
-                                lines.append(f"    {child_key}:")
-                                for child_item in child_value:
-                                    if isinstance(child_item, dict):
-                                        nested_keys = list(child_item.keys())
-                                        if not nested_keys:
-                                            lines.append("      - {}")
-                                            continue
-                                        nested_first = nested_keys[0]
-                                        lines.append(f"      - {nested_first}: {self._format_yaml_scalar(child_item.get(nested_first))}")
-                                        for nested_key in nested_keys[1:]:
-                                            lines.append(f"        {nested_key}: {self._format_yaml_scalar(child_item.get(nested_key))}")
-                                    else:
-                                        lines.append(f"      - {self._format_yaml_scalar(child_item)}")
-                            continue
-                        if isinstance(child_value, dict):
-                            if not child_value:
-                                lines.append(f"    {child_key}: {{}}")
-                            else:
-                                lines.append(f"    {child_key}:")
-                                for nested_key, nested_value in child_value.items():
-                                    lines.append(f"      {nested_key}: {self._format_yaml_scalar(nested_value)}")
-                            continue
-                        lines.append(f"    {child_key}: {self._format_yaml_scalar(child_value)}")
-                else:
-                    lines.append(f"  - {self._format_yaml_scalar(item)}")
-            return lines
-
-        if isinstance(value, dict):
-            if not value:
-                return [f"{prefix}{key}: {{}}"]
-
-            lines = [f"{prefix}{key}:"]
-            for child_key, child_value in value.items():
-                if isinstance(child_value, list):
-                    if not child_value:
-                        lines.append(f"    {child_key}: []")
-                    else:
-                        lines.append(f"    {child_key}:")
-                        for item in child_value:
-                            lines.append(f"      - {self._format_yaml_scalar(item)}")
-                    continue
-                lines.append(f"    {child_key}: {self._format_yaml_scalar(child_value)}")
-            return lines
-
-        scalar = self._format_yaml_scalar(value)
-        return [f"{prefix}{key}: {scalar}"]
+        return self._repository_service()._format_yaml_value_lines(key, value, prefix)
 
     def _format_yaml_entity_block(self, entity):
-        if self._is_species_entity(entity):
-            self._normalize_species_entity(entity)
-            ordered_keys = ["id", "common_name", "binomial_name", "type"]
-        else:
-            ordered_keys = ["id", "pretty_name", "name", "type"]
-        keys = [key for key in ordered_keys if key in entity]
-        keys.extend(key for key in entity.keys() if key not in keys and not key.startswith("_"))
-
-        lines = []
-        for index, key in enumerate(keys):
-            value = entity.get(key)
-            prefix = "- " if index == 0 else "  "
-            lines.extend(self._format_yaml_value_lines(key, value, prefix))
-
-        return "\n".join(lines).rstrip() + "\n"
+        return self._repository_service()._format_yaml_entity_block(entity)
 
     def _find_yaml_entity_block(self, text, entity_id):
-        start_pattern = rf"(?m)^- id: {re.escape(str(entity_id))}\s*$"
-        start_match = re.search(start_pattern, text)
-        if not start_match:
-            return None
-
-        next_match = re.search(r"(?m)^- id: ", text[start_match.end():])
-        block_start = start_match.start()
-        block_end = start_match.end() + next_match.start() if next_match else len(text)
-        return block_start, block_end
+        return self._repository_service()._find_yaml_entity_block(text, entity_id)
 
     def _persist_entity_to_repository(self, entity, previous_entity_id=None):
-        if not isinstance(entity, dict):
-            return False
-
-        entity_id = entity.get("id")
-        lookup_entity_id = previous_entity_id or entity_id
-        dataset_name = entity.get("_dataset", entity.get("type"))
-        entry_path = self._entry_file_path_for_dataset(dataset_name)
-        if not entity_id or entry_path is None:
-            return False
-
-        os.makedirs(os.path.dirname(entry_path), exist_ok=True)
-        if os.path.exists(entry_path):
-            with open(entry_path, "r", encoding="utf-8") as f:
-                text = f.read()
-        else:
-            text = ""
-
-        if text.strip() == "[]":
-            text = ""
-
-        block = self._format_yaml_entity_block(entity)
-        found = self._find_yaml_entity_block(text, lookup_entity_id)
-        if found is None:
-            separator = "" if not text.strip() else "\n"
-            updated_text = text.rstrip() + separator + block
-        else:
-            block_start, block_end = found
-            updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
-
-        with open(entry_path, "w", encoding="utf-8") as f:
-            f.write(updated_text)
-
-        return True
+        return self._repository_service()._persist_entity_to_repository(
+            entity,
+            previous_entity_id=previous_entity_id,
+        )
 
     def _sync_bidirectional_relations(self, persist=True):
-        if self.world_model is None or getattr(self.world_model, "loader", None) is None:
-            return set()
-
-        loader = self.world_model.loader
-        entities = getattr(loader, "entities", {}) or {}
-        changed_entity_ids = set()
-
-        if hasattr(loader, "populate_offspring"):
-            changed_entity_ids.update(loader.populate_offspring())
-
-        if changed_entity_ids and persist:
-            failed_persist_ids = []
-            for entity_id in sorted(changed_entity_ids):
-                entity = entities.get(entity_id)
-                if isinstance(entity, dict):
-                    try:
-                        self._persist_entity_to_repository(entity)
-                    except OSError:
-                        failed_persist_ids.append(entity_id)
-            if failed_persist_ids:
-                self.relation_link_status = (
-                    "Relation sync skipped repository writes for "
-                    + ", ".join(failed_persist_ids[:3])
-                    + ("..." if len(failed_persist_ids) > 3 else "")
-                )
-
-        if changed_entity_ids:
-            self.relation_tree_neighbor_cache = {}
-            self.canvas_relation_edges = []
-            if hasattr(loader, "build_reference_graph"):
-                loader.build_reference_graph()
-            self._refresh_timeline_items()
-
-        return changed_entity_ids
+        return self._repository_service()._sync_bidirectional_relations(persist=persist)
 
     def _persist_card_entity(self, card):
-        if card is None:
-            return False
-
-        self._sync_species_identity(card)
-        self._sync_card_wiki_mentions(card)
-        entity = self._entity_for_card(card)
-        if not isinstance(entity, dict):
-            return False
-        self._sync_stellar_class_profile(card, entity)
-        card.pop("last_committed_field", None)
-
-        id_change = card.get("pending_entity_id_change")
-        previous_entity_id = None
-        if isinstance(id_change, dict):
-            previous_entity_id = id_change.get("old") or None
-
-        current_entity_id = str(card.get("entity_id") or entity.get("id") or "")
-        if previous_entity_id or not str(entity.get("id") or "").strip():
-            normalized_entity_id = self._normalize_entity_id_for_save(
-                entity,
-                current_id=previous_entity_id or current_entity_id,
-            )
-            if normalized_entity_id and normalized_entity_id != str(entity.get("id") or ""):
-                previous_entity_id = previous_entity_id or current_entity_id
-                entity["id"] = normalized_entity_id
-                card["pending_entity_id_change"] = {
-                    "old": previous_entity_id,
-                    "new": normalized_entity_id,
-                }
-
-        persisted = self._persist_entity_to_repository(entity, previous_entity_id=previous_entity_id)
-        if persisted and isinstance(entity, dict):
-            self.relation_tree_neighbor_cache = {}
-            self.canvas_relation_edges = []
-            new_entity_id = str(entity.get("id"))
-            old_entity_id = previous_entity_id
-
-            if old_entity_id and old_entity_id != new_entity_id:
-                if self.world_model is not None:
-                    self.world_model.loader.entities.pop(old_entity_id, None)
-                    self.world_model.loader.entities[new_entity_id] = entity
-
-                card["entity_id"] = new_entity_id
-                self.selected_entity_id = new_entity_id
-                self.active_card_drag_id = new_entity_id if self.active_card_drag_id == old_entity_id else self.active_card_drag_id
-                self.active_card_resize_id = new_entity_id if self.active_card_resize_id == old_entity_id else self.active_card_resize_id
-                self._rewrite_entity_id_references(
-                    old_entity_id,
-                    new_entity_id,
-                    renamed_entity_id=new_entity_id,
-                )
-                self._remove_card_draft(old_entity_id)
-
-            card.pop("pending_entity_id_change", None)
-            card["is_draft_entity"] = False
-            remaining_buffers = card.get("draft_edit_buffers", {})
-            if isinstance(remaining_buffers, dict) and remaining_buffers:
-                entity_id = str(entity.get("id"))
-                draft = dict(self.card_drafts.get(entity_id, {}))
-                draft["entity"] = self._draft_entity_snapshot(entity)
-                draft["dataset"] = entity.get("_dataset", entity.get("type", ""))
-                draft["is_new_entry"] = False
-                draft["edit_buffers"] = remaining_buffers
-                self.card_drafts[entity_id] = draft
-                self._write_card_drafts()
-            else:
-                card["draft_edit_buffers"] = {}
-                self._remove_card_draft(entity.get("id"))
-        return persisted
-
+        return self._repository_service()._persist_card_entity(card)
     def _sync_stellar_class_profile(self, card, entity):
         committed_field = card.get("last_committed_field")
         if committed_field not in {"star_class", "spectral_class"}:
@@ -6227,425 +3903,69 @@ class KnowledgeBrowserUI:
         if metric_size_m <= 200.0:
             return 150, 150
         return 200, 200
+    def _pixel_art_editor_controller(self):
+        controller = getattr(self, "_pixel_art_editor_ui", None)
+        if controller is None:
+            controller = PixelArtEditorUI(self)
+            self._pixel_art_editor_ui = controller
+        return controller
 
     def _open_pixel_art_editor(self, illustration_id):
-        if self.world_model is None or not illustration_id:
-            return False
-        illustration = self.world_model.get_entity(illustration_id)
-        if not isinstance(illustration, dict):
-            return False
-        if str(illustration.get("idea_class") or "").strip().lower() != "illustration":
-            return False
-
-        parent = self._parent_entity_for_illustration(illustration)
-        existing_size = illustration.get("depicted_size_m") or illustration.get("metric_size_m")
-        size_text = "" if existing_size in (None, "") else str(existing_size)
-        self.pixel_art_editor = {
-            "stage": "size",
-            "illustration_id": illustration_id,
-            "illustration": illustration,
-            "parent_entity": parent,
-            "metric_size_buffer": size_text,
-            "metric_size_cursor": len(size_text),
-            "status": "Enter depicted size in meters",
-            "color": (236, 240, 246),
-            "hsv": colorsys.rgb_to_hsv(236 / 255.0, 240 / 255.0, 246 / 255.0),
-            "pixels": [],
-            "canvas_width": 0,
-            "canvas_height": 0,
-            "tool": "brush",
-            "brush_size": 1,
-            "active_slider": None,
-            "tool_hitboxes": {},
-            "brush_size_hitboxes": {},
-            "clear_rect": None,
-            "reference_surface": None,
-            "reference_rect": None,
-        }
-        self.pixel_art_painting = False
-        return True
+        return self._pixel_art_editor_controller().open(illustration_id)
 
     def _close_pixel_art_editor(self):
-        self.pixel_art_editor = None
-        self.pixel_art_painting = False
-        return True
+        return self._pixel_art_editor_controller().close()
 
     def _pixel_editor_metric_size(self):
-        editor = self.pixel_art_editor if isinstance(self.pixel_art_editor, dict) else {}
-        try:
-            return max(0.0, float(str(editor.get("metric_size_buffer") or "").replace(",", ".")))
-        except ValueError:
-            return None
+        return self._pixel_art_editor_controller().metric_size()
 
     def _begin_pixel_art_canvas(self):
-        editor = self.pixel_art_editor
-        if not isinstance(editor, dict):
-            return False
-        metric_size_m = self._pixel_editor_metric_size()
-        if metric_size_m is None or metric_size_m <= 0:
-            editor["status"] = "Size must be a positive meter value"
-            return True
-
-        parent = editor.get("parent_entity")
-        width, height = self._pixel_canvas_size_for_entity(parent, metric_size_m)
-        editor["stage"] = "canvas"
-        editor["canvas_width"] = width
-        editor["canvas_height"] = height
-        editor["pixels"] = [[None for _ in range(width)] for _ in range(height)]
-        editor["status"] = f"{width} x {height} px canvas"
-        return True
+        return self._pixel_art_editor_controller().begin_canvas()
 
     def _set_pixel_editor_color_from_hsv(self, channel, value):
-        editor = self.pixel_art_editor
-        if not isinstance(editor, dict):
-            return False
-        hue, saturation, brightness = editor.get("hsv", (0.0, 0.0, 1.0))
-        value = max(0.0, min(1.0, float(value)))
-        if channel == "h":
-            hue = value
-        elif channel == "s":
-            saturation = value
-        elif channel == "v":
-            brightness = value
-        red, green, blue = colorsys.hsv_to_rgb(hue, saturation, brightness)
-        editor["hsv"] = (hue, saturation, brightness)
-        editor["color"] = (
-            int(round(red * 255)),
-            int(round(green * 255)),
-            int(round(blue * 255)),
-        )
-        return True
+        return self._pixel_art_editor_controller().set_color_from_hsv(channel, value)
 
     def _set_pixel_editor_color_rgb(self, color):
-        editor = self.pixel_art_editor
-        if not isinstance(editor, dict):
-            return False
-        try:
-            red, green, blue = [max(0, min(255, int(part))) for part in color[:3]]
-        except (TypeError, ValueError):
-            return False
-        editor["color"] = (red, green, blue)
-        editor["hsv"] = colorsys.rgb_to_hsv(red / 255.0, green / 255.0, blue / 255.0)
-        return True
+        return self._pixel_art_editor_controller().set_color_rgb(color)
 
     def _set_pixel_editor_tool(self, tool):
-        editor = self.pixel_art_editor
-        if not isinstance(editor, dict):
-            return False
-        if tool not in {"brush", "eraser"}:
-            return False
-        editor["tool"] = tool
-        editor["status"] = "Brush selected" if tool == "brush" else "Eraser selected"
-        return True
+        return self._pixel_art_editor_controller().set_tool(tool)
 
     def _set_pixel_editor_brush_size(self, brush_size):
-        editor = self.pixel_art_editor
-        if not isinstance(editor, dict):
-            return False
-        try:
-            brush_size = int(brush_size)
-        except (TypeError, ValueError):
-            return False
-        brush_size = max(1, min(16, brush_size))
-        editor["brush_size"] = brush_size
-        editor["status"] = f"Brush size {brush_size} px"
-        return True
+        return self._pixel_art_editor_controller().set_brush_size(brush_size)
 
     def _clear_pixel_art_canvas(self):
-        editor = self.pixel_art_editor
-        if not isinstance(editor, dict) or editor.get("stage") != "canvas":
-            return False
-        width = int(editor.get("canvas_width") or 0)
-        height = int(editor.get("canvas_height") or 0)
-        if width <= 0 or height <= 0:
-            return False
-        editor["pixels"] = [[None for _ in range(width)] for _ in range(height)]
-        editor["status"] = "Canvas cleared"
-        return True
+        return self._pixel_art_editor_controller().clear_canvas()
 
     def _pixel_editor_set_slider_from_mouse(self, slider_info, mouse_x):
-        rect = slider_info.get("rect") if isinstance(slider_info, dict) else None
-        if rect is None or rect.width <= 0:
-            return False
-        value = (mouse_x - rect.x) / max(1, rect.width)
-        return self._set_pixel_editor_color_from_hsv(slider_info.get("channel"), value)
+        return self._pixel_art_editor_controller().set_slider_from_mouse(slider_info, mouse_x)
 
     def _surface_from_image_bytes(self, data):
-        if not data:
-            return None
-        if isinstance(data, str):
-            data = data.encode("utf-8", errors="ignore")
-        try:
-            return pygame.image.load(io.BytesIO(data)).convert_alpha()
-        except (pygame.error, OSError, ValueError):
-            pass
-
-        # Windows clipboard bitmaps are often DIB data without a BMP file header.
-        try:
-            header_size = int.from_bytes(data[:4], "little")
-            bit_count = int.from_bytes(data[14:16], "little") if len(data) >= 16 else 32
-            colors_used = int.from_bytes(data[32:36], "little") if len(data) >= 36 else 0
-            palette_size = (colors_used or (1 << bit_count if bit_count <= 8 else 0)) * 4
-            pixel_offset = 14 + header_size + palette_size
-            file_size = 14 + len(data)
-            bmp_header = (
-                b"BM"
-                + file_size.to_bytes(4, "little")
-                + (0).to_bytes(4, "little")
-                + pixel_offset.to_bytes(4, "little")
-            )
-            return pygame.image.load(io.BytesIO(bmp_header + data)).convert_alpha()
-        except (pygame.error, OSError, ValueError, OverflowError):
-            return None
+        return self._pixel_art_editor_controller().surface_from_image_bytes(data)
 
     def _load_pixel_reference_from_clipboard(self):
-        editor = self.pixel_art_editor
-        if not isinstance(editor, dict):
-            return False
-        try:
-            if not pygame.scrap.get_init():
-                pygame.scrap.init()
-        except pygame.error:
-            editor["status"] = "Clipboard image support is unavailable"
-            return True
-
-        surface = None
-        for scrap_type in (getattr(pygame, "SCRAP_BMP", "image/bmp"),):
-            try:
-                data = pygame.scrap.get(scrap_type)
-            except pygame.error:
-                data = None
-            surface = self._surface_from_image_bytes(data)
-            if surface is not None:
-                break
-
-        if surface is None:
-            try:
-                text_data = pygame.scrap.get(getattr(pygame, "SCRAP_TEXT", "text/plain"))
-            except pygame.error:
-                text_data = None
-            if text_data:
-                try:
-                    text = text_data.decode("utf-8", errors="ignore").strip().strip("\x00").strip('"')
-                except AttributeError:
-                    text = str(text_data).strip().strip('"')
-                if text and os.path.exists(text):
-                    try:
-                        surface = pygame.image.load(text).convert_alpha()
-                    except (pygame.error, OSError):
-                        surface = None
-
-        if surface is None:
-            editor["status"] = "Ctrl+V found no image or image path"
-            return True
-
-        editor["reference_surface"] = surface
-        editor["status"] = f"Reference loaded: {surface.get_width()} x {surface.get_height()} px"
-        return True
+        return self._pixel_art_editor_controller().load_reference_from_clipboard()
 
     def _sample_pixel_reference_at(self, mouse_pos):
-        editor = self.pixel_art_editor
-        if not isinstance(editor, dict):
-            return False
-        surface = editor.get("reference_surface")
-        rect = editor.get("reference_rect")
-        if surface is None or rect is None or not rect.collidepoint(mouse_pos):
-            return False
-        ref_x = int((mouse_pos[0] - rect.x) * surface.get_width() / max(1, rect.width))
-        ref_y = int((mouse_pos[1] - rect.y) * surface.get_height() / max(1, rect.height))
-        ref_x = max(0, min(surface.get_width() - 1, ref_x))
-        ref_y = max(0, min(surface.get_height() - 1, ref_y))
-        color = surface.get_at((ref_x, ref_y))
-        self._set_pixel_editor_color_rgb(color)
-        editor["status"] = f"Picked #{color.r:02x}{color.g:02x}{color.b:02x} from reference"
-        return True
+        return self._pixel_art_editor_controller().sample_reference_at(mouse_pos)
 
     def _paint_pixel_editor_at(self, mouse_pos):
-        editor = self.pixel_art_editor
-        if not isinstance(editor, dict) or editor.get("stage") != "canvas":
-            return False
-        canvas_rect = editor.get("canvas_rect")
-        if canvas_rect is None or not canvas_rect.collidepoint(mouse_pos):
-            return False
-        width = int(editor.get("canvas_width") or 0)
-        height = int(editor.get("canvas_height") or 0)
-        if width <= 0 or height <= 0:
-            return False
-        pixel_x = int((mouse_pos[0] - canvas_rect.x) * width / max(1, canvas_rect.width))
-        pixel_y = int((mouse_pos[1] - canvas_rect.y) * height / max(1, canvas_rect.height))
-        pixel_x = max(0, min(width - 1, pixel_x))
-        pixel_y = max(0, min(height - 1, pixel_y))
-        pixels = editor.get("pixels")
-        if not isinstance(pixels, list) or pixel_y >= len(pixels):
-            return False
-        brush_size = max(1, min(16, int(editor.get("brush_size") or 1)))
-        start_x = pixel_x - brush_size // 2
-        start_y = pixel_y - brush_size // 2
-        paint_color = None if editor.get("tool") == "eraser" else tuple(editor.get("color", (236, 240, 246)))
-        for y in range(start_y, start_y + brush_size):
-            if y < 0 or y >= height or y >= len(pixels):
-                continue
-            row = pixels[y]
-            if not isinstance(row, list):
-                continue
-            for x in range(start_x, start_x + brush_size):
-                if 0 <= x < width and x < len(row):
-                    row[x] = paint_color
-        return True
+        return self._pixel_art_editor_controller().paint_at(mouse_pos)
 
     def _pixel_art_asset_path(self, illustration_id):
-        safe_id = self._sanitize_entity_id(illustration_id) or "illustration"
-        return os.path.join("assets", "illustrations", f"{safe_id}_pixel.png").replace("\\", "/")
+        return self._pixel_art_editor_controller().asset_path(illustration_id)
 
     def _save_pixel_art_editor(self):
-        editor = self.pixel_art_editor
-        if not isinstance(editor, dict) or editor.get("stage") != "canvas":
-            if isinstance(editor, dict):
-                editor["status"] = "Create the canvas before saving"
-            return False
-        illustration_id = str(editor.get("illustration_id") or "").strip()
-        illustration = self.world_model.get_entity(illustration_id) if self.world_model is not None else None
-        if not isinstance(illustration, dict):
-            editor["status"] = "Could not find illustration entry"
-            return False
-        width = int(editor.get("canvas_width") or 0)
-        height = int(editor.get("canvas_height") or 0)
-        pixels = editor.get("pixels")
-        if width <= 0 or height <= 0 or not isinstance(pixels, list):
-            editor["status"] = "Pixel canvas is missing"
-            return False
-
-        rel_path = self._pixel_art_asset_path(illustration_id)
-        abs_path = os.path.normpath(str(self.PROJECT_ROOT / rel_path))
-        try:
-            os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-            surface = pygame.Surface((width, height), pygame.SRCALPHA)
-            surface.fill((0, 0, 0, 0))
-            for y, row in enumerate(pixels[:height]):
-                if not isinstance(row, list):
-                    continue
-                for x, color in enumerate(row[:width]):
-                    if color is None:
-                        continue
-                    surface.set_at((x, y), (*tuple(color[:3]), 255))
-            pygame.image.save(surface, abs_path)
-        except (pygame.error, OSError, ValueError) as exc:
-            editor["status"] = f"Could not save PNG: {exc}"
-            return False
-
-        metric_size_m = self._pixel_editor_metric_size()
-        illustration["depicted_size_m"] = metric_size_m
-        illustration["pixel_canvas_width"] = width
-        illustration["pixel_canvas_height"] = height
-        illustration["pixel_art_source"] = "in_engine_pixel_editor"
-        illustration["media_path"] = rel_path
-        if not self.assign_illustration_image(illustration_id, rel_path):
-            editor["status"] = "PNG saved, but illustration entry was not updated"
-            return False
-        self._close_pixel_art_editor()
-        return True
+        return self._pixel_art_editor_controller().save()
 
     def _handle_pixel_art_editor_keydown(self, event):
-        editor = self.pixel_art_editor
-        if not isinstance(editor, dict):
-            return False
-        if event.key == pygame.K_ESCAPE:
-            self._close_pixel_art_editor()
-            return True
-        if (
-            editor.get("stage") == "canvas"
-            and event.key == pygame.K_v
-            and (getattr(event, "mod", 0) & pygame.KMOD_CTRL)
-        ):
-            return self._load_pixel_reference_from_clipboard()
-        if editor.get("stage") == "canvas":
-            if event.key == pygame.K_b:
-                return self._set_pixel_editor_tool("brush")
-            if event.key == pygame.K_e:
-                return self._set_pixel_editor_tool("eraser")
-            if event.key in (pygame.K_LEFTBRACKET, pygame.K_MINUS):
-                return self._set_pixel_editor_brush_size(int(editor.get("brush_size") or 1) - 1)
-            if event.key in (pygame.K_RIGHTBRACKET, pygame.K_EQUALS, getattr(pygame, "K_PLUS", pygame.K_EQUALS)):
-                return self._set_pixel_editor_brush_size(int(editor.get("brush_size") or 1) + 1)
-        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-            if editor.get("stage") == "size":
-                return self._begin_pixel_art_canvas()
-            return self._save_pixel_art_editor()
-        if editor.get("stage") != "size":
-            return True
-
-        buffer_text = str(editor.get("metric_size_buffer") or "")
-        cursor = max(0, min(int(editor.get("metric_size_cursor", len(buffer_text)) or 0), len(buffer_text)))
-        if event.key == pygame.K_BACKSPACE:
-            if cursor > 0:
-                editor["metric_size_buffer"] = buffer_text[:cursor - 1] + buffer_text[cursor:]
-                editor["metric_size_cursor"] = cursor - 1
-            return True
-        if event.key == pygame.K_DELETE:
-            if cursor < len(buffer_text):
-                editor["metric_size_buffer"] = buffer_text[:cursor] + buffer_text[cursor + 1:]
-            return True
-        if event.key == pygame.K_LEFT:
-            editor["metric_size_cursor"] = max(0, cursor - 1)
-            return True
-        if event.key == pygame.K_RIGHT:
-            editor["metric_size_cursor"] = min(len(buffer_text), cursor + 1)
-            return True
-        text = getattr(event, "unicode", "")
-        if text and text in "0123456789.,":
-            editor["metric_size_buffer"] = buffer_text[:cursor] + text + buffer_text[cursor:]
-            editor["metric_size_cursor"] = cursor + len(text)
-            return True
-        return True
+        return self._pixel_art_editor_controller().handle_keydown(event)
 
     def _handle_pixel_art_editor_click(self, mouse_pos):
-        editor = self.pixel_art_editor
-        if not isinstance(editor, dict):
-            return False
-        for key in ("close_rect", "cancel_rect"):
-            rect = editor.get(key)
-            if rect is not None and rect.collidepoint(mouse_pos):
-                self._close_pixel_art_editor()
-                return True
-        primary_rect = editor.get("primary_rect")
-        if primary_rect is not None and primary_rect.collidepoint(mouse_pos):
-            if editor.get("stage") == "size":
-                return self._begin_pixel_art_canvas()
-            return self._save_pixel_art_editor()
-        if editor.get("stage") == "canvas":
-            for tool, rect in (editor.get("tool_hitboxes") or {}).items():
-                if rect is not None and rect.collidepoint(mouse_pos):
-                    return self._set_pixel_editor_tool(tool)
-            for delta, rect in (editor.get("brush_size_hitboxes") or {}).items():
-                if rect is not None and rect.collidepoint(mouse_pos):
-                    return self._set_pixel_editor_brush_size(int(editor.get("brush_size") or 1) + int(delta))
-            clear_rect = editor.get("clear_rect")
-            if clear_rect is not None and clear_rect.collidepoint(mouse_pos):
-                return self._clear_pixel_art_canvas()
-            if self._sample_pixel_reference_at(mouse_pos):
-                return True
-            for slider in editor.get("slider_hitboxes", []):
-                rect = slider.get("rect")
-                if rect is not None and rect.inflate(8, 10).collidepoint(mouse_pos):
-                    self._pixel_editor_set_slider_from_mouse(slider, mouse_pos[0])
-                    editor["active_slider"] = slider
-                    return True
-            if self._paint_pixel_editor_at(mouse_pos):
-                self.pixel_art_painting = True
-                return True
-        return True
+        return self._pixel_art_editor_controller().handle_click(mouse_pos)
 
     def _handle_pixel_art_editor_motion(self, mouse_pos):
-        editor = self.pixel_art_editor
-        if not isinstance(editor, dict):
-            return False
-        active_slider = editor.get("active_slider")
-        if active_slider is not None:
-            return self._pixel_editor_set_slider_from_mouse(active_slider, mouse_pos[0])
-        if self.pixel_art_painting:
-            return self._paint_pixel_editor_at(mouse_pos)
-        return True
-
+        return self._pixel_art_editor_controller().handle_motion(mouse_pos)
     def _rebuild_browser_hitboxes(self):
         self.browser_hitboxes = []
         self.browser_toggle_hitboxes = []
@@ -6850,175 +4170,32 @@ class KnowledgeBrowserUI:
             close_surface = font.render("x", True, (250, 230, 234))
             screen.blit(close_surface, close_surface.get_rect(center=close_rect.center))
 
-    def _card_visual_rect(self, card):
-        if not isinstance(card, dict):
-            return None
+    def _card_visual_rect(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_card_visual_rect")(*args, **kwargs)
 
-        card_rect = card.get("rect")
-        toolbelt_rect = card.get("toolbelt_rect")
-        if card_rect is not None and toolbelt_rect is not None:
-            return card_rect.union(toolbelt_rect)
-        return card_rect or toolbelt_rect
+    def _graph_relation_entity_ids_for_card(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_graph_relation_entity_ids_for_card")(*args, **kwargs)
 
-    def _graph_relation_entity_ids_for_card(self, card):
-        entity = self._entity_for_card(card)
-        if not isinstance(entity, dict):
-            return []
+    def _rect_edge_point_toward(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_rect_edge_point_toward")(*args, **kwargs)
 
-        seen = set()
-        entity_ids = []
+    def _draw_canvas_graph_line(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_draw_canvas_graph_line")(*args, **kwargs)
 
-        def append_entity_id(value):
-            entity_id = str(value or "").strip()
-            if entity_id and entity_id not in seen:
-                seen.add(entity_id)
-                entity_ids.append(entity_id)
+    def _rebuild_canvas_relation_edges(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_rebuild_canvas_relation_edges")(*args, **kwargs)
 
-        for entity_id in self._relation_tree_neighbor_ids(entity.get("id")):
-            append_entity_id(entity_id)
+    def _draw_canvas_relation_lines(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_draw_canvas_relation_lines")(*args, **kwargs)
 
-        return entity_ids
+    def _draw_canvas_relation_target_highlights(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_draw_canvas_relation_target_highlights")(*args, **kwargs)
 
-    def _rect_edge_point_toward(self, rect, target_point):
-        center_x, center_y = rect.center
-        dx = target_point[0] - center_x
-        dy = target_point[1] - center_y
-        if dx == 0 and dy == 0:
-            return rect.center
+    def _draw_canvas_relation_control_for_card(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_draw_canvas_relation_control_for_card")(*args, **kwargs)
 
-        x_scale = (rect.width / 2) / abs(dx) if dx else 999999
-        y_scale = (rect.height / 2) / abs(dy) if dy else 999999
-        scale = min(x_scale, y_scale)
-        return (int(center_x + dx * scale), int(center_y + dy * scale))
-
-    def _draw_canvas_graph_line(self, screen, source_rect, target_rect, color):
-        start = self._rect_edge_point_toward(source_rect, target_rect.center)
-        end = self._rect_edge_point_toward(target_rect, source_rect.center)
-        pygame.draw.line(screen, (12, 16, 24), start, end, 6)
-        pygame.draw.line(screen, color, start, end, 3)
-        pygame.draw.circle(screen, (12, 16, 24), start, 6)
-        pygame.draw.circle(screen, color, start, 4)
-        pygame.draw.circle(screen, (12, 16, 24), end, 6)
-        pygame.draw.circle(screen, color, end, 4)
-
-    def _rebuild_canvas_relation_edges(self):
-        cards_by_id = {
-            str(card.get("entity_id")): card
-            for card in self.cards
-            if card.get("entity_id") and card.get("card_kind") != "schema" and card.get("rect") is not None
-        }
-        if len(cards_by_id) < 2:
-            self.canvas_relation_edges = []
-            return
-
-        drawn_edges = set()
-        edges = []
-        for source_id, source_card in cards_by_id.items():
-            for target_id in self._graph_relation_entity_ids_for_card(source_card):
-                target_id = str(target_id)
-                if target_id == source_id or target_id not in cards_by_id:
-                    continue
-                edge_key = tuple(sorted((source_id, target_id)))
-                if edge_key in drawn_edges:
-                    continue
-                drawn_edges.add(edge_key)
-                edges.append(edge_key)
-        self.canvas_relation_edges = edges
-
-    def _draw_canvas_relation_lines(self, screen, right_rect):
-        if len(self.cards) < 2:
-            return
-
-        cards_by_id = {
-            str(card.get("entity_id")): card
-            for card in self.cards
-            if card.get("entity_id") and card.get("card_kind") != "schema" and card.get("rect") is not None
-        }
-        if len(cards_by_id) < 2:
-            return
-
-        previous_clip = screen.get_clip()
-        screen.set_clip(previous_clip.clip(right_rect))
-        try:
-            for source_id, target_id in self.canvas_relation_edges:
-                source_card = cards_by_id.get(str(source_id))
-                target_card = cards_by_id.get(str(target_id))
-                if source_card is None or target_card is None:
-                    continue
-                source_rect = source_card.get("rect")
-                target_rect = target_card.get("rect")
-                if source_rect is None or target_rect is None:
-                    continue
-                self._draw_canvas_graph_line(screen, source_rect, target_rect, (232, 190, 92))
-
-            if self.canvas_relation_link_source_id is not None:
-                source_card = self._find_card_by_entity_id(self.canvas_relation_link_source_id)
-                source_rect = source_card.get("rect") if source_card is not None else None
-                if source_rect is not None:
-                    start = self._rect_edge_point_toward(source_rect, pygame.mouse.get_pos())
-                    pygame.draw.line(screen, (12, 16, 24), start, pygame.mouse.get_pos(), 4)
-                    pygame.draw.line(screen, (238, 214, 128), start, pygame.mouse.get_pos(), 2)
-        finally:
-            screen.set_clip(previous_clip)
-
-    def _draw_canvas_relation_target_highlights(self, screen, right_rect):
-        if self.canvas_relation_link_source_id is None:
-            return
-
-        previous_clip = screen.get_clip()
-        screen.set_clip(previous_clip.clip(right_rect))
-        try:
-            for card in self.cards:
-                rect = card.get("rect")
-                entity_id = card.get("entity_id")
-                if (
-                    rect is None
-                    or card.get("card_kind") == "schema"
-                    or entity_id == self.canvas_relation_link_source_id
-                ):
-                    continue
-                pygame.draw.rect(screen, (232, 190, 92), rect.inflate(8, 8), 2)
-        finally:
-            screen.set_clip(previous_clip)
-
-    def _draw_canvas_relation_control_for_card(self, screen, font, card):
-        button_rect = card.get("canvas_relation_add_rect")
-        if button_rect is None:
-            return
-
-        is_active = card.get("entity_id") == self.canvas_relation_link_source_id
-        hovered = button_rect.collidepoint(pygame.mouse.get_pos())
-        fill = (104, 88, 36) if is_active else ((62, 78, 104) if hovered else (42, 50, 68))
-        border = (238, 210, 130) if is_active else ((174, 204, 238) if hovered else (112, 132, 162))
-        pygame.draw.ellipse(screen, fill, button_rect)
-        pygame.draw.ellipse(screen, border, button_rect, 1)
-        plus_surface = font.render("+", True, (245, 245, 245))
-        plus_rect = plus_surface.get_rect(center=button_rect.center)
-        screen.blit(plus_surface, plus_rect)
-
-    def _draw_card_canvas(self, screen, font, right_rect):
-        """
-        Central draw order for card-canvas content.
-
-        Keep background graph/link affordances below cards, then draw each card
-        with its own controls in card z order so lower-card controls cannot cut
-        through cards above them.
-        """
-        previous_clip = screen.get_clip()
-        canvas_clip = right_rect.inflate(-8, -8)
-        screen.set_clip(previous_clip.clip(canvas_clip))
-        try:
-            self._draw_canvas_relation_lines(screen, right_rect)
-            self._draw_canvas_relation_target_highlights(screen, right_rect)
-            for card in self.cards:
-                visual_rect = self._card_visual_rect(card)
-                if visual_rect is not None and not visual_rect.colliderect(canvas_clip):
-                    continue
-                self._draw_card(screen, font, card)
-                self._draw_canvas_relation_control_for_card(screen, font, card)
-        finally:
-            screen.set_clip(previous_clip)
-
+    def _draw_card_canvas(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_draw_card_canvas")(*args, **kwargs)
     def _draw_card_type_picker(self, screen, font, card):
         if not card.get("type_picker_open", False):
             card["type_picker_hitboxes"] = []
@@ -7532,450 +4709,56 @@ class KnowledgeBrowserUI:
 
         return None
 
-    def _insert_relation_reference_into_card(self, card, field_key, entity_id):
-        entity = self._entity_for_card(card)
-        card_view = card.get("card_view") if card is not None else None
-        if not isinstance(entity, dict) or not field_key or not entity_id or card_view is None:
-            return False
-
-        allows_many = field_key in EntityCard.CORE_RELATION_FIELDS or (
-            card_view._relation_field_allows_many(field_key)
-            if hasattr(card_view, "_relation_field_allows_many")
-            else isinstance(entity.get(field_key), list)
-        )
-
-        if allows_many:
-            current_value = entity.get(field_key)
-            if isinstance(current_value, list):
-                values = list(current_value)
-            elif current_value in (None, ""):
-                values = []
-            else:
-                values = [current_value]
-
-            if entity_id not in [str(value) for value in values]:
-                values.append(entity_id)
-            entity[field_key] = values
-        else:
-            entity[field_key] = entity_id
-
-        if card.get("is_draft_entity", False):
-            self._save_card_draft(card)
-        else:
-            self._persist_card_entity(card)
-        return True
-
-    def _remove_relation_reference_from_card(self, card, field_key, entity_id):
-        entity = self._entity_for_card(card)
-        card_view = card.get("card_view") if card is not None else None
-        entity_id = str(entity_id or "").strip()
-        if not isinstance(entity, dict) or not field_key or not entity_id or card_view is None:
-            return False
-
-        allows_many = field_key in EntityCard.CORE_RELATION_FIELDS or (
-            card_view._relation_field_allows_many(field_key)
-            if hasattr(card_view, "_relation_field_allows_many")
-            else isinstance(entity.get(field_key), list)
-        )
-
-        current_value = entity.get(field_key)
-        if allows_many:
-            if isinstance(current_value, list):
-                values = [value for value in current_value if str(value).strip() != entity_id]
-                if len(values) == len(current_value):
-                    return False
-            elif current_value in (None, ""):
-                return False
-            elif str(current_value).strip() == entity_id:
-                values = []
-            else:
-                return False
-            entity[field_key] = values
-        else:
-            if str(current_value or "").strip() != entity_id:
-                return False
-            entity[field_key] = ""
-
-        if card.get("is_draft_entity", False):
-            self._save_card_draft(card)
-        else:
-            self._persist_card_entity(card)
-        return True
-
-    def _find_card_by_entity_id(self, entity_id):
-        entity_id = str(entity_id or "")
-        for card in self.cards:
-            if str(card.get("entity_id") or "") == entity_id:
-                return card
-            card_view = card.get("card_view")
-            entity = getattr(card_view, "entity", None) if card_view is not None else None
-            if isinstance(entity, dict) and str(entity.get("id") or "") == entity_id:
-                return card
-        return None
-
-    def _begin_canvas_relation_link(self, card):
-        if card is None or card.get("card_kind") == "schema" or not card.get("entity_id"):
-            return False
-
-        if not card.get("is_edit_mode", False):
-            return False
-
-        self.canvas_relation_link_source_id = card.get("entity_id")
-        entity = self._entity_for_card(card)
-        label = (
-            self._entity_display_label(entity, fallback=card.get("entity_id", "entry"))
-            if isinstance(entity, dict)
-            else str(card.get("entity_id") or "entry")
-        )
-        self.canvas_relation_status = f"Linking from {label}: click a second card"
-        self._close_wiki_link_picker(card)
-        self._close_relation_picker(card)
-        self._relayout_cards()
-        return True
-
-    def _clear_canvas_relation_link(self):
-        self.canvas_relation_link_source_id = None
-        self.canvas_relation_status = ""
-
-    def _link_canvas_relation_cards(self, target_card):
-        source_card = self._find_card_by_entity_id(self.canvas_relation_link_source_id)
-        target_id = target_card.get("entity_id") if isinstance(target_card, dict) else None
-        if source_card is None or not target_id:
-            self._clear_canvas_relation_link()
-            return False
-
-        if target_id == source_card.get("entity_id") or target_card.get("card_kind") == "schema":
-            self._clear_canvas_relation_link()
-            self._relayout_cards()
-            return False
-
-        linked_related = self._insert_relation_reference_into_card(source_card, "related", target_id)
-        linked_parent = self._insert_relation_reference_into_card(source_card, "parents", target_id)
-        linked = linked_related or linked_parent
-        if linked:
-            self._clear_canvas_relation_link()
-            self.browser_items = self._build_browser_items(self.world_model)
-            self._rebuild_browser_hitboxes()
-            self._relayout_cards()
-            return True
-
-        self.canvas_relation_status = "Could not link those entries"
-        self._relayout_cards()
-        return False
-
-    def _handle_canvas_relation_target_click(self, mouse_pos):
-        if self.canvas_relation_link_source_id is None:
-            return None
-
-        for index in range(len(self.cards) - 1, -1, -1):
-            card = self.cards[index]
-            visual_rect = self._card_visual_rect(card)
-            if visual_rect is None or not visual_rect.collidepoint(mouse_pos):
-                continue
-
-            card_obj = self._bring_card_to_front(index)
-            self._link_canvas_relation_cards(card_obj)
-            return "__ui_consumed__"
-
-        self._clear_canvas_relation_link()
-        self._relayout_cards()
-        return "__ui_consumed__"
-
-    def _clear_relation_browser_link(self):
-        target = self.relation_link_target or {}
-        source_card = target.get("source_card")
-        if isinstance(source_card, dict):
-            source_card.pop("active_relation_link_field", None)
-            source_card.pop("relation_link_status", None)
-
-        self.relation_link_target = None
-        self.relation_link_status = ""
-        self.browser_search_active = False
-
-    def _finish_relation_browser_link(self):
-        if self.relation_link_target is None:
-            return False
-
-        self._clear_relation_browser_link()
-        self._rebuild_browser_hitboxes()
-        self._relayout_cards()
-        return True
-
-    def _handle_relation_link_mode_click(self, mouse_pos, left_rect):
-        if self.relation_link_target is None:
-            return None
-
-        if not left_rect.collidepoint(mouse_pos):
-            self._finish_relation_browser_link()
-            return "__ui_consumed__"
-
-        item = self._browser_item_at_pos(mouse_pos, left_rect)
-        if item is None:
-            return "__ui_consumed__"
-
-        entity_id = item.get("entity_id")
-        if item.get("kind") == "schema" or self._schema_name_from_card_id(entity_id) is not None:
-            self.relation_link_status = "Pick an entry, not a schema"
-            source_card = self.relation_link_target.get("source_card")
-            if isinstance(source_card, dict):
-                source_card["relation_link_status"] = self.relation_link_status
-            self._rebuild_browser_hitboxes()
-            self._relayout_cards()
-            return "__ui_consumed__"
-
-        if item.get("kind") not in {"entity", "tree_entity"}:
-            return "__ui_consumed__"
-
-        if not self._browser_item_matches_relation_target(item):
-            target_label = self._relation_target_label(self.relation_link_target.get("target"))
-            self.relation_link_status = f"Pick a matching {target_label} entry"
-            source_card = self.relation_link_target.get("source_card")
-            if isinstance(source_card, dict):
-                source_card["relation_link_status"] = self.relation_link_status
-            self._rebuild_browser_hitboxes()
-            self._relayout_cards()
-            return "__ui_consumed__"
-
-        linked = self._link_relation_from_browser_entity(entity_id)
-        if not linked:
-            self._rebuild_browser_hitboxes()
-            self._relayout_cards()
-        return "__ui_consumed__"
-
-    def _begin_relation_browser_link(self, card, relation_info):
-        if card is None or not isinstance(relation_info, dict):
-            return False
-
-        field_key = relation_info.get("field_key")
-        if not field_key:
-            return False
-
-        self.relation_link_target = {
-            "source_card": card,
-            "source_entity_id": card.get("entity_id"),
-            "field_key": field_key,
-            "target": relation_info.get("target", ""),
-        }
-        target_label = self._relation_target_label(relation_info.get("target"))
-        status = f"Choose an existing {target_label} in the repository or click an open card"
-        card["active_relation_link_field"] = field_key
-        card["relation_link_status"] = status
-        self.relation_link_status = status
-        self.browser_filter_dataset = self._relation_target_dataset_filter(relation_info.get("target", ""))
-        self.browser_filter_incomplete_only = False
-        self.browser_collapsed = False
-        self.browser_search_active = True
-        self.browser_search_query = ""
-        self.browser_scroll = 0
-        self.browser_items = self._build_browser_items(self.world_model)
-        self.show_template_picker = False
-        self._build_template_picker_hitboxes()
-        self._rebuild_browser_hitboxes()
-        self._relayout_cards()
-        return True
-
-    def _handle_relation_card_link_target_click(self, mouse_pos):
-        if self.relation_link_target is None:
-            return None
-
-        source_card = self.relation_link_target.get("source_card")
-        source_entity_id = self.relation_link_target.get("source_entity_id")
-
-        for index in range(len(self.cards) - 1, -1, -1):
-            card = self.cards[index]
-            visual_rect = self._card_visual_rect(card)
-            if visual_rect is None or not visual_rect.collidepoint(mouse_pos):
-                continue
-
-            target_entity_id = card.get("entity_id")
-            if not target_entity_id or target_entity_id == source_entity_id:
-                self.relation_link_status = "Pick a different card"
-                if isinstance(source_card, dict):
-                    source_card["relation_link_status"] = self.relation_link_status
-                self._relayout_cards()
-                return "__ui_consumed__"
-
-            entity = self.world_model.get_entity(target_entity_id) if self.world_model is not None else None
-            if entity is None or not self._entity_matches_relation_target(
-                entity,
-                self.relation_link_target.get("target"),
-            ):
-                target_label = self._relation_target_label(self.relation_link_target.get("target"))
-                self.relation_link_status = f"Pick a matching {target_label} card"
-                if isinstance(source_card, dict):
-                    source_card["relation_link_status"] = self.relation_link_status
-                self._relayout_cards()
-                return "__ui_consumed__"
-
-            self._bring_card_to_front(index)
-            linked = self._link_relation_from_browser_entity(target_entity_id)
-            if not linked:
-                self._relayout_cards()
-            return "__ui_consumed__"
-
-        self._finish_relation_browser_link()
-        return "__ui_consumed__"
-
-    def _link_relation_from_browser_entity(self, entity_id):
-        if self.relation_link_target is None or self.world_model is None:
-            return False
-
-        entity = self.world_model.get_entity(entity_id)
-        if entity is None:
-            self.relation_link_status = "That repository row is not an entry"
-            return False
-
-        source_card = self.relation_link_target.get("source_card")
-        if not isinstance(source_card, dict):
-            source_card = self._find_card_by_entity_id(self.relation_link_target.get("source_entity_id"))
-        if source_card is None:
-            self.relation_link_status = "The source card is no longer open"
-            return False
-
-        if self.relation_link_target.get("mode") == "stellar_neighbourhood":
-            if not self._is_star_system_entity(entity):
-                self.relation_link_status = "Pick a matching star system"
-                source_card["relation_link_status"] = self.relation_link_status
-                return False
-            if entity_id == source_card.get("entity_id"):
-                self.relation_link_status = "Pick a different star system"
-                source_card["relation_link_status"] = self.relation_link_status
-                return False
-            return self._open_stellar_neighbour_distance_prompt(source_card, entity_id)
-
-        linked = self._insert_relation_reference_into_card(
-            source_card,
-            self.relation_link_target.get("field_key"),
-            entity_id,
-        )
-        if not linked:
-            self.relation_link_status = "Could not link that entry"
-            return False
-
-        label = self._entity_display_label(entity, fallback=entity_id)
-        self.relation_link_status = f"Added {label}; Enter or click away to finish"
-        source_card["relation_link_status"] = self.relation_link_status
-        self.browser_items = self._build_browser_items(self.world_model)
-        self._rebuild_browser_hitboxes()
-        self._relayout_cards()
-        return True
-
-    def _create_relation_target_entity(self, relation_info):
-        target = relation_info.get("target")
-        template = self._template_for_relation_target(target)
-        if template is None:
-            template = self._template_by_dataset("ideas")
-        if template is None:
-            return None
-
-        requested_id = relation_info.get("entity_id") if relation_info.get("kind") == "missing" else None
-        return self._create_and_open_template_entity(template, requested_id=requested_id)
-
-    def _open_relation_target_template_picker(self, card, relation_info):
-        if card is None or not isinstance(relation_info, dict):
-            return False
-
-        missing_ref = str(relation_info.get("entity_id") or relation_info.get("label") or "").strip()
-        if not missing_ref:
-            return False
-
-        self.schema_entry_templates = self._load_schema_entry_templates()
-        self.pending_new_entry_name = missing_ref
-        self.template_picker_mode = "relation_create"
-        self.template_picker_context = {
-            "source_entity_id": card.get("entity_id"),
-            "card": card,
-            "field_key": relation_info.get("field_key"),
-            "missing_ref": missing_ref,
-        }
-        self.template_picker_search_query = ""
-        self.template_picker_search_active = True
-        self.template_picker_scroll = 0
-        self.template_picker_status = f"Choose type for {missing_ref}"
-        self.show_template_picker = True
-        self._build_template_picker_hitboxes()
-        return True
-
-    def _replace_relation_reference_on_card(self, card, field_key, old_ref, new_ref):
-        entity = self._entity_for_card(card)
-        if not isinstance(entity, dict) or not field_key or not new_ref:
-            return False
-
-        old_ref = str(old_ref or "").strip()
-        new_ref = str(new_ref or "").strip()
-        current_value = entity.get(field_key)
-        values = []
-        if isinstance(current_value, list):
-            values = [
-                str(item.get("id") if isinstance(item, dict) else item).strip()
-                for item in current_value
-            ]
-        elif isinstance(current_value, str) and current_value.strip():
-            values = [current_value.strip()]
-        elif current_value not in (None, "", []):
-            values = [str(current_value).strip()]
-
-        if not values:
-            values = [new_ref]
-
-        replaced = False
-        updated_values = []
-        for value in values:
-            if value == old_ref:
-                value = new_ref
-                replaced = True
-            if value and value not in updated_values:
-                updated_values.append(value)
-
-        if not replaced and new_ref not in updated_values:
-            updated_values.append(new_ref)
-
-        entity[field_key] = updated_values
-        card["subtitle"] = self._card_subtitle_for_entity(entity)
-        if card.get("is_draft_entity", False):
-            self._save_card_draft(card)
-        else:
-            self._persist_card_entity(card)
-        return True
-
-    def _create_relation_target_from_template_picker(self, template):
-        entry_name = str(self.pending_new_entry_name or "").strip()
-        if not entry_name:
-            self.template_picker_status = "Name entry first"
-            return False
-
-        created_entity = self._create_named_template_entity(template, entry_name)
-        if created_entity is None:
-            self.template_picker_status = "Could not create linked entry"
-            return False
-
-        context = dict(self.template_picker_context or {})
-        source_card = context.get("card")
-        if source_card not in self.cards:
-            source_card = self._find_card_by_entity_id(context.get("source_entity_id"))
-
-        created_entity_id = str(created_entity.get("id") or "").strip()
-        if source_card is not None and created_entity_id:
-            self._replace_relation_reference_on_card(
-                source_card,
-                context.get("field_key"),
-                context.get("missing_ref"),
-                created_entity_id,
-            )
-
-        self.pending_new_entry_name = None
-        self.show_template_picker = False
-        self.template_picker_search_query = ""
-        self.template_picker_search_active = False
-        self.template_picker_mode = "create"
-        self.template_picker_context = {}
-        self.template_picker_status = ""
-        self.browser_items = self._build_browser_items(self.world_model)
-        self._rebuild_browser_hitboxes()
-        self._build_template_picker_hitboxes()
-        self._relayout_cards()
-        return True
+    def _insert_relation_reference_into_card(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_insert_relation_reference_into_card")(*args, **kwargs)
 
+    def _remove_relation_reference_from_card(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_remove_relation_reference_from_card")(*args, **kwargs)
+
+    def _find_card_by_entity_id(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_find_card_by_entity_id")(*args, **kwargs)
+
+    def _begin_canvas_relation_link(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_begin_canvas_relation_link")(*args, **kwargs)
+
+    def _clear_canvas_relation_link(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_clear_canvas_relation_link")(*args, **kwargs)
+
+    def _link_canvas_relation_cards(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_link_canvas_relation_cards")(*args, **kwargs)
+
+    def _handle_canvas_relation_target_click(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_handle_canvas_relation_target_click")(*args, **kwargs)
+
+    def _clear_relation_browser_link(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_clear_relation_browser_link")(*args, **kwargs)
+
+    def _finish_relation_browser_link(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_finish_relation_browser_link")(*args, **kwargs)
+
+    def _handle_relation_link_mode_click(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_handle_relation_link_mode_click")(*args, **kwargs)
+
+    def _begin_relation_browser_link(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_begin_relation_browser_link")(*args, **kwargs)
+
+    def _handle_relation_card_link_target_click(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_handle_relation_card_link_target_click")(*args, **kwargs)
+
+    def _link_relation_from_browser_entity(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_link_relation_from_browser_entity")(*args, **kwargs)
+
+    def _create_relation_target_entity(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_create_relation_target_entity")(*args, **kwargs)
+
+    def _open_relation_target_template_picker(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_open_relation_target_template_picker")(*args, **kwargs)
+
+    def _replace_relation_reference_on_card(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_replace_relation_reference_on_card")(*args, **kwargs)
+
+    def _create_relation_target_from_template_picker(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_create_relation_target_from_template_picker")(*args, **kwargs)
     def _handle_wiki_link_click(self, card, link_info):
         if self.world_model is None or card is None or not isinstance(link_info, dict):
             return False
@@ -8542,444 +5325,8 @@ class KnowledgeBrowserUI:
 
         return None
 
-    def _handle_card_canvas_click(self, mouse_pos, right_rect):
-        if not right_rect.collidepoint(mouse_pos):
-            return None
-
-        for index in range(len(self.cards) - 1, -1, -1):
-            card = self.cards[index]
-            card_view = card.get("card_view")
-
-            close_rect = card.get("close_rect")
-            if close_rect is not None and close_rect.collidepoint(mouse_pos):
-                self._close_card_at_index(index)
-                return "__ui_consumed__"
-
-            if card.get("is_compact_canvas_card", False):
-                rect = card.get("rect")
-                if rect is not None and rect.collidepoint(mouse_pos):
-                    card_obj = self._bring_card_to_front(index)
-                    self.active_card_drag_id = card_obj["entity_id"]
-                    canvas_x, canvas_y = self._screen_to_canvas_pos(mouse_pos)
-                    self.card_drag_mouse_offset = (
-                        canvas_x - card_obj.get("canvas_x", 24),
-                        canvas_y - card_obj.get("canvas_y", 84),
-                    )
-                    self._layout_all_cards()
-                    return "__ui_consumed__"
-                continue
-
-            if card.get("card_kind") == "schema":
-                schema_result = self._handle_schema_card_click(card, index, mouse_pos)
-                if schema_result is not None:
-                    return schema_result
-
-            relation_add_rect = card.get("canvas_relation_add_rect")
-            if relation_add_rect is not None and relation_add_rect.collidepoint(mouse_pos):
-                card_obj = self._bring_card_to_front(index)
-                if self._begin_canvas_relation_link(card_obj):
-                    return "__ui_consumed__"
-
-            idea_button_rect = card.get("idea_button_rect")
-            if idea_button_rect is not None and idea_button_rect.collidepoint(mouse_pos) and card_view is not None:
-                card_obj = self._bring_card_to_front(index)
-                self._open_idea_name_prompt(card_obj)
-                self._relayout_cards()
-                return "__ui_consumed__"
-
-            relation_tree_rect = card.get("relation_tree_rect")
-            if (
-                relation_tree_rect is not None
-                and relation_tree_rect.collidepoint(mouse_pos)
-                and card_view is not None
-                and not card.get("is_edit_mode", False)
-            ):
-                card_obj = self._bring_card_to_front(index)
-                if self._open_relation_tree_for_card(card_obj):
-                    return "__ui_consumed__"
-                self._relayout_cards()
-                return "__ui_consumed__"
-
-            for template, type_rect in card.get("type_picker_hitboxes", []):
-                if type_rect.collidepoint(mouse_pos):
-                    card_obj = self._bring_card_to_front(index)
-                    self._convert_card_to_template(card_obj, template)
-                    return "__ui_consumed__"
-
-            type_label_rect = card.get("type_label_rect")
-            if type_label_rect is not None and type_label_rect.collidepoint(mouse_pos) and card_view is not None:
-                card_obj = self._bring_card_to_front(index)
-                if self._open_card_class_template_picker(card_obj):
-                    self._relayout_cards()
-                    return "__ui_consumed__"
-
-            time_anchor_rect = card.get("time_anchor_rect")
-            if (
-                time_anchor_rect is not None
-                and time_anchor_rect.collidepoint(mouse_pos)
-                and card.get("is_edit_mode", False)
-                and card_view is not None
-            ):
-                card_obj = self._bring_card_to_front(index)
-                if card_obj.get("active_edit_field"):
-                    card_obj["card_view"].commit_edit_field(card_obj)
-                    if card_obj.get("last_edit_action") == "commit":
-                        self._persist_card_entity(card_obj)
-                    else:
-                        self._save_card_draft(card_obj)
-                    card_obj["last_edit_action"] = None
-
-                self._close_wiki_link_picker(card_obj)
-                self._close_relation_picker(card_obj)
-                self._set_timeline_reanchor_target(card_obj)
-                self._relayout_cards()
-                return "__ui_consumed__"
-
-            delete_rect = card.get("delete_rect")
-            if (
-                delete_rect is not None
-                and delete_rect.collidepoint(mouse_pos)
-                and card.get("is_edit_mode", False)
-                and card_view is not None
-            ):
-                card_obj = self._bring_card_to_front(index)
-                if not card_obj.get("delete_confirm_active", False):
-                    card_obj["delete_confirm_active"] = True
-                    card_obj["active_edit_field"] = None
-                    card_obj["edit_buffer"] = ""
-                    card_obj["edit_original_value"] = None
-                    self._clear_timeline_edit_target()
-                    self._close_wiki_link_picker(card_obj)
-                    self._close_relation_picker(card_obj)
-                    self._relayout_cards()
-                    return "__ui_consumed__"
-
-                self._delete_card_entry(card_obj)
-                return "__ui_consumed__"
-
-            edit_toggle_rect = card.get("edit_toggle_rect")
-            if edit_toggle_rect is not None and edit_toggle_rect.collidepoint(mouse_pos) and card_view is not None:
-                card_obj = self._bring_card_to_front(index)
-                if card_obj.get("is_temporary", False):
-                    self._relayout_cards()
-                    return "__ui_consumed__"
-                if card_obj.get("is_edit_mode", False) and card_obj.get("active_edit_field"):
-                    card_obj["card_view"].commit_edit_field(card_obj)
-                    if card_obj.get("last_edit_action") == "commit":
-                        self._persist_card_entity(card_obj)
-                    else:
-                        self._save_card_draft(card_obj)
-                    card_obj["last_edit_action"] = None
-                card_obj["card_view"].toggle_edit_mode(card_obj)
-                if not card_obj.get("is_edit_mode", False):
-                    self._persist_card_entity(card_obj)
-                    self._sync_bidirectional_relations(persist=True)
-                    if self.canvas_relation_link_source_id == card_obj.get("entity_id"):
-                        self._clear_canvas_relation_link()
-                    self._clear_timeline_edit_target()
-                    self._close_wiki_link_picker(card_obj)
-                    self._close_relation_picker(card_obj)
-                self._relayout_cards()
-                return "__ui_consumed__"
-
-            for match_index, match_rect in card.get("relation_picker_hitboxes", []):
-                if match_rect.collidepoint(mouse_pos) and card_view is not None:
-                    card_obj = self._bring_card_to_front(index)
-                    if match_index == "note":
-                        self._open_relation_note_prompt(
-                            card_obj,
-                            {"field_key": card_obj.get("active_edit_field")},
-                            initial_text=card_obj.get("relation_picker_query", ""),
-                        )
-                    else:
-                        self._insert_relation_from_picker(card_obj, match_index=match_index)
-                    self._relayout_cards()
-                    return "__ui_consumed__"
-
-            for relation_info, relation_rect in card.get("relation_hitboxes", []):
-                if relation_rect.collidepoint(mouse_pos) and card_view is not None:
-                    card_obj = self._bring_card_to_front(index)
-                    if self._handle_relation_chip_click(card_obj, relation_info, mouse_pos=mouse_pos):
-                        return "__ui_consumed__"
-
-            for link_info in card.get("wiki_link_hitboxes", []):
-                link_rect = link_info.get("rect")
-                if link_rect is not None and link_rect.collidepoint(mouse_pos) and card_view is not None:
-                    card_obj = self._bring_card_to_front(index)
-                    if self._handle_wiki_link_click(card_obj, link_info):
-                        self._relayout_cards()
-                        return "__ui_consumed__"
-
-            phylogeny_click_active = (
-                card_view is not None
-                and getattr(card_view, "_is_phylogeny_mode", lambda: False)()
-            )
-            phylogeny_input_rect = card.get("phylogeny_parent_input_rect")
-            if phylogeny_click_active and phylogeny_input_rect is not None and phylogeny_input_rect.collidepoint(mouse_pos):
-                card_obj = self._bring_card_to_front(index)
-                for open_card in self.cards:
-                    open_card["phylogeny_parent_input_active"] = open_card is card_obj
-                    open_card["phylogeny_child_input_active"] = False
-                card_obj.setdefault("phylogeny_parent_query", "")
-                card_obj["phylogeny_parent_matches"] = find_clade_matches(
-                    self.world_model,
-                    card_obj.get("phylogeny_parent_query", ""),
-                )
-                card_obj["phylogeny_parent_selected_index"] = 0
-                self.browser_search_active = False
-                self._relayout_cards()
-                return "__ui_consumed__"
-
-            if phylogeny_click_active:
-                for match_row in card.get("phylogeny_parent_match_rows", []):
-                    match_rect = match_row.get("rect")
-                    if match_rect is not None and match_rect.collidepoint(mouse_pos):
-                        card_obj = self._bring_card_to_front(index)
-                        match_index = match_row.get("index")
-                        if match_index == "create":
-                            match_index = None
-                            card_obj["phylogeny_parent_matches"] = []
-                        self._confirm_phylogeny_parent_input(card_obj, match_index=match_index)
-                        return "__ui_consumed__"
-
-            phylogeny_child_input_rect = card.get("phylogeny_child_input_rect")
-            if phylogeny_click_active and phylogeny_child_input_rect is not None and phylogeny_child_input_rect.collidepoint(mouse_pos):
-                card_obj = self._bring_card_to_front(index)
-                for open_card in self.cards:
-                    open_card["phylogeny_parent_input_active"] = False
-                    open_card["phylogeny_child_input_active"] = open_card is card_obj
-                card_obj.setdefault("phylogeny_child_query", "")
-                card_obj["phylogeny_child_matches"] = self._phylogeny_child_matches_for_card(
-                    card_obj,
-                    card_obj.get("phylogeny_child_query", ""),
-                )
-                card_obj["phylogeny_child_selected_index"] = 0
-                self.browser_search_active = False
-                self._relayout_cards()
-                return "__ui_consumed__"
-
-            if phylogeny_click_active:
-                for match_row in card.get("phylogeny_child_match_rows", []):
-                    match_rect = match_row.get("rect")
-                    if match_rect is not None and match_rect.collidepoint(mouse_pos):
-                        card_obj = self._bring_card_to_front(index)
-                        match_index = match_row.get("index")
-                        if match_index == "create":
-                            match_index = None
-                            card_obj["phylogeny_child_matches"] = []
-                        self._confirm_phylogeny_child_input(card_obj, match_index=match_index)
-                        return "__ui_consumed__"
-
-                for clade_id, node_rect in card.get("phylogeny_node_hitboxes", []):
-                    if node_rect is not None and node_rect.collidepoint(mouse_pos):
-                        self._bring_card_to_front(index)
-                        clade = self.world_model.get_entity(clade_id) if self.world_model is not None else None
-                        if clade is not None:
-                            self._ensure_card(clade)
-                            self._relayout_cards()
-                        return "__ui_consumed__"
-
-                for phylogeny_row in (
-                    list(card.get("phylogeny_parent_tree_rows", []))
-                    + list(card.get("phylogeny_local_tree_rows", []))
-                ):
-                    row_rect = phylogeny_row.get("rect")
-                    target_id = phylogeny_row.get("id")
-                    if row_rect is not None and target_id and row_rect.collidepoint(mouse_pos):
-                        self._bring_card_to_front(index)
-                        target = self.world_model.get_entity(target_id) if self.world_model is not None else None
-                        if target is not None:
-                            self._ensure_card(target)
-                            self._relayout_cards()
-                        return "__ui_consumed__"
-
-            editable_result = self._handle_editable_field_click(card, index, mouse_pos)
-            if editable_result is not None:
-                return editable_result
-
-            for section_info in card.get("wiki_section_hitboxes", []):
-                section_rect = section_info.get("rect")
-                if (
-                    section_rect is not None
-                    and section_rect.collidepoint(mouse_pos)
-                    and card_view is not None
-                    and card.get("is_edit_mode", False)
-                ):
-                    card_obj = self._bring_card_to_front(index)
-                    card_obj["active_color_role"] = "wiki"
-                    card_obj["active_wiki_section_id"] = section_info.get("section_id")
-                    self._layout_all_cards()
-                    return "__ui_consumed__"
-
-            if self._handle_task_checklist_click(card, mouse_pos):
-                self._bring_card_to_front(index)
-                return "__ui_consumed__"
-
-            for tool_info, tool_rect in card.get("toolbelt_hitboxes", []):
-                if tool_rect.collidepoint(mouse_pos) and card_view is not None:
-                    card_obj = self._bring_card_to_front(index)
-                    if tool_info.get("kind") == "color_picker":
-                        if tool_info.get("control") == "role":
-                            card_obj["active_color_role"] = tool_info.get("role", "body")
-                            if card_obj["active_color_role"] == "wiki" and not card_obj.get("active_wiki_section_id"):
-                                first_section = next(iter(card_obj.get("wiki_section_hitboxes", [])), None)
-                                if isinstance(first_section, dict):
-                                    card_obj["active_wiki_section_id"] = first_section.get("section_id")
-                            self._layout_all_cards()
-                            return "__ui_consumed__"
-
-                        channel = tool_info.get("channel")
-                        slider_rect = tool_info.get("slider_rect")
-                        role = card_obj.get("active_color_role", "body")
-                        section_id = card_obj.get("active_wiki_section_id")
-                        self._set_card_color_from_slider(
-                            card_obj,
-                            channel,
-                            slider_rect,
-                            mouse_pos[0],
-                            persist=True,
-                            role=role,
-                            section_id=section_id,
-                        )
-                        self.active_card_color_slider = {
-                            "entity_id": card_obj.get("entity_id"),
-                            "channel": channel,
-                            "slider_rect": slider_rect,
-                            "role": role,
-                            "section_id": section_id,
-                        }
-                        self._layout_all_cards()
-                        return "__ui_consumed__"
-                    action_id = tool_info.get("action_id")
-                    if action_id:
-                        if action_id == "knowledge_define_stellar_neighbourhood":
-                            self._begin_stellar_neighbourhood_link(card_obj)
-                            return "__ui_consumed__"
-                        self._layout_all_cards()
-                        return {
-                            "id": action_id,
-                            "entity_id": card_obj.get("entity_id"),
-                        }
-                    self._open_toolbelt_name_prompt(card_obj, tool_info)
-                    return "__ui_consumed__"
-
-            for resize_edges, hitbox in card.get("resize_hitboxes", []):
-                if hitbox.collidepoint(mouse_pos):
-                    card_obj = self._bring_card_to_front(index)
-                    self._begin_card_resize(card_obj, mouse_pos, resize_edges)
-                    self._layout_all_cards()
-                    return "__ui_consumed__"
-
-            if card["resize_handle_rect"].collidepoint(mouse_pos):
-                card_obj = self._bring_card_to_front(index)
-                self._begin_card_resize(card_obj, mouse_pos, "bottom_right")
-                self._layout_all_cards()
-                return "__ui_consumed__"
-
-            if card["header_drag_rect"].collidepoint(mouse_pos):
-                card_obj = self._bring_card_to_front(index)
-                self.active_card_drag_id = card_obj["entity_id"]
-                canvas_x, canvas_y = self._screen_to_canvas_pos(mouse_pos)
-                self.card_drag_mouse_offset = (
-                    canvas_x - card_obj.get("canvas_x", 24),
-                    canvas_y - card_obj.get("canvas_y", 84),
-                )
-                self._layout_all_cards()
-                return "__ui_consumed__"
-
-            for tab_name, tab_rect in card.get("tab_hitboxes", []):
-                if tab_rect.collidepoint(mouse_pos) and card_view is not None:
-                    card_obj = self._bring_card_to_front(index)
-                    card_obj["card_view"].set_active_tab(tab_name)
-                    self._relayout_cards()
-                    return "__ui_consumed__"
-
-            for tab_name, subtab_name, subtab_rect in card.get("subtab_hitboxes", []):
-                if subtab_rect.collidepoint(mouse_pos) and card_view is not None:
-                    card_obj = self._bring_card_to_front(index)
-                    card_obj["card_view"].set_active_subtab(tab_name, subtab_name)
-                    self._relayout_cards()
-                    return "__ui_consumed__"
-
-            add_illustration_rect = card.get("media_add_illustration_rect")
-            if add_illustration_rect is not None and add_illustration_rect.collidepoint(mouse_pos):
-                card_obj = self._bring_card_to_front(index)
-                self._open_illustration_prompt(card_obj)
-                self._relayout_cards()
-                return "__ui_consumed__"
-
-            for illustration_id, title_rect in card.get("media_illustration_link_hitboxes", []):
-                if title_rect.collidepoint(mouse_pos):
-                    self._bring_card_to_front(index)
-                    illustration = self.world_model.get_entity(illustration_id) if self.world_model is not None else None
-                    if illustration is not None:
-                        self._ensure_card(illustration)
-                        self._relayout_cards()
-                    return "__ui_consumed__"
-
-            for illustration_id, button_rect in card.get("media_pixel_art_hitboxes", []):
-                if button_rect.collidepoint(mouse_pos):
-                    self._bring_card_to_front(index)
-                    self._open_pixel_art_editor(illustration_id)
-                    self._relayout_cards()
-                    return "__ui_consumed__"
-
-            for illustration_id, button_rect in card.get("media_import_hitboxes", []):
-                if button_rect.collidepoint(mouse_pos):
-                    card_obj = self._bring_card_to_front(index)
-                    self.choose_and_assign_illustration_image(illustration_id)
-                    self._relayout_cards()
-                    return "__ui_consumed__"
-
-            for section_name, section_rect in card.get("section_hitboxes", []):
-                if section_rect.collidepoint(mouse_pos) and card_view is not None:
-                    card_obj = self._bring_card_to_front(index)
-                    card_obj["card_view"].toggle_section(section_name)
-                    self._relayout_cards()
-                    return "__ui_consumed__"
-
-            for year, hitbox in card.get("year_hitboxes", []):
-                if hitbox.collidepoint(mouse_pos):
-                    card_obj = self._bring_card_to_front(index)
-                    card_obj["selected_year"] = year
-                    self._focus_timeline_year(year)
-                    self._layout_all_cards()
-                    return "__ui_consumed__"
-
-            launch_rect = card.get("launch_rect")
-            if launch_rect is not None and launch_rect.collidepoint(mouse_pos):
-                card_obj = self._bring_card_to_front(index)
-                self._layout_all_cards()
-                return {
-                    "id": "knowledge_launch_entry",
-                    "entity_id": card_obj.get("entity_id"),
-                    "year": card_obj.get("selected_year"),
-                }
-
-            toolbelt_rect = card.get("toolbelt_rect")
-            if toolbelt_rect is not None and toolbelt_rect.collidepoint(mouse_pos):
-                for open_card in self.cards:
-                    if open_card is not card:
-                        self._close_type_picker(open_card)
-                self._bring_card_to_front(index)
-                self._layout_all_cards()
-                return "__ui_consumed__"
-
-            if card["rect"].collidepoint(mouse_pos):
-                for open_card in self.cards:
-                    if open_card is not card:
-                        self._close_type_picker(open_card)
-                self._bring_card_to_front(index)
-                self._layout_all_cards()
-                return "__ui_consumed__"
-
-        for card in self.cards:
-            self._close_type_picker(card)
-        self.active_canvas_pan = True
-        self.canvas_pan_start_mouse = mouse_pos
-        self.canvas_pan_start_offset = (self.canvas_offset_x, self.canvas_offset_y)
-        return "__ui_consumed__"
-
+    def _handle_card_canvas_click(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_handle_card_canvas_click")(*args, **kwargs)
     def _draw_template_picker(self, screen, font):
         if not self.show_template_picker or self.template_picker_rect is None:
             return
@@ -9077,499 +5424,19 @@ class KnowledgeBrowserUI:
             )
 
     def _draw_entry_name_prompt(self, screen, font):
-        prompt = self.entry_name_prompt
-        if not isinstance(prompt, dict) or self.layout is None:
-            return
-
-        right_rect = self.layout["right_rect"]
-        prompt_w = min(420, max(300, right_rect.width - 48))
-        is_illustration_prompt = prompt.get("mode") == "illustration_from_parent"
-        is_star_class_prompt = prompt.get("mode") == "star_system_class"
-        suggestion_matches = prompt.get("suggestion_matches") or []
-        suggestion_count = len(suggestion_matches) if self._entry_name_prompt_uses_suggestions(prompt) else 0
-        suggestion_h = suggestion_count * 30 + (10 if suggestion_count else 0)
-        prompt_h = 194 if is_illustration_prompt else (196 if is_star_class_prompt else 148 + suggestion_h)
-        prompt_x = right_rect.right - prompt_w - 12
-        prompt_y = right_rect.y + 44
-        prompt_rect = pygame.Rect(prompt_x, prompt_y, prompt_w, prompt_h)
-        header_rect = pygame.Rect(prompt_rect.x, prompt_rect.y, prompt_rect.width, 48)
-        input_rect = pygame.Rect(prompt_rect.x + 18, prompt_rect.y + 72, prompt_rect.width - 36, 30)
-        description_rect = None
-        if is_illustration_prompt:
-            description_rect = pygame.Rect(prompt_rect.x + 18, input_rect.bottom + 28, prompt_rect.width - 36, 30)
-        cancel_rect = pygame.Rect(prompt_rect.right - 198, prompt_rect.bottom - 42, 86, 28)
-        create_rect = pygame.Rect(prompt_rect.right - 104, prompt_rect.bottom - 42, 86, 28)
-
-        prompt["rect"] = prompt_rect
-        prompt["input_rect"] = input_rect
-        prompt["description_rect"] = description_rect
-        prompt["cancel_rect"] = cancel_rect
-        prompt["create_rect"] = create_rect
-        prompt["suggestion_hitboxes"] = []
-
-        pygame.draw.rect(screen, (28, 30, 38), prompt_rect)
-        pygame.draw.rect(screen, (170, 170, 170), prompt_rect, 1)
-        pygame.draw.rect(screen, (34, 38, 48), header_rect)
-        pygame.draw.line(
-            screen,
-            (110, 110, 120),
-            (header_rect.x, header_rect.bottom),
-            (header_rect.right, header_rect.bottom),
-            1,
-        )
-
-        if prompt.get("mode") == "idea_from_parent":
-            prompt_title = "Name New Idea"
-        elif prompt.get("mode") == "illustration_from_parent":
-            prompt_title = "Add Illustration"
-        elif prompt.get("mode") == "toolbelt":
-            prompt_title = f"Name New {prompt.get('label') or 'Entry'}"
-        elif prompt.get("mode") == "star_system_class":
-            prompt_title = "Choose Star Class"
-        else:
-            prompt_title = "Name New Entry"
-        title = font.render(prompt_title, True, (244, 244, 244))
-        detail = font.render(str(prompt.get("label") or "Entry"), True, (166, 176, 194))
-        screen.blit(title, (prompt_rect.x + 12, prompt_rect.y + 8))
-        screen.blit(detail, (prompt_rect.x + 12, prompt_rect.y + 28))
-
-        name_label_text = "star class" if prompt.get("mode") == "star_system_class" else "name"
-        name_label = font.render(name_label_text, True, (188, 196, 212))
-        screen.blit(name_label, (input_rect.x, input_rect.y - 18))
-
-        def draw_prompt_input(field_rect, buffer_key, cursor_key, placeholder, active_field_name):
-            active = prompt.get("active_prompt_field") == active_field_name
-            border = (210, 224, 248) if active else (150, 162, 186)
-            pygame.draw.rect(screen, (38, 43, 56), field_rect)
-            pygame.draw.rect(screen, border, field_rect, 1)
-            buffer_text = str(prompt.get(buffer_key, ""))
-            cursor = max(0, min(int(prompt.get(cursor_key, len(buffer_text))), len(buffer_text)))
-            visible_text = buffer_text
-            max_input_text_w = field_rect.width - 18
-            while visible_text and font.size(visible_text)[0] > max_input_text_w:
-                visible_text = visible_text[1:]
-
-            hidden_prefix_len = len(buffer_text) - len(visible_text)
-            display_text = visible_text if buffer_text else placeholder
-            text_color = (238, 238, 238) if buffer_text else (126, 136, 154)
-            text_surface = font.render(display_text, True, text_color)
-            screen.blit(text_surface, (field_rect.x + 8, field_rect.y + 6))
-
-            if active:
-                visible_cursor = max(0, cursor - hidden_prefix_len)
-                cursor_x = field_rect.x + 8 + font.size(visible_text[:visible_cursor])[0]
-                pygame.draw.line(
-                    screen,
-                    (236, 236, 236),
-                    (cursor_x, field_rect.y + 6),
-                    (cursor_x, field_rect.bottom - 6),
-                    1,
-                )
-
-        name_placeholder = "G2V, K5V, M3V, or O/B/A/F/G/K/M" if prompt.get("mode") == "star_system_class" else "Entry name"
-        draw_prompt_input(input_rect, "buffer", "cursor", name_placeholder, "name")
-
-        if suggestion_matches:
-            selected_index = max(0, min(int(prompt.get("suggestion_selected_index", 0)), len(suggestion_matches) - 1))
-            row_y = input_rect.bottom + 8
-            for index, match in enumerate(suggestion_matches):
-                row_rect = pygame.Rect(input_rect.x, row_y, input_rect.width, 26)
-                color = self._coerce_hex_rgb(match.get("card_color"), fallback=(54, 70, 96))
-                fill = EntityCard._mix_color(color, (22, 25, 34), 0.68)
-                border = EntityCard._mix_color(color, (228, 234, 246), 0.35)
-                if index == selected_index and prompt.get("suggestion_keyboard_active"):
-                    fill = EntityCard._mix_color(color, (64, 92, 134), 0.36)
-                    border = EntityCard._mix_color(color, (238, 242, 250), 0.18)
-                pygame.draw.rect(screen, fill, row_rect)
-                pygame.draw.rect(screen, border, row_rect, 1)
-
-                label = self._ellipsize_text(match.get("label", ""), font, row_rect.width - 124)
-                subtitle = self._ellipsize_text(match.get("subtitle", ""), font, 104)
-                text_color = (246, 248, 252)
-                muted_color = (176, 188, 208)
-                screen.blit(font.render(label, True, text_color), (row_rect.x + 8, row_rect.y + 5))
-                if subtitle:
-                    subtitle_surface = font.render(subtitle, True, muted_color)
-                    screen.blit(subtitle_surface, (row_rect.right - subtitle_surface.get_width() - 8, row_rect.y + 5))
-                prompt["suggestion_hitboxes"].append((index, row_rect))
-                row_y += 30
-
-        if is_star_class_prompt:
-            help_text = "Valid: OBAFGKM + 0-9 + Ia/Ib/II/III/IV/V/VI/VII. Example: G2V."
-            help_surface = font.render(help_text, True, (158, 170, 190))
-            screen.blit(help_surface, (input_rect.x, input_rect.bottom + 6))
-
-        if description_rect is not None:
-            description_label = font.render("description", True, (188, 196, 212))
-            screen.blit(description_label, (description_rect.x, description_rect.y - 18))
-            draw_prompt_input(
-                description_rect,
-                "description_buffer",
-                "description_cursor",
-                "Illustration description",
-                "description",
-            )
-
-        status = str(prompt.get("status") or "")
-        if status:
-            status_surface = font.render(status, True, (230, 154, 132))
-            status_y = (description_rect.bottom if description_rect is not None else input_rect.bottom) + (24 if is_star_class_prompt else 6)
-            screen.blit(status_surface, (prompt_rect.x + 18, status_y))
-
-        mouse_pos = pygame.mouse.get_pos()
-        for rect, label, primary in (
-            (cancel_rect, "Cancel", False),
-            (create_rect, "Create", True),
-        ):
-            hovered = rect.collidepoint(mouse_pos)
-            fill = (72, 92, 132) if primary else (42, 48, 62)
-            if hovered:
-                fill = (88, 108, 150) if primary else (56, 64, 82)
-            pygame.draw.rect(screen, fill, rect)
-            pygame.draw.rect(screen, (164, 176, 198), rect, 1)
-            label_surface = font.render(label, True, (244, 244, 244))
-            screen.blit(label_surface, label_surface.get_rect(center=rect.center))
-
+        return self._entry_name_prompt_controller()._draw_entry_name_prompt(screen, font)
     def _draw_pixel_art_editor(self, screen, font):
-        editor = self.pixel_art_editor
-        if not isinstance(editor, dict) or self.layout is None:
-            return
-
-        right_rect = self.layout["right_rect"]
-        stage = editor.get("stage")
-        modal_w = min(760, max(420, right_rect.width - 72))
-        modal_h = 260 if stage == "size" else min(720, max(520, right_rect.height - 72))
-        modal_rect = pygame.Rect(
-            right_rect.centerx - modal_w // 2,
-            right_rect.centery - modal_h // 2,
-            modal_w,
-            modal_h,
-        )
-        header_rect = pygame.Rect(modal_rect.x, modal_rect.y, modal_rect.width, 48)
-        close_rect = pygame.Rect(modal_rect.right - 38, modal_rect.y + 12, 24, 24)
-        cancel_rect = pygame.Rect(modal_rect.right - 210, modal_rect.bottom - 42, 90, 28)
-        primary_rect = pygame.Rect(modal_rect.right - 112, modal_rect.bottom - 42, 94, 28)
-        editor["rect"] = modal_rect
-        editor["close_rect"] = close_rect
-        editor["cancel_rect"] = cancel_rect
-        editor["primary_rect"] = primary_rect
-        editor["slider_hitboxes"] = []
-        editor["tool_hitboxes"] = {}
-        editor["brush_size_hitboxes"] = {}
-        editor["clear_rect"] = None
-
-        overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 120))
-        screen.blit(overlay, (0, 0))
-        pygame.draw.rect(screen, (20, 23, 31), modal_rect)
-        pygame.draw.rect(screen, (176, 184, 202), modal_rect, 1)
-        pygame.draw.rect(screen, (32, 37, 50), header_rect)
-        pygame.draw.line(screen, (94, 104, 124), (header_rect.x, header_rect.bottom), (header_rect.right, header_rect.bottom), 1)
-
-        illustration = editor.get("illustration") if isinstance(editor.get("illustration"), dict) else {}
-        title = self._ellipsize_text(
-            f"Pixel Art: {illustration.get('name') or illustration.get('pretty_name') or editor.get('illustration_id')}",
-            font,
-            modal_rect.width - 74,
-        )
-        screen.blit(font.render(title, True, (242, 244, 248)), (modal_rect.x + 14, modal_rect.y + 14))
-        pygame.draw.rect(screen, (74, 44, 52), close_rect)
-        pygame.draw.rect(screen, (218, 154, 164), close_rect, 1)
-        close_surface = font.render("x", True, (255, 232, 236))
-        screen.blit(close_surface, close_surface.get_rect(center=close_rect.center))
-
-        if stage == "size":
-            input_rect = pygame.Rect(modal_rect.x + 24, modal_rect.y + 94, min(240, modal_rect.width - 48), 32)
-            editor["metric_size_rect"] = input_rect
-            screen.blit(font.render("depicted size in meters", True, (184, 194, 214)), (input_rect.x, input_rect.y - 20))
-            pygame.draw.rect(screen, (35, 40, 54), input_rect)
-            pygame.draw.rect(screen, (190, 204, 234), input_rect, 1)
-            text = str(editor.get("metric_size_buffer") or "")
-            display_text = text or "1.0"
-            text_color = (240, 242, 248) if text else (130, 140, 158)
-            screen.blit(font.render(display_text, True, text_color), (input_rect.x + 8, input_rect.y + 7))
-            cursor = max(0, min(int(editor.get("metric_size_cursor", len(text)) or 0), len(text)))
-            cursor_x = input_rect.x + 8 + font.size(text[:cursor])[0]
-            pygame.draw.line(screen, (240, 242, 248), (cursor_x, input_rect.y + 7), (cursor_x, input_rect.bottom - 7), 1)
-
-            size_value = self._pixel_editor_metric_size()
-            suggested = self._pixel_canvas_size_for_entity(editor.get("parent_entity"), size_value or 1.0)
-            y = input_rect.bottom + 18
-            for line in (
-                f"Suggested canvas: {suggested[0]} x {suggested[1]} px",
-                "Canvas size is derived from entry class and depicted metric size.",
-                "Enter creates the canvas. Esc cancels.",
-            ):
-                screen.blit(font.render(line, True, (166, 176, 196)), (modal_rect.x + 24, y))
-                y += self.LINE_HEIGHT
-            primary_label = "Create"
-        else:
-            canvas_w = max(1, int(editor.get("canvas_width") or 1))
-            canvas_h = max(1, int(editor.get("canvas_height") or 1))
-            side_w = min(310, max(240, modal_rect.width // 3))
-            canvas_area = pygame.Rect(modal_rect.x + 24, modal_rect.y + 68, modal_rect.width - side_w - 54, modal_rect.height - 128)
-            scale = max(1, min(canvas_area.width // canvas_w, canvas_area.height // canvas_h))
-            canvas_rect = pygame.Rect(
-                canvas_area.x + (canvas_area.width - canvas_w * scale) // 2,
-                canvas_area.y + (canvas_area.height - canvas_h * scale) // 2,
-                canvas_w * scale,
-                canvas_h * scale,
-            )
-            editor["canvas_rect"] = canvas_rect
-            pygame.draw.rect(screen, (14, 16, 22), canvas_area)
-            pygame.draw.rect(screen, (84, 94, 116), canvas_area, 1)
-            pixels = editor.get("pixels") or []
-            checker = [(34, 38, 48), (42, 47, 58)]
-            for y in range(canvas_h):
-                row = pixels[y] if y < len(pixels) and isinstance(pixels[y], list) else []
-                for x in range(canvas_w):
-                    cell = pygame.Rect(canvas_rect.x + x * scale, canvas_rect.y + y * scale, scale, scale)
-                    pygame.draw.rect(screen, checker[(x + y) % 2], cell)
-                    color = row[x] if x < len(row) else None
-                    if color is not None:
-                        pygame.draw.rect(screen, color, cell)
-            if scale >= 6:
-                grid_color = (54, 62, 76)
-                for x in range(canvas_w + 1):
-                    px = canvas_rect.x + x * scale
-                    pygame.draw.line(screen, grid_color, (px, canvas_rect.y), (px, canvas_rect.bottom), 1)
-                for y in range(canvas_h + 1):
-                    py = canvas_rect.y + y * scale
-                    pygame.draw.line(screen, grid_color, (canvas_rect.x, py), (canvas_rect.right, py), 1)
-            pygame.draw.rect(screen, (186, 198, 224), canvas_rect, 1)
-
-            side_rect = pygame.Rect(modal_rect.right - side_w - 18, modal_rect.y + 68, side_w, modal_rect.height - 128)
-            pygame.draw.rect(screen, (27, 31, 42), side_rect)
-            pygame.draw.rect(screen, (86, 98, 122), side_rect, 1)
-            color = tuple(editor.get("color", (236, 240, 246)))
-            preview_rect = pygame.Rect(side_rect.x + 14, side_rect.y + 18, 42, 42)
-            pygame.draw.rect(screen, color, preview_rect)
-            pygame.draw.rect(screen, (210, 218, 234), preview_rect, 1)
-            screen.blit(font.render(f"{canvas_w} x {canvas_h}", True, (226, 232, 242)), (preview_rect.right + 12, preview_rect.y + 3))
-            active_tool = str(editor.get("tool") or "brush")
-            tool_hint = "left click erases" if active_tool == "eraser" else "left click paints"
-            screen.blit(font.render(tool_hint, True, (156, 166, 186)), (preview_rect.right + 12, preview_rect.y + 24))
-
-            tool_y = preview_rect.bottom + 18
-            screen.blit(font.render("Tool", True, (194, 204, 224)), (side_rect.x + 14, tool_y + 4))
-            button_x = side_rect.x + 58
-            tool_buttons = (
-                ("brush", "Brush", pygame.Rect(button_x, tool_y, 68, 24)),
-                ("eraser", "Eraser", pygame.Rect(button_x + 74, tool_y, 74, 24)),
-            )
-            for tool_name, label, button_rect in tool_buttons:
-                selected = active_tool == tool_name
-                hovered = button_rect.collidepoint(pygame.mouse.get_pos())
-                fill = (76, 96, 138) if selected else (42, 48, 62)
-                if hovered:
-                    fill = (90, 110, 152) if selected else (56, 64, 82)
-                pygame.draw.rect(screen, fill, button_rect)
-                pygame.draw.rect(screen, (190, 204, 234) if selected else (132, 144, 170), button_rect, 1)
-                label_surface = font.render(label, True, (242, 246, 252))
-                screen.blit(label_surface, label_surface.get_rect(center=button_rect.center))
-                editor["tool_hitboxes"][tool_name] = button_rect
-
-            size_y = tool_y + 34
-            brush_size = max(1, min(16, int(editor.get("brush_size") or 1)))
-            screen.blit(font.render("Size", True, (194, 204, 224)), (side_rect.x + 14, size_y + 4))
-            dec_rect = pygame.Rect(button_x, size_y, 28, 24)
-            value_rect = pygame.Rect(dec_rect.right + 6, size_y, 50, 24)
-            inc_rect = pygame.Rect(value_rect.right + 6, size_y, 28, 24)
-            clear_rect = pygame.Rect(inc_rect.right + 8, size_y, 50, 24)
-            for rect_button, label in ((dec_rect, "-"), (inc_rect, "+"), (clear_rect, "Clear")):
-                pygame.draw.rect(screen, (42, 48, 62), rect_button)
-                pygame.draw.rect(screen, (132, 144, 170), rect_button, 1)
-                label_surface = font.render(label, True, (242, 246, 252))
-                screen.blit(label_surface, label_surface.get_rect(center=rect_button.center))
-            pygame.draw.rect(screen, (26, 30, 40), value_rect)
-            pygame.draw.rect(screen, (132, 144, 170), value_rect, 1)
-            value_surface = font.render(f"{brush_size}px", True, (230, 236, 248))
-            screen.blit(value_surface, value_surface.get_rect(center=value_rect.center))
-            editor["brush_size_hitboxes"] = {-1: dec_rect, 1: inc_rect}
-            editor["clear_rect"] = clear_rect
-
-            hue, saturation, brightness = editor.get("hsv", (0.0, 0.0, 1.0))
-            slider_y = size_y + 42
-            for channel, label, value in (("h", "Hue", hue), ("s", "Sat", saturation), ("v", "Val", brightness)):
-                screen.blit(font.render(label, True, (194, 204, 224)), (side_rect.x + 14, slider_y - 4))
-                slider_rect = pygame.Rect(side_rect.x + 58, slider_y, side_rect.width - 74, 10)
-                if channel == "h":
-                    for offset in range(slider_rect.width):
-                        hue_color = colorsys.hsv_to_rgb(offset / max(1, slider_rect.width - 1), 1.0, 1.0)
-                        pygame.draw.line(screen, tuple(int(part * 255) for part in hue_color), (slider_rect.x + offset, slider_rect.y), (slider_rect.x + offset, slider_rect.bottom - 1))
-                else:
-                    pygame.draw.rect(screen, (82, 96, 126), slider_rect)
-                pygame.draw.rect(screen, (184, 196, 222), slider_rect, 1)
-                knob_x = slider_rect.x + int(max(0.0, min(1.0, value)) * slider_rect.width)
-                pygame.draw.circle(screen, (236, 240, 248), (knob_x, slider_rect.centery), 5)
-                editor["slider_hitboxes"].append({"channel": channel, "rect": slider_rect})
-                slider_y += 32
-
-            ref_label_y = slider_y + 8
-            screen.blit(font.render("Reference", True, (194, 204, 224)), (side_rect.x + 14, ref_label_y))
-            ref_area = pygame.Rect(side_rect.x + 14, ref_label_y + 22, side_rect.width - 28, max(80, side_rect.bottom - ref_label_y - 34))
-            pygame.draw.rect(screen, (18, 21, 29), ref_area)
-            pygame.draw.rect(screen, (82, 94, 118), ref_area, 1)
-            reference_surface = editor.get("reference_surface")
-            editor["reference_rect"] = None
-            if reference_surface is not None:
-                src_w = max(1, reference_surface.get_width())
-                src_h = max(1, reference_surface.get_height())
-                scale_ref = min(ref_area.width / src_w, ref_area.height / src_h)
-                target_w = max(1, int(src_w * scale_ref))
-                target_h = max(1, int(src_h * scale_ref))
-                scaled = pygame.transform.smoothscale(reference_surface, (target_w, target_h))
-                ref_rect = scaled.get_rect(center=ref_area.center)
-                screen.blit(scaled, ref_rect)
-                pygame.draw.rect(screen, (196, 210, 238), ref_rect, 1)
-                editor["reference_rect"] = ref_rect
-            else:
-                for index, line in enumerate(("Ctrl+V reference", "Click image to pick color")):
-                    line_surface = font.render(line, True, (140, 150, 170))
-                    screen.blit(line_surface, (ref_area.x + 10, ref_area.y + 14 + index * self.LINE_HEIGHT))
-            primary_label = "Save PNG"
-
-        mouse_pos = pygame.mouse.get_pos()
-        for rect, label, primary in ((cancel_rect, "Cancel", False), (primary_rect, primary_label, True)):
-            hovered = rect.collidepoint(mouse_pos)
-            fill = (78, 98, 142) if primary else (56, 62, 76)
-            if hovered:
-                fill = (94, 116, 164) if primary else (70, 78, 96)
-            pygame.draw.rect(screen, fill, rect)
-            pygame.draw.rect(screen, (192, 208, 240) if primary else (176, 184, 202), rect, 1)
-            surface = font.render(label, True, (246, 248, 252))
-            screen.blit(surface, surface.get_rect(center=rect.center))
-        status = str(editor.get("status") or "").strip()
-        if status:
-            screen.blit(font.render(status, True, (204, 218, 242)), (modal_rect.x + 24, modal_rect.bottom - 34))
-
+        return self._pixel_art_editor_controller().draw(screen, font)
     def _draw_stellar_neighbourhood_prompt(self, screen, font):
-        prompt = getattr(self, "stellar_neighbourhood_prompt", None)
-        if not isinstance(prompt, dict) or self.layout is None:
-            return
-
-        right_rect = self.layout["right_rect"]
-        prompt_w = min(460, max(340, right_rect.width - 48))
-        distance_only = prompt.get("mode") == "distance"
-        prompt_h = 212 if distance_only else 292
-        prompt_rect = pygame.Rect(right_rect.right - prompt_w - 12, right_rect.y + 44, prompt_w, prompt_h)
-        header_rect = pygame.Rect(prompt_rect.x, prompt_rect.y, prompt_rect.width, 48)
-        system_rect = pygame.Rect(prompt_rect.x + 18, prompt_rect.y + 78, prompt_rect.width - 36, 30)
-        distance_rect_y = system_rect.bottom + (32 if distance_only else 122)
-        distance_rect = pygame.Rect(prompt_rect.x + 18, distance_rect_y, prompt_rect.width - 36, 30)
-        cancel_rect = pygame.Rect(prompt_rect.right - 198, prompt_rect.bottom - 42, 86, 28)
-        create_rect = pygame.Rect(prompt_rect.right - 104, prompt_rect.bottom - 42, 86, 28)
-
-        prompt["rect"] = prompt_rect
-        prompt["system_rect"] = system_rect
-        prompt["distance_rect"] = distance_rect
-        prompt["cancel_rect"] = cancel_rect
-        prompt["create_rect"] = create_rect
-        prompt["match_hitboxes"] = []
-
-        pygame.draw.rect(screen, (28, 30, 38), prompt_rect)
-        pygame.draw.rect(screen, (170, 170, 170), prompt_rect, 1)
-        pygame.draw.rect(screen, (34, 38, 48), header_rect)
-        pygame.draw.line(screen, (110, 110, 120), (header_rect.x, header_rect.bottom), (header_rect.right, header_rect.bottom), 1)
-
-        source = self.world_model.get_entity(prompt.get("source_entity_id")) if self.world_model is not None else None
-        source_name = self._entity_display_label(source, fallback=prompt.get("source_entity_id")) if source else "Star System"
-        title = font.render("Define Neighbourhood", True, (244, 244, 244))
-        detail = font.render(source_name, True, (166, 176, 194))
-        screen.blit(title, (prompt_rect.x + 12, prompt_rect.y + 8))
-        screen.blit(detail, (prompt_rect.x + 12, prompt_rect.y + 28))
-
-        def draw_input(rect, label_text, value, placeholder, active):
-            label = font.render(label_text, True, (188, 196, 212))
-            screen.blit(label, (rect.x, rect.y - 18))
-            border = (210, 224, 248) if active else (150, 162, 186)
-            pygame.draw.rect(screen, (38, 43, 56), rect)
-            pygame.draw.rect(screen, border, rect, 1)
-            text = str(value or "")
-            display = text if text else placeholder
-            color = (238, 238, 238) if text else (126, 136, 154)
-            surface = font.render(self._ellipsize_text(display, font, rect.width - 16), True, color)
-            screen.blit(surface, (rect.x + 8, rect.y + 6))
-
-        target = self.world_model.get_entity(prompt.get("target_entity_id")) if self.world_model is not None else None
-        system_label = "selected system" if distance_only else "star system"
-        draw_input(
-            system_rect,
-            system_label,
-            self._entity_display_label(target, fallback=prompt.get("target_entity_id")) if target else prompt.get("query"),
-            "Search existing systems",
-            prompt.get("active_field") == "system" and not distance_only,
+        return self._stellar_neighbour_prompt_controller()._draw_stellar_neighbourhood_prompt(
+            screen,
+            font,
         )
-
-        matches = prompt.get("matches") or []
-        selected_index = int(prompt.get("selected_index", 0))
-        match_y = system_rect.bottom + 4
-        for index, match in enumerate([] if distance_only else matches[:5]):
-            row_rect = pygame.Rect(system_rect.x, match_y + index * 20, system_rect.width, 19)
-            prompt["match_hitboxes"].append((index, row_rect))
-            selected = index == selected_index
-            pygame.draw.rect(screen, (52, 64, 86) if selected else (31, 36, 48), row_rect)
-            pygame.draw.rect(screen, (138, 164, 206) if selected else (72, 82, 104), row_rect, 1)
-            label = self._ellipsize_text(match.get("pretty_name", match.get("id", "")), font, row_rect.width - 12)
-            surface = font.render(label, True, (240, 244, 250) if selected else (188, 198, 216))
-            screen.blit(surface, (row_rect.x + 6, row_rect.y + 2))
-
-        draw_input(
-            distance_rect,
-            "distance (ly)",
-            prompt.get("distance"),
-            "Light years",
-            prompt.get("active_field") == "distance",
-        )
-
-        status = str(prompt.get("status") or "")
-        if status:
-            status_surface = font.render(status, True, (230, 154, 132))
-            screen.blit(status_surface, (prompt_rect.x + 18, distance_rect.bottom + 6))
-
-        mouse_pos = pygame.mouse.get_pos()
-        for rect, label, primary in (
-            (cancel_rect, "Cancel", False),
-            (create_rect, "Save", True),
-        ):
-            hovered = rect.collidepoint(mouse_pos)
-            fill = (72, 92, 132) if primary else (42, 48, 62)
-            if hovered:
-                fill = (88, 108, 150) if primary else (56, 64, 82)
-            pygame.draw.rect(screen, fill, rect)
-            pygame.draw.rect(screen, (164, 176, 198), rect, 1)
-            label_surface = font.render(label, True, (244, 244, 244))
-            screen.blit(label_surface, label_surface.get_rect(center=rect.center))
 
     def _handle_stellar_neighbourhood_prompt_click(self, mouse_pos):
-        prompt = getattr(self, "stellar_neighbourhood_prompt", None)
-        if not isinstance(prompt, dict):
-            return False
-        cancel_rect = prompt.get("cancel_rect")
-        if cancel_rect is not None and cancel_rect.collidepoint(mouse_pos):
-            self._close_stellar_neighbourhood_prompt()
-            self._relayout_cards()
-            return True
-        create_rect = prompt.get("create_rect")
-        if create_rect is not None and create_rect.collidepoint(mouse_pos):
-            self._confirm_stellar_neighbourhood_prompt()
-            return True
-        system_rect = prompt.get("system_rect")
-        if system_rect is not None and system_rect.collidepoint(mouse_pos):
-            if prompt.get("mode") != "distance":
-                prompt["active_field"] = "system"
-            return True
-        distance_rect = prompt.get("distance_rect")
-        if distance_rect is not None and distance_rect.collidepoint(mouse_pos):
-            prompt["active_field"] = "distance"
-            return True
-        for match_index, match_rect in prompt.get("match_hitboxes", []):
-            if match_rect.collidepoint(mouse_pos):
-                self._select_stellar_prompt_match(match_index)
-                self._relayout_cards()
-                return True
-        return True
-
+        return self._stellar_neighbour_prompt_controller()._handle_stellar_neighbourhood_prompt_click(
+            mouse_pos
+        )
     def draw(self, screen, font, draw_button_fn):
         if self.layout is None:
             return

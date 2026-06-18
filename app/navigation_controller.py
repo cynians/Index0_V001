@@ -573,6 +573,23 @@ class NavigationController:
         self.app.system_settings_active = False
         return True
 
+    def open_selection_wiki_entry(self, active_sim):
+        get_selection_payload = getattr(active_sim, "get_selection_inspector_payload", None)
+        if get_selection_payload is None:
+            return False
+
+        payload = get_selection_payload()
+        entity_id = payload.get("entity_id") if isinstance(payload, dict) else None
+        if not entity_id or self.app.world_model.get_entity(entity_id) is None:
+            return False
+
+        self.app.repository_scope_entity_id = entity_id
+        self.app.knowledge_layer_active = True
+        self.app.repository_return_confirm_active = False
+        self.app.system_menu_active = False
+        self.app.system_settings_active = False
+        return True
+
     def activate_tab_index(self, tab_index):
         """
         Activate an existing simulation tab from the top tab strip.
@@ -825,6 +842,9 @@ class NavigationController:
 
         if action_id == "open_repository":
             return self.open_repository_workspace(active_sim)
+
+        if action_id == "open_selection_wiki" and active_sim is not None:
+            return self.open_selection_wiki_entry(active_sim)
 
         if action_id == "confirm_open_repository":
             return self.open_repository_workspace(active_sim)

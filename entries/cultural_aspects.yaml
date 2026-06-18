@@ -220,3 +220,14 @@
   end_year: null
   related: []
   entry_status: ''
+- id: cultasp_cyberpsychosis
+  pretty_name: Cyberpsychosis
+  name: Cyberpsychosis
+  type: cultural_aspect
+  three_word_description: ''
+  related: []
+  card_color: '#7d001f'
+  card_header_color: '#66417d'
+  wiki_field_colors:
+    intro: '#244838'
+  offspring: []

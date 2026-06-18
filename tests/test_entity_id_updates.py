@@ -6,7 +6,12 @@ from types import SimpleNamespace
 import pygame
 
 from ui.card import EntityCard
+from ui.entry_name_prompt_ui import EntryNamePromptUI
+from ui.knowledge_canvas_controller import KnowledgeCanvasController
 from ui.knowledge_browser_ui import KnowledgeBrowserUI
+from ui.pixel_art_editor_ui import PixelArtEditorUI
+from ui.knowledge_repository_service import KnowledgeRepositoryService
+from ui.stellar_neighbour_prompt_ui import StellarNeighbourPromptUI
 
 
 class DummyLoader:
@@ -228,6 +233,7 @@ class EntityIdUpdateTests(unittest.TestCase):
             }
             ui.cards = [card]
 
+            self.assertIsInstance(ui._repository_service(), KnowledgeRepositoryService)
             self.assertTrue(ui._delete_card_entry(card))
             self.assertFalse((Path(temp_dir) / "ideas.yaml").exists())
             self.assertNotIn("idea_draft_delete", ui.world_model.loader.entities)
@@ -282,6 +288,7 @@ class EntityIdUpdateTests(unittest.TestCase):
             ui.PROJECT_ROOT = Path(temp_dir)
 
             self.assertTrue(ui._open_pixel_art_editor("idea_rover_pixel"))
+            self.assertIsInstance(ui._pixel_art_editor_controller(), PixelArtEditorUI)
             ui.pixel_art_editor["metric_size_buffer"] = "4"
             self.assertTrue(ui._begin_pixel_art_canvas())
 
@@ -530,6 +537,7 @@ class EntityIdUpdateTests(unittest.TestCase):
             },
             initial_buffer="Entry 12",
         )
+        self.assertIsInstance(ui._entry_name_prompt_controller(), EntryNamePromptUI)
         ui.entry_name_prompt["suggestion_keyboard_active"] = True
 
         self.assertTrue(ui._select_entry_name_prompt_suggestion())
@@ -562,6 +570,7 @@ class EntityIdUpdateTests(unittest.TestCase):
             "id_prefix": "idea",
         }
 
+        self.assertIsInstance(ui._canvas_controller(), KnowledgeCanvasController)
         self.assertTrue(ui._create_new_entry_from_template(template))
 
         self.assertEqual(["idea_fresh_entry"], source["related"])
@@ -649,6 +658,10 @@ class EntityIdUpdateTests(unittest.TestCase):
             "selected_system_id": "system_beta",
             "distance": "4.2",
         }
+        self.assertIsInstance(
+            ui._stellar_neighbour_prompt_controller(),
+            StellarNeighbourPromptUI,
+        )
 
         confirmed = ui._confirm_stellar_neighbourhood_prompt()
 

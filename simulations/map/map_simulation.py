@@ -691,6 +691,48 @@ class MapSimulation:
 
         return self.world_model.get_entity(location_id)
 
+    def get_selection_inspector_payload(self):
+        entity_id = self.selected_entity_id or self.selected_spatial_feature_id
+        if not entity_id:
+            return None
+
+        entity = self.world_model.get_entity(entity_id)
+        if entity is None:
+            return {
+                "entity_id": None,
+                "title": str(entity_id).removeprefix("virtual:"),
+                "kind": "Virtual map aggregate",
+                "details": [f"Layer: {self.get_active_layer_label()}"],
+                "actions": [],
+            }
+
+        entity_class = (
+            entity.get("location_class")
+            or entity.get("region_class")
+            or entity.get("type", "map entity")
+        )
+        details = [
+            f"Class: {entity_class}",
+            f"Repository ID: {entity_id}",
+            f"Layer: {self.get_active_layer_label()}",
+        ]
+        start_year = entity.get("start_year")
+        end_year = entity.get("end_year")
+        if start_year not in (None, "") or end_year not in (None, ""):
+            active_start = start_year if start_year not in (None, "") else "?"
+            active_end = end_year if end_year not in (None, "") else "present"
+            details.append(f"Active: {active_start} to {active_end}")
+
+        return {
+            "entity_id": entity_id,
+            "title": entity.get("pretty_name") or entity.get("name") or entity_id,
+            "kind": "Map selection",
+            "details": details,
+            "actions": [
+                {"id": "open_selection_wiki", "label": "Open Wiki Entry"},
+            ],
+        }
+
     def _get_entity_bbox_bounds(self, entity):
         if not entity:
             return None

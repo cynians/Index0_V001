@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pygame
 
+from ui.knowledge_browser_model import KnowledgeBrowserModel
 from ui.knowledge_browser_ui import KnowledgeBrowserUI
 
 
@@ -21,6 +22,7 @@ class CardTypePickerTests(unittest.TestCase):
 
     def test_conversion_templates_include_every_schema_template(self):
         ui = KnowledgeBrowserUI()
+        self.assertIsInstance(ui._browser_model(), KnowledgeBrowserModel)
         ui.schema_entry_templates = [
             {"dataset_name": "ideas", "label": "Idea"},
             {"dataset_name": "vehicles", "label": "Vehicle"},

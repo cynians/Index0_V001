@@ -28,6 +28,8 @@ class UIManager:
         self.hover_tooltip_lines = []
         self.hover_tooltip_pos = None
         self.person_dossier_lines = []
+        self.simulation_selection_payload = None
+        self.simulation_selection_buttons = []
 
         self.simulation_bar_rect = None
         self.simulation_bar_title = None
@@ -108,6 +110,8 @@ class UIManager:
         self.hover_tooltip_lines = []
         self.hover_tooltip_pos = None
         self.person_dossier_lines = []
+        self.simulation_selection_payload = None
+        self.simulation_selection_buttons = []
 
         self.simulation_bar_rect = None
         self.simulation_bar_title = None
@@ -420,6 +424,10 @@ class UIManager:
         button_height = 32
         button_x = app_width - button_width - 20
         button_y = 42
+
+        get_selection_payload = getattr(active_sim, "get_selection_inspector_payload", None)
+        if get_selection_payload is not None:
+            self.simulation_selection_payload = get_selection_payload()
 
         if render_mode == "vehicle":
             self.scope_label = (
@@ -757,12 +765,6 @@ class UIManager:
             selected_body_entity = active_sim.get_selected_body_entity() if hasattr(active_sim,
                                                                                     "get_selected_body_entity") else None
             if selected_body_entity:
-                body_name = selected_body_entity.get("name", selected_body_entity.get("id"))
-                body_class = selected_body_entity.get("body_class", "body")
-                self.scope_label = f"Selected: {body_name}"
-                scope_context = active_sim.get_scope_breadcrumb() if hasattr(active_sim, "get_scope_breadcrumb") else ""
-                self.breadcrumb_label = f"{scope_context} | class: {body_class}" if scope_context else f"class: {body_class}"
-
                 self.buttons.append(
                     UIButton("open_space_body_map", "Open Map",
                              pygame.Rect(button_x, button_y + 40, button_width, button_height))
@@ -1127,6 +1129,62 @@ class UIManager:
             screen.blit(text_surface, (panel_rect.x + padding, current_y))
             current_y += text_surface.get_height() + line_gap
 
+    def _draw_simulation_selection_inspector(self, screen, font, x, y):
+        payload = self.simulation_selection_payload
+        if not payload:
+            self.simulation_selection_buttons = []
+            return 0
+
+        lines = [
+            "Selection",
+            str(payload.get("title") or "Unnamed selection"),
+            str(payload.get("kind") or "Simulation object"),
+        ]
+        lines.extend(str(line) for line in payload.get("details", []) if line not in (None, ""))
+
+        padding = 10
+        line_gap = 4
+        button_h = 28
+        button_gap = 6
+        rendered = [font.render(line, True, (240, 240, 240)) for line in lines]
+        actions = payload.get("actions", [])
+        content_width = max([280] + [surface.get_width() for surface in rendered])
+        panel_width = content_width + padding * 2
+        text_height = (
+            sum(surface.get_height() for surface in rendered)
+            + line_gap * (len(rendered) - 1)
+        )
+        actions_height = len(actions) * button_h + max(0, len(actions) - 1) * button_gap
+        panel_height = padding * 2 + text_height + (10 + actions_height if actions else 0)
+        panel_rect = pygame.Rect(x, y, panel_width, panel_height)
+
+        pygame.draw.rect(screen, (24, 28, 36), panel_rect)
+        pygame.draw.rect(screen, (154, 174, 208), panel_rect, 1)
+
+        current_y = panel_rect.y + padding
+        for index, text_surface in enumerate(rendered):
+            text_color = (245, 245, 245) if index < 2 else (185, 194, 210)
+            if text_color != (240, 240, 240):
+                text_surface = font.render(lines[index], True, text_color)
+            screen.blit(text_surface, (panel_rect.x + padding, current_y))
+            current_y += text_surface.get_height() + line_gap
+
+        self.simulation_selection_buttons = []
+        if actions:
+            current_y += 6
+            for action in actions:
+                button = UIButton(
+                    action.get("id"),
+                    action.get("label", action.get("id", "Action")),
+                    pygame.Rect(panel_rect.x + padding, current_y, content_width, button_h),
+                    enabled=bool(action.get("id")) and action.get("enabled", True),
+                )
+                self.simulation_selection_buttons.append(button)
+                self._draw_button(screen, font, button)
+                current_y += button_h + button_gap
+
+        return panel_height
+
     def _draw_hover_tooltip(self, screen, font):
         if not self.hover_tooltip_lines or not self.hover_tooltip_pos:
             return
@@ -1341,6 +1399,15 @@ class UIManager:
                 + padding * 2
             )
             current_info_y += panel_height + 12
+
+        selection_height = self._draw_simulation_selection_inspector(
+            screen,
+            font,
+            20,
+            current_info_y,
+        )
+        if selection_height:
+            current_info_y += selection_height + 12
 
         if self.person_dossier_lines:
             dossier_lines = ["Dossier"] + self.person_dossier_lines
@@ -1594,6 +1661,10 @@ class UIManager:
                     continue
 
                 if button.rect.collidepoint(mouse_pos):
+                    return button.id
+
+            for button in self.simulation_selection_buttons:
+                if button.visible and button.enabled and button.rect.collidepoint(mouse_pos):
                     return button.id
 
             return None

@@ -86,6 +86,38 @@ class SpaceSimulation:
             return None
         return self.system.get_source_entity_for_space_object(self.selected_space_object)
 
+    def get_selection_inspector_payload(self):
+        entity = self.get_selected_body_entity()
+        if not entity:
+            return None
+
+        entity_id = entity.get("id")
+        body_class = (
+            entity.get("body_class")
+            or entity.get("location_class")
+            or entity.get("type", "body")
+        )
+        details = [
+            f"Class: {body_class}",
+            f"Repository ID: {entity_id}",
+        ]
+        start_year = entity.get("start_year")
+        end_year = entity.get("end_year")
+        if start_year not in (None, "") or end_year not in (None, ""):
+            active_start = start_year if start_year not in (None, "") else "?"
+            active_end = end_year if end_year not in (None, "") else "present"
+            details.append(f"Active: {active_start} to {active_end}")
+
+        return {
+            "entity_id": entity_id,
+            "title": entity.get("pretty_name") or entity.get("name") or entity_id,
+            "kind": "Space body",
+            "details": details,
+            "actions": [
+                {"id": "open_selection_wiki", "label": "Open Wiki Entry"},
+            ] if entity_id else [],
+        }
+
     def _pick_space_object(self, camera, screen_pos):
         """
         Pick the nearest visible body under the cursor using a screen-space radius.
