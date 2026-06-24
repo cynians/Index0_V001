@@ -2313,8 +2313,8 @@ TASK-243
 Status: TODO
 Difficulty: 5
 Requires: TASK-231, TASK-232, TASK-237
-Description: Derive operational-mode module visibility and system grouping from repository-backed placed vehicle components, including:
-- Use design_placed_components and related repository-backed component placement state as the basis for operational-mode module presentation
+Description: Derive operational-mode module visibility and system grouping from the next vehicle simulation model, including:
+- Define the replacement source of truth for operational module presentation
 - Replace empty or placeholder operational module lists with component-derived operational groupings where possible
 - Preserve distinction between:
   - design placement representation
@@ -2376,16 +2376,16 @@ TASK-237
 Status: IN PROGRESS
 Difficulty: 5
 Requires: TASK-236, TASK-038, TASK-210
-Description: Represent vehicle component structure descriptively in repository vehicle entries without flattening final capabilities, including:
-- Vehicle entries storing intended roles, major component groups, and configuration stubs
+Description: Represent vehicle component structure without flattening final capabilities, including:
+- Define the replacement structure for vehicle roles, major groups, and configuration concepts
 - Avoid treating repository vehicle entries as authoritative flat capability stat blocks
 - Preserve future derivation of actual runtime capabilities from installed components and component combinations
 - Keep repository vehicle entries aligned with the existing VehicleSimulation component-based direction
 - Normalize this structure across the growing mixed-era vehicle repository rather than only introducing it for new entries
 
 Notes:
-- This direction is already partially present in current vehicles.yaml entries through component_layout_stub and related descriptive fields.
-- Remaining work is mainly repository-wide consistency and tighter linkage to simulation usage.
+- The previous vehicle-entry component layout fields have been removed pending a full simulation rethink.
+- Remaining work is mainly repository-wide consistency and tighter linkage to the replacement simulation model.
 
 TASK-238
 Status: TODO

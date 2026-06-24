@@ -79,3 +79,10 @@
     Hypothized type of nuclear reaction that could occur at or around room temperature.
     
   start_year: 2153
+- id: tech_aerial_refueling
+  pretty_name: Aerial Refueling
+  name: Aerial Refueling
+  type: technology
+  three_word_description: Fuel Handling Technology
+  related: []
+  offspring: []

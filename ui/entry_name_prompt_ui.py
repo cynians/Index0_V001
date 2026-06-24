@@ -74,9 +74,70 @@ class EntryNamePromptUI:
 
     def _entry_name_prompt_uses_suggestions(self, prompt=None):
         prompt = prompt or self.entry_name_prompt
-        return isinstance(prompt, dict) and prompt.get("mode") == "new_entry"
+        return isinstance(prompt, dict) and prompt.get("mode") in {"new_entry", "entry_description"}
 
-    def _entry_name_prompt_matches(self, query_text, limit=7):
+    def _entry_description_prompt_matches(self, query_text, limit=7, prompt=None):
+        prompt = prompt or self.entry_name_prompt
+        if self.world_model is None or getattr(self.world_model, "loader", None) is None:
+            return []
+        if not isinstance(prompt, dict):
+            return []
+
+        normalized_query = str(query_text or "").strip().lower()
+        if not normalized_query:
+            return []
+
+        template = prompt.get("template")
+        if not isinstance(template, dict):
+            return []
+
+        dataset_name = str(template.get("dataset_name") or "").strip()
+        initial_fields = self._template_initial_fields(template)
+        subclass_field = str(template.get("subclass_field") or "").strip()
+        subclass_value = initial_fields.get(subclass_field) if subclass_field else None
+        normalized_subclass = self._normalize_schema_name(subclass_value) if subclass_field else ""
+
+        if dataset_name and hasattr(self.world_model, "get_entities_by_dataset"):
+            entities = self.world_model.get_entities_by_dataset(dataset_name)
+        else:
+            datasets = getattr(getattr(self.world_model, "loader", None), "datasets", {}) or {}
+            entities = datasets.get(dataset_name, []) if dataset_name else []
+        matches_by_description = {}
+        for entity in entities:
+            if not isinstance(entity, dict):
+                continue
+            if subclass_field:
+                entity_subclass = self._normalize_schema_name(entity.get(subclass_field))
+                if entity_subclass != normalized_subclass:
+                    continue
+
+            description = str(entity.get("three_word_description") or "").strip()
+            if not description or normalized_query not in description.lower():
+                continue
+
+            key = description.lower()
+            if key in matches_by_description:
+                continue
+
+            label = self._entity_display_label(entity, fallback=entity.get("id", ""))
+            class_label = self._schema_display_label(subclass_value) if subclass_field else self._schema_display_label(dataset_name)
+            matches_by_description[key] = {
+                "id": description,
+                "label": description,
+                "subtitle": " | ".join(part for part in (class_label, str(label)) if part),
+                "card_color": entity.get("card_color") or entity.get("wiki_link_color") or "",
+                "rank": 0 if description.lower() == normalized_query else (1 if description.lower().startswith(normalized_query) else 2),
+            }
+
+        matches = list(matches_by_description.values())
+        matches.sort(key=lambda item: (item["rank"], item["label"].lower()))
+        return matches[:limit]
+
+    def _entry_name_prompt_matches(self, query_text, limit=7, prompt=None):
+        prompt = prompt or self.entry_name_prompt
+        if isinstance(prompt, dict) and prompt.get("mode") == "entry_description":
+            return self._entry_description_prompt_matches(query_text, limit=limit, prompt=prompt)
+
         if self.world_model is None or getattr(self.world_model, "loader", None) is None:
             return []
 
@@ -137,7 +198,7 @@ class EntryNamePromptUI:
         if not self._entry_name_prompt_uses_suggestions(prompt):
             return
 
-        matches = self._entry_name_prompt_matches(prompt.get("buffer", ""))
+        matches = self._entry_name_prompt_matches(prompt.get("buffer", ""), prompt=prompt)
         prompt["suggestion_matches"] = matches
         prompt["suggestion_hitboxes"] = []
         if not matches:
@@ -160,6 +221,14 @@ class EntryNamePromptUI:
         if index is None:
             index = int(prompt.get("suggestion_selected_index", 0))
         index = max(0, min(int(index), len(matches) - 1))
+        if prompt.get("mode") == "entry_description":
+            description = str(matches[index].get("label") or matches[index].get("id") or "").strip()
+            prompt["buffer"] = description
+            prompt["cursor"] = len(description)
+            prompt["suggestion_keyboard_active"] = False
+            self._refresh_entry_name_prompt_suggestions()
+            return True
+
         entity_id = str(matches[index].get("id") or "").strip()
         if not entity_id or self.world_model is None:
             return False
@@ -201,7 +270,7 @@ class EntryNamePromptUI:
             return False
 
         active_field = "description" if (
-            prompt.get("mode") == "illustration_from_parent"
+            prompt.get("mode") in {"illustration_from_parent"}
             and prompt.get("active_prompt_field") == "description"
         ) else "name"
         buffer_key = "description_buffer" if active_field == "description" else "buffer"
@@ -358,6 +427,8 @@ class EntryNamePromptUI:
             prompt_title = f"Name New {prompt.get('label') or 'Entry'}"
         elif prompt.get("mode") == "star_system_class":
             prompt_title = "Choose Star Class"
+        elif prompt.get("mode") == "entry_description":
+            prompt_title = "Add Short Description"
         else:
             prompt_title = "Name New Entry"
         title = font.render(prompt_title, True, (244, 244, 244))
@@ -365,7 +436,12 @@ class EntryNamePromptUI:
         screen.blit(title, (prompt_rect.x + 12, prompt_rect.y + 8))
         screen.blit(detail, (prompt_rect.x + 12, prompt_rect.y + 28))
 
-        name_label_text = "star class" if prompt.get("mode") == "star_system_class" else "name"
+        if prompt.get("mode") == "star_system_class":
+            name_label_text = "star class"
+        elif prompt.get("mode") == "entry_description":
+            name_label_text = "short description (optional)"
+        else:
+            name_label_text = "name"
         name_label = font.render(name_label_text, True, (188, 196, 212))
         screen.blit(name_label, (input_rect.x, input_rect.y - 18))
 
@@ -398,7 +474,12 @@ class EntryNamePromptUI:
                     1,
                 )
 
-        name_placeholder = "G2V, K5V, M3V, or O/B/A/F/G/K/M" if prompt.get("mode") == "star_system_class" else "Entry name"
+        if prompt.get("mode") == "star_system_class":
+            name_placeholder = "G2V, K5V, M3V, or O/B/A/F/G/K/M"
+        elif prompt.get("mode") == "entry_description":
+            name_placeholder = "Optional"
+        else:
+            name_placeholder = "Entry name"
         draw_prompt_input(input_rect, "buffer", "cursor", name_placeholder, "name")
 
         if suggestion_matches:
@@ -461,4 +542,3 @@ class EntryNamePromptUI:
             pygame.draw.rect(screen, (164, 176, 198), rect, 1)
             label_surface = font.render(label, True, (244, 244, 244))
             screen.blit(label_surface, label_surface.get_rect(center=rect.center))
-

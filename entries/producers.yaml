@@ -184,3 +184,10 @@
     !! [[ATG-3 Filling - Specialized Cargo Aircraft]]
     
     !!
+- id: prod_new_002
+  pretty_name: New Producer
+  name: New Producer
+  type: producer
+  three_word_description: ''
+  related: []
+  offspring: []

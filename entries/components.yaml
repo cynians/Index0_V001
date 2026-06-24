@@ -84,9 +84,9 @@
   - provides_vehicle_propulsion
   maintenance_notes: Compact engine block intended for light vehicle layouts and simple
     early design testing.
-  dimension_x_m: 2.2
-  dimension_y_m: 1.2
-  dimension_z_m: 1.4
+  dimension_length_m: 2.2
+  dimension_height_m: 1.4
+  dimension_width_m: 1.2
   mass_kg: 680.0
   power_kw: 180.0
   tags:
@@ -132,9 +132,9 @@
   - provides_vehicle_propulsion
   maintenance_notes: Larger engine block requiring more hull volume but providing
     a heavier propulsion option for design testing.
-  dimension_x_m: 2.8
-  dimension_y_m: 1.5
-  dimension_z_m: 1.6
+  dimension_length_m: 2.8
+  dimension_height_m: 1.6
+  dimension_width_m: 1.5
   mass_kg: 980.0
   power_kw: 320.0
   tags:
@@ -180,9 +180,9 @@
   - grand_touring_profile
   maintenance_notes: Exterior finish and body alignment are intended to preserve the
     sleek design language and refined road presence of the C1 line.
-  dimension_x_m: 4.25
-  dimension_y_m: 1.8
-  dimension_z_m: 1.18
+  dimension_length_m: 4.25
+  dimension_height_m: 1.18
+  dimension_width_m: 1.8
   mass_kg: 420.0
   power_kw: 0.0
   tags:
@@ -229,9 +229,9 @@
   - refined_open_top_operation
   maintenance_notes: Roof seals, hinge points, and folding mechanisms should be maintained
     to preserve quiet cruising quality and open-top usability.
-  dimension_x_m: 1.75
-  dimension_y_m: 1.48
-  dimension_z_m: 0.32
+  dimension_length_m: 1.75
+  dimension_height_m: 0.32
+  dimension_width_m: 1.48
   mass_kg: 68.0
   power_kw: 0.0
   tags:
@@ -280,9 +280,9 @@
   - grand_touring_performance
   maintenance_notes: Service focus is on smoothness, noise suppression, and reliable
     touring-range operation rather than aggressive maximum-performance tuning.
-  dimension_x_m: 1.55
-  dimension_y_m: 0.95
-  dimension_z_m: 0.88
+  dimension_length_m: 1.55
+  dimension_height_m: 0.88
+  dimension_width_m: 0.95
   mass_kg: 260.0
   power_kw: 210.0
   tags:
@@ -331,9 +331,9 @@
   - amphibious_vehicle_base_structure
   maintenance_notes: Hull seams, drain points, and structural corrosion areas must
     be inspected to preserve amphibious integrity and field durability.
-  dimension_x_m: 3.1
-  dimension_y_m: 1.5
-  dimension_z_m: 0.62
+  dimension_length_m: 3.1
+  dimension_height_m: 0.62
+  dimension_width_m: 1.5
   mass_kg: 240.0
   power_kw: 0.0
   tags:
@@ -378,9 +378,9 @@
   - weldable_body_basis
   maintenance_notes: Inspect floor shell for deformation, weld fatigue, and corrosion
     in wet-service environments.
-  dimension_x_m: 2.6
-  dimension_y_m: 1.45
-  dimension_z_m: 0.32
+  dimension_length_m: 2.6
+  dimension_height_m: 0.32
+  dimension_width_m: 1.45
   mass_kg: 92.0
   power_kw: 0.0
   tags:
@@ -422,9 +422,9 @@
   - shaped_front_closure
   - weldable_panel_set
   maintenance_notes: Check frontal panels for impact damage and seam integrity.
-  dimension_x_m: 0.72
-  dimension_y_m: 1.42
-  dimension_z_m: 0.46
+  dimension_length_m: 0.72
+  dimension_height_m: 0.46
+  dimension_width_m: 1.42
   mass_kg: 26.0
   power_kw: 0.0
   tags:
@@ -468,9 +468,9 @@
   - weldable_rear_panel_set
   maintenance_notes: Inspect rear closure surfaces and bracket mounts for cracking
     and deformation under cargo/towing use.
-  dimension_x_m: 0.4
-  dimension_y_m: 1.42
-  dimension_z_m: 0.42
+  dimension_length_m: 0.4
+  dimension_height_m: 0.42
+  dimension_width_m: 1.42
   mass_kg: 18.0
   power_kw: 0.0
   tags:
@@ -513,9 +513,9 @@
   - mount_hardpoint_support
   maintenance_notes: Check reinforcement members for cracking around axle, tow, and
     seat mount areas.
-  dimension_x_m: 1.8
-  dimension_y_m: 1.2
-  dimension_z_m: 0.18
+  dimension_length_m: 1.8
+  dimension_height_m: 0.18
+  dimension_width_m: 1.2
   mass_kg: 34.0
   power_kw: 0.0
   tags:
@@ -557,9 +557,9 @@
   - sealing_edge_support
   maintenance_notes: Keep frame edges and hinges aligned to preserve access cover
     fit and sealing quality.
-  dimension_x_m: 1.1
-  dimension_y_m: 0.9
-  dimension_z_m: 0.08
+  dimension_length_m: 1.1
+  dimension_height_m: 0.08
+  dimension_width_m: 0.9
   mass_kg: 12.0
   power_kw: 0.0
   tags:
@@ -593,9 +593,9 @@
   - pressed_sheet_part
   - weldable
   maintenance_notes: Inspect for corrosion and impact deformation.
-  dimension_x_m: 2.2
-  dimension_y_m: 1.1
-  dimension_z_m: 0.06
+  dimension_length_m: 2.2
+  dimension_height_m: 0.06
+  dimension_width_m: 1.1
   mass_kg: 24.0
   power_kw: 0.0
   tags:
@@ -628,9 +628,9 @@
   - pressed_sheet_part
   - weldable
   maintenance_notes: Inspect for seam cracking and corrosion along lower edges.
-  dimension_x_m: 2.0
-  dimension_y_m: 0.34
-  dimension_z_m: 0.05
+  dimension_length_m: 2.0
+  dimension_height_m: 0.05
+  dimension_width_m: 0.34
   mass_kg: 11.0
   power_kw: 0.0
   tags:
@@ -662,9 +662,9 @@
   - pressed_sheet_part
   - weldable
   maintenance_notes: Check for cracking and local deformation around suspension loads.
-  dimension_x_m: 0.52
-  dimension_y_m: 0.44
-  dimension_z_m: 0.05
+  dimension_length_m: 0.52
+  dimension_height_m: 0.05
+  dimension_width_m: 0.44
   mass_kg: 5.0
   power_kw: 0.0
   tags:
@@ -696,9 +696,9 @@
   - weldable
   - closing_plate
   maintenance_notes: Inspect weld lines and corrosion concentration points.
-  dimension_x_m: 0.26
-  dimension_y_m: 0.18
-  dimension_z_m: 0.03
+  dimension_length_m: 0.26
+  dimension_height_m: 0.03
+  dimension_width_m: 0.18
   mass_kg: 1.5
   power_kw: 0.0
   tags:
@@ -731,9 +731,9 @@
   - pressed_sheet_part
   - weldable
   maintenance_notes: Inspect for frontal impact deformation and seam opening.
-  dimension_x_m: 0.68
-  dimension_y_m: 1.12
-  dimension_z_m: 0.05
+  dimension_length_m: 0.68
+  dimension_height_m: 0.05
+  dimension_width_m: 1.12
   mass_kg: 8.0
   power_kw: 0.0
   tags:
@@ -765,9 +765,9 @@
   - pressed_sheet_part
   - weldable
   maintenance_notes: Check for cracking at joining seams and edge distortion.
-  dimension_x_m: 0.62
-  dimension_y_m: 0.32
-  dimension_z_m: 0.05
+  dimension_length_m: 0.62
+  dimension_height_m: 0.05
+  dimension_width_m: 0.32
   mass_kg: 4.0
   power_kw: 0.0
   tags:
@@ -800,9 +800,9 @@
   - installable
   - simple_mounting_support
   maintenance_notes: Inspect bracket holes and bends for fatigue or elongation.
-  dimension_x_m: 0.24
-  dimension_y_m: 0.16
-  dimension_z_m: 0.04
+  dimension_length_m: 0.24
+  dimension_height_m: 0.04
+  dimension_width_m: 0.16
   mass_kg: 1.8
   power_kw: 0.0
   tags:
@@ -834,9 +834,9 @@
   - pressed_sheet_part
   - weldable
   maintenance_notes: Inspect edge straightness and bracket mounting integrity.
-  dimension_x_m: 0.4
-  dimension_y_m: 0.18
-  dimension_z_m: 0.04
+  dimension_length_m: 0.4
+  dimension_height_m: 0.04
+  dimension_width_m: 0.18
   mass_kg: 2.2
   power_kw: 0.0
   tags:
@@ -868,9 +868,9 @@
   - installable
   - mounting_support_set
   maintenance_notes: Inspect holes, bends, and attachment faces for wear and cracking.
-  dimension_x_m: 0.26
-  dimension_y_m: 0.18
-  dimension_z_m: 0.04
+  dimension_length_m: 0.26
+  dimension_height_m: 0.04
+  dimension_width_m: 0.18
   mass_kg: 2.4
   power_kw: 0.0
   tags:
@@ -903,9 +903,9 @@
   - weldable
   - hardpoint_reinforcement
   maintenance_notes: Inspect cracks around suspension bolt patterns and weld lines.
-  dimension_x_m: 0.3
-  dimension_y_m: 0.24
-  dimension_z_m: 0.03
+  dimension_length_m: 0.3
+  dimension_height_m: 0.03
+  dimension_width_m: 0.24
   mass_kg: 2.1
   power_kw: 0.0
   tags:
@@ -937,9 +937,9 @@
   - installable
   - structural_member
   maintenance_notes: Check for bending, corrosion, and cracking at junctions.
-  dimension_x_m: 1.22
-  dimension_y_m: 0.1
-  dimension_z_m: 0.1
+  dimension_length_m: 1.22
+  dimension_height_m: 0.1
+  dimension_width_m: 0.1
   mass_kg: 7.5
   power_kw: 0.0
   tags:
@@ -972,9 +972,9 @@
   - local_heavy_load_support
   maintenance_notes: Inspect for cracking, elongation, and deformation under towing
     stress.
-  dimension_x_m: 0.18
-  dimension_y_m: 0.14
-  dimension_z_m: 0.08
+  dimension_length_m: 0.18
+  dimension_height_m: 0.08
+  dimension_width_m: 0.14
   mass_kg: 2.8
   power_kw: 0.0
   tags:
@@ -1008,9 +1008,9 @@
   - local_mount_support
   maintenance_notes: Inspect mounting holes and local material fatigue around attachment
     points.
-  dimension_x_m: 0.32
-  dimension_y_m: 0.24
-  dimension_z_m: 0.03
+  dimension_length_m: 0.32
+  dimension_height_m: 0.03
+  dimension_width_m: 0.24
   mass_kg: 2.0
   power_kw: 0.0
   tags:
@@ -1042,9 +1042,9 @@
   - installable
   - frame_ring
   maintenance_notes: Check sealing surfaces and local edge corrosion.
-  dimension_x_m: 0.62
-  dimension_y_m: 0.48
-  dimension_z_m: 0.04
+  dimension_length_m: 0.62
+  dimension_height_m: 0.04
+  dimension_width_m: 0.48
   mass_kg: 3.2
   power_kw: 0.0
   tags:
@@ -1076,9 +1076,9 @@
   - installable
   - hinge_support
   maintenance_notes: Inspect hinge holes and bends for wear and cracking.
-  dimension_x_m: 0.1
-  dimension_y_m: 0.06
-  dimension_z_m: 0.03
+  dimension_length_m: 0.1
+  dimension_height_m: 0.03
+  dimension_width_m: 0.06
   mass_kg: 0.4
   power_kw: 0.0
   tags:
@@ -1112,9 +1112,9 @@
   - edge_flange
   maintenance_notes: Inspect sealing surface straightness and corrosion along the
     strip.
-  dimension_x_m: 0.8
-  dimension_y_m: 0.04
-  dimension_z_m: 0.02
+  dimension_length_m: 0.8
+  dimension_height_m: 0.02
+  dimension_width_m: 0.04
   mass_kg: 0.9
   power_kw: 0.0
   tags:

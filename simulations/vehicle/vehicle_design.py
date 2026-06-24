@@ -190,9 +190,9 @@ class VehicleDesignController:
     def _load_vehicle_dimensions_m(self, vehicle_entity):
         if vehicle_entity:
             return {
-                "x": float(vehicle_entity.get("dimension_x_m", 10.0)),
-                "y": float(vehicle_entity.get("dimension_y_m", 4.0)),
-                "z": float(vehicle_entity.get("dimension_z_m", 3.0)),
+                "x": float(vehicle_entity.get("dimension_length_m", 10.0)),
+                "y": float(vehicle_entity.get("dimension_width_m", 4.0)),
+                "z": float(vehicle_entity.get("dimension_height_m", 3.0)),
             }
 
         return {
@@ -266,9 +266,9 @@ class VehicleDesignController:
             "component_type": entity.get("component_class", "component"),
             "entry_type": entity.get("type", "component"),
             "dimensions_m": {
-                "x": float(entity.get("dimension_x_m", 1.0)),
-                "y": float(entity.get("dimension_y_m", 1.0)),
-                "z": float(entity.get("dimension_z_m", 1.0)),
+                "x": float(entity.get("dimension_length_m", 1.0)),
+                "y": float(entity.get("dimension_width_m", 1.0)),
+                "z": float(entity.get("dimension_height_m", 1.0)),
             },
             "mass_kg": float(entity.get("mass_kg", 0.0)),
             "power_kw": float(entity.get("power_kw", 0.0)),
@@ -306,83 +306,10 @@ class VehicleDesignController:
         ]
 
     def _load_component_catalog(self, world_model, vehicle_entity):
-        if world_model is None or vehicle_entity is None:
-            return self._default_component_catalog()
-
-        component_ids = vehicle_entity.get("design_catalog_components", [])
-        catalog = []
-
-        for component_id in component_ids:
-            entity = world_model.get_entity(component_id)
-            if entity is None:
-                continue
-            catalog.append(self._build_catalog_entry_from_component_entity(entity))
-
-        return catalog or self._default_component_catalog()
+        return self._default_component_catalog()
 
     def _load_placed_components(self, world_model, vehicle_entity):
-        placed = []
-
-        if vehicle_entity is None:
-            return placed
-
-        design_placed_components = vehicle_entity.get("design_placed_components", [])
-        for entry in design_placed_components:
-            if not isinstance(entry, dict):
-                continue
-
-            component_id = entry.get("component_id")
-            component_entity = world_model.get_entity(component_id) if (world_model and component_id) else None
-
-            if component_entity is not None:
-                label = component_entity.get("pretty_name", component_entity.get("name", component_id))
-                component_type = component_entity.get("component_class", "component")
-                entry_type = component_entity.get("type", "component")
-                width = float(entry.get("width_m", component_entity.get("dimension_x_m", 1.0)))
-                height = float(entry.get("height_m", component_entity.get("dimension_y_m", 1.0)))
-                satisfies_categories = self._infer_satisfies_categories_from_entity(component_entity)
-
-                raw_operational_groups = component_entity.get("operational_groups", [])
-                operational_groups = [str(v).strip() for v in raw_operational_groups if str(v).strip()]
-
-                raw_subsystem_labels = component_entity.get("subsystem_labels", [])
-                subsystem_labels = [str(v).strip() for v in raw_subsystem_labels if str(v).strip()]
-            else:
-                label = entry.get("label", component_id or "component")
-                component_type = entry.get("component_type", "component")
-                entry_type = entry.get("entry_type", "component")
-                width = float(entry.get("width_m", 1.0))
-                height = float(entry.get("height_m", 1.0))
-
-                raw_categories = entry.get("satisfies_categories", [])
-                satisfies_categories = [str(v).strip().lower() for v in raw_categories if str(v).strip()]
-
-                raw_operational_groups = entry.get("operational_groups", [])
-                operational_groups = [str(v).strip() for v in raw_operational_groups if str(v).strip()]
-
-                raw_subsystem_labels = entry.get("subsystem_labels", [])
-                subsystem_labels = [str(v).strip() for v in raw_subsystem_labels if str(v).strip()]
-
-            placed.append(
-                {
-                    "instance_id": entry.get("instance_id", "placed_component_001"),
-                    "catalog_id": component_id,
-                    "label": label,
-                    "component_type": component_type,
-                    "entry_type": entry_type,
-                    "satisfies_categories": satisfies_categories,
-                    "operational_groups": operational_groups,
-                    "subsystem_labels": subsystem_labels,
-                    "local_rect_m": {
-                        "x": float(entry.get("local_x_m", 0.0)),
-                        "y": float(entry.get("local_y_m", 0.0)),
-                        "width": width,
-                        "height": height,
-                    },
-                }
-            )
-
-        return placed
+        return []
 
     def _infer_next_component_index(self):
         max_index = 0
@@ -548,27 +475,12 @@ class VehicleDesignController:
         ordered = []
         visited = set()
 
-        explicit_parents = []
-        if self.vehicle_entity is not None:
-            raw_parents = self.vehicle_entity.get("vehicle_class_parents", [])
-            if isinstance(raw_parents, list):
-                explicit_parents = [
-                    str(parent).strip().lower()
-                    for parent in raw_parents
-                    if str(parent).strip()
-                ]
-
         def visit(class_name):
             if class_name in visited:
                 return
             visited.add(class_name)
 
-            if class_name == normalized and explicit_parents:
-                parent_list = explicit_parents
-            else:
-                parent_list = self.VEHICLE_CLASS_PARENTS.get(class_name, [])
-
-            for parent in parent_list:
+            for parent in self.VEHICLE_CLASS_PARENTS.get(class_name, []):
                 visit(parent)
 
             ordered.append(class_name)
@@ -578,42 +490,7 @@ class VehicleDesignController:
             visit("vehicle")
         return ordered
 
-    def get_resolved_required_categories(self):
-        if self.vehicle_entity is not None:
-            explicit_required = self.vehicle_entity.get("required_categories", [])
-            explicit_overrides = self.vehicle_entity.get("required_category_overrides", [])
-
-            if isinstance(explicit_required, list) and explicit_required:
-                resolved = []
-                seen = set()
-
-                for category in explicit_required:
-                    text = str(category).strip().lower()
-                    if not text or text in seen:
-                        continue
-                    seen.add(text)
-                    resolved.append(
-                        {
-                            "category": text,
-                            "source_class": "entry_required_categories",
-                        }
-                    )
-
-                if isinstance(explicit_overrides, list):
-                    for category in explicit_overrides:
-                        text = str(category).strip().lower()
-                        if not text or text in seen:
-                            continue
-                        seen.add(text)
-                        resolved.append(
-                            {
-                                "category": text,
-                                "source_class": "entry_required_category_overrides",
-                            }
-                        )
-
-                return resolved
-
+    def get_resolved_class_requirements(self):
         vehicle_class = ""
         if self.vehicle_entity is not None:
             vehicle_class = self.vehicle_entity.get("vehicle_class", "vehicle")
@@ -680,7 +557,7 @@ class VehicleDesignController:
         return categories
 
     def get_requirement_status_list(self):
-        required = self.get_resolved_required_categories()
+        required = self.get_resolved_class_requirements()
         placed = self.get_placed_components()
 
         placed_category_map = {}

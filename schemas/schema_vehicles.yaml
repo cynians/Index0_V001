@@ -8,18 +8,6 @@ fields:
     type: string
     optional: true
 
-  vehicle_class_parents:
-    type: string_list
-    optional: true
-
-  required_categories:
-    type: string_list
-    optional: true
-
-  required_category_overrides:
-    type: string_list
-    optional: true
-
   produced_by:
     type: entity_list
     target: faction
@@ -35,70 +23,39 @@ fields:
     target: formation
     optional: true
 
+  operators:
+    type: entity_list
+    target:
+      - factions
+      - institutions
+      - formations
+    section: Class Relations
+    optional: true
+
+  markets:
+    type: entity_list
+    target: markets
+    section: Class Relations
+    optional: true
+
+  producers:
+    type: entity_list
+    target: producers
+    section: Class Relations
+    optional: true
+
   manufacturer_name:
     type: string
     optional: true
 
-  dimension_x_m:
+  dimension_length_m:
     type: number
     optional: true
 
-  dimension_y_m:
+  dimension_height_m:
     type: number
     optional: true
 
-  dimension_z_m:
+  dimension_width_m:
     type: number
     optional: true
-
-  design_catalog_components:
-    type: entity_list
-    target: components
-    optional: true
-
-  design_placed_components:
-    type: object_list
-    optional: true
-
-  interior_layout:
-    type: object_list
-    optional: true
-
-  operational_state:
-    type: object
-    optional: true
-
-# --------------------------------------------------
-# COMMENTED EXAMPLE ENTRY
-# --------------------------------------------------
-#
-# - id: veh_luaz_967
-#   pretty_name: LuAZ-967
-#   name: LuAZ-967
-#   type: vehicle
-#   vehicle_class: amphibious_front_line_transport
-#   vehicle_class_parents:
-#     - utility_vehicle
-#     - road_vehicle
-#     - ground_vehicle
-#     - vehicle
-#   required_categories:
-#     - structure
-#     - control
-#     - locomotion_ground
-#     - wheels
-#     - propulsion_road
-#   required_category_overrides:
-#     - amphibious_hull
-#   manufacturer_name: LuAZ
-#   dimension_x_m: 3.74
-#   dimension_y_m: 1.71
-#   dimension_z_m: 1.75
-#   design_catalog_components:
-#     - comp_engine_inline_compact
-#   tags:
-#     - vehicle
-#     - ground_vehicle
-#     - amphibious_vehicle
-#   start_year: 1961
-#   entry_status: draft

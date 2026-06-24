@@ -56,15 +56,15 @@ fields:
     type: text
     optional: true
 
-  dimension_x_m:
+  dimension_length_m:
     type: number
     optional: true
 
-  dimension_y_m:
+  dimension_height_m:
     type: number
     optional: true
 
-  dimension_z_m:
+  dimension_width_m:
     type: number
     optional: true
 
@@ -108,9 +108,9 @@ fields:
 #     - compact_engine_module
 #     - provides_vehicle_propulsion
 #   maintenance_notes: Compact engine block intended for light vehicle layouts and simple early design testing.
-#   dimension_x_m: 2.2
-#   dimension_y_m: 1.2
-#   dimension_z_m: 1.4
+#   dimension_length_m: 2.2
+#   dimension_height_m: 1.4
+#   dimension_width_m: 1.2
 #   mass_kg: 680
 #   power_kw: 180
 #   start_year: 2400

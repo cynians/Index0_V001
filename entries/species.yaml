@@ -2014,3 +2014,124 @@
   parents:
   - cladis_paratypothoracini
   offspring: []
+- id: spec_eoperipatus_totoro
+  common_name: Totoro Velvet Worm - Eoperipatus totoro
+  binomial_name: Eoperipatus totoro
+  type: species
+  three_word_description: Velvet Worm
+  related: []
+  card_color: '#621c2d'
+  card_header_color: '#bf3959'
+  wiki_field_colors:
+    default: '#50384b'
+  offspring: []
+  tags: []
+  start_year: null
+  end_year: null
+  parents:
+  - cladis_eoperipatus
+  entry_status: ''
+- id: spec_rhinella_marina
+  common_name: Cane Toad - Rhinella marina
+  binomial_name: Rhinella marina
+  type: species
+  related: []
+  three_word_description: Giant Neotropical Toad
+  parents:
+  - cladis_beaked_toads_rhinella
+  offspring: []
+  card_color: '#26201c'
+  card_header_color: '#453c1d'
+  wiki_field_colors:
+    default: '#80370f'
+- id: spec_varanus_salvadorii
+  common_name: Crocodile Monitor - Varanus salvadorii
+  binomial_name: Varanus salvadorii
+  type: species
+  three_word_description: Monitor Lizard Species
+  related: []
+  parents:
+  - cladis_monitor_lizards_varanus
+  offspring: []
+  card_color: '#111b0d'
+  card_header_color: '#292d29'
+  wiki_field_colors:
+    default: '#8bbd87'
+- id: spec_varanus_salvator
+  common_name: Asian Water Monitor - Varanus salvator
+  binomial_name: Varanus salvator
+  type: species
+  three_word_description: Large Varanid Lizard
+  related: []
+  parents:
+  - cladis_southeast_asian_water_monitors_soterosaurus
+  offspring: []
+  card_color: '#293228'
+  card_header_color: '#5d4425'
+  wiki_field_colors:
+    default: '#aa947a'
+- id: spec_heterodon_platirhinos
+  common_name: Eastern Hognose Snake - Heterodon platirhinos
+  binomial_name: Heterodon platirhinos
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#181211'
+  card_header_color: '#b7450e'
+  wiki_field_colors:
+    intro: '#958465'
+  offspring: []
+  parents:
+  - cladis_hog_nosed_snakes_heterodon
+- id: spec_varanus_panoptes
+  common_name: Yellow Spotted Monitor - Varanus panoptes
+  binomial_name: Varanus panoptes
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#4a3a28'
+  card_header_color: '#70694d'
+  wiki_field_colors:
+    default: '#857323'
+  offspring: []
+  parents:
+  - cladis_monitor_lizards_varanus
+- id: spec_varanus_mertensi
+  common_name: Mertens Water Monitor - Varanus mertensi
+  binomial_name: Varanus mertensi
+  type: species
+  three_word_description: ''
+  related: []
+  card_color: '#26211c'
+  card_header_color: '#1c1f26'
+  wiki_field_colors:
+    default: '#1b1612'
+  offspring: []
+  parents:
+  - cladis_monitor_lizards_varanus
+- id: spec_raranimus_dashankouensis
+  common_name: Raranimus - Raranimus dashankouensis
+  binomial_name: Raranimus dashankouensis
+  type: species
+  three_word_description: Middle Permian Therapsid
+  related: []
+  parents:
+  - cladis_therapsida
+  offspring: []
+  card_color: '#756139'
+  card_header_color: '#382c0d'
+  wiki_field_colors:
+    default: '#6c31aa'
+- id: spec_ginko_biloba
+  common_name: Ginko - Ginko biloba
+  binomial_name: Ginko biloba
+  type: species
+  three_word_description: ''
+  related: []
+  parents:
+  - cladis_ginkgo
+  offspring: []
+  card_color: '#213a19'
+  card_header_color: '#3a2413'
+  wiki_field_colors:
+    default: '#6ea264'

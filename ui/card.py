@@ -24,7 +24,7 @@ class EntityCard:
     Reusable renderer + interaction helper for one repository entity card.
     """
 
-    HEADER_H = 50
+    HEADER_H = 66
     TAB_H = 24
     SECTION_HEADER_H = 22
     IMAGE_TOP = 86
@@ -90,6 +90,7 @@ class EntityCard:
         "Dimensions / Scale",
         "Temporal",
         "Relations",
+        "Class Relations",
         "State / Layout",
         "Metadata",
     ]
@@ -123,7 +124,7 @@ class EntityCard:
         "general": [],
         "overview": ["Identity", "Classification", "Dimensions / Scale", "Metadata"],
         "temporal": ["Temporal"],
-        "relations": ["Relations"],
+        "relations": ["Relations", "Class Relations"],
         "state": ["State / Layout"],
         "operational": ["Operational"],
         "simulation": [],
@@ -310,6 +311,7 @@ class EntityCard:
             "Dimensions / Scale": False,
             "Temporal": False,
             "Relations": False,
+            "Class Relations": False,
             "State / Layout": True,
             "Metadata": False,
             "Media": False,
@@ -360,6 +362,9 @@ class EntityCard:
 
     def _title_edit_field(self):
         return "common_name" if self._is_species_card() else "name"
+
+    def _header_description_text(self):
+        return str(self.entity.get("three_word_description") or "").strip()
 
     def _tab_order(self):
         if self._is_idea_card():
@@ -462,7 +467,7 @@ class EntityCard:
         if field_key in self.CORE_RELATION_FIELDS:
             return "entity_core"
         spec = self._field_spec(field_key)
-        target = str(spec.get("target", "")).strip()
+        target = spec.get("target", "")
         if target:
             return target
 
@@ -474,6 +479,28 @@ class EntityCard:
         if field_type in {"idea", "ideas"}:
             return "ideas"
         return ""
+
+    def _relation_target_options(self, target):
+        if isinstance(target, (list, tuple, set)):
+            return [
+                str(candidate).strip()
+                for candidate in target
+                if str(candidate).strip()
+            ]
+
+        target_text = str(target or "").strip()
+        if not target_text:
+            return []
+
+        for delimiter in ("|", ","):
+            if delimiter in target_text:
+                return [
+                    candidate.strip()
+                    for candidate in target_text.split(delimiter)
+                    if candidate.strip()
+                ]
+
+        return [target_text]
 
     def _relation_reference_values(self, value):
         if value is None:
@@ -639,7 +666,14 @@ class EntityCard:
         return None
 
     def _relation_target_label(self, target):
-        normalized = str(target or "").strip().lower()
+        options = self._relation_target_options(target)
+        if len(options) > 1:
+            labels = [option.replace("_", " ") for option in options]
+            if len(labels) == 2:
+                return " or ".join(labels)
+            return f"{', '.join(labels[:-1])}, or {labels[-1]}"
+
+        normalized = str(options[0] if options else "").strip().lower()
         if not normalized or normalized in {"entity", "entity_core", "core", "any"}:
             return "Entry"
         return normalized.replace("_", " ")
@@ -1338,9 +1372,9 @@ class EntityCard:
                 classification.append((key, entity.get(key)))
 
         dims = [
-            ("dimension_x_m", entity.get("dimension_x_m")),
-            ("dimension_y_m", entity.get("dimension_y_m")),
-            ("dimension_z_m", entity.get("dimension_z_m")),
+            ("dimension_length_m", entity.get("dimension_length_m")),
+            ("dimension_height_m", entity.get("dimension_height_m")),
+            ("dimension_width_m", entity.get("dimension_width_m")),
             ("mass_kg", entity.get("mass_kg")),
             ("power_kw", entity.get("power_kw")),
         ]
@@ -1350,6 +1384,7 @@ class EntityCard:
         overview_dims = [] if self._is_component_card() else dims
 
         relation_values = []
+        class_relation_values = []
         state_values = []
         metadata_values = []
         operational_values = []
@@ -1362,9 +1397,9 @@ class EntityCard:
         media_keys = self._media_field_keys()
 
         component_operational_keys = {
-            "dimension_x_m",
-            "dimension_y_m",
-            "dimension_z_m",
+            "dimension_length_m",
+            "dimension_height_m",
+            "dimension_width_m",
             "mass_kg",
             "power_kw",
             "install_contexts",
@@ -1430,6 +1465,10 @@ class EntityCard:
                 temporal_values.append((key, value))
                 continue
 
+            if section_name == "class relations":
+                class_relation_values.append((key, value))
+                continue
+
             if section_name == "relations" or key in self.STANDARD_RELATION_FIELDS:
                 relation_values.append((key, value))
                 continue
@@ -1468,6 +1507,7 @@ class EntityCard:
             "Dimensions / Scale": overview_dims,
             "Temporal": temporal_values,
             "Relations": relation_values,
+            "Class Relations": class_relation_values,
             "State / Layout": state_values,
             "Metadata": metadata_values,
             "Media": media_values,
@@ -2627,7 +2667,9 @@ class EntityCard:
         header_icon_rect = pygame.Rect(rect.x + 10, rect.y + 8, 34, 34) if header_icon_ref else None
         title_x = rect.x + (52 if header_icon_ref else 10)
         title_edit_rect = pygame.Rect(title_x, rect.y + 7, max(40, rect.right - header_reserved_w - title_x), 20)
-        type_label_rect = pygame.Rect(title_x, rect.y + 28, max(40, rect.right - header_reserved_w - title_x), 18)
+        header_description = self._header_description_text()
+        type_label_y = rect.y + (46 if header_description else 30)
+        type_label_rect = pygame.Rect(title_x, type_label_y, max(40, rect.right - header_reserved_w - title_x), 18)
         if card.get("is_edit_mode", False):
             editable_field_hitboxes.append((self._title_edit_field(), title_edit_rect))
 
@@ -3298,6 +3340,7 @@ class EntityCard:
         )
 
         title_text = card.get("title", "")
+        header_description = self._header_description_text()
         if card.get("is_edit_mode", False):
             title_edit_rect = card.get("title_edit_rect")
             title_active = card.get("active_edit_field") == self._title_edit_field()
@@ -3328,18 +3371,28 @@ class EntityCard:
             title_max_w = max(30, type_label_rect.right - title_x)
         title_surface = font.render(self._ellipsize_text(title_text, font, title_max_w), True, header_text_color)
         subtitle_max_w = title_max_w
+        description_surface = None
+        if header_description:
+            description_surface = font.render(
+                self._ellipsize_text(header_description, font, subtitle_max_w),
+                True,
+                header_muted_color,
+            )
         subtitle_surface = font.render(
             self._ellipsize_text(card["subtitle"], font, subtitle_max_w),
             True,
             header_muted_color,
         )
         screen.blit(title_surface, (title_x, rect.y + 10))
+        if description_surface is not None:
+            screen.blit(description_surface, (subtitle_x, rect.y + 29))
         if type_label_rect is not None:
             hover_pos = pygame.mouse.get_pos()
             if type_label_rect.collidepoint(hover_pos):
                 pygame.draw.rect(screen, (42, 48, 62), type_label_rect)
                 pygame.draw.rect(screen, (130, 150, 190), type_label_rect, 1)
-        screen.blit(subtitle_surface, (subtitle_x, rect.y + 30))
+        subtitle_y = rect.y + (47 if header_description else 30)
+        screen.blit(subtitle_surface, (subtitle_x, subtitle_y))
 
         edit_toggle_rect = card.get("edit_toggle_rect")
         idea_button_rect = card.get("idea_button_rect")

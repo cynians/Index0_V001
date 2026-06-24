@@ -573,8 +573,138 @@ class EntityIdUpdateTests(unittest.TestCase):
         self.assertIsInstance(ui._canvas_controller(), KnowledgeCanvasController)
         self.assertTrue(ui._create_new_entry_from_template(template))
 
+        self.assertEqual("entry_description", ui.entry_name_prompt["mode"])
+        ui.entry_name_prompt["buffer"] = "Notebook Seed"
+        ui.entry_name_prompt["cursor"] = len("Notebook Seed")
+        self.assertTrue(ui._submit_entry_name_prompt())
+
         self.assertEqual(["idea_fresh_entry"], source["related"])
         self.assertIn("idea_fresh_entry", ui.world_model.loader.entities)
+        self.assertEqual(
+            "Notebook Seed",
+            ui.world_model.loader.entities["idea_fresh_entry"]["three_word_description"],
+        )
+
+    def test_new_entry_from_template_allows_blank_description(self):
+        source = {
+            "id": "idea_source",
+            "type": "idea",
+            "_dataset": "ideas",
+            "name": "Source",
+        }
+        ui = KnowledgeBrowserHarness({"idea_source": source})
+        source_card = {
+            "entity_id": "idea_source",
+            "card_view": EntityCard(source, dataset_name="ideas", world_model=ui.world_model),
+            "is_draft_entity": True,
+        }
+        ui.cards = [source_card]
+        ui.pending_new_entry_name = "Fresh Entry"
+        ui.template_picker_context = {
+            "link_source_entity_id": "idea_source",
+            "link_field_key": "related",
+        }
+        template = {
+            "dataset_name": "ideas",
+            "entity_type": "idea",
+            "id_prefix": "idea",
+        }
+
+        self.assertTrue(ui._create_new_entry_from_template(template))
+        self.assertEqual("entry_description", ui.entry_name_prompt["mode"])
+        self.assertTrue(ui._submit_entry_name_prompt())
+
+        self.assertIsNone(ui.entry_name_prompt)
+        self.assertEqual(["idea_fresh_entry"], source["related"])
+        self.assertIn("idea_fresh_entry", ui.world_model.loader.entities)
+        self.assertEqual(
+            "",
+            ui.world_model.loader.entities["idea_fresh_entry"].get("three_word_description", ""),
+        )
+
+    def test_relation_create_chip_uses_new_entry_route(self):
+        source = {
+            "id": "idea_source",
+            "type": "idea",
+            "_dataset": "ideas",
+            "name": "Source",
+        }
+        ui = KnowledgeBrowserHarness({"idea_source": source})
+        source_card = {
+            "entity_id": "idea_source",
+            "card_view": EntityCard(source, dataset_name="ideas", world_model=ui.world_model),
+            "is_edit_mode": True,
+            "is_draft_entity": True,
+        }
+        ui.cards = [source_card]
+        relation_info = {
+            "kind": "create",
+            "field_key": "related",
+            "target": "entity",
+            "label": "Create entry",
+        }
+
+        self.assertTrue(ui._handle_relation_chip_click(source_card, relation_info))
+        self.assertEqual("new_entry", ui.entry_name_prompt["mode"])
+        self.assertEqual("idea_source", ui.entry_name_prompt["context"]["link_source_entity_id"])
+        self.assertNotIn("idea_1", ui.world_model.loader.entities)
+
+        ui.entry_name_prompt["buffer"] = "Fresh Vehicle"
+        ui.entry_name_prompt["cursor"] = len("Fresh Vehicle")
+        self.assertTrue(ui._submit_entry_name_prompt())
+        self.assertTrue(ui.show_template_picker)
+
+        vehicle_template = {
+            "dataset_name": "vehicles",
+            "entity_type": "vehicle",
+            "id_prefix": "veh",
+        }
+        self.assertTrue(ui._create_new_entry_from_template(vehicle_template))
+        self.assertEqual("entry_description", ui.entry_name_prompt["mode"])
+        self.assertTrue(ui._submit_entry_name_prompt())
+
+        self.assertEqual(["veh_fresh_vehicle"], source["related"])
+        self.assertIn("veh_fresh_vehicle", ui.world_model.loader.entities)
+        self.assertNotIn("idea_fresh_vehicle", ui.world_model.loader.entities)
+
+    def test_entry_description_suggestions_are_scoped_to_selected_class(self):
+        vehicle = {
+            "id": "veh_existing",
+            "type": "vehicle",
+            "_dataset": "vehicles",
+            "name": "Existing Vehicle",
+            "vehicle_class": "ground_vehicle",
+            "three_word_description": "Medium Range SUV",
+        }
+        animal = {
+            "id": "species_existing",
+            "type": "species",
+            "_dataset": "species",
+            "common_name": "Existing Animal",
+            "species_class": "natural_vertebrate",
+            "three_word_description": "Medium Seabird",
+        }
+        ui = KnowledgeBrowserHarness({
+            "veh_existing": vehicle,
+            "species_existing": animal,
+        })
+        ui.world_model.loader.datasets = {
+            "vehicles": [vehicle],
+            "species": [animal],
+        }
+        template = {
+            "dataset_name": "vehicles",
+            "entity_type": "vehicle",
+            "label": "Ground Vehicle",
+            "subclass_field": "vehicle_class",
+            "subclass_value": "ground_vehicle",
+            "initial_fields": {"vehicle_class": "ground_vehicle"},
+        }
+        ui._open_entry_description_prompt(template, "New Rover")
+
+        matches = ui._entry_name_prompt_matches("Medium")
+
+        self.assertEqual(["Medium Range SUV"], [match["label"] for match in matches])
 
     def test_wiki_links_sync_into_related_not_wiki_mentions(self):
         source = {

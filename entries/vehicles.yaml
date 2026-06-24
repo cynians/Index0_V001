@@ -6,45 +6,10 @@
   produced_by: []
   uses_technology: []
   operated_by: []
-  intended_roles:
-  - fleet_screening
-  - convoy_escort
-  - anti_submarine_warfare
-  - anti_air_warfare
-  - torpedo_attack
-  - surface_combat
-  - naval_patrol
-  - shore_bombardment
-  descriptive_capabilities:
-  - blue_water_naval_operation
-  - dual_purpose_gun_battery
-  - torpedo_attack_capability
-  - radar_directed_gunnery
-  - depth_charge_and_asw_operation
-  - high_speed_fleet_escort
-  component_layout_stub:
-    major_component_groups:
-    - hull_and_superstructure
-    - steam_propulsion_plant
-    - boiler_rooms
-    - geared_turbines
-    - propeller_shafts_and_screws
-    - bridge_and_command_spaces
-    - main_gun_battery
-    - torpedo_battery
-    - anti_aircraft_battery
-    - anti_submarine_weapons
-    - fire_control_and_radar
-    - fuel_and_support_systems
-    configurable_groups:
-    - anti_aircraft_fit
-    - radar_fit
-    - anti_submarine_fit
-    - late_war_refits
   manufacturer_name: Multiple United States shipyards
-  dimension_x_m: 114.76
-  dimension_y_m: 12.04
-  dimension_z_m: 5.33
+  dimension_length_m: 114.76
+  dimension_height_m: 5.33
+  dimension_width_m: 12.04
   standard_displacement_long_tons: 2050
   full_load_displacement_long_tons: 2500
   max_speed_knots: 36.5
@@ -86,37 +51,9 @@
   uses_technology: []
   operated_by: []
   manufacturer_name: Unknown
-  dimension_x_m: 8.72
-  dimension_y_m: 1.59
-  dimension_z_m: 1.89
-  intended_roles:
-  - anti_tank_fire
-  - direct_fire_support
-  - towed_artillery_operation
-  - defensive_gun_position
-  supported_infrastructure:
-  - towed_field_deployment
-  - military_road_towing
-  - prepared_fire_positions
-  descriptive_capabilities:
-  - high_velocity_anti_tank_fire
-  - split_trail_deployment
-  - crew_served_towed_operation
-  - limited_indirect_fire_capability
-  component_layout_stub:
-    major_component_groups:
-    - gun_barrel
-    - muzzle_brake
-    - breech
-    - recoil_system
-    - carriage
-    - split_trail
-    - sighting_system
-    - wheels_and_tow_assembly
-    configurable_groups:
-    - ammunition_types
-    - towing_configurations
-    - sighting_fits
+  dimension_length_m: 8.72
+  dimension_height_m: 1.89
+  dimension_width_m: 1.59
   crew_complement: 6
   mass_kg: 2350
   caliber_mm: 85
@@ -154,48 +91,13 @@
   name: LuAZ-967
   type: vehicle
   vehicle_class: ground_vehicle
-  vehicle_class_parents:
-  - ground_vehicle
-  - vehicle
-  required_categories:
-  - structure
-  - control
-  - locomotion_ground
-  - wheels
-  - propulsion_road
-  required_category_overrides:
-  - amphibious_hull
   produced_by: []
   uses_technology: []
   operated_by: []
   manufacturer_name: LuAZ
-  dimension_x_m: 3.74
-  dimension_y_m: 1.71
-  dimension_z_m: 1.75
-  design_catalog_components:
-  - comp_engine_inline_compact
-  - comp_engine_vblock_heavy
-  intended_roles:
-  - casualty_evacuation
-  - light_front_line_transport
-  - ammunition_supply
-  - light_weapon_transport
-  - difficult_terrain_utility
-  supported_infrastructure:
-  - rough_ground_operations
-  - military_field_operations
-  - calm_water_crossing
-  descriptive_capabilities:
-  - amphibious_operation
-  - low_profile_transport
-  - air_transportable_light_vehicle
-  - difficult_terrain_mobility
-  - fold_down_low_silhouette_configuration
-  component_layout_stub:
-    major_component_groups: '[''steel_hull_body'', ''amphibious_vehicle_hull'', ''central_driver_control_position'',
-      ''fold_down_windscreen_and_controls'', ''light_utility_cargo_section'', ''four_wheel_drive_system'',
-      ''suspension'', ''engine_and_transmission'']'
-    configurable_groups: '[''evacuation_fittings'', ''cargo_fittings'', ''light_weapon_transport_fittings'']'
+  dimension_length_m: 3.74
+  dimension_height_m: 1.75
+  dimension_width_m: 1.71
   crew_complement: 1
   payload_kg: 400
   max_speed_kmh: 75
@@ -238,39 +140,9 @@
   uses_technology: []
   operated_by: []
   manufacturer_name: Lockheed Martin
-  dimension_x_m: 18.92
-  dimension_y_m: 13.56
-  dimension_z_m: 5.08
-  intended_roles:
-  - air_superiority
-  - interceptor
-  - escort_fighter
-  - precision_strike
-  supported_infrastructure:
-  - conventional_airbase
-  - hardened_airbase
-  - military_runway_operations
-  descriptive_capabilities:
-  - low_observable_air_combat
-  - supercruise
-  - supermaneuverability
-  - integrated_sensor_fusion
-  - beyond_visual_range_engagement
-  - internal_weapons_carriage
-  component_layout_stub:
-    major_component_groups:
-    - stealth_airframe
-    - twin_engine_propulsion
-    - cockpit_and_life_support
-    - radar_and_sensor_suite
-    - integrated_avionics
-    - internal_weapons_bays
-    - flight_control_surfaces
-    - landing_gear
-    configurable_groups:
-    - air_to_air_loadouts
-    - strike_loadouts
-    - avionics_upgrades
+  dimension_length_m: 18.92
+  dimension_height_m: 5.08
+  dimension_width_m: 13.56
   crew_complement: 1
   max_speed_mach: 2.25
   supercruise_mach: 1.5
@@ -313,33 +185,6 @@
   uses_technology: []
   operated_by: []
   manufacturer_name: Unknown
-  intended_roles:
-  - scouting
-  - targeting
-  - long_term_surveillance
-  - littoral_quick_response
-  - coastal_combat_patrol
-  supported_infrastructure:
-  - littoral_operations
-  - coastal_basing
-  - concealed_standby_deployment
-  descriptive_capabilities:
-  - semi_submersible_standby
-  - persistent_surveillance
-  - littoral_ambush
-  - unmanned_naval_operation
-  component_layout_stub:
-    major_component_groups:
-    - semi_submersible_hull
-    - sensor_and_targeting_suite
-    - command_and_control_module
-    - propulsion_block
-    - limited_missile_fit
-    - 17mm_autocannon_mount
-    - detachable_self_destruct_warhead
-    configurable_groups:
-    - surveillance_fits
-    - littoral_attack_fits
   main_armament_summary: 17 mm autocannon, very limited missile armament, detachable
     self-destruct warhead
   tags:
@@ -368,27 +213,10 @@
   name: MDV-3
   type: vehicle
   idea_reference: IDEA-496
-  vehicle_class: system_spacecraft
+  vehicle_class: planetary_spacecraft
   produced_by: []
   uses_technology: []
   operated_by: []
-  intended_roles:
-  - earth_orbit_to_mars_orbit_cargo_transfer
-  - orbital_freight_logistics
-  - high_volume_interplanetary_transport
-  supported_infrastructure:
-  - infra_earth_orbital_cargo_terminals
-  - infra_mars_orbital_logistics_hubs
-  - infra_orbital_refueling_nodes
-  descriptive_capabilities:
-  - high_volume_space_freight_transport
-  - non_atmospheric_interplanetary_operation
-  - orbital_cargo_interface_operation
-  component_layout_stub:
-    major_component_groups: '[''cargo_module_structure'', ''main_transfer_propulsion'',
-      ''reaction_control_system'', ''docking_and_transfer_interface'', ''avionics_and_guidance'',
-      ''power_and_support_systems'', ''structural_truss_or_hull_frame'']'
-    configurable_groups: '[''cargo_module_variants'']'
   payload_capacity_t: 385
   tags:
   - vehicle
@@ -418,33 +246,10 @@
   name: Taltos-class Mars Cargo Lander
   type: vehicle
   idea_reference: IDEA-502
-  vehicle_class: planetary_spacecraft
+  vehicle_class: orbital_spacecraft
   produced_by: []
   uses_technology: []
   operated_by: []
-  intended_roles:
-  - mars_orbit_to_surface_cargo_delivery
-  - cargo_landing_pad_servicing
-  - martian_surface_freight_unloading
-  supported_infrastructure:
-  - infra_mars_orbital_logistics_hubs
-  - infra_mars_surface_landing_pads
-  - equip_martian_cargo_crane
-  descriptive_capabilities:
-  - reusable_freight_landing
-  - heavy_cargo_surface_delivery
-  - modular_aerodynamic_configuration
-  component_layout_stub:
-    major_component_groups:
-    - cargo_hold
-    - main_descent_propulsion
-    - reaction_control_system
-    - detachable_lifting_wing_mounts
-    - landing_gear
-    - avionics_and_guidance
-    - power_and_support_systems
-    configurable_groups:
-    - detachable_lifting_wings
   payload_capacity_t: 45
   service_life_cycles: 50
   tags:
@@ -475,36 +280,14 @@
   name: Conviction C1
   type: vehicle
   vehicle_class: ground_vehicle
-  vehicle_class_parents:
-  - ground_vehicle
-  - vehicle
-  required_categories:
-  - structure
-  - control
-  - locomotion_ground
-  - wheels
-  - propulsion_road
   produced_by:
   - producer_conviction_automobiles
   uses_technology: []
   operated_by: []
   manufacturer_name: Conviction Automobiles
-  dimension_x_m: 4.42
-  dimension_y_m: 1.82
-  dimension_z_m: 1.31
-  design_catalog_components:
-  - asm_conviction_c1_touring_body
-  - asm_conviction_c1_open_roof_assembly
-  - asm_conviction_c1_grand_touring_drive_unit
-  intended_roles:
-  - private_leisure_touring
-  - prestige_personal_transport
-  - scenic_intercity_travel
-  descriptive_capabilities:
-  - open_top_luxury_touring
-  - compact_prestige_road_travel
-  - smooth_quiet_cruising
-  - refined_touring_performance
+  dimension_length_m: 4.42
+  dimension_height_m: 1.31
+  dimension_width_m: 1.82
   tags:
   - vehicle
   - ground_vehicle
@@ -536,36 +319,9 @@
   uses_technology: []
   operated_by: []
   manufacturer_name: Unknown
-  dimension_x_m: 168.0
-  dimension_y_m: 24.0
-  dimension_z_m: 28.0
-  intended_roles:
-  - in_system_communications_relay
-  - systems_coordination
-  - fleet_communications_support
-  - station_to_station_signal_routing
-  - relay_redeployment
-  supported_infrastructure: []
-  descriptive_capabilities:
-  - high_gain_signal_handling
-  - in_system_communications_coordination
-  - limited_operational_repositioning
-  - fleet_attached_signal_support
-  - persistent_relay_presence
-  component_layout_stub:
-    major_component_groups:
-    - forward_antenna_nose
-    - communications_processing_core
-    - signal_distribution_spine
-    - technical_crew_section
-    - propulsion_block
-    - power_generation
-    - thermal_management
-    - docking_and_service_access
-    configurable_groups:
-    - antenna_suites
-    - relay_packages
-    - fleet_support_fits
+  dimension_length_m: 168.0
+  dimension_height_m: 28.0
+  dimension_width_m: 24.0
   tags:
   - vehicle
   - spacecraft
@@ -592,37 +348,12 @@
   type: vehicle
   vehicle_class: ground_vehicle
   manufacturer_name: Bospor Automat
-  dimension_x_m: 4.8
-  dimension_y_m: 1.9
-  dimension_z_m: 1.75
+  dimension_length_m: 4.8
+  dimension_height_m: 1.75
+  dimension_width_m: 1.9
   produced_by: []
   uses_technology: []
   operated_by: []
-  intended_roles:
-  - personal_transport
-  - light_utility_transport
-  - settlement_to_settlement_travel
-  - rough_surface_driving
-  supported_infrastructure:
-  - settlement_road_networks
-  - rough_surface_tracks
-  - local_service_garages
-  descriptive_capabilities:
-  - enclosed_passenger_transport
-  - light_cargo_utility
-  - rough_surface_mobility
-  - civilian_frontier_serviceability
-  component_layout_stub:
-    major_component_groups:
-    - chassis
-    - suspension
-    - drive_system
-    - passenger_compartment
-    - cargo_space
-    - control_interface
-    configurable_groups:
-    - drivetrain_variants
-    - utility_fittings
   tags:
   - vehicle
   - ground_vehicle
@@ -653,19 +384,10 @@
   type: vehicle
   idea_reference: IDEA-364
   vehicle_class: ground_vehicle
-  vehicle_class_parents:
-  - ground_vehicle
-  - vehicle
-  required_categories:
-  - structure
-  - control
-  - locomotion_ground
-  - wheels
-  - propulsion_road
   manufacturer_name: Stacklingen Consolidated Industries
-  dimension_x_m: 4.95
-  dimension_y_m: 1.88
-  dimension_z_m: 1.48
+  dimension_length_m: 4.95
+  dimension_height_m: 1.48
+  dimension_width_m: 1.88
   produced_by:
   - producer_stacklingen_consolidated_industries
   uses_technology: []
@@ -673,26 +395,6 @@
   associated_locations:
   - planet_patina
   - settlement_stacklinger
-  intended_roles:
-  - urban_passenger_transport
-  - industrial_city_taxi_service
-  supported_infrastructure:
-  - settlement_stacklinger
-  descriptive_capabilities:
-  - electric_ground_transport
-  - dense_urban_passenger_service
-  - industrial_frontier_city_operation
-  component_layout_stub:
-    major_component_groups:
-    - passenger_compartment
-    - battery_pack
-    - electric_drive_system
-    - suspension
-    - taxi_control_interface
-    - luggage_storage
-    configurable_groups:
-    - body_variants
-    - local_service_fittings
   tags:
   - vehicle
   - ground_vehicle
@@ -746,6 +448,7 @@
   pretty_name: Wandering Habition Observation Platform and Colony
   name: WHOPCO
   type: vehicle
+  vehicle_class: orbital_spacecraft
   related:
   - planet_mercury
   - prod_new_001
@@ -760,6 +463,7 @@
   pretty_name: Plowshare Class - Combat Tug
   name: Plowshare Class - Combat Tug
   type: vehicle
+  vehicle_class: orbital_spacecraft
   card_color: '#0d1626'
   parents:
   - prod_paladin_aerospace
@@ -832,6 +536,7 @@
   pretty_name: Altona Class Interstellar Cruisers
   name: Altona Class Interstellar Cruisers
   type: vehicle
+  vehicle_class: interstellar_spacecraft
   card_color: '#1c2625'
   wiki_entry: ''
   offspring:
@@ -846,6 +551,7 @@
   pretty_name: Hansa Postman Class - Interstellar One Way Delivery Vehicle
   name: Hansa Postman Class - Interstellar One Way Delivery Vehicle
   type: vehicle
+  vehicle_class: interstellar_spacecraft
   card_color: '#102126'
   offspring:
   - id: veh_tho_hildebrand_postman_class
@@ -887,6 +593,7 @@
   pretty_name: TH Altona
   name: TH Altona
   type: vehicle
+  vehicle_class: interstellar_spacecraft
   card_color: '#142625'
   parents:
   - veh_altona_class_interstellar_cruisers
@@ -904,6 +611,7 @@
   pretty_name: THO Hildebrand - Postman Class
   name: THO Hildebrand - Postman Class
   type: vehicle
+  vehicle_class: interstellar_spacecraft
   card_color: '#122326'
   parents:
   - veh_hansa_postman_class_interstellar_one_way_delivery_vehicle
@@ -935,7 +643,7 @@
   name: ECM Stratofalcon - Orbital Fighter
   type: vehicle
   three_word_description: ''
-  vehicle_class: planetary_spacecraft
+  vehicle_class: orbital_spacecraft
   related:
   - fac_enu
   - prod_european_consolidated_manufacturing_ecm
@@ -975,3 +683,73 @@
   offspring: []
   parents:
   - prod_abra_gee_transport_agt
+- id: veh_tugger_class
+  pretty_name: Tugger Class
+  name: Tugger Class
+  type: vehicle
+  three_word_description: Orbital Space Tug
+  vehicle_class: orbital_spacecraft
+  related: []
+  dimension_length_m: 35
+  dimension_height_m: null
+  dimension_width_m: 25
+  offspring: []
+- id: veh_shovesholder_class
+  pretty_name: Shovesholder Class
+  name: Shovesholder Class
+  type: vehicle
+  related: []
+  three_word_description: Zero G Forklift
+  vehicle_class: orbital_spacecraft
+  offspring: []
+- id: veh_sch_tzenpanzer_puma
+  pretty_name: Schützenpanzer Puma
+  name: Schützenpanzer Puma
+  type: vehicle
+  three_word_description: Infantry Fighting Vehicle
+  vehicle_class: ground_vehicle
+  related: []
+  start_year: 2015
+  end_year: 2131
+  card_color: '#1c281b'
+  card_header_color: '#282219'
+  wiki_field_colors:
+    default: '#000000'
+  offspring: []
+- id: veh_nissan_fairlady_z
+  pretty_name: Nissan Fairlady Z
+  name: Nissan Fairlady Z
+  type: vehicle
+  three_word_description: Sports Car
+  vehicle_class: ground_vehicle
+  related: []
+  producers: []
+  offspring: []
+- id: veh_douglas_c_133_cargomaster
+  pretty_name: Douglas C-133 Cargomaster
+  name: Douglas C-133 Cargomaster
+  type: vehicle
+  three_word_description: Large Truboprop Cargo Aircraft
+  vehicle_class: aircraft
+  related: []
+  card_color: '#737685'
+  card_header_color: '#9f9f8c'
+  wiki_field_colors:
+    intro: '#a2a2a2'
+  offspring: []
+  start_year: 1956
+  end_year: 1971
+  operators:
+  - form_usaf_1501st_air_transport_wing
+- id: veh_lockheed_c_141_starlifter
+  pretty_name: Lockheed C-141 Starlifter
+  name: Lockheed C-141 Starlifter
+  type: vehicle
+  three_word_description: Strategic Airlifter
+  vehicle_class: aircraft
+  related: []
+  start_year: 1963
+  end_year: 2006
+  operators:
+  - form_usaf_62nd_airlift_wing
+  offspring: []

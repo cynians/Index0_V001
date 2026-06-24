@@ -130,6 +130,13 @@ class TimelineTickTests(unittest.TestCase):
         self.assertEqual("period_filter_changed", finished["kind"])
         self.assertEqual((1920, 1970), timeline.period_filter_range)
 
+    def test_axis_year_pick_ignores_lower_timeline_content(self):
+        timeline = self._timeline(1900, 2000, width=100)
+        timeline.rect = pygame.Rect(0, 0, 160, 120)
+
+        self.assertEqual(1920, timeline.pick_year_from_axis_pos((40, timeline.axis_y)))
+        self.assertIsNone(timeline.pick_year_from_axis_pos((40, timeline.axis_y + 24)))
+
 
 if __name__ == "__main__":
     unittest.main()

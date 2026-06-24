@@ -383,7 +383,28 @@ class CardTypePickerTests(unittest.TestCase):
         self.assertEqual("locations", converted["_dataset"])
         self.assertEqual("location", converted["type"])
         self.assertEqual("building", converted["location_class"])
-        self.assertEqual("location | building", card["subtitle"])
+        self.assertEqual("Location | Building", card["subtitle"])
+
+    def test_card_subtitle_uses_class_and_subclass_labels(self):
+        ui = KnowledgeBrowserUI()
+
+        self.assertEqual(
+            "Vehicle | Ground Vehicle",
+            ui._card_subtitle_for_entity({
+                "id": "veh_rover",
+                "type": "vehicle",
+                "_dataset": "vehicles",
+                "vehicle_class": "ground_vehicle",
+            }),
+        )
+        self.assertEqual(
+            "Vehicle",
+            ui._card_subtitle_for_entity({
+                "id": "veh_unknown",
+                "type": "vehicle",
+                "_dataset": "vehicles",
+            }),
+        )
 
 
 if __name__ == "__main__":

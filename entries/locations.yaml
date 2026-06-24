@@ -21,7 +21,7 @@
   - id: loc_north_america
     offspring:
       - id: loc_united_states_of_america
-        offspring: '[{''id'': ''loc_hawaii'', ''offspring'': [{''id'': ''geo_northwestern_hawaiian_islands'', ''offspring'': [{''id'': ''geo_kure_atoll''}]}]}, {''id'': ''loc_california'', ''offspring'': [{''id'': ''loc_sonoma_county_california'', ''offspring'': [{''id'': ''loc_fort_ross_sonoma_county_california''}]}]}, {''id'': ''loc_greater_los_angeles''}, {''id'': ''fac_united_states_army''}]'
+        offspring: '[{''id'': ''fac_united_states_army''}, {''id'': ''loc_hawaii'', ''offspring'': [{''id'': ''geo_northwestern_hawaiian_islands'', ''offspring'': [{''id'': ''geo_kure_atoll''}]}]}, {''id'': ''loc_california'', ''offspring'': [{''id'': ''loc_sonoma_county_california'', ''offspring'': [{''id'': ''loc_fort_ross_sonoma_county_california''}]}]}, {''id'': ''loc_greater_los_angeles''}]'
   - id: loc_australia
     offspring:
       - id: loc_victoria_state_australia
@@ -35,6 +35,8 @@
         offspring: '[{''id'': ''loc_danube_delta''}]'
       - id: loc_europe
         offspring: '[{''id'': ''geo_central_europe''}, {''id'': ''loc_scandinavia'', ''offspring'': [{''id'': ''geo_sweden'', ''offspring'': [{''id'': ''loc_angermansland_grand_carperies''}, {''id'': ''prod_saab_ab''}]}]}]'
+      - id: loc_asia
+        offspring: '[{''id'': ''loc_east_asia'', ''offspring'': [{''id'': ''loc_peoples_republic_of_china'', ''offspring'': [{''id'': ''loc_gansu_province''}]}]}]'
   tags: []
   end_year: null
   entry_status: ''
@@ -6154,8 +6156,8 @@
   related: []
   entry_status: ''
 - id: loc_groundworks_district_lumen_free_city
-  pretty_name: Groundworks District, Lumen Free City
-  name: Groundworks District, Lumen Free City
+  pretty_name: 'Groundworks District, Lumen Free City'
+  name: 'Groundworks District, Lumen Free City'
   type: location
   card_color: '#b28745'
   location_class: site
@@ -6509,16 +6511,16 @@
   offspring:
   - id: loc_black_sea
     offspring:
-    - id: loc_danube_delta
+      - id: loc_danube_delta
   - id: loc_europe
     offspring:
-    - id: geo_central_europe
-    - id: loc_scandinavia
-      offspring:
-      - id: geo_sweden
-        offspring:
-        - id: loc_angermansland_grand_carperies
-        - id: prod_saab_ab
+      - id: geo_central_europe
+      - id: loc_scandinavia
+        offspring: '[{''id'': ''geo_sweden'', ''offspring'': [{''id'': ''loc_angermansland_grand_carperies''}, {''id'': ''prod_saab_ab''}]}]'
+  - id: loc_asia
+    offspring:
+      - id: loc_east_asia
+        offspring: '[{''id'': ''loc_peoples_republic_of_china'', ''offspring'': [{''id'': ''loc_gansu_province''}]}]'
   tags: []
   start_year: null
   end_year: null
@@ -32900,3 +32902,71 @@
     Slightly lower gravity, slightly denser atmosphere, Kestrellis was a CEAG site for a variety of large birds, with the surface being settled primarily by Primate derivedanimals.
     
   offspring: []
+- id: loc_barambul
+  pretty_name: Barambul
+  name: Barambul
+  type: location
+  three_word_description: Wetland Jungle Planet
+  location_class: planet
+  related: []
+  card_color: '#488025'
+  card_header_color: '#37482a'
+  wiki_field_colors:
+    intro: '#11453e'
+  offspring: []
+- id: loc_gansu_province
+  pretty_name: Gansu Province
+  name: Gansu Province
+  type: location
+  three_word_description: Province in Northwestern China
+  location_class: region
+  related: []
+  card_color: '#b2945f'
+  card_header_color: '#b27c25'
+  wiki_field_colors:
+    intro: '#4f682b'
+  offspring: []
+  parents:
+  - loc_peoples_republic_of_china
+- id: loc_peoples_republic_of_china
+  pretty_name: Peoples Republic of China
+  name: Peoples Republic of China
+  type: location
+  three_word_description: Country in East Asia
+  location_class: country
+  related: []
+  card_color: '#b50303'
+  card_header_color: '#dcc627'
+  wiki_field_colors:
+    intro: '#820e0e'
+  offspring:
+  - id: loc_gansu_province
+  parents:
+  - loc_east_asia
+- id: loc_east_asia
+  pretty_name: East Asia
+  name: East Asia
+  type: location
+  three_word_description: Region in Asia
+  location_class: region
+  related: []
+  offspring:
+  - id: loc_peoples_republic_of_china
+    offspring:
+      - id: loc_gansu_province
+  parents:
+  - loc_asia
+- id: loc_asia
+  pretty_name: Asia
+  name: Asia
+  type: location
+  three_word_description: ''
+  location_class: continent
+  related: []
+  offspring:
+  - id: loc_east_asia
+    offspring:
+      - id: loc_peoples_republic_of_china
+        offspring: '[{''id'': ''loc_gansu_province''}]'
+  parents:
+  - loc_eurasia

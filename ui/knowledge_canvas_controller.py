@@ -1,6 +1,7 @@
 import pygame
 
 from ui.card import EntityCard
+from simulations.phylogeny.clade_graph import find_clade_matches
 
 
 class KnowledgeCanvasController:
@@ -922,24 +923,8 @@ class KnowledgeCanvasController:
             self.template_picker_status = "Name entry first"
             return False
 
-        created_entity = self._create_named_template_entity(template, entry_name)
-        if created_entity is None:
-            self.template_picker_status = "Could not create linked entry"
-            return False
-
         context = dict(self.template_picker_context or {})
-        source_card = context.get("card")
-        if source_card not in self.cards:
-            source_card = self._find_card_by_entity_id(context.get("source_entity_id"))
-
-        created_entity_id = str(created_entity.get("id") or "").strip()
-        if source_card is not None and created_entity_id:
-            self._replace_relation_reference_on_card(
-                source_card,
-                context.get("field_key"),
-                context.get("missing_ref"),
-                created_entity_id,
-            )
+        context["relation_create"] = True
 
         self.pending_new_entry_name = None
         self.show_template_picker = False
@@ -948,11 +933,8 @@ class KnowledgeCanvasController:
         self.template_picker_mode = "create"
         self.template_picker_context = {}
         self.template_picker_status = ""
-        self.browser_items = self._build_browser_items(self.world_model)
-        self._rebuild_browser_hitboxes()
         self._build_template_picker_hitboxes()
-        self._relayout_cards()
-        return True
+        return self._open_entry_description_prompt(template, entry_name, context=context)
 
 
     def _handle_card_canvas_click(self, mouse_pos, right_rect):

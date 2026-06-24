@@ -44,6 +44,7 @@ class TimelineUI:
     ZOOM_IN_FACTOR = 0.80
     ZOOM_OUT_FACTOR = 1.25
     MIN_VIEW_SPAN_YEARS = 10
+    AXIS_PICK_HALF_H = 10
 
     def __init__(self):
         self.rect = pygame.Rect(0, 0, 0, 0)
@@ -1107,6 +1108,24 @@ class TimelineUI:
             return None
 
         if mouse_pos[1] < self.content_rect.y or mouse_pos[1] > self.rect.bottom:
+            return None
+
+        return int(round(self._x_to_year(mouse_pos[0])))
+
+    def pick_year_from_axis_pos(self, mouse_pos):
+        if not self.rect.collidepoint(mouse_pos):
+            return None
+
+        if mouse_pos[0] < self.content_rect.x or mouse_pos[0] > self.content_rect.right:
+            return None
+
+        axis_hit_rect = pygame.Rect(
+            self.content_rect.x,
+            self.axis_y - self.AXIS_PICK_HALF_H,
+            self.content_rect.width,
+            self.AXIS_PICK_HALF_H * 2 + 1,
+        )
+        if not axis_hit_rect.collidepoint(mouse_pos):
             return None
 
         return int(round(self._x_to_year(mouse_pos[0])))

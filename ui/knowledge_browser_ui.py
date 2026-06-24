@@ -1165,6 +1165,9 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         if self.world_model is None:
             return "all"
 
+        if len(self._relation_target_options(target)) != 1:
+            return "all"
+
         candidates = self._relation_target_candidates(target)
         if not candidates:
             return "all"
@@ -1176,26 +1179,57 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         return "all"
 
     def _relation_target_label(self, target):
-        normalized = self._normalize_schema_name(target)
+        options = self._relation_target_options(target)
+        if len(options) > 1:
+            labels = [option.replace("_", " ") for option in options]
+            if len(labels) == 2:
+                return " or ".join(labels)
+            return f"{', '.join(labels[:-1])}, or {labels[-1]}"
+
+        normalized = self._normalize_schema_name(options[0] if options else target)
         if normalized in {"star_system", "stellar_system"}:
             return "star system"
         if not normalized or normalized in {"entity", "entity_core", "core", "any"}:
             return "entry"
         return normalized.replace("_", " ")
 
+    def _relation_target_options(self, target):
+        if isinstance(target, (list, tuple, set)):
+            return [
+                self._normalize_schema_name(candidate)
+                for candidate in target
+                if self._normalize_schema_name(candidate)
+            ]
+
+        target_text = str(target or "").strip()
+        if not target_text:
+            return []
+
+        for delimiter in ("|", ","):
+            if delimiter in target_text:
+                return [
+                    self._normalize_schema_name(candidate)
+                    for candidate in target_text.split(delimiter)
+                    if self._normalize_schema_name(candidate)
+                ]
+
+        normalized = self._normalize_schema_name(target_text)
+        return [normalized] if normalized else []
+
     def _relation_target_candidates(self, target):
-        normalized = self._normalize_schema_name(target)
-        if not normalized or normalized in {"entity", "entity_core", "core", "any"}:
+        options = self._relation_target_options(target)
+        if not options or any(option in {"entity", "entity_core", "core", "any"} for option in options):
             return set()
 
         candidates = set()
-        for candidate in (
-            normalized,
-            self._pluralize_name(normalized),
-            self._singularize_name(normalized),
-        ):
-            if candidate:
-                candidates.add(candidate)
+        for normalized in options:
+            for candidate in (
+                normalized,
+                self._pluralize_name(normalized),
+                self._singularize_name(normalized),
+            ):
+                if candidate:
+                    candidates.add(candidate)
         return candidates
 
     def _entity_matches_relation_target(self, entity, target):
@@ -2152,6 +2186,23 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             index=index,
             link_from_context=link_from_context,
         )
+
+    def _open_entry_description_prompt(self, template, entry_name, context=None):
+        entry_name = str(entry_name or "").strip()
+        if not entry_name:
+            return False
+        template_label = "Entry"
+        if isinstance(template, dict):
+            template_label = template.get("label") or self._schema_display_label(template.get("dataset_name"))
+        return self._open_entry_name_prompt(
+            template,
+            mode="entry_description",
+            context={
+                "entry_name": entry_name,
+                **dict(context or {}),
+            },
+            label=f"{entry_name} | {template_label}",
+        )
     def _open_idea_name_prompt(self, parent_card):
         if parent_card is None:
             return False
@@ -2423,14 +2474,19 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self._relayout_cards()
         return system_entity
 
-    def _create_named_template_entity(self, template, entry_name):
+    def _create_named_template_entity(self, template, entry_name, short_description=""):
+        initial_fields = {
+            "pretty_name": entry_name,
+            "name": entry_name,
+        }
+        short_description = str(short_description or "").strip()
+        if short_description:
+            initial_fields["three_word_description"] = short_description
+
         entity = self._create_and_open_template_entity(
             template,
             requested_id=self._requested_template_entity_id_from_name(template, entry_name),
-            initial_fields={
-                "pretty_name": entry_name,
-                "name": entry_name,
-            },
+            initial_fields=initial_fields,
             label=entry_name,
             place_in_view=True,
         )
@@ -2439,11 +2495,39 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
         entity["pretty_name"] = entry_name
         entity["name"] = entry_name
+        if short_description:
+            entity["three_word_description"] = short_description
         card = self._find_card_by_entity_id(entity.get("id"))
         if card is not None:
             card["title"] = entry_name
             self._save_card_draft(card)
 
+        return entity
+
+    def _finish_named_template_entry_creation(self, template, entry_name, short_description="", context=None):
+        context = dict(context or {})
+        entity = self._create_named_template_entity(template, entry_name, short_description=short_description)
+        if entity is None:
+            return None
+
+        created_entity_id = str(entity.get("id") or "").strip()
+        if context.get("relation_create"):
+            source_card = context.get("card")
+            if source_card not in self.cards:
+                source_card = self._find_card_by_entity_id(context.get("source_entity_id"))
+            if source_card is not None and created_entity_id:
+                self._replace_relation_reference_on_card(
+                    source_card,
+                    context.get("field_key"),
+                    context.get("missing_ref"),
+                    created_entity_id,
+                )
+        else:
+            self._link_entry_name_prompt_result(created_entity_id, context)
+
+        self.browser_items = self._build_browser_items(self.world_model)
+        self._rebuild_browser_hitboxes()
+        self._relayout_cards()
         return entity
 
     def _link_entry_name_prompt_result(self, entity_id, context):
@@ -2601,12 +2685,30 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             return False
 
         entry_name = str(prompt.get("buffer", "")).strip()
+        mode = prompt.get("mode", "template")
+        template = prompt.get("template")
+        if mode == "entry_description":
+            context = dict(prompt.get("context") or {})
+            actual_entry_name = str(context.get("entry_name") or "").strip()
+            if not actual_entry_name:
+                prompt["status"] = "Name required"
+                return True
+            created = self._finish_named_template_entry_creation(
+                template,
+                actual_entry_name,
+                short_description=entry_name,
+                context=context,
+            )
+            if created is None:
+                prompt["status"] = "Could not create entry"
+                return True
+            self._close_entry_name_prompt()
+            return True
+
         if not entry_name:
             prompt["status"] = "Name required"
             return True
 
-        mode = prompt.get("mode", "template")
-        template = prompt.get("template")
         if mode == "relation_note":
             context = prompt.get("context", {})
             source_card = context.get("card")
@@ -2691,14 +2793,9 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 label=f"Star Class for {entry_name}",
             )
 
-        entity = self._create_named_template_entity(template, entry_name)
-        if entity is None:
-            prompt["status"] = "Could not create entry"
-            return True
-
-        self._link_entry_name_prompt_result(entity.get("id"), prompt.get("context"))
+        context = dict(prompt.get("context") or {})
         self._close_entry_name_prompt()
-        return True
+        return self._open_entry_description_prompt(template, entry_name, context=context)
 
     def _handle_entry_name_prompt_keydown(self, event):
         return self._entry_name_prompt_controller()._handle_entry_name_prompt_keydown(event)
@@ -2722,17 +2819,12 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                     context={"system_name": entry_name, **context},
                     label=f"Star Class for {entry_name}",
                 )
-            entity = self._create_named_template_entity(template, entry_name)
-            if entity is None:
-                self.template_picker_status = "Could not create entry"
-                return False
-            self._link_entry_name_prompt_result(entity.get("id"), context)
             self.show_template_picker = False
             self.template_picker_status = ""
             self.template_picker_mode = "create"
             self.template_picker_context = {}
             self._build_template_picker_hitboxes()
-            return True
+            return self._open_entry_description_prompt(template, entry_name, context=context)
         if self._is_star_system_template(template):
             return self._open_entry_name_prompt(template, label="System Name")
         return self._open_entry_name_prompt(template)
@@ -2979,24 +3071,46 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         if not isinstance(entity, dict):
             return "entity"
 
-        dataset_name = entity.get("_dataset", entity.get("type", "entity"))
+        entity_type = str(entity.get("type") or "").strip()
+        dataset_name = str(entity.get("_dataset") or entity_type or "entity").strip()
+        class_key = entity_type or self._singularize_name(dataset_name) or dataset_name
+        subclass_value = self._entity_subclass_value(entity, dataset_name, class_key)
+        class_label = self._schema_display_label(class_key)
+        if subclass_value:
+            return f"{class_label} | {self._schema_display_label(subclass_value)}"
+        return class_label
+
+    def _entity_subclass_value(self, entity, dataset_name, class_key):
         if dataset_name == "locations":
-            return f"location | {entity.get('location_class', entity.get('type', 'entity'))}"
-        if dataset_name == "ideas":
-            return f"idea | {entity.get('idea_class') or entity.get('entry_status') or 'generic'}"
-        if dataset_name == "species":
-            common_name, binomial_name = self._species_name_parts(entity)
-            if binomial_name:
-                return f"species | {binomial_name}"
-            return f"species | {entity.get('species_class') or 'unclassified'}"
+            return entity.get("location_class")
         if dataset_name == "systems":
-            system_role = entity.get("system_role")
-            if system_role == "star_system":
-                return f"star system | {entity.get('system_class', entity.get('type', 'entity'))}"
-            if system_role == "orbital_body":
-                return f"orbital body | {entity.get('body_class', entity.get('type', 'entity'))}"
-            return f"system | {entity.get('type', 'entity')}"
-        return f"{dataset_name} | {entity.get('type', 'entity')}"
+            if entity.get("system_role") == "star_system":
+                return entity.get("system_class")
+            if entity.get("system_role") == "orbital_body":
+                return entity.get("body_class")
+            return entity.get("system_class") or entity.get("body_class")
+
+        candidate_fields = [
+            f"{self._singularize_name(dataset_name)}_class",
+            f"{class_key}_class",
+            "vehicle_class",
+            "component_class",
+            "idea_class",
+            "faction_class",
+            "producer_class",
+            "institution_class",
+            "city_class",
+            "event_class",
+            "item_class",
+            "material_class",
+            "species_class",
+            "person_class",
+        ]
+        for field_key in candidate_fields:
+            value = entity.get(field_key)
+            if isinstance(value, str) and value.strip():
+                return value
+        return ""
 
     def _close_type_picker(self, card):
         card["type_picker_open"] = False
@@ -4150,10 +4264,19 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
         title = card.get("title") or card.get("entity_id") or "Card"
         subtitle = card.get("subtitle") or ""
+        description = ""
+        if isinstance(entity, dict):
+            description = str(entity.get("three_word_description") or "").strip()
         title_surface = font.render(self._ellipsize_text(title, font, rect.width - 34), True, (244, 246, 250))
+        description_surface = None
+        if description:
+            description_surface = font.render(self._ellipsize_text(description, font, rect.width - 18), True, (202, 210, 226))
         subtitle_surface = font.render(self._ellipsize_text(subtitle, font, rect.width - 18), True, (178, 188, 206))
         screen.blit(title_surface, (rect.x + 8, rect.y + 8))
-        screen.blit(subtitle_surface, (rect.x + 8, rect.y + 28))
+        if description_surface is not None:
+            screen.blit(description_surface, (rect.x + 8, rect.y + 28))
+        subtitle_y = rect.y + (48 if description else 28)
+        screen.blit(subtitle_surface, (rect.x + 8, subtitle_y))
 
         years = card.get("years", [])
         if years:
@@ -4161,7 +4284,9 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         else:
             year_text = "year missing"
         year_surface = font.render(self._ellipsize_text(year_text, font, rect.width - 18), True, (206, 214, 230))
-        screen.blit(year_surface, (rect.x + 8, rect.y + 48))
+        year_y = rect.y + (68 if description else 48)
+        if year_y + year_surface.get_height() <= rect.bottom - 6:
+            screen.blit(year_surface, (rect.x + 8, year_y))
 
         close_rect = card.get("close_rect")
         if close_rect is not None:
@@ -4830,6 +4955,19 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             if entity is not None:
                 self._ensure_card(entity)
                 return True
+
+        if kind == "create":
+            opened = self._open_entry_name_prompt(
+                None,
+                mode="new_entry",
+                context={
+                    "link_source_entity_id": card.get("entity_id"),
+                    "link_field_key": relation_info.get("field_key") or "related",
+                },
+            )
+            if opened:
+                self._relayout_cards()
+            return opened
 
         if kind == "missing" and relation_info.get("field_key") == "related":
             return self._open_relation_target_template_picker(card, relation_info)
@@ -5798,7 +5936,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 return "__ui_consumed__"
 
             if self.timeline_edit_target is not None:
-                picked_year = self.timeline_ui.pick_year_from_pos(mouse_pos)
+                picked_year = self.timeline_ui.pick_year_from_axis_pos(mouse_pos)
                 if picked_year is not None:
                     self._apply_timeline_year_pick(picked_year)
                     return "__ui_consumed__"
