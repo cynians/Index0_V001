@@ -5,6 +5,8 @@ from simulations.phylogeny.clade_graph import find_clade_matches
 
 
 class KnowledgeCanvasController:
+    MAX_CARD_CANVAS_H = 8000
+
     def __init__(self, host):
         object.__setattr__(self, "host", host)
 
@@ -36,13 +38,13 @@ class KnowledgeCanvasController:
             rect_y = right_rect.y + self.canvas_offset_y + int(card.get("canvas_y", 84) * zoom)
 
             if compact_mode:
-                card_h = max(260, min(2400, requested_h))
+                card_h = max(260, min(self.MAX_CARD_CANVAS_H, requested_h))
                 self._layout_compact_card(card, rect_x, rect_y, card_w, card_h, zoom)
                 max_right = max(max_right, card.get("canvas_x", 24) + card_w)
                 max_bottom = max(max_bottom, card.get("canvas_y", 84) + card_h)
                 continue
 
-            approximate_h = max(260, min(2400, requested_h))
+            approximate_h = max(260, min(self.MAX_CARD_CANVAS_H, requested_h))
             approximate_rect = pygame.Rect(
                 rect_x,
                 rect_y,
@@ -66,9 +68,9 @@ class KnowledgeCanvasController:
                 minimum_h = 260
 
             if auto_canvas_h:
-                card_h = max(260, min(2400, minimum_h))
+                card_h = max(260, min(self.MAX_CARD_CANVAS_H, minimum_h))
             else:
-                card_h = max(260, min(2400, max(requested_h, minimum_h)))
+                card_h = max(260, min(self.MAX_CARD_CANVAS_H, max(requested_h, minimum_h)))
             card["canvas_h"] = card_h
             card["layout_font"] = card_font
 
@@ -517,6 +519,23 @@ class KnowledgeCanvasController:
         if not isinstance(entity, dict) or not field_key or not entity_id or card_view is None:
             return False
 
+        if hasattr(card_view, "is_location_topology_relation_field") and card_view.is_location_topology_relation_field(field_key):
+            card["active_edit_field"] = field_key
+            linked = card_view.insert_relation_reference(card, entity_id)
+            if not linked:
+                return False
+            related_update_ids = list(card.pop("location_related_entity_update_ids", []) or [])
+            if card.get("is_draft_entity", False):
+                self._save_card_draft(card)
+            else:
+                self._persist_card_entity(card)
+                for related_entity_id in related_update_ids:
+                    related_entity = self.world_model.get_entity(related_entity_id) if self.world_model is not None else None
+                    if isinstance(related_entity, dict):
+                        self._persist_entity_to_repository(related_entity)
+                self._sync_bidirectional_relations(persist=True)
+            return True
+
         allows_many = field_key in EntityCard.CORE_RELATION_FIELDS or (
             card_view._relation_field_allows_many(field_key)
             if hasattr(card_view, "_relation_field_allows_many")
@@ -866,6 +885,7 @@ class KnowledgeCanvasController:
             "card": card,
             "field_key": relation_info.get("field_key"),
             "missing_ref": missing_ref,
+            "target": relation_info.get("target"),
         }
         self.template_picker_search_query = ""
         self.template_picker_search_active = True
@@ -1086,8 +1106,32 @@ class KnowledgeCanvasController:
                             {"field_key": card_obj.get("active_edit_field")},
                             initial_text=card_obj.get("relation_picker_query", ""),
                         )
+                    elif match_index == "create_target":
+                        opened = self._open_entry_name_prompt(
+                            None,
+                            mode="new_entry",
+                            context={
+                                "link_source_entity_id": card_obj.get("entity_id"),
+                                "link_field_key": card_obj.get("active_edit_field"),
+                                "target": card_obj.get("relation_picker_target"),
+                            },
+                        )
+                        if not opened:
+                            self._open_relation_target_template_picker(
+                                card_obj,
+                                {
+                                    "kind": "create",
+                                    "field_key": card_obj.get("active_edit_field"),
+                                    "target": card_obj.get("relation_picker_target") or "locations",
+                                    "entity_id": card_obj.get("relation_picker_query", ""),
+                                    "label": card_obj.get("relation_picker_query", ""),
+                                },
+                            )
                     else:
-                        self._insert_relation_from_picker(card_obj, match_index=match_index)
+                        if self._insert_relation_from_picker(card_obj, match_index=match_index):
+                            self._finalize_relation_picker_edit(card_obj)
+                            self._sync_card_years_from_entity(card_obj)
+                            self._refresh_timeline_items()
                     self._relayout_cards()
                     return "__ui_consumed__"
 
@@ -1104,6 +1148,28 @@ class KnowledgeCanvasController:
                     if self._handle_wiki_link_click(card_obj, link_info):
                         self._relayout_cards()
                         return "__ui_consumed__"
+
+            if card_view is not None and card_view.handle_location_click(card, mouse_pos):
+                card_obj = self._bring_card_to_front(index)
+                pending_location_action = card_obj.pop("pending_location_action", None)
+                if card_obj.get("relation_picker_open") and card_obj.get("relation_picker_target"):
+                    self._open_relation_picker(card_obj)
+                if card_obj.get("last_edit_action") == "commit":
+                    self._persist_card_entity(card_obj)
+                    related_update_ids = list(card_obj.pop("location_related_entity_update_ids", []) or [])
+                    for related_entity_id in related_update_ids:
+                        related_entity = self.world_model.get_entity(related_entity_id) if self.world_model is not None else None
+                        if isinstance(related_entity, dict):
+                            self._persist_entity_to_repository(related_entity)
+                    self._sync_bidirectional_relations(persist=True)
+                    self._refresh_timeline_items()
+                elif card_obj.get("last_edit_action") == "draft":
+                    self._save_card_draft(card_obj)
+                card_obj["last_edit_action"] = None
+                self._relayout_cards()
+                if isinstance(pending_location_action, dict):
+                    return pending_location_action
+                return "__ui_consumed__"
 
             phylogeny_click_active = (
                 card_view is not None
@@ -1232,7 +1298,7 @@ class KnowledgeCanvasController:
                             channel,
                             slider_rect,
                             mouse_pos[0],
-                            persist=True,
+                            persist=False,
                             role=role,
                             section_id=section_id,
                         )
@@ -1243,7 +1309,6 @@ class KnowledgeCanvasController:
                             "role": role,
                             "section_id": section_id,
                         }
-                        self._layout_all_cards()
                         return "__ui_consumed__"
                     action_id = tool_info.get("action_id")
                     if action_id:
@@ -1337,7 +1402,22 @@ class KnowledgeCanvasController:
                 if hitbox.collidepoint(mouse_pos):
                     card_obj = self._bring_card_to_front(index)
                     card_obj["selected_year"] = year
+                    card_obj["active_timeline_snapshot_range"] = (year, year)
                     self._focus_timeline_year(year)
+                    self._layout_all_cards()
+                    return "__ui_consumed__"
+
+            if card_view is not None:
+                period_action = card_view.handle_temporal_period_timeline_click(card, mouse_pos)
+                if period_action is not None:
+                    card_obj = self._bring_card_to_front(index)
+                    if period_action == "commit":
+                        if card_obj.get("is_draft_entity", False):
+                            self._save_card_draft(card_obj)
+                        else:
+                            self._persist_card_entity(card_obj)
+                        self._sync_card_years_from_entity(card_obj)
+                        self._refresh_timeline_items()
                     self._layout_all_cards()
                     return "__ui_consumed__"
 

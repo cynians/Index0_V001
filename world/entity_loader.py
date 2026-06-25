@@ -2,6 +2,7 @@ import json
 import yaml
 from pathlib import Path
 import logging
+from world.ontology_repository import OntologyRepository
 
 logger = logging.getLogger(__name__)
 
@@ -64,13 +65,20 @@ class EntityLoader:
         "related_ideas": "related",
     }
 
-    def __init__(self, entries_directory=None, auto_save_normalized=False):
+    def __init__(self, entries_directory=None, auto_save_normalized=False, ontology_path=None, use_ontology=None):
 
         if entries_directory is None:
             project_root = Path(__file__).resolve().parents[1]
             entries_directory = project_root / "entries"
+        else:
+            project_root = Path(entries_directory).resolve().parent
+
+        if ontology_path is None:
+            ontology_path = project_root / "ontology" / "index0.owl"
 
         self.entries_directory = Path(entries_directory)
+        self.ontology_path = Path(ontology_path)
+        self.use_ontology = self.ontology_path.exists() if use_ontology is None else bool(use_ontology)
         self.auto_save_normalized = auto_save_normalized
 
         self.datasets = {}
@@ -424,6 +432,10 @@ class EntityLoader:
         self.entity_aliases = {}
         self._dataset_file_records = []
 
+        if self.use_ontology and self.ontology_path.exists():
+            self.load_ontology_datasets()
+            return
+
         if not self.entries_directory.exists():
             logger.warning("Entries path does not exist: %s", self.entries_directory)
             return
@@ -489,6 +501,10 @@ class EntityLoader:
         self._fold_system_entities_into_locations()
         self._fold_spatial_features_into_locations()
 
+    def load_ontology_datasets(self):
+        ontology = OntologyRepository.from_owl(self.ontology_path)
+        self.datasets = ontology.datasets
+
     # --------------------------------------------------
 
     def _normalize_parent_relations(self, entity):
@@ -539,18 +555,13 @@ class EntityLoader:
         return nodes
 
     def populate_offspring(self):
-        children_by_parent = {}
-
-        for entity_id, entity in self.entities.items():
-            for parent_id in self._normalize_parent_relations(entity):
-                children_by_parent.setdefault(parent_id, [])
-                if entity_id not in children_by_parent[parent_id]:
-                    children_by_parent[parent_id].append(entity_id)
-
+        ontology = OntologyRepository(self.datasets)
+        ontology.materialize_inverse_relations()
         changed_entities = set()
 
         for entity_id, entity in self.entities.items():
-            offspring = self._build_offspring_tree(entity_id, children_by_parent)
+            projected = ontology.entities.get(entity_id, {})
+            offspring = projected.get("offspring", [])
             if entity.get("offspring") != offspring:
                 entity["offspring"] = offspring
                 changed_entities.add(entity_id)
@@ -558,6 +569,10 @@ class EntityLoader:
         return changed_entities
 
     def save_changed_dataset_files(self, changed_entity_ids=None):
+        if self.use_ontology:
+            self.save_ontology_file()
+            return
+
         changed_entity_ids = set(changed_entity_ids or [])
 
         for record in self._dataset_file_records:
@@ -571,6 +586,72 @@ class EntityLoader:
 
             if changed:
                 self._save_dataset_file(record["file"], record["data"])
+
+    def save_ontology_file(self):
+        ontology = OntologyRepository(self.datasets)
+        ontology.save_owl(self.ontology_path)
+
+    def persist_entity(self, entity, previous_entity_id=None):
+        if not isinstance(entity, dict):
+            return False
+
+        entity_id = str(entity.get("id") or "").strip()
+        if not entity_id:
+            return False
+
+        previous_entity_id = str(previous_entity_id or "").strip()
+        if previous_entity_id and previous_entity_id != entity_id:
+            self.entities.pop(previous_entity_id, None)
+            for dataset in self.datasets.values():
+                if not isinstance(dataset, list):
+                    continue
+                dataset[:] = [
+                    item
+                    for item in dataset
+                    if not (isinstance(item, dict) and item.get("id") == previous_entity_id)
+                ]
+
+        dataset_name = str(entity.get("_dataset") or entity.get("type") or "entries").strip() or "entries"
+        entity["_dataset"] = dataset_name
+        dataset = self.datasets.setdefault(dataset_name, [])
+        for index, existing in enumerate(dataset):
+            if isinstance(existing, dict) and existing.get("id") == entity_id:
+                dataset[index] = entity
+                break
+        else:
+            dataset.append(entity)
+
+        self.entities[entity_id] = entity
+        if self.use_ontology:
+            self.save_ontology_file()
+        return True
+
+    def remove_entity(self, entity_id, dataset_name=None):
+        entity_id = str(entity_id or "").strip()
+        if not entity_id:
+            return False
+
+        removed = self.entities.pop(entity_id, None) is not None
+        target_datasets = (
+            [dataset_name]
+            if dataset_name
+            else list(self.datasets.keys())
+        )
+        for candidate_name in target_datasets:
+            dataset = self.datasets.get(candidate_name)
+            if not isinstance(dataset, list):
+                continue
+            before_count = len(dataset)
+            dataset[:] = [
+                item
+                for item in dataset
+                if not (isinstance(item, dict) and item.get("id") == entity_id)
+            ]
+            removed = removed or len(dataset) != before_count
+
+        if removed and self.use_ontology:
+            self.save_ontology_file()
+        return removed
 
     # --------------------------------------------------
 

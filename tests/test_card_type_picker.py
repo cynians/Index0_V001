@@ -84,7 +84,7 @@ class CardTypePickerTests(unittest.TestCase):
         self.assertEqual("Planet", planet_template["label"])
         self.assertEqual({"location_class": "planet"}, planet_template["initial_fields"])
 
-    def test_conversion_templates_include_building_and_room_location_classes(self):
+    def test_conversion_templates_include_canonical_location_classes(self):
         ui = KnowledgeBrowserUI()
         ui.schema_entry_templates = [
             {
@@ -106,6 +106,8 @@ class CardTypePickerTests(unittest.TestCase):
 
         self.assertIn("building", subclasses)
         self.assertIn("room", subclasses)
+        self.assertIn("state", subclasses)
+        self.assertIn("quarter", subclasses)
 
     def test_location_subclass_templates_prefer_canonical_location_class(self):
         ui = KnowledgeBrowserUI()

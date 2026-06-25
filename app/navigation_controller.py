@@ -471,7 +471,7 @@ class NavigationController:
         if isinstance(value, str):
             return [value]
         if isinstance(value, dict):
-            candidate = value.get("id") or value.get("entity_id") or value.get("target")
+            candidate = value.get("location_id") or value.get("id") or value.get("entity_id") or value.get("target")
             return [candidate] if candidate else []
         if isinstance(value, (list, tuple, set)):
             ids = []
@@ -495,6 +495,15 @@ class NavigationController:
             parent = self.app.world_model.get_entity(parent_id)
             if parent_id and parent_id != location_id and self._is_location_entity(parent):
                 return parent_id
+
+        entities = getattr(getattr(self.app.world_model, "loader", None), "entities", {}) or {}
+        if not entities and hasattr(self.app.world_model, "entities"):
+            entities = getattr(self.app.world_model, "entities", {}) or {}
+        for candidate_id, candidate in entities.items():
+            if candidate_id == location_id or not self._is_location_entity(candidate):
+                continue
+            if location_id in self._relation_entity_ids(candidate.get("constituents")):
+                return candidate_id
 
         return None
 

@@ -2,6 +2,7 @@ import re
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from world.entity_loader import EntityLoader
 from world.world_model import WorldModel
@@ -77,6 +78,21 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
         model = WorldModel()
         self.assertEqual("planet_earth", model.get_entity("body_earth").get("id"))
+
+    def test_spatial_feature_projection_includes_state_and_quarter_locations(self):
+        entities = [
+            {"id": "loc_region", "location_class": "region", "geometry": {"type": "polygon"}},
+            {"id": "loc_state", "location_class": "state", "geometry": {"type": "polygon"}},
+            {"id": "loc_quarter", "location_class": "quarter", "layer_kind": "districts"},
+            {"id": "loc_building", "location_class": "building", "geometry": {"type": "polygon"}},
+            {"id": "loc_city", "location_class": "city"},
+        ]
+        model = WorldModel.__new__(WorldModel)
+        model.loader = SimpleNamespace(get_dataset=lambda dataset_name: entities if dataset_name == "locations" else [])
+
+        spatial_ids = {entity["id"] for entity in model.get_entities_by_dataset("spatial_features")}
+
+        self.assertEqual({"loc_region", "loc_state", "loc_quarter"}, spatial_ids)
 
     def test_loader_collapses_obsolete_relations_into_related(self):
         try:

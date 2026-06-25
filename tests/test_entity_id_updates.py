@@ -47,6 +47,20 @@ class KnowledgeBrowserHarness(KnowledgeBrowserUI):
         self.selected_entity_id = None
         self.active_card_drag_id = None
         self.active_card_resize_id = None
+        self.active_card_color_slider = None
+        self.active_timeline_resize = False
+        self.active_timeline_pan = False
+        self.timeline_resize_start_mouse_y = None
+        self.timeline_resize_start_height = None
+        self.timeline_pan_last_mouse_x = None
+        self.active_canvas_pan = False
+        self.card_drag_mouse_offset = (0, 0)
+        self.card_resize_start_mouse = None
+        self.card_resize_start_size = None
+        self.card_resize_start_position = None
+        self.card_resize_edges = None
+        self.canvas_pan_start_mouse = None
+        self.canvas_pan_start_offset = None
         self.canvas_relation_link_source_id = None
         self.canvas_relation_status = ""
         self.relation_link_target = None
@@ -60,6 +74,7 @@ class KnowledgeBrowserHarness(KnowledgeBrowserUI):
         self.browser_search_active = False
         self.browser_search_query = ""
         self.browser_items = []
+        self.relayout_count = 0
 
     def _persist_entity_to_repository(self, entity, previous_entity_id=None):
         self.persisted_ids.append((entity.get("id"), previous_entity_id))
@@ -83,6 +98,7 @@ class KnowledgeBrowserHarness(KnowledgeBrowserUI):
         return None
 
     def _relayout_cards(self):
+        self.relayout_count += 1
         return None
 
     def _close_relation_picker(self, card):
@@ -129,6 +145,35 @@ class EntityIdUpdateTests(unittest.TestCase):
         entity_id = ui._requested_template_entity_id_from_name(template, "Blue Union")
 
         self.assertEqual("fac_blue_union_2", entity_id)
+
+    def test_header_rebuild_does_not_create_launch_vehicle_test_button(self):
+        ui = KnowledgeBrowserHarness()
+        ui.header_button = SimpleNamespace(button_id="launch_vehicle_test")
+        ui.layout = {
+            "header_rect": pygame.Rect(0, 0, 900, 52),
+            "right_rect": pygame.Rect(300, 80, 600, 400),
+        }
+        ui.contemporary_spawn_count = 1
+        ui.contemporary_spawn_min = 0
+        ui.contemporary_spawn_max = 12
+        ui.relation_tree_touch_degree = 2
+        ui.relation_tree_min_touch_degree = 1
+        ui.relation_tree_max_touch_degree = 6
+
+        ui._build_header_button()
+
+        self.assertIsNone(ui.header_button)
+        button_ids = {
+            button.id
+            for button in (
+                ui.new_entry_button,
+                ui.random_task_button,
+                ui.random_entry_button,
+                ui.clear_canvas_button,
+            )
+            if button is not None
+        }
+        self.assertNotIn("launch_vehicle_test", button_ids)
 
     def test_persisted_id_change_rewrites_entity_references(self):
         parent = {
@@ -445,6 +490,178 @@ class EntityIdUpdateTests(unittest.TestCase):
         self.assertEqual("__ui_consumed__", result)
         self.assertEqual("a", card["edit_buffer"])
         self.assertEqual("", ui.browser_search_query)
+
+    def test_card_draft_keystroke_does_not_refresh_timeline(self):
+        entity = {
+            "id": "idea_edit_name",
+            "type": "idea",
+            "_dataset": "ideas",
+            "pretty_name": "Old",
+            "name": "Old",
+        }
+        ui = KnowledgeBrowserHarness({"idea_edit_name": entity})
+        refresh_count = {"value": 0}
+        ui._refresh_timeline_items = lambda: refresh_count.__setitem__("value", refresh_count["value"] + 1)
+        card = {
+            "entity_id": "idea_edit_name",
+            "card_view": EntityCard(entity, dataset_name="ideas", world_model=ui.world_model),
+            "is_edit_mode": True,
+            "active_edit_field": "name",
+            "edit_buffer": "",
+            "edit_cursor": 0,
+            "edit_original_value": "Old",
+            "draft_edit_buffers": {},
+        }
+        ui.cards = [card]
+
+        result = ui._handle_keydown_event(SimpleNamespace(
+            key=pygame.K_a,
+            unicode="a",
+            mod=0,
+        ))
+
+        self.assertEqual("__ui_consumed__", result)
+        self.assertEqual(0, refresh_count["value"])
+
+    def test_save_card_draft_does_not_sync_wiki_mentions(self):
+        entity = {
+            "id": "idea_source",
+            "type": "idea",
+            "_dataset": "ideas",
+            "name": "Source",
+            "wiki_entry": "See [[Entry 123]].",
+        }
+        ui = KnowledgeBrowserHarness({"idea_source": entity})
+        ui._sync_card_wiki_mentions = lambda card, wiki_text=None: self.fail("draft save should not scan wiki mentions")
+        card = {
+            "entity_id": "idea_source",
+            "card_view": EntityCard(entity, dataset_name="ideas", world_model=ui.world_model),
+            "is_edit_mode": True,
+            "active_edit_field": "wiki_entry",
+            "edit_buffer": "See [[Entry 123]].",
+            "edit_cursor": 18,
+            "draft_edit_buffers": {},
+        }
+
+        self.assertTrue(ui._save_card_draft(card))
+
+    def test_card_color_slider_click_defers_repository_persist(self):
+        entity = {
+            "id": "idea_color",
+            "type": "idea",
+            "_dataset": "ideas",
+            "name": "Color",
+            "card_color": "#4466aa",
+        }
+        ui = KnowledgeBrowserHarness({"idea_color": entity})
+        slider_rect = pygame.Rect(40, 30, 120, 10)
+        hit_rect = slider_rect.inflate(6, 8)
+        card = {
+            "entity_id": "idea_color",
+            "card_view": SimpleNamespace(
+                entity=entity,
+                handle_location_click=lambda card_arg, mouse_pos: False,
+            ),
+            "toolbelt_hitboxes": [
+                (
+                    {
+                        "kind": "color_picker",
+                        "control": "slider",
+                        "channel": "h",
+                        "slider_rect": slider_rect,
+                    },
+                    hit_rect,
+                )
+            ],
+        }
+        ui.cards = [card]
+
+        result = ui._handle_card_canvas_click((slider_rect.x + 72, slider_rect.centery), pygame.Rect(0, 0, 260, 180))
+
+        self.assertEqual("__ui_consumed__", result)
+        self.assertEqual([], ui.persisted_ids)
+        self.assertTrue(card.get("pending_color_persist"))
+        self.assertIsNotNone(ui.active_card_color_slider)
+
+    def test_card_color_slider_motion_stays_in_memory_without_relayout(self):
+        entity = {
+            "id": "idea_color",
+            "type": "idea",
+            "_dataset": "ideas",
+            "name": "Color",
+            "card_color": "#4466aa",
+        }
+        ui = KnowledgeBrowserHarness({"idea_color": entity})
+        slider_rect = pygame.Rect(40, 30, 120, 10)
+        card = {
+            "entity_id": "idea_color",
+            "card_view": SimpleNamespace(entity=entity),
+        }
+        ui.cards = [card]
+        ui.active_card_color_slider = {
+            "entity_id": "idea_color",
+            "channel": "s",
+            "slider_rect": slider_rect,
+            "role": "body",
+            "section_id": None,
+        }
+
+        result = ui._handle_mousemotion_event(SimpleNamespace(pos=(slider_rect.x + 84, slider_rect.centery)))
+
+        self.assertEqual("__ui_consumed__", result)
+        self.assertEqual([], ui.persisted_ids)
+        self.assertTrue(card.get("pending_color_persist"))
+        self.assertEqual(0, ui.relayout_count)
+
+    def test_card_color_slider_release_persists_once_without_draft_snapshot(self):
+        entity = {
+            "id": "idea_color",
+            "type": "idea",
+            "_dataset": "ideas",
+            "name": "Color",
+            "card_color": "#4466aa",
+        }
+        ui = KnowledgeBrowserHarness({"idea_color": entity})
+        card = {
+            "entity_id": "idea_color",
+            "card_view": SimpleNamespace(entity=entity),
+            "pending_color_persist": True,
+        }
+        ui.cards = [card]
+        ui.active_card_color_slider = {"entity_id": "idea_color"}
+
+        result = ui._handle_mousebuttonup_event(SimpleNamespace(button=1))
+
+        self.assertEqual("__ui_consumed__", result)
+        self.assertEqual([("idea_color", None)], ui.persisted_ids)
+        self.assertNotIn("idea_color", ui.card_drafts)
+        self.assertFalse(card.get("pending_color_persist", False))
+        self.assertIsNone(ui.active_card_color_slider)
+
+    def test_draft_card_color_slider_release_saves_only_draft(self):
+        entity = {
+            "id": "idea_color",
+            "type": "idea",
+            "_dataset": "ideas",
+            "name": "Color",
+            "card_color": "#4466aa",
+        }
+        ui = KnowledgeBrowserHarness({"idea_color": entity})
+        card = {
+            "entity_id": "idea_color",
+            "card_view": SimpleNamespace(entity=entity),
+            "is_draft_entity": True,
+            "pending_color_persist": True,
+        }
+        ui.cards = [card]
+        ui.active_card_color_slider = {"entity_id": "idea_color"}
+
+        result = ui._handle_mousebuttonup_event(SimpleNamespace(button=1))
+
+        self.assertEqual("__ui_consumed__", result)
+        self.assertEqual([], ui.persisted_ids)
+        self.assertIn("idea_color", ui.card_drafts)
+        self.assertFalse(card.get("pending_color_persist", False))
 
     def test_stellar_neighbour_link_selection_opens_distance_prompt(self):
         source = {
@@ -799,6 +1016,41 @@ class EntityIdUpdateTests(unittest.TestCase):
         self.assertEqual([{"system": "system_beta", "distance_ly": 4.2}], source["stellar_neighbours"])
         self.assertEqual([{"system": "system_alpha", "distance_ly": 4.2}], target["stellar_neighbours"])
         self.assertIsNone(ui.stellar_neighbourhood_prompt)
+
+    def test_star_system_creation_opens_only_system_card(self):
+        ui = KnowledgeBrowserHarness()
+        ui.schema_entry_templates = [
+            {
+                "dataset_name": "locations",
+                "entity_type": "location",
+                "label": "Location",
+                "initial_fields": {},
+            }
+        ]
+        opened_ids = []
+        saved_ids = []
+        ui._populate_required_schema_fields = lambda entity, template: None
+        ui._place_new_card_in_canvas_view = lambda card: None
+        ui._save_card_draft = lambda card: saved_ids.append(card.get("entity_id")) or True
+
+        def ensure_card(entity, relayout=True, bring_to_front=True):
+            opened_ids.append(entity["id"])
+            card = {"entity_id": entity["id"], "card_view": SimpleNamespace(entity=entity)}
+            ui.cards.append(card)
+            return card
+
+        ui._ensure_card = ensure_card
+
+        created = ui._create_star_system_from_class(
+            ui.schema_entry_templates[0],
+            "Alpha System",
+            "G2V",
+        )
+
+        self.assertEqual("system_alpha_system", created["id"])
+        self.assertEqual(["system_alpha_system"], opened_ids)
+        self.assertEqual(["system_alpha_system"], saved_ids)
+        self.assertIn("star_alpha_system_primary", ui.world_model.loader.entities)
 
 
 if __name__ == "__main__":

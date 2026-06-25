@@ -41,6 +41,7 @@ class EntityCard:
         ("body", "Body"),
         ("header", "Banner"),
         ("wiki", "Wiki"),
+        ("wiki_alt", "Wiki B"),
     ]
     RESIZE_HANDLE = 14
     RESIZE_BORDER = 6
@@ -59,6 +60,20 @@ class EntityCard:
         "offspring",
     ]
     CORE_RELATION_FIELDS = set(STANDARD_RELATION_FIELDS)
+    LOCATION_TOPOLOGY_FIELDS = ["neighbours", "constituents", "overlaps"]
+    LOCATION_TOPOLOGY_LABELS = {
+        "neighbours": "Neighbours",
+        "constituents": "Constituents",
+        "overlaps": "Overlaps",
+    }
+    LOCATION_TOPOLOGY_HELP = {
+        "neighbours": "Adjacent locations.",
+        "constituents": "Locations contained by this location.",
+        "overlaps": "Locations sharing territory without full containment.",
+    }
+    LOCATION_TOPOLOGY_SYMMETRIC_FIELDS = {"neighbours", "overlaps"}
+    LOCATION_TOPOLOGY_FIELD_PREFIX = "location_topology:"
+    TIMELINE_SNAPSHOT_FIELD = "timeline_snapshot_entry"
     IDEA_GENERIC_FIELDS = {
         "id",
         "pretty_name",
@@ -75,9 +90,10 @@ class EntityCard:
         "wiki_field_colors",
         "tags",
         "start_year",
-        "start_event",
+        "start_commentary",
         "end_year",
-        "end_event",
+        "end_commentary",
+        "temporal_periods",
         "parents",
         "related",
         "offspring",
@@ -96,17 +112,18 @@ class EntityCard:
     ]
 
     SUBTAB_H = 22
-    TAB_ORDER = ["general", "overview", "temporal", "relations", "state", "simulation", "media"]
+    TAB_ORDER = ["general", "overview", "temporal", "location", "relations", "state", "simulation", "media"]
     DATASET_TAB_ORDER = {
-        "ideas": ["general", "overview", "temporal", "relations", "media"],
-        "cladistics": ["general", "overview", "phylogeny", "relations", "temporal", "media"],
-        "species": ["general", "overview", "phylogeny", "relations", "temporal", "media"],
-        "components": ["general", "overview", "temporal", "relations", "operational", "simulation", "media"],
+        "ideas": ["general", "overview", "temporal", "location", "relations", "media"],
+        "cladistics": ["general", "overview", "phylogeny", "relations", "temporal", "location", "media"],
+        "species": ["general", "overview", "phylogeny", "relations", "temporal", "location", "media"],
+        "components": ["general", "overview", "temporal", "location", "relations", "operational", "simulation", "media"],
     }
     TAB_LABELS = {
         "general": "General",
         "overview": "Overview",
         "temporal": "Temporal",
+        "location": "Location",
         "relations": "Relations",
         "phylogeny": "Phylogeny",
         "state": "State",
@@ -124,6 +141,7 @@ class EntityCard:
         "general": [],
         "overview": ["Identity", "Classification", "Dimensions / Scale", "Metadata"],
         "temporal": ["Temporal"],
+        "location": [],
         "relations": ["Relations", "Class Relations"],
         "state": ["State / Layout"],
         "operational": ["Operational"],
@@ -141,8 +159,9 @@ class EntityCard:
         "start_year",
         "end_year",
         "effective_year",
-        "start_event",
-        "end_event",
+        "start_commentary",
+        "end_commentary",
+        "temporal_periods",
         "end_condition",
         "era",
     }
@@ -431,11 +450,1068 @@ class EntityCard:
     def _is_temporal_mode(self):
         return self.active_tab == "temporal"
 
+    def _is_location_mode(self):
+        return self.active_tab == "location"
+
     def _is_general_mode(self):
         return self.active_tab == "general"
 
     def _uses_image_block(self):
         return self._is_media_mode() or self._is_temporal_mode()
+
+    def _is_location_entity(self, entity):
+        return isinstance(entity, dict) and (
+            entity.get("_dataset") == "locations"
+            or entity.get("type") == "location"
+        )
+
+    def _location_display_label(self, entity, fallback=None):
+        if not isinstance(entity, dict):
+            return str(fallback or "")
+        return str(
+            entity.get("pretty_name")
+            or entity.get("name")
+            or entity.get("common_name")
+            or entity.get("label")
+            or fallback
+            or entity.get("id")
+            or ""
+        )
+
+    def _default_location_mode(self):
+        dataset = str(self.dataset_name or self.entity.get("_dataset") or "").lower()
+        entity_type = str(self.entity.get("type") or "").lower()
+        if dataset in {"people", "pops"} or entity_type in {"person", "character", "individual", "pop"}:
+            return "exclusive"
+        return "multiple"
+
+    def _location_mode_value(self):
+        mode = str(self.entity.get("location_mode") or "").strip().lower()
+        return mode if mode in {"exclusive", "multiple"} else self._default_location_mode()
+
+    def _coerce_location_year(self, value):
+        if value in (None, ""):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            parsed = parse_year(value)
+            return parsed
+
+    def _normalize_location_history_entry(self, value):
+        if isinstance(value, str):
+            location_id = value.strip()
+            return {"location_id": location_id} if location_id else None
+        if not isinstance(value, dict):
+            return None
+
+        location_id = (
+            value.get("location_id")
+            or value.get("id")
+            or value.get("entity_id")
+            or value.get("location")
+        )
+        location_id = str(location_id or "").strip()
+        if not location_id:
+            return None
+
+        normalized = {"location_id": location_id}
+        start_year = self._coerce_location_year(value.get("start_year"))
+        end_year = self._coerce_location_year(value.get("end_year"))
+        if start_year is not None:
+            normalized["start_year"] = start_year
+        if end_year is not None:
+            normalized["end_year"] = end_year
+        note = str(value.get("note") or "").strip()
+        if note:
+            normalized["note"] = note
+        return normalized
+
+    def _relation_entity_ids(self, value):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            value = value.strip()
+            return [value] if value else []
+        if isinstance(value, dict):
+            candidate = value.get("id") or value.get("entity_id") or value.get("target") or value.get("location_id")
+            return [str(candidate)] if candidate else []
+        if isinstance(value, (list, tuple, set)):
+            ids = []
+            for item in value:
+                ids.extend(self._relation_entity_ids(item))
+            return ids
+        return []
+
+    def _location_history_entries(self):
+        entries = []
+        seen = set()
+
+        for raw_entry in self.entity.get("location_history") or []:
+            entry = self._normalize_location_history_entry(raw_entry)
+            if not entry:
+                continue
+            key = (
+                entry.get("location_id"),
+                entry.get("start_year"),
+                entry.get("end_year"),
+                entry.get("note", ""),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            entries.append(entry)
+
+        for legacy_key in ("location_entity", "associated_locations", "locations"):
+            for location_id in self._relation_entity_ids(self.entity.get(legacy_key)):
+                key = (location_id, None, None, "")
+                if key in seen:
+                    continue
+                seen.add(key)
+                entries.append({"location_id": location_id})
+
+        return entries
+
+    def _sync_location_relation_fields(self):
+        entries = self._location_history_entries()
+        self.entity["location_history"] = entries
+        location_ids = []
+        for entry in entries:
+            location_id = str(entry.get("location_id") or "").strip()
+            if location_id and location_id not in location_ids:
+                location_ids.append(location_id)
+        self.entity["associated_locations"] = location_ids
+        return location_ids
+
+    def _is_location_card(self):
+        return self._is_location_entity(self.entity)
+
+    def _location_topology_ids(self, entity=None, field_key=None):
+        entity = entity if isinstance(entity, dict) else self.entity
+        field_key = str(field_key or "")
+        ids = []
+        for location_id in self._relation_entity_ids(entity.get(field_key)):
+            if location_id and location_id not in ids:
+                ids.append(location_id)
+        return ids
+
+    def _set_location_topology_ids(self, entity, field_key, ids):
+        if not isinstance(entity, dict) or field_key not in self.LOCATION_TOPOLOGY_FIELDS:
+            return False
+        normalized = []
+        entity_id = str(entity.get("id") or "")
+        for location_id in ids or []:
+            location_id = str(location_id or "").strip()
+            if not location_id or location_id == entity_id or location_id in normalized:
+                continue
+            normalized.append(location_id)
+        if normalized:
+            entity[field_key] = normalized
+        elif field_key in entity:
+            entity[field_key] = []
+        return True
+
+    def _mark_related_location_update(self, card, location_id):
+        location_id = str(location_id or "").strip()
+        if not location_id:
+            return
+        update_ids = card.setdefault("location_related_entity_update_ids", [])
+        if location_id not in update_ids:
+            update_ids.append(location_id)
+
+    def _location_topology_match_field(self, card):
+        active = str(card.get("location_topology_active_field") or "").strip()
+        return active if active in self.LOCATION_TOPOLOGY_FIELDS else "constituents"
+
+    def _location_topology_virtual_field(self, field_key):
+        field_key = str(field_key or "").strip()
+        if field_key not in self.LOCATION_TOPOLOGY_FIELDS:
+            return ""
+        return f"{self.LOCATION_TOPOLOGY_FIELD_PREFIX}{field_key}"
+
+    def _location_topology_field_from_virtual(self, field_key):
+        field_key = str(field_key or "")
+        if not field_key.startswith(self.LOCATION_TOPOLOGY_FIELD_PREFIX):
+            return ""
+        topology_field = field_key[len(self.LOCATION_TOPOLOGY_FIELD_PREFIX):]
+        return topology_field if topology_field in self.LOCATION_TOPOLOGY_FIELDS else ""
+
+    def is_location_topology_relation_field(self, field_key):
+        return bool(self._location_topology_field_from_virtual(field_key))
+
+    def _build_location_topology_matches(self, card, field_key=None, query_text=None, limit=7):
+        field_key = field_key or self._location_topology_match_field(card)
+        query_text = card.get("location_topology_query", "") if query_text is None else query_text
+        existing = set(self._location_topology_ids(self.entity, field_key))
+        current_id = str(self.entity.get("id") or "")
+        matches = []
+        for match in self._build_location_matches(query_text, limit=50):
+            match_id = str(match.get("id") or "")
+            if not match_id or match_id == current_id or match_id in existing:
+                continue
+            matches.append(match)
+            if len(matches) >= limit:
+                break
+        return matches
+
+    def refresh_location_topology_matches(self, card):
+        if not card.get("location_topology_input_active"):
+            card["location_topology_matches"] = []
+            card["location_topology_match_rows"] = []
+            card["location_topology_selected_index"] = 0
+            return
+        matches = self._build_location_topology_matches(card)
+        card["location_topology_matches"] = matches
+        card["location_topology_match_rows"] = []
+        if not matches:
+            card["location_topology_selected_index"] = 0
+            return
+        card["location_topology_selected_index"] = max(
+            0,
+            min(int(card.get("location_topology_selected_index", 0) or 0), len(matches) - 1),
+        )
+
+    def _sync_added_location_topology_relation(self, card, field_key, target_id):
+        if self.world_model is None:
+            return
+        current_id = str(self.entity.get("id") or "").strip()
+        if not current_id or not target_id:
+            return
+        target = self.world_model.get_entity(target_id)
+        if not self._is_location_entity(target):
+            return
+
+        if field_key in self.LOCATION_TOPOLOGY_SYMMETRIC_FIELDS:
+            target_ids = self._location_topology_ids(target, field_key)
+            if current_id not in target_ids:
+                target_ids.append(current_id)
+                self._set_location_topology_ids(target, field_key, target_ids)
+                self._mark_related_location_update(card, target_id)
+            return
+
+        if field_key == "constituents":
+            parent_ids = self._relation_entity_ids(target.get("parents"))
+            if current_id not in parent_ids:
+                parent_ids.append(current_id)
+                target["parents"] = parent_ids
+                self._mark_related_location_update(card, target_id)
+            if not target.get("parent_location"):
+                target["parent_location"] = current_id
+                self._mark_related_location_update(card, target_id)
+
+    def _sync_removed_location_topology_relation(self, card, field_key, target_id):
+        if self.world_model is None:
+            return
+        current_id = str(self.entity.get("id") or "").strip()
+        if not current_id or not target_id:
+            return
+        target = self.world_model.get_entity(target_id)
+        if not self._is_location_entity(target):
+            return
+
+        if field_key in self.LOCATION_TOPOLOGY_SYMMETRIC_FIELDS:
+            target_ids = self._location_topology_ids(target, field_key)
+            if current_id in target_ids:
+                self._set_location_topology_ids(target, field_key, [item for item in target_ids if item != current_id])
+                self._mark_related_location_update(card, target_id)
+            return
+
+        if field_key == "constituents":
+            parent_ids = self._relation_entity_ids(target.get("parents"))
+            if current_id in parent_ids:
+                target["parents"] = [item for item in parent_ids if item != current_id]
+                self._mark_related_location_update(card, target_id)
+            if target.get("parent_location") == current_id:
+                target["parent_location"] = ""
+                self._mark_related_location_update(card, target_id)
+
+    def add_location_topology_relation(self, card, field_key=None, location_id=None):
+        field_key = field_key or self._location_topology_match_field(card)
+        if field_key not in self.LOCATION_TOPOLOGY_FIELDS:
+            return False
+        location_id = str(location_id or "").strip()
+        if not location_id:
+            matches = card.get("location_topology_matches") or []
+            if matches:
+                index = max(0, min(int(card.get("location_topology_selected_index", 0) or 0), len(matches) - 1))
+                location_id = str(matches[index].get("id") or "").strip()
+        if not location_id or location_id == str(self.entity.get("id") or ""):
+            return False
+        if self.world_model is not None and not self._is_location_entity(self.world_model.get_entity(location_id)):
+            return False
+
+        values = self._location_topology_ids(self.entity, field_key)
+        if location_id not in values:
+            values.append(location_id)
+            self._set_location_topology_ids(self.entity, field_key, values)
+            self._sync_added_location_topology_relation(card, field_key, location_id)
+
+        card["location_topology_query"] = ""
+        card["location_topology_matches"] = []
+        card["location_topology_match_rows"] = []
+        card["location_topology_selected_index"] = 0
+        card["location_topology_input_active"] = False
+        card["last_edit_action"] = "commit"
+        card["last_committed_field"] = field_key
+        return True
+
+    def remove_location_topology_relation(self, card, field_key, location_id):
+        field_key = str(field_key or "")
+        location_id = str(location_id or "").strip()
+        if field_key not in self.LOCATION_TOPOLOGY_FIELDS or not location_id:
+            return False
+        values = self._location_topology_ids(self.entity, field_key)
+        if location_id not in values:
+            return False
+        self._set_location_topology_ids(self.entity, field_key, [item for item in values if item != location_id])
+        self._sync_removed_location_topology_relation(card, field_key, location_id)
+        card["last_edit_action"] = "commit"
+        card["last_committed_field"] = field_key
+        return True
+
+    def _set_location_topology_input_field(self, card, field_key):
+        if field_key not in self.LOCATION_TOPOLOGY_FIELDS:
+            return False
+        virtual_field = self._location_topology_virtual_field(field_key)
+        card["location_topology_input_active"] = False
+        card["location_topology_active_field"] = field_key
+        card["active_edit_field"] = virtual_field
+        card["relation_picker_target"] = "locations"
+        card["relation_picker_anchor_field"] = virtual_field
+        card["relation_picker_open"] = True
+        card["relation_picker_query"] = ""
+        card["relation_picker_matches"] = []
+        card["relation_picker_selected_index"] = 0
+        card["relation_picker_hitboxes"] = []
+        card["last_edit_action"] = None
+        return True
+
+    def _location_entry_label(self, location_id):
+        entity = self.world_model.get_entity(location_id) if self.world_model is not None else None
+        return self._location_display_label(entity, fallback=location_id)
+
+    def _format_location_period(self, entry):
+        start_year = entry.get("start_year")
+        end_year = entry.get("end_year")
+        if start_year is None and end_year is None:
+            return "any period"
+        if start_year is None:
+            return f"until {end_year}"
+        if end_year is None:
+            return f"from {start_year}"
+        if start_year == end_year:
+            return str(start_year)
+        return f"{start_year} - {end_year}"
+
+    def _build_location_matches(self, query_text, limit=7):
+        if self.world_model is None:
+            return []
+        query = str(query_text or "").strip().casefold()
+        entities = getattr(getattr(self.world_model, "loader", None), "entities", {}) or {}
+        matches = []
+        for entity_id, entity in entities.items():
+            if not self._is_location_entity(entity):
+                continue
+            label = self._location_display_label(entity, fallback=entity_id)
+            location_class = str(entity.get("location_class") or entity.get("type") or "location")
+            haystack = " ".join(
+                [
+                    str(entity_id),
+                    str(label),
+                    str(entity.get("pretty_name", "")),
+                    str(entity.get("name", "")),
+                    str(location_class),
+                ]
+            ).casefold()
+            if query and query not in haystack:
+                continue
+            label_folded = str(label).casefold()
+            id_folded = str(entity_id).casefold()
+            if query and (label_folded == query or id_folded == query):
+                rank = 0
+            elif query and (label_folded.startswith(query) or id_folded.startswith(query)):
+                rank = 1
+            elif query:
+                rank = 2
+            else:
+                rank = 3
+            matches.append(
+                {
+                    "id": str(entity_id),
+                    "label": str(label),
+                    "subtitle": f"{location_class.replace('_', ' ').title()} | {entity_id}",
+                    "rank": rank,
+                }
+            )
+        matches.sort(key=lambda item: (item["rank"], item["label"].casefold(), item["id"]))
+        return matches[:limit]
+
+    def refresh_location_matches(self, card):
+        if not card.get("location_input_active"):
+            card["location_matches"] = []
+            card["location_match_hitboxes"] = []
+            card["location_selected_index"] = 0
+            return
+        matches = self._build_location_matches(card.get("location_query", ""))
+        card["location_matches"] = matches
+        card["location_match_hitboxes"] = []
+        if not matches:
+            card["location_selected_index"] = 0
+            return
+        card["location_selected_index"] = max(0, min(int(card.get("location_selected_index", 0) or 0), len(matches) - 1))
+
+    def add_location_history_entry(self, card, location_id=None):
+        location_id = str(location_id or "").strip()
+        if not location_id:
+            matches = card.get("location_matches") or []
+            if matches:
+                index = max(0, min(int(card.get("location_selected_index", 0) or 0), len(matches) - 1))
+                location_id = str(matches[index].get("id") or "").strip()
+        if not location_id:
+            return False
+
+        entry = {"location_id": location_id}
+        start_year = self._coerce_location_year(card.get("location_start_buffer"))
+        end_year = self._coerce_location_year(card.get("location_end_buffer"))
+        if start_year is not None:
+            entry["start_year"] = start_year
+        if end_year is not None:
+            entry["end_year"] = end_year
+        if (
+            entry.get("start_year") is not None
+            and entry.get("end_year") is not None
+            and entry["end_year"] < entry["start_year"]
+        ):
+            entry["start_year"], entry["end_year"] = entry["end_year"], entry["start_year"]
+
+        entries = self._location_history_entries()
+        key = (entry.get("location_id"), entry.get("start_year"), entry.get("end_year"))
+        if not any((row.get("location_id"), row.get("start_year"), row.get("end_year")) == key for row in entries):
+            entries.append(entry)
+        self.entity["location_history"] = entries
+        self._sync_location_relation_fields()
+        card["location_query"] = ""
+        card["location_start_buffer"] = ""
+        card["location_end_buffer"] = ""
+        card["location_matches"] = []
+        card["location_match_hitboxes"] = []
+        card["location_selected_index"] = 0
+        card["location_input_active"] = False
+        card["last_edit_action"] = "commit"
+        card["last_committed_field"] = "location_history"
+        return True
+
+    def remove_location_history_entry(self, card, index):
+        entries = self._location_history_entries()
+        try:
+            index = int(index)
+        except (TypeError, ValueError):
+            return False
+        if index < 0 or index >= len(entries):
+            return False
+        entries.pop(index)
+        self.entity["location_history"] = entries
+        self._sync_location_relation_fields()
+        card["last_edit_action"] = "commit"
+        card["last_committed_field"] = "location_history"
+        return True
+
+    def toggle_location_mode(self, card):
+        mode = self._location_mode_value()
+        self.entity["location_mode"] = "multiple" if mode == "exclusive" else "exclusive"
+        card["last_edit_action"] = "commit"
+        card["last_committed_field"] = "location_mode"
+        return True
+
+    def _set_location_input_field(self, card, field_name):
+        card["location_input_active"] = True
+        card["location_active_field"] = field_name
+        card.setdefault("location_query", "")
+        card.setdefault("location_start_buffer", "")
+        card.setdefault("location_end_buffer", "")
+        self.refresh_location_matches(card)
+        return True
+
+    def _handle_location_keydown(self, card, event):
+        if self._is_location_mode() and self._is_location_card():
+            return self._handle_location_topology_keydown(card, event)
+
+        if not self._is_location_mode() or not card.get("location_input_active"):
+            return False
+
+        active_field = card.get("location_active_field") or "query"
+        if event.key == pygame.K_ESCAPE:
+            card["location_input_active"] = False
+            card["location_active_field"] = None
+            card["location_matches"] = []
+            card["location_match_hitboxes"] = []
+            card["last_edit_action"] = "cancel"
+            return True
+
+        if event.key == pygame.K_TAB:
+            order = ["query", "start", "end"]
+            direction = -1 if (event.mod & pygame.KMOD_SHIFT) else 1
+            current_index = order.index(active_field) if active_field in order else 0
+            card["location_active_field"] = order[(current_index + direction) % len(order)]
+            return True
+
+        matches = card.get("location_matches") or []
+        if active_field == "query" and event.key == pygame.K_UP and matches:
+            card["location_selected_index"] = max(0, int(card.get("location_selected_index", 0) or 0) - 1)
+            return True
+        if active_field == "query" and event.key == pygame.K_DOWN and matches:
+            card["location_selected_index"] = min(len(matches) - 1, int(card.get("location_selected_index", 0) or 0) + 1)
+            return True
+
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            if active_field == "query" and matches and not (event.mod & pygame.KMOD_SHIFT):
+                index = max(0, min(int(card.get("location_selected_index", 0) or 0), len(matches) - 1))
+                card["location_query"] = matches[index].get("label", matches[index].get("id", ""))
+                card["location_selected_id"] = matches[index].get("id")
+                card["location_active_field"] = "start"
+                return True
+            selected_id = card.get("location_selected_id")
+            if not selected_id and matches:
+                index = max(0, min(int(card.get("location_selected_index", 0) or 0), len(matches) - 1))
+                selected_id = matches[index].get("id")
+            return self.add_location_history_entry(card, selected_id)
+
+        if event.key == pygame.K_BACKSPACE:
+            if active_field == "query":
+                card["location_query"] = str(card.get("location_query", ""))[:-1]
+                card.pop("location_selected_id", None)
+                self.refresh_location_matches(card)
+            elif active_field == "start":
+                card["location_start_buffer"] = str(card.get("location_start_buffer", ""))[:-1]
+            elif active_field == "end":
+                card["location_end_buffer"] = str(card.get("location_end_buffer", ""))[:-1]
+            card["last_edit_action"] = "draft"
+            return True
+
+        if event.key == pygame.K_DELETE:
+            if active_field == "query":
+                card["location_query"] = ""
+                card.pop("location_selected_id", None)
+                self.refresh_location_matches(card)
+            elif active_field == "start":
+                card["location_start_buffer"] = ""
+            elif active_field == "end":
+                card["location_end_buffer"] = ""
+            card["last_edit_action"] = "draft"
+            return True
+
+        text = getattr(event, "unicode", "")
+        if text and text.isprintable():
+            if active_field == "query":
+                card["location_query"] = str(card.get("location_query", "")) + text
+                card.pop("location_selected_id", None)
+                self.refresh_location_matches(card)
+            elif active_field == "start":
+                if text.isdigit() or text in {"-", "+"}:
+                    card["location_start_buffer"] = str(card.get("location_start_buffer", "")) + text
+            elif active_field == "end":
+                if text.isdigit() or text in {"-", "+"}:
+                    card["location_end_buffer"] = str(card.get("location_end_buffer", "")) + text
+            card["last_edit_action"] = "draft"
+            return True
+
+        return False
+
+    def _handle_location_topology_keydown(self, card, event):
+        if not card.get("location_topology_input_active"):
+            return False
+
+        if event.key == pygame.K_ESCAPE:
+            card["location_topology_input_active"] = False
+            card["location_topology_active_field"] = None
+            card["location_topology_matches"] = []
+            card["location_topology_match_rows"] = []
+            card["last_edit_action"] = "cancel"
+            return True
+
+        matches = card.get("location_topology_matches") or []
+        if event.key == pygame.K_UP and matches:
+            card["location_topology_selected_index"] = max(
+                0,
+                int(card.get("location_topology_selected_index", 0) or 0) - 1,
+            )
+            return True
+        if event.key == pygame.K_DOWN and matches:
+            card["location_topology_selected_index"] = min(
+                len(matches) - 1,
+                int(card.get("location_topology_selected_index", 0) or 0) + 1,
+            )
+            return True
+
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            selected_id = card.get("location_topology_selected_id")
+            if not selected_id and matches:
+                index = max(0, min(int(card.get("location_topology_selected_index", 0) or 0), len(matches) - 1))
+                selected_id = matches[index].get("id")
+            return self.add_location_topology_relation(
+                card,
+                self._location_topology_match_field(card),
+                selected_id,
+            )
+
+        if event.key == pygame.K_BACKSPACE:
+            card["location_topology_query"] = str(card.get("location_topology_query", ""))[:-1]
+            card.pop("location_topology_selected_id", None)
+            self.refresh_location_topology_matches(card)
+            card["last_edit_action"] = None
+            return True
+
+        if event.key == pygame.K_DELETE:
+            card["location_topology_query"] = ""
+            card.pop("location_topology_selected_id", None)
+            self.refresh_location_topology_matches(card)
+            card["last_edit_action"] = None
+            return True
+
+        text = getattr(event, "unicode", "")
+        if text and text.isprintable():
+            card["location_topology_query"] = str(card.get("location_topology_query", "")) + text
+            card.pop("location_topology_selected_id", None)
+            self.refresh_location_topology_matches(card)
+            card["last_edit_action"] = None
+            return True
+
+        return False
+
+    def handle_location_click(self, card, mouse_pos):
+        if not self._is_location_mode():
+            return False
+
+        if self._is_location_card():
+            return self.handle_location_topology_click(card, mouse_pos)
+
+        if card.get("is_edit_mode", False):
+            mode_rect = card.get("location_mode_rect")
+            if mode_rect is not None and mode_rect.collidepoint(mouse_pos):
+                return self.toggle_location_mode(card)
+
+            for row in card.get("location_rows", []):
+                remove_rect = row.get("remove_rect")
+                if remove_rect is not None and remove_rect.collidepoint(mouse_pos):
+                    return self.remove_location_history_entry(card, row.get("index"))
+
+            for row in card.get("location_match_rows", []):
+                row_rect = row.get("rect")
+                if row_rect is not None and row_rect.collidepoint(mouse_pos):
+                    index = int(row.get("index", 0) or 0)
+                    matches = card.get("location_matches") or []
+                    if 0 <= index < len(matches):
+                        card["location_selected_index"] = index
+                        card["location_selected_id"] = matches[index].get("id")
+                        card["location_query"] = matches[index].get("label", matches[index].get("id", ""))
+                        card["location_active_field"] = "start"
+                        card["location_input_active"] = True
+                        return True
+
+            if card.get("location_query_rect") is not None and card["location_query_rect"].collidepoint(mouse_pos):
+                return self._set_location_input_field(card, "query")
+            if card.get("location_start_rect") is not None and card["location_start_rect"].collidepoint(mouse_pos):
+                return self._set_location_input_field(card, "start")
+            if card.get("location_end_rect") is not None and card["location_end_rect"].collidepoint(mouse_pos):
+                return self._set_location_input_field(card, "end")
+            if card.get("location_add_rect") is not None and card["location_add_rect"].collidepoint(mouse_pos):
+                selected_id = card.get("location_selected_id")
+                matches = card.get("location_matches") or []
+                if not selected_id and matches:
+                    index = max(0, min(int(card.get("location_selected_index", 0) or 0), len(matches) - 1))
+                    selected_id = matches[index].get("id")
+                return self.add_location_history_entry(card, selected_id)
+
+        return False
+
+    def handle_location_topology_click(self, card, mouse_pos):
+        if not card.get("is_edit_mode", False):
+            return False
+
+        place_rect = card.get("location_topology_place_rect")
+        if place_rect is not None and place_rect.collidepoint(mouse_pos):
+            card["pending_location_action"] = {
+                "id": "knowledge_place_location_on_parent",
+                "entity_id": card.get("entity_id") or self.entity.get("id"),
+            }
+            card["last_edit_action"] = None
+            return True
+
+        for row in card.get("location_topology_rows", []):
+            remove_rect = row.get("remove_rect")
+            if remove_rect is not None and remove_rect.collidepoint(mouse_pos):
+                return self.remove_location_topology_relation(
+                    card,
+                    row.get("field_key"),
+                    row.get("location_id"),
+                )
+
+        for row in card.get("location_topology_match_rows", []):
+            row_rect = row.get("rect")
+            if row_rect is not None and row_rect.collidepoint(mouse_pos):
+                index = int(row.get("index", 0) or 0)
+                matches = card.get("location_topology_matches") or []
+                if 0 <= index < len(matches):
+                    card["location_topology_selected_index"] = index
+                    card["location_topology_selected_id"] = matches[index].get("id")
+                    card["location_topology_query"] = matches[index].get("label", matches[index].get("id", ""))
+                    card["location_topology_input_active"] = True
+                    card["location_topology_active_field"] = row.get("field_key") or self._location_topology_match_field(card)
+                    card["last_edit_action"] = None
+                    return True
+
+        for field_key, input_rect in (card.get("location_topology_input_rects") or {}).items():
+            if input_rect is not None and input_rect.collidepoint(mouse_pos):
+                return self._set_location_topology_input_field(card, field_key)
+
+        for field_key, add_rect in (card.get("location_topology_add_rects") or {}).items():
+            if add_rect is not None and add_rect.collidepoint(mouse_pos):
+                selected_id = card.get("location_topology_selected_id")
+                matches = card.get("location_topology_matches") or []
+                if not selected_id and matches:
+                    index = max(0, min(int(card.get("location_topology_selected_index", 0) or 0), len(matches) - 1))
+                    selected_id = matches[index].get("id")
+                return self.add_location_topology_relation(card, field_key, selected_id)
+
+        return False
+
+    def _layout_location_topology_content(self, card, content_left, current_y, text_width):
+        row_gap = 6
+        card["location_topology_rows"] = []
+        card["location_topology_section_rects"] = {}
+        card["location_topology_input_rects"] = {}
+        card["location_topology_add_rects"] = {}
+        card["location_topology_match_rows"] = []
+        card["location_topology_place_rect"] = None
+
+        if card.get("is_edit_mode", False):
+            place_rect = pygame.Rect(content_left, current_y, min(172, text_width), 24)
+            card["location_topology_place_rect"] = place_rect
+            current_y = place_rect.bottom + row_gap + 4
+
+        for field_key in self.LOCATION_TOPOLOGY_FIELDS:
+            section_rect = pygame.Rect(content_left, current_y, text_width, self.SECTION_HEADER_H)
+            card["location_topology_section_rects"][field_key] = section_rect
+            current_y = section_rect.bottom + self.SECTION_GAP + 4
+
+            ids = self._location_topology_ids(self.entity, field_key)
+            if not ids:
+                empty_rect = pygame.Rect(content_left, current_y, text_width, 30)
+                card["location_topology_rows"].append(
+                    {
+                        "kind": "empty",
+                        "field_key": field_key,
+                        "rect": empty_rect,
+                    }
+                )
+                current_y = empty_rect.bottom + row_gap
+            else:
+                for location_id in ids:
+                    row_rect = pygame.Rect(content_left, current_y, text_width, 34)
+                    remove_rect = None
+                    if card.get("is_edit_mode", False):
+                        remove_rect = pygame.Rect(row_rect.right - 24, row_rect.y + 8, 18, 18)
+                    card["location_topology_rows"].append(
+                        {
+                            "kind": "entry",
+                            "field_key": field_key,
+                            "location_id": location_id,
+                            "rect": row_rect,
+                            "remove_rect": remove_rect,
+                        }
+                    )
+                    current_y = row_rect.bottom + row_gap
+
+            if card.get("is_edit_mode", False):
+                input_h = 24
+                add_w = 44
+                gap = 6
+                input_rect = pygame.Rect(content_left, current_y, max(100, text_width - add_w - gap), input_h)
+                add_rect = pygame.Rect(input_rect.right + gap, current_y, add_w, input_h)
+                card["location_topology_input_rects"][field_key] = input_rect
+                card["location_topology_add_rects"][field_key] = add_rect
+                current_y = input_rect.bottom + 4
+
+                if (
+                    card.get("location_topology_input_active")
+                    and self._location_topology_match_field(card) == field_key
+                ):
+                    for index, match in enumerate((card.get("location_topology_matches") or [])[:5]):
+                        row_rect = pygame.Rect(input_rect.x, current_y, min(text_width, input_rect.width + 160), 22)
+                        card["location_topology_match_rows"].append(
+                            {
+                                "index": index,
+                                "field_key": field_key,
+                                "match": match,
+                                "rect": row_rect,
+                            }
+                        )
+                        current_y = row_rect.bottom + 2
+                current_y += row_gap
+
+            current_y += 6
+
+        return current_y
+
+    def _layout_location_content(self, card, content_left, current_y, text_width):
+        if self._is_location_card():
+            return self._layout_location_topology_content(card, content_left, current_y, text_width)
+
+        font = card["layout_font"]
+        line_h = self._table_line_height(font)
+        row_gap = 6
+        card["location_rows"] = []
+        card["location_mode_rect"] = None
+        card["location_query_rect"] = None
+        card["location_start_rect"] = None
+        card["location_end_rect"] = None
+        card["location_add_rect"] = None
+        card["location_match_rows"] = []
+
+        header_rect = pygame.Rect(content_left, current_y, text_width, self.SECTION_HEADER_H)
+        card["location_section_rect"] = header_rect
+        current_y = header_rect.bottom + self.SECTION_GAP + 4
+
+        mode_rect = pygame.Rect(content_left, current_y, min(260, text_width), 24)
+        card["location_mode_rect"] = mode_rect
+        current_y = mode_rect.bottom + row_gap
+
+        entries = self._location_history_entries()
+        if not entries:
+            empty_rect = pygame.Rect(content_left, current_y, text_width, 34)
+            card["location_rows"].append({"kind": "empty", "rect": empty_rect})
+            current_y = empty_rect.bottom + row_gap
+        else:
+            for index, entry in enumerate(entries):
+                row_rect = pygame.Rect(content_left, current_y, text_width, 38)
+                remove_rect = None
+                if card.get("is_edit_mode", False):
+                    remove_rect = pygame.Rect(row_rect.right - 24, row_rect.y + 8, 18, 18)
+                card["location_rows"].append(
+                    {
+                        "kind": "entry",
+                        "index": index,
+                        "entry": entry,
+                        "rect": row_rect,
+                        "remove_rect": remove_rect,
+                    }
+                )
+                current_y = row_rect.bottom + row_gap
+
+        if card.get("is_edit_mode", False):
+            current_y += 2
+            query_w = max(120, int(text_width * 0.46))
+            year_w = max(58, min(76, int(text_width * 0.17)))
+            add_w = 44
+            gap = 6
+            total_w = query_w + year_w * 2 + add_w + gap * 3
+            if total_w > text_width:
+                query_w = max(90, text_width - year_w * 2 - add_w - gap * 3)
+            input_h = 24
+            query_rect = pygame.Rect(content_left, current_y, query_w, input_h)
+            start_rect = pygame.Rect(query_rect.right + gap, current_y, year_w, input_h)
+            end_rect = pygame.Rect(start_rect.right + gap, current_y, year_w, input_h)
+            add_rect = pygame.Rect(end_rect.right + gap, current_y, add_w, input_h)
+            card["location_query_rect"] = query_rect
+            card["location_start_rect"] = start_rect
+            card["location_end_rect"] = end_rect
+            card["location_add_rect"] = add_rect
+            current_y = query_rect.bottom + 4
+
+            matches = card.get("location_matches") or []
+            for index, match in enumerate(matches[:5]):
+                row_rect = pygame.Rect(query_rect.x, current_y, min(text_width, query_rect.width + 180), 22)
+                card["location_match_rows"].append({"index": index, "match": match, "rect": row_rect})
+                current_y = row_rect.bottom + 2
+
+            current_y += row_gap
+
+        return current_y
+
+    def _draw_location_content(self, screen, font, card):
+        if self._is_location_card():
+            self._draw_location_topology_content(screen, font, card)
+            return
+
+        content_clip = card.get("content_viewport_rect")
+        section_rect = card.get("location_section_rect")
+        if section_rect is not None:
+            pygame.draw.rect(screen, (34, 38, 48), section_rect)
+            pygame.draw.rect(screen, (86, 96, 116), section_rect, 1)
+            title = font.render("Location History", True, (232, 236, 244))
+            screen.blit(title, (section_rect.x + 8, section_rect.y + 3))
+
+        mode_rect = card.get("location_mode_rect")
+        if mode_rect is not None:
+            mode = self._location_mode_value()
+            mode_label = "Exclusive location" if mode == "exclusive" else "Multiple locations"
+            pygame.draw.rect(screen, (38, 44, 58), mode_rect)
+            pygame.draw.rect(screen, (116, 132, 160), mode_rect, 1)
+            screen.blit(font.render(mode_label, True, (230, 234, 242)), (mode_rect.x + 8, mode_rect.y + 4))
+
+        for row in card.get("location_rows", []):
+            row_rect = row.get("rect")
+            if row_rect is None or (content_clip is not None and not row_rect.colliderect(content_clip)):
+                continue
+            pygame.draw.rect(screen, (30, 34, 44), row_rect)
+            pygame.draw.rect(screen, (82, 92, 112), row_rect, 1)
+            if row.get("kind") == "empty":
+                screen.blit(font.render("No related locations yet", True, (150, 160, 178)), (row_rect.x + 8, row_rect.y + 9))
+                continue
+
+            entry = row.get("entry") or {}
+            location_id = str(entry.get("location_id") or "")
+            label = self._ellipsize_text(self._location_entry_label(location_id), font, row_rect.width - 150)
+            period = self._format_location_period(entry)
+            screen.blit(font.render(label, True, (238, 240, 246)), (row_rect.x + 8, row_rect.y + 5))
+            screen.blit(font.render(period, True, (176, 188, 208)), (row_rect.x + 8, row_rect.y + 20))
+            remove_rect = row.get("remove_rect")
+            if remove_rect is not None:
+                pygame.draw.rect(screen, (70, 40, 46), remove_rect)
+                pygame.draw.rect(screen, (178, 116, 124), remove_rect, 1)
+                remove_text = font.render("x", True, (250, 220, 224))
+                screen.blit(remove_text, remove_text.get_rect(center=remove_rect.center))
+
+        if not card.get("is_edit_mode", False):
+            return
+
+        active_field = card.get("location_active_field")
+
+        def draw_input(rect, value, placeholder, field_name):
+            if rect is None:
+                return
+            active = bool(card.get("location_input_active")) and active_field == field_name
+            pygame.draw.rect(screen, (40, 46, 60) if active else (30, 34, 44), rect)
+            pygame.draw.rect(screen, (190, 208, 236) if active else (94, 104, 124), rect, 1)
+            text = str(value or "")
+            display = text if text else placeholder
+            color = (238, 240, 246) if text else (132, 142, 160)
+            display = self._ellipsize_text(display, font, rect.width - 12)
+            screen.blit(font.render(display, True, color), (rect.x + 6, rect.y + 4))
+
+        draw_input(card.get("location_query_rect"), card.get("location_query", ""), "Search location", "query")
+        draw_input(card.get("location_start_rect"), card.get("location_start_buffer", ""), "start", "start")
+        draw_input(card.get("location_end_rect"), card.get("location_end_buffer", ""), "end", "end")
+
+        add_rect = card.get("location_add_rect")
+        if add_rect is not None:
+            pygame.draw.rect(screen, (54, 70, 98), add_rect)
+            pygame.draw.rect(screen, (150, 172, 210), add_rect, 1)
+            add_text = font.render("Add", True, (244, 246, 250))
+            screen.blit(add_text, add_text.get_rect(center=add_rect.center))
+
+        selected_index = int(card.get("location_selected_index", 0) or 0)
+        for row in card.get("location_match_rows", []):
+            row_rect = row.get("rect")
+            if row_rect is None:
+                continue
+            index = int(row.get("index", 0))
+            match = row.get("match") or {}
+            selected = index == selected_index
+            pygame.draw.rect(screen, (52, 64, 86) if selected else (31, 36, 48), row_rect)
+            pygame.draw.rect(screen, (138, 164, 206) if selected else (72, 82, 104), row_rect, 1)
+            label = self._ellipsize_text(match.get("label", ""), font, row_rect.width - 120)
+            subtitle = self._ellipsize_text(match.get("subtitle", ""), font, 110)
+            screen.blit(font.render(label, True, (240, 244, 250) if selected else (188, 198, 216)), (row_rect.x + 6, row_rect.y + 3))
+            if subtitle:
+                subtitle_surface = font.render(subtitle, True, (176, 188, 208))
+                screen.blit(subtitle_surface, (row_rect.right - subtitle_surface.get_width() - 6, row_rect.y + 3))
+
+    def _draw_location_topology_content(self, screen, font, card):
+        content_clip = card.get("content_viewport_rect")
+
+        place_rect = card.get("location_topology_place_rect")
+        if place_rect is not None:
+            pygame.draw.rect(screen, (46, 60, 84), place_rect)
+            pygame.draw.rect(screen, (148, 170, 210), place_rect, 1)
+            place_text = font.render("Place On Parent", True, (242, 246, 252))
+            screen.blit(place_text, place_text.get_rect(center=place_rect.center))
+
+        for field_key in self.LOCATION_TOPOLOGY_FIELDS:
+            section_rect = (card.get("location_topology_section_rects") or {}).get(field_key)
+            if section_rect is not None:
+                pygame.draw.rect(screen, (34, 38, 48), section_rect)
+                pygame.draw.rect(screen, (86, 96, 116), section_rect, 1)
+                title = self.LOCATION_TOPOLOGY_LABELS.get(field_key, field_key.title())
+                screen.blit(font.render(title, True, (232, 236, 244)), (section_rect.x + 8, section_rect.y + 3))
+                help_text = self.LOCATION_TOPOLOGY_HELP.get(field_key, "")
+                if help_text:
+                    help_surface = font.render(
+                        self._ellipsize_text(help_text, font, max(20, section_rect.width - 140)),
+                        True,
+                        (158, 170, 190),
+                    )
+                    screen.blit(help_surface, (section_rect.right - help_surface.get_width() - 8, section_rect.y + 3))
+
+        for row in card.get("location_topology_rows", []):
+            row_rect = row.get("rect")
+            if row_rect is None or (content_clip is not None and not row_rect.colliderect(content_clip)):
+                continue
+            pygame.draw.rect(screen, (30, 34, 44), row_rect)
+            pygame.draw.rect(screen, (82, 92, 112), row_rect, 1)
+            if row.get("kind") == "empty":
+                label = f"No {self.LOCATION_TOPOLOGY_LABELS.get(row.get('field_key'), 'locations').lower()} yet"
+                screen.blit(font.render(label, True, (150, 160, 178)), (row_rect.x + 8, row_rect.y + 7))
+                continue
+
+            location_id = str(row.get("location_id") or "")
+            label = self._ellipsize_text(self._location_entry_label(location_id), font, row_rect.width - 120)
+            subtitle = self._ellipsize_text(location_id, font, 100)
+            screen.blit(font.render(label, True, (238, 240, 246)), (row_rect.x + 8, row_rect.y + 8))
+            subtitle_surface = font.render(subtitle, True, (176, 188, 208))
+            screen.blit(subtitle_surface, (row_rect.right - subtitle_surface.get_width() - 34, row_rect.y + 8))
+            remove_rect = row.get("remove_rect")
+            if remove_rect is not None:
+                pygame.draw.rect(screen, (70, 40, 46), remove_rect)
+                pygame.draw.rect(screen, (178, 116, 124), remove_rect, 1)
+                remove_text = font.render("x", True, (250, 220, 224))
+                screen.blit(remove_text, remove_text.get_rect(center=remove_rect.center))
+
+        if not card.get("is_edit_mode", False):
+            return
+
+        active_field = self._location_topology_match_field(card)
+        for field_key, input_rect in (card.get("location_topology_input_rects") or {}).items():
+            active = bool(card.get("location_topology_input_active")) and active_field == field_key
+            pygame.draw.rect(screen, (40, 46, 60) if active else (30, 34, 44), input_rect)
+            pygame.draw.rect(screen, (190, 208, 236) if active else (94, 104, 124), input_rect, 1)
+            query = str(card.get("location_topology_query", "")) if active else ""
+            display = query if query else "Search location"
+            color = (238, 240, 246) if query else (132, 142, 160)
+            screen.blit(
+                font.render(self._ellipsize_text(display, font, input_rect.width - 12), True, color),
+                (input_rect.x + 6, input_rect.y + 4),
+            )
+
+        for add_rect in (card.get("location_topology_add_rects") or {}).values():
+            pygame.draw.rect(screen, (54, 70, 98), add_rect)
+            pygame.draw.rect(screen, (150, 172, 210), add_rect, 1)
+            add_text = font.render("Add", True, (244, 246, 250))
+            screen.blit(add_text, add_text.get_rect(center=add_rect.center))
+
+        active_virtual_field = str(card.get("active_edit_field") or "")
+        active_topology_field = self._location_topology_field_from_virtual(active_virtual_field)
+        if active_topology_field:
+            anchor_rect = (card.get("location_topology_input_rects") or {}).get(active_topology_field)
+            if anchor_rect is not None and card.get("relation_picker_open", False):
+                self._draw_relation_picker(screen, font, card, anchor_rect)
+
+        selected_index = int(card.get("location_topology_selected_index", 0) or 0)
+        for row in card.get("location_topology_match_rows", []):
+            row_rect = row.get("rect")
+            if row_rect is None:
+                continue
+            index = int(row.get("index", 0))
+            match = row.get("match") or {}
+            selected = index == selected_index
+            pygame.draw.rect(screen, (52, 64, 86) if selected else (31, 36, 48), row_rect)
+            pygame.draw.rect(screen, (138, 164, 206) if selected else (72, 82, 104), row_rect, 1)
+            label = self._ellipsize_text(match.get("label", ""), font, row_rect.width - 120)
+            subtitle = self._ellipsize_text(match.get("subtitle", ""), font, 110)
+            screen.blit(font.render(label, True, (240, 244, 250) if selected else (188, 198, 216)), (row_rect.x + 6, row_rect.y + 3))
+            if subtitle:
+                subtitle_surface = font.render(subtitle, True, (176, 188, 208))
+                screen.blit(subtitle_surface, (row_rect.right - subtitle_surface.get_width() - 6, row_rect.y + 3))
 
     def _field_spec(self, field_key):
         return self._normalize_field_spec(self._get_schema_field_specs().get(field_key, {}))
@@ -448,6 +1524,8 @@ class EntityCard:
         return {}
 
     def is_relation_edit_field(self, field_key):
+        if self.is_location_topology_relation_field(field_key):
+            return True
         if field_key in self.CORE_RELATION_FIELDS:
             return True
         spec = self._field_spec(field_key)
@@ -458,12 +1536,16 @@ class EntityCard:
         return "entity" in field_type or field_type in {"idea", "idea_list"}
 
     def _relation_field_allows_many(self, field_key):
+        if self.is_location_topology_relation_field(field_key):
+            return True
         if field_key in self.CORE_RELATION_FIELDS:
             return True
         field_type = str(self._field_spec(field_key).get("type", "")).lower()
         return "list" in field_type
 
     def _relation_field_target(self, field_key):
+        if self.is_location_topology_relation_field(field_key):
+            return "locations"
         if field_key in self.CORE_RELATION_FIELDS:
             return "entity_core"
         spec = self._field_spec(field_key)
@@ -780,10 +1862,11 @@ class EntityCard:
             if value:
                 return value
             return self._card_color_hex("body")
-        if role == "wiki":
+        if role in {"wiki", "wiki_alt"}:
             section_id = str(section_id or "").strip()
             colors = self._wiki_field_colors()
-            value = str(colors.get(section_id) or colors.get("default") or "").strip()
+            color_key = "alternate" if role == "wiki_alt" else section_id
+            value = str(colors.get(color_key) or colors.get("default") or "").strip()
             if value:
                 return value
             return "#222632"
@@ -1011,6 +2094,108 @@ class EntityCard:
 
         return ""
 
+    def _working_year_wiki_stub(self, card=None):
+        if card is None:
+            return ""
+        year_range = self._timeline_snapshot_range(card)
+        if year_range is None:
+            return ""
+        start_year, end_year = year_range
+        title = str(card.get("title") or self._location_display_label(self.entity, fallback=self.entity.get("id"))).strip()
+        if not title:
+            return ""
+        if start_year == end_year:
+            return f"{title} in the Year {start_year}"
+        return f"{title} in the Period {start_year} - {end_year}"
+
+    def _timeline_snapshot_range(self, card=None):
+        if card is None:
+            return None
+        year_range = card.get("active_timeline_snapshot_range") or card.get("working_year_range")
+        if not isinstance(year_range, (list, tuple)) or len(year_range) != 2:
+            selected_year = card.get("selected_year")
+            if selected_year is None:
+                return None
+            year_range = (selected_year, selected_year)
+        try:
+            start_year = int(year_range[0])
+            end_year = int(year_range[1])
+        except (TypeError, ValueError):
+            return None
+        if end_year < start_year:
+            start_year, end_year = end_year, start_year
+        return start_year, end_year
+
+    def _timeline_snapshot_entries(self):
+        raw_entries = self.entity.get("timeline_snapshots")
+        if isinstance(raw_entries, dict):
+            entries = []
+            for key, value in raw_entries.items():
+                parts = str(key).split("-", 1)
+                try:
+                    start_year = int(parts[0])
+                    end_year = int(parts[1]) if len(parts) > 1 else start_year
+                except (TypeError, ValueError):
+                    continue
+                entries.append({"start_year": start_year, "end_year": end_year, "wiki_entry": str(value or "")})
+            return entries
+        if isinstance(raw_entries, list):
+            return [entry for entry in raw_entries if isinstance(entry, dict)]
+        return []
+
+    def _timeline_snapshot_text(self, card=None):
+        if card is not None and card.get("is_edit_mode", False) and card.get("active_edit_field") == self.TIMELINE_SNAPSHOT_FIELD:
+            return card.get("edit_buffer", "")
+        if card is not None:
+            draft_buffer = card.get("draft_edit_buffers", {}).get(self.TIMELINE_SNAPSHOT_FIELD)
+            if isinstance(draft_buffer, dict) and "text" in draft_buffer:
+                return str(draft_buffer.get("text", ""))
+        year_range = self._timeline_snapshot_range(card)
+        if year_range is None:
+            return ""
+        start_year, end_year = year_range
+        for entry in self._timeline_snapshot_entries():
+            try:
+                entry_start = int(entry.get("start_year"))
+                entry_end = int(entry.get("end_year", entry_start))
+            except (TypeError, ValueError):
+                continue
+            if entry_start == start_year and entry_end == end_year:
+                text = str(entry.get("wiki_entry") or "")
+                return text if text.strip() else self._working_year_wiki_stub(card)
+        return self._working_year_wiki_stub(card)
+
+    def _set_timeline_snapshot_text(self, card, text):
+        year_range = self._timeline_snapshot_range(card)
+        if year_range is None:
+            return False
+        start_year, end_year = year_range
+        entries = []
+        replaced = False
+        for entry in self._timeline_snapshot_entries():
+            try:
+                entry_start = int(entry.get("start_year"))
+                entry_end = int(entry.get("end_year", entry_start))
+            except (TypeError, ValueError):
+                continue
+            normalized = dict(entry)
+            if entry_start == start_year and entry_end == end_year:
+                normalized["start_year"] = start_year
+                normalized["end_year"] = end_year
+                normalized["wiki_entry"] = str(text or "")
+                replaced = True
+            entries.append(normalized)
+        if not replaced:
+            entries.append(
+                {
+                    "start_year": start_year,
+                    "end_year": end_year,
+                    "wiki_entry": str(text or ""),
+                }
+            )
+        self.entity["timeline_snapshots"] = entries
+        return True
+
     def _task_is_finished(self):
         return str(self.entity.get("entry_status") or "").strip().lower() in {
             "finished",
@@ -1150,6 +2335,12 @@ class EntityCard:
         ]
         years = [year for year in years if year is not None]
         if not years:
+            for period in self._temporal_period_entries():
+                for key in ("start_year", "end_year"):
+                    year = self._coerce_period_year(period.get(key))
+                    if year is not None:
+                        years.append(year)
+        if not years:
             return None
         return (min(years), max(years))
 
@@ -1160,6 +2351,56 @@ class EntityCard:
         duration = abs(timeline_range[1] - timeline_range[0])
         unit = "year" if duration == 1 else "years"
         return f"{duration} {unit}"
+
+    def _timeline_year_commentaries(self):
+        commentaries = {}
+        for field_key, year_key, label in (
+            ("start_commentary", "start_year", "Start"),
+            ("start_event", "start_year", "Start"),
+            ("end_commentary", "end_year", "End"),
+            ("end_event", "end_year", "End"),
+        ):
+            text = str(self.entity.get(field_key) or "").strip()
+            year = self._coerce_timeline_year(self.entity.get(year_key))
+            if not text or year is None:
+                continue
+            rendered = f"{label}: {text}"
+            commentaries.setdefault(year, [])
+            if rendered not in commentaries[year]:
+                commentaries[year].append(rendered)
+        return commentaries
+
+    def _temporal_period_timeline_entries(self, card=None):
+        card_range = self._card_timeline_range(card or {})
+        entries = []
+        for period in self._temporal_period_entries():
+            start_year = self._coerce_period_year(period.get("start_year"))
+            end_year = self._coerce_period_year(period.get("end_year"))
+            if start_year is None and end_year is None:
+                continue
+            if start_year is None:
+                start_year = end_year
+            if end_year is None:
+                end_year = start_year
+            if end_year < start_year:
+                start_year, end_year = end_year, start_year
+            if card_range is not None and (end_year < card_range[0] or start_year > card_range[1]):
+                continue
+            entry = {
+                "label": str(period.get("label") or "Period"),
+                "start_year": start_year,
+                "end_year": end_year,
+                "commentary": str(period.get("commentary") or "").strip(),
+            }
+            predecessor = str(period.get("predecessor") or "").strip()
+            successor = str(period.get("successor") or "").strip()
+            if predecessor:
+                entry["predecessor"] = predecessor
+            if successor:
+                entry["successor"] = successor
+            entries.append(entry)
+        entries.sort(key=lambda entry: (entry["start_year"], entry["end_year"], entry["label"].lower()))
+        return entries
 
     def _collect_relation_refs_from_value(self, value):
         refs = []
@@ -1289,6 +2530,9 @@ class EntityCard:
         if self._simulation_section_for_key(field_key):
             return False
 
+        if field_key in {"start_commentary", "end_commentary", "start_event", "end_event", "temporal_periods"}:
+            return True
+
         if field_key in self.TEMPORAL_FIELDS:
             return True
 
@@ -1320,6 +2564,10 @@ class EntityCard:
         return key in {"year", "year_number", "start_year", "end_year", "effective_year"} or key.endswith("_year")
 
     def _is_field_editable(self, field_key, value, schema_field_specs):
+        if field_key == self.TIMELINE_SNAPSHOT_FIELD:
+            return True
+        if field_key == "temporal_periods":
+            return True
         if field_key in {"name", "common_name"}:
             return True
 
@@ -1519,12 +2767,254 @@ class EntityCard:
         sections["Simulation / Space Sim"] = space_sim_values
         return sections
 
+    def _is_temporal_period_entry(self, value):
+        return isinstance(value, dict) and (
+            "label" in value
+            or "start_year" in value
+            or "end_year" in value
+            or "commentary" in value
+        )
+
+    def _coerce_period_year(self, value):
+        if value in (None, ""):
+            return None
+        parsed = parse_year(value)
+        if parsed is not None:
+            return parsed
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _normalize_temporal_period(self, value):
+        if not isinstance(value, dict):
+            return None
+        label = str(value.get("label") or value.get("name") or value.get("phase") or "Period").strip()
+        start_year = self._coerce_period_year(value.get("start_year") if value.get("start_year") is not None else value.get("start"))
+        end_year = self._coerce_period_year(value.get("end_year") if value.get("end_year") is not None else value.get("end"))
+        commentary = str(value.get("commentary") or value.get("note") or value.get("description") or "").strip()
+        if not label and start_year is None and end_year is None and not commentary:
+            return None
+        normalized = {"label": label or "Period"}
+        if start_year is not None:
+            normalized["start_year"] = start_year
+        if end_year is not None:
+            normalized["end_year"] = end_year
+        if commentary:
+            normalized["commentary"] = commentary
+        predecessor = str(value.get("predecessor") or value.get("predecessor_id") or value.get("previous") or "").strip()
+        successor = str(value.get("successor") or value.get("successor_id") or value.get("next") or "").strip()
+        if predecessor:
+            normalized["predecessor"] = predecessor
+        if successor:
+            normalized["successor"] = successor
+        return normalized
+
+    def _temporal_period_entries(self):
+        entries = []
+        for raw_entry in self.entity.get("temporal_periods") or []:
+            entry = self._normalize_temporal_period(raw_entry)
+            if entry is not None:
+                entries.append(entry)
+        return entries
+
+    def _format_temporal_period_line(self, entry):
+        entry = self._normalize_temporal_period(entry) or {"label": "Period"}
+        label = str(entry.get("label") or "Period").strip()
+        start_year = entry.get("start_year")
+        end_year = entry.get("end_year")
+        commentary = str(entry.get("commentary") or "").strip()
+        descriptor = commentary or label or "Period"
+        parts = [
+            descriptor,
+            "" if start_year is None else str(start_year),
+            "" if end_year is None else str(end_year),
+        ]
+        predecessor = str(entry.get("predecessor") or "").strip()
+        successor = str(entry.get("successor") or "").strip()
+        if predecessor:
+            parts.append(f"predecessor={predecessor}")
+        if successor:
+            parts.append(f"successor={successor}")
+        return " | ".join(parts)
+
+    def _split_temporal_period_line(self, text):
+        parts = []
+        current = []
+        bracket_depth = 0
+        index = 0
+        text = str(text or "")
+        while index < len(text):
+            if text.startswith("[[", index):
+                bracket_depth += 1
+                current.append("[[")
+                index += 2
+                continue
+            if text.startswith("]]", index) and bracket_depth:
+                bracket_depth -= 1
+                current.append("]]")
+                index += 2
+                continue
+            character = text[index]
+            if character == "|" and bracket_depth == 0:
+                parts.append("".join(current).strip())
+                current = []
+            else:
+                current.append(character)
+            index += 1
+        parts.append("".join(current).strip())
+        return parts
+
+    def _parse_temporal_period_line(self, line):
+        text = str(line or "").strip()
+        if not text:
+            return None
+        parts = self._split_temporal_period_line(text)
+        head = parts[0]
+        commentary = " | ".join(part for part in parts[1:] if part).strip()
+
+        label = ""
+        date_text = ""
+        predecessor = ""
+        successor = ""
+        if len(parts) >= 3:
+            label = "Period"
+            commentary = head
+            start_year = self._coerce_period_year(parts[1])
+            end_year = self._coerce_period_year(parts[2])
+            for extra in parts[3:]:
+                key, _, value = extra.partition("=")
+                key = key.strip().lower()
+                value = value.strip()
+                if key in {"predecessor", "previous", "prev"}:
+                    predecessor = value
+                elif key in {"successor", "next"}:
+                    successor = value
+            entry = {"label": label}
+            if start_year is not None:
+                entry["start_year"] = start_year
+            if end_year is not None:
+                entry["end_year"] = end_year
+            if commentary:
+                entry["commentary"] = commentary
+            if predecessor:
+                entry["predecessor"] = predecessor
+            if successor:
+                entry["successor"] = successor
+            return entry
+
+        if ":" in head:
+            label, date_text = [part.strip() for part in head.split(":", 1)]
+        elif len(parts) >= 2:
+            label = head
+            date_text = parts[1]
+            commentary = " | ".join(part for part in parts[2:] if part).strip()
+        else:
+            label = head
+
+        start_year = None
+        end_year = None
+        normalized_date = date_text.replace("to", "-")
+        if normalized_date:
+            if normalized_date.lower().startswith("until "):
+                end_year = self._coerce_period_year(normalized_date[6:].strip())
+            elif "-" in normalized_date:
+                start_text, end_text = [part.strip() for part in normalized_date.split("-", 1)]
+                start_year = self._coerce_period_year(start_text)
+                end_year = self._coerce_period_year(end_text)
+            else:
+                start_year = self._coerce_period_year(normalized_date)
+                end_year = start_year
+
+        entry = {"label": label or "Period"}
+        if start_year is not None:
+            entry["start_year"] = start_year
+        if end_year is not None:
+            entry["end_year"] = end_year
+        if commentary:
+            entry["commentary"] = commentary
+        if predecessor:
+            entry["predecessor"] = predecessor
+        if successor:
+            entry["successor"] = successor
+        return entry
+
+    def _parse_temporal_periods(self, buffer_text):
+        entries = []
+        for line in str(buffer_text or "").splitlines():
+            entry = self._parse_temporal_period_line(line)
+            if entry is not None:
+                entries.append(entry)
+        return entries
+
+    def timeline_year_from_period_click(self, card, mouse_x):
+        context = card.get("temporal_period_click_context")
+        if not isinstance(context, dict):
+            return None
+        try:
+            left_x = int(context["left_x"])
+            right_x = int(context["right_x"])
+            start_year = int(context["start_year"])
+            end_year = int(context["end_year"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        if right_x <= left_x:
+            return start_year
+        ratio = (int(mouse_x) - left_x) / float(right_x - left_x)
+        ratio = max(0.0, min(1.0, ratio))
+        return int(round(start_year + ratio * (end_year - start_year)))
+
+    def handle_temporal_period_timeline_click(self, card, mouse_pos):
+        if not isinstance(card, dict) or not card.get("is_edit_mode", False):
+            return None
+        click_rect = card.get("temporal_period_click_rect")
+        if click_rect is None or not click_rect.collidepoint(mouse_pos):
+            return None
+
+        clicked_year = self.timeline_year_from_period_click(card, mouse_pos[0])
+        if clicked_year is None:
+            return None
+
+        pending_start = card.get("pending_temporal_period_start")
+        if pending_start is None:
+            card["pending_temporal_period_start"] = clicked_year
+            card["timeline_period_status"] = f"Period start {clicked_year}"
+            return "pending"
+
+        try:
+            start_year = int(pending_start)
+        except (TypeError, ValueError):
+            start_year = clicked_year
+        end_year = clicked_year
+        if end_year < start_year:
+            start_year, end_year = end_year, start_year
+
+        periods = self._temporal_period_entries()
+        period_index = len(periods) + 1
+        periods.append(
+            {
+                "label": f"Period {period_index}",
+                "start_year": start_year,
+                "end_year": end_year,
+            }
+        )
+        self.entity["temporal_periods"] = periods
+        card.pop("pending_temporal_period_start", None)
+        card["timeline_period_status"] = f"Added Period {period_index}: {start_year}-{end_year}"
+        if card.get("active_edit_field") == "temporal_periods":
+            card["edit_buffer"] = self._format_value(periods)
+            card["edit_cursor"] = len(card["edit_buffer"])
+        card["last_edit_action"] = "commit"
+        return "commit"
+
     def _format_value(self, value):
         if value is None:
             return ""
         if isinstance(value, dict):
             return "\n".join(f"{k}: {v}" for k, v in value.items())
         if isinstance(value, list):
+            if value and all(isinstance(item, dict) and self._is_temporal_period_entry(item) for item in value):
+                return "\n".join(self._format_temporal_period_line(item) for item in value)
             if value and all(isinstance(item, dict) and "id" in item for item in value):
                 return "\n".join(self._format_offspring_node(item) for item in value)
             return "\n".join(f"- {item}" for item in value) if value else "[]"
@@ -1550,10 +3040,14 @@ class EntityCard:
         if value is None:
             return ""
         if isinstance(value, list):
+            if value and all(isinstance(item, dict) and self._is_temporal_period_entry(item) for item in value):
+                return "\n".join(self._format_temporal_period_line(item) for item in value)
             return "\n".join(str(item) for item in value)
         return str(value)
 
     def _initial_edit_buffer(self, field_key, value):
+        if field_key == self.TIMELINE_SNAPSHOT_FIELD:
+            return self._timeline_snapshot_text(value if isinstance(value, dict) else None)
         if field_key == "wiki_entry" and not (isinstance(value, str) and value.strip()):
             fallback_text = self._get_general_wiki_text()
             if fallback_text and fallback_text != CardWikiRenderer.EMPTY_HINT:
@@ -1633,7 +3127,12 @@ class EntityCard:
         return TextEditing.line_end_after_cursor(buffer_text, cursor)
 
     def _wiki_edit_lines(self, card):
-        general_rect = card.get("general_content_rect")
+        active_field = card.get("active_edit_field")
+        general_rect = (
+            card.get("timeline_snapshot_rect")
+            if active_field == self.TIMELINE_SNAPSHOT_FIELD
+            else card.get("general_content_rect")
+        )
         font = card.get("layout_font")
         if general_rect is None or font is None:
             return []
@@ -1710,6 +3209,9 @@ class EntityCard:
     def _coerce_edit_buffer(self, field_key, original_value, buffer_text):
         text = str(buffer_text or "")
         field_type = self._field_spec(field_key).get("type")
+
+        if field_key == "temporal_periods":
+            return self._parse_temporal_periods(text)
 
         if self._is_year_value_field(field_key):
             parsed_year = parse_year(text)
@@ -1800,7 +3302,7 @@ class EntityCard:
         if not card.get("is_edit_mode", False):
             return False
 
-        value = self.entity.get(field_key)
+        value = card if field_key == self.TIMELINE_SNAPSHOT_FIELD else self.entity.get(field_key)
         schema_field_specs = self._get_schema_field_specs()
         if not self._is_field_editable(field_key, value, schema_field_specs):
             return False
@@ -1829,6 +3331,20 @@ class EntityCard:
         field_key = card.get("active_edit_field")
         if not field_key:
             return False
+
+        if field_key == self.TIMELINE_SNAPSHOT_FIELD:
+            self._set_timeline_snapshot_text(card, card.get("edit_buffer", ""))
+            draft_buffers = card.get("draft_edit_buffers")
+            if isinstance(draft_buffers, dict):
+                draft_buffers.pop(field_key, None)
+            card["active_edit_field"] = None
+            card["edit_buffer"] = ""
+            card["edit_original_value"] = None
+            card["edit_cursor"] = 0
+            self._clear_edit_preferred_column(card)
+            card["last_edit_action"] = "commit"
+            card["last_committed_field"] = "timeline_snapshots"
+            return True
 
         original_value = card.get("edit_original_value", self.entity.get(field_key))
         new_value = self._coerce_edit_buffer(field_key, original_value, card.get("edit_buffer", ""))
@@ -1883,6 +3399,9 @@ class EntityCard:
         if not card.get("is_edit_mode", False):
             return False
 
+        if self._handle_location_keydown(card, event):
+            return True
+
         active_field = card.get("active_edit_field")
         if not active_field:
             if event.key == pygame.K_TAB:
@@ -1894,7 +3413,7 @@ class EntityCard:
                 return True
             return False
 
-        if active_field == "wiki_entry":
+        if active_field in {"wiki_entry", self.TIMELINE_SNAPSHOT_FIELD}:
             if event.key == pygame.K_s and (event.mod & pygame.KMOD_CTRL):
                 return self.commit_edit_field(card)
 
@@ -1949,7 +3468,7 @@ class EntityCard:
 
         if event.key == pygame.K_HOME:
             self._clear_edit_preferred_column(card)
-            if active_field == "wiki_entry" and not (event.mod & pygame.KMOD_CTRL):
+            if active_field in {"wiki_entry", self.TIMELINE_SNAPSHOT_FIELD} and not (event.mod & pygame.KMOD_CTRL):
                 self._set_edit_cursor(card, self._line_start_before_cursor(card.get("edit_buffer", ""), self._clamp_edit_cursor(card)))
             else:
                 self._set_edit_cursor(card, 0)
@@ -1958,7 +3477,7 @@ class EntityCard:
 
         if event.key == pygame.K_END:
             self._clear_edit_preferred_column(card)
-            if active_field == "wiki_entry" and not (event.mod & pygame.KMOD_CTRL):
+            if active_field in {"wiki_entry", self.TIMELINE_SNAPSHOT_FIELD} and not (event.mod & pygame.KMOD_CTRL):
                 self._set_edit_cursor(card, self._line_end_after_cursor(card.get("edit_buffer", ""), self._clamp_edit_cursor(card)))
             else:
                 self._set_edit_cursor(card, len(card.get("edit_buffer", "")))
@@ -2001,6 +3520,10 @@ class EntityCard:
         if not entity_id:
             return False
 
+        topology_field = self._location_topology_field_from_virtual(field_key)
+        if topology_field:
+            return self.add_location_topology_relation(card, topology_field, entity_id)
+
         if self._relation_field_allows_many(field_key):
             existing = self._parse_edit_lines(card.get("edit_buffer", ""))
             if entity_id not in existing:
@@ -2013,10 +3536,14 @@ class EntityCard:
         return True
 
     def set_edit_cursor_from_pos(self, card, field_key, mouse_pos, font):
-        if field_key != "wiki_entry":
+        if field_key not in {"wiki_entry", self.TIMELINE_SNAPSHOT_FIELD}:
             return False
 
-        general_rect = card.get("general_content_rect")
+        general_rect = (
+            card.get("timeline_snapshot_rect")
+            if field_key == self.TIMELINE_SNAPSHOT_FIELD
+            else card.get("general_content_rect")
+        )
         if general_rect is None or font is None:
             return False
 
@@ -2171,8 +3698,11 @@ class EntityCard:
         labels = {
             "start_year": "start year",
             "end_year": "end year",
-            "start_event": "  related event",
-            "end_event": "  related event",
+            "start_commentary": "  commentary",
+            "end_commentary": "  commentary",
+            "start_event": "  commentary",
+            "end_event": "  commentary",
+            "temporal_periods": "periods",
         }
         return labels.get(field_key, str(field_key or ""))
 
@@ -2360,6 +3890,7 @@ class EntityCard:
         child_input_rect = None
         child_match_rows = []
         parent_tree_rows = []
+        child_tree_rows = []
         member_rows = []
         local_node_hitboxes = []
         parent_panel_rect = None
@@ -2516,47 +4047,90 @@ class EntityCard:
             card["phylogeny_parent_scroll_max_y"] = 0
 
         current_y += 8
-        members_section_rect = pygame.Rect(content_left, current_y, text_width, section_h)
-        current_y = members_section_rect.bottom + self.SECTION_GAP
+        child_section_rect = pygame.Rect(
+            content_left,
+            current_y,
+            text_width,
+            section_h,
+        )
+        current_y = child_section_rect.bottom + self.SECTION_GAP
 
+        if not self.collapsed_sections.get("Phylogeny Children", False):
+            child_ids = graph.children_by_parent.get(entity_id, [])
+
+            for child_id in child_ids:
+                child = graph.phylogeny_entities.get(child_id)
+                row_rect = pygame.Rect(
+                    content_left + 10,
+                    current_y + 3,
+                    text_width - 20,
+                    line_h + 10,
+                )
+                child_tree_rows.append(
+                    {
+                        "id": child_id,
+                        "label": clade_label(child, child_id),
+                        "rect": row_rect,
+                        "depth": 0,
+                        "species": bool(is_species_entity(child)),
+                    }
+                )
+                local_node_hitboxes.append((child_id, row_rect))
+                current_y = row_rect.bottom + 3
+
+            if not child_ids:
+                current_y += line_h + 10
+
+        current_y += 8
+        members_section_rect = pygame.Rect(
+            content_left,
+            current_y,
+            text_width,
+            section_h,
+        )
+        current_y = members_section_rect.bottom + self.SECTION_GAP
         if not self.collapsed_sections.get("Members", False):
             if is_clade:
-                limit = max(1, int(card.get("phylogeny_clade_member_limit", 3) or 3))
-                member_ids = graph.distant_species_members(entity_id, limit=limit)
+                limit = int(card.get("phylogeny_clade_member_limit", 3) or 3)
+                member_ids = graph.distant_species_members(entity_id, limit=max(1, limit))
             else:
-                limit = max(1, int(card.get("phylogeny_species_relative_limit", 4) or 4))
-                member_ids = graph.closest_species_relatives(entity_id, limit=limit)
+                limit = int(card.get("phylogeny_species_relative_limit", 4) or 4)
+                member_ids = graph.closest_species_relatives(entity_id, limit=max(1, limit))
 
             for member_id in member_ids:
                 member = graph.phylogeny_entities.get(member_id)
-                distance = graph.graph_distance(entity_id, member_id, max_depth=64)
-                row_rect = pygame.Rect(content_left + 10, current_y + 3, text_width - 20, line_h + 10)
-                label = clade_label(member, member_id)
+                row_rect = pygame.Rect(
+                    content_left + 10,
+                    current_y + 3,
+                    text_width - 20,
+                    line_h + 10,
+                )
                 member_rows.append(
                     {
                         "id": member_id,
-                        "label": label,
-                        "distance_label": f"{distance} steps" if distance is not None else "?",
+                        "label": clade_label(member, member_id),
                         "rect": row_rect,
                         "depth": 0,
-                        "species": True,
+                        "species": bool(is_species_entity(member)),
                     }
                 )
                 local_node_hitboxes.append((member_id, row_rect))
                 current_y = row_rect.bottom + 3
+
             if not member_ids:
                 current_y += line_h + 10
 
         card["phylogeny_parent_section_rect"] = parent_section_rect
         card["phylogeny_parent_panel_rect"] = parent_panel_rect
         card["phylogeny_parent_panel_content_rect"] = parent_panel_content_rect
-        card["phylogeny_child_section_rect"] = None
+        card["phylogeny_child_section_rect"] = child_section_rect
         card["phylogeny_diagram_section_rect"] = members_section_rect
         card["phylogeny_parent_input_rect"] = input_rect
         card["phylogeny_child_input_rect"] = child_input_rect
         card["phylogeny_parent_match_rows"] = match_rows
         card["phylogeny_child_match_rows"] = child_match_rows
         card["phylogeny_parent_tree_rows"] = parent_tree_rows
+        card["phylogeny_child_tree_rows"] = child_tree_rows
         card["phylogeny_local_tree_rows"] = member_rows
         card["phylogeny_node_hitboxes"] = local_node_hitboxes
         card["phylogeny_members_label"] = "Members" if is_clade else "Relatives"
@@ -2585,6 +4159,7 @@ class EntityCard:
         toolbelt_rect = None
         field_rows = []
         general_content_rect = None
+        timeline_snapshot_rect = None
         task_checklist_rect = None
         task_finish_checkbox_rect = None
         task_checklist_hitboxes = []
@@ -2598,6 +4173,7 @@ class EntityCard:
             "general": 70,
             "overview": 78,
             "temporal": 82,
+            "location": 82,
             "relations": 76,
             "phylogeny": 86,
             "state": 54,
@@ -2754,6 +4330,7 @@ class EntityCard:
             image_rect = None
             general_bottom = timeline_label_y - 10
             general_height = max(40, general_bottom - top_content_y)
+            snapshot_active = self._timeline_snapshot_range(card) is not None
             general_content_rect = pygame.Rect(content_left, top_content_y, text_width, general_height)
             if self._is_task_card():
                 checklist_h = min(
@@ -2764,8 +4341,15 @@ class EntityCard:
                 wiki_h = max(44, general_height - checklist_h - 8)
                 general_content_rect = pygame.Rect(content_left, top_content_y, text_width, wiki_h)
                 task_checklist_rect = pygame.Rect(content_left, general_content_rect.bottom + 8, text_width, checklist_h)
+            elif snapshot_active:
+                snapshot_h = max(58, min(118, int(general_height * 0.38)))
+                wiki_h = max(44, general_height - snapshot_h - 8)
+                general_content_rect = pygame.Rect(content_left, top_content_y, text_width, wiki_h)
+                timeline_snapshot_rect = pygame.Rect(content_left, general_content_rect.bottom + 8, text_width, snapshot_h)
             if card.get("is_edit_mode", False):
                 editable_field_hitboxes.append(("wiki_entry", general_content_rect))
+                if timeline_snapshot_rect is not None:
+                    editable_field_hitboxes.append((self.TIMELINE_SNAPSHOT_FIELD, timeline_snapshot_rect))
             wiki_text = self._get_general_wiki_text(card)
             if card.get("is_edit_mode", False) and card.get("active_edit_field") == "wiki_entry":
                 inner_w = max(20, general_content_rect.width - 20)
@@ -2778,6 +4362,19 @@ class EntityCard:
                     resolve_link_label=self._resolve_wiki_link_label,
                 )
             content_end_y = general_content_rect.y + content_h
+            if timeline_snapshot_rect is not None:
+                snapshot_text = self._timeline_snapshot_text(card)
+                if card.get("is_edit_mode", False) and card.get("active_edit_field") == self.TIMELINE_SNAPSHOT_FIELD:
+                    inner_w = max(20, timeline_snapshot_rect.width - 20)
+                    snapshot_h = len(CardWikiRenderer.wrap_edit_lines(snapshot_text, card["layout_font"], inner_w)) * self._table_line_height(card["layout_font"]) + 20
+                else:
+                    snapshot_h = CardWikiRenderer.measure_content(
+                        snapshot_text,
+                        card["layout_font"],
+                        timeline_snapshot_rect,
+                        resolve_link_label=self._resolve_wiki_link_label,
+                    )
+                content_end_y = max(content_end_y, timeline_snapshot_rect.y + snapshot_h)
             if task_checklist_rect is not None:
                 content_end_y = max(content_end_y, task_checklist_rect.bottom)
                 line_h = self._table_line_height(card["layout_font"])
@@ -2815,6 +4412,25 @@ class EntityCard:
             if card.get("phylogeny_child_section_rect") is not None:
                 section_hitboxes.append(("Phylogeny Children", card["phylogeny_child_section_rect"]))
             section_hitboxes.append(("Members", card["phylogeny_diagram_section_rect"]))
+        elif self._is_location_mode():
+            image_rect = None
+            for key, value in (
+                ("phylogeny_parent_section_rect", None),
+                ("phylogeny_parent_panel_rect", None),
+                ("phylogeny_parent_panel_content_rect", None),
+                ("phylogeny_child_section_rect", None),
+                ("phylogeny_diagram_section_rect", None),
+                ("phylogeny_parent_input_rect", None),
+                ("phylogeny_child_input_rect", None),
+                ("phylogeny_parent_match_rows", []),
+                ("phylogeny_child_match_rows", []),
+                ("phylogeny_parent_tree_rows", []),
+                ("phylogeny_child_tree_rows", []),
+                ("phylogeny_local_tree_rows", []),
+                ("phylogeny_node_hitboxes", []),
+            ):
+                card[key] = value
+            content_end_y = self._layout_location_content(card, content_left, current_y, text_width)
         else:
             for key, value in (
                 ("phylogeny_parent_section_rect", None),
@@ -2969,6 +4585,7 @@ class EntityCard:
                     "phylogeny_parent_match_rows",
                     "phylogeny_child_match_rows",
                     "phylogeny_parent_tree_rows",
+                    "phylogeny_child_tree_rows",
                     "phylogeny_local_tree_rows",
                 ):
                     visible_rows = []
@@ -2986,6 +4603,51 @@ class EntityCard:
                     for clade_id, node_rect in card.get("phylogeny_node_hitboxes", [])
                     if node_rect.move(0, -scroll_y).colliderect(content_viewport_rect)
                 ]
+            elif self._is_location_mode():
+                for rect_key in (
+                    "location_section_rect",
+                    "location_mode_rect",
+                    "location_query_rect",
+                    "location_start_rect",
+                    "location_end_rect",
+                    "location_add_rect",
+                ):
+                    rect_value = card.get(rect_key)
+                    if rect_value is not None:
+                        shifted_rect = rect_value.move(0, -scroll_y)
+                        card[rect_key] = (
+                            shifted_rect.clip(content_viewport_rect)
+                            if shifted_rect.colliderect(content_viewport_rect)
+                            else None
+                        )
+                visible_rows = []
+                for row in card.get("location_rows", []):
+                    row_rect = row.get("rect")
+                    if row_rect is not None:
+                        shifted_rect = row_rect.move(0, -scroll_y)
+                        if not shifted_rect.colliderect(content_viewport_rect):
+                            continue
+                        row["rect"] = shifted_rect.clip(content_viewport_rect)
+                    remove_rect = row.get("remove_rect")
+                    if remove_rect is not None:
+                        shifted_remove = remove_rect.move(0, -scroll_y)
+                        row["remove_rect"] = (
+                            shifted_remove.clip(content_viewport_rect)
+                            if shifted_remove.colliderect(content_viewport_rect)
+                            else None
+                        )
+                    visible_rows.append(row)
+                card["location_rows"] = visible_rows
+                visible_matches = []
+                for row in card.get("location_match_rows", []):
+                    row_rect = row.get("rect")
+                    if row_rect is not None:
+                        shifted_rect = row_rect.move(0, -scroll_y)
+                        if not shifted_rect.colliderect(content_viewport_rect):
+                            continue
+                        row["rect"] = shifted_rect.clip(content_viewport_rect)
+                    visible_matches.append(row)
+                card["location_match_rows"] = visible_matches
 
             shifted_section_hitboxes = []
             for section_name, section_rect in section_hitboxes:
@@ -3069,6 +4731,32 @@ class EntityCard:
                             row["rect"] = row_rect.clip(content_viewport_rect)
                         visible_rows.append(row)
                     card[collection_key] = visible_rows
+            elif self._is_location_mode():
+                for rect_key in (
+                    "location_section_rect",
+                    "location_mode_rect",
+                    "location_query_rect",
+                    "location_start_rect",
+                    "location_end_rect",
+                    "location_add_rect",
+                ):
+                    rect_value = card.get(rect_key)
+                    if rect_value is not None:
+                        card[rect_key] = (
+                            rect_value.clip(content_viewport_rect)
+                            if rect_value.colliderect(content_viewport_rect)
+                            else None
+                        )
+                card["location_rows"] = [
+                    row
+                    for row in card.get("location_rows", [])
+                    if row.get("rect") is None or row["rect"].colliderect(content_viewport_rect)
+                ]
+                card["location_match_rows"] = [
+                    row
+                    for row in card.get("location_match_rows", [])
+                    if row.get("rect") is None or row["rect"].colliderect(content_viewport_rect)
+                ]
             section_hitboxes = [
                 (section_name, section_rect.clip(content_viewport_rect))
                 for section_name, section_rect in section_hitboxes
@@ -3199,6 +4887,7 @@ class EntityCard:
         card["subtab_hitboxes"] = subtab_hitboxes
         card["image_rect"] = image_rect
         card["general_content_rect"] = general_content_rect
+        card["timeline_snapshot_rect"] = timeline_snapshot_rect
         card["task_checklist_rect"] = task_checklist_rect
         card["task_finish_checkbox_rect"] = task_finish_checkbox_rect
         card["task_checklist_hitboxes"] = task_checklist_hitboxes
@@ -3253,6 +4942,16 @@ class EntityCard:
                 content_rect,
                 resolve_link_label=self._resolve_wiki_link_label,
             )
+            if self._timeline_snapshot_range(card) is not None:
+                general_h += 8 + max(
+                    58,
+                    CardWikiRenderer.measure_content(
+                        self._timeline_snapshot_text(card),
+                        font,
+                        content_rect,
+                        resolve_link_label=self._resolve_wiki_link_label,
+                    ),
+                )
             if self._is_task_card():
                 general_h += 8 + self._measure_task_checklist_height(
                     font,
@@ -3275,6 +4974,18 @@ class EntityCard:
                 current_y += self.PHYLOGENY_PARENT_PANEL_H + 16
             else:
                 current_y += 8
+
+            current_y += self.SECTION_HEADER_H + self.SECTION_GAP
+            if not self.collapsed_sections.get("Phylogeny Children", False):
+                line_h = self._phylogeny_line_height(font)
+                visible_children = max(
+                    1,
+                    self._phylogeny_children_count(
+                        str(self.entity.get("id") or "")
+                    ),
+                )
+                current_y += visible_children * (line_h + 13)
+
             current_y += self.SECTION_HEADER_H + self.SECTION_GAP
             if not self.collapsed_sections.get("Members", False):
                 line_h = self._phylogeny_line_height(font)
@@ -3287,6 +4998,24 @@ class EntityCard:
             launch_top = center_y + self.TIMELINE_TO_LAUNCH_GAP
             resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
             return max(360, resize_bottom + 8)
+
+        if self._is_location_mode():
+            tabs_bottom_y = self.HEADER_H + 6 + self.TAB_H
+            if self._is_location_card():
+                topology_rows = sum(max(1, len(self._location_topology_ids(self.entity, field_key))) for field_key in self.LOCATION_TOPOLOGY_FIELDS)
+                input_h = 34 * len(self.LOCATION_TOPOLOGY_FIELDS) if card.get("is_edit_mode", False) else 0
+                current_y = tabs_bottom_y + 10 + len(self.LOCATION_TOPOLOGY_FIELDS) * (self.SECTION_HEADER_H + self.SECTION_GAP + 10)
+                current_y += topology_rows * 40 + input_h
+            else:
+                entries_h = max(34, len(self._location_history_entries()) * 44)
+                input_h = 86 if card.get("is_edit_mode", False) else 0
+                current_y = tabs_bottom_y + 10 + self.SECTION_HEADER_H + self.SECTION_GAP + 4 + 24 + 6 + entries_h + input_h
+            timeline_label_y = current_y + 12
+            timeline_y = timeline_label_y + 18
+            center_y = timeline_y + 10
+            launch_top = center_y + self.TIMELINE_TO_LAUNCH_GAP
+            resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
+            return max(340, resize_bottom + 8)
 
         tabs_bottom_y = self.HEADER_H + 6 + self.TAB_H
         if self._active_subtab_order():
@@ -3493,6 +5222,15 @@ class EntityCard:
                 self._draw_phylogeny_content(screen, font, card)
             finally:
                 screen.set_clip(previous_clip)
+        elif self._is_location_mode():
+            content_clip = card.get("content_viewport_rect")
+            previous_clip = screen.get_clip()
+            if content_clip is not None:
+                screen.set_clip(previous_clip.clip(content_clip))
+            try:
+                self._draw_location_content(screen, font, card)
+            finally:
+                screen.set_clip(previous_clip)
         else:
             content_clip = card.get("content_viewport_rect")
             previous_clip = screen.get_clip()
@@ -3542,6 +5280,7 @@ class EntityCard:
             and rect.width >= 260
         )
         selected_year = card.get("selected_year")
+        year_commentaries = self._timeline_year_commentaries()
         for year, hitbox in card["year_hitboxes"]:
             marker_rect = pygame.Rect(hitbox.centerx - 5, center_y - 5, 10, 10)
             selected = year == selected_year
@@ -3559,14 +5298,92 @@ class EntityCard:
                     screen.blit(year_surface, year_rect)
                     year_label_rects.append(year_rect)
 
+            if show_year_labels and year in year_commentaries:
+                note = " / ".join(year_commentaries[year])
+                note_surface = font.render(self._ellipsize_text(note, font, 130), True, (198, 214, 238))
+                note_x = max(left_x, min(hitbox.centerx - note_surface.get_width() // 2, right_x - note_surface.get_width()))
+                note_y = year_label_y + font_h
+                note_rect = pygame.Rect(note_x, note_y, note_surface.get_width(), note_surface.get_height())
+                if note_rect.bottom <= launch_rect.y - 4 and not any(note_rect.inflate(4, 0).colliderect(existing) for existing in year_label_rects):
+                    screen.blit(note_surface, note_rect)
+                    year_label_rects.append(note_rect)
+
+        temporal_periods = self._temporal_period_timeline_entries(card)
         related_entries = self._related_timeline_entries(card)
         card_range = self._card_timeline_range(card)
-        show_related_timeline = (
+        card["temporal_period_hitboxes"] = []
+        card["temporal_period_click_rect"] = None
+        card["temporal_period_click_context"] = None
+        show_bottom_timeline = (
             not compact_timeline
             and center_y + self.RELATED_TIMELINE_OFFSET_Y + font_h + 8 <= launch_rect.y
             and rect.width >= 300
         )
-        if show_related_timeline and related_entries and card_range is not None:
+        if show_bottom_timeline and card_range is not None and (temporal_periods or card.get("is_edit_mode", False)):
+            range_start, range_end = card_range
+            range_span = max(1, range_end - range_start)
+
+            def related_year_x(year):
+                if range_end == range_start:
+                    return (left_x + right_x) // 2
+                ratio = (year - range_start) / float(range_span)
+                ratio = max(0.0, min(1.0, ratio))
+                return left_x + int(round((right_x - left_x) * ratio))
+
+            related_y = center_y + self.RELATED_TIMELINE_OFFSET_Y
+            card["temporal_period_click_rect"] = pygame.Rect(left_x, related_y - 10, max(1, right_x - left_x), max(24, font_h + 18))
+            card["temporal_period_click_context"] = {
+                "left_x": left_x,
+                "right_x": right_x,
+                "start_year": range_start,
+                "end_year": range_end,
+            }
+            pygame.draw.line(screen, (66, 88, 108), (left_x, related_y), (right_x, related_y), 1)
+            pending_start = card.get("pending_temporal_period_start")
+            if pending_start is not None:
+                pending_x = related_year_x(self._coerce_timeline_year(pending_start) or range_start)
+                pygame.draw.line(screen, (232, 210, 148), (pending_x, related_y - 8), (pending_x, related_y + 8), 2)
+                pending_label = font.render("period start", True, (232, 210, 148))
+                screen.blit(pending_label, (max(left_x, min(pending_x + 4, right_x - pending_label.get_width())), related_y - font_h - 2))
+
+            label_rects = []
+            visible_periods = temporal_periods[:self.RELATED_TIMELINE_LABEL_LIMIT]
+            for lane, entry in enumerate(visible_periods[:2]):
+                x1 = related_year_x(entry["start_year"])
+                x2 = related_year_x(entry["end_year"])
+                band_y = related_y + lane * (font_h + 4)
+                bar_rect = pygame.Rect(min(x1, x2), band_y - 3, max(6, abs(x2 - x1)), 7)
+                card["temporal_period_hitboxes"].append((entry, bar_rect.inflate(4, 8)))
+                pygame.draw.rect(screen, (72, 106, 134), bar_rect)
+                pygame.draw.rect(screen, (132, 184, 214), bar_rect, 1)
+                label = entry.get("commentary") or entry["label"]
+                label_surface = font.render(self._ellipsize_text(label, font, max(140, rect.width // 2)), True, (184, 220, 238))
+                label_x = max(left_x, min(bar_rect.centerx - label_surface.get_width() // 2, right_x - label_surface.get_width()))
+                label_rect = pygame.Rect(label_x, band_y + 4, label_surface.get_width(), label_surface.get_height())
+                if label_rect.bottom <= launch_rect.y - 4 and not any(label_rect.inflate(4, 0).colliderect(existing) for existing in label_rects):
+                    screen.blit(label_surface, label_rect)
+                    label_rects.append(label_rect)
+                endpoint_labels = [
+                    (entry.get("predecessor"), x1, "|_"),
+                    (entry.get("successor"), x2, "_|"),
+                ]
+                for endpoint_id, endpoint_x, marker in endpoint_labels:
+                    endpoint_id = str(endpoint_id or "").strip()
+                    if not endpoint_id:
+                        continue
+                    endpoint_text = self._ellipsize_text(f"{marker} {endpoint_id}", font, 92)
+                    endpoint_surface = font.render(endpoint_text, True, (198, 214, 238))
+                    endpoint_x = max(left_x, min(endpoint_x - endpoint_surface.get_width() // 2, right_x - endpoint_surface.get_width()))
+                    endpoint_rect = pygame.Rect(endpoint_x, band_y + font_h + 4, endpoint_surface.get_width(), endpoint_surface.get_height())
+                    if endpoint_rect.bottom <= launch_rect.y - 4 and not any(endpoint_rect.inflate(4, 0).colliderect(existing) for existing in label_rects):
+                        screen.blit(endpoint_surface, endpoint_rect)
+                        label_rects.append(endpoint_rect)
+            if not temporal_periods and card.get("is_edit_mode", False):
+                hint = str(card.get("timeline_period_status") or "click start, click end to add period")
+                hint_surface = font.render(self._ellipsize_text(hint, font, max(80, right_x - left_x)), True, (132, 184, 214))
+                screen.blit(hint_surface, (left_x, related_y + 5))
+
+        if show_bottom_timeline and related_entries and card_range is not None and not temporal_periods and not card.get("is_edit_mode", False):
             range_start, range_end = card_range
             range_span = max(1, range_end - range_start)
 
@@ -3733,6 +5550,7 @@ class EntityCard:
                 "general": "Gen",
                 "overview": "Over",
                 "temporal": "Temp",
+                "location": "Loc",
                 "relations": "Rel",
                 "phylogeny": "Phylo",
                 "state": "State",
@@ -4020,8 +5838,18 @@ class EntityCard:
         pygame.draw.rect(screen, (132, 146, 170), pygame.Rect(track_rect.x, thumb_y, track_rect.width, thumb_h))
 
     def _draw_phylogeny_content(self, screen, font, card):
-        parent_expanded = not self.collapsed_sections.get("Phylogeny Parents", False)
-        diagram_expanded = not self.collapsed_sections.get("Members", False)
+        parent_expanded = not self.collapsed_sections.get(
+            "Phylogeny Parents",
+            False,
+        )
+        child_expanded = not self.collapsed_sections.get(
+            "Phylogeny Children",
+            False,
+        )
+        diagram_expanded = not self.collapsed_sections.get(
+            "Members",
+            False,
+        )
         self._draw_phylogeny_section_header(
             screen,
             font,
@@ -4167,6 +5995,31 @@ class EntityCard:
 
         if parent_expanded:
             self._draw_phylogeny_parent_scrollbar(screen, card)
+
+        self._draw_phylogeny_section_header(
+            screen,
+            font,
+            card.get("phylogeny_child_section_rect"),
+            "Phylogeny Children",
+            child_expanded,
+        )
+
+        if child_expanded:
+            rows = card.get("phylogeny_child_tree_rows", [])
+            if rows:
+                self._draw_phylogeny_rows(screen, font, rows)
+            else:
+                rect = card.get("phylogeny_child_section_rect")
+                if rect is not None:
+                    empty_surface = font.render(
+                        "No direct offspring found",
+                        True,
+                        (150, 160, 178),
+                    )
+                    screen.blit(
+                        empty_surface,
+                        (rect.x + 8, rect.bottom + 8),
+                    )
 
         self._draw_phylogeny_section_header(
             screen,
@@ -4345,6 +6198,42 @@ class EntityCard:
             scroll_y=card.get("scroll_y", 0),
         )
 
+        snapshot_rect = card.get("timeline_snapshot_rect")
+        if snapshot_rect is not None:
+            label_rect = pygame.Rect(snapshot_rect.x, snapshot_rect.y, snapshot_rect.width, 18)
+            pygame.draw.rect(screen, (30, 36, 50), label_rect)
+            pygame.draw.rect(screen, (88, 104, 132), snapshot_rect, 1)
+            label = self._working_year_wiki_stub(card) or "Timeline Snapshot"
+            label_surface = font.render(
+                self._ellipsize_text(label, font, snapshot_rect.width - 16),
+                True,
+                (210, 222, 244),
+            )
+            screen.blit(label_surface, (snapshot_rect.x + 8, snapshot_rect.y + 2))
+            content_rect = pygame.Rect(
+                snapshot_rect.x,
+                snapshot_rect.y + 18,
+                snapshot_rect.width,
+                max(20, snapshot_rect.height - 18),
+            )
+            snapshot_editing = (
+                card.get("is_edit_mode", False)
+                and card.get("active_edit_field") == self.TIMELINE_SNAPSHOT_FIELD
+            )
+            CardWikiRenderer.draw_content(
+                screen,
+                font,
+                content_rect,
+                self._timeline_snapshot_text(card),
+                is_editing=snapshot_editing,
+                resolve_link_label=self._resolve_wiki_link_label,
+                resolve_link_color=self._resolve_wiki_link_color,
+                resolve_link_palette=self._resolve_wiki_link_palette,
+                section_colors=self._wiki_field_colors(),
+                cursor_index=card.get("edit_cursor", 0),
+                scroll_y=card.get("scroll_y", 0),
+            )
+
         if card.get("wiki_link_picker_open", False):
             self._draw_wiki_link_picker(screen, font, card, general_rect)
 
@@ -4493,8 +6382,11 @@ class EntityCard:
         note_rect = pygame.Rect(picker_rect.x + 10, row_y, picker_rect.width - 20, 28)
         pygame.draw.rect(screen, (44, 50, 64), note_rect)
         pygame.draw.rect(screen, (128, 144, 176), note_rect, 1)
-        card["relation_picker_hitboxes"].append(("note", note_rect))
-        note_surface = font.render("Add Note", True, (236, 240, 248))
+        picker_target = card.get("relation_picker_target")
+        action_key = "create_target" if picker_target else "note"
+        action_label = f"Create {self._relation_target_label(picker_target)}" if picker_target else "Add Note"
+        card["relation_picker_hitboxes"].append((action_key, note_rect))
+        note_surface = font.render(action_label, True, (236, 240, 248))
         screen.blit(note_surface, (note_rect.x + 8, note_rect.y + 6))
         row_y += 34
         for index, match in enumerate(matches[:6]):

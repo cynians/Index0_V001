@@ -52,9 +52,8 @@ fields:
     section: Temporal
     optional: true
 
-  start_event:
-    type: entity
-    target: events
+  start_commentary:
+    type: text
     section: Temporal
     optional: true
 
@@ -63,9 +62,13 @@ fields:
     section: Temporal
     optional: true
 
-  end_event:
-    type: entity
-    target: events
+  end_commentary:
+    type: text
+    section: Temporal
+    optional: true
+
+  temporal_periods:
+    type: object_list
     section: Temporal
     optional: true
 

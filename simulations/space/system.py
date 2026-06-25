@@ -179,6 +179,17 @@ class CelestialSystem:
         generated_entry = self.build_generated_location_entry(body_entity)
         generated_location_id = generated_entry["id"]
 
+        loader = getattr(world_model, "loader", None) if world_model is not None else None
+        if getattr(loader, "use_ontology", False) and hasattr(loader, "persist_entity"):
+            location_exists = generated_location_id in getattr(loader, "entities", {})
+            if not location_exists:
+                generated_entry["_dataset"] = "locations"
+                loader.persist_entity(generated_entry)
+            if body_entity.get("location_entity") != generated_location_id:
+                body_entity["location_entity"] = generated_location_id
+                loader.persist_entity(body_entity)
+            return generated_location_id, (not location_exists)
+
         locations_path = self._locations_file_path()
         systems_path = self._systems_file_path()
 

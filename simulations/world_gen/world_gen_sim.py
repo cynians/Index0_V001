@@ -429,6 +429,11 @@ class WorldGenSimulation:
         return Path(__file__).resolve().parents[2] / "entries" / "locations.yaml"
 
     def _persist_location_entity(self, entity):
+        loader = getattr(self.world_model, "loader", None)
+        if getattr(loader, "use_ontology", False) and hasattr(loader, "persist_entity"):
+            entity["_dataset"] = "locations"
+            return loader.persist_entity(entity)
+
         entry_path = self._locations_entry_path()
         entry_path.parent.mkdir(parents=True, exist_ok=True)
         block = yaml.safe_dump([self._serializable_entity(entity)], sort_keys=False, allow_unicode=True).rstrip() + "\n"
@@ -451,7 +456,13 @@ class WorldGenSimulation:
         loader = getattr(self.world_model, "loader", None)
         if loader is None:
             return
-        loader.datasets.setdefault("locations", []).append(entity)
+        dataset = loader.datasets.setdefault("locations", [])
+        for index, existing in enumerate(dataset):
+            if isinstance(existing, dict) and existing.get("id") == entity.get("id"):
+                dataset[index] = entity
+                break
+        else:
+            dataset.append(entity)
         loader.entities[entity["id"]] = entity
         if hasattr(loader, "build_reference_graph"):
             loader.build_reference_graph()
@@ -728,6 +739,11 @@ class WorldGenSimulation:
         return True
 
     def _persist_existing_location_entity(self, entity):
+        loader = getattr(self.world_model, "loader", None)
+        if getattr(loader, "use_ontology", False) and hasattr(loader, "persist_entity"):
+            entity["_dataset"] = "locations"
+            return loader.persist_entity(entity)
+
         entry_path = self._locations_entry_path()
         try:
             data = yaml.safe_load(entry_path.read_text(encoding="utf-8")) if entry_path.exists() else []

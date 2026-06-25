@@ -1,5 +1,6 @@
 import unittest
 
+from ui.card import EntityCard
 from ui.knowledge_browser_ui import KnowledgeBrowserUI
 
 
@@ -55,6 +56,14 @@ class WikiLinkPickerTests(unittest.TestCase):
         self.assertEqual("Before placeholder after", card["edit_buffer"])
         self.assertTrue(card["wiki_link_picker_open"])
         self.assertEqual([], self.saved_cards)
+
+    def test_timeline_snapshot_field_is_wiki_link_capable(self):
+        card_view = EntityCard({"id": "evt_test", "_dataset": "events", "type": "event"})
+        card = {"card_view": card_view}
+
+        self.assertTrue(self.ui._is_wiki_text_edit_field(card, card_view.TIMELINE_SNAPSHOT_FIELD))
+        self.assertTrue(self.ui._is_wiki_text_edit_field(card, "wiki_entry"))
+        self.assertFalse(self.ui._is_wiki_text_edit_field(card, "description"))
 
 
 if __name__ == "__main__":

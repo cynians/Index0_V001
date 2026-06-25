@@ -627,15 +627,19 @@ class CardWikiRenderer:
                 return
 
             section_colors = section_colors if isinstance(section_colors, dict) else {}
-            for section in cls._section_layout(
+            sections = cls._section_layout(
                 wiki_text,
                 font,
                 rect,
                 resolve_link_label=resolve_link_label,
                 scroll_y=scroll_y,
-            ):
+            )
+            for section_index, section in enumerate(sections):
                 section_id = section["section_id"]
-                fill = cls._coerce_color(section_colors.get(section_id) or section_colors.get("default"), (32, 38, 50))
+                default_color = section_colors.get("default")
+                alternate_color = section_colors.get("alternate")
+                automatic_color = alternate_color if alternate_color and section_index % 2 else default_color
+                fill = cls._coerce_color(section_colors.get(section_id) or automatic_color, (32, 38, 50))
                 border = (
                     min(255, fill[0] + 60),
                     min(255, fill[1] + 60),

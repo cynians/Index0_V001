@@ -1,4 +1,6 @@
 import math
+import random
+import re
 
 import pygame
 
@@ -15,7 +17,7 @@ class TimelineUI:
     * support wheel-based zoom on the visible year range
     """
 
-    HEADER_H = 48
+    HEADER_H = 84
     AXIS_H = 22
     PERIOD_FILTER_H = 10
     PERIOD_FILTER_GAP = 8
@@ -40,6 +42,8 @@ class TimelineUI:
         ("world", "World", ["systems", "species", "events", "formations", "spatial_features"]),
         ("ideas", "Ideas", ["ideas", "tasks", "behaviors", "cultural_aspects", "cladistics", "conflicts"]),
     ]
+    DEFAULT_HIDDEN_DATASETS = {"animals", "cladistics", "species"}
+    DEFAULT_HIDDEN_ENTITY_TYPES = {"animal", "animals", "cladistics", "species"}
 
     ZOOM_IN_FACTOR = 0.80
     ZOOM_OUT_FACTOR = 1.25
@@ -59,9 +63,11 @@ class TimelineUI:
         self.active_filter_group = "general"
         self.active_filter_groups = {"general"}
         self.active_filter_mode = "category"
+        self.timeline_sort_mode = "flat"
         self.open_canvas_entity_ids = set()
         self.filter_hitboxes = []
         self.filter_group_hitboxes = []
+        self.sort_mode_hitboxes = []
         self.period_filter_range = None
         self.period_filter_pending_start = None
         self.period_filter_rect = pygame.Rect(0, 0, 0, 0)
@@ -70,6 +76,26 @@ class TimelineUI:
         self.year_selection_enabled = False
         self.selected_year = None
         self.selected_year_context_label = None
+        self.working_year_enabled = False
+        self.working_year = None
+        self.working_year_range = None
+        self.working_year_buffer = ""
+        self.working_year_active = False
+        self.working_year_rect = pygame.Rect(0, 0, 0, 0)
+        self.random_working_year_rect = pygame.Rect(0, 0, 0, 0)
+        self.location_focus_enabled = False
+        self.location_focus_id = None
+        self.location_focus_label = None
+        self.location_focus_buffer = ""
+        self.location_focus_active = False
+        self.location_focus_invalid = False
+        self.location_focus_rect = pygame.Rect(0, 0, 0, 0)
+        self.random_location_focus_rect = pygame.Rect(0, 0, 0, 0)
+        self.location_focus_matches = []
+        self.location_focus_selected_index = 0
+        self.location_focus_keyboard_active = False
+        self.location_focus_suggestion_hitboxes = []
+        self.entity_lookup = {}
 
         self.full_min_year = 0
         self.full_max_year = 1
@@ -100,6 +126,14 @@ class TimelineUI:
             self._view_range_initialized = False
         self._ensure_active_filter_valid()
 
+    def set_entity_lookup(self, entity_lookup):
+        self.entity_lookup = {
+            str(entity_id): entity
+            for entity_id, entity in (entity_lookup or {}).items()
+            if str(entity_id or "").strip() and isinstance(entity, dict)
+        }
+        self._refresh_location_focus_matches()
+
     def set_open_canvas_entity_ids(self, entity_ids):
         self.open_canvas_entity_ids = {
             str(entity_id)
@@ -110,6 +144,261 @@ class TimelineUI:
 
     def set_year_selection_enabled(self, enabled):
         self.year_selection_enabled = bool(enabled)
+
+    def set_working_year_enabled(self, enabled):
+        self.working_year_enabled = bool(enabled)
+        if not self.working_year_enabled:
+            self.working_year_active = False
+            self.working_year_rect = pygame.Rect(0, 0, 0, 0)
+            self.random_working_year_rect = pygame.Rect(0, 0, 0, 0)
+
+    def set_location_focus_enabled(self, enabled):
+        self.location_focus_enabled = bool(enabled)
+        if not self.location_focus_enabled:
+            self.location_focus_active = False
+            self.location_focus_rect = pygame.Rect(0, 0, 0, 0)
+            self.random_location_focus_rect = pygame.Rect(0, 0, 0, 0)
+            self.location_focus_suggestion_hitboxes = []
+
+    def set_working_year(self, year, focus=False):
+        old_year = self.working_year
+        old_range = self.working_year_range
+        if year is None or str(year).strip() == "":
+            self.working_year = None
+            self.working_year_range = None
+            self.working_year_buffer = ""
+            self.working_year_active = False
+            if (
+                (self.selected_year == old_year or old_range is not None)
+                and str(self.selected_year_context_label or "").startswith("Working Year")
+            ):
+                self.selected_year = None
+                self.selected_year_context_label = None
+            self.rebuild_layout()
+            return old_range is not None
+
+        parsed_range = self._parse_working_year_value(year)
+        if parsed_range is None:
+            return False
+        start_year, end_year = parsed_range
+
+        changed = parsed_range != self.working_year_range
+        self.working_year_range = parsed_range
+        self.working_year = start_year if start_year == end_year else None
+        self.working_year_buffer = self._format_working_year_range(parsed_range)
+        self.working_year_active = False
+        if self.working_year is not None:
+            self.set_selected_year(
+                self.working_year,
+                context_label=f"Working Year {self.working_year}",
+                focus=focus,
+            )
+        else:
+            self.selected_year = None
+            self.selected_year_context_label = None
+            if focus:
+                self.focus_year((start_year + end_year) // 2)
+        self.rebuild_layout()
+        return changed
+
+    def get_working_year(self):
+        return self.working_year
+
+    def get_working_year_range(self):
+        return self.working_year_range
+
+    def set_location_focus(self, location_value):
+        old_location_id = self.location_focus_id
+        if location_value is None or str(location_value).strip() == "":
+            self.location_focus_id = None
+            self.location_focus_label = None
+            self.location_focus_buffer = ""
+            self.location_focus_active = False
+            self.location_focus_invalid = False
+            self.location_focus_matches = []
+            self.location_focus_suggestion_hitboxes = []
+            self.rebuild_layout()
+            return old_location_id is not None
+
+        resolved = self._resolve_location_focus(location_value)
+        if resolved is None:
+            self.location_focus_invalid = True
+            return False
+
+        location_id, location_label = resolved
+        changed = location_id != self.location_focus_id
+        self.location_focus_id = location_id
+        self.location_focus_label = location_label
+        self.location_focus_buffer = location_label
+        self.location_focus_active = False
+        self.location_focus_invalid = False
+        self.location_focus_matches = []
+        self.location_focus_suggestion_hitboxes = []
+        self.rebuild_layout()
+        return changed
+
+    def get_location_focus(self):
+        return self.location_focus_id
+
+    def _resolve_location_focus(self, location_value):
+        query = str(location_value or "").strip()
+        if not query:
+            return None
+        query_folded = query.casefold()
+
+        matches = self._build_location_focus_matches(query, limit=12)
+        exact_matches = [
+            match
+            for match in matches
+            if match["id"].casefold() == query_folded or str(match["label"]).casefold() == query_folded
+        ]
+        if len(exact_matches) == 1:
+            return exact_matches[0]["id"], exact_matches[0]["label"]
+        if len(matches) == 1:
+            return matches[0]["id"], matches[0]["label"]
+        return None
+
+    def _build_location_focus_matches(self, query_text, limit=7):
+        query = str(query_text or "").strip().casefold()
+        matches = []
+
+        for entity_id, entity in self.entity_lookup.items():
+            if not self._is_location_entity(entity):
+                continue
+
+            label = self._entity_display_label(entity, fallback=entity_id)
+            location_class = str(entity.get("location_class") or entity.get("type") or "location")
+            haystack = " ".join(
+                [
+                    str(entity_id),
+                    str(label),
+                    str(entity.get("pretty_name", "")),
+                    str(entity.get("name", "")),
+                    str(entity.get("short_name", "")),
+                    str(location_class),
+                ]
+            ).casefold()
+            if query and query not in haystack:
+                continue
+
+            label_folded = str(label).casefold()
+            id_folded = str(entity_id).casefold()
+            if query and (label_folded == query or id_folded == query):
+                rank = 0
+            elif query and (label_folded.startswith(query) or id_folded.startswith(query)):
+                rank = 1
+            elif query:
+                rank = 2
+            else:
+                rank = 3
+            subtitle = f"{location_class.replace('_', ' ').title()} | {entity_id}"
+            matches.append(
+                {
+                    "id": str(entity_id),
+                    "label": str(label),
+                    "subtitle": subtitle,
+                    "rank": rank,
+                    "card_color": entity.get("card_color", ""),
+                }
+            )
+
+        matches.sort(key=lambda item: (item["rank"], item["label"].casefold(), item["id"]))
+        return matches[:limit]
+
+    def _refresh_location_focus_matches(self):
+        if not self.location_focus_enabled or not self.location_focus_active:
+            self.location_focus_matches = []
+            self.location_focus_selected_index = 0
+            self.location_focus_keyboard_active = False
+            self.location_focus_suggestion_hitboxes = []
+            return
+
+        matches = self._build_location_focus_matches(self.location_focus_buffer)
+        self.location_focus_matches = matches
+        self.location_focus_suggestion_hitboxes = []
+        if not matches:
+            self.location_focus_selected_index = 0
+            self.location_focus_keyboard_active = False
+            return
+        self.location_focus_selected_index = max(
+            0,
+            min(int(self.location_focus_selected_index or 0), len(matches) - 1),
+        )
+
+    def _select_location_focus_match(self, index=None):
+        matches = self.location_focus_matches or []
+        if not matches:
+            return False
+        if index is None:
+            index = self.location_focus_selected_index
+        index = max(0, min(int(index or 0), len(matches) - 1))
+        match = matches[index]
+        self.location_focus_selected_index = index
+        self.location_focus_keyboard_active = False
+        return self.set_location_focus(match.get("id"))
+
+    @staticmethod
+    def _parse_working_year_token(value):
+        text = str(value or "").strip()
+        match = re.fullmatch(r"([+-]?\d+(?:\.\d+)?)\s*(mya)?", text, flags=re.IGNORECASE)
+        if match is None:
+            return None
+        number_text = match.group(1)
+        try:
+            if match.group(2):
+                return -int(round(float(number_text) * 1_000_000))
+            if "." in number_text:
+                return None
+            return int(number_text)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _parse_working_year_value(value):
+        text = str(value or "").strip()
+        if "mya" in text.casefold():
+            token_pattern = r"([+-]?\d+(?:\.\d+)?\s*(?:mya)?)"
+            match = re.fullmatch(
+                token_pattern + r"(?:\s*(?:-|–|—|to)\s*" + token_pattern + r")?",
+                text,
+                flags=re.IGNORECASE,
+            )
+            if match is None:
+                return None
+            start_year = TimelineUI._parse_working_year_token(match.group(1))
+            end_year = TimelineUI._parse_working_year_token(match.group(2)) if match.group(2) is not None else start_year
+            if start_year is None or end_year is None:
+                return None
+            return (min(start_year, end_year), max(start_year, end_year))
+        match = re.fullmatch(r"([+-]?\d+)(?:\s*(?:-|–|—|to)\s*([+-]?\d+))?", text, flags=re.IGNORECASE)
+        if match is None:
+            return None
+
+        start_year = int(match.group(1))
+        end_year = int(match.group(2)) if match.group(2) is not None else start_year
+        return (min(start_year, end_year), max(start_year, end_year))
+
+    @staticmethod
+    def _format_working_year_value(year):
+        try:
+            year = int(year)
+        except (TypeError, ValueError):
+            return ""
+        if year <= -1_000_000 and year % 1_000_000 == 0:
+            return f"{abs(year) // 1_000_000}MYA"
+        return str(year)
+
+    @staticmethod
+    def _format_working_year_range(year_range):
+        if year_range is None:
+            return ""
+        start_year, end_year = year_range
+        if start_year == end_year:
+            return TimelineUI._format_working_year_value(start_year)
+        return (
+            f"{TimelineUI._format_working_year_value(start_year)}"
+            f" - {TimelineUI._format_working_year_value(end_year)}"
+        )
 
     def set_selected_year(self, year, context_label=None, focus=False):
         if year is None:
@@ -195,6 +484,16 @@ class TimelineUI:
             self.rebuild_layout()
         return changed
 
+    def set_timeline_sort_mode(self, mode):
+        mode = str(mode or "flat").strip().lower()
+        if mode not in {"flat", "offspring"}:
+            mode = "flat"
+        changed = mode != self.timeline_sort_mode
+        self.timeline_sort_mode = mode
+        if changed:
+            self.rebuild_layout()
+        return changed
+
     def set_period_filter(self, start_year=None, end_year=None, pending_start=None):
         old_range = self.period_filter_range
         old_pending = self.period_filter_pending_start
@@ -211,6 +510,8 @@ class TimelineUI:
         categories = {"all", "open_canvas", "contemporary"}
         for item in self.items:
             if item.get("timeline_kind") == "major_period":
+                continue
+            if self._item_hidden_by_default(item):
                 continue
             dataset_name = item.get("dataset")
             if dataset_name:
@@ -311,6 +612,46 @@ class TimelineUI:
 
         return f"Selected {self.selected_year}"
 
+    def _format_location_focus_display_value(self):
+        if self.location_focus_active:
+            return self.location_focus_buffer
+        return self.location_focus_label or ""
+
+    def _format_working_year_display_value(self):
+        if self.working_year_active:
+            return self.working_year_buffer
+        return self._format_working_year_range(self.working_year_range)
+
+    def _entity_display_label(self, entity, fallback=None):
+        if not isinstance(entity, dict):
+            return fallback or ""
+        return str(
+            entity.get("pretty_name")
+            or entity.get("name")
+            or entity.get("common_name")
+            or entity.get("label")
+            or fallback
+            or entity.get("id")
+            or ""
+        )
+
+    def _ellipsize_text(self, text, font, max_width):
+        text = str(text or "")
+        if font is None or font.size(text)[0] <= max_width:
+            return text
+        ellipsis = "..."
+        if font.size(ellipsis)[0] > max_width:
+            return ""
+        while text and font.size(text + ellipsis)[0] > max_width:
+            text = text[:-1]
+        return text + ellipsis if text else ellipsis
+
+    def _is_location_entity(self, entity):
+        return isinstance(entity, dict) and (
+            entity.get("_dataset") == "locations"
+            or entity.get("type") == "location"
+        )
+
     @staticmethod
     def _coerce_color(value, fallback):
         if isinstance(value, (list, tuple)) and len(value) >= 3:
@@ -344,6 +685,16 @@ class TimelineUI:
         luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255.0
         return (18, 22, 30) if luminance >= 0.58 else (240, 244, 250)
 
+    def _item_hidden_by_default(self, item):
+        if item.get("timeline_kind") == "major_period":
+            return False
+        dataset_name = str(item.get("dataset") or "").strip().lower()
+        entity_type = str(item.get("entity_type") or "").strip().lower()
+        return (
+            dataset_name in self.DEFAULT_HIDDEN_DATASETS
+            or entity_type in self.DEFAULT_HIDDEN_ENTITY_TYPES
+        )
+
     def _draw_selected_year_marker(self, screen):
         if self.selected_year is None or not self._year_is_in_view(self.selected_year):
             return
@@ -367,7 +718,9 @@ class TimelineUI:
         )
 
     def _filtered_visible_items(self):
-        visible_items = self._visible_items()
+        visible_items = self._location_focus_visible_items(
+            self._working_year_visible_items(self._visible_items())
+        )
         if self.active_filter_mode == "group":
             group_categories = set()
             for group_id in self.active_filter_groups:
@@ -414,6 +767,320 @@ class TimelineUI:
             end_year = start_year
         return (min(start_year, end_year), max(start_year, end_year))
 
+    def _item_extant_in_year(self, item, year):
+        return self._item_extant_in_period(item, year, year)
+
+    def _item_extant_in_period(self, item, filter_start_year, filter_end_year):
+        start_year = item.get("raw_start_year", item.get("start_year"))
+        end_year = item.get("raw_end_year", item.get("end_year"))
+        if start_year is None and end_year is None:
+            return False
+
+        try:
+            if start_year is not None:
+                start_year = int(start_year)
+            if end_year is not None:
+                end_year = int(end_year)
+            filter_start_year = int(filter_start_year)
+            filter_end_year = int(filter_end_year)
+        except (TypeError, ValueError):
+            return False
+
+        if filter_end_year < filter_start_year:
+            filter_start_year, filter_end_year = filter_end_year, filter_start_year
+
+        if start_year is None:
+            return filter_start_year <= end_year
+        if end_year is None:
+            return start_year <= filter_end_year
+
+        if end_year < start_year:
+            start_year, end_year = end_year, start_year
+        return start_year <= filter_end_year and end_year >= filter_start_year
+
+    def _working_year_visible_items(self, visible_items):
+        if self.working_year_range is None:
+            return visible_items
+        filter_start_year, filter_end_year = self.working_year_range
+        return [
+            item
+            for item in visible_items
+            if self._item_extant_in_period(item, filter_start_year, filter_end_year)
+        ]
+
+    def _random_working_year_candidates(self):
+        ordinary_years = set()
+        mya_buckets = set()
+        geologic_cutoff = -1_000_000
+
+        for item in self.items:
+            if item.get("timeline_kind") == "major_period" or self._item_hidden_by_default(item):
+                continue
+            year_range = self._item_year_range(item)
+            if year_range is None:
+                continue
+
+            start_year, end_year = year_range
+            try:
+                start_year = int(start_year)
+                end_year = int(end_year)
+            except (TypeError, ValueError):
+                continue
+            if end_year < start_year:
+                start_year, end_year = end_year, start_year
+
+            ordinary_start = max(start_year, geologic_cutoff + 1)
+            ordinary_end = end_year
+            if ordinary_start <= ordinary_end:
+                ordinary_years.update(range(ordinary_start, ordinary_end + 1))
+
+            geologic_start = start_year
+            geologic_end = min(end_year, geologic_cutoff)
+            if geologic_start <= geologic_end:
+                oldest_bucket = int(math.ceil(abs(geologic_start) / 1_000_000))
+                youngest_bucket = int(math.ceil(abs(geologic_end) / 1_000_000))
+                mya_buckets.update(range(max(1, youngest_bucket), max(1, oldest_bucket) + 1))
+
+        candidates = list(ordinary_years)
+        candidates.extend(-bucket * 1_000_000 for bucket in mya_buckets)
+        return candidates
+
+    def _random_working_year_candidate_space(self):
+        ordinary_ranges = []
+        mya_buckets = set()
+        geologic_cutoff = -1_000_000
+
+        for item in self.items:
+            if item.get("timeline_kind") == "major_period" or self._item_hidden_by_default(item):
+                continue
+            year_range = self._item_year_range(item)
+            if year_range is None:
+                continue
+
+            start_year, end_year = year_range
+            try:
+                start_year = int(start_year)
+                end_year = int(end_year)
+            except (TypeError, ValueError):
+                continue
+            if end_year < start_year:
+                start_year, end_year = end_year, start_year
+
+            ordinary_start = max(start_year, geologic_cutoff + 1)
+            ordinary_end = end_year
+            if ordinary_start <= ordinary_end:
+                ordinary_ranges.append((ordinary_start, ordinary_end))
+
+            geologic_start = start_year
+            geologic_end = min(end_year, geologic_cutoff)
+            if geologic_start <= geologic_end:
+                oldest_bucket = int(math.ceil(abs(geologic_start) / 1_000_000))
+                youngest_bucket = int(math.ceil(abs(geologic_end) / 1_000_000))
+                mya_buckets.update(range(max(1, youngest_bucket), max(1, oldest_bucket) + 1))
+
+        ordinary_ranges = self._merge_year_ranges(ordinary_ranges)
+        ordinary_total = sum(end_year - start_year + 1 for start_year, end_year in ordinary_ranges)
+        return ordinary_ranges, sorted(mya_buckets), ordinary_total
+
+    @staticmethod
+    def _merge_year_ranges(ranges):
+        normalized = sorted(
+            (int(start_year), int(end_year))
+            for start_year, end_year in ranges
+            if start_year is not None and end_year is not None
+        )
+        merged = []
+        for start_year, end_year in normalized:
+            if end_year < start_year:
+                start_year, end_year = end_year, start_year
+            if not merged or start_year > merged[-1][1] + 1:
+                merged.append([start_year, end_year])
+            else:
+                merged[-1][1] = max(merged[-1][1], end_year)
+        return [(start_year, end_year) for start_year, end_year in merged]
+
+    def _choose_random_working_year(self):
+        ordinary_ranges, mya_buckets, ordinary_total = self._random_working_year_candidate_space()
+        total_weight = ordinary_total + len(mya_buckets)
+        if total_weight <= 0:
+            return None
+
+        pick_index = random.randrange(total_weight)
+        if pick_index < ordinary_total:
+            offset = pick_index
+            for start_year, end_year in ordinary_ranges:
+                span = end_year - start_year + 1
+                if offset < span:
+                    return start_year + offset
+                offset -= span
+            return ordinary_ranges[-1][1] if ordinary_ranges else None
+
+        bucket_index = pick_index - ordinary_total
+        return -mya_buckets[bucket_index] * 1_000_000 if bucket_index < len(mya_buckets) else None
+
+    def set_random_working_year(self):
+        picked_year = self._choose_random_working_year()
+        if picked_year is None:
+            return None
+        changed = self.set_working_year(picked_year, focus=True)
+        return {
+            "kind": "random_working_year_changed",
+            "year": self.working_year,
+            "start_year": self.working_year_range[0] if self.working_year_range is not None else None,
+            "end_year": self.working_year_range[1] if self.working_year_range is not None else None,
+            "changed": changed,
+        }
+
+    def _random_extant_location_ids(self):
+        filter_range = self.working_year_range
+        if filter_range is None:
+            return sorted(
+                entity_id
+                for entity_id, entity in self.entity_lookup.items()
+                if self._is_location_entity(entity)
+            )
+        filter_start_year, filter_end_year = filter_range
+        location_ids = set()
+        for item in self.items:
+            if item.get("timeline_kind") == "major_period":
+                continue
+            entity_id = str(item.get("entity_id") or "").strip()
+            if not entity_id:
+                continue
+            entity = self.entity_lookup.get(entity_id)
+            if not self._is_location_entity(entity):
+                continue
+            if self._item_extant_in_period(item, filter_start_year, filter_end_year):
+                location_ids.add(entity_id)
+        return sorted(location_ids)
+
+    def set_random_location_focus(self):
+        location_ids = self._random_extant_location_ids()
+        if not location_ids:
+            return None
+        picked_location_id = random.choice(location_ids)
+        changed = self.set_location_focus(picked_location_id)
+        return {
+            "kind": "random_location_focus_changed",
+            "location_id": self.location_focus_id,
+            "label": self.location_focus_label,
+            "changed": changed,
+        }
+
+    def _relation_entity_ids(self, value):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            value = value.strip()
+            return [value] if value else []
+        if isinstance(value, dict):
+            candidate = value.get("location_id") or value.get("id") or value.get("entity_id") or value.get("target")
+            return [str(candidate)] if candidate else []
+        if isinstance(value, (list, tuple, set)):
+            ids = []
+            for item in value:
+                ids.extend(self._relation_entity_ids(item))
+            return ids
+        return []
+
+    def _location_parent_ids(self, entity):
+        if not isinstance(entity, dict):
+            return []
+        parent_ids = []
+        entity_id = str(entity.get("id") or "")
+        for field_key in ("parent_location", "parent_entity", "parent_body", "parents"):
+            for parent_id in self._relation_entity_ids(entity.get(field_key)):
+                parent_entity = self.entity_lookup.get(parent_id)
+                if parent_id != entity_id and self._is_location_entity(parent_entity):
+                    parent_ids.append(parent_id)
+        for candidate_id, candidate in self.entity_lookup.items():
+            if not self._is_location_entity(candidate):
+                continue
+            if candidate_id == entity_id:
+                continue
+            if entity_id in self._relation_entity_ids(candidate.get("constituents")):
+                parent_ids.append(candidate_id)
+        return parent_ids
+
+    def _location_id_is_in_focus(self, location_id, focus_id=None, visited=None):
+        if not location_id:
+            return False
+        location_id = str(location_id)
+        focus_id = str(focus_id or self.location_focus_id or "")
+        if not focus_id:
+            return True
+        if location_id == focus_id:
+            return True
+
+        if visited is None:
+            visited = set()
+        if location_id in visited:
+            return False
+        visited.add(location_id)
+
+        location_entity = self.entity_lookup.get(location_id)
+        if not self._is_location_entity(location_entity):
+            return False
+        return any(
+            self._location_id_is_in_focus(parent_id, focus_id=focus_id, visited=visited)
+            for parent_id in self._location_parent_ids(location_entity)
+        )
+
+    def _entity_location_reference_ids(self, entity):
+        if not isinstance(entity, dict):
+            return []
+
+        reference_keys = (
+            "location_entity",
+            "location",
+            "locations",
+            "associated_location",
+            "associated_locations",
+            "location_history",
+            "place",
+            "places",
+            "parent_location",
+            "parent_entity",
+            "parent_body",
+            "owner_entity",
+            "parents",
+            "neighbours",
+            "constituents",
+            "overlaps",
+        )
+        location_ids = []
+        for field_key in reference_keys:
+            for candidate_id in self._relation_entity_ids(entity.get(field_key)):
+                if self._is_location_entity(self.entity_lookup.get(candidate_id)):
+                    location_ids.append(candidate_id)
+        return location_ids
+
+    def _entity_is_in_location_focus(self, entity_id):
+        if self.location_focus_id is None:
+            return True
+
+        entity = self.entity_lookup.get(str(entity_id or ""))
+        if not isinstance(entity, dict):
+            return False
+
+        if self._is_location_entity(entity):
+            return self._location_id_is_in_focus(entity.get("id") or entity_id)
+
+        return any(
+            self._location_id_is_in_focus(location_id)
+            for location_id in self._entity_location_reference_ids(entity)
+        )
+
+    def _location_focus_visible_items(self, visible_items):
+        if self.location_focus_id is None:
+            return visible_items
+        return [
+            item
+            for item in visible_items
+            if item.get("timeline_kind") == "major_period"
+            or self._entity_is_in_location_focus(item.get("entity_id"))
+        ]
+
     def _contemporary_visible_items(self, visible_items):
         if self.selected_year is not None:
             return [
@@ -459,6 +1126,8 @@ class TimelineUI:
         years = []
         if self.selected_year is not None:
             years.append(self.selected_year)
+        if self.working_year_range is not None:
+            years.extend(self.working_year_range)
 
         for item in self.items:
             start = item.get("start_year")
@@ -610,6 +1279,26 @@ class TimelineUI:
 
         return self.view_min_year <= year <= self.view_max_year
 
+    def _item_commentary_text(self, item):
+        commentary = str(item.get("commentary") or "").strip()
+        if commentary:
+            return commentary
+        parts = []
+        for key, label in (("start_commentary", "Start"), ("end_commentary", "End")):
+            text = str(item.get(key) or "").strip()
+            if text:
+                parts.append(f"{label}: {text}")
+        return " / ".join(parts)
+
+    def _show_item_commentary(self):
+        return (self.view_max_year - self.view_min_year) <= 500
+
+    def _lane_pitch(self):
+        extra = 0
+        if self._show_item_commentary():
+            extra = max(0, (self.layout_font.get_linesize() if self.layout_font is not None else 14) - 2)
+        return self.ITEM_H + self.LANE_GAP + extra
+
     def _nice_year_step(self, target_years):
         target_years = max(1.0, float(target_years))
         magnitude = 10 ** math.floor(math.log10(target_years))
@@ -712,8 +1401,13 @@ class TimelineUI:
         visible = []
 
         for item in self.items:
-            start = item.get("start_year")
-            end = item.get("end_year")
+            if self._item_hidden_by_default(item):
+                continue
+
+            raw_start = item.get("start_year")
+            raw_end = item.get("end_year")
+            start = raw_start
+            end = raw_end
 
             if start is None and end is None:
                 continue
@@ -721,7 +1415,13 @@ class TimelineUI:
             if start is None:
                 start = end
             if end is None:
-                end = start
+                if self.working_year_range is not None:
+                    end = max(start, self.working_year_range[1])
+                else:
+                    end = start
+
+            if raw_start is None and self.working_year_range is not None:
+                start = min(start, self.working_year_range[0])
 
             if end < start:
                 start, end = end, start
@@ -732,6 +1432,8 @@ class TimelineUI:
             visible.append(
                 {
                     **item,
+                    "raw_start_year": raw_start,
+                    "raw_end_year": raw_end,
                     "start_year": start,
                     "end_year": end,
                 }
@@ -816,6 +1518,111 @@ class TimelineUI:
 
         return layout_items, max(0, len(lane_end_pixels))
 
+    def _timeline_parent_ids_for_item(self, entity_id, visible_ids):
+        entity = self.entity_lookup.get(str(entity_id or ""))
+        parent_ids = []
+        if isinstance(entity, dict):
+            for field_key in ("parents", "parent_entity", "parent_location", "parent_body"):
+                for parent_id in self._relation_entity_ids(entity.get(field_key)):
+                    if parent_id in visible_ids and parent_id != entity_id:
+                        parent_ids.append(parent_id)
+
+        for parent_id, parent_entity in self.entity_lookup.items():
+            if parent_id == entity_id or parent_id not in visible_ids:
+                continue
+            for child_id in self._relation_entity_ids(parent_entity.get("offspring") if isinstance(parent_entity, dict) else None):
+                if child_id == entity_id and parent_id not in parent_ids:
+                    parent_ids.append(parent_id)
+        return parent_ids
+
+    def _expand_nested_item_range(self, item, children_by_parent, items_by_id, visiting=None):
+        entity_id = str(item.get("entity_id") or "")
+        if visiting is None:
+            visiting = set()
+        if entity_id in visiting:
+            return int(item["start_year"]), int(item["end_year"])
+        visiting.add(entity_id)
+
+        start_year = int(item["start_year"])
+        end_year = int(item["end_year"])
+        for child_id in children_by_parent.get(entity_id, []):
+            child = items_by_id.get(child_id)
+            if child is None:
+                continue
+            child_start, child_end = self._expand_nested_item_range(child, children_by_parent, items_by_id, visiting)
+            start_year = min(start_year, child_start)
+            end_year = max(end_year, child_end)
+        visiting.discard(entity_id)
+        return start_year, end_year
+
+    def _assign_offspring_nested_lanes(self, items):
+        items_by_id = {
+            str(item.get("entity_id")): item
+            for item in items
+            if str(item.get("entity_id") or "").strip()
+        }
+        visible_ids = set(items_by_id)
+        parent_by_child = {}
+        children_by_parent = {entity_id: [] for entity_id in visible_ids}
+
+        for entity_id in visible_ids:
+            parent_ids = sorted(set(self._timeline_parent_ids_for_item(entity_id, visible_ids)))
+            if parent_ids:
+                parent_id = parent_ids[0]
+                parent_by_child[entity_id] = parent_id
+                children_by_parent.setdefault(parent_id, []).append(entity_id)
+
+        for child_ids in children_by_parent.values():
+            child_ids.sort(key=lambda child_id: (
+                items_by_id[child_id]["start_year"],
+                items_by_id[child_id]["end_year"],
+                str(items_by_id[child_id].get("label", "")),
+            ))
+
+        roots = [
+            entity_id
+            for entity_id in visible_ids
+            if entity_id not in parent_by_child
+        ]
+        roots.sort(key=lambda entity_id: (
+            items_by_id[entity_id]["start_year"],
+            items_by_id[entity_id]["end_year"],
+            str(items_by_id[entity_id].get("label", "")),
+        ))
+
+        layout_items = []
+        visited = set()
+
+        def append_tree(entity_id, depth):
+            if entity_id in visited:
+                return
+            item = items_by_id[entity_id]
+            visited.add(entity_id)
+            expanded_start, expanded_end = self._expand_nested_item_range(item, children_by_parent, items_by_id)
+            display_item = {
+                **item,
+                "original_start_year": item["start_year"],
+                "original_end_year": item["end_year"],
+                "start_year": expanded_start,
+                "end_year": expanded_end,
+                "nest_depth": depth,
+                "has_nested_children": bool(children_by_parent.get(entity_id)),
+                "lane": len(layout_items),
+            }
+            item_left, item_right = self._get_item_horizontal_bounds(display_item)
+            display_item["layout_left_px"] = item_left
+            display_item["layout_right_px"] = item_right
+            layout_items.append(display_item)
+            for child_id in children_by_parent.get(entity_id, []):
+                append_tree(child_id, depth + 1)
+
+        for root_id in roots:
+            append_tree(root_id, 0)
+        for entity_id in sorted(visible_ids - visited):
+            append_tree(entity_id, 0)
+
+        return layout_items, len(layout_items)
+
     def _assign_period_lanes(self):
         period_items = [
             item
@@ -833,7 +1640,10 @@ class TimelineUI:
             for item in self._filtered_visible_items()
             if item.get("timeline_kind") != "major_period"
         ]
-        self.layout_items, lane_count = self._assign_items_to_lanes(timeline_items)
+        if self.timeline_sort_mode == "offspring":
+            self.layout_items, lane_count = self._assign_offspring_nested_lanes(timeline_items)
+        else:
+            self.layout_items, lane_count = self._assign_items_to_lanes(timeline_items)
         self.lane_count = max(1, lane_count)
 
     def _build_coverage_segments(self):
@@ -894,25 +1704,36 @@ class TimelineUI:
     def _rebuild_filter_hitboxes(self):
         self.filter_hitboxes = []
         self.filter_group_hitboxes = []
+        self.sort_mode_hitboxes = []
         if self.layout_font is None:
             return
 
+        self._layout_working_year_rect(self.layout_font)
+        self._layout_location_focus_rect(self.layout_font)
+        self._layout_random_working_year_rect(self.layout_font)
+        self._layout_random_location_focus_rect(self.layout_font)
+        self._layout_sort_mode_hitboxes(self.layout_font)
         x = self.rect.x + 180
         y = self.rect.y + 6
         chip_h = 20
         gap = 6
         max_right = self.rect.right - 10
+        group_max_right = max_right
+        if self.working_year_enabled and self.working_year_rect.width > 0:
+            group_max_right = min(group_max_right, self.working_year_rect.x - 8)
+        if self.sort_mode_hitboxes:
+            group_max_right = min(group_max_right, self.sort_mode_hitboxes[0][2].x - 8)
 
         for group_id, group_label, _ in self.get_filter_groups():
             chip_w = self.layout_font.size(group_label)[0] + 16
             chip_rect = pygame.Rect(x, y, chip_w, chip_h)
-            if chip_rect.right > max_right:
+            if chip_rect.right > group_max_right:
                 break
             self.filter_group_hitboxes.append((group_id, group_label, chip_rect))
             x = chip_rect.right + gap
 
         x = self.rect.x + 180
-        y = self.rect.y + 28
+        y = self.rect.y + 58
         for category_name in self.get_filter_categories():
             label = self._format_filter_label(category_name)
             chip_w = self.layout_font.size(label)[0] + 16
@@ -921,6 +1742,232 @@ class TimelineUI:
                 break
             self.filter_hitboxes.append((category_name, label, chip_rect))
             x = chip_rect.right + gap
+
+    def _layout_sort_mode_hitboxes(self, font):
+        self.sort_mode_hitboxes = []
+        if font is None or self.rect.width < 180:
+            return
+        labels = [("flat", "Flat"), ("offspring", "Nest")]
+        button_h = 20
+        gap = 4
+        widths = [max(34, font.size(label)[0] + 14) for _, label in labels]
+        total_w = sum(widths) + gap
+        x = self.rect.right - total_w - 10
+        y = self.rect.y + 6
+        for (mode, label), width in zip(labels, widths):
+            rect = pygame.Rect(x, y, width, button_h)
+            self.sort_mode_hitboxes.append((mode, label, rect))
+            x = rect.right + gap
+
+    def _layout_location_focus_rect(self, font):
+        if not self.location_focus_enabled or font is None:
+            self.location_focus_rect = pygame.Rect(0, 0, 0, 0)
+            return
+
+        label_w = font.size("Location")[0]
+        value_w = max(font.size("Planet X / Northern Spain")[0], font.size(self._format_location_focus_display_value())[0])
+        width = max(200, label_w + value_w + 34)
+        width = min(width, max(140, self.rect.width - 36))
+        self.location_focus_rect = pygame.Rect(
+            self.rect.centerx - width // 2,
+            self.rect.y + 31,
+            width,
+            24,
+        )
+
+    def _layout_working_year_rect(self, font):
+        if not self.working_year_enabled or font is None:
+            self.working_year_rect = pygame.Rect(0, 0, 0, 0)
+            self.random_working_year_rect = pygame.Rect(0, 0, 0, 0)
+            return
+
+        label_w = font.size("Working Year")[0]
+        value_w = max(font.size("0000 - 0000")[0], font.size(self._format_working_year_display_value())[0])
+        width = max(170, label_w + value_w + 34)
+        width = min(width, max(120, self.rect.width - 36))
+        self.working_year_rect = pygame.Rect(
+            self.rect.centerx - width // 2,
+            self.rect.y + 5,
+            width,
+            24,
+        )
+
+    def _layout_button_next_to_rect(self, anchor_rect, label, font):
+        if anchor_rect is None or anchor_rect.width <= 0 or font is None:
+            return pygame.Rect(0, 0, 0, 0)
+        button_w = max(72, font.size(label)[0] + 16)
+        button_h = anchor_rect.height
+        gap = 6
+        right_x = anchor_rect.right + gap
+        if right_x + button_w <= self.rect.right - 12:
+            return pygame.Rect(right_x, anchor_rect.y, button_w, button_h)
+        left_x = anchor_rect.x - gap - button_w
+        if left_x >= self.rect.x + 12:
+            return pygame.Rect(left_x, anchor_rect.y, button_w, button_h)
+        return pygame.Rect(0, 0, 0, 0)
+
+    def _layout_random_working_year_rect(self, font):
+        if not self.working_year_enabled:
+            self.random_working_year_rect = pygame.Rect(0, 0, 0, 0)
+            return
+        self.random_working_year_rect = self._layout_button_next_to_rect(
+            self.working_year_rect,
+            "Random Year",
+            font,
+        )
+
+    def _layout_random_location_focus_rect(self, font):
+        if not self.location_focus_enabled:
+            self.random_location_focus_rect = pygame.Rect(0, 0, 0, 0)
+            return
+        self.random_location_focus_rect = self._layout_button_next_to_rect(
+            self.location_focus_rect,
+            "Random Loc",
+            font,
+        )
+
+    def _draw_working_year_input(self, screen, font):
+        if not self.working_year_enabled:
+            return
+
+        self._layout_working_year_rect(font)
+        self._layout_random_working_year_rect(font)
+        if self.working_year_rect.width <= 0:
+            return
+
+        fill = (36, 44, 61) if self.working_year_active else (24, 30, 43)
+        border = (232, 210, 148) if self.working_year_active else (96, 108, 130)
+        pygame.draw.rect(screen, fill, self.working_year_rect)
+        pygame.draw.rect(screen, border, self.working_year_rect, 1)
+
+        label_surface = font.render("Working Year", True, (178, 188, 208))
+        label_x = self.working_year_rect.x + 8
+        label_y = self.working_year_rect.y + (self.working_year_rect.height - label_surface.get_height()) // 2
+        screen.blit(label_surface, (label_x, label_y))
+
+        value = self._format_working_year_display_value()
+        if value:
+            value_color = (245, 242, 226)
+        else:
+            value = "Year/Period"
+            value_color = (112, 124, 146)
+        max_value_w = max(20, self.working_year_rect.right - (label_x + label_surface.get_width() + 22))
+        value = self._ellipsize_text(value, font, max_value_w)
+        value_surface = font.render(value, True, value_color)
+        value_x = max(
+            label_x + label_surface.get_width() + 12,
+            self.working_year_rect.right - value_surface.get_width() - 10,
+        )
+        value_y = self.working_year_rect.y + (self.working_year_rect.height - value_surface.get_height()) // 2
+        screen.blit(value_surface, (value_x, value_y))
+
+        if self.working_year_active:
+            cursor_x = min(self.working_year_rect.right - 7, value_x + value_surface.get_width() + 2)
+            pygame.draw.line(
+                screen,
+                (245, 242, 226),
+                (cursor_x, self.working_year_rect.y + 5),
+                (cursor_x, self.working_year_rect.bottom - 5),
+                1,
+            )
+
+        self._draw_small_button(screen, font, self.random_working_year_rect, "Random Year")
+
+    def _draw_location_focus_input(self, screen, font):
+        if not self.location_focus_enabled:
+            return
+
+        self._layout_location_focus_rect(font)
+        self._layout_random_location_focus_rect(font)
+        if self.location_focus_rect.width <= 0:
+            return
+
+        if self.location_focus_invalid:
+            border = (220, 112, 112)
+        elif self.location_focus_active:
+            border = (232, 210, 148)
+        else:
+            border = (96, 108, 130)
+        fill = (36, 44, 61) if self.location_focus_active else (24, 30, 43)
+        pygame.draw.rect(screen, fill, self.location_focus_rect)
+        pygame.draw.rect(screen, border, self.location_focus_rect, 1)
+
+        label_surface = font.render("Location", True, (178, 188, 208))
+        label_x = self.location_focus_rect.x + 8
+        label_y = self.location_focus_rect.y + (self.location_focus_rect.height - label_surface.get_height()) // 2
+        screen.blit(label_surface, (label_x, label_y))
+
+        value = self._format_location_focus_display_value()
+        if value:
+            value_color = (245, 242, 226)
+        else:
+            value = "Any"
+            value_color = (112, 124, 146)
+        max_value_w = max(20, self.location_focus_rect.right - (label_x + label_surface.get_width() + 22))
+        value = self._ellipsize_text(value, font, max_value_w)
+        value_surface = font.render(value, True, value_color)
+        value_x = max(
+            label_x + label_surface.get_width() + 12,
+            self.location_focus_rect.right - value_surface.get_width() - 10,
+        )
+        value_y = self.location_focus_rect.y + (self.location_focus_rect.height - value_surface.get_height()) // 2
+        screen.blit(value_surface, (value_x, value_y))
+
+        if self.location_focus_active:
+            cursor_x = min(self.location_focus_rect.right - 7, value_x + value_surface.get_width() + 2)
+            pygame.draw.line(
+                screen,
+                (245, 242, 226),
+                (cursor_x, self.location_focus_rect.y + 5),
+                (cursor_x, self.location_focus_rect.bottom - 5),
+                1,
+            )
+
+        self._draw_small_button(screen, font, self.random_location_focus_rect, "Random Loc")
+
+    def _draw_small_button(self, screen, font, rect, label):
+        if rect is None or rect.width <= 0 or rect.height <= 0:
+            return
+        mouse_pos = pygame.mouse.get_pos()
+        hovered = rect.collidepoint(mouse_pos)
+        fill = (48, 58, 78) if hovered else (30, 36, 50)
+        border = (158, 176, 210) if hovered else (86, 98, 120)
+        text_color = (238, 242, 250) if hovered else (178, 188, 208)
+        pygame.draw.rect(screen, fill, rect)
+        pygame.draw.rect(screen, border, rect, 1)
+        label_surface = font.render(label, True, text_color)
+        screen.blit(label_surface, label_surface.get_rect(center=rect.center))
+
+    def _draw_location_focus_suggestions(self, screen, font):
+        self.location_focus_suggestion_hitboxes = []
+        if not self.location_focus_enabled or not self.location_focus_active:
+            return
+
+        matches = self.location_focus_matches or []
+        if not matches:
+            return
+
+        selected_index = max(0, min(int(self.location_focus_selected_index or 0), len(matches) - 1))
+        row_y = self.location_focus_rect.bottom + 4
+        row_h = 22
+        max_rows = 6
+        for index, match in enumerate(matches[:max_rows]):
+            row_rect = pygame.Rect(self.location_focus_rect.x, row_y + index * row_h, self.location_focus_rect.width, row_h)
+            self.location_focus_suggestion_hitboxes.append((index, row_rect))
+            selected = index == selected_index
+            fill = (52, 64, 86) if selected else (31, 36, 48)
+            border = (138, 164, 206) if selected else (72, 82, 104)
+            pygame.draw.rect(screen, fill, row_rect)
+            pygame.draw.rect(screen, border, row_rect, 1)
+
+            label = self._ellipsize_text(match.get("label", ""), font, row_rect.width - 128)
+            subtitle = self._ellipsize_text(match.get("subtitle", ""), font, 112)
+            label_color = (240, 244, 250) if selected else (188, 198, 216)
+            subtitle_color = (176, 188, 208)
+            screen.blit(font.render(label, True, label_color), (row_rect.x + 6, row_rect.y + 3))
+            if subtitle:
+                subtitle_surface = font.render(subtitle, True, subtitle_color)
+                screen.blit(subtitle_surface, (row_rect.right - subtitle_surface.get_width() - 6, row_rect.y + 3))
 
     def zoom_at(self, screen_x, factor):
         if factor <= 0:
@@ -1023,7 +2070,128 @@ class TimelineUI:
 
         return False
 
+    def handle_keydown(self, event):
+        if self.location_focus_enabled and self.location_focus_active:
+            return self._handle_location_focus_keydown(event)
+
+        if self.working_year_enabled and self.working_year_active:
+            return self._handle_working_year_keydown(event)
+
+        return None
+
+    def _handle_working_year_keydown(self, event):
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            value = self.working_year_buffer.strip()
+            changed = self.set_working_year(value if value else None, focus=bool(value))
+            start_year = self.working_year_range[0] if self.working_year_range is not None else None
+            end_year = self.working_year_range[1] if self.working_year_range is not None else None
+            return {
+                "kind": "working_year_changed",
+                "year": self.working_year,
+                "start_year": start_year,
+                "end_year": end_year,
+                "changed": changed,
+            }
+
+        if event.key == pygame.K_ESCAPE:
+            self.working_year_active = False
+            self.working_year_buffer = self._format_working_year_range(self.working_year_range)
+            return {"kind": "working_year_cancelled", "changed": False}
+
+        if event.key == pygame.K_BACKSPACE:
+            self.working_year_buffer = self.working_year_buffer[:-1]
+            return {"kind": "working_year_editing", "changed": False}
+
+        if event.key == pygame.K_DELETE:
+            self.working_year_buffer = ""
+            return {"kind": "working_year_editing", "changed": False}
+
+        text = getattr(event, "unicode", "")
+        if text and text.isprintable():
+            if text.isdigit() or text in {" ", "-", "+", "–", "—"}:
+                self.working_year_buffer += text
+            return {"kind": "working_year_editing", "changed": False}
+
+        return {"kind": "working_year_editing", "changed": False}
+
+    def _handle_location_focus_keydown(self, event):
+        matches = self.location_focus_matches or []
+        if event.key == pygame.K_UP and matches:
+            self.location_focus_selected_index = (
+                int(self.location_focus_selected_index or 0) - 1
+            ) % len(matches)
+            self.location_focus_keyboard_active = True
+            return {"kind": "location_focus_editing", "changed": False}
+
+        if event.key == pygame.K_DOWN and matches:
+            self.location_focus_selected_index = (
+                int(self.location_focus_selected_index or 0) + 1
+            ) % len(matches)
+            self.location_focus_keyboard_active = True
+            return {"kind": "location_focus_editing", "changed": False}
+
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            value = self.location_focus_buffer.strip()
+            if matches and (value or self.location_focus_keyboard_active):
+                changed = self._select_location_focus_match()
+            else:
+                changed = self.set_location_focus(value if value else None)
+            if value and self.location_focus_invalid:
+                return {
+                    "kind": "location_focus_invalid",
+                    "location_id": None,
+                    "changed": False,
+                }
+            return {
+                "kind": "location_focus_changed",
+                "location_id": self.location_focus_id,
+                "label": self.location_focus_label,
+                "changed": changed,
+            }
+
+        if event.key == pygame.K_ESCAPE:
+            self.location_focus_active = False
+            self.location_focus_invalid = False
+            self.location_focus_buffer = self.location_focus_label or ""
+            return {"kind": "location_focus_cancelled", "changed": False}
+
+        if event.key == pygame.K_BACKSPACE:
+            self.location_focus_buffer = self.location_focus_buffer[:-1]
+            self.location_focus_invalid = False
+            self.location_focus_keyboard_active = False
+            self._refresh_location_focus_matches()
+            return {"kind": "location_focus_editing", "changed": False}
+
+        if event.key == pygame.K_DELETE:
+            self.location_focus_buffer = ""
+            self.location_focus_invalid = False
+            self.location_focus_keyboard_active = False
+            self._refresh_location_focus_matches()
+            return {"kind": "location_focus_editing", "changed": False}
+
+        text = getattr(event, "unicode", "")
+        if text and text.isprintable():
+            self.location_focus_buffer += text
+            self.location_focus_invalid = False
+            self.location_focus_keyboard_active = False
+            self._refresh_location_focus_matches()
+            return {"kind": "location_focus_editing", "changed": False}
+
+        return {"kind": "location_focus_editing", "changed": False}
+
     def handle_click(self, mouse_pos):
+        random_action = self.handle_random_button_click(mouse_pos)
+        if random_action is not None:
+            return random_action
+
+        location_focus_action = self.handle_location_focus_click(mouse_pos)
+        if location_focus_action is not None:
+            return location_focus_action
+
+        working_year_action = self.handle_working_year_click(mouse_pos)
+        if working_year_action is not None:
+            return working_year_action
+
         filter_action = self.handle_filter_click(mouse_pos)
         if filter_action is not None:
             return filter_action
@@ -1032,12 +2200,154 @@ class TimelineUI:
         if period_filter_action is not None:
             return period_filter_action
 
+        item_action = self.handle_item_click(mouse_pos)
+        if item_action is not None:
+            return item_action
+
         if self.year_selection_enabled:
             return self.select_year_from_pos(mouse_pos)
 
         return None
 
+    def _timeline_item_hit_rect(self, item, period=False):
+        if not isinstance(item, dict):
+            return None
+
+        if period:
+            lane = item.get("lane", 0)
+            x1 = self._year_to_x(item["start_year"])
+            x2 = self._year_to_x(item["end_year"])
+            y = self._period_base_y() + lane * (self.PERIOD_H + self.PERIOD_GAP)
+            return pygame.Rect(x1, y - 4, max(8, x2 - x1), self.PERIOD_H + 8)
+
+        lane = item.get("lane", 0)
+        start_year = item["start_year"]
+        end_year = item["end_year"]
+        label = item.get("label", item.get("entity_id", "unknown"))
+        y = self._lane_base_y() + lane * self._lane_pitch()
+        x1 = self._year_to_x(start_year)
+        x2 = self._year_to_x(end_year)
+        if start_year == end_year:
+            label_w = self._measure_label_width(label)
+            return pygame.Rect(x1 - 8, y - 4, max(20, label_w + 20), self._lane_pitch() + 4)
+        label_w = self._measure_label_width(label)
+        bar_w = max(6, x2 - x1)
+        label_x = self._get_duration_label_x(x1, x2, label_w)
+        left = min(x1, label_x)
+        right = max(x1 + bar_w, label_x + label_w)
+        return pygame.Rect(left, y - 4, max(8, right - left), self._lane_pitch() + 4)
+
+    def _period_base_y(self):
+        if self.period_filter_rect is None:
+            return self.content_rect.y
+        return self.period_filter_rect.bottom + self.PERIOD_FILTER_GAP + self.COVERAGE_H + self.COVERAGE_GAP
+
+    def _lane_base_y(self):
+        period_section_h = 0
+        if self.period_lane_count > 0:
+            period_section_h = (
+                self.period_lane_count * self.PERIOD_H
+                + max(0, self.period_lane_count - 1) * self.PERIOD_GAP
+                + self.PERIOD_SECTION_GAP
+            )
+        return self._period_base_y() + period_section_h
+
+    def handle_item_click(self, mouse_pos):
+        for item in reversed(self.layout_items):
+            hit_rect = self._timeline_item_hit_rect(item)
+            if hit_rect is not None and hit_rect.collidepoint(mouse_pos):
+                entity_id = item.get("entity_id")
+                if entity_id:
+                    return {
+                        "kind": "open_timeline_entity",
+                        "entity_id": entity_id,
+                        "year": item.get("raw_start_year", item.get("start_year")),
+                        "start_year": item.get("raw_start_year", item.get("start_year")),
+                        "end_year": item.get("raw_end_year", item.get("end_year")),
+                        "changed": False,
+                    }
+
+        for item in reversed(self.period_layout_items):
+            hit_rect = self._timeline_item_hit_rect(item, period=True)
+            if hit_rect is not None and hit_rect.collidepoint(mouse_pos):
+                entity_id = item.get("entity_id")
+                if entity_id:
+                    return {
+                        "kind": "open_timeline_entity",
+                        "entity_id": entity_id,
+                        "year": item.get("raw_start_year", item.get("start_year")),
+                        "start_year": item.get("raw_start_year", item.get("start_year")),
+                        "end_year": item.get("raw_end_year", item.get("end_year")),
+                        "changed": False,
+                    }
+
+        return None
+
+    def handle_working_year_click(self, mouse_pos):
+        if not self.working_year_enabled:
+            return None
+
+        if self.working_year_rect.collidepoint(mouse_pos):
+            self.working_year_active = True
+            self.location_focus_active = False
+            self.location_focus_invalid = False
+            self.working_year_buffer = "" if self.working_year is None else str(self.working_year)
+            if self.working_year_range is not None:
+                self.working_year_buffer = self._format_working_year_range(self.working_year_range)
+            return {
+                "kind": "working_year_focus",
+                "year": self.working_year,
+                "changed": False,
+            }
+
+        if self.working_year_active:
+            self.working_year_active = False
+            self.working_year_buffer = self._format_working_year_range(self.working_year_range)
+
+        return None
+
+    def handle_location_focus_click(self, mouse_pos):
+        if not self.location_focus_enabled:
+            return None
+
+        for match_index, hitbox in self.location_focus_suggestion_hitboxes:
+            if hitbox.collidepoint(mouse_pos):
+                changed = self._select_location_focus_match(match_index)
+                return {
+                    "kind": "location_focus_changed",
+                    "location_id": self.location_focus_id,
+                    "label": self.location_focus_label,
+                    "changed": changed,
+                }
+
+        if self.location_focus_rect.collidepoint(mouse_pos):
+            self.location_focus_active = True
+            self.working_year_active = False
+            self.location_focus_invalid = False
+            self.location_focus_buffer = self.location_focus_label or ""
+            self.location_focus_keyboard_active = False
+            self._refresh_location_focus_matches()
+            return {
+                "kind": "location_focus_focus",
+                "location_id": self.location_focus_id,
+                "changed": False,
+            }
+
+        if self.location_focus_active:
+            self.location_focus_active = False
+            self.location_focus_invalid = False
+            self.location_focus_buffer = self.location_focus_label or ""
+            self.location_focus_matches = []
+            self.location_focus_suggestion_hitboxes = []
+
+        return None
+
     def handle_filter_click(self, mouse_pos):
+        for mode, _, hitbox in self.sort_mode_hitboxes:
+            if hitbox.collidepoint(mouse_pos):
+                changed = self.set_timeline_sort_mode(mode)
+                return {"kind": "timeline_sort_changed", "mode": mode, "changed": changed}
+
         for group_id, _, hitbox in self.filter_group_hitboxes:
             if hitbox.collidepoint(mouse_pos):
                 changed = self.toggle_active_filter_group(group_id)
@@ -1052,6 +2362,24 @@ class TimelineUI:
             if hitbox.collidepoint(mouse_pos):
                 changed = self.set_active_category_filter(category_name)
                 return {"kind": "filter_changed", "category": category_name, "changed": changed}
+
+        return None
+
+    def handle_random_button_click(self, mouse_pos):
+        if self.working_year_enabled and self.random_working_year_rect.collidepoint(mouse_pos):
+            self.working_year_active = False
+            self.location_focus_active = False
+            self.location_focus_invalid = False
+            return self.set_random_working_year()
+
+        if (
+            self.location_focus_enabled
+            and self.random_location_focus_rect.collidepoint(mouse_pos)
+        ):
+            self.working_year_active = False
+            self.location_focus_active = False
+            self.location_focus_invalid = False
+            return self.set_random_location_focus()
 
         return None
 
@@ -1140,7 +2468,7 @@ class TimelineUI:
                 + self.PERIOD_SECTION_GAP
             )
 
-        lanes_h = self.lane_count * self.ITEM_H + max(0, self.lane_count - 1) * self.LANE_GAP
+        lanes_h = self.lane_count * self._lane_pitch()
         total = self.TOP_PAD + self.HEADER_H + self.AXIS_H + 10 + coverage_h + period_h + lanes_h + self.BOTTOM_PAD
         return max(70, total)
 
@@ -1155,6 +2483,18 @@ class TimelineUI:
             self._rebuild_filter_hitboxes()
             title = font.render(self.title, True, (240, 240, 240))
             screen.blit(title, (self.rect.x + 12, self.rect.y + 8))
+            self._draw_working_year_input(screen, font)
+            self._draw_location_focus_input(screen, font)
+
+            for mode, label, chip_rect in self.sort_mode_hitboxes:
+                selected = mode == self.timeline_sort_mode
+                fill = (64, 84, 122) if selected else (28, 34, 48)
+                border = (210, 220, 240) if selected else (88, 100, 124)
+                text_color = (245, 245, 245) if selected else (178, 188, 208)
+                pygame.draw.rect(screen, fill, chip_rect)
+                pygame.draw.rect(screen, border, chip_rect, 1)
+                chip_text = font.render(label, True, text_color)
+                screen.blit(chip_text, chip_text.get_rect(center=chip_rect.center))
 
             for group_id, label, chip_rect in self.filter_group_hitboxes:
                 selected = self.active_filter_mode == "group" and group_id in self.active_filter_groups
@@ -1181,6 +2521,8 @@ class TimelineUI:
                 chip_text_rect = chip_text.get_rect(center=chip_rect.center)
                 screen.blit(chip_text, chip_text_rect)
 
+            self._draw_location_focus_suggestions(screen, font)
+
             if self.picker_target_label:
                 picker_text = f"Pick year for {self.picker_target_label}"
                 if self.picker_preview_year is not None:
@@ -1188,7 +2530,7 @@ class TimelineUI:
                 picker_surface = font.render(picker_text, True, (232, 210, 148))
                 picker_x = self.rect.right - picker_surface.get_width() - 12
                 screen.blit(picker_surface, (picker_x, self.rect.y + 8))
-            elif self.selected_year is not None:
+            elif self.selected_year is not None and not self.working_year_enabled:
                 selected_label = self._format_selected_year_label()
                 selected_surface = font.render(selected_label, True, (232, 210, 148))
                 selected_x = self.rect.right - selected_surface.get_width() - 12
@@ -1293,20 +2635,25 @@ class TimelineUI:
                 start_year = item["start_year"]
                 end_year = item["end_year"]
                 label = item.get("label", item.get("entity_id", "unknown"))
+                depth = max(0, int(item.get("nest_depth", 0) or 0))
                 is_point = start_year == end_year
 
-                y = lane_base_y + lane * (self.ITEM_H + self.LANE_GAP)
+                y = lane_base_y + lane * self._lane_pitch()
                 x1 = self._year_to_x(start_year)
                 x2 = self._year_to_x(end_year)
 
                 color = self._coerce_color(item.get("card_color"), (110, 140, 220) if is_point else (80, 110, 180))
                 border_color = self._mix_color(color, (210, 225, 255), 0.55)
                 label_color = self._readable_text_color(color)
+                label_prefix = "  " * min(depth, 4)
+                if depth:
+                    label_prefix += "> "
+                render_label = f"{label_prefix}{label}"
 
                 if is_point:
                     pygame.draw.line(screen, color, (x1, self.axis_y), (x1, y + self.ITEM_H // 2), 1)
                     pygame.draw.circle(screen, border_color, (x1, y + self.ITEM_H // 2), 4)
-                    label_surface = font.render(label, True, (220, 220, 220))
+                    label_surface = font.render(render_label, True, (220, 220, 220))
                     screen.blit(label_surface, (x1 + 8, y))
                 else:
                     bar_w = max(6, x2 - x1)
@@ -1315,9 +2662,17 @@ class TimelineUI:
                     pygame.draw.rect(screen, border_color, bar_rect, 1)
 
                     if x1 <= axis_right and x2 >= axis_left:
-                        label_surface = font.render(label, True, label_color)
+                        label_surface = font.render(render_label, True, label_color)
                         label_x = self._get_duration_label_x(x1, x2, label_surface.get_width())
                         screen.blit(label_surface, (label_x, y - 1))
+
+                commentary = self._item_commentary_text(item)
+                if commentary and self._show_item_commentary():
+                    note = self._ellipsize_text(commentary, font, max(80, axis_right - max(axis_left, x1 + 8) - 4))
+                    if note:
+                        note_surface = font.render(note, True, (178, 194, 218))
+                        note_x = max(axis_left, min(x1 + 8 + depth * 12, axis_right - note_surface.get_width()))
+                        screen.blit(note_surface, (note_x, y + self.ITEM_H))
 
             self._draw_selected_year_marker(screen)
         finally:

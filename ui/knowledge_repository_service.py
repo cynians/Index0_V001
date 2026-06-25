@@ -169,7 +169,6 @@ class KnowledgeRepositoryService:
 
     def _save_card_draft(self, card):
         self._sync_species_identity(card)
-        self._sync_card_wiki_mentions(card)
         entity = self._entity_for_card(card)
         if not isinstance(entity, dict) or not entity.get("id"):
             return False
@@ -266,6 +265,10 @@ class KnowledgeRepositoryService:
         if not isinstance(entity, dict):
             return False
 
+        loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
+        if getattr(loader, "use_ontology", False) and hasattr(loader, "persist_entity"):
+            return loader.persist_entity(entity, previous_entity_id=previous_entity_id)
+
         entity_id = entity.get("id")
         lookup_entity_id = previous_entity_id or entity_id
         dataset_name = entity.get("_dataset", entity.get("type"))
@@ -304,6 +307,72 @@ class KnowledgeRepositoryService:
         loader = self.world_model.loader
         entities = getattr(loader, "entities", {}) or {}
         changed_entity_ids = set()
+
+        def relation_ids(value):
+            if value is None:
+                return []
+            if isinstance(value, str):
+                value = value.strip()
+                return [value] if value else []
+            if isinstance(value, dict):
+                candidate = value.get("location_id") or value.get("id") or value.get("entity_id") or value.get("target")
+                return [str(candidate)] if candidate else []
+            if isinstance(value, (list, tuple, set)):
+                ids = []
+                for item in value:
+                    ids.extend(relation_ids(item))
+                return ids
+            return []
+
+        def is_location(entity):
+            return isinstance(entity, dict) and (
+                entity.get("_dataset") == "locations"
+                or entity.get("type") == "location"
+            )
+
+        def set_unique_list(entity, key, values):
+            normalized = []
+            entity_id = str(entity.get("id") or "")
+            for value in values or []:
+                value = str(value or "").strip()
+                if value and value != entity_id and value not in normalized:
+                    normalized.append(value)
+            if not normalized and key not in entity:
+                return
+            if entity.get(key) != normalized:
+                entity[key] = normalized
+                changed_entity_ids.add(str(entity.get("id") or ""))
+
+        for entity_id, entity in list(entities.items()):
+            if not is_location(entity):
+                continue
+
+            for field_key in ("neighbours", "overlaps"):
+                current_ids = relation_ids(entity.get(field_key))
+                set_unique_list(entity, field_key, current_ids)
+                for target_id in current_ids:
+                    target = entities.get(target_id)
+                    if not is_location(target):
+                        continue
+                    reciprocal = relation_ids(target.get(field_key))
+                    if entity_id not in reciprocal:
+                        reciprocal.append(entity_id)
+                        set_unique_list(target, field_key, reciprocal)
+
+            constituent_ids = relation_ids(entity.get("constituents"))
+            set_unique_list(entity, "constituents", constituent_ids)
+            for child_id in constituent_ids:
+                child = entities.get(child_id)
+                if not is_location(child):
+                    continue
+                parents = relation_ids(child.get("parents"))
+                if entity_id not in parents:
+                    parents.append(entity_id)
+                    child["parents"] = parents
+                    changed_entity_ids.add(child_id)
+                if not child.get("parent_location"):
+                    child["parent_location"] = entity_id
+                    changed_entity_ids.add(child_id)
 
         if hasattr(loader, "populate_offspring"):
             changed_entity_ids.update(loader.populate_offspring())
@@ -440,6 +509,10 @@ class KnowledgeRepositoryService:
         return ""
 
     def _remove_entity_from_repository(self, dataset_name, entity_id):
+        loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
+        if getattr(loader, "use_ontology", False) and hasattr(loader, "remove_entity"):
+            return loader.remove_entity(entity_id, dataset_name=dataset_name)
+
         entry_path = self.host._entry_file_path_for_dataset(dataset_name)
         if not entry_path or not os.path.exists(entry_path):
             return False
@@ -528,4 +601,3 @@ class KnowledgeRepositoryService:
         self._rebuild_browser_hitboxes()
         self._relayout_cards()
         return removed
-

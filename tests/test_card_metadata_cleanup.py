@@ -8,9 +8,44 @@ import pygame
 from simulations.space.system import CelestialSystem
 from simulations.phylogeny.phylogeny_renderer import PhylogenyRenderer
 from ui.card import EntityCard
+from ui.knowledge_browser_ui import KnowledgeBrowserUI
 
 
 class CardMetadataCleanupTests(unittest.TestCase):
+    def _world_with_locations(self):
+        entities = {
+            "loc_planet_x": {
+                "id": "loc_planet_x",
+                "_dataset": "locations",
+                "type": "location",
+                "name": "Planet X",
+                "location_class": "planet",
+            },
+            "loc_northern_spain": {
+                "id": "loc_northern_spain",
+                "_dataset": "locations",
+                "type": "location",
+                "name": "Northern Spain",
+                "location_class": "region",
+            },
+            "loc_alps": {
+                "id": "loc_alps",
+                "_dataset": "locations",
+                "type": "location",
+                "name": "The Alps",
+                "location_class": "bioregion",
+            },
+            "event_not_location": {
+                "id": "event_not_location",
+                "_dataset": "events",
+                "name": "Planet X Incident",
+            },
+        }
+        return SimpleNamespace(
+            loader=SimpleNamespace(entities=entities),
+            get_entity=lambda entity_id: entities.get(entity_id),
+        )
+
     def test_description_notes_are_not_metadata_rows(self):
         card = EntityCard(
             {
@@ -31,6 +66,215 @@ class CardMetadataCleanupTests(unittest.TestCase):
         self.assertNotIn("description", metadata_keys)
         self.assertNotIn("notes", metadata_keys)
         self.assertIn("tags", metadata_keys)
+
+    def test_location_history_syncs_associated_locations(self):
+        entity = {
+            "id": "ship_class_test",
+            "_dataset": "vehicles",
+            "type": "vehicle",
+        }
+        card_view = EntityCard(entity, dataset_name="vehicles", world_model=self._world_with_locations())
+        card = {
+            "location_start_buffer": "2016",
+            "location_end_buffer": "2100",
+            "location_matches": [{"id": "loc_planet_x", "label": "Planet X"}],
+            "location_selected_index": 0,
+        }
+
+        self.assertTrue(card_view.add_location_history_entry(card))
+
+        self.assertEqual(
+            [{"location_id": "loc_planet_x", "start_year": 2016, "end_year": 2100}],
+            entity["location_history"],
+        )
+        self.assertEqual(["loc_planet_x"], entity["associated_locations"])
+
+    def test_location_matches_only_location_entries(self):
+        card_view = EntityCard(
+            {"id": "evt_test", "_dataset": "events", "type": "event"},
+            dataset_name="events",
+            world_model=self._world_with_locations(),
+        )
+
+        matches = card_view._build_location_matches("Planet X")
+
+        self.assertEqual(["loc_planet_x"], [match["id"] for match in matches])
+
+    def test_people_default_to_exclusive_location_mode(self):
+        person_card = EntityCard(
+            {"id": "person_alpha", "_dataset": "people", "type": "person"},
+            dataset_name="people",
+        )
+        vehicle_card = EntityCard(
+            {"id": "vehicle_class_alpha", "_dataset": "vehicles", "type": "vehicle"},
+            dataset_name="vehicles",
+        )
+
+        self.assertEqual("exclusive", person_card._location_mode_value())
+        self.assertEqual("multiple", vehicle_card._location_mode_value())
+
+    def test_location_topology_neighbours_are_reciprocal(self):
+        world = self._world_with_locations()
+        planet = world.get_entity("loc_planet_x")
+        card_view = EntityCard(planet, dataset_name="locations", world_model=world)
+        card = {}
+
+        self.assertTrue(card_view.add_location_topology_relation(card, "neighbours", "loc_northern_spain"))
+
+        self.assertEqual(["loc_northern_spain"], planet["neighbours"])
+        self.assertEqual(["loc_planet_x"], world.get_entity("loc_northern_spain")["neighbours"])
+        self.assertEqual(["loc_northern_spain"], card["location_related_entity_update_ids"])
+
+    def test_location_topology_constituents_set_child_parent(self):
+        world = self._world_with_locations()
+        planet = world.get_entity("loc_planet_x")
+        child = world.get_entity("loc_northern_spain")
+        card_view = EntityCard(planet, dataset_name="locations", world_model=world)
+        card = {}
+
+        self.assertTrue(card_view.add_location_topology_relation(card, "constituents", "loc_northern_spain"))
+
+        self.assertEqual(["loc_northern_spain"], planet["constituents"])
+        self.assertEqual(["loc_planet_x"], child["parents"])
+        self.assertEqual("loc_planet_x", child["parent_location"])
+        self.assertEqual(["loc_northern_spain"], card["location_related_entity_update_ids"])
+
+    def test_location_topology_overlaps_are_reciprocal(self):
+        world = self._world_with_locations()
+        region = world.get_entity("loc_northern_spain")
+        card_view = EntityCard(region, dataset_name="locations", world_model=world)
+        card = {}
+
+        self.assertTrue(card_view.add_location_topology_relation(card, "overlaps", "loc_alps"))
+
+        self.assertEqual(["loc_alps"], region["overlaps"])
+        self.assertEqual(["loc_northern_spain"], world.get_entity("loc_alps")["overlaps"])
+
+    def test_location_topology_uses_relation_link_field(self):
+        world = self._world_with_locations()
+        region = world.get_entity("loc_northern_spain")
+        card_view = EntityCard(region, dataset_name="locations", world_model=world)
+        field_key = card_view._location_topology_virtual_field("overlaps")
+        card = {"active_edit_field": field_key}
+
+        self.assertTrue(card_view.is_relation_edit_field(field_key))
+        self.assertEqual("locations", card_view._relation_field_target(field_key))
+        self.assertTrue(card_view.insert_relation_reference(card, "loc_alps"))
+
+        self.assertEqual(["loc_alps"], region["overlaps"])
+        self.assertEqual(["loc_northern_spain"], world.get_entity("loc_alps")["overlaps"])
+        self.assertEqual(["loc_alps"], card["location_related_entity_update_ids"])
+
+    def test_location_topology_matches_only_locations(self):
+        world = self._world_with_locations()
+        card_view = EntityCard(
+            world.get_entity("loc_planet_x"),
+            dataset_name="locations",
+            world_model=world,
+        )
+        card = {
+            "location_topology_active_field": "constituents",
+            "location_topology_query": "Planet",
+        }
+
+        matches = card_view._build_location_topology_matches(card)
+
+        self.assertEqual([], [match["id"] for match in matches])
+
+    def test_relation_picker_location_target_filters_to_locations(self):
+        world = self._world_with_locations()
+        ui = KnowledgeBrowserUI.__new__(KnowledgeBrowserUI)
+        ui.world_model = world
+
+        matches = ui._build_relation_picker_matches({"relation_picker_target": "locations"}, "Planet")
+
+        self.assertEqual(["loc_planet_x"], [match["id"] for match in matches])
+
+    def test_location_topology_place_button_emits_navigation_action(self):
+        world = self._world_with_locations()
+        card_view = EntityCard(
+            world.get_entity("loc_northern_spain"),
+            dataset_name="locations",
+            world_model=world,
+        )
+        card = {
+            "entity_id": "loc_northern_spain",
+            "is_edit_mode": True,
+            "location_topology_place_rect": pygame.Rect(10, 10, 120, 24),
+        }
+
+        self.assertTrue(card_view.handle_location_topology_click(card, (20, 20)))
+
+        self.assertEqual(
+            {
+                "id": "knowledge_place_location_on_parent",
+                "entity_id": "loc_northern_spain",
+            },
+            card["pending_location_action"],
+        )
+        self.assertIsNone(card["last_edit_action"])
+
+    def test_working_year_stub_appears_in_timeline_snapshot_front(self):
+        entity = {
+            "id": "evt_test",
+            "_dataset": "events",
+            "type": "event",
+            "pretty_name": "Northern Campaign",
+            "wiki_entry": "Existing note.",
+        }
+        card_view = EntityCard(entity, dataset_name="events")
+        card = {"title": "Northern Campaign", "working_year_range": (2016, 2016)}
+
+        wiki_text = card_view._timeline_snapshot_text(card)
+
+        self.assertTrue(wiki_text.startswith("Northern Campaign in the Year 2016"))
+        self.assertEqual("Existing note.", card_view._get_general_wiki_text(card))
+
+    def test_timeline_snapshot_commit_writes_separate_field(self):
+        entity = {
+            "id": "evt_test",
+            "_dataset": "events",
+            "type": "event",
+            "pretty_name": "Northern Campaign",
+            "wiki_entry": "General note.",
+        }
+        card_view = EntityCard(entity, dataset_name="events")
+        card = {
+            "title": "Northern Campaign",
+            "working_year_range": (2016, 2016),
+            "is_edit_mode": True,
+        }
+
+        self.assertTrue(card_view.begin_edit_field(card, card_view.TIMELINE_SNAPSHOT_FIELD))
+        card["edit_buffer"] = "Snapshot note."
+        self.assertTrue(card_view.commit_edit_field(card))
+
+        self.assertEqual("General note.", entity["wiki_entry"])
+        self.assertEqual(
+            [{"start_year": 2016, "end_year": 2016, "wiki_entry": "Snapshot note."}],
+            entity["timeline_snapshots"],
+        )
+
+    def test_timeline_snapshot_text_prefers_draft_buffer(self):
+        entity = {
+            "id": "evt_test",
+            "_dataset": "events",
+            "type": "event",
+            "pretty_name": "Northern Campaign",
+        }
+        card_view = EntityCard(entity, dataset_name="events")
+        card = {
+            "title": "Northern Campaign",
+            "working_year_range": (2016, 2016),
+            "draft_edit_buffers": {
+                card_view.TIMELINE_SNAPSHOT_FIELD: {
+                    "text": "Draft [[loc_northern_spain]] note.",
+                    "cursor": 30,
+                },
+            },
+        }
+
+        self.assertEqual("Draft [[loc_northern_spain]] note.", card_view._timeline_snapshot_text(card))
 
     def test_image_fields_are_media_rows(self):
         card = EntityCard(

@@ -319,6 +319,13 @@ class PersonSimulation:
         if not entity_id:
             return False
 
+        loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
+        if getattr(loader, "use_ontology", False) and hasattr(loader, "persist_entity"):
+            person.update(updates)
+            if not person.get("_dataset"):
+                person["_dataset"] = "people"
+            return loader.persist_entity(person)
+
         entry_path = self._entry_path_for_person(person)
         entry_path.parent.mkdir(parents=True, exist_ok=True)
 

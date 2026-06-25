@@ -27,14 +27,53 @@ class KnowledgeTemplatePickerMixin:
             template.get("dataset_name"): template
             for template in self.schema_entry_templates
         }
-        return [
+        templates = [
             by_dataset[dataset_name]
             for dataset_name in ("tasks", "ideas", "species", "cladistics")
             if dataset_name in by_dataset
         ]
+        target = self._template_picker_relation_target()
+        if target:
+            templates = [
+                template
+                for template in templates
+                if self._template_matches_relation_target(template, target)
+            ]
+        return templates
 
     def _template_picker_source_templates(self):
         return self._conversion_templates()
+
+    def _template_picker_relation_target(self):
+        if self.template_picker_mode not in {"create", "relation_create"}:
+            return None
+        context = self.template_picker_context if isinstance(self.template_picker_context, dict) else {}
+        return context.get("target")
+
+    def _template_matches_relation_target(self, template, target):
+        if not target:
+            return True
+        if not hasattr(self, "_relation_target_candidates"):
+            return True
+
+        candidates = self._relation_target_candidates(target)
+        if not candidates:
+            return True
+
+        names = set()
+        for value in (
+            template.get("dataset_name"),
+            template.get("entity_type"),
+            template.get("schema_name"),
+            template.get("subclass_value"),
+        ):
+            normalized = self._normalize_schema_name(value)
+            if not normalized:
+                continue
+            names.add(normalized)
+            names.add(self._pluralize_name(normalized))
+            names.add(self._singularize_name(normalized))
+        return bool(candidates & names)
 
     def _template_search_blob(self, template):
         values = [
@@ -49,6 +88,13 @@ class KnowledgeTemplatePickerMixin:
 
     def _filtered_template_picker_templates(self):
         templates = self._template_picker_source_templates()
+        target = self._template_picker_relation_target()
+        if target:
+            templates = [
+                template
+                for template in templates
+                if self._template_matches_relation_target(template, target)
+            ]
         query = self.template_picker_search_query.strip().lower()
         if not query:
             return templates

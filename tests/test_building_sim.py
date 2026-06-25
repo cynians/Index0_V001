@@ -335,6 +335,103 @@ class BuildingSimulationTests(unittest.TestCase):
             self.assertEqual("loc_room_alpha", sim.selected_entity_id)
             self.assertIsNone(sim.selected_spatial_feature_id)
 
+    def test_map_ghost_layers_include_location_topology(self):
+        world_model = FakeWorldModel([
+            {
+                "id": "loc_country",
+                "name": "Country",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "country",
+                "bounds": {"type": "polygon", "points": [(0, 0), (10, 0), (10, 10), (0, 10)]},
+                "neighbours": ["loc_neighbour"],
+                "overlaps": ["loc_bioregion"],
+                "constituents": ["loc_state"],
+            },
+            {
+                "id": "loc_neighbour",
+                "name": "Neighbour",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "country",
+                "bounds": {"type": "polygon", "points": [(11, 0), (20, 0), (20, 10), (11, 10)]},
+            },
+            {
+                "id": "loc_bioregion",
+                "name": "Bioregion",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "region",
+                "bounds": {"type": "polygon", "points": [(5, -2), (15, -2), (15, 6), (5, 6)]},
+            },
+            {
+                "id": "loc_state",
+                "name": "State",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "state",
+                "bounds": {"type": "polygon", "points": [(1, 1), (4, 1), (4, 4), (1, 4)]},
+            },
+        ])
+        sim = MapSimulation(SimulationContext(year=1, root_entity_id="loc_country", world_model=world_model))
+
+        ghost_layers = sim._build_ghost_context_layers()
+        ghost_entity_ids = {
+            layer.get("entity_id")
+            for layer in ghost_layers
+            if layer.get("is_ghost_sister")
+        }
+
+        self.assertIn("loc_neighbour", ghost_entity_ids)
+        self.assertIn("loc_bioregion", ghost_entity_ids)
+        self.assertIn("loc_state", ghost_entity_ids)
+
+    def test_scoped_spatial_features_include_states_and_quarters(self):
+        world_model = FakeWorldModel([
+            {
+                "id": "loc_country",
+                "name": "Country",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "country",
+                "bounds": {"type": "polygon", "points": [(0, 0), (20, 0), (20, 20), (0, 20)]},
+            },
+            {
+                "id": "loc_state",
+                "name": "State",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "state",
+                "parent_location": "loc_country",
+                "bounds": {"type": "polygon", "points": [(1, 1), (10, 1), (10, 10), (1, 10)]},
+            },
+            {
+                "id": "loc_quarter",
+                "name": "Quarter",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "quarter",
+                "parent_location": "loc_country",
+                "bounds": {"type": "polygon", "points": [(11, 1), (18, 1), (18, 8), (11, 8)]},
+            },
+            {
+                "id": "loc_building",
+                "name": "Building",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "building",
+                "parent_location": "loc_country",
+                "bounds": {"type": "polygon", "points": [(2, 2), (4, 2), (4, 4), (2, 4)]},
+            },
+        ])
+        sim = MapSimulation(SimulationContext(year=1, root_entity_id="loc_country", world_model=world_model))
+
+        scoped_ids = {feature.get("id") for feature in sim._get_scoped_spatial_features()}
+
+        self.assertIn("loc_state", scoped_ids)
+        self.assertIn("loc_quarter", scoped_ids)
+        self.assertNotIn("loc_building", scoped_ids)
+
 
 if __name__ == "__main__":
     unittest.main()

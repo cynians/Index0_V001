@@ -9,10 +9,14 @@ fields:
   locations:
     type: entity_list
 
-  start_event:
-    type: entity|null
+  start_commentary:
+    type: text
     section: Temporal
 
-  end_event:
-    type: entity|null
+  end_commentary:
+    type: text
+    section: Temporal
+
+  temporal_periods:
+    type: object_list
     section: Temporal

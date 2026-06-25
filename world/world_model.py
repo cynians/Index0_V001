@@ -203,8 +203,12 @@ class WorldModel:
         },
     ]
 
-    def __init__(self):
-        self.loader = EntityLoader()
+    def __init__(self, entries_directory=None, ontology_path=None, use_ontology=None):
+        self.loader = EntityLoader(
+            entries_directory=entries_directory,
+            ontology_path=ontology_path,
+            use_ontology=use_ontology,
+        )
         self.schemas = SchemaLoader()
         self.touch_degrees = TouchDegrees(self.loader, self.schemas)
         self.graph = self.touch_degrees
@@ -224,7 +228,7 @@ class WorldModel:
             return [
                 entity
                 for entity in self.loader.get_dataset("locations")
-                if entity.get("location_class") == "region"
+                if entity.get("location_class") in {"region", "state", "quarter"}
                 and (entity.get("geometry") or entity.get("layer_kind"))
             ]
         return self.loader.get_dataset(dataset_name)
@@ -368,6 +372,13 @@ class WorldModel:
             else:
                 label = entity.get("pretty_name") or entity.get("name") or entity_id
             card_color = entity.get("card_color", "")
+            commentary_parts = []
+            start_commentary = str(entity.get("start_commentary") or entity.get("start_event") or "").strip()
+            end_commentary = str(entity.get("end_commentary") or entity.get("end_event") or "").strip()
+            if start_commentary:
+                commentary_parts.append(f"Start: {start_commentary}")
+            if end_commentary:
+                commentary_parts.append(f"End: {end_commentary}")
 
             items.append(
                 {
@@ -379,6 +390,7 @@ class WorldModel:
                     "end_year": end_year,
                     "is_point": start_year == end_year,
                     "card_color": card_color,
+                    "commentary": " / ".join(commentary_parts),
                 }
             )
 

@@ -40,6 +40,8 @@ class TouchDegrees:
         return text.lower().replace(" ", "_")
 
     def _resolve_entity(self, value):
+        if not isinstance(value, str):
+            return None
 
         if value in self.loader.entities:
             return value

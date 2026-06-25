@@ -25,6 +25,14 @@ class DummyLoader:
                 "type": "test",
                 "start_year": 5,
             },
+            "commented": {
+                "id": "commented",
+                "type": "test",
+                "start_year": 10,
+                "end_year": 20,
+                "start_commentary": "started",
+                "end_commentary": "ended",
+            },
         }
 
     def get(self, entity_id):
@@ -72,6 +80,19 @@ class TemporalFilteringTests(unittest.TestCase):
 
         self.assertNotIn("missing_start", entity_ids)
         self.assertIn("explicit_zero", entity_ids)
+
+    def test_timeline_items_include_start_and_end_commentary(self):
+        model = WorldModel.__new__(WorldModel)
+        model.loader = DummyLoader()
+        model.yearer = Yearer(model.loader)
+
+        items = {
+            item["entity_id"]: item
+            for item in model.get_timeline_items()
+            if item.get("timeline_kind") != "major_period"
+        }
+
+        self.assertEqual("Start: started / End: ended", items["commented"]["commentary"])
 
     def test_card_years_do_not_fallback_to_zero_when_start_year_is_missing(self):
         ui = KnowledgeBrowserUI()

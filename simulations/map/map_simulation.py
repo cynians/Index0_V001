@@ -184,6 +184,39 @@ class MapSimulation:
         logger.info(f"[MapSimulation] Selected history year {year}")
         return True
 
+    def _repository_loader(self):
+        return getattr(self.world_model, "loader", None) if self.world_model is not None else None
+
+    def _repository_uses_ontology(self):
+        return bool(getattr(self._repository_loader(), "use_ontology", False))
+
+    def _persist_repository_entity(self, entity, dataset_name):
+        loader = self._repository_loader()
+        if loader is None or not hasattr(loader, "persist_entity"):
+            return False
+        entity["_dataset"] = dataset_name
+        if not entity.get("type") and dataset_name == "locations":
+            entity["type"] = "location"
+        return loader.persist_entity(entity)
+
+    def _update_repository_entity_fields(self, entity_id, updates):
+        if not self._repository_uses_ontology():
+            return None
+        loader = self._repository_loader()
+        entity = getattr(loader, "entities", {}).get(entity_id) if loader is not None else None
+        if not isinstance(entity, dict):
+            return False
+        entity.update(updates)
+        return loader.persist_entity(entity) if hasattr(loader, "persist_entity") else False
+
+    def _remove_repository_entity(self, entity_id, dataset_name=None):
+        if not self._repository_uses_ontology():
+            return None
+        loader = self._repository_loader()
+        if loader is None or not hasattr(loader, "remove_entity"):
+            return False
+        return loader.remove_entity(entity_id, dataset_name=dataset_name)
+
     def get_year_context_label(self):
         year = int(self.year)
         root_entity = self.get_root_entity() or {}
@@ -277,7 +310,7 @@ class MapSimulation:
         if isinstance(value, str):
             return [value]
         if isinstance(value, dict):
-            candidate = value.get("id") or value.get("entity_id") or value.get("target")
+            candidate = value.get("location_id") or value.get("id") or value.get("entity_id") or value.get("target")
             return [candidate] if candidate else []
         if isinstance(value, (list, tuple, set)):
             ids = []
@@ -301,6 +334,13 @@ class MapSimulation:
             parent = self.world_model.get_entity(parent_id)
             if parent_id and parent_id != entity_id and self._is_location_entity(parent):
                 return parent_id
+
+        entities = getattr(getattr(self.world_model, "loader", None), "entities", {}) or {}
+        for candidate_id, candidate in entities.items():
+            if candidate_id == entity_id or not self._is_location_entity(candidate):
+                continue
+            if entity_id in self._relation_entity_ids(candidate.get("constituents")):
+                return candidate_id
 
         return None
 
@@ -544,11 +584,17 @@ class MapSimulation:
         if location_class == "country":
             return (155, 170, 195)
 
+        if location_class == "state":
+            return (166, 180, 202)
+
         if location_class == "region":
             return (180, 190, 205)
 
         if location_class == "city":
             return (220, 220, 220)
+
+        if location_class == "quarter":
+            return (212, 210, 198)
 
         if location_class == "building":
             return (202, 184, 136)
@@ -2421,6 +2467,11 @@ class MapSimulation:
         return "\n".join(lines) + "\n"
 
     def _append_spatial_feature_record(self, feature):
+        if self._repository_uses_ontology():
+            if not self._persist_repository_entity(feature, "spatial_features"):
+                raise OSError("Could not persist spatial feature to ontology")
+            return
+
         entry_path = self.SPATIAL_FEATURES_ENTRY_PATH
         entry_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -2435,6 +2486,11 @@ class MapSimulation:
         entry_path.write_text(existing_text + separator + block, encoding="utf-8")
 
     def _append_location_record(self, location):
+        if self._repository_uses_ontology():
+            if not self._persist_repository_entity(location, "locations"):
+                raise OSError("Could not persist location to ontology")
+            return
+
         entry_path = self.LOCATIONS_ENTRY_PATH
         entry_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -2458,6 +2514,30 @@ class MapSimulation:
     def _append_offspring_reference_to_location(self, parent_location_id, child_location_id):
         if not parent_location_id or not child_location_id:
             return False
+
+        if self._repository_uses_ontology():
+            loader = self._repository_loader()
+            entities = getattr(loader, "entities", {}) if loader is not None else {}
+            child = entities.get(child_location_id)
+            parent = entities.get(parent_location_id)
+            if not isinstance(child, dict):
+                return False
+            parents = child.get("parents")
+            if not isinstance(parents, list):
+                parents = [] if parents in (None, "") else [parents]
+            if parent_location_id not in parents:
+                parents.append(parent_location_id)
+            child["parents"] = parents
+            persisted = loader.persist_entity(child) if hasattr(loader, "persist_entity") else False
+            if isinstance(parent, dict):
+                constituents = parent.get("constituents")
+                if not isinstance(constituents, list):
+                    constituents = [] if constituents in (None, "") else [constituents]
+                if child_location_id not in constituents:
+                    constituents.append(child_location_id)
+                parent["constituents"] = constituents
+                persisted = bool(loader.persist_entity(parent) if hasattr(loader, "persist_entity") else False) or bool(persisted)
+            return persisted
 
         entry_path = self.LOCATIONS_ENTRY_PATH
         if not entry_path.exists():
@@ -2569,9 +2649,18 @@ class MapSimulation:
         parent_location_id = entity.get("parent_location") or entity.get("parent_entity")
 
         try:
-            if not self._delete_yaml_entity_block(entry_path, target_id):
+            removed_from_repository = self._remove_repository_entity(
+                target_id,
+                dataset_name="locations" if is_location_region else "spatial_features",
+            )
+            if removed_from_repository is False:
                 return False
-            if is_location_region and parent_location_id:
+            if removed_from_repository is None:
+                if not self._delete_yaml_entity_block(entry_path, target_id):
+                    return False
+            if removed_from_repository and is_location_region and parent_location_id:
+                self._remove_offspring_reference_from_location(parent_location_id, target_id)
+            elif is_location_region and parent_location_id:
                 self._remove_offspring_reference_from_location(parent_location_id, target_id)
         except OSError as exc:
             logger.error(f"[MapSimulation] Failed to delete region {target_id}: {exc}")
@@ -2706,7 +2795,7 @@ class MapSimulation:
             isinstance(entity, dict)
             and entity.get("_dataset") in (None, "locations")
             and entity.get("type") == "location"
-            and entity.get("location_class") == "region"
+            and entity.get("location_class") in {"region", "state", "quarter"}
         )
 
     def _find_yaml_entity_block(self, text, entity_id):
@@ -2745,6 +2834,30 @@ class MapSimulation:
     def _remove_offspring_reference_from_location(self, parent_location_id, child_location_id):
         if not parent_location_id or not child_location_id:
             return False
+
+        if self._repository_uses_ontology():
+            loader = self._repository_loader()
+            entities = getattr(loader, "entities", {}) if loader is not None else {}
+            child = entities.get(child_location_id)
+            parent = entities.get(parent_location_id)
+            if not isinstance(child, dict):
+                return False
+            parents = child.get("parents")
+            if isinstance(parents, list):
+                child["parents"] = [parent_id for parent_id in parents if parent_id != parent_location_id]
+            elif parents == parent_location_id:
+                child["parents"] = []
+            persisted = loader.persist_entity(child) if hasattr(loader, "persist_entity") else False
+            if isinstance(parent, dict):
+                constituents = parent.get("constituents")
+                if isinstance(constituents, list):
+                    parent["constituents"] = [
+                        constituent_id for constituent_id in constituents if constituent_id != child_location_id
+                    ]
+                elif constituents == child_location_id:
+                    parent["constituents"] = []
+                persisted = bool(loader.persist_entity(parent) if hasattr(loader, "persist_entity") else False) or bool(persisted)
+            return persisted
 
         entry_path = self.LOCATIONS_ENTRY_PATH
         if not entry_path.exists():
@@ -2879,6 +2992,10 @@ class MapSimulation:
         return "\n".join(lines[:insert_index] + new_field_lines + lines[insert_index:]) + "\n"
 
     def _update_entity_temporal_fields(self, entry_path, entity_id, field_values):
+        updated_repository = self._update_repository_entity_fields(entity_id, field_values)
+        if updated_repository is not None:
+            return updated_repository
+
         if not entry_path.exists():
             return False
 
@@ -2975,6 +3092,13 @@ class MapSimulation:
         if self._is_location_backed_region(spatial_feature_id):
             return self._update_location_text_fields(spatial_feature_id, name, notes)
 
+        updated_repository = self._update_repository_entity_fields(
+            spatial_feature_id,
+            {"pretty_name": name, "name": name, "wiki_entry": notes},
+        )
+        if updated_repository is not None:
+            return updated_repository
+
         entry_path = self.SPATIAL_FEATURES_ENTRY_PATH
         if not entry_path.exists():
             return False
@@ -2995,6 +3119,13 @@ class MapSimulation:
         return True
 
     def _update_location_text_fields(self, location_id, name, notes):
+        updated_repository = self._update_repository_entity_fields(
+            location_id,
+            {"pretty_name": name, "name": name, "wiki_entry": notes},
+        )
+        if updated_repository is not None:
+            return updated_repository
+
         entry_path = self.LOCATIONS_ENTRY_PATH
         if not entry_path.exists():
             return False
@@ -3015,6 +3146,10 @@ class MapSimulation:
         return True
 
     def _update_location_map_image_fields(self, location_id, updates):
+        updated_repository = self._update_repository_entity_fields(location_id, dict(updates))
+        if updated_repository is not None:
+            return updated_repository
+
         entry_path = self.LOCATIONS_ENTRY_PATH
         if not entry_path.exists():
             return False
@@ -3049,6 +3184,19 @@ class MapSimulation:
                 return False
             return True
 
+        updated_repository = self._update_repository_entity_fields(
+            spatial_feature_id,
+            {
+                "geometry": {
+                    "type": "polygon",
+                    "coordinate_space": "map_world",
+                    "points": list(points),
+                }
+            },
+        )
+        if updated_repository is not None:
+            return updated_repository
+
         entry_path = self.SPATIAL_FEATURES_ENTRY_PATH
         if not entry_path.exists():
             return False
@@ -3067,6 +3215,10 @@ class MapSimulation:
         return True
 
     def _update_location_bounds(self, location_id, bounds):
+        updated_repository = self._update_repository_entity_fields(location_id, {"bounds": bounds})
+        if updated_repository is not None:
+            return updated_repository
+
         entry_path = self.LOCATIONS_ENTRY_PATH
         if not entry_path.exists():
             return False
@@ -3085,6 +3237,19 @@ class MapSimulation:
         return True
 
     def _update_location_geometry(self, location_id, points):
+        updated_repository = self._update_repository_entity_fields(
+            location_id,
+            {
+                "geometry": {
+                    "type": "polygon",
+                    "coordinate_space": "map_world",
+                    "points": list(points),
+                }
+            },
+        )
+        if updated_repository is not None:
+            return updated_repository
+
         entry_path = self.LOCATIONS_ENTRY_PATH
         if not entry_path.exists():
             return False
@@ -3103,6 +3268,16 @@ class MapSimulation:
         return True
 
     def _update_location_parent(self, location_id, parent_location_id):
+        updated_repository = self._update_repository_entity_fields(
+            location_id,
+            {
+                "parent_location": parent_location_id,
+                "parents": [parent_location_id] if parent_location_id else [],
+            },
+        )
+        if updated_repository is not None:
+            return updated_repository
+
         entry_path = self.LOCATIONS_ENTRY_PATH
         if not entry_path.exists():
             return False
@@ -3125,6 +3300,10 @@ class MapSimulation:
         return True
 
     def _update_spatial_feature_end_year(self, spatial_feature_id, end_year):
+        updated_repository = self._update_repository_entity_fields(spatial_feature_id, {"end_year": end_year})
+        if updated_repository is not None:
+            return updated_repository
+
         entry_path = (
             self.LOCATIONS_ENTRY_PATH
             if self._is_location_backed_region(spatial_feature_id)
@@ -3266,7 +3445,7 @@ class MapSimulation:
                 dataset_name="locations",
                 entity_type="location",
             )
-            if entity.get("location_class") == "region"
+            if entity.get("location_class") in {"region", "state", "quarter"}
             and (entity.get("geometry") or entity.get("bounds"))
             and entity.get("id") != root_entity_id
         ]
@@ -3468,7 +3647,7 @@ class MapSimulation:
             seen.add(entity_id)
             entities.append(current)
 
-            parent_id = current.get("parent_location")
+            parent_id = self._structural_parent_location_id(current)
             if not parent_id:
                 break
             current = self.world_model.get_entity(parent_id)
@@ -3500,12 +3679,9 @@ class MapSimulation:
         }
         parent_ids = []
         for entity in context_entities:
-            parent_id = entity.get("parent_location") if isinstance(entity, dict) else None
+            parent_id = self._structural_parent_location_id(entity) if isinstance(entity, dict) else None
             if parent_id and parent_id not in parent_ids:
                 parent_ids.append(parent_id)
-
-        if not parent_ids:
-            return []
 
         locations = self.world_model.get_active_entities(
             self.year,
@@ -3514,17 +3690,38 @@ class MapSimulation:
         )
         sisters = []
         seen = set()
-        for parent_id in parent_ids:
-            for entity in locations:
-                entity_id = entity.get("id")
-                if not entity_id or entity_id in context_ids or entity_id in seen:
-                    continue
-                if entity.get("parent_location") != parent_id:
-                    continue
-                if not self._location_has_context_geometry(entity):
-                    continue
-                seen.add(entity_id)
-                sisters.append(entity)
+        if parent_ids:
+            for parent_id in parent_ids:
+                for entity in locations:
+                    entity_id = entity.get("id")
+                    if not entity_id or entity_id in context_ids or entity_id in seen:
+                        continue
+                    if self._structural_parent_location_id(entity) != parent_id:
+                        continue
+                    if not self._location_has_context_geometry(entity):
+                        continue
+                    seen.add(entity_id)
+                    sisters.append(entity)
+
+        topology_ids = []
+        for entity in context_entities:
+            if not isinstance(entity, dict):
+                continue
+            for field_key in ("neighbours", "overlaps", "constituents"):
+                for related_id in self._relation_entity_ids(entity.get(field_key)):
+                    if related_id not in topology_ids:
+                        topology_ids.append(related_id)
+
+        for related_id in topology_ids:
+            if related_id in context_ids or related_id in seen:
+                continue
+            related = self.world_model.get_entity(related_id)
+            if not self._is_location_entity(related):
+                continue
+            if not self._location_has_context_geometry(related):
+                continue
+            seen.add(related_id)
+            sisters.append(related)
 
         return sisters
 
@@ -3991,20 +4188,17 @@ class MapSimulation:
             "owner_entity",
             "associated_locations",
             "locations",
+            "location_history",
+            "neighbours",
+            "constituents",
+            "overlaps",
             "related",
             "parents",
         )
         references = []
 
         for key in reference_keys:
-            value = entity.get(key)
-            if isinstance(value, str):
-                references.append(value)
-            elif isinstance(value, (list, tuple)):
-                references.extend(
-                    item for item in value
-                    if isinstance(item, str)
-                )
+            references.extend(self._relation_entity_ids(entity.get(key)))
 
         return references
 
