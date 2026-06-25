@@ -14,6 +14,7 @@ class CardWikiRenderer:
     IMAGE_GAP = 10
     EMPTY_HINT = "No general article yet. Add text and embed images with ![caption](path)"
     LINK_PATTERN = re.compile(r"\[\[([^\]]+)\]\]")
+    TASK_PATTERN = re.compile(r"^\s*\(\)\s+(.+?)\s*$")
 
     @classmethod
     def extract_link_refs(cls, wiki_text):
@@ -26,6 +27,20 @@ class CardWikiRenderer:
             seen.add(ref)
             refs.append(ref)
         return refs
+
+    @classmethod
+    def extract_tasks(cls, wiki_text):
+        tasks = []
+        task_number = 0
+        for raw_line in str(wiki_text or "").splitlines():
+            match = cls.TASK_PATTERN.match(raw_line)
+            if not match:
+                continue
+            task_number += 1
+            text = match.group(1).strip()
+            if text:
+                tasks.append({"task_number": task_number, "text": text})
+        return tasks
 
     @staticmethod
     def _scaled_font(font, scale=1.0, bold=False):
@@ -368,38 +383,70 @@ class CardWikiRenderer:
 
         blocks = []
         paragraph_lines = []
+        list_items = []
+        task_items = []
 
         def flush_paragraph():
             if paragraph_lines:
                 blocks.append({"kind": "text", "text": "\n".join(paragraph_lines)})
                 paragraph_lines.clear()
 
+        def flush_list():
+            if list_items:
+                blocks.append({"kind": "list", "items": list(list_items)})
+                list_items.clear()
+
+        def flush_tasks():
+            if task_items:
+                blocks.append({"kind": "tasks", "items": list(task_items)})
+                task_items.clear()
+
+        def flush_all():
+            flush_paragraph()
+            flush_list()
+            flush_tasks()
+
         for raw_line in text.splitlines():
             stripped = raw_line.strip()
             if stripped.startswith("![") and "](" in stripped and stripped.endswith(")"):
-                flush_paragraph()
+                flush_all()
                 alt_text = stripped[2:stripped.index("]")]
                 path = stripped[stripped.index("](") + 2:-1].strip()
                 blocks.append({"kind": "image", "alt": alt_text, "path": path})
                 continue
 
             if stripped.startswith("!!") and stripped[2:].strip():
-                flush_paragraph()
+                flush_all()
                 blocks.append({"kind": "headline", "level": 2, "text": stripped[2:].strip()})
                 continue
 
             if stripped.startswith("!") and stripped[1:].strip():
-                flush_paragraph()
+                flush_all()
                 blocks.append({"kind": "headline", "level": 1, "text": stripped[1:].strip()})
                 continue
 
-            if not stripped:
+            task_match = cls.TASK_PATTERN.match(raw_line)
+            if task_match:
                 flush_paragraph()
+                flush_list()
+                task_items.append(task_match.group(1).strip())
                 continue
 
+            if stripped.startswith("- ") and stripped[2:].strip():
+                flush_paragraph()
+                flush_tasks()
+                list_items.append(stripped[2:].strip())
+                continue
+
+            if not stripped:
+                flush_all()
+                continue
+
+            flush_list()
+            flush_tasks()
             paragraph_lines.append(raw_line)
 
-        flush_paragraph()
+        flush_all()
         return blocks
 
     @staticmethod
@@ -450,6 +497,21 @@ class CardWikiRenderer:
                 width,
                 resolve_link_label=resolve_link_label,
             )
+        if block["kind"] in {"list", "tasks"}:
+            item_width = max(20, width - 24)
+            line_h = max(font.get_linesize(), font.get_linesize() + cls.LINK_PAD_Y * 2)
+            total = 0
+            for item in block.get("items", []):
+                total += max(
+                    line_h,
+                    cls._measure_inline_text(
+                        item,
+                        font,
+                        item_width,
+                        resolve_link_label=resolve_link_label,
+                    ),
+                ) + 3
+            return max(line_h, total)
 
         image_surface = cls._load_image_surface(block.get("path"))
         if image_surface is not None:
@@ -500,6 +562,10 @@ class CardWikiRenderer:
                 lines.append(f"{marker} {block.get('text', '')}".strip())
             elif block.get("kind") == "image":
                 lines.append(f"![{block.get('alt', '')}]({block.get('path', '')})")
+            elif block.get("kind") == "list":
+                lines.extend(f"- {item}" for item in block.get("items", []))
+            elif block.get("kind") == "tasks":
+                lines.extend(f"() {item}" for item in block.get("items", []))
             else:
                 lines.append(str(block.get("text", "")))
         return "\n\n".join(line for line in lines if line)
@@ -532,6 +598,21 @@ class CardWikiRenderer:
                     block_font = cls._scaled_font(font, 1.35 if block.get("level") == 1 else 1.12, bold=True)
                 elif block["kind"] == "text":
                     block_font = font
+                elif block["kind"] in {"list", "tasks"}:
+                    for item in block.get("items", []):
+                        block_hitboxes, y = cls._collect_inline_link_rects(
+                            item,
+                            font,
+                            section["content_rect"].x + 24,
+                            y,
+                            max(20, section["content_rect"].width - 24),
+                            resolve_link_label=resolve_link_label,
+                        )
+                        for hitbox in block_hitboxes:
+                            hitbox["section_id"] = section["section_id"]
+                        hitboxes.extend(block_hitboxes)
+                        y += 3
+                    block_font = None
                 else:
                     y += cls._block_height(block, font, section["content_rect"].width, resolve_link_label=resolve_link_label)
                     block_font = None
@@ -682,6 +763,46 @@ class CardWikiRenderer:
                             resolve_link_color=resolve_link_color,
                             resolve_link_palette=resolve_link_palette,
                         )
+                    elif block["kind"] == "list":
+                        item_x = section["content_rect"].x + 24
+                        item_w = max(20, section["content_rect"].width - 24)
+                        for item in block.get("items", []):
+                            bullet_y = y + max(5, font.get_linesize() // 2)
+                            pygame.draw.circle(screen, local_text, (section["content_rect"].x + 8, bullet_y), 3)
+                            y = cls._draw_inline_text(
+                                screen,
+                                font,
+                                item,
+                                item_x,
+                                y,
+                                item_w,
+                                local_text,
+                                resolve_link_label=resolve_link_label,
+                                link_color=link_color,
+                                resolve_link_color=resolve_link_color,
+                                resolve_link_palette=resolve_link_palette,
+                            )
+                            y += 3
+                    elif block["kind"] == "tasks":
+                        item_x = section["content_rect"].x + 24
+                        item_w = max(20, section["content_rect"].width - 24)
+                        for item in block.get("items", []):
+                            box_rect = pygame.Rect(section["content_rect"].x + 3, y + 3, 12, 12)
+                            pygame.draw.rect(screen, local_text, box_rect, 1)
+                            y = cls._draw_inline_text(
+                                screen,
+                                font,
+                                item,
+                                item_x,
+                                y,
+                                item_w,
+                                local_text,
+                                resolve_link_label=resolve_link_label,
+                                link_color=link_color,
+                                resolve_link_color=resolve_link_color,
+                                resolve_link_palette=resolve_link_palette,
+                            )
+                            y += 3
                     else:
                         image_surface = cls._load_image_surface(block.get("path"))
                         if image_surface is not None:

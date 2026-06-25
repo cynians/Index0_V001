@@ -58,7 +58,20 @@ fields:
 
   produced_by:
     type: entity_list
-    target: faction
+    target:
+      - producers
+      - factions
+      - institutions
+    optional: true
+
+  production_rate_value:
+    type: number
+    section: Temporal
+    optional: true
+
+  production_rate_period:
+    type: string
+    section: Temporal
     optional: true
 
   required_technology:

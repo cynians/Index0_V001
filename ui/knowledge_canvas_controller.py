@@ -170,6 +170,33 @@ class KnowledgeCanvasController:
             and bool(card.get("entity_id"))
         )
 
+    def _edit_field_requires_relation_sync(self, card, field_key):
+        field_key = str(field_key or "").strip()
+        if not field_key:
+            return False
+        card_view = card.get("card_view") if isinstance(card, dict) else None
+        if card_view is not None and getattr(card_view, "is_relation_edit_field", lambda key: False)(field_key):
+            return True
+        return field_key in {
+            "parents",
+            "offspring",
+            "related",
+            "neighbours",
+            "overlaps",
+            "constituents",
+            "parent_location",
+            "parent_entity",
+            "parent_body",
+            "star_system",
+        }
+
+    def _card_is_cladistic_entity(self, card):
+        entity = self._entity_for_card(card)
+        return isinstance(entity, dict) and (
+            entity.get("_dataset") == "cladistics"
+            or entity.get("type") == "cladistics"
+        )
+
     def _layout_canvas_relation_controls(self):
         for card in self.cards:
             card["canvas_relation_add_rect"] = None
@@ -709,29 +736,20 @@ class KnowledgeCanvasController:
 
         item = self._browser_item_at_pos(mouse_pos, left_rect)
         if item is None:
+            self._finish_relation_browser_link()
             return "__ui_consumed__"
 
         entity_id = item.get("entity_id")
         if item.get("kind") == "schema" or self._schema_name_from_card_id(entity_id) is not None:
-            self.relation_link_status = "Pick an entry, not a schema"
-            source_card = self.relation_link_target.get("source_card")
-            if isinstance(source_card, dict):
-                source_card["relation_link_status"] = self.relation_link_status
-            self._rebuild_browser_hitboxes()
-            self._relayout_cards()
+            self._finish_relation_browser_link()
             return "__ui_consumed__"
 
         if item.get("kind") not in {"entity", "tree_entity"}:
+            self._finish_relation_browser_link()
             return "__ui_consumed__"
 
         if not self._browser_item_matches_relation_target(item):
-            target_label = self._relation_target_label(self.relation_link_target.get("target"))
-            self.relation_link_status = f"Pick a matching {target_label} entry"
-            source_card = self.relation_link_target.get("source_card")
-            if isinstance(source_card, dict):
-                source_card["relation_link_status"] = self.relation_link_status
-            self._rebuild_browser_hitboxes()
-            self._relayout_cards()
+            self._finish_relation_browser_link()
             return "__ui_consumed__"
 
         linked = self._link_relation_from_browser_entity(entity_id)
@@ -787,10 +805,7 @@ class KnowledgeCanvasController:
 
             target_entity_id = card.get("entity_id")
             if not target_entity_id or target_entity_id == source_entity_id:
-                self.relation_link_status = "Pick a different card"
-                if isinstance(source_card, dict):
-                    source_card["relation_link_status"] = self.relation_link_status
-                self._relayout_cards()
+                self._finish_relation_browser_link()
                 return "__ui_consumed__"
 
             entity = self.world_model.get_entity(target_entity_id) if self.world_model is not None else None
@@ -798,11 +813,7 @@ class KnowledgeCanvasController:
                 entity,
                 self.relation_link_target.get("target"),
             ):
-                target_label = self._relation_target_label(self.relation_link_target.get("target"))
-                self.relation_link_status = f"Pick a matching {target_label} card"
-                if isinstance(source_card, dict):
-                    source_card["relation_link_status"] = self.relation_link_status
-                self._relayout_cards()
+                self._finish_relation_browser_link()
                 return "__ui_consumed__"
 
             self._bring_card_to_front(index)
@@ -1078,17 +1089,27 @@ class KnowledgeCanvasController:
                 if card_obj.get("is_temporary", False):
                     self._relayout_cards()
                     return "__ui_consumed__"
+                relation_sync_field = card_obj.get("last_committed_field")
+                persisted_on_commit = False
+                had_active_edit = bool(card_obj.get("is_edit_mode", False) and card_obj.get("active_edit_field"))
                 if card_obj.get("is_edit_mode", False) and card_obj.get("active_edit_field"):
+                    relation_sync_field = card_obj.get("active_edit_field")
                     card_obj["card_view"].commit_edit_field(card_obj)
                     if card_obj.get("last_edit_action") == "commit":
-                        self._persist_card_entity(card_obj)
+                        relation_sync_field = card_obj.get("last_committed_field") or relation_sync_field
+                        persisted_on_commit = bool(self._persist_card_entity(card_obj))
                     else:
                         self._save_card_draft(card_obj)
                     card_obj["last_edit_action"] = None
                 card_obj["card_view"].toggle_edit_mode(card_obj)
-                if not card_obj.get("is_edit_mode", False):
-                    self._persist_card_entity(card_obj)
-                    self._sync_bidirectional_relations(persist=True)
+                if card_obj.get("is_edit_mode", False):
+                    if self._card_is_cladistic_entity(card_obj):
+                        self._update_derived_clade_color(card_obj.get("entity_id"), persist=True, force=True)
+                else:
+                    if not persisted_on_commit and (had_active_edit or card_obj.get("pending_color_persist", False)):
+                        self._persist_card_entity(card_obj)
+                    if self._edit_field_requires_relation_sync(card_obj, relation_sync_field):
+                        self._sync_bidirectional_relations(persist=True)
                     if self.canvas_relation_link_source_id == card_obj.get("entity_id"):
                         self._clear_canvas_relation_link()
                     self._clear_timeline_edit_target()
@@ -1169,6 +1190,27 @@ class KnowledgeCanvasController:
                 self._relayout_cards()
                 if isinstance(pending_location_action, dict):
                     return pending_location_action
+                return "__ui_consumed__"
+
+            if card_view is not None and card_view.handle_production_click(card, mouse_pos):
+                card_obj = self._bring_card_to_front(index)
+                if card_obj.get("last_edit_action") == "commit":
+                    removed_ids = list(card_obj.pop("production_removed_entity_ids", []) or [])
+                    for production_id in removed_ids:
+                        self._remove_entity_from_repository("production", production_id)
+                    related_update_ids = list(card_obj.pop("production_related_entity_update_ids", []) or [])
+                    for related_entity_id in related_update_ids:
+                        related_entity = self.world_model.get_entity(related_entity_id) if self.world_model is not None else None
+                        if isinstance(related_entity, dict):
+                            self._persist_entity_to_repository(related_entity)
+                    if not related_update_ids and not removed_ids:
+                        self._persist_card_entity(card_obj)
+                    self._sync_card_years_from_entity(card_obj)
+                    self._refresh_timeline_items()
+                elif card_obj.get("last_edit_action") == "draft":
+                    self._save_card_draft(card_obj)
+                card_obj["last_edit_action"] = None
+                self._relayout_cards()
                 return "__ui_consumed__"
 
             phylogeny_click_active = (

@@ -23,6 +23,24 @@ fields:
     target: components
     optional: true
 
+  production_materials_needed:
+    type: entity_list
+    target: materials
+    section: Class Relations
+    optional: true
+
+  production_components_needed:
+    type: entity_list
+    target: components
+    section: Class Relations
+    optional: true
+
+  production_items_needed:
+    type: entity_list
+    target: item
+    section: Class Relations
+    optional: true
+
   produced_by:
     type: entity_list
     target: faction

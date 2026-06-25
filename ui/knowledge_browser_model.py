@@ -188,6 +188,12 @@ class KnowledgeBrowserModel:
                 for key, value in field_specs.items()
                 if key not in {"pretty_name", "name"}
             }
+        if dataset_name == "locations":
+            field_specs = {
+                key: value
+                for key, value in field_specs.items()
+                if self._is_location_field_relevant(entity, key)
+            }
         missing = 0
         for field_key, spec in field_specs.items():
             if field_key in {
@@ -207,6 +213,78 @@ class KnowledgeBrowserModel:
             elif isinstance(value, str) and not value.strip():
                 missing += 1
         return missing
+
+    def _is_location_field_relevant(self, entity, field_key):
+        if not isinstance(entity, dict):
+            return True
+
+        class_key = str(
+            entity.get("location_class")
+            or entity.get("body_class")
+            or ""
+        ).strip().lower().replace(" ", "_").replace("-", "_")
+        surface_classes = {
+            "continent",
+            "country",
+            "state",
+            "region",
+            "city",
+            "quarter",
+            "site",
+            "macro_site",
+            "internal_passage",
+            "island_chain",
+            "atoll",
+            "cluster",
+        }
+        orbital_classes = {
+            "star_system",
+            "stellar_system",
+            "star",
+            "planet",
+            "moon",
+            "dwarf_planet",
+            "asteroid",
+            "comet",
+            "orbital_body",
+        }
+        building_only = {"building_class"}
+        room_only = {"room_class", "floor_index", "floor_label", "room_number"}
+        orbital_only = {
+            "system_role",
+            "system_class",
+            "star_system",
+            "body_class",
+            "parent_body",
+            "location_entity",
+            "legacy_system_entity_id",
+            "derived_from_system_body",
+            "star_class",
+            "spectral_class",
+            "luminosity_solar",
+            "habitable_zone_inner_au",
+            "habitable_zone_outer_au",
+            "stellar_neighbours",
+            "radius_m",
+            "semi_major_axis_m",
+            "eccentricity",
+            "inclination_deg",
+            "longitude_of_ascending_node_deg",
+            "argument_of_periapsis_deg",
+            "mean_anomaly_deg_at_epoch",
+            "display_color",
+            "mass_kg",
+        }
+
+        if class_key in surface_classes:
+            return field_key not in (building_only | room_only | orbital_only)
+        if class_key == "building":
+            return field_key not in (room_only | orbital_only)
+        if class_key == "room":
+            return field_key not in orbital_only
+        if class_key in orbital_classes:
+            return field_key not in (building_only | room_only)
+        return field_key not in (building_only | room_only)
 
     def _location_tree_entity_matches(self, entity, dataset_name):
         if entity is None:
@@ -327,6 +405,93 @@ class KnowledgeBrowserModel:
         label = self._entity_display_label(entity, fallback=entity.get("id", "")).lower()
         return (label, str(entity.get("id", "")))
 
+    def _is_sol_location(self, entity):
+        if not isinstance(entity, dict):
+            return False
+        entity_id = str(entity.get("id") or "").strip().lower()
+        label = self._entity_display_label(entity, fallback=entity_id).strip().lower()
+        return entity_id in {"system_sol", "sol", "solar_system"} or label in {"sol", "sol system", "solar system"}
+
+    def _is_star_system_location(self, entity):
+        if not isinstance(entity, dict):
+            return False
+        role = str(entity.get("system_role") or entity.get("location_role") or "").strip().lower()
+        return role == "star_system" or self._canonical_location_class_key(entity) in {"star_system", "stellar_system"}
+
+    def _coerce_float(self, value):
+        if value in (None, ""):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _stellar_distance_to_sol(self, entity):
+        if self._is_sol_location(entity):
+            return 0.0
+        entity_id = str(entity.get("id") or "").strip().lower() if isinstance(entity, dict) else ""
+
+        def distance_from_rows(rows, target_ids):
+            if isinstance(rows, dict):
+                rows = [rows]
+            if not isinstance(rows, list):
+                return None
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                target_id = str(row.get("system") or row.get("id") or row.get("entity_id") or "").strip().lower()
+                if target_id not in target_ids:
+                    continue
+                distance = self._coerce_float(row.get("distance_ly") or row.get("distance"))
+                if distance is not None:
+                    return distance
+            return None
+
+        rows = entity.get("stellar_neighbours") if isinstance(entity, dict) else None
+        own_distance = distance_from_rows(rows, {"system_sol", "sol", "solar_system"})
+        if own_distance is not None:
+            return own_distance
+
+        sol = self.world_model.get_entity("system_sol") if self.world_model is not None else None
+        if isinstance(sol, dict) and entity_id:
+            return distance_from_rows(sol.get("stellar_neighbours"), {entity_id})
+        return None
+
+    def _orbital_distance_m(self, entity):
+        if not isinstance(entity, dict):
+            return None
+        direct = self._coerce_float(entity.get("semi_major_axis_m"))
+        if direct is not None:
+            return direct
+        periapsis = self._coerce_float(entity.get("periapsis_m") or entity.get("perihelion_m"))
+        apoapsis = self._coerce_float(entity.get("apoapsis_m") or entity.get("aphelion_m"))
+        if periapsis is not None and apoapsis is not None:
+            return (periapsis + apoapsis) / 2.0
+        return None
+
+    def _location_hierarchy_sort_key_for_parent(self, entity, parent_entity=None):
+        alpha_key = self._location_hierarchy_sort_key(entity)
+        if self._is_star_system_location(entity):
+            distance = self._stellar_distance_to_sol(entity)
+            return (
+                0 if self._is_sol_location(entity) else 1,
+                0 if distance is not None else 1,
+                distance if distance is not None else float("inf"),
+                *alpha_key,
+            )
+
+        parent_is_orbit = self._location_browser_domain(parent_entity) == "orbit" if parent_entity is not None else False
+        entity_is_orbit = self._location_browser_domain(entity) == "orbit"
+        if parent_is_orbit or entity_is_orbit:
+            distance = self._orbital_distance_m(entity)
+            return (
+                0 if distance is not None else 1,
+                distance if distance is not None else float("inf"),
+                *alpha_key,
+            )
+
+        return (2, *alpha_key)
+
     def _build_location_browser_items(self, world_model):
         items = []
 
@@ -415,13 +580,17 @@ class KnowledgeBrowserModel:
                     if child_entity not in children:
                         children.append(child_entity)
 
-        for child_list in children_by_parent.values():
+        for parent_id, child_list in children_by_parent.items():
             unique_children = {}
             for child in child_list:
                 child_id = canonical_location_id(child.get("id"))
                 if child_id:
                     unique_children[child_id] = child
-            child_list[:] = sorted(unique_children.values(), key=self._location_hierarchy_sort_key)
+            parent_entity = location_by_id.get(parent_id)
+            child_list[:] = sorted(
+                unique_children.values(),
+                key=lambda child: self._location_hierarchy_sort_key_for_parent(child, parent_entity),
+            )
 
         auto_reveal = self._location_tree_auto_reveal_descendants()
         emitted_ids = set()
@@ -514,7 +683,7 @@ class KnowledgeBrowserModel:
                 if canonical_location_id(location.get("id"))
                 and canonical_location_id(location.get("id")) not in parent_id_by_child
             ],
-            key=self._location_hierarchy_sort_key,
+            key=lambda location: self._location_hierarchy_sort_key_for_parent(location),
         )
         for location_entity in root_locations:
             add_location_subtree(location_entity, 0)
@@ -626,4 +795,3 @@ class KnowledgeBrowserModel:
             items.append({"kind": "spacer"})
 
         return items
-

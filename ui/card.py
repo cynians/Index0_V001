@@ -4,21 +4,19 @@ import colorsys
 import pygame
 
 from engine.scaler import ScaleHelper
+from ui.card_location import CardLocationMixin
+from ui.card_phylogeny import CardPhylogenyMixin
+from ui.card_production import CardProductionMixin
+from ui.card_simulation import CardSimulationMixin
+from ui.card_task import CardTaskMixin
 from ui.card_wiki import CardWikiRenderer
 from ui.text_editing import TextEditing
 from world.schema_loader import SchemaLoader
 from world.year_utils import parse_year
 from simulations.space.stellar import STELLAR_CLASS_HELP, is_valid_stellar_class
-from simulations.phylogeny.clade_graph import (
-    clade_label,
-    find_clade_matches,
-    get_clade_entities,
-    is_species_entity,
-    phylogeny_graph_context,
-)
 
 
-class EntityCard:
+class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, CardSimulationMixin, CardTaskMixin):
     PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     """
     Reusable renderer + interaction helper for one repository entity card.
@@ -60,17 +58,20 @@ class EntityCard:
         "offspring",
     ]
     CORE_RELATION_FIELDS = set(STANDARD_RELATION_FIELDS)
-    LOCATION_TOPOLOGY_FIELDS = ["neighbours", "constituents", "overlaps"]
+    LOCATION_TOPOLOGY_FIELDS = ["parents", "neighbours", "constituents", "overlaps"]
     LOCATION_TOPOLOGY_LABELS = {
+        "parents": "Location Parents",
         "neighbours": "Neighbours",
         "constituents": "Constituents",
         "overlaps": "Overlaps",
     }
     LOCATION_TOPOLOGY_HELP = {
+        "parents": "Larger locations containing this location.",
         "neighbours": "Adjacent locations.",
         "constituents": "Locations contained by this location.",
         "overlaps": "Locations sharing territory without full containment.",
     }
+    LOCATION_TOPOLOGY_EDITABLE_FIELDS = {"neighbours", "constituents", "overlaps"}
     LOCATION_TOPOLOGY_SYMMETRIC_FIELDS = {"neighbours", "overlaps"}
     LOCATION_TOPOLOGY_FIELD_PREFIX = "location_topology:"
     TIMELINE_SNAPSHOT_FIELD = "timeline_snapshot_entry"
@@ -118,10 +119,12 @@ class EntityCard:
         "cladistics": ["general", "overview", "phylogeny", "relations", "temporal", "location", "media"],
         "species": ["general", "overview", "phylogeny", "relations", "temporal", "location", "media"],
         "components": ["general", "overview", "temporal", "location", "relations", "operational", "simulation", "media"],
+        "producers": ["general", "overview", "production", "temporal", "location", "relations", "media"],
     }
     TAB_LABELS = {
         "general": "General",
         "overview": "Overview",
+        "production": "Production",
         "temporal": "Temporal",
         "location": "Location",
         "relations": "Relations",
@@ -140,6 +143,7 @@ class EntityCard:
     TAB_SECTIONS = {
         "general": [],
         "overview": ["Identity", "Classification", "Dimensions / Scale", "Metadata"],
+        "production": [],
         "temporal": ["Temporal"],
         "location": [],
         "relations": ["Relations", "Class Relations"],
@@ -345,42 +349,11 @@ class EntityCard:
     def _is_idea_card(self):
         return self.dataset_name == "ideas" or self.entity.get("type") == "idea"
 
-    def _is_task_card(self):
-        return self.dataset_name == "tasks" or self.entity.get("type") == "task"
-
-    def _is_component_card(self):
-        return self.dataset_name == "components" or self.entity.get("type") in {"component", "assembly"}
-
-    def _is_species_card(self):
-        return self.dataset_name == "species" or self.entity.get("type") == "species"
-
-    def _is_cladistics_card(self):
-        return self.dataset_name == "cladistics" or self.entity.get("type") == "cladistics"
-
-    def _species_name_parts(self):
-        common_name = str(self.entity.get("common_name") or "").strip()
-        binomial_name = str(self.entity.get("binomial_name") or "").strip()
-
-        if not common_name:
-            pretty_name = str(self.entity.get("pretty_name") or "").strip()
-            if " - " in pretty_name:
-                common_name = pretty_name.split(" - ", 1)[0].strip()
-            elif pretty_name and pretty_name != self.entity.get("id"):
-                common_name = pretty_name
-
-        if not binomial_name:
-            legacy_name = str(self.entity.get("name") or "").strip()
-            if legacy_name and legacy_name != common_name:
-                binomial_name = legacy_name
-            else:
-                pretty_name = str(self.entity.get("pretty_name") or "").strip()
-                if " - " in pretty_name:
-                    binomial_name = pretty_name.split(" - ", 1)[1].strip()
-
-        return common_name, binomial_name
-
     def _title_edit_field(self):
         return "common_name" if self._is_species_card() else "name"
+
+    def _header_description_edit_field(self):
+        return "three_word_description"
 
     def _header_description_text(self):
         return str(self.entity.get("three_word_description") or "").strip()
@@ -413,119 +386,17 @@ class EntityCard:
             return True
         return False
 
-    def _has_simulation_fields(self):
-        keys = set(self.entity.keys()) | set(self._get_schema_field_specs().keys())
-        simulation_keys = self.SPACE_SIM_FIELDS | self.MAP_SIM_FIELDS | self.WORLD_GEN_SIM_FIELDS
-        return bool(keys & simulation_keys)
-
-    def _active_subtab_order(self):
-        if self.active_tab == "simulation":
-            return self.SIMULATION_SUBTAB_ORDER
-        return []
-
-    def _default_simulation_subtab(self):
-        keys = set(self.entity.keys())
-        if keys & (self.SPACE_SIM_FIELDS | {"mass_kg"}) and self._is_space_sim_context():
-            return "orbital"
-        if keys & self.MAP_SIM_FIELDS:
-            return "map"
-        if keys & self.WORLD_GEN_SIM_FIELDS:
-            return "world_gen"
-        return self.active_simulation_subtab if self.active_simulation_subtab in self.SIMULATION_SUBTAB_ORDER else "orbital"
-
-    def _visible_sections(self):
-        if self.active_tab == "simulation":
-            return self.SIMULATION_SUBTAB_SECTIONS.get(
-                self.active_simulation_subtab,
-                self.SIMULATION_SUBTAB_SECTIONS["orbital"],
-            )
-        return self.TAB_SECTIONS.get(self.active_tab, self.TAB_SECTIONS["general"])
-
     def _is_media_mode(self):
         return self.active_tab == "media"
 
-    def _is_phylogeny_mode(self):
-        return self.active_tab == "phylogeny" and (self._is_cladistics_card() or self._is_species_card())
-
     def _is_temporal_mode(self):
         return self.active_tab == "temporal"
-
-    def _is_location_mode(self):
-        return self.active_tab == "location"
 
     def _is_general_mode(self):
         return self.active_tab == "general"
 
     def _uses_image_block(self):
         return self._is_media_mode() or self._is_temporal_mode()
-
-    def _is_location_entity(self, entity):
-        return isinstance(entity, dict) and (
-            entity.get("_dataset") == "locations"
-            or entity.get("type") == "location"
-        )
-
-    def _location_display_label(self, entity, fallback=None):
-        if not isinstance(entity, dict):
-            return str(fallback or "")
-        return str(
-            entity.get("pretty_name")
-            or entity.get("name")
-            or entity.get("common_name")
-            or entity.get("label")
-            or fallback
-            or entity.get("id")
-            or ""
-        )
-
-    def _default_location_mode(self):
-        dataset = str(self.dataset_name or self.entity.get("_dataset") or "").lower()
-        entity_type = str(self.entity.get("type") or "").lower()
-        if dataset in {"people", "pops"} or entity_type in {"person", "character", "individual", "pop"}:
-            return "exclusive"
-        return "multiple"
-
-    def _location_mode_value(self):
-        mode = str(self.entity.get("location_mode") or "").strip().lower()
-        return mode if mode in {"exclusive", "multiple"} else self._default_location_mode()
-
-    def _coerce_location_year(self, value):
-        if value in (None, ""):
-            return None
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            parsed = parse_year(value)
-            return parsed
-
-    def _normalize_location_history_entry(self, value):
-        if isinstance(value, str):
-            location_id = value.strip()
-            return {"location_id": location_id} if location_id else None
-        if not isinstance(value, dict):
-            return None
-
-        location_id = (
-            value.get("location_id")
-            or value.get("id")
-            or value.get("entity_id")
-            or value.get("location")
-        )
-        location_id = str(location_id or "").strip()
-        if not location_id:
-            return None
-
-        normalized = {"location_id": location_id}
-        start_year = self._coerce_location_year(value.get("start_year"))
-        end_year = self._coerce_location_year(value.get("end_year"))
-        if start_year is not None:
-            normalized["start_year"] = start_year
-        if end_year is not None:
-            normalized["end_year"] = end_year
-        note = str(value.get("note") or "").strip()
-        if note:
-            normalized["note"] = note
-        return normalized
 
     def _relation_entity_ids(self, value):
         if value is None:
@@ -543,975 +414,12 @@ class EntityCard:
             return ids
         return []
 
-    def _location_history_entries(self):
-        entries = []
-        seen = set()
-
-        for raw_entry in self.entity.get("location_history") or []:
-            entry = self._normalize_location_history_entry(raw_entry)
-            if not entry:
-                continue
-            key = (
-                entry.get("location_id"),
-                entry.get("start_year"),
-                entry.get("end_year"),
-                entry.get("note", ""),
-            )
-            if key in seen:
-                continue
-            seen.add(key)
-            entries.append(entry)
-
-        for legacy_key in ("location_entity", "associated_locations", "locations"):
-            for location_id in self._relation_entity_ids(self.entity.get(legacy_key)):
-                key = (location_id, None, None, "")
-                if key in seen:
-                    continue
-                seen.add(key)
-                entries.append({"location_id": location_id})
-
-        return entries
-
-    def _sync_location_relation_fields(self):
-        entries = self._location_history_entries()
-        self.entity["location_history"] = entries
-        location_ids = []
-        for entry in entries:
-            location_id = str(entry.get("location_id") or "").strip()
-            if location_id and location_id not in location_ids:
-                location_ids.append(location_id)
-        self.entity["associated_locations"] = location_ids
-        return location_ids
-
-    def _is_location_card(self):
-        return self._is_location_entity(self.entity)
-
-    def _location_topology_ids(self, entity=None, field_key=None):
-        entity = entity if isinstance(entity, dict) else self.entity
-        field_key = str(field_key or "")
-        ids = []
-        for location_id in self._relation_entity_ids(entity.get(field_key)):
-            if location_id and location_id not in ids:
-                ids.append(location_id)
-        return ids
-
-    def _set_location_topology_ids(self, entity, field_key, ids):
-        if not isinstance(entity, dict) or field_key not in self.LOCATION_TOPOLOGY_FIELDS:
-            return False
-        normalized = []
-        entity_id = str(entity.get("id") or "")
-        for location_id in ids or []:
-            location_id = str(location_id or "").strip()
-            if not location_id or location_id == entity_id or location_id in normalized:
-                continue
-            normalized.append(location_id)
-        if normalized:
-            entity[field_key] = normalized
-        elif field_key in entity:
-            entity[field_key] = []
-        return True
-
-    def _mark_related_location_update(self, card, location_id):
-        location_id = str(location_id or "").strip()
-        if not location_id:
-            return
-        update_ids = card.setdefault("location_related_entity_update_ids", [])
-        if location_id not in update_ids:
-            update_ids.append(location_id)
-
-    def _location_topology_match_field(self, card):
-        active = str(card.get("location_topology_active_field") or "").strip()
-        return active if active in self.LOCATION_TOPOLOGY_FIELDS else "constituents"
-
-    def _location_topology_virtual_field(self, field_key):
-        field_key = str(field_key or "").strip()
-        if field_key not in self.LOCATION_TOPOLOGY_FIELDS:
-            return ""
-        return f"{self.LOCATION_TOPOLOGY_FIELD_PREFIX}{field_key}"
-
-    def _location_topology_field_from_virtual(self, field_key):
-        field_key = str(field_key or "")
-        if not field_key.startswith(self.LOCATION_TOPOLOGY_FIELD_PREFIX):
-            return ""
-        topology_field = field_key[len(self.LOCATION_TOPOLOGY_FIELD_PREFIX):]
-        return topology_field if topology_field in self.LOCATION_TOPOLOGY_FIELDS else ""
-
-    def is_location_topology_relation_field(self, field_key):
-        return bool(self._location_topology_field_from_virtual(field_key))
-
-    def _build_location_topology_matches(self, card, field_key=None, query_text=None, limit=7):
-        field_key = field_key or self._location_topology_match_field(card)
-        query_text = card.get("location_topology_query", "") if query_text is None else query_text
-        existing = set(self._location_topology_ids(self.entity, field_key))
-        current_id = str(self.entity.get("id") or "")
-        matches = []
-        for match in self._build_location_matches(query_text, limit=50):
-            match_id = str(match.get("id") or "")
-            if not match_id or match_id == current_id or match_id in existing:
-                continue
-            matches.append(match)
-            if len(matches) >= limit:
-                break
-        return matches
-
-    def refresh_location_topology_matches(self, card):
-        if not card.get("location_topology_input_active"):
-            card["location_topology_matches"] = []
-            card["location_topology_match_rows"] = []
-            card["location_topology_selected_index"] = 0
-            return
-        matches = self._build_location_topology_matches(card)
-        card["location_topology_matches"] = matches
-        card["location_topology_match_rows"] = []
-        if not matches:
-            card["location_topology_selected_index"] = 0
-            return
-        card["location_topology_selected_index"] = max(
-            0,
-            min(int(card.get("location_topology_selected_index", 0) or 0), len(matches) - 1),
-        )
-
-    def _sync_added_location_topology_relation(self, card, field_key, target_id):
-        if self.world_model is None:
-            return
-        current_id = str(self.entity.get("id") or "").strip()
-        if not current_id or not target_id:
-            return
-        target = self.world_model.get_entity(target_id)
-        if not self._is_location_entity(target):
-            return
-
-        if field_key in self.LOCATION_TOPOLOGY_SYMMETRIC_FIELDS:
-            target_ids = self._location_topology_ids(target, field_key)
-            if current_id not in target_ids:
-                target_ids.append(current_id)
-                self._set_location_topology_ids(target, field_key, target_ids)
-                self._mark_related_location_update(card, target_id)
-            return
-
-        if field_key == "constituents":
-            parent_ids = self._relation_entity_ids(target.get("parents"))
-            if current_id not in parent_ids:
-                parent_ids.append(current_id)
-                target["parents"] = parent_ids
-                self._mark_related_location_update(card, target_id)
-            if not target.get("parent_location"):
-                target["parent_location"] = current_id
-                self._mark_related_location_update(card, target_id)
-
-    def _sync_removed_location_topology_relation(self, card, field_key, target_id):
-        if self.world_model is None:
-            return
-        current_id = str(self.entity.get("id") or "").strip()
-        if not current_id or not target_id:
-            return
-        target = self.world_model.get_entity(target_id)
-        if not self._is_location_entity(target):
-            return
-
-        if field_key in self.LOCATION_TOPOLOGY_SYMMETRIC_FIELDS:
-            target_ids = self._location_topology_ids(target, field_key)
-            if current_id in target_ids:
-                self._set_location_topology_ids(target, field_key, [item for item in target_ids if item != current_id])
-                self._mark_related_location_update(card, target_id)
-            return
-
-        if field_key == "constituents":
-            parent_ids = self._relation_entity_ids(target.get("parents"))
-            if current_id in parent_ids:
-                target["parents"] = [item for item in parent_ids if item != current_id]
-                self._mark_related_location_update(card, target_id)
-            if target.get("parent_location") == current_id:
-                target["parent_location"] = ""
-                self._mark_related_location_update(card, target_id)
-
-    def add_location_topology_relation(self, card, field_key=None, location_id=None):
-        field_key = field_key or self._location_topology_match_field(card)
-        if field_key not in self.LOCATION_TOPOLOGY_FIELDS:
-            return False
-        location_id = str(location_id or "").strip()
-        if not location_id:
-            matches = card.get("location_topology_matches") or []
-            if matches:
-                index = max(0, min(int(card.get("location_topology_selected_index", 0) or 0), len(matches) - 1))
-                location_id = str(matches[index].get("id") or "").strip()
-        if not location_id or location_id == str(self.entity.get("id") or ""):
-            return False
-        if self.world_model is not None and not self._is_location_entity(self.world_model.get_entity(location_id)):
-            return False
-
-        values = self._location_topology_ids(self.entity, field_key)
-        if location_id not in values:
-            values.append(location_id)
-            self._set_location_topology_ids(self.entity, field_key, values)
-            self._sync_added_location_topology_relation(card, field_key, location_id)
-
-        card["location_topology_query"] = ""
-        card["location_topology_matches"] = []
-        card["location_topology_match_rows"] = []
-        card["location_topology_selected_index"] = 0
-        card["location_topology_input_active"] = False
-        card["last_edit_action"] = "commit"
-        card["last_committed_field"] = field_key
-        return True
-
-    def remove_location_topology_relation(self, card, field_key, location_id):
-        field_key = str(field_key or "")
-        location_id = str(location_id or "").strip()
-        if field_key not in self.LOCATION_TOPOLOGY_FIELDS or not location_id:
-            return False
-        values = self._location_topology_ids(self.entity, field_key)
-        if location_id not in values:
-            return False
-        self._set_location_topology_ids(self.entity, field_key, [item for item in values if item != location_id])
-        self._sync_removed_location_topology_relation(card, field_key, location_id)
-        card["last_edit_action"] = "commit"
-        card["last_committed_field"] = field_key
-        return True
-
-    def _set_location_topology_input_field(self, card, field_key):
-        if field_key not in self.LOCATION_TOPOLOGY_FIELDS:
-            return False
-        virtual_field = self._location_topology_virtual_field(field_key)
-        card["location_topology_input_active"] = False
-        card["location_topology_active_field"] = field_key
-        card["active_edit_field"] = virtual_field
-        card["relation_picker_target"] = "locations"
-        card["relation_picker_anchor_field"] = virtual_field
-        card["relation_picker_open"] = True
-        card["relation_picker_query"] = ""
-        card["relation_picker_matches"] = []
-        card["relation_picker_selected_index"] = 0
-        card["relation_picker_hitboxes"] = []
-        card["last_edit_action"] = None
-        return True
-
-    def _location_entry_label(self, location_id):
-        entity = self.world_model.get_entity(location_id) if self.world_model is not None else None
-        return self._location_display_label(entity, fallback=location_id)
-
-    def _format_location_period(self, entry):
-        start_year = entry.get("start_year")
-        end_year = entry.get("end_year")
-        if start_year is None and end_year is None:
-            return "any period"
-        if start_year is None:
-            return f"until {end_year}"
-        if end_year is None:
-            return f"from {start_year}"
-        if start_year == end_year:
-            return str(start_year)
-        return f"{start_year} - {end_year}"
-
-    def _build_location_matches(self, query_text, limit=7):
-        if self.world_model is None:
-            return []
-        query = str(query_text or "").strip().casefold()
-        entities = getattr(getattr(self.world_model, "loader", None), "entities", {}) or {}
-        matches = []
-        for entity_id, entity in entities.items():
-            if not self._is_location_entity(entity):
-                continue
-            label = self._location_display_label(entity, fallback=entity_id)
-            location_class = str(entity.get("location_class") or entity.get("type") or "location")
-            haystack = " ".join(
-                [
-                    str(entity_id),
-                    str(label),
-                    str(entity.get("pretty_name", "")),
-                    str(entity.get("name", "")),
-                    str(location_class),
-                ]
-            ).casefold()
-            if query and query not in haystack:
-                continue
-            label_folded = str(label).casefold()
-            id_folded = str(entity_id).casefold()
-            if query and (label_folded == query or id_folded == query):
-                rank = 0
-            elif query and (label_folded.startswith(query) or id_folded.startswith(query)):
-                rank = 1
-            elif query:
-                rank = 2
-            else:
-                rank = 3
-            matches.append(
-                {
-                    "id": str(entity_id),
-                    "label": str(label),
-                    "subtitle": f"{location_class.replace('_', ' ').title()} | {entity_id}",
-                    "rank": rank,
-                }
-            )
-        matches.sort(key=lambda item: (item["rank"], item["label"].casefold(), item["id"]))
-        return matches[:limit]
-
-    def refresh_location_matches(self, card):
-        if not card.get("location_input_active"):
-            card["location_matches"] = []
-            card["location_match_hitboxes"] = []
-            card["location_selected_index"] = 0
-            return
-        matches = self._build_location_matches(card.get("location_query", ""))
-        card["location_matches"] = matches
-        card["location_match_hitboxes"] = []
-        if not matches:
-            card["location_selected_index"] = 0
-            return
-        card["location_selected_index"] = max(0, min(int(card.get("location_selected_index", 0) or 0), len(matches) - 1))
-
-    def add_location_history_entry(self, card, location_id=None):
-        location_id = str(location_id or "").strip()
-        if not location_id:
-            matches = card.get("location_matches") or []
-            if matches:
-                index = max(0, min(int(card.get("location_selected_index", 0) or 0), len(matches) - 1))
-                location_id = str(matches[index].get("id") or "").strip()
-        if not location_id:
-            return False
-
-        entry = {"location_id": location_id}
-        start_year = self._coerce_location_year(card.get("location_start_buffer"))
-        end_year = self._coerce_location_year(card.get("location_end_buffer"))
-        if start_year is not None:
-            entry["start_year"] = start_year
-        if end_year is not None:
-            entry["end_year"] = end_year
-        if (
-            entry.get("start_year") is not None
-            and entry.get("end_year") is not None
-            and entry["end_year"] < entry["start_year"]
-        ):
-            entry["start_year"], entry["end_year"] = entry["end_year"], entry["start_year"]
-
-        entries = self._location_history_entries()
-        key = (entry.get("location_id"), entry.get("start_year"), entry.get("end_year"))
-        if not any((row.get("location_id"), row.get("start_year"), row.get("end_year")) == key for row in entries):
-            entries.append(entry)
-        self.entity["location_history"] = entries
-        self._sync_location_relation_fields()
-        card["location_query"] = ""
-        card["location_start_buffer"] = ""
-        card["location_end_buffer"] = ""
-        card["location_matches"] = []
-        card["location_match_hitboxes"] = []
-        card["location_selected_index"] = 0
-        card["location_input_active"] = False
-        card["last_edit_action"] = "commit"
-        card["last_committed_field"] = "location_history"
-        return True
-
-    def remove_location_history_entry(self, card, index):
-        entries = self._location_history_entries()
-        try:
-            index = int(index)
-        except (TypeError, ValueError):
-            return False
-        if index < 0 or index >= len(entries):
-            return False
-        entries.pop(index)
-        self.entity["location_history"] = entries
-        self._sync_location_relation_fields()
-        card["last_edit_action"] = "commit"
-        card["last_committed_field"] = "location_history"
-        return True
-
-    def toggle_location_mode(self, card):
-        mode = self._location_mode_value()
-        self.entity["location_mode"] = "multiple" if mode == "exclusive" else "exclusive"
-        card["last_edit_action"] = "commit"
-        card["last_committed_field"] = "location_mode"
-        return True
-
-    def _set_location_input_field(self, card, field_name):
-        card["location_input_active"] = True
-        card["location_active_field"] = field_name
-        card.setdefault("location_query", "")
-        card.setdefault("location_start_buffer", "")
-        card.setdefault("location_end_buffer", "")
-        self.refresh_location_matches(card)
-        return True
-
-    def _handle_location_keydown(self, card, event):
-        if self._is_location_mode() and self._is_location_card():
-            return self._handle_location_topology_keydown(card, event)
-
-        if not self._is_location_mode() or not card.get("location_input_active"):
-            return False
-
-        active_field = card.get("location_active_field") or "query"
-        if event.key == pygame.K_ESCAPE:
-            card["location_input_active"] = False
-            card["location_active_field"] = None
-            card["location_matches"] = []
-            card["location_match_hitboxes"] = []
-            card["last_edit_action"] = "cancel"
-            return True
-
-        if event.key == pygame.K_TAB:
-            order = ["query", "start", "end"]
-            direction = -1 if (event.mod & pygame.KMOD_SHIFT) else 1
-            current_index = order.index(active_field) if active_field in order else 0
-            card["location_active_field"] = order[(current_index + direction) % len(order)]
-            return True
-
-        matches = card.get("location_matches") or []
-        if active_field == "query" and event.key == pygame.K_UP and matches:
-            card["location_selected_index"] = max(0, int(card.get("location_selected_index", 0) or 0) - 1)
-            return True
-        if active_field == "query" and event.key == pygame.K_DOWN and matches:
-            card["location_selected_index"] = min(len(matches) - 1, int(card.get("location_selected_index", 0) or 0) + 1)
-            return True
-
-        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-            if active_field == "query" and matches and not (event.mod & pygame.KMOD_SHIFT):
-                index = max(0, min(int(card.get("location_selected_index", 0) or 0), len(matches) - 1))
-                card["location_query"] = matches[index].get("label", matches[index].get("id", ""))
-                card["location_selected_id"] = matches[index].get("id")
-                card["location_active_field"] = "start"
-                return True
-            selected_id = card.get("location_selected_id")
-            if not selected_id and matches:
-                index = max(0, min(int(card.get("location_selected_index", 0) or 0), len(matches) - 1))
-                selected_id = matches[index].get("id")
-            return self.add_location_history_entry(card, selected_id)
-
-        if event.key == pygame.K_BACKSPACE:
-            if active_field == "query":
-                card["location_query"] = str(card.get("location_query", ""))[:-1]
-                card.pop("location_selected_id", None)
-                self.refresh_location_matches(card)
-            elif active_field == "start":
-                card["location_start_buffer"] = str(card.get("location_start_buffer", ""))[:-1]
-            elif active_field == "end":
-                card["location_end_buffer"] = str(card.get("location_end_buffer", ""))[:-1]
-            card["last_edit_action"] = "draft"
-            return True
-
-        if event.key == pygame.K_DELETE:
-            if active_field == "query":
-                card["location_query"] = ""
-                card.pop("location_selected_id", None)
-                self.refresh_location_matches(card)
-            elif active_field == "start":
-                card["location_start_buffer"] = ""
-            elif active_field == "end":
-                card["location_end_buffer"] = ""
-            card["last_edit_action"] = "draft"
-            return True
-
-        text = getattr(event, "unicode", "")
-        if text and text.isprintable():
-            if active_field == "query":
-                card["location_query"] = str(card.get("location_query", "")) + text
-                card.pop("location_selected_id", None)
-                self.refresh_location_matches(card)
-            elif active_field == "start":
-                if text.isdigit() or text in {"-", "+"}:
-                    card["location_start_buffer"] = str(card.get("location_start_buffer", "")) + text
-            elif active_field == "end":
-                if text.isdigit() or text in {"-", "+"}:
-                    card["location_end_buffer"] = str(card.get("location_end_buffer", "")) + text
-            card["last_edit_action"] = "draft"
-            return True
-
-        return False
-
-    def _handle_location_topology_keydown(self, card, event):
-        if not card.get("location_topology_input_active"):
-            return False
-
-        if event.key == pygame.K_ESCAPE:
-            card["location_topology_input_active"] = False
-            card["location_topology_active_field"] = None
-            card["location_topology_matches"] = []
-            card["location_topology_match_rows"] = []
-            card["last_edit_action"] = "cancel"
-            return True
-
-        matches = card.get("location_topology_matches") or []
-        if event.key == pygame.K_UP and matches:
-            card["location_topology_selected_index"] = max(
-                0,
-                int(card.get("location_topology_selected_index", 0) or 0) - 1,
-            )
-            return True
-        if event.key == pygame.K_DOWN and matches:
-            card["location_topology_selected_index"] = min(
-                len(matches) - 1,
-                int(card.get("location_topology_selected_index", 0) or 0) + 1,
-            )
-            return True
-
-        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-            selected_id = card.get("location_topology_selected_id")
-            if not selected_id and matches:
-                index = max(0, min(int(card.get("location_topology_selected_index", 0) or 0), len(matches) - 1))
-                selected_id = matches[index].get("id")
-            return self.add_location_topology_relation(
-                card,
-                self._location_topology_match_field(card),
-                selected_id,
-            )
-
-        if event.key == pygame.K_BACKSPACE:
-            card["location_topology_query"] = str(card.get("location_topology_query", ""))[:-1]
-            card.pop("location_topology_selected_id", None)
-            self.refresh_location_topology_matches(card)
-            card["last_edit_action"] = None
-            return True
-
-        if event.key == pygame.K_DELETE:
-            card["location_topology_query"] = ""
-            card.pop("location_topology_selected_id", None)
-            self.refresh_location_topology_matches(card)
-            card["last_edit_action"] = None
-            return True
-
-        text = getattr(event, "unicode", "")
-        if text and text.isprintable():
-            card["location_topology_query"] = str(card.get("location_topology_query", "")) + text
-            card.pop("location_topology_selected_id", None)
-            self.refresh_location_topology_matches(card)
-            card["last_edit_action"] = None
-            return True
-
-        return False
-
-    def handle_location_click(self, card, mouse_pos):
-        if not self._is_location_mode():
-            return False
-
-        if self._is_location_card():
-            return self.handle_location_topology_click(card, mouse_pos)
-
-        if card.get("is_edit_mode", False):
-            mode_rect = card.get("location_mode_rect")
-            if mode_rect is not None and mode_rect.collidepoint(mouse_pos):
-                return self.toggle_location_mode(card)
-
-            for row in card.get("location_rows", []):
-                remove_rect = row.get("remove_rect")
-                if remove_rect is not None and remove_rect.collidepoint(mouse_pos):
-                    return self.remove_location_history_entry(card, row.get("index"))
-
-            for row in card.get("location_match_rows", []):
-                row_rect = row.get("rect")
-                if row_rect is not None and row_rect.collidepoint(mouse_pos):
-                    index = int(row.get("index", 0) or 0)
-                    matches = card.get("location_matches") or []
-                    if 0 <= index < len(matches):
-                        card["location_selected_index"] = index
-                        card["location_selected_id"] = matches[index].get("id")
-                        card["location_query"] = matches[index].get("label", matches[index].get("id", ""))
-                        card["location_active_field"] = "start"
-                        card["location_input_active"] = True
-                        return True
-
-            if card.get("location_query_rect") is not None and card["location_query_rect"].collidepoint(mouse_pos):
-                return self._set_location_input_field(card, "query")
-            if card.get("location_start_rect") is not None and card["location_start_rect"].collidepoint(mouse_pos):
-                return self._set_location_input_field(card, "start")
-            if card.get("location_end_rect") is not None and card["location_end_rect"].collidepoint(mouse_pos):
-                return self._set_location_input_field(card, "end")
-            if card.get("location_add_rect") is not None and card["location_add_rect"].collidepoint(mouse_pos):
-                selected_id = card.get("location_selected_id")
-                matches = card.get("location_matches") or []
-                if not selected_id and matches:
-                    index = max(0, min(int(card.get("location_selected_index", 0) or 0), len(matches) - 1))
-                    selected_id = matches[index].get("id")
-                return self.add_location_history_entry(card, selected_id)
-
-        return False
-
-    def handle_location_topology_click(self, card, mouse_pos):
-        if not card.get("is_edit_mode", False):
-            return False
-
-        place_rect = card.get("location_topology_place_rect")
-        if place_rect is not None and place_rect.collidepoint(mouse_pos):
-            card["pending_location_action"] = {
-                "id": "knowledge_place_location_on_parent",
-                "entity_id": card.get("entity_id") or self.entity.get("id"),
-            }
-            card["last_edit_action"] = None
-            return True
-
-        for row in card.get("location_topology_rows", []):
-            remove_rect = row.get("remove_rect")
-            if remove_rect is not None and remove_rect.collidepoint(mouse_pos):
-                return self.remove_location_topology_relation(
-                    card,
-                    row.get("field_key"),
-                    row.get("location_id"),
-                )
-
-        for row in card.get("location_topology_match_rows", []):
-            row_rect = row.get("rect")
-            if row_rect is not None and row_rect.collidepoint(mouse_pos):
-                index = int(row.get("index", 0) or 0)
-                matches = card.get("location_topology_matches") or []
-                if 0 <= index < len(matches):
-                    card["location_topology_selected_index"] = index
-                    card["location_topology_selected_id"] = matches[index].get("id")
-                    card["location_topology_query"] = matches[index].get("label", matches[index].get("id", ""))
-                    card["location_topology_input_active"] = True
-                    card["location_topology_active_field"] = row.get("field_key") or self._location_topology_match_field(card)
-                    card["last_edit_action"] = None
-                    return True
-
-        for field_key, input_rect in (card.get("location_topology_input_rects") or {}).items():
-            if input_rect is not None and input_rect.collidepoint(mouse_pos):
-                return self._set_location_topology_input_field(card, field_key)
-
-        for field_key, add_rect in (card.get("location_topology_add_rects") or {}).items():
-            if add_rect is not None and add_rect.collidepoint(mouse_pos):
-                selected_id = card.get("location_topology_selected_id")
-                matches = card.get("location_topology_matches") or []
-                if not selected_id and matches:
-                    index = max(0, min(int(card.get("location_topology_selected_index", 0) or 0), len(matches) - 1))
-                    selected_id = matches[index].get("id")
-                return self.add_location_topology_relation(card, field_key, selected_id)
-
-        return False
-
-    def _layout_location_topology_content(self, card, content_left, current_y, text_width):
-        row_gap = 6
-        card["location_topology_rows"] = []
-        card["location_topology_section_rects"] = {}
-        card["location_topology_input_rects"] = {}
-        card["location_topology_add_rects"] = {}
-        card["location_topology_match_rows"] = []
-        card["location_topology_place_rect"] = None
-
-        if card.get("is_edit_mode", False):
-            place_rect = pygame.Rect(content_left, current_y, min(172, text_width), 24)
-            card["location_topology_place_rect"] = place_rect
-            current_y = place_rect.bottom + row_gap + 4
-
-        for field_key in self.LOCATION_TOPOLOGY_FIELDS:
-            section_rect = pygame.Rect(content_left, current_y, text_width, self.SECTION_HEADER_H)
-            card["location_topology_section_rects"][field_key] = section_rect
-            current_y = section_rect.bottom + self.SECTION_GAP + 4
-
-            ids = self._location_topology_ids(self.entity, field_key)
-            if not ids:
-                empty_rect = pygame.Rect(content_left, current_y, text_width, 30)
-                card["location_topology_rows"].append(
-                    {
-                        "kind": "empty",
-                        "field_key": field_key,
-                        "rect": empty_rect,
-                    }
-                )
-                current_y = empty_rect.bottom + row_gap
-            else:
-                for location_id in ids:
-                    row_rect = pygame.Rect(content_left, current_y, text_width, 34)
-                    remove_rect = None
-                    if card.get("is_edit_mode", False):
-                        remove_rect = pygame.Rect(row_rect.right - 24, row_rect.y + 8, 18, 18)
-                    card["location_topology_rows"].append(
-                        {
-                            "kind": "entry",
-                            "field_key": field_key,
-                            "location_id": location_id,
-                            "rect": row_rect,
-                            "remove_rect": remove_rect,
-                        }
-                    )
-                    current_y = row_rect.bottom + row_gap
-
-            if card.get("is_edit_mode", False):
-                input_h = 24
-                add_w = 44
-                gap = 6
-                input_rect = pygame.Rect(content_left, current_y, max(100, text_width - add_w - gap), input_h)
-                add_rect = pygame.Rect(input_rect.right + gap, current_y, add_w, input_h)
-                card["location_topology_input_rects"][field_key] = input_rect
-                card["location_topology_add_rects"][field_key] = add_rect
-                current_y = input_rect.bottom + 4
-
-                if (
-                    card.get("location_topology_input_active")
-                    and self._location_topology_match_field(card) == field_key
-                ):
-                    for index, match in enumerate((card.get("location_topology_matches") or [])[:5]):
-                        row_rect = pygame.Rect(input_rect.x, current_y, min(text_width, input_rect.width + 160), 22)
-                        card["location_topology_match_rows"].append(
-                            {
-                                "index": index,
-                                "field_key": field_key,
-                                "match": match,
-                                "rect": row_rect,
-                            }
-                        )
-                        current_y = row_rect.bottom + 2
-                current_y += row_gap
-
-            current_y += 6
-
-        return current_y
-
-    def _layout_location_content(self, card, content_left, current_y, text_width):
-        if self._is_location_card():
-            return self._layout_location_topology_content(card, content_left, current_y, text_width)
-
-        font = card["layout_font"]
-        line_h = self._table_line_height(font)
-        row_gap = 6
-        card["location_rows"] = []
-        card["location_mode_rect"] = None
-        card["location_query_rect"] = None
-        card["location_start_rect"] = None
-        card["location_end_rect"] = None
-        card["location_add_rect"] = None
-        card["location_match_rows"] = []
-
-        header_rect = pygame.Rect(content_left, current_y, text_width, self.SECTION_HEADER_H)
-        card["location_section_rect"] = header_rect
-        current_y = header_rect.bottom + self.SECTION_GAP + 4
-
-        mode_rect = pygame.Rect(content_left, current_y, min(260, text_width), 24)
-        card["location_mode_rect"] = mode_rect
-        current_y = mode_rect.bottom + row_gap
-
-        entries = self._location_history_entries()
-        if not entries:
-            empty_rect = pygame.Rect(content_left, current_y, text_width, 34)
-            card["location_rows"].append({"kind": "empty", "rect": empty_rect})
-            current_y = empty_rect.bottom + row_gap
-        else:
-            for index, entry in enumerate(entries):
-                row_rect = pygame.Rect(content_left, current_y, text_width, 38)
-                remove_rect = None
-                if card.get("is_edit_mode", False):
-                    remove_rect = pygame.Rect(row_rect.right - 24, row_rect.y + 8, 18, 18)
-                card["location_rows"].append(
-                    {
-                        "kind": "entry",
-                        "index": index,
-                        "entry": entry,
-                        "rect": row_rect,
-                        "remove_rect": remove_rect,
-                    }
-                )
-                current_y = row_rect.bottom + row_gap
-
-        if card.get("is_edit_mode", False):
-            current_y += 2
-            query_w = max(120, int(text_width * 0.46))
-            year_w = max(58, min(76, int(text_width * 0.17)))
-            add_w = 44
-            gap = 6
-            total_w = query_w + year_w * 2 + add_w + gap * 3
-            if total_w > text_width:
-                query_w = max(90, text_width - year_w * 2 - add_w - gap * 3)
-            input_h = 24
-            query_rect = pygame.Rect(content_left, current_y, query_w, input_h)
-            start_rect = pygame.Rect(query_rect.right + gap, current_y, year_w, input_h)
-            end_rect = pygame.Rect(start_rect.right + gap, current_y, year_w, input_h)
-            add_rect = pygame.Rect(end_rect.right + gap, current_y, add_w, input_h)
-            card["location_query_rect"] = query_rect
-            card["location_start_rect"] = start_rect
-            card["location_end_rect"] = end_rect
-            card["location_add_rect"] = add_rect
-            current_y = query_rect.bottom + 4
-
-            matches = card.get("location_matches") or []
-            for index, match in enumerate(matches[:5]):
-                row_rect = pygame.Rect(query_rect.x, current_y, min(text_width, query_rect.width + 180), 22)
-                card["location_match_rows"].append({"index": index, "match": match, "rect": row_rect})
-                current_y = row_rect.bottom + 2
-
-            current_y += row_gap
-
-        return current_y
-
-    def _draw_location_content(self, screen, font, card):
-        if self._is_location_card():
-            self._draw_location_topology_content(screen, font, card)
-            return
-
-        content_clip = card.get("content_viewport_rect")
-        section_rect = card.get("location_section_rect")
-        if section_rect is not None:
-            pygame.draw.rect(screen, (34, 38, 48), section_rect)
-            pygame.draw.rect(screen, (86, 96, 116), section_rect, 1)
-            title = font.render("Location History", True, (232, 236, 244))
-            screen.blit(title, (section_rect.x + 8, section_rect.y + 3))
-
-        mode_rect = card.get("location_mode_rect")
-        if mode_rect is not None:
-            mode = self._location_mode_value()
-            mode_label = "Exclusive location" if mode == "exclusive" else "Multiple locations"
-            pygame.draw.rect(screen, (38, 44, 58), mode_rect)
-            pygame.draw.rect(screen, (116, 132, 160), mode_rect, 1)
-            screen.blit(font.render(mode_label, True, (230, 234, 242)), (mode_rect.x + 8, mode_rect.y + 4))
-
-        for row in card.get("location_rows", []):
-            row_rect = row.get("rect")
-            if row_rect is None or (content_clip is not None and not row_rect.colliderect(content_clip)):
-                continue
-            pygame.draw.rect(screen, (30, 34, 44), row_rect)
-            pygame.draw.rect(screen, (82, 92, 112), row_rect, 1)
-            if row.get("kind") == "empty":
-                screen.blit(font.render("No related locations yet", True, (150, 160, 178)), (row_rect.x + 8, row_rect.y + 9))
-                continue
-
-            entry = row.get("entry") or {}
-            location_id = str(entry.get("location_id") or "")
-            label = self._ellipsize_text(self._location_entry_label(location_id), font, row_rect.width - 150)
-            period = self._format_location_period(entry)
-            screen.blit(font.render(label, True, (238, 240, 246)), (row_rect.x + 8, row_rect.y + 5))
-            screen.blit(font.render(period, True, (176, 188, 208)), (row_rect.x + 8, row_rect.y + 20))
-            remove_rect = row.get("remove_rect")
-            if remove_rect is not None:
-                pygame.draw.rect(screen, (70, 40, 46), remove_rect)
-                pygame.draw.rect(screen, (178, 116, 124), remove_rect, 1)
-                remove_text = font.render("x", True, (250, 220, 224))
-                screen.blit(remove_text, remove_text.get_rect(center=remove_rect.center))
-
-        if not card.get("is_edit_mode", False):
-            return
-
-        active_field = card.get("location_active_field")
-
-        def draw_input(rect, value, placeholder, field_name):
-            if rect is None:
-                return
-            active = bool(card.get("location_input_active")) and active_field == field_name
-            pygame.draw.rect(screen, (40, 46, 60) if active else (30, 34, 44), rect)
-            pygame.draw.rect(screen, (190, 208, 236) if active else (94, 104, 124), rect, 1)
-            text = str(value or "")
-            display = text if text else placeholder
-            color = (238, 240, 246) if text else (132, 142, 160)
-            display = self._ellipsize_text(display, font, rect.width - 12)
-            screen.blit(font.render(display, True, color), (rect.x + 6, rect.y + 4))
-
-        draw_input(card.get("location_query_rect"), card.get("location_query", ""), "Search location", "query")
-        draw_input(card.get("location_start_rect"), card.get("location_start_buffer", ""), "start", "start")
-        draw_input(card.get("location_end_rect"), card.get("location_end_buffer", ""), "end", "end")
-
-        add_rect = card.get("location_add_rect")
-        if add_rect is not None:
-            pygame.draw.rect(screen, (54, 70, 98), add_rect)
-            pygame.draw.rect(screen, (150, 172, 210), add_rect, 1)
-            add_text = font.render("Add", True, (244, 246, 250))
-            screen.blit(add_text, add_text.get_rect(center=add_rect.center))
-
-        selected_index = int(card.get("location_selected_index", 0) or 0)
-        for row in card.get("location_match_rows", []):
-            row_rect = row.get("rect")
-            if row_rect is None:
-                continue
-            index = int(row.get("index", 0))
-            match = row.get("match") or {}
-            selected = index == selected_index
-            pygame.draw.rect(screen, (52, 64, 86) if selected else (31, 36, 48), row_rect)
-            pygame.draw.rect(screen, (138, 164, 206) if selected else (72, 82, 104), row_rect, 1)
-            label = self._ellipsize_text(match.get("label", ""), font, row_rect.width - 120)
-            subtitle = self._ellipsize_text(match.get("subtitle", ""), font, 110)
-            screen.blit(font.render(label, True, (240, 244, 250) if selected else (188, 198, 216)), (row_rect.x + 6, row_rect.y + 3))
-            if subtitle:
-                subtitle_surface = font.render(subtitle, True, (176, 188, 208))
-                screen.blit(subtitle_surface, (row_rect.right - subtitle_surface.get_width() - 6, row_rect.y + 3))
-
-    def _draw_location_topology_content(self, screen, font, card):
-        content_clip = card.get("content_viewport_rect")
-
-        place_rect = card.get("location_topology_place_rect")
-        if place_rect is not None:
-            pygame.draw.rect(screen, (46, 60, 84), place_rect)
-            pygame.draw.rect(screen, (148, 170, 210), place_rect, 1)
-            place_text = font.render("Place On Parent", True, (242, 246, 252))
-            screen.blit(place_text, place_text.get_rect(center=place_rect.center))
-
-        for field_key in self.LOCATION_TOPOLOGY_FIELDS:
-            section_rect = (card.get("location_topology_section_rects") or {}).get(field_key)
-            if section_rect is not None:
-                pygame.draw.rect(screen, (34, 38, 48), section_rect)
-                pygame.draw.rect(screen, (86, 96, 116), section_rect, 1)
-                title = self.LOCATION_TOPOLOGY_LABELS.get(field_key, field_key.title())
-                screen.blit(font.render(title, True, (232, 236, 244)), (section_rect.x + 8, section_rect.y + 3))
-                help_text = self.LOCATION_TOPOLOGY_HELP.get(field_key, "")
-                if help_text:
-                    help_surface = font.render(
-                        self._ellipsize_text(help_text, font, max(20, section_rect.width - 140)),
-                        True,
-                        (158, 170, 190),
-                    )
-                    screen.blit(help_surface, (section_rect.right - help_surface.get_width() - 8, section_rect.y + 3))
-
-        for row in card.get("location_topology_rows", []):
-            row_rect = row.get("rect")
-            if row_rect is None or (content_clip is not None and not row_rect.colliderect(content_clip)):
-                continue
-            pygame.draw.rect(screen, (30, 34, 44), row_rect)
-            pygame.draw.rect(screen, (82, 92, 112), row_rect, 1)
-            if row.get("kind") == "empty":
-                label = f"No {self.LOCATION_TOPOLOGY_LABELS.get(row.get('field_key'), 'locations').lower()} yet"
-                screen.blit(font.render(label, True, (150, 160, 178)), (row_rect.x + 8, row_rect.y + 7))
-                continue
-
-            location_id = str(row.get("location_id") or "")
-            label = self._ellipsize_text(self._location_entry_label(location_id), font, row_rect.width - 120)
-            subtitle = self._ellipsize_text(location_id, font, 100)
-            screen.blit(font.render(label, True, (238, 240, 246)), (row_rect.x + 8, row_rect.y + 8))
-            subtitle_surface = font.render(subtitle, True, (176, 188, 208))
-            screen.blit(subtitle_surface, (row_rect.right - subtitle_surface.get_width() - 34, row_rect.y + 8))
-            remove_rect = row.get("remove_rect")
-            if remove_rect is not None:
-                pygame.draw.rect(screen, (70, 40, 46), remove_rect)
-                pygame.draw.rect(screen, (178, 116, 124), remove_rect, 1)
-                remove_text = font.render("x", True, (250, 220, 224))
-                screen.blit(remove_text, remove_text.get_rect(center=remove_rect.center))
-
-        if not card.get("is_edit_mode", False):
-            return
-
-        active_field = self._location_topology_match_field(card)
-        for field_key, input_rect in (card.get("location_topology_input_rects") or {}).items():
-            active = bool(card.get("location_topology_input_active")) and active_field == field_key
-            pygame.draw.rect(screen, (40, 46, 60) if active else (30, 34, 44), input_rect)
-            pygame.draw.rect(screen, (190, 208, 236) if active else (94, 104, 124), input_rect, 1)
-            query = str(card.get("location_topology_query", "")) if active else ""
-            display = query if query else "Search location"
-            color = (238, 240, 246) if query else (132, 142, 160)
-            screen.blit(
-                font.render(self._ellipsize_text(display, font, input_rect.width - 12), True, color),
-                (input_rect.x + 6, input_rect.y + 4),
-            )
-
-        for add_rect in (card.get("location_topology_add_rects") or {}).values():
-            pygame.draw.rect(screen, (54, 70, 98), add_rect)
-            pygame.draw.rect(screen, (150, 172, 210), add_rect, 1)
-            add_text = font.render("Add", True, (244, 246, 250))
-            screen.blit(add_text, add_text.get_rect(center=add_rect.center))
-
-        active_virtual_field = str(card.get("active_edit_field") or "")
-        active_topology_field = self._location_topology_field_from_virtual(active_virtual_field)
-        if active_topology_field:
-            anchor_rect = (card.get("location_topology_input_rects") or {}).get(active_topology_field)
-            if anchor_rect is not None and card.get("relation_picker_open", False):
-                self._draw_relation_picker(screen, font, card, anchor_rect)
-
-        selected_index = int(card.get("location_topology_selected_index", 0) or 0)
-        for row in card.get("location_topology_match_rows", []):
-            row_rect = row.get("rect")
-            if row_rect is None:
-                continue
-            index = int(row.get("index", 0))
-            match = row.get("match") or {}
-            selected = index == selected_index
-            pygame.draw.rect(screen, (52, 64, 86) if selected else (31, 36, 48), row_rect)
-            pygame.draw.rect(screen, (138, 164, 206) if selected else (72, 82, 104), row_rect, 1)
-            label = self._ellipsize_text(match.get("label", ""), font, row_rect.width - 120)
-            subtitle = self._ellipsize_text(match.get("subtitle", ""), font, 110)
-            screen.blit(font.render(label, True, (240, 244, 250) if selected else (188, 198, 216)), (row_rect.x + 6, row_rect.y + 3))
-            if subtitle:
-                subtitle_surface = font.render(subtitle, True, (176, 188, 208))
-                screen.blit(subtitle_surface, (row_rect.right - subtitle_surface.get_width() - 6, row_rect.y + 3))
+    def _entity_label_for_id(self, entity_id):
+        entity_id = str(entity_id or "").strip()
+        entity = self.world_model.get_entity(entity_id) if self.world_model is not None and entity_id else None
+        if isinstance(entity, dict):
+            return self._entity_display_label(entity)
+        return entity_id
 
     def _field_spec(self, field_key):
         return self._normalize_field_spec(self._get_schema_field_specs().get(field_key, {}))
@@ -1705,47 +613,6 @@ class EntityCard:
             "header": header,
             "wiki": band,
         }
-
-    def _phylogeny_row_colors(self, row, muted=False):
-        if row.get("summary"):
-            return (30, 34, 44), (76, 86, 106), (178, 188, 204)
-
-        palette = self._phylogeny_row_palette(row, muted=muted)
-        if palette is not None:
-            return palette["fill"], palette["border"], palette["text"]
-
-        if row.get("highlight"):
-            return (58, 66, 88), (190, 210, 246), (244, 246, 250)
-        if row.get("neighbor"):
-            return (46, 54, 42), (164, 188, 124), (226, 238, 202)
-        if row.get("species"):
-            return (38, 42, 50), (118, 132, 156), (210, 220, 236)
-        return (32, 36, 46), (72, 82, 100), (184, 192, 208) if muted else (216, 224, 238)
-
-    def _phylogeny_row_palette(self, row, muted=False):
-        if row.get("summary"):
-            return {"fill": (30, 34, 44), "border": (76, 86, 106), "text": (178, 188, 204), "band": None}
-
-        palette = self._entity_link_palette(row.get("id"), fallback_body=None)
-        if palette is None and isinstance(row.get("entity"), dict):
-            palette = self._entity_link_palette(row.get("entity"), fallback_body=None)
-        if palette is not None:
-            base = palette["body"]
-            fill = self._mix_color(base, (18, 22, 30), 0.60)
-            border_source = palette["header"] if palette.get("header") is not None else base
-            border = self._mix_color(border_source, (234, 240, 250), 0.26)
-            if row.get("highlight"):
-                fill = self._mix_color(base, (58, 66, 88), 0.35)
-                border = self._mix_color(border_source, (244, 246, 250), 0.12)
-            elif row.get("neighbor"):
-                fill = self._mix_color(base, (46, 54, 42), 0.35)
-                border = self._mix_color(border_source, (230, 242, 204), 0.24)
-            text = self._readable_text_color(fill, light=(238, 244, 252), dark=(20, 24, 32))
-            if muted:
-                text = self._mix_color(text, fill, 0.18)
-            palette.update({"fill": fill, "border": border, "text": text})
-            return palette
-        return None
 
     def _relation_target_label(self, target):
         options = self._relation_target_options(target)
@@ -2057,28 +924,6 @@ class EntityCard:
     def _media_field_keys(self):
         return set(self.MEDIA_FIELDS)
 
-    def _is_space_sim_context(self):
-        return bool(
-            self.entity.get("system_role")
-            or self.entity.get("body_class")
-            or self.entity.get("star_system")
-            or self.entity.get("parent_body")
-            or self.entity.get("derived_from_system_body")
-            or self.entity.get("location_class") in {"star_system", "star", "planet", "moon"}
-            or self.dataset_name == "systems"
-        )
-
-    def _simulation_section_for_key(self, key):
-        if key in self.SPACE_SIM_FIELDS:
-            return "Simulation / Orbital"
-        if key == "mass_kg" and self._is_space_sim_context():
-            return "Simulation / Orbital"
-        if key in self.MAP_SIM_FIELDS:
-            return "Simulation / Map Sim"
-        if key in self.WORLD_GEN_SIM_FIELDS:
-            return "Simulation / World Gen"
-        return None
-
     def _get_general_wiki_text(self, card=None):
         if card is not None and card.get("is_edit_mode", False) and card.get("active_edit_field") == "wiki_entry":
             return card.get("edit_buffer", "")
@@ -2195,53 +1040,6 @@ class EntityCard:
             )
         self.entity["timeline_snapshots"] = entries
         return True
-
-    def _task_is_finished(self):
-        return str(self.entity.get("entry_status") or "").strip().lower() in {
-            "finished",
-            "complete",
-            "completed",
-            "done",
-        }
-
-    def _task_checklist_items(self):
-        raw_items = self.entity.get("checklist")
-        if not isinstance(raw_items, list):
-            return []
-
-        items = []
-        for item in raw_items:
-            if isinstance(item, dict):
-                text = str(item.get("text") or item.get("label") or item.get("name") or "").strip()
-                done = bool(item.get("done", item.get("checked", False)))
-            else:
-                text = str(item or "").strip()
-                done = False
-            if text:
-                items.append({"text": text, "done": done})
-        return items
-
-    def _task_checklist_completion(self):
-        items = self._task_checklist_items()
-        if not items:
-            return 0
-        done_count = sum(1 for item in items if item.get("done"))
-        return int(round((done_count / len(items)) * 100))
-
-    def _measure_task_checklist_height(self, font, width, card=None):
-        if not self._is_task_card():
-            return 0
-
-        line_h = self._table_line_height(font)
-        items = self._task_checklist_items()
-        input_active = bool(card and card.get("task_checklist_input_active"))
-        height = line_h + 8
-        height += 24
-        height += 4
-        height += max(1, len(items)) * (line_h + 6)
-        height += 8
-        height += 26 if input_active else 22
-        return max(92, height)
 
     def _resolve_wiki_link_label(self, entity_ref):
         if self.world_model is None:
@@ -2686,6 +1484,9 @@ class EntityCard:
             if key in {
                 "id", "pretty_name", "name", "common_name", "binomial_name", "type", "_dataset",
             }:
+                continue
+
+            if not self._is_location_field_relevant(key):
                 continue
 
             spec = self._normalize_field_spec(schema_field_specs.get(key, {}))
@@ -3399,6 +2200,9 @@ class EntityCard:
         if not card.get("is_edit_mode", False):
             return False
 
+        if self._handle_production_keydown(card, event):
+            return True
+
         if self._handle_location_keydown(card, event):
             return True
 
@@ -3754,391 +2558,6 @@ class EntityCard:
         value = illustration.get("media_path")
         return value.strip() if isinstance(value, str) else ""
 
-    def _phylogeny_line_height(self, font):
-        return max(16, int(font.get_linesize())) if font is not None else 18
-
-    def _phylogeny_children_count(self, entity_id):
-        world_model = self.world_model
-        clades = get_clade_entities(world_model)
-        entity = clades.get(entity_id)
-        if not isinstance(entity, dict):
-            return 0
-        children = entity.get("offspring") or []
-        if isinstance(children, str):
-            return 1 if children.strip() else 0
-        if isinstance(children, list):
-            return len(children)
-        return 0
-
-    def _layout_phylogeny_tree_rows(self, root, font, x, y, max_width, depth=0, rows=None):
-        rows = rows if rows is not None else []
-        if not isinstance(root, dict):
-            return rows, y
-
-        line_h = self._phylogeny_line_height(font)
-        row_h = line_h + 8
-        indent = depth * 18
-        label = str(root.get("label") or root.get("id") or "Unknown")
-        row_rect = pygame.Rect(x + indent, y, max(40, max_width - indent), row_h)
-        rows.append(
-            {
-                "id": root.get("id"),
-                "label": label,
-                "rect": row_rect,
-                "depth": depth,
-                "highlight": bool(root.get("highlight")),
-                "neighbor": bool(root.get("neighbor")),
-                "species": bool(root.get("species")),
-            }
-        )
-        y = row_rect.bottom + 3
-        for child in root.get("children", []) or []:
-            rows, y = self._layout_phylogeny_tree_rows(child, font, x, y, max_width, depth + 1, rows)
-        return rows, y
-
-    def _summarized_phylogeny_chain_ids(self, chain_ids, top_count=3, tail_count=5):
-        chain_ids = [str(chain_id) for chain_id in chain_ids if chain_id]
-        if len(chain_ids) <= top_count + tail_count + 1:
-            return [(chain_id, False) for chain_id in chain_ids]
-
-        top_ids = chain_ids[:top_count]
-        tail_ids = chain_ids[-tail_count:]
-        return (
-            [(chain_id, False) for chain_id in top_ids]
-            + [(None, True)]
-            + [(chain_id, False) for chain_id in tail_ids]
-        )
-
-    def _layout_phylogeny_chain_rows(self, graph, entity_id, font, x, y, max_width):
-        line_h = self._phylogeny_line_height(font)
-        row_h = max(18, line_h + 2)
-        row_gap = 1
-        rows = []
-        chain_ids = graph.ancestor_chain(entity_id)
-        if not chain_ids and entity_id in graph.phylogeny_entities:
-            chain_ids = [entity_id]
-
-        for display_depth, (chain_id, is_summary) in enumerate(self._summarized_phylogeny_chain_ids(chain_ids)):
-            indent = display_depth * 14
-            row_rect = pygame.Rect(x + indent, y, max(40, max_width - indent), row_h)
-            if is_summary:
-                rows.append(
-                    {
-                        "id": None,
-                        "label": "(...)",
-                        "rect": row_rect,
-                        "depth": display_depth,
-                        "summary": True,
-                    }
-                )
-            else:
-                entity = graph.phylogeny_entities.get(chain_id)
-                rows.append(
-                    {
-                        "id": chain_id,
-                        "label": clade_label(entity, chain_id),
-                        "rect": row_rect,
-                        "depth": display_depth,
-                        "highlight": chain_id == entity_id,
-                        "species": bool(is_species_entity(entity)),
-                    }
-                )
-            y = row_rect.bottom + row_gap
-        return rows, y
-
-    def _clip_phylogeny_rect_to_panel(self, rect, panel_rect):
-        if rect is None or panel_rect is None or not rect.colliderect(panel_rect):
-            return None
-        clipped = rect.clip(panel_rect)
-        if clipped.width <= 0 or clipped.height <= 0:
-            return None
-        return clipped
-
-    def _shift_clip_phylogeny_row(self, row, scroll_y, panel_rect):
-        row_rect = row.get("rect")
-        if row_rect is None:
-            return None
-        shifted_rect = row_rect.move(0, -scroll_y)
-        clipped_rect = self._clip_phylogeny_rect_to_panel(shifted_rect, panel_rect)
-        if clipped_rect is None:
-            return None
-        visible_row = dict(row)
-        visible_row["rect"] = clipped_rect
-        return visible_row
-
-    def _shift_clip_phylogeny_match_rows(self, rows, scroll_y, panel_rect):
-        visible_rows = []
-        for row in rows:
-            shifted = self._shift_clip_phylogeny_row(row, scroll_y, panel_rect)
-            if shifted is not None:
-                visible_rows.append(shifted)
-        return visible_rows
-
-    def _layout_phylogeny_content(self, card, content_left, current_y, text_width):
-        font = card.get("layout_font")
-        line_h = self._phylogeny_line_height(font)
-        entity_id = str(self.entity.get("id") or "")
-        is_clade = self._is_cladistics_card()
-        section_h = self.SECTION_HEADER_H
-        graph = phylogeny_graph_context(self.world_model)
-
-        parent_section_rect = pygame.Rect(content_left, current_y, text_width, section_h)
-        current_y = parent_section_rect.bottom + self.SECTION_GAP
-
-        input_rect = None
-        match_rows = []
-        child_input_rect = None
-        child_match_rows = []
-        parent_tree_rows = []
-        child_tree_rows = []
-        member_rows = []
-        local_node_hitboxes = []
-        parent_panel_rect = None
-        parent_panel_content_rect = None
-        parent_target_id = entity_id
-        child_target_id = entity_id if is_clade else ""
-        child_sibling_id = ""
-
-        if not self.collapsed_sections.get("Phylogeny Parents", False):
-            parent_panel_rect = pygame.Rect(
-                content_left + 4,
-                current_y,
-                max(80, text_width - 8),
-                self.PHYLOGENY_PARENT_PANEL_H,
-            )
-            parent_panel_content_rect = parent_panel_rect.inflate(-14, -14)
-            panel_content_y = parent_panel_content_rect.y
-
-            input_rect = pygame.Rect(
-                parent_panel_content_rect.x,
-                panel_content_y,
-                parent_panel_content_rect.width,
-                26,
-            )
-            panel_content_y = input_rect.bottom + 5
-
-            query = str(card.get("phylogeny_parent_query") or "").strip()
-            matches = card.get("phylogeny_parent_matches")
-            if matches is None:
-                matches = find_clade_matches(self.world_model, query)
-                card["phylogeny_parent_matches"] = matches
-
-            if query:
-                if matches:
-                    for index, match in enumerate(matches[:4]):
-                        row_rect = pygame.Rect(
-                            parent_panel_content_rect.x,
-                            panel_content_y,
-                            parent_panel_content_rect.width,
-                            28,
-                        )
-                        match_rows.append({"index": index, "entity": match, "rect": row_rect})
-                        panel_content_y = row_rect.bottom + 4
-                else:
-                    row_rect = pygame.Rect(
-                        parent_panel_content_rect.x,
-                        panel_content_y,
-                        parent_panel_content_rect.width,
-                        28,
-                    )
-                    match_rows.append({"index": "create", "entity": None, "rect": row_rect})
-                    panel_content_y = row_rect.bottom + 4
-
-            tree = graph.context_tree(entity_id)
-            if tree is not None:
-                parent_tree_rows, panel_content_y = self._layout_phylogeny_chain_rows(
-                    graph,
-                    entity_id,
-                    font,
-                    parent_panel_content_rect.x,
-                    panel_content_y + 4,
-                    parent_panel_content_rect.width,
-                )
-            else:
-                panel_content_y += line_h + 8
-
-            if parent_tree_rows:
-                parent_target_id = str(parent_tree_rows[0].get("id") or entity_id)
-                child_target_id = ""
-                bottom_entry_id = ""
-                for row in reversed(parent_tree_rows):
-                    if row.get("summary"):
-                        continue
-                    row_id = str(row.get("id") or "").strip()
-                    if row_id:
-                        bottom_entry_id = row_id
-                        break
-                if bottom_entry_id:
-                    child_sibling_id = bottom_entry_id
-                    for candidate_parent_id in graph.parents_by_child.get(bottom_entry_id, []):
-                        if candidate_parent_id in graph.clades:
-                            child_target_id = candidate_parent_id
-                            break
-
-            if is_clade and child_target_id:
-                child_input_rect = pygame.Rect(
-                    parent_panel_content_rect.x,
-                    panel_content_y + 2,
-                    parent_panel_content_rect.width,
-                    26,
-                )
-                panel_content_y = child_input_rect.bottom + 5
-
-                child_query = str(card.get("phylogeny_child_query") or "").strip()
-                child_matches = card.get("phylogeny_child_matches")
-                if child_matches is None:
-                    child_matches = find_clade_matches(self.world_model, child_query)
-                    card["phylogeny_child_matches"] = child_matches
-
-                if child_query:
-                    excluded_child_match_ids = {
-                        entity_id,
-                        str(child_target_id or "").strip(),
-                        str(child_sibling_id or "").strip(),
-                    }
-                    visible_child_matches = [
-                        (index, match)
-                        for index, match in enumerate(child_matches)
-                        if str(match.get("id") or "").strip() not in excluded_child_match_ids
-                    ]
-                    for index, match in visible_child_matches[:5]:
-                        row_rect = pygame.Rect(
-                            parent_panel_content_rect.x,
-                            panel_content_y,
-                            parent_panel_content_rect.width,
-                            28,
-                        )
-                        child_match_rows.append({"index": index, "entity": match, "rect": row_rect})
-                        panel_content_y = row_rect.bottom + 4
-                    if not child_match_rows:
-                        row_rect = pygame.Rect(
-                            parent_panel_content_rect.x,
-                            panel_content_y,
-                            parent_panel_content_rect.width,
-                            28,
-                        )
-                        child_match_rows.append({"index": "create", "entity": None, "rect": row_rect})
-                        panel_content_y = row_rect.bottom + 4
-
-            parent_content_h = max(0, panel_content_y - parent_panel_content_rect.y)
-            parent_visible_h = max(1, parent_panel_content_rect.height)
-            parent_scroll_max = max(0, int(parent_content_h - parent_visible_h))
-            parent_scroll_y = max(0, min(parent_scroll_max, int(card.get("phylogeny_parent_scroll_y", 0) or 0)))
-            card["phylogeny_parent_scroll_y"] = parent_scroll_y
-            card["phylogeny_parent_scroll_max_y"] = parent_scroll_max
-
-            input_rect = self._clip_phylogeny_rect_to_panel(input_rect.move(0, -parent_scroll_y), parent_panel_content_rect)
-            child_input_rect = (
-                self._clip_phylogeny_rect_to_panel(child_input_rect.move(0, -parent_scroll_y), parent_panel_content_rect)
-                if child_input_rect is not None
-                else None
-            )
-            match_rows = self._shift_clip_phylogeny_match_rows(match_rows, parent_scroll_y, parent_panel_content_rect)
-            child_match_rows = self._shift_clip_phylogeny_match_rows(child_match_rows, parent_scroll_y, parent_panel_content_rect)
-            parent_tree_rows = [
-                visible_row
-                for row in parent_tree_rows
-                for visible_row in [self._shift_clip_phylogeny_row(row, parent_scroll_y, parent_panel_content_rect)]
-                if visible_row is not None
-            ]
-            current_y = parent_panel_rect.bottom + 8
-        else:
-            card["phylogeny_parent_scroll_y"] = 0
-            card["phylogeny_parent_scroll_max_y"] = 0
-
-        current_y += 8
-        child_section_rect = pygame.Rect(
-            content_left,
-            current_y,
-            text_width,
-            section_h,
-        )
-        current_y = child_section_rect.bottom + self.SECTION_GAP
-
-        if not self.collapsed_sections.get("Phylogeny Children", False):
-            child_ids = graph.children_by_parent.get(entity_id, [])
-
-            for child_id in child_ids:
-                child = graph.phylogeny_entities.get(child_id)
-                row_rect = pygame.Rect(
-                    content_left + 10,
-                    current_y + 3,
-                    text_width - 20,
-                    line_h + 10,
-                )
-                child_tree_rows.append(
-                    {
-                        "id": child_id,
-                        "label": clade_label(child, child_id),
-                        "rect": row_rect,
-                        "depth": 0,
-                        "species": bool(is_species_entity(child)),
-                    }
-                )
-                local_node_hitboxes.append((child_id, row_rect))
-                current_y = row_rect.bottom + 3
-
-            if not child_ids:
-                current_y += line_h + 10
-
-        current_y += 8
-        members_section_rect = pygame.Rect(
-            content_left,
-            current_y,
-            text_width,
-            section_h,
-        )
-        current_y = members_section_rect.bottom + self.SECTION_GAP
-        if not self.collapsed_sections.get("Members", False):
-            if is_clade:
-                limit = int(card.get("phylogeny_clade_member_limit", 3) or 3)
-                member_ids = graph.distant_species_members(entity_id, limit=max(1, limit))
-            else:
-                limit = int(card.get("phylogeny_species_relative_limit", 4) or 4)
-                member_ids = graph.closest_species_relatives(entity_id, limit=max(1, limit))
-
-            for member_id in member_ids:
-                member = graph.phylogeny_entities.get(member_id)
-                row_rect = pygame.Rect(
-                    content_left + 10,
-                    current_y + 3,
-                    text_width - 20,
-                    line_h + 10,
-                )
-                member_rows.append(
-                    {
-                        "id": member_id,
-                        "label": clade_label(member, member_id),
-                        "rect": row_rect,
-                        "depth": 0,
-                        "species": bool(is_species_entity(member)),
-                    }
-                )
-                local_node_hitboxes.append((member_id, row_rect))
-                current_y = row_rect.bottom + 3
-
-            if not member_ids:
-                current_y += line_h + 10
-
-        card["phylogeny_parent_section_rect"] = parent_section_rect
-        card["phylogeny_parent_panel_rect"] = parent_panel_rect
-        card["phylogeny_parent_panel_content_rect"] = parent_panel_content_rect
-        card["phylogeny_child_section_rect"] = child_section_rect
-        card["phylogeny_diagram_section_rect"] = members_section_rect
-        card["phylogeny_parent_input_rect"] = input_rect
-        card["phylogeny_child_input_rect"] = child_input_rect
-        card["phylogeny_parent_match_rows"] = match_rows
-        card["phylogeny_child_match_rows"] = child_match_rows
-        card["phylogeny_parent_tree_rows"] = parent_tree_rows
-        card["phylogeny_child_tree_rows"] = child_tree_rows
-        card["phylogeny_local_tree_rows"] = member_rows
-        card["phylogeny_node_hitboxes"] = local_node_hitboxes
-        card["phylogeny_members_label"] = "Members" if is_clade else "Relatives"
-        card["phylogeny_parent_target_id"] = parent_target_id
-        card["phylogeny_child_target_id"] = child_target_id
-        card["phylogeny_child_sibling_id"] = child_sibling_id
-        return current_y
-
     def layout_card(self, card, rect):
         section_hitboxes = []
         tab_hitboxes = []
@@ -4172,6 +2591,7 @@ class EntityCard:
         tab_widths = {
             "general": 70,
             "overview": 78,
+            "production": 94,
             "temporal": 82,
             "location": 82,
             "relations": 76,
@@ -4244,10 +2664,13 @@ class EntityCard:
         title_x = rect.x + (52 if header_icon_ref else 10)
         title_edit_rect = pygame.Rect(title_x, rect.y + 7, max(40, rect.right - header_reserved_w - title_x), 20)
         header_description = self._header_description_text()
-        type_label_y = rect.y + (46 if header_description else 30)
+        description_visible = bool(header_description) or bool(card.get("is_edit_mode", False))
+        header_description_rect = pygame.Rect(title_x, rect.y + 27, max(40, rect.right - header_reserved_w - title_x), 18)
+        type_label_y = rect.y + (46 if description_visible else 30)
         type_label_rect = pygame.Rect(title_x, type_label_y, max(40, rect.right - header_reserved_w - title_x), 18)
         if card.get("is_edit_mode", False):
             editable_field_hitboxes.append((self._title_edit_field(), title_edit_rect))
+            editable_field_hitboxes.append((self._header_description_edit_field(), header_description_rect))
 
         image_rect = pygame.Rect(
             rect.x + 12,
@@ -4412,6 +2835,9 @@ class EntityCard:
             if card.get("phylogeny_child_section_rect") is not None:
                 section_hitboxes.append(("Phylogeny Children", card["phylogeny_child_section_rect"]))
             section_hitboxes.append(("Members", card["phylogeny_diagram_section_rect"]))
+        elif self._is_production_mode():
+            image_rect = None
+            content_end_y = self._layout_production_content(card, content_left, current_y, text_width)
         elif self._is_location_mode():
             image_rect = None
             for key, value in (
@@ -4611,6 +3037,7 @@ class EntityCard:
                     "location_start_rect",
                     "location_end_rect",
                     "location_add_rect",
+                    "location_topology_place_rect",
                 ):
                     rect_value = card.get(rect_key)
                     if rect_value is not None:
@@ -4648,6 +3075,122 @@ class EntityCard:
                         row["rect"] = shifted_rect.clip(content_viewport_rect)
                     visible_matches.append(row)
                 card["location_match_rows"] = visible_matches
+                card["location_topology_section_rects"] = {
+                    field_key: shifted_rect.clip(content_viewport_rect)
+                    for field_key, section_rect in (card.get("location_topology_section_rects") or {}).items()
+                    for shifted_rect in [section_rect.move(0, -scroll_y)]
+                    if shifted_rect.colliderect(content_viewport_rect)
+                }
+                card["location_topology_input_rects"] = {
+                    field_key: shifted_rect.clip(content_viewport_rect)
+                    for field_key, input_rect in (card.get("location_topology_input_rects") or {}).items()
+                    for shifted_rect in [input_rect.move(0, -scroll_y)]
+                    if shifted_rect.colliderect(content_viewport_rect)
+                }
+                card["location_topology_add_rects"] = {
+                    field_key: shifted_rect.clip(content_viewport_rect)
+                    for field_key, add_rect in (card.get("location_topology_add_rects") or {}).items()
+                    for shifted_rect in [add_rect.move(0, -scroll_y)]
+                    if shifted_rect.colliderect(content_viewport_rect)
+                }
+                visible_topology_rows = []
+                for row in card.get("location_topology_rows", []):
+                    row_rect = row.get("rect")
+                    if row_rect is not None:
+                        shifted_rect = row_rect.move(0, -scroll_y)
+                        if not shifted_rect.colliderect(content_viewport_rect):
+                            continue
+                        row["rect"] = shifted_rect.clip(content_viewport_rect)
+                    remove_rect = row.get("remove_rect")
+                    if remove_rect is not None:
+                        shifted_remove = remove_rect.move(0, -scroll_y)
+                        row["remove_rect"] = (
+                            shifted_remove.clip(content_viewport_rect)
+                            if shifted_remove.colliderect(content_viewport_rect)
+                            else None
+                        )
+                    visible_topology_rows.append(row)
+                card["location_topology_rows"] = visible_topology_rows
+                visible_topology_matches = []
+                for row in card.get("location_topology_match_rows", []):
+                    row_rect = row.get("rect")
+                    if row_rect is not None:
+                        shifted_rect = row_rect.move(0, -scroll_y)
+                        if not shifted_rect.colliderect(content_viewport_rect):
+                            continue
+                        row["rect"] = shifted_rect.clip(content_viewport_rect)
+                    visible_topology_matches.append(row)
+                card["location_topology_match_rows"] = visible_topology_matches
+            elif self._is_production_mode():
+                for rect_key in (
+                    "production_section_rect",
+                    "production_product_input_rect",
+                    "production_product_add_rect",
+                    "production_empty_rect",
+                ):
+                    rect_value = card.get(rect_key)
+                    if rect_value is not None:
+                        shifted_rect = rect_value.move(0, -scroll_y)
+                        card[rect_key] = (
+                            shifted_rect.clip(content_viewport_rect)
+                            if shifted_rect.colliderect(content_viewport_rect)
+                            else None
+                        )
+                visible_rows = []
+                for row in card.get("production_line_rows", []):
+                    shifted_row = dict(row)
+                    keep = False
+                    for rect_key in (
+                        "section_rect",
+                        "location_rect",
+                        "rate_rect",
+                        "period_rect",
+                        "start_year_rect",
+                        "end_year_rect",
+                        "requirements_rect",
+                        "remove_rect",
+                    ):
+                        rect_value = row.get(rect_key)
+                        if rect_value is None:
+                            shifted_row[rect_key] = None
+                            continue
+                        shifted_rect = rect_value.move(0, -scroll_y)
+                        if shifted_rect.colliderect(content_viewport_rect):
+                            shifted_row[rect_key] = shifted_rect.clip(content_viewport_rect)
+                            keep = True
+                        else:
+                            shifted_row[rect_key] = None
+                    shifted_chips = []
+                    for chip in row.get("requirement_chips", []):
+                        chip_rect = chip.get("rect")
+                        if chip_rect is None:
+                            continue
+                        shifted_chip_rect = chip_rect.move(0, -scroll_y)
+                        if not shifted_chip_rect.colliderect(content_viewport_rect):
+                            continue
+                        shifted_chip = dict(chip)
+                        shifted_chip["rect"] = shifted_chip_rect.clip(content_viewport_rect)
+                        shifted_chips.append(shifted_chip)
+                    shifted_row["requirement_chips"] = shifted_chips
+                    if keep or shifted_chips:
+                        visible_rows.append(shifted_row)
+                card["production_line_rows"] = visible_rows
+                card["production_hitboxes"] = [
+                    {**info, "rect": shifted_rect.clip(content_viewport_rect)}
+                    for info in card.get("production_hitboxes", [])
+                    for rect_value in [info.get("rect")]
+                    if rect_value is not None
+                    for shifted_rect in [rect_value.move(0, -scroll_y)]
+                    if shifted_rect.colliderect(content_viewport_rect)
+                ]
+                card["production_match_rows"] = [
+                    {**row, "rect": shifted_rect.clip(content_viewport_rect)}
+                    for row in card.get("production_match_rows", [])
+                    for rect_value in [row.get("rect")]
+                    if rect_value is not None
+                    for shifted_rect in [rect_value.move(0, -scroll_y)]
+                    if shifted_rect.colliderect(content_viewport_rect)
+                ]
 
             shifted_section_hitboxes = []
             for section_name, section_rect in section_hitboxes:
@@ -4739,6 +3282,7 @@ class EntityCard:
                     "location_start_rect",
                     "location_end_rect",
                     "location_add_rect",
+                    "location_topology_place_rect",
                 ):
                     rect_value = card.get(rect_key)
                     if rect_value is not None:
@@ -4756,6 +3300,71 @@ class EntityCard:
                     row
                     for row in card.get("location_match_rows", [])
                     if row.get("rect") is None or row["rect"].colliderect(content_viewport_rect)
+                ]
+                card["location_topology_section_rects"] = {
+                    field_key: section_rect.clip(content_viewport_rect)
+                    for field_key, section_rect in (card.get("location_topology_section_rects") or {}).items()
+                    if section_rect.colliderect(content_viewport_rect)
+                }
+                card["location_topology_input_rects"] = {
+                    field_key: input_rect.clip(content_viewport_rect)
+                    for field_key, input_rect in (card.get("location_topology_input_rects") or {}).items()
+                    if input_rect.colliderect(content_viewport_rect)
+                }
+                card["location_topology_add_rects"] = {
+                    field_key: add_rect.clip(content_viewport_rect)
+                    for field_key, add_rect in (card.get("location_topology_add_rects") or {}).items()
+                    if add_rect.colliderect(content_viewport_rect)
+                }
+                card["location_topology_rows"] = [
+                    row
+                    for row in card.get("location_topology_rows", [])
+                    if row.get("rect") is None or row["rect"].colliderect(content_viewport_rect)
+                ]
+                card["location_topology_match_rows"] = [
+                    row
+                    for row in card.get("location_topology_match_rows", [])
+                    if row.get("rect") is None or row["rect"].colliderect(content_viewport_rect)
+                ]
+            elif self._is_production_mode():
+                for rect_key in (
+                    "production_section_rect",
+                    "production_product_input_rect",
+                    "production_product_add_rect",
+                    "production_empty_rect",
+                ):
+                    rect_value = card.get(rect_key)
+                    if rect_value is not None:
+                        card[rect_key] = (
+                            rect_value.clip(content_viewport_rect)
+                            if rect_value.colliderect(content_viewport_rect)
+                            else None
+                        )
+                card["production_line_rows"] = [
+                    row
+                    for row in card.get("production_line_rows", [])
+                    if any(
+                        row.get(rect_key) is not None and row[rect_key].colliderect(content_viewport_rect)
+                        for rect_key in (
+                            "section_rect",
+                            "location_rect",
+                            "rate_rect",
+                            "period_rect",
+                            "start_year_rect",
+                            "end_year_rect",
+                            "requirements_rect",
+                        )
+                    )
+                ]
+                card["production_hitboxes"] = [
+                    {**info, "rect": info["rect"].clip(content_viewport_rect)}
+                    for info in card.get("production_hitboxes", [])
+                    if info.get("rect") is not None and info["rect"].colliderect(content_viewport_rect)
+                ]
+                card["production_match_rows"] = [
+                    {**row, "rect": row["rect"].clip(content_viewport_rect)}
+                    for row in card.get("production_match_rows", [])
+                    if row.get("rect") is not None and row["rect"].colliderect(content_viewport_rect)
                 ]
             section_hitboxes = [
                 (section_name, section_rect.clip(content_viewport_rect))
@@ -4921,6 +3530,7 @@ class EntityCard:
         card["delete_rect"] = delete_rect
         card["close_rect"] = close_rect
         card["title_edit_rect"] = title_edit_rect
+        card["header_description_rect"] = header_description_rect
         card["type_label_rect"] = type_label_rect
         card["year_hitboxes"] = [
             (year, pygame.Rect(year_x - 12, center_y - 12, 24, 48))
@@ -5003,7 +3613,7 @@ class EntityCard:
             tabs_bottom_y = self.HEADER_H + 6 + self.TAB_H
             if self._is_location_card():
                 topology_rows = sum(max(1, len(self._location_topology_ids(self.entity, field_key))) for field_key in self.LOCATION_TOPOLOGY_FIELDS)
-                input_h = 34 * len(self.LOCATION_TOPOLOGY_FIELDS) if card.get("is_edit_mode", False) else 0
+                input_h = 34 * len(self.LOCATION_TOPOLOGY_EDITABLE_FIELDS) if card.get("is_edit_mode", False) else 0
                 current_y = tabs_bottom_y + 10 + len(self.LOCATION_TOPOLOGY_FIELDS) * (self.SECTION_HEADER_H + self.SECTION_GAP + 10)
                 current_y += topology_rows * 40 + input_h
             else:
@@ -5016,6 +3626,36 @@ class EntityCard:
             launch_top = center_y + self.TIMELINE_TO_LAUNCH_GAP
             resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
             return max(340, resize_bottom + 8)
+
+        if self._is_production_mode():
+            tabs_bottom_y = self.HEADER_H + 6 + self.TAB_H
+            current_y = tabs_bottom_y + 10 + self.SECTION_HEADER_H + self.SECTION_GAP + 6
+            if card.get("is_edit_mode", False):
+                current_y += 24 + 4
+                if card.get("production_input_active") and card.get("production_active_field") == "product":
+                    current_y += min(5, len(card.get("production_matches") or [])) * 24
+                current_y += 8
+            lines = self._production_lines()
+            if not lines:
+                current_y += 34 + 8
+            else:
+                for line_index, line in enumerate(lines):
+                    current_y += 30 + 4 + 26 + 4 + 24 + 4 + 24 + 4 + 24 + 8
+                    requirement_count = len(self._production_requirement_items(line.get("product_id")))
+                    if requirement_count:
+                        current_y += max(1, (requirement_count + 1) // 2) * 24 + 8
+                    if (
+                        card.get("production_input_active")
+                        and card.get("production_active_line") == line_index
+                        and card.get("production_active_field") == "location"
+                    ):
+                        current_y += min(5, len(card.get("production_matches") or [])) * 24 + 4
+            timeline_label_y = current_y + 12
+            timeline_y = timeline_label_y + 18
+            center_y = timeline_y + 10
+            launch_top = center_y + self.TIMELINE_TO_LAUNCH_GAP
+            resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
+            return max(360, resize_bottom + 8)
 
         tabs_bottom_y = self.HEADER_H + 6 + self.TAB_H
         if self._active_subtab_order():
@@ -5072,14 +3712,23 @@ class EntityCard:
         header_description = self._header_description_text()
         if card.get("is_edit_mode", False):
             title_edit_rect = card.get("title_edit_rect")
+            description_edit_rect = card.get("header_description_rect")
             title_active = card.get("active_edit_field") == self._title_edit_field()
+            description_active = card.get("active_edit_field") == self._header_description_edit_field()
             if title_edit_rect is not None:
                 title_fill = (48, 54, 68) if title_active else (38, 43, 56)
                 title_border = (182, 202, 236) if title_active else (92, 104, 128)
                 pygame.draw.rect(screen, title_fill, title_edit_rect)
                 pygame.draw.rect(screen, title_border, title_edit_rect, 1)
+            if description_edit_rect is not None:
+                description_fill = (48, 54, 68) if description_active else (36, 41, 54)
+                description_border = (182, 202, 236) if description_active else (82, 94, 118)
+                pygame.draw.rect(screen, description_fill, description_edit_rect)
+                pygame.draw.rect(screen, description_border, description_edit_rect, 1)
             if title_active:
                 title_text = card.get("edit_buffer", "")
+            if description_active:
+                header_description = card.get("edit_buffer", "")
 
         title_x = rect.x + 12
         subtitle_x = rect.x + 12
@@ -5101,11 +3750,12 @@ class EntityCard:
         title_surface = font.render(self._ellipsize_text(title_text, font, title_max_w), True, header_text_color)
         subtitle_max_w = title_max_w
         description_surface = None
-        if header_description:
+        if header_description or card.get("is_edit_mode", False):
+            description_text = header_description or "description"
             description_surface = font.render(
-                self._ellipsize_text(header_description, font, subtitle_max_w),
+                self._ellipsize_text(description_text, font, subtitle_max_w),
                 True,
-                header_muted_color,
+                header_muted_color if header_description else self._mix_color(header_muted_color, card_header_color, 0.45),
             )
         subtitle_surface = font.render(
             self._ellipsize_text(card["subtitle"], font, subtitle_max_w),
@@ -5120,7 +3770,7 @@ class EntityCard:
             if type_label_rect.collidepoint(hover_pos):
                 pygame.draw.rect(screen, (42, 48, 62), type_label_rect)
                 pygame.draw.rect(screen, (130, 150, 190), type_label_rect, 1)
-        subtitle_y = rect.y + (47 if header_description else 30)
+        subtitle_y = rect.y + (47 if (header_description or card.get("is_edit_mode", False)) else 30)
         screen.blit(subtitle_surface, (subtitle_x, subtitle_y))
 
         edit_toggle_rect = card.get("edit_toggle_rect")
@@ -5229,6 +3879,15 @@ class EntityCard:
                 screen.set_clip(previous_clip.clip(content_clip))
             try:
                 self._draw_location_content(screen, font, card)
+            finally:
+                screen.set_clip(previous_clip)
+        elif self._is_production_mode():
+            content_clip = card.get("content_viewport_rect")
+            previous_clip = screen.get_clip()
+            if content_clip is not None:
+                screen.set_clip(previous_clip.clip(content_clip))
+            try:
+                self._draw_production_content(screen, font, card)
             finally:
                 screen.set_clip(previous_clip)
         else:
@@ -5779,264 +4438,6 @@ class EntityCard:
             screen.blit(surf, (image_rect.x + 10, current_y))
             current_y += self.IMAGE_TEXT_LINE_H
 
-    def _draw_phylogeny_section_header(self, screen, font, rect, label, expanded):
-        if rect is None:
-            return
-        pygame.draw.rect(screen, (36, 40, 50), rect)
-        pygame.draw.rect(screen, (110, 110, 120), rect, 1)
-        marker = "v" if expanded else ">"
-        screen.blit(font.render(f"{marker} {label}", True, (235, 235, 235)), (rect.x + 8, rect.y + 3))
-
-    def _draw_phylogeny_rows(self, screen, font, rows, muted=False):
-        line_h = self._phylogeny_line_height(font)
-        for row in rows:
-            row_rect = row.get("rect")
-            if row_rect is None:
-                continue
-            palette = self._phylogeny_row_palette(row, muted=muted)
-            if palette is None:
-                fill, border, text_color = self._phylogeny_row_colors(row, muted=muted)
-                band = None
-            else:
-                fill, border, text_color = palette["fill"], palette["border"], palette["text"]
-                band = palette.get("band")
-            pygame.draw.rect(screen, fill, row_rect)
-            if band is not None:
-                band_rect = pygame.Rect(row_rect.x, row_rect.y, min(5, row_rect.width), row_rect.height)
-                pygame.draw.rect(screen, band, band_rect)
-            pygame.draw.rect(screen, border, row_rect, 1)
-            text_x = row_rect.x + (11 if band is not None else 8)
-            available_w = row_rect.right - text_x - 8
-            distance_label = str(row.get("distance_label") or "").strip()
-            if distance_label:
-                badge_w = min(64, max(42, row_rect.width // 3))
-                badge_rect = pygame.Rect(row_rect.x + 5, row_rect.y + 4, badge_w, max(14, row_rect.height - 8))
-                pygame.draw.rect(screen, (24, 28, 36), badge_rect)
-                pygame.draw.rect(screen, (132, 148, 174), badge_rect, 1)
-                badge_text = self._ellipsize_text(distance_label, font, badge_rect.width - 8)
-                badge_surface = font.render(badge_text, True, (232, 238, 248))
-                screen.blit(badge_surface, badge_surface.get_rect(center=badge_rect.center))
-                text_x = badge_rect.right + 8
-                available_w = max(20, row_rect.right - text_x - 8)
-            label = self._ellipsize_text(str(row.get("label") or row.get("id") or ""), font, available_w)
-            screen.blit(font.render(label, True, text_color), (text_x, row_rect.y + max(3, (row_rect.height - line_h) // 2)))
-
-    def _draw_phylogeny_parent_scrollbar(self, screen, card):
-        panel_rect = card.get("phylogeny_parent_panel_rect")
-        content_rect = card.get("phylogeny_parent_panel_content_rect")
-        max_scroll = max(0, int(card.get("phylogeny_parent_scroll_max_y", 0) or 0))
-        if panel_rect is None or content_rect is None or max_scroll <= 0:
-            return
-
-        track_rect = pygame.Rect(panel_rect.right - 7, content_rect.y, 3, content_rect.height)
-        pygame.draw.rect(screen, (44, 50, 62), track_rect)
-        visible_h = max(1, content_rect.height)
-        content_h = visible_h + max_scroll
-        thumb_h = max(18, int(round(track_rect.height * visible_h / max(1, content_h))))
-        scroll_y = max(0, min(max_scroll, int(card.get("phylogeny_parent_scroll_y", 0) or 0)))
-        thumb_y = track_rect.y + int(round((track_rect.height - thumb_h) * scroll_y / max(1, max_scroll)))
-        pygame.draw.rect(screen, (132, 146, 170), pygame.Rect(track_rect.x, thumb_y, track_rect.width, thumb_h))
-
-    def _draw_phylogeny_content(self, screen, font, card):
-        parent_expanded = not self.collapsed_sections.get(
-            "Phylogeny Parents",
-            False,
-        )
-        child_expanded = not self.collapsed_sections.get(
-            "Phylogeny Children",
-            False,
-        )
-        diagram_expanded = not self.collapsed_sections.get(
-            "Members",
-            False,
-        )
-        self._draw_phylogeny_section_header(
-            screen,
-            font,
-            card.get("phylogeny_parent_section_rect"),
-            "Phylogeny Parents",
-            parent_expanded,
-        )
-
-        panel_rect = card.get("phylogeny_parent_panel_rect")
-        panel_content_rect = card.get("phylogeny_parent_panel_content_rect")
-        previous_clip = screen.get_clip()
-        if parent_expanded and panel_rect is not None:
-            pygame.draw.rect(screen, (24, 28, 36), panel_rect)
-            pygame.draw.rect(screen, (94, 108, 132), panel_rect, 1)
-            if panel_content_rect is not None:
-                screen.set_clip(previous_clip.clip(panel_content_rect))
-
-        input_rect = card.get("phylogeny_parent_input_rect")
-        try:
-            if parent_expanded and input_rect is not None:
-                active = bool(card.get("phylogeny_parent_input_active"))
-                fill = (40, 48, 64) if active else (30, 35, 44)
-                border = (184, 204, 236) if active else (92, 104, 126)
-                pygame.draw.rect(screen, fill, input_rect)
-                pygame.draw.rect(screen, border, input_rect, 1)
-                query = str(card.get("phylogeny_parent_query") or "")
-                target = self.world_model.get_entity(card.get("phylogeny_parent_target_id")) if self.world_model is not None else None
-                target_label = clade_label(target, card.get("phylogeny_parent_target_id"))
-                placeholder = f"+ parent of {target_label}..."
-                text = query or placeholder
-                color = (238, 240, 246) if query else (144, 154, 172)
-                text = self._ellipsize_text(text, font, input_rect.width - 14)
-                screen.blit(font.render(text, True, color), (input_rect.x + 7, input_rect.y + 4))
-
-                for row in card.get("phylogeny_parent_match_rows", []):
-                    row_rect = row.get("rect")
-                    if row_rect is None:
-                        continue
-                    selected = row.get("index") == card.get("phylogeny_parent_selected_index", 0)
-                    is_create = row.get("index") == "create"
-                    row_palette = self._phylogeny_row_palette(
-                        {
-                            "id": (row.get("entity") or {}).get("id") if isinstance(row.get("entity"), dict) else "",
-                            "entity": row.get("entity"),
-                            "highlight": selected,
-                        }
-                    )
-                    if row_palette is None:
-                        fill, border, text_color = self._phylogeny_row_colors(
-                            {
-                                "id": (row.get("entity") or {}).get("id") if isinstance(row.get("entity"), dict) else "",
-                                "entity": row.get("entity"),
-                                "highlight": selected,
-                            }
-                        )
-                        band = None
-                    else:
-                        fill, border, text_color = row_palette["fill"], row_palette["border"], row_palette["text"]
-                        band = row_palette.get("band")
-                    if is_create:
-                        fill = (48, 58, 42) if selected else (36, 44, 34)
-                        border = (168, 196, 128)
-                        text_color = (238, 242, 246)
-                        band = None
-                    pygame.draw.rect(screen, fill, row_rect)
-                    if band is not None:
-                        pygame.draw.rect(screen, band, pygame.Rect(row_rect.x, row_rect.y, min(5, row_rect.width), row_rect.height))
-                    pygame.draw.rect(screen, border, row_rect, 1)
-                    if is_create:
-                        label = f"Create clade: {query}"
-                    else:
-                        label = clade_label(row.get("entity"), "")
-                    text_x = row_rect.x + (11 if band is not None else 7)
-                    label = self._ellipsize_text(label, font, row_rect.right - text_x - 7)
-                    screen.blit(font.render(label, True, text_color), (text_x, row_rect.y + 6))
-
-            if parent_expanded:
-                self._draw_phylogeny_rows(screen, font, card.get("phylogeny_parent_tree_rows", []))
-                status = str(card.get("phylogeny_status") or "").strip()
-                if status and input_rect is not None:
-                    status_surface = font.render(status, True, (220, 196, 132))
-                    screen.blit(status_surface, (input_rect.x, input_rect.bottom + 2))
-
-            child_input_rect = card.get("phylogeny_child_input_rect")
-            if parent_expanded and child_input_rect is not None:
-                active = bool(card.get("phylogeny_child_input_active"))
-                fill = (40, 48, 64) if active else (30, 35, 44)
-                border = (184, 204, 236) if active else (92, 104, 126)
-                pygame.draw.rect(screen, fill, child_input_rect)
-                pygame.draw.rect(screen, border, child_input_rect, 1)
-                query = str(card.get("phylogeny_child_query") or "")
-                sibling = self.world_model.get_entity(card.get("phylogeny_child_sibling_id")) if self.world_model is not None else None
-                sibling_label = clade_label(sibling, card.get("phylogeny_child_sibling_id"))
-                placeholder = f"+ sister of {sibling_label}..."
-                text = self._ellipsize_text(query or placeholder, font, child_input_rect.width - 14)
-                color = (238, 240, 246) if query else (144, 154, 172)
-                screen.blit(font.render(text, True, color), (child_input_rect.x + 7, child_input_rect.y + 4))
-
-                for row in card.get("phylogeny_child_match_rows", []):
-                    row_rect = row.get("rect")
-                    if row_rect is None:
-                        continue
-                    selected = row.get("index") == card.get("phylogeny_child_selected_index", 0)
-                    is_create = row.get("index") == "create"
-                    row_palette = self._phylogeny_row_palette(
-                        {
-                            "id": (row.get("entity") or {}).get("id") if isinstance(row.get("entity"), dict) else "",
-                            "entity": row.get("entity"),
-                            "highlight": selected,
-                        }
-                    )
-                    if row_palette is None:
-                        fill, border, text_color = self._phylogeny_row_colors(
-                            {
-                                "id": (row.get("entity") or {}).get("id") if isinstance(row.get("entity"), dict) else "",
-                                "entity": row.get("entity"),
-                                "highlight": selected,
-                            }
-                        )
-                        band = None
-                    else:
-                        fill, border, text_color = row_palette["fill"], row_palette["border"], row_palette["text"]
-                        band = row_palette.get("band")
-                    if is_create:
-                        fill = (48, 58, 42) if selected else (36, 44, 34)
-                        border = (168, 196, 128)
-                        text_color = (238, 242, 246)
-                        band = None
-                    pygame.draw.rect(screen, fill, row_rect)
-                    if band is not None:
-                        pygame.draw.rect(screen, band, pygame.Rect(row_rect.x, row_rect.y, min(5, row_rect.width), row_rect.height))
-                    pygame.draw.rect(screen, border, row_rect, 1)
-                    if is_create:
-                        label = f"Create clade: {query}"
-                    else:
-                        entity = row.get("entity")
-                        label = clade_label(entity, "")
-                    text_x = row_rect.x + (11 if band is not None else 7)
-                    label = self._ellipsize_text(label, font, row_rect.right - text_x - 7)
-                    screen.blit(font.render(label, True, text_color), (text_x, row_rect.y + 6))
-        finally:
-            screen.set_clip(previous_clip)
-
-        if parent_expanded:
-            self._draw_phylogeny_parent_scrollbar(screen, card)
-
-        self._draw_phylogeny_section_header(
-            screen,
-            font,
-            card.get("phylogeny_child_section_rect"),
-            "Phylogeny Children",
-            child_expanded,
-        )
-
-        if child_expanded:
-            rows = card.get("phylogeny_child_tree_rows", [])
-            if rows:
-                self._draw_phylogeny_rows(screen, font, rows)
-            else:
-                rect = card.get("phylogeny_child_section_rect")
-                if rect is not None:
-                    empty_surface = font.render(
-                        "No direct offspring found",
-                        True,
-                        (150, 160, 178),
-                    )
-                    screen.blit(
-                        empty_surface,
-                        (rect.x + 8, rect.bottom + 8),
-                    )
-
-        self._draw_phylogeny_section_header(
-            screen,
-            font,
-            card.get("phylogeny_diagram_section_rect"),
-            card.get("phylogeny_members_label", "Members"),
-            diagram_expanded,
-        )
-        if diagram_expanded:
-            rows = card.get("phylogeny_local_tree_rows", [])
-            if rows:
-                self._draw_phylogeny_rows(screen, font, rows)
-            else:
-                rect = card.get("phylogeny_diagram_section_rect")
-                if rect is not None:
-                    screen.blit(font.render("No species entries found yet", True, (150, 160, 178)), (rect.x + 8, rect.bottom + 8))
-
     def _draw_sections(self, screen, font, card):
         if self._is_general_mode():
             return
@@ -6238,77 +4639,6 @@ class EntityCard:
             self._draw_wiki_link_picker(screen, font, card, general_rect)
 
         self._draw_task_checklist(screen, font, card)
-
-    def _draw_checkbox(self, screen, font, rect, checked):
-        pygame.draw.rect(screen, (24, 28, 36), rect)
-        pygame.draw.rect(screen, (202, 208, 222), rect, 1)
-        if checked:
-            mark = font.render("x", True, (236, 240, 248))
-            screen.blit(mark, mark.get_rect(center=rect.center))
-
-    def _draw_task_checklist(self, screen, font, card):
-        checklist_rect = card.get("task_checklist_rect")
-        if checklist_rect is None or not self._is_task_card():
-            return
-
-        pygame.draw.rect(screen, (26, 30, 40), checklist_rect)
-        pygame.draw.rect(screen, (92, 102, 124), checklist_rect, 1)
-
-        line_h = self._table_line_height(font)
-        text_x = checklist_rect.x + 24
-        finish_rect = card.get("task_finish_checkbox_rect")
-        finished = self._task_is_finished()
-        if finish_rect is not None:
-            self._draw_checkbox(screen, font, finish_rect, finished)
-        finish_text = font.render("Finish Task", True, (236, 238, 244))
-        screen.blit(finish_text, (text_x, checklist_rect.y + 2))
-
-        completion = self._task_checklist_completion()
-        header_y = checklist_rect.y + line_h + 8
-        header_text = font.render(f"[Checklist] ({completion}% Complete)", True, (202, 210, 226))
-        screen.blit(header_text, (checklist_rect.x + 4, header_y))
-
-        items = self._task_checklist_items()
-        row_y = header_y + line_h + 8
-        checkbox_by_index = {
-            index: rect
-            for index, rect in card.get("task_checklist_hitboxes", [])
-        }
-        if items:
-            for index, item in enumerate(items):
-                checkbox_rect = checkbox_by_index.get(index)
-                if checkbox_rect is not None:
-                    self._draw_checkbox(screen, font, checkbox_rect, bool(item.get("done")))
-                text_color = (178, 188, 206) if item.get("done") else (232, 234, 240)
-                label = self._ellipsize_text(
-                    item.get("text", ""),
-                    font,
-                    checklist_rect.width - 58,
-                )
-                item_surface = font.render(label, True, text_color)
-                screen.blit(item_surface, (checklist_rect.x + 40, row_y))
-                row_y += line_h + 6
-        else:
-            empty_surface = font.render("No checklist items", True, (142, 152, 170))
-            screen.blit(empty_surface, (checklist_rect.x + 18, row_y))
-            row_y += line_h + 6
-
-        input_rect = card.get("task_checklist_input_rect")
-        if input_rect is None:
-            return
-
-        input_active = bool(card.get("task_checklist_input_active"))
-        fill = (40, 48, 64) if input_active else (30, 34, 44)
-        border = (180, 202, 236) if input_active else (88, 98, 118)
-        pygame.draw.rect(screen, fill, input_rect)
-        pygame.draw.rect(screen, border, input_rect, 1)
-        buffer_text = str(card.get("task_checklist_input_buffer") or "")
-        placeholder = "Add checklist item..."
-        text_color = (238, 238, 238) if buffer_text else (138, 148, 166)
-        visible_text = buffer_text or placeholder
-        visible_text = self._ellipsize_text(visible_text, font, input_rect.width - 14)
-        input_surface = font.render(visible_text, True, text_color)
-        screen.blit(input_surface, (input_rect.x + 6, input_rect.y + 3))
 
     def _draw_wiki_link_picker(self, screen, font, card, general_rect):
         matches = card.get("wiki_link_matches", [])

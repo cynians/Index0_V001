@@ -378,21 +378,24 @@ class KnowledgeRepositoryService:
             changed_entity_ids.update(loader.populate_offspring())
 
         if changed_entity_ids and persist:
-            failed_persist_ids = []
-            for entity_id in sorted(changed_entity_ids):
-                entity = entities.get(entity_id)
-                if isinstance(entity, dict):
-                    try:
-                        self.host._persist_entity_to_repository(entity)
-                    except OSError:
-                        failed_persist_ids.append(entity_id)
+            if getattr(loader, "use_ontology", False) and hasattr(loader, "save_changed_dataset_files"):
+                loader.save_changed_dataset_files(changed_entity_ids)
+                failed_persist_ids = []
+            else:
+                failed_persist_ids = []
+                for entity_id in sorted(changed_entity_ids):
+                    entity = entities.get(entity_id)
+                    if isinstance(entity, dict):
+                        try:
+                            self.host._persist_entity_to_repository(entity)
+                        except OSError:
+                            failed_persist_ids.append(entity_id)
             if failed_persist_ids:
                 self.relation_link_status = (
                     "Relation sync skipped repository writes for "
                     + ", ".join(failed_persist_ids[:3])
                     + ("..." if len(failed_persist_ids) > 3 else "")
                 )
-
         if changed_entity_ids:
             self.relation_tree_neighbor_cache = {}
             self.canvas_relation_edges = []

@@ -1,4 +1,5 @@
 import json
+import ast
 import copy
 import colorsys
 import os
@@ -31,6 +32,7 @@ from simulations.phylogeny.clade_graph import (
     clade_id_from_name,
     clade_label,
     find_clade_matches,
+    phylogeny_graph_context,
     relation_ids,
 )
 
@@ -1710,6 +1712,15 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             "phylogeny_clade_member_limit": self.phylogeny_clade_member_count,
             "phylogeny_species_relative_limit": self.phylogeny_species_relative_count,
             "phylogeny_status": "",
+            "production_input_active": False,
+            "production_active_field": None,
+            "production_active_line": None,
+            "production_query": "",
+            "production_matches": [],
+            "production_selected_index": 0,
+            "production_hitboxes": [],
+            "production_match_rows": [],
+            "production_line_rows": [],
             "wiki_link_hitboxes": [],
             "wiki_section_hitboxes": [],
             "toolbelt_hitboxes": [],
@@ -1993,26 +2004,22 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         if self.world_model is None:
             return None
 
-        tasks = [
-            entity
-            for entity in self.world_model.get_entities_by_dataset("tasks")
-            if isinstance(entity, dict)
-            and entity.get("id")
-            and not self._is_finished_task_entity(entity)
-        ]
-        if not tasks:
-            tasks = [
-                entity
-                for entity in self.world_model.loader.entities.values()
-                if isinstance(entity, dict)
-                and entity.get("id")
-                and (entity.get("_dataset") == "tasks" or entity.get("type") == "task")
-                and not self._is_finished_task_entity(entity)
-            ]
-        if not tasks:
-            return None
-
-        return random.choice(tasks)
+        wiki_tasks = []
+        for entity in self.world_model.loader.entities.values():
+            if not isinstance(entity, dict) or not entity.get("id"):
+                continue
+            for task in CardWikiRenderer.extract_tasks(entity.get("wiki_entry", "")):
+                wiki_tasks.append(
+                    {
+                        "entity": entity,
+                        "task_number": task.get("task_number"),
+                        "text": task.get("text", ""),
+                    }
+                )
+        if wiki_tasks:
+            selected = random.choice(wiki_tasks)
+            return selected.get("entity")
+        return None
 
     def _is_finished_task_entity(self, entity):
         return str(entity.get("entry_status") or "").strip().lower() in {
@@ -2406,6 +2413,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             entity["wiki_field_colors"] = colors
         else:
             entity["card_color"] = color_hex
+            entity.pop("card_color_source", None)
         entity.pop("wiki_link_color", None)
         if card is None:
             return True
@@ -4003,6 +4011,178 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             card.pop("pending_color_persist", None)
         return saved
 
+    def _entity_rgb_for_average(self, entity):
+        if not isinstance(entity, dict):
+            return None
+        color_value = entity.get("card_color") or entity.get("wiki_link_color") or entity.get("display_color")
+        if isinstance(color_value, (list, tuple)) and len(color_value) >= 3:
+            try:
+                return tuple(max(0, min(255, int(part))) for part in color_value[:3])
+            except (TypeError, ValueError):
+                return None
+        color_text = str(color_value or "").strip()
+        if color_text.startswith("#") and len(color_text) == 7:
+            try:
+                return (
+                    int(color_text[1:3], 16),
+                    int(color_text[3:5], 16),
+                    int(color_text[5:7], 16),
+                )
+            except ValueError:
+                return None
+        return None
+
+    def _entity_custom_rgb_for_average(self, entity):
+        if not isinstance(entity, dict):
+            return None
+        if entity.get("card_color_source") == "derived_offspring":
+            return None
+        color_value = entity.get("card_color") or entity.get("wiki_link_color")
+        if isinstance(color_value, (list, tuple)) and len(color_value) >= 3:
+            try:
+                return tuple(max(0, min(255, int(part))) for part in color_value[:3])
+            except (TypeError, ValueError):
+                return None
+        color_text = str(color_value or "").strip()
+        if color_text.startswith("#") and len(color_text) == 7:
+            try:
+                return (
+                    int(color_text[1:3], 16),
+                    int(color_text[3:5], 16),
+                    int(color_text[5:7], 16),
+                )
+            except ValueError:
+                return None
+        return None
+
+    def _clade_offspring_ids(self, parent_id):
+        if self.world_model is None or not parent_id:
+            return []
+        parent = self.world_model.get_entity(parent_id)
+        offspring_ids = relation_ids(parent.get("offspring")) if isinstance(parent, dict) else []
+        seen = set(offspring_ids)
+        for entity in self.world_model.loader.entities.values():
+            if not isinstance(entity, dict):
+                continue
+            entity_id = str(entity.get("id") or "").strip()
+            if not entity_id or entity_id in seen:
+                continue
+            if parent_id in relation_ids(entity.get("parents")):
+                offspring_ids.append(entity_id)
+                seen.add(entity_id)
+        return offspring_ids
+
+    def _terminal_phylogeny_descendant_ids(self, clade_id):
+        if self.world_model is None or not clade_id:
+            return []
+        graph = phylogeny_graph_context(self.world_model)
+
+        def nested_offspring_ids(value):
+            if value is None:
+                return []
+            if isinstance(value, str):
+                text = value.strip()
+                if not text:
+                    return []
+                if text.startswith("[") or text.startswith("{"):
+                    try:
+                        return nested_offspring_ids(ast.literal_eval(text))
+                    except (ValueError, SyntaxError):
+                        return [text] if text in graph.phylogeny_entities else []
+                return [text] if text in graph.phylogeny_entities else []
+            if isinstance(value, dict):
+                ids = []
+                child_id = str(value.get("id") or value.get("entity_id") or value.get("target") or "").strip()
+                if child_id in graph.phylogeny_entities:
+                    ids.append(child_id)
+                ids.extend(nested_offspring_ids(value.get("offspring")))
+                return ids
+            if isinstance(value, (list, tuple, set)):
+                ids = []
+                for item in value:
+                    for child_id in nested_offspring_ids(item):
+                        if child_id not in ids:
+                            ids.append(child_id)
+                return ids
+            return []
+
+        def child_ids_for(entity_id):
+            ids = []
+            for child_id in graph.children_by_parent.get(entity_id, []):
+                if child_id in graph.phylogeny_entities and child_id not in ids:
+                    ids.append(child_id)
+            entity = graph.phylogeny_entities.get(entity_id)
+            if isinstance(entity, dict):
+                for child_id in nested_offspring_ids(entity.get("offspring")):
+                    if child_id in graph.phylogeny_entities and child_id not in ids:
+                        ids.append(child_id)
+            return ids
+
+        terminal_ids = []
+        seen = set()
+        stack = child_ids_for(clade_id)
+        while stack:
+            descendant_id = str(stack.pop() or "").strip()
+            if not descendant_id or descendant_id in seen:
+                continue
+            seen.add(descendant_id)
+            child_ids = [child_id for child_id in child_ids_for(descendant_id) if child_id not in seen]
+            if child_ids:
+                stack.extend(child_ids)
+            elif descendant_id in graph.phylogeny_entities:
+                terminal_ids.append(descendant_id)
+        return terminal_ids
+
+    def _update_derived_clade_color(self, clade_id, persist=True, force=False):
+        if self.world_model is None or not clade_id:
+            return False
+        clade = self.world_model.get_entity(clade_id)
+        if not isinstance(clade, dict):
+            return False
+        if not (clade.get("_dataset") == "cladistics" or clade.get("type") == "cladistics"):
+            return False
+        if not force and clade.get("card_color") and clade.get("card_color_source") != "derived_offspring":
+            return False
+
+        colors = []
+        for descendant_id in self._terminal_phylogeny_descendant_ids(clade_id):
+            descendant = self.world_model.get_entity(descendant_id)
+            rgb = self._entity_custom_rgb_for_average(descendant)
+            if rgb is not None:
+                colors.append(rgb)
+        if not colors:
+            return False
+
+        average = tuple(round(sum(color[index] for color in colors) / len(colors)) for index in range(3))
+        color_hex = self._rgb_to_hex(average)
+        if clade.get("card_color") == color_hex and clade.get("card_color_source") == "derived_offspring":
+            return False
+        clade["card_color"] = color_hex
+        clade["card_color_source"] = "derived_offspring"
+        card = self._find_card_by_entity_id(clade_id)
+        if card is not None and isinstance(card.get("card_view"), EntityCard):
+            card["card_view"].entity = clade
+        if persist:
+            self._persist_entity_to_repository(clade)
+        return True
+
+    def _invalidate_phylogeny_views(self):
+        if self.world_model is not None and hasattr(self.world_model, "_phylogeny_graph_context_cache"):
+            self.world_model._phylogeny_graph_context_cache = None
+        self.relation_tree_neighbor_cache = {}
+        self.canvas_relation_edges = []
+
+    def _add_phylogeny_offspring_reference(self, parent_entity, child_id):
+        if not isinstance(parent_entity, dict) or not child_id:
+            return False
+        existing = relation_ids(parent_entity.get("offspring"))
+        if child_id in existing:
+            parent_entity["offspring"] = existing
+            return False
+        existing.append(child_id)
+        parent_entity["offspring"] = existing
+        return True
+
     def _sync_stellar_class_profile(self, card, entity):
         committed_field = card.get("last_committed_field")
         if committed_field not in {"star_class", "spectral_class"}:
@@ -5306,13 +5486,17 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         if parent_id not in parents:
             parents.append(parent_id)
         child["parents"] = parents
+        parent_changed = self._add_phylogeny_offspring_reference(parent_entity, child_id)
 
         target_card = self._find_card_by_entity_id(child_id)
         if target_card is not None:
             self._persist_card_entity(target_card)
         else:
             self._persist_entity_to_repository(child)
-        self._sync_bidirectional_relations(persist=True)
+        if parent_changed:
+            self._persist_entity_to_repository(parent_entity)
+        self._update_derived_clade_color(parent_id, persist=True)
+        self._invalidate_phylogeny_views()
         card["phylogeny_parent_query"] = ""
         card["phylogeny_parent_matches"] = []
         card["phylogeny_parent_selected_index"] = 0
@@ -5377,13 +5561,17 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         if parent_id not in parents:
             parents.append(parent_id)
         child_entity["parents"] = parents
+        parent_changed = self._add_phylogeny_offspring_reference(parent, child_id)
 
         child_card = self._find_card_by_entity_id(child_id)
         if child_card is not None:
             self._persist_card_entity(child_card)
         else:
             self._persist_entity_to_repository(child_entity)
-        self._sync_bidirectional_relations(persist=True)
+        if parent_changed:
+            self._persist_entity_to_repository(parent)
+        self._update_derived_clade_color(parent_id, persist=True)
+        self._invalidate_phylogeny_views()
         card["phylogeny_child_query"] = ""
         card["phylogeny_child_matches"] = []
         card["phylogeny_child_selected_index"] = 0
