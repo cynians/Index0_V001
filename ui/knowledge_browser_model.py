@@ -34,6 +34,13 @@ class KnowledgeBrowserModel:
             return "All"
         return str(filter_name).replace("_", " ").title()
 
+    def _query_matches_text(self, query, text):
+        terms = [term for term in str(query or "").strip().lower().split() if term]
+        if not terms:
+            return True
+        haystack = str(text or "").lower()
+        return all(term in haystack for term in terms)
+
     def _entity_exists_during_browser_period(self, entity):
         if not self.browser_period_filter:
             return True
@@ -84,7 +91,7 @@ class KnowledgeBrowserModel:
                     str(entity.get("type", "")),
                 ]
             ).lower()
-            if query not in haystack:
+            if not self._query_matches_text(query, haystack):
                 return False
 
         return True
@@ -109,7 +116,7 @@ class KnowledgeBrowserModel:
                 " ".join(str(field_name) for field_name in fields.keys()),
             ]
         ).lower()
-        return query in haystack
+        return self._query_matches_text(query, haystack)
 
     def _build_schema_browser_items(self):
         items = []
@@ -321,7 +328,7 @@ class KnowledgeBrowserModel:
                     str(entity.get("location_role", "")),
                 ]
             ).lower()
-            if query not in haystack:
+            if not self._query_matches_text(query, haystack):
                 return False
 
         return True

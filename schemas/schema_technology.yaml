@@ -8,6 +8,10 @@ fields:
     type: string
     optional: true
 
+  technology_subclass:
+    type: string
+    optional: true
+
   developed_by:
     type: entity_list
     target: faction
@@ -26,4 +30,87 @@ fields:
   associated_locations:
     type: entity_list
     target: locations
+    optional: true
+
+  input_materials:
+    type: entity_list
+    target: materials
+    section: Production
+    optional: true
+
+  input_items:
+    type: entity_list
+    target: item
+    section: Production
+    optional: true
+
+  input_components:
+    type: entity_list
+    target: components
+    section: Production
+    optional: true
+
+  output_materials:
+    type: entity_list
+    target: materials
+    section: Production
+    optional: true
+
+  output_items:
+    type: entity_list
+    target: item
+    section: Production
+    optional: true
+
+  output_components:
+    type: entity_list
+    target: components
+    section: Production
+    optional: true
+
+  output_vehicles:
+    type: entity_list
+    target: vehicles
+    section: Production
+    optional: true
+
+  production_rate_value:
+    type: number
+    section: Production
+    optional: true
+
+  production_rate_period:
+    type: string
+    section: Production
+    optional: true
+
+  required_technologies:
+    type: entity_list
+    target: technology
+    section: Requirements
+    optional: true
+
+  required_site_tags:
+    type: string_list
+    section: Requirements
+    optional: true
+
+  required_site_conditions:
+    type: string_list
+    section: Requirements
+    optional: true
+
+  required_vehicle_tags:
+    type: string_list
+    section: Requirements
+    optional: true
+
+  required_item_tags:
+    type: string_list
+    section: Requirements
+    optional: true
+
+  required_component_tags:
+    type: string_list
+    section: Requirements
     optional: true

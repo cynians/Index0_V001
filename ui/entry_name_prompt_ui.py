@@ -3,6 +3,14 @@ import pygame
 from ui.card import EntityCard
 
 
+def _query_matches_text(query, text):
+    terms = [term for term in str(query or "").strip().lower().split() if term]
+    if not terms:
+        return True
+    haystack = str(text or "").lower()
+    return all(term in haystack for term in terms)
+
+
 class EntryNamePromptUI:
     def __init__(self, host):
         object.__setattr__(self, "host", host)
@@ -112,7 +120,7 @@ class EntryNamePromptUI:
                     continue
 
             description = str(entity.get("three_word_description") or "").strip()
-            if not description or normalized_query not in description.lower():
+            if not description or not _query_matches_text(normalized_query, description):
                 continue
 
             key = description.lower()
@@ -169,7 +177,7 @@ class EntryNamePromptUI:
                     dataset,
                 ]
             ).lower()
-            if normalized_query not in haystack:
+            if not _query_matches_text(normalized_query, haystack):
                 continue
 
             label_l = str(label).lower()

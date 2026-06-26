@@ -25,6 +25,14 @@ def choose_link_target(matches, selected_index, query):
     return str(query or "").strip() or None
 
 
+def _query_matches_text(query, text):
+    terms = [term for term in str(query or "").strip().lower().split() if term]
+    if not terms:
+        return True
+    haystack = str(text or "").lower()
+    return all(term in haystack for term in terms)
+
+
 def insert_wiki_link(text, target, replace_range=None, cursor=None):
     text = str(text or "")
     target = str(target or "").strip()
@@ -78,7 +86,7 @@ def build_entity_link_matches(
                 str(entity.get("name", "")),
             ]
         ).lower()
-        if normalized_query and normalized_query not in haystack:
+        if normalized_query and not _query_matches_text(normalized_query, haystack):
             continue
 
         matches.append(

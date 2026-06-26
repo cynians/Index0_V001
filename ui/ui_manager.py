@@ -631,13 +631,14 @@ class UIManager:
                     "get_active_layer_kind",
                     lambda: None,
                 )()
-                can_create_square = bool(
-                    getattr(active_sim, "can_create_map_square_draft", lambda: False)()
-                )
-                if active_layer_kind == "locations" and can_create_square:
+                if active_layer_kind == "locations":
+                    can_create_location = bool(
+                        getattr(active_sim, "can_create_location_draft", lambda: False)()
+                    )
                     self.buttons.append(
-                        UIButton("new_map_rectangle", "New Map Rectangle",
-                                 pygame.Rect(button_x, next_button_y, button_width, button_height))
+                        UIButton("new_map_selection", "New Location",
+                                 pygame.Rect(button_x, next_button_y, button_width, button_height),
+                                 enabled=can_create_location)
                     )
                     next_button_y += 40
                 else:

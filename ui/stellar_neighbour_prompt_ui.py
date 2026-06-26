@@ -3,6 +3,14 @@ import math
 import pygame
 
 
+def _query_matches_text(query, text):
+    terms = [term for term in str(query or "").strip().lower().split() if term]
+    if not terms:
+        return True
+    haystack = str(text or "").lower()
+    return all(term in haystack for term in terms)
+
+
 class StellarNeighbourPromptUI:
     def __init__(self, host):
         object.__setattr__(self, "host", host)
@@ -36,7 +44,7 @@ class StellarNeighbourPromptUI:
                 continue
             label = self._entity_display_label(entity, fallback=entity_id)
             haystack = f"{label} {entity_id} {entity.get('name', '')}".lower()
-            if normalized_query and normalized_query not in haystack:
+            if normalized_query and not _query_matches_text(normalized_query, haystack):
                 continue
             matches.append({
                 "id": entity_id,
@@ -437,4 +445,3 @@ class StellarNeighbourPromptUI:
                 self._relayout_cards()
                 return True
         return True
-

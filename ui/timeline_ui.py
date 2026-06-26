@@ -33,6 +33,13 @@ class TimelineUI:
     BOTTOM_PAD = 8
     LEFT_PAD = 12
     RIGHT_PAD = 12
+
+    def _query_matches_text(self, query, text):
+        terms = [term for term in str(query or "").strip().casefold().split() if term]
+        if not terms:
+            return True
+        haystack = str(text or "").casefold()
+        return all(term in haystack for term in terms)
     FILTER_GROUPS = [
         ("general", "General", ["all", "open_canvas", "contemporary"]),
         ("locations", "Locations", ["locations"]),
@@ -278,7 +285,7 @@ class TimelineUI:
                     str(location_class),
                 ]
             ).casefold()
-            if query and query not in haystack:
+            if query and not self._query_matches_text(query, haystack):
                 continue
 
             label_folded = str(label).casefold()

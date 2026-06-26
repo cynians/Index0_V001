@@ -1,6 +1,14 @@
 import pygame
 
 
+def _query_matches_text(query, text):
+    terms = [term for term in str(query or "").strip().casefold().split() if term]
+    if not terms:
+        return True
+    haystack = str(text or "").casefold()
+    return all(term in haystack for term in terms)
+
+
 class CardProductionMixin:
     def _is_producer_card(self):
         return self.dataset_name == "producers" or self.entity.get("type") == "producer"
@@ -28,6 +36,17 @@ class CardProductionMixin:
 
     def _producer_entity_id(self):
         return str(self.entity.get("id") or "").strip()
+
+    def _production_location_is_site(self, entity):
+        if not isinstance(entity, dict):
+            return False
+        values = (
+            entity.get("location_class"),
+            entity.get("site_class"),
+            entity.get("location_subclass"),
+            entity.get("type"),
+        )
+        return any("site" in str(value or "").strip().lower() for value in values)
 
     def _production_slug(self, value):
         text = str(value or "").strip().lower()
@@ -80,6 +99,14 @@ class CardProductionMixin:
             "start_year": "" if entity.get("start_year") is None else str(entity.get("start_year")),
             "end_year": "" if entity.get("end_year") is None else str(entity.get("end_year")),
         }
+
+    def _production_group_mode(self, card):
+        mode = str(card.get("production_group_mode") or "product").strip().lower()
+        return "site" if mode == "site" else "product"
+
+    def _toggle_production_group_mode(self, card):
+        card["production_group_mode"] = "product" if self._production_group_mode(card) == "site" else "site"
+        return True
 
     def _production_lines(self):
         lines = []
@@ -194,6 +221,7 @@ class CardProductionMixin:
             "_dataset": "production",
             "production_class": "production_line",
             "produced_by": [producer_id] if producer_id else [],
+            "operated_by": [producer_id] if producer_id else [],
             "production_location": str(location_id or "").strip(),
             "production_rate_value": "",
             "production_rate_period": "month",
@@ -243,13 +271,22 @@ class CardProductionMixin:
             entity_type = str(entity.get("type") or "").strip().lower()
             if dataset not in allowed_datasets and entity_type not in allowed_types:
                 continue
+            if target == "location" and not self._production_location_is_site(entity):
+                continue
             label = self._entity_display_label(entity)
             haystack = " ".join([str(entity_id), label, str(entity.get("pretty_name") or ""), str(entity.get("name") or "")]).lower()
-            if query and query not in haystack:
+            if query and not _query_matches_text(query, haystack):
                 continue
-            matches.append({"id": entity_id, "label": label, "subtitle": dataset or entity_type})
-            if len(matches) >= 8:
-                break
+            if target == "location":
+                location_class = str(entity.get("site_class") or entity.get("location_class") or entity_type or dataset)
+                rank = 0
+                subtitle = location_class.replace("_", " ")
+            else:
+                rank = 0
+                subtitle = dataset or entity_type
+            matches.append({"id": entity_id, "label": label, "subtitle": subtitle, "rank": rank})
+        matches.sort(key=lambda item: (item.get("rank", 0), item["label"].casefold(), item["id"]))
+        matches = matches[:8]
         return matches
 
     def _refresh_production_matches(self, card):
@@ -265,6 +302,21 @@ class CardProductionMixin:
             return
         target = "location" if card.get("production_active_field") == "location" else "product"
         card["production_matches"] = self._production_entity_matches(card.get("production_query", ""), target)
+        if target == "location":
+            query = str(card.get("production_query") or "").strip()
+            query_l = query.casefold()
+            exact_match = any(str(match.get("label") or "").casefold() == query_l for match in card["production_matches"])
+            if query and not exact_match:
+                card["production_matches"].append(
+                    {
+                        "id": "__create_site__",
+                        "label": f"Create site: {query}",
+                        "subtitle": "new production site",
+                        "create_site": True,
+                        "site_name": query,
+                        "rank": -1 if not card["production_matches"] else 9,
+                    }
+                )
         card["production_match_rows"] = []
         if card["production_matches"]:
             card["production_selected_index"] = max(0, min(int(card.get("production_selected_index", 0) or 0), len(card["production_matches"]) - 1))
@@ -325,7 +377,18 @@ class CardProductionMixin:
         if entity is None:
             return False
         if "location_id" in updates:
-            entity["production_location"] = str(updates.get("location_id") or "").strip()
+            location_id = str(updates.get("location_id") or "").strip()
+            entity["production_location"] = location_id
+            producer_id = self._producer_entity_id()
+            if producer_id:
+                entity["operated_by"] = [producer_id]
+            location = self.world_model.get_entity(location_id) if self.world_model is not None and location_id else None
+            if isinstance(location, dict) and producer_id:
+                operators = self._relation_entity_ids(location.get("operated_by"))
+                if producer_id not in operators:
+                    operators.append(producer_id)
+                    location["operated_by"] = operators
+                    self._mark_production_entity_update(card, location_id)
         if "rate_value" in updates:
             entity["production_rate_value"] = str(updates.get("rate_value") or "").strip()
         if "rate_period" in updates:
@@ -408,6 +471,15 @@ class CardProductionMixin:
                 if not matches:
                     return False
                 index = max(0, min(int(card.get("production_selected_index", 0) or 0), len(matches) - 1))
+                if matches[index].get("create_site"):
+                    card["pending_production_action"] = {
+                        "id": "create_production_site",
+                        "name": matches[index].get("site_name") or card.get("production_query"),
+                        "line_index": line_index,
+                    }
+                    card["production_input_active"] = False
+                    card["production_matches"] = []
+                    return True
                 card["production_input_active"] = False
                 return self._update_production_line(card, line_index, location_id=matches[index].get("id"))
             if field_name == "rate":
@@ -441,7 +513,7 @@ class CardProductionMixin:
         return False
 
     def handle_production_click(self, card, mouse_pos):
-        if not self._is_production_mode() or not card.get("is_edit_mode", False):
+        if not self._is_production_mode():
             return False
 
         for info in card.get("production_hitboxes", []):
@@ -450,6 +522,10 @@ class CardProductionMixin:
                 continue
             kind = info.get("kind")
             line_index = info.get("line_index")
+            if kind == "group_toggle":
+                return self._toggle_production_group_mode(card)
+            if not card.get("is_edit_mode", False):
+                continue
             if kind == "product_input":
                 return self._set_production_input(card, "product")
             if kind == "product_add":
@@ -483,6 +559,15 @@ class CardProductionMixin:
             if field_name == "product":
                 return self._add_production_line(card, match.get("id"))
             if field_name == "location":
+                if match.get("create_site"):
+                    card["pending_production_action"] = {
+                        "id": "create_production_site",
+                        "name": match.get("site_name") or card.get("production_query"),
+                        "line_index": line_index,
+                    }
+                    card["production_input_active"] = False
+                    card["production_matches"] = []
+                    return True
                 card["production_input_active"] = False
                 return self._update_production_line(card, line_index, location_id=match.get("id"))
 
@@ -494,8 +579,12 @@ class CardProductionMixin:
         card["production_hitboxes"] = []
         card["production_match_rows"] = []
         card["production_line_rows"] = []
+        card["production_site_group_rows"] = []
         header_rect = pygame.Rect(content_left, current_y, text_width, self.SECTION_HEADER_H)
         card["production_section_rect"] = header_rect
+        group_toggle_rect = pygame.Rect(header_rect.right - 102, header_rect.y + 2, 96, max(18, header_rect.height - 4))
+        card["production_group_toggle_rect"] = group_toggle_rect
+        card["production_hitboxes"].append({"kind": "group_toggle", "rect": group_toggle_rect})
         current_y = header_rect.bottom + self.SECTION_GAP + 6
 
         if card.get("is_edit_mode", False):
@@ -524,7 +613,26 @@ class CardProductionMixin:
             return current_y
         card["production_empty_rect"] = None
 
-        for line_index, line in enumerate(lines):
+        line_entries = list(enumerate(lines))
+        if self._production_group_mode(card) == "site":
+            line_entries.sort(
+                key=lambda item: (
+                    self._entity_label_for_id(item[1].get("location_id")) if item[1].get("location_id") else "Unassigned Site",
+                    self._entity_label_for_id(item[1].get("product_id")),
+                    item[0],
+                )
+            )
+
+        previous_group = None
+        for line_index, line in line_entries:
+            if self._production_group_mode(card) == "site":
+                location_id = line.get("location_id", "")
+                group_label = self._entity_label_for_id(location_id) if location_id else "Unassigned Site"
+                if group_label != previous_group:
+                    group_rect = pygame.Rect(content_left, current_y, text_width, 24)
+                    card["production_site_group_rows"].append({"label": group_label, "rect": group_rect, "location_id": location_id})
+                    current_y = group_rect.bottom + 4
+                    previous_group = group_label
             section_rect = pygame.Rect(content_left, current_y, text_width, 30)
             current_y = section_rect.bottom + 4
             location_rect = pygame.Rect(content_left + 18, current_y, max(120, text_width - 36), 26)
@@ -616,6 +724,13 @@ class CardProductionMixin:
             pygame.draw.rect(screen, (34, 38, 48), section_rect)
             pygame.draw.rect(screen, (86, 96, 116), section_rect, 1)
             screen.blit(font.render("Production", True, (232, 236, 244)), (section_rect.x + 8, section_rect.y + 3))
+            toggle_rect = card.get("production_group_toggle_rect")
+            if toggle_rect is not None:
+                mode_label = "By Site" if self._production_group_mode(card) == "site" else "By Product"
+                mode_surface = font.render(mode_label, True, (238, 242, 250))
+                pygame.draw.rect(screen, (42, 52, 70), toggle_rect)
+                pygame.draw.rect(screen, (126, 150, 190), toggle_rect, 1)
+                screen.blit(mode_surface, mode_surface.get_rect(center=toggle_rect.center))
 
         if card.get("is_edit_mode", False):
             input_rect = card.get("production_product_input_rect")
@@ -638,7 +753,16 @@ class CardProductionMixin:
         if empty_rect is not None:
             pygame.draw.rect(screen, (30, 34, 44), empty_rect)
             pygame.draw.rect(screen, (82, 92, 112), empty_rect, 1)
-            screen.blit(font.render("No production lines yet", True, (150, 160, 178)), (empty_rect.x + 8, empty_rect.y + 8))
+            screen.blit(font.render("No production lines yet. Add a product first.", True, (150, 160, 178)), (empty_rect.x + 8, empty_rect.y + 8))
+
+        for group in card.get("production_site_group_rows", []):
+            group_rect = group.get("rect")
+            if group_rect is None:
+                continue
+            pygame.draw.rect(screen, (32, 40, 52), group_rect)
+            pygame.draw.rect(screen, (82, 102, 132), group_rect, 1)
+            label = self._ellipsize_text(str(group.get("label") or "Unassigned Site"), font, group_rect.width - 14)
+            screen.blit(font.render(label, True, (212, 224, 242)), (group_rect.x + 8, group_rect.y + 4))
 
         for row in card.get("production_line_rows", []):
             line = row.get("line") or {}
@@ -661,7 +785,7 @@ class CardProductionMixin:
             if location_rect is not None:
                 pygame.draw.rect(screen, (30, 34, 44), location_rect)
                 pygame.draw.rect(screen, (94, 104, 124), location_rect, 1)
-                location_label = self._entity_label_for_id(location_id) if location_id else "Select production location"
+                location_label = self._entity_label_for_id(location_id) if location_id else "Assign production site"
                 screen.blit(font.render(self._ellipsize_text(location_label, font, location_rect.width - 12), True, (232, 236, 244) if location_id else (132, 142, 160)), (location_rect.x + 6, location_rect.y + 5))
 
             rate_rect = row.get("rate_rect")

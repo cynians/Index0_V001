@@ -13,6 +13,21 @@ fields:
     target: locations
     optional: true
 
+  production_technology:
+    type: entity
+    target: technology
+    optional: true
+
+  operated_by:
+    type: entity_list
+    target:
+      - producers
+      - institutions
+      - factions
+      - pops
+      - people
+    optional: true
+
   input_materials:
     type: entity_list
     target: materials
@@ -46,6 +61,21 @@ fields:
   output_vehicles:
     type: entity_list
     target: vehicles
+    optional: true
+
+  assigned_vehicles:
+    type: entity_list
+    target: vehicles
+    optional: true
+
+  assigned_items:
+    type: entity_list
+    target: item
+    optional: true
+
+  assigned_components:
+    type: entity_list
+    target: components
     optional: true
 
   output_buildings:

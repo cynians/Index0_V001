@@ -7,6 +7,7 @@ from engine.scaler import ScaleHelper
 from ui.card_location import CardLocationMixin
 from ui.card_phylogeny import CardPhylogenyMixin
 from ui.card_production import CardProductionMixin
+from ui.card_site import CardSiteMixin
 from ui.card_simulation import CardSimulationMixin
 from ui.card_task import CardTaskMixin
 from ui.card_wiki import CardWikiRenderer
@@ -16,7 +17,7 @@ from world.year_utils import parse_year
 from simulations.space.stellar import STELLAR_CLASS_HELP, is_valid_stellar_class
 
 
-class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, CardSimulationMixin, CardTaskMixin):
+class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, CardSiteMixin, CardSimulationMixin, CardTaskMixin):
     PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     """
     Reusable renderer + interaction helper for one repository entity card.
@@ -125,6 +126,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         "general": "General",
         "overview": "Overview",
         "production": "Production",
+        "site": "Site",
         "temporal": "Temporal",
         "location": "Location",
         "relations": "Relations",
@@ -358,6 +360,123 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
     def _header_description_text(self):
         return str(self.entity.get("three_word_description") or "").strip()
 
+    def _tag_values(self):
+        values = []
+        for value in self.entity.get("tags") or []:
+            text = str(value or "").strip()
+            if text and text not in values:
+                values.append(text)
+        return values
+
+    def _known_tag_values(self):
+        tags = set()
+        entities = getattr(getattr(self.world_model, "loader", None), "entities", {}) if self.world_model is not None else {}
+        for entity in entities.values():
+            if not isinstance(entity, dict):
+                continue
+            for value in entity.get("tags") or []:
+                text = str(value or "").strip()
+                if text:
+                    tags.add(text)
+            if entity.get("_dataset") == "tags" or entity.get("type") == "tag":
+                label = str(entity.get("name") or entity.get("pretty_name") or entity.get("id") or "").strip()
+                if label:
+                    tags.add(label)
+        return sorted(tags, key=lambda value: value.lower())
+
+    def _tag_lookup_key(self, value):
+        return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+    def _tag_entity_for_value(self, tag_value):
+        tag_key = self._tag_lookup_key(tag_value)
+        if not tag_key:
+            return None
+        entities = getattr(getattr(self.world_model, "loader", None), "entities", {}) if self.world_model is not None else {}
+        for entity in entities.values():
+            if not isinstance(entity, dict):
+                continue
+            if entity.get("_dataset") != "tags" and entity.get("type") != "tag":
+                continue
+            candidates = {
+                self._tag_lookup_key(entity.get("id")),
+                self._tag_lookup_key(entity.get("name")),
+                self._tag_lookup_key(entity.get("pretty_name")),
+                self._tag_lookup_key(entity.get("common_name")),
+            }
+            expanded = set(candidates)
+            expanded.update(value[4:] for value in candidates if value.startswith("tag_"))
+            if tag_key in expanded:
+                return entity
+        return None
+
+    def _tag_chip_colors(self, tag_value):
+        tag_entity = self._tag_entity_for_value(tag_value)
+        if not isinstance(tag_entity, dict):
+            return (38, 52, 60), (102, 152, 166), (224, 238, 240)
+        fill = self._coerce_hex_color(tag_entity.get("secondary_color"), fallback=(38, 52, 60))
+        border = self._coerce_hex_color(tag_entity.get("primary_color"), fallback=(102, 152, 166))
+        text = self._readable_text_color(fill)
+        return fill, border, text
+
+    def _tag_suggestions(self, query, limit=6):
+        query = str(query or "").strip().lower()
+        query_terms = [term for term in query.split() if term]
+        current_tags = {tag.lower() for tag in self._tag_values()}
+        suggestions = []
+        for tag in self._known_tag_values():
+            tag_l = tag.lower()
+            if tag_l in current_tags:
+                continue
+            if query_terms and not all(term in tag_l for term in query_terms):
+                continue
+            suggestions.append(tag)
+            if len(suggestions) >= limit:
+                break
+        return suggestions
+
+    def _tag_search_query(self, card):
+        return str(card.get("edit_buffer") or "").strip()
+
+    def _tag_search_matches(self, card, limit=6):
+        query = self._tag_search_query(card)
+        return self._tag_suggestions(query, limit=limit)
+
+    def _add_tag_value(self, card, tag_value):
+        tag_value = str(tag_value or "").strip()
+        if not tag_value:
+            return False
+        tags = self._tag_values()
+        if tag_value.lower() not in {tag.lower() for tag in tags}:
+            tags.append(tag_value)
+            self.entity["tags"] = tags
+        card["edit_buffer"] = ""
+        card["edit_cursor"] = 0
+        card["tag_selected_index"] = 0
+        card["last_edit_action"] = "commit"
+        card["last_committed_field"] = "tags"
+        return True
+
+    def confirm_tag_search(self, card):
+        matches = self._tag_search_matches(card, limit=6)
+        query = self._tag_search_query(card)
+        tag_value = ""
+        if matches:
+            index = max(0, min(int(card.get("tag_selected_index", 0) or 0), len(matches) - 1))
+            tag_value = matches[index]
+        elif query:
+            tag_value = query
+        return self._add_tag_value(card, tag_value)
+
+    def remove_tag_value(self, card, tag_value):
+        tag_value = str(tag_value or "").strip()
+        if not tag_value:
+            return False
+        tags = [tag for tag in self._tag_values() if tag.lower() != tag_value.lower()]
+        self.entity["tags"] = tags
+        card["last_edit_action"] = "commit"
+        card["last_committed_field"] = "tags"
+        return True
+
     def _tab_order(self):
         if self._is_idea_card():
             return self.DATASET_TAB_ORDER["ideas"]
@@ -365,6 +484,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             order = self.DATASET_TAB_ORDER["components"]
         else:
             order = self.DATASET_TAB_ORDER.get(self.dataset_name, self.TAB_ORDER)
+        if self._is_site_card() and "site" not in order:
+            insert_index = order.index("overview") + 1 if "overview" in order else 1
+            order = list(order[:insert_index]) + ["site"] + list(order[insert_index:])
         if self._has_simulation_fields():
             return order
         return [tab_name for tab_name in order if tab_name != "simulation"]
@@ -1372,7 +1494,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         spec = self._normalize_field_spec(schema_field_specs.get(field_key, {}))
         field_type = spec.get("type")
 
-        if field_type in {"entity", "entity_list"}:
+        if field_type in {"entity", "entity_list", "string_list"}:
             return value is None or isinstance(value, (str, list))
 
         if value is None:
@@ -1847,6 +1969,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         return str(value)
 
     def _initial_edit_buffer(self, field_key, value):
+        if field_key == "tags":
+            return ""
         if field_key == self.TIMELINE_SNAPSHOT_FIELD:
             return self._timeline_snapshot_text(value if isinstance(value, dict) else None)
         if field_key == "wiki_entry" and not (isinstance(value, str) and value.strip()):
@@ -2116,6 +2240,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
         card["active_edit_field"] = field_key
         card["edit_original_value"] = value
+        if field_key == "tags":
+            card["tag_selected_index"] = 0
         self._clear_edit_preferred_column(card)
         draft_buffer = card.get("draft_edit_buffers", {}).get(field_key)
         if isinstance(draft_buffer, dict) and "text" in draft_buffer:
@@ -2132,6 +2258,20 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         field_key = card.get("active_edit_field")
         if not field_key:
             return False
+
+        if field_key == "tags":
+            draft_buffers = card.get("draft_edit_buffers")
+            if isinstance(draft_buffers, dict):
+                draft_buffers.pop(field_key, None)
+            card["active_edit_field"] = None
+            card["edit_buffer"] = ""
+            card["edit_original_value"] = None
+            card["edit_cursor"] = 0
+            card["tag_selected_index"] = 0
+            self._clear_edit_preferred_column(card)
+            card["last_edit_action"] = "commit"
+            card["last_committed_field"] = "tags"
+            return True
 
         if field_key == self.TIMELINE_SNAPSHOT_FIELD:
             self._set_timeline_snapshot_text(card, card.get("edit_buffer", ""))
@@ -2239,6 +2379,17 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 card["last_edit_action"] = "draft"
                 return True
 
+        if active_field == "tags":
+            matches = self._tag_search_matches(card, limit=6)
+            if event.key == pygame.K_UP and matches:
+                card["tag_selected_index"] = max(0, int(card.get("tag_selected_index", 0) or 0) - 1)
+                return True
+            if event.key == pygame.K_DOWN and matches:
+                card["tag_selected_index"] = min(len(matches) - 1, int(card.get("tag_selected_index", 0) or 0) + 1)
+                return True
+            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                return self.confirm_tag_search(card)
+
         if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             return self.commit_edit_field(card)
 
@@ -2294,6 +2445,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 self._delete_word_before_cursor(card)
             else:
                 self._delete_before_cursor(card)
+            if active_field == "tags":
+                card["tag_selected_index"] = 0
             card["last_edit_action"] = "draft"
             return True
 
@@ -2303,6 +2456,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 self._delete_word_after_cursor(card)
             else:
                 self._delete_after_cursor(card)
+            if active_field == "tags":
+                card["tag_selected_index"] = 0
             card["last_edit_action"] = "draft"
             return True
 
@@ -2310,6 +2465,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         if text and text.isprintable():
             self._clear_edit_preferred_column(card)
             self._insert_edit_text(card, text)
+            if active_field == "tags":
+                card["tag_selected_index"] = 0
             card["last_edit_action"] = "draft"
             return True
 
@@ -2578,6 +2735,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         toolbelt_rect = None
         field_rows = []
         general_content_rect = None
+        tag_bar_rect = None
         timeline_snapshot_rect = None
         task_checklist_rect = None
         task_finish_checkbox_rect = None
@@ -2592,6 +2750,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             "general": 70,
             "overview": 78,
             "production": 94,
+            "site": 58,
             "temporal": 82,
             "location": 82,
             "relations": 76,
@@ -2753,8 +2912,16 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             image_rect = None
             general_bottom = timeline_label_y - 10
             general_height = max(40, general_bottom - top_content_y)
+            tag_bar_h = 34
+            if card.get("is_edit_mode", False) and card.get("active_edit_field") == "tags":
+                tag_bar_h = 92
+            tag_bar_rect = pygame.Rect(content_left, top_content_y, text_width, tag_bar_h)
+            if card.get("is_edit_mode", False):
+                editable_field_hitboxes.append(("tags", tag_bar_rect))
+            wiki_top_y = tag_bar_rect.bottom + 8
+            general_height = max(40, general_bottom - wiki_top_y)
             snapshot_active = self._timeline_snapshot_range(card) is not None
-            general_content_rect = pygame.Rect(content_left, top_content_y, text_width, general_height)
+            general_content_rect = pygame.Rect(content_left, wiki_top_y, text_width, general_height)
             if self._is_task_card():
                 checklist_h = min(
                     general_height - 44,
@@ -2762,12 +2929,12 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 )
                 checklist_h = max(92, checklist_h)
                 wiki_h = max(44, general_height - checklist_h - 8)
-                general_content_rect = pygame.Rect(content_left, top_content_y, text_width, wiki_h)
+                general_content_rect = pygame.Rect(content_left, wiki_top_y, text_width, wiki_h)
                 task_checklist_rect = pygame.Rect(content_left, general_content_rect.bottom + 8, text_width, checklist_h)
             elif snapshot_active:
                 snapshot_h = max(58, min(118, int(general_height * 0.38)))
                 wiki_h = max(44, general_height - snapshot_h - 8)
-                general_content_rect = pygame.Rect(content_left, top_content_y, text_width, wiki_h)
+                general_content_rect = pygame.Rect(content_left, wiki_top_y, text_width, wiki_h)
                 timeline_snapshot_rect = pygame.Rect(content_left, general_content_rect.bottom + 8, text_width, snapshot_h)
             if card.get("is_edit_mode", False):
                 editable_field_hitboxes.append(("wiki_entry", general_content_rect))
@@ -2838,6 +3005,11 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         elif self._is_production_mode():
             image_rect = None
             content_end_y = self._layout_production_content(card, content_left, current_y, text_width)
+        elif self._is_site_mode():
+            image_rect = None
+            content_end_y = self._layout_site_content(card, content_left, current_y, text_width)
+            if card.get("is_edit_mode", False):
+                content_editable_field_hitboxes.extend(card.get("site_editable_field_hitboxes", []))
         elif self._is_location_mode():
             image_rect = None
             for key, value in (
@@ -3124,6 +3296,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             elif self._is_production_mode():
                 for rect_key in (
                     "production_section_rect",
+                    "production_group_toggle_rect",
                     "production_product_input_rect",
                     "production_product_add_rect",
                     "production_empty_rect",
@@ -3175,6 +3348,14 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                     if keep or shifted_chips:
                         visible_rows.append(shifted_row)
                 card["production_line_rows"] = visible_rows
+                card["production_site_group_rows"] = [
+                    {**row, "rect": shifted_rect.clip(content_viewport_rect)}
+                    for row in card.get("production_site_group_rows", [])
+                    for rect_value in [row.get("rect")]
+                    if rect_value is not None
+                    for shifted_rect in [rect_value.move(0, -scroll_y)]
+                    if shifted_rect.colliderect(content_viewport_rect)
+                ]
                 card["production_hitboxes"] = [
                     {**info, "rect": shifted_rect.clip(content_viewport_rect)}
                     for info in card.get("production_hitboxes", [])
@@ -3191,6 +3372,25 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                     for shifted_rect in [rect_value.move(0, -scroll_y)]
                     if shifted_rect.colliderect(content_viewport_rect)
                 ]
+            elif self._is_site_mode():
+                card["site_section_rects"] = {
+                    label: shifted_rect.clip(content_viewport_rect)
+                    for label, section_rect in (card.get("site_section_rects") or {}).items()
+                    for shifted_rect in [section_rect.move(0, -scroll_y)]
+                    if shifted_rect.colliderect(content_viewport_rect)
+                }
+                visible_rows = []
+                for row in card.get("site_rows", []):
+                    row_rect = row.get("rect")
+                    if row_rect is None:
+                        continue
+                    shifted_rect = row_rect.move(0, -scroll_y)
+                    if not shifted_rect.colliderect(content_viewport_rect):
+                        continue
+                    shifted_row = dict(row)
+                    shifted_row["rect"] = shifted_rect.clip(content_viewport_rect)
+                    visible_rows.append(shifted_row)
+                card["site_rows"] = visible_rows
 
             shifted_section_hitboxes = []
             for section_name, section_rect in section_hitboxes:
@@ -3329,6 +3529,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             elif self._is_production_mode():
                 for rect_key in (
                     "production_section_rect",
+                    "production_group_toggle_rect",
                     "production_product_input_rect",
                     "production_product_add_rect",
                     "production_empty_rect",
@@ -3356,6 +3557,11 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                         )
                     )
                 ]
+                card["production_site_group_rows"] = [
+                    {**row, "rect": row["rect"].clip(content_viewport_rect)}
+                    for row in card.get("production_site_group_rows", [])
+                    if row.get("rect") is not None and row["rect"].colliderect(content_viewport_rect)
+                ]
                 card["production_hitboxes"] = [
                     {**info, "rect": info["rect"].clip(content_viewport_rect)}
                     for info in card.get("production_hitboxes", [])
@@ -3364,6 +3570,17 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 card["production_match_rows"] = [
                     {**row, "rect": row["rect"].clip(content_viewport_rect)}
                     for row in card.get("production_match_rows", [])
+                    if row.get("rect") is not None and row["rect"].colliderect(content_viewport_rect)
+                ]
+            elif self._is_site_mode():
+                card["site_section_rects"] = {
+                    label: section_rect.clip(content_viewport_rect)
+                    for label, section_rect in (card.get("site_section_rects") or {}).items()
+                    if section_rect is not None and section_rect.colliderect(content_viewport_rect)
+                }
+                card["site_rows"] = [
+                    {**row, "rect": row["rect"].clip(content_viewport_rect)}
+                    for row in card.get("site_rows", [])
                     if row.get("rect") is not None and row["rect"].colliderect(content_viewport_rect)
                 ]
             section_hitboxes = [
@@ -3496,6 +3713,10 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         card["subtab_hitboxes"] = subtab_hitboxes
         card["image_rect"] = image_rect
         card["general_content_rect"] = general_content_rect
+        card["tag_bar_rect"] = tag_bar_rect
+        card["tag_chip_hitboxes"] = []
+        card["tag_suggestion_hitboxes"] = []
+        card["tag_remove_hitboxes"] = []
         card["timeline_snapshot_rect"] = timeline_snapshot_rect
         card["task_checklist_rect"] = task_checklist_rect
         card["task_finish_checkbox_rect"] = task_finish_checkbox_rect
@@ -3568,6 +3789,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                     content_rect.width,
                     card,
                 )
+            tag_bar_h = 92 if card.get("is_edit_mode", False) and card.get("active_edit_field") == "tags" else 34
+            general_h += tag_bar_h + 8
             tabs_bottom_y = self.HEADER_H + 6 + self.TAB_H
             timeline_label_y = tabs_bottom_y + 10 + general_h + 8
             timeline_y = timeline_label_y + 18
@@ -3656,6 +3879,21 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             launch_top = center_y + self.TIMELINE_TO_LAUNCH_GAP
             resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
             return max(360, resize_bottom + 8)
+
+        if self._is_site_mode():
+            tabs_bottom_y = self.HEADER_H + 6 + self.TAB_H
+            reports = (self._site_requirement_report() or {}).get("production", [])
+            operator_count = max(1, len(self._relation_entity_ids(self.entity.get("operated_by"))))
+            condition_count = len(self.entity.get("site_conditions") or [])
+            requirement_count = sum(max(1, len(report.get("checks") or [])) + 1 for report in reports)
+            row_count = 2 + operator_count + condition_count + max(1, requirement_count)
+            current_y = tabs_bottom_y + 10 + 2 * (self.SECTION_HEADER_H + self.SECTION_GAP + 4) + row_count * 30
+            timeline_label_y = current_y + 12
+            timeline_y = timeline_label_y + 18
+            center_y = timeline_y + 10
+            launch_top = center_y + self.TIMELINE_TO_LAUNCH_GAP
+            resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
+            return max(340, resize_bottom + 8)
 
         tabs_bottom_y = self.HEADER_H + 6 + self.TAB_H
         if self._active_subtab_order():
@@ -3888,6 +4126,15 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 screen.set_clip(previous_clip.clip(content_clip))
             try:
                 self._draw_production_content(screen, font, card)
+            finally:
+                screen.set_clip(previous_clip)
+        elif self._is_site_mode():
+            content_clip = card.get("content_viewport_rect")
+            previous_clip = screen.get_clip()
+            if content_clip is not None:
+                screen.set_clip(previous_clip.clip(content_clip))
+            try:
+                self._draw_site_content(screen, font, card)
             finally:
                 screen.set_clip(previous_clip)
         else:
@@ -4579,6 +4826,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             self._draw_relation_picker(screen, font, card, active_relation_anchor)
 
     def _draw_general_content(self, screen, font, card):
+        self._draw_tag_bar(screen, font, card)
         general_rect = card.get("general_content_rect")
         if general_rect is None:
             return
@@ -4639,6 +4887,87 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             self._draw_wiki_link_picker(screen, font, card, general_rect)
 
         self._draw_task_checklist(screen, font, card)
+
+    def _draw_tag_bar(self, screen, font, card):
+        rect = card.get("tag_bar_rect")
+        if rect is None:
+            return
+        card["tag_chip_hitboxes"] = []
+        card["tag_suggestion_hitboxes"] = []
+        card["tag_remove_hitboxes"] = []
+        active = card.get("is_edit_mode", False) and card.get("active_edit_field") == "tags"
+        pygame.draw.rect(screen, (28, 32, 42) if not active else (36, 42, 56), rect)
+        pygame.draw.rect(screen, (86, 98, 122) if not active else (174, 194, 228), rect, 1)
+
+        label_surface = font.render("Tags", True, (184, 196, 216))
+        screen.blit(label_surface, (rect.x + 8, rect.y + 8))
+        chip_x = rect.x + 52
+        chip_y = rect.y + 6
+        chip_right = rect.right - 8
+        tags = self._tag_values()
+        if not tags and not active:
+            muted = font.render("none", True, (126, 136, 154))
+            screen.blit(muted, (chip_x, rect.y + 8))
+            return
+
+        if active:
+            for tag in tags:
+                label = self._ellipsize_text(tag, font, 104)
+                chip_w = min(132, max(48, font.size(label)[0] + 30))
+                if chip_x + chip_w > chip_right:
+                    break
+                chip_rect = pygame.Rect(chip_x, chip_y, chip_w, 22)
+                remove_rect = pygame.Rect(chip_rect.right - 20, chip_rect.y + 3, 16, 16)
+                card["tag_chip_hitboxes"].append({"tag": tag, "rect": chip_rect})
+                card["tag_remove_hitboxes"].append({"tag": tag, "rect": remove_rect})
+                fill, border, text_color = self._tag_chip_colors(tag)
+                pygame.draw.rect(screen, fill, chip_rect)
+                pygame.draw.rect(screen, border, chip_rect, 1)
+                screen.blit(font.render(label, True, text_color), (chip_rect.x + 7, chip_rect.y + 3))
+                pygame.draw.rect(screen, (70, 40, 46), remove_rect)
+                pygame.draw.rect(screen, (178, 116, 124), remove_rect, 1)
+                remove_surface = font.render("x", True, (250, 220, 224))
+                screen.blit(remove_surface, remove_surface.get_rect(center=remove_rect.center))
+                chip_x = chip_rect.right + 6
+
+            input_text = self._tag_search_query(card)
+            input_rect = pygame.Rect(rect.x + 52, rect.y + 34, max(80, chip_right - rect.x - 52), 24)
+            pygame.draw.rect(screen, (24, 28, 38), input_rect)
+            pygame.draw.rect(screen, (116, 136, 176), input_rect, 1)
+            display = self._ellipsize_text(input_text or "Search tag, Enter to add", font, input_rect.width - 12)
+            color = (236, 240, 248) if input_text else (130, 140, 158)
+            screen.blit(font.render(display, True, color), (input_rect.x + 6, input_rect.y + 5))
+            suggestion_x = input_rect.x
+            suggestion_y = input_rect.bottom + 6
+            selected_index = int(card.get("tag_selected_index", 0) or 0)
+            for index, suggestion in enumerate(self._tag_search_matches(card, limit=5)):
+                label = self._ellipsize_text(suggestion, font, 110)
+                chip_w = min(122, max(46, font.size(label)[0] + 14))
+                if suggestion_x + chip_w > chip_right:
+                    break
+                chip_rect = pygame.Rect(suggestion_x, suggestion_y, chip_w, 22)
+                card["tag_suggestion_hitboxes"].append({"tag": suggestion, "rect": chip_rect})
+                selected = index == selected_index
+                pygame.draw.rect(screen, (54, 66, 86) if selected else (42, 50, 64), chip_rect)
+                pygame.draw.rect(screen, (168, 194, 232) if selected else (112, 132, 166), chip_rect, 1)
+                screen.blit(font.render(label, True, (218, 226, 240)), (chip_rect.x + 7, chip_rect.y + 3))
+                suggestion_x = chip_rect.right + 6
+            return
+
+        for tag in tags:
+            label = self._ellipsize_text(tag, font, 120)
+            chip_w = min(134, max(42, font.size(label)[0] + 14))
+            if chip_x + chip_w > chip_right:
+                overflow = font.render("+", True, (188, 198, 216))
+                screen.blit(overflow, (chip_x, chip_y + 3))
+                break
+            chip_rect = pygame.Rect(chip_x, chip_y, chip_w, 22)
+            card["tag_chip_hitboxes"].append({"tag": tag, "rect": chip_rect})
+            fill, border, text_color = self._tag_chip_colors(tag)
+            pygame.draw.rect(screen, fill, chip_rect)
+            pygame.draw.rect(screen, border, chip_rect, 1)
+            screen.blit(font.render(label, True, text_color), (chip_rect.x + 7, chip_rect.y + 3))
+            chip_x = chip_rect.right + 6
 
     def _draw_wiki_link_picker(self, screen, font, card, general_rect):
         matches = card.get("wiki_link_matches", [])

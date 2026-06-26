@@ -750,6 +750,17 @@ class NavigationController:
                 if system_role == "orbital_body" or is_orbital_location:
                     body_class = entity.get("body_class") or entity.get("location_class")
                     if body_class == "planet":
+                        if not entity.get("star_system") and any(
+                            entity.get(key)
+                            for key in (
+                                "bounds",
+                                "map_canvas_width_px",
+                                "map_canvas_height_px",
+                                "map_status",
+                            )
+                        ):
+                            self.open_region_map_tab(entity_id)
+                            return True
                         return self.launch_planet_space_tab(entity_id)
 
                     star_system_id = entity.get("star_system")
@@ -919,6 +930,11 @@ class NavigationController:
             return bool(getattr(active_sim, "import_map_image_for_current_target", lambda: False)())
 
         if action_id == "new_map_selection" and active_sim is not None:
+            if (
+                getattr(active_sim, "get_active_layer_kind", lambda: None)()
+                == getattr(active_sim, "LOCATION_LAYER_KIND", "locations")
+            ):
+                return bool(getattr(active_sim, "begin_location_draft", lambda: False)())
             return bool(getattr(active_sim, "begin_spatial_feature_draft", lambda: False)())
 
         if action_id in {"new_map_rectangle", "new_map_square"} and active_sim is not None:

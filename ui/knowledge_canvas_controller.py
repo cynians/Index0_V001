@@ -16,6 +16,119 @@ class KnowledgeCanvasController:
     def __setattr__(self, name, value):
         setattr(self.host, name, value)
 
+    def _normalize_tag_lookup_value(self, value):
+        return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+    def _find_tag_entity_for_value(self, tag_value):
+        if self.world_model is None:
+            return None
+        tag_norm = self._normalize_tag_lookup_value(tag_value)
+        if not tag_norm:
+            return None
+        entities = getattr(getattr(self.world_model, "loader", None), "entities", {}) or {}
+        for entity in entities.values():
+            if not isinstance(entity, dict):
+                continue
+            if entity.get("_dataset") != "tags" and entity.get("type") != "tag":
+                continue
+            candidates = {
+                self._normalize_tag_lookup_value(entity.get("id")),
+                self._normalize_tag_lookup_value(entity.get("name")),
+                self._normalize_tag_lookup_value(entity.get("pretty_name")),
+                self._normalize_tag_lookup_value(entity.get("common_name")),
+            }
+            candidates.update(
+                self._normalize_tag_lookup_value(value)
+                for value in (entity.get("tags") or [])
+            )
+            expanded = set(candidates)
+            expanded.update(value[4:] for value in candidates if value.startswith("tag_"))
+            if tag_norm in expanded:
+                return entity
+        return None
+
+    def _insert_tag_suggestion_into_card(self, card, tag_value):
+        tag_value = str(tag_value or "").strip()
+        if not tag_value:
+            return False
+        card_view = card.get("card_view") if isinstance(card, dict) else None
+        if card_view is not None and hasattr(card_view, "_add_tag_value"):
+            return bool(card_view._add_tag_value(card, tag_value))
+        raw_parts = str(card.get("edit_buffer") or "").replace(",", "\n").splitlines()
+        tags = []
+        for part in raw_parts:
+            text = str(part or "").strip()
+            if text and text.lower() not in {tag.lower() for tag in tags}:
+                tags.append(text)
+        if tag_value.lower() not in {tag.lower() for tag in tags}:
+            tags.append(tag_value)
+        card["edit_buffer"] = "\n".join(tags)
+        card["edit_cursor"] = len(card["edit_buffer"])
+        return True
+
+    def _computed_tag_chip_hit_at(self, card, mouse_pos):
+        card_view = card.get("card_view") if isinstance(card, dict) else None
+        rect = card.get("tag_bar_rect") if isinstance(card, dict) else None
+        font = card.get("layout_font") or self.font_for_layout
+        if card_view is None or rect is None or font is None:
+            return None
+        tags = card_view._tag_values() if hasattr(card_view, "_tag_values") else []
+        chip_x = rect.x + 52
+        chip_y = rect.y + 6
+        chip_right = rect.right - 8
+        for tag in tags:
+            label = card_view._ellipsize_text(tag, font, 120) if hasattr(card_view, "_ellipsize_text") else str(tag)
+            chip_w = min(134, max(42, font.size(label)[0] + 14))
+            if chip_x + chip_w > chip_right:
+                break
+            chip_rect = pygame.Rect(chip_x, chip_y, chip_w, 22)
+            if chip_rect.collidepoint(mouse_pos):
+                return {"tag": tag, "rect": chip_rect}
+            chip_x = chip_rect.right + 6
+        return None
+
+    def _computed_tag_remove_hit_at(self, card, mouse_pos):
+        card_view = card.get("card_view") if isinstance(card, dict) else None
+        rect = card.get("tag_bar_rect") if isinstance(card, dict) else None
+        font = card.get("layout_font") or self.font_for_layout
+        if card_view is None or rect is None or font is None:
+            return None
+        tags = card_view._tag_values() if hasattr(card_view, "_tag_values") else []
+        chip_x = rect.x + 52
+        chip_y = rect.y + 6
+        chip_right = rect.right - 8
+        for tag in tags:
+            label = card_view._ellipsize_text(tag, font, 104) if hasattr(card_view, "_ellipsize_text") else str(tag)
+            chip_w = min(132, max(48, font.size(label)[0] + 30))
+            if chip_x + chip_w > chip_right:
+                break
+            chip_rect = pygame.Rect(chip_x, chip_y, chip_w, 22)
+            remove_rect = pygame.Rect(chip_rect.right - 20, chip_rect.y + 3, 16, 16)
+            if remove_rect.collidepoint(mouse_pos):
+                return {"tag": tag, "rect": remove_rect}
+            chip_x = chip_rect.right + 6
+        return None
+
+    def _open_pending_production_site_prompt(self, card):
+        action = card.pop("pending_production_action", None)
+        if not isinstance(action, dict) or action.get("id") != "create_production_site":
+            return False
+        site_name = str(action.get("name") or "").strip()
+        if not site_name:
+            return False
+        template = self._template_by_dataset("locations")
+        if template is None:
+            return False
+        return self._open_entry_description_prompt(
+            template,
+            site_name,
+            context={
+                "production_create_site": True,
+                "producer_card_entity_id": card.get("entity_id"),
+                "production_line_index": action.get("line_index"),
+            },
+        )
+
     def _layout_all_cards(self):
         if self.layout is None:
             return
@@ -1194,6 +1307,7 @@ class KnowledgeCanvasController:
 
             if card_view is not None and card_view.handle_production_click(card, mouse_pos):
                 card_obj = self._bring_card_to_front(index)
+                pending_production_action_opened = self._open_pending_production_site_prompt(card_obj)
                 if card_obj.get("last_edit_action") == "commit":
                     removed_ids = list(card_obj.pop("production_removed_entity_ids", []) or [])
                     for production_id in removed_ids:
@@ -1211,6 +1325,8 @@ class KnowledgeCanvasController:
                     self._save_card_draft(card_obj)
                 card_obj["last_edit_action"] = None
                 self._relayout_cards()
+                if pending_production_action_opened:
+                    return "__ui_consumed__"
                 return "__ui_consumed__"
 
             phylogeny_click_active = (
@@ -1295,6 +1411,70 @@ class KnowledgeCanvasController:
                             self._ensure_card(target)
                             self._relayout_cards()
                         return "__ui_consumed__"
+
+            if card_view is not None:
+                remove_hitboxes = list(card.get("tag_remove_hitboxes", []))
+                computed_remove_hit = self._computed_tag_remove_hit_at(card, mouse_pos)
+                if computed_remove_hit is not None and not any(
+                    info.get("rect") is not None and info.get("rect").collidepoint(mouse_pos)
+                    for info in remove_hitboxes
+                ):
+                    remove_hitboxes.append(computed_remove_hit)
+                for remove_info in remove_hitboxes:
+                    remove_rect = remove_info.get("rect")
+                    if (
+                        remove_rect is not None
+                        and remove_rect.collidepoint(mouse_pos)
+                        and card.get("is_edit_mode", False)
+                        and card.get("active_edit_field") == "tags"
+                    ):
+                        card_obj = self._bring_card_to_front(index)
+                        if hasattr(card_obj.get("card_view"), "remove_tag_value"):
+                            card_obj["card_view"].remove_tag_value(card_obj, remove_info.get("tag"))
+                            if card_obj.get("last_edit_action") == "commit":
+                                self._persist_card_entity(card_obj)
+                                card_obj["last_edit_action"] = None
+                        self._relayout_cards()
+                        return "__ui_consumed__"
+
+                for suggestion_info in card.get("tag_suggestion_hitboxes", []):
+                    suggestion_rect = suggestion_info.get("rect")
+                    if (
+                        suggestion_rect is not None
+                        and suggestion_rect.collidepoint(mouse_pos)
+                        and card.get("is_edit_mode", False)
+                        and card.get("active_edit_field") == "tags"
+                    ):
+                        card_obj = self._bring_card_to_front(index)
+                        if self._insert_tag_suggestion_into_card(card_obj, suggestion_info.get("tag")):
+                            if card_obj.get("last_edit_action") == "commit":
+                                self._persist_card_entity(card_obj)
+                                card_obj["last_edit_action"] = None
+                            self._relayout_cards()
+                        return "__ui_consumed__"
+
+                tag_hitboxes = list(card.get("tag_chip_hitboxes", []))
+                computed_tag_hit = self._computed_tag_chip_hit_at(card, mouse_pos)
+                if computed_tag_hit is not None and not any(
+                    info.get("rect") is not None and info.get("rect").collidepoint(mouse_pos)
+                    for info in tag_hitboxes
+                ):
+                    tag_hitboxes.append(computed_tag_hit)
+                for tag_info in tag_hitboxes:
+                    tag_rect = tag_info.get("rect")
+                    if tag_rect is None or not tag_rect.collidepoint(mouse_pos):
+                        continue
+                    card_obj = self._bring_card_to_front(index)
+                    if card_obj.get("is_edit_mode", False):
+                        card_obj["card_view"].begin_edit_field(card_obj, "tags")
+                        self._close_relation_picker(card_obj)
+                        self._relayout_cards()
+                        return "__ui_consumed__"
+                    tag_entity = self._find_tag_entity_for_value(tag_info.get("tag"))
+                    if tag_entity is not None:
+                        self._ensure_card(tag_entity)
+                    self._relayout_cards()
+                    return "__ui_consumed__"
 
             editable_result = self._handle_editable_field_click(card, index, mouse_pos)
             if editable_result is not None:

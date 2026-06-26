@@ -2288,6 +2288,26 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             },
             label=f"{entry_name} | {template_label}",
         )
+
+    def _open_pending_production_site_prompt(self, card):
+        action = card.pop("pending_production_action", None)
+        if not isinstance(action, dict) or action.get("id") != "create_production_site":
+            return False
+        site_name = str(action.get("name") or "").strip()
+        if not site_name:
+            return False
+        template = self._template_by_dataset("locations")
+        if template is None:
+            return False
+        return self._open_entry_description_prompt(
+            template,
+            site_name,
+            context={
+                "production_create_site": True,
+                "producer_card_entity_id": card.get("entity_id"),
+                "production_line_index": action.get("line_index"),
+            },
+        )
     def _open_idea_name_prompt(self, parent_card):
         if parent_card is None:
             return False
@@ -2607,6 +2627,31 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                     context.get("missing_ref"),
                     created_entity_id,
                 )
+        elif context.get("production_create_site"):
+            producer_card = self._find_card_by_entity_id(context.get("producer_card_entity_id"))
+            producer_id = str((producer_card or {}).get("entity_id") or "").strip()
+            if producer_id:
+                entity["location_class"] = "site"
+                entity["site_class"] = "production_site"
+                entity["operated_by"] = [producer_id]
+                entity["type"] = "location"
+                entity["_dataset"] = "locations"
+                created_card = self._find_card_by_entity_id(created_entity_id)
+                if created_card is not None:
+                    created_card["subtitle"] = self._card_subtitle_for_entity(entity)
+                    self._save_card_draft(created_card)
+                self._persist_entity_to_repository(entity)
+            if producer_card is not None and created_entity_id:
+                line_index = context.get("production_line_index")
+                card_view = producer_card.get("card_view")
+                if card_view is not None and hasattr(card_view, "_update_production_line"):
+                    card_view._update_production_line(producer_card, line_index, location_id=created_entity_id)
+                    related_update_ids = list(producer_card.pop("production_related_entity_update_ids", []) or [])
+                    for related_entity_id in related_update_ids:
+                        related_entity = self.world_model.get_entity(related_entity_id) if self.world_model is not None else None
+                        if isinstance(related_entity, dict):
+                            self._persist_entity_to_repository(related_entity)
+                    producer_card["last_edit_action"] = None
         else:
             self._link_entry_name_prompt_result(created_entity_id, context)
 
@@ -4794,6 +4839,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
             if card_view.handle_keydown(card, event):
                 self._bring_card_to_front(index)
+                pending_production_action_opened = self._open_pending_production_site_prompt(card)
                 if not card_view.is_relation_edit_field(card.get("active_edit_field")):
                     self._close_relation_picker(card)
                 action = card.get("last_edit_action")
@@ -4807,6 +4853,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                     self._save_card_draft(card)
                 card["last_edit_action"] = None
                 self._relayout_cards()
+                if pending_production_action_opened:
+                    return "__ui_consumed__"
                 return "__ui_consumed__"
 
             return "__ui_consumed__"
@@ -4874,6 +4922,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
                 if card_view.handle_keydown(card, event):
                     self._bring_card_to_front(index)
+                    pending_production_action_opened = self._open_pending_production_site_prompt(card)
                     if not card_view.is_relation_edit_field(card.get("active_edit_field")):
                         self._close_relation_picker(card)
                     action = card.get("last_edit_action")
@@ -4887,6 +4936,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                         self._save_card_draft(card)
                     card["last_edit_action"] = None
                     self._relayout_cards()
+                    if pending_production_action_opened:
+                        return "__ui_consumed__"
                     return "__ui_consumed__"
 
         return None

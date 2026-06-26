@@ -3,6 +3,14 @@ import pygame
 from world.year_utils import parse_year
 
 
+def _query_matches_text(query, text):
+    terms = [term for term in str(query or "").strip().casefold().split() if term]
+    if not terms:
+        return True
+    haystack = str(text or "").casefold()
+    return all(term in haystack for term in terms)
+
+
 class CardLocationMixin:
     def _is_location_mode(self):
         return self.active_tab == "location"
@@ -357,7 +365,7 @@ class CardLocationMixin:
                     str(location_class),
                 ]
             ).casefold()
-            if query and query not in haystack:
+            if query and not _query_matches_text(query, haystack):
                 continue
             label_folded = str(label).casefold()
             id_folded = str(entity_id).casefold()

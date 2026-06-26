@@ -52,10 +52,12 @@ class MapSimulation:
 
     LOCATION_LAYER_KIND = "locations"
     REGION_LAYER_KIND = "regions"
+    GROUND_MATERIALS_LAYER_KIND = "ground_materials"
 
     LAYER_LABELS = {
         "locations": "Locations",
         "regions": "Regions",
+        "ground_materials": "Ground Materials Layer",
     }
 
     SPATIAL_LAYER_COLORS = {
@@ -69,9 +71,11 @@ class MapSimulation:
         "city_margins": (160, 142, 78),
         "sites": (86, 118, 158),
         "rooms": (112, 146, 172),
+        "ground_materials": (156, 118, 74),
+        "iron_ore": (178, 96, 70),
     }
 
-    AUTHORABLE_HISTORY_LAYER_KINDS = [REGION_LAYER_KIND]
+    AUTHORABLE_HISTORY_LAYER_KINDS = [LOCATION_LAYER_KIND, GROUND_MATERIALS_LAYER_KIND]
 
     def __init__(self, simulation_context):
         from engine.clock import Clock
@@ -127,6 +131,7 @@ class MapSimulation:
         self.is_creating_map_square = False
         self.map_square_anchor = None
         self.map_square_hover_pos = None
+        self.map_square_target_entity_id = None
         self.last_saved_location_id = None
         self.is_editing_map_square = False
         self.editing_map_square_entity_id = None
@@ -466,6 +471,23 @@ class MapSimulation:
                 "canvas_height_px": canvas_h,
             }
 
+        radius_m = entity.get("radius_m")
+        if radius_m not in (None, ""):
+            try:
+                width_world, height_world = self._planet_world_size_from_radius(radius_m)
+                canvas_w, canvas_h = self._planet_canvas_size_from_radius(radius_m)
+                center_x, center_y = self._map_point_to_world(center_x, center_y)
+                return {
+                    "x": center_x,
+                    "y": center_y,
+                    "width_world": width_world,
+                    "height_world": height_world,
+                    "canvas_width_px": canvas_w,
+                    "canvas_height_px": canvas_h,
+                }
+            except (TypeError, ValueError):
+                pass
+
         center_x, center_y = self._map_point_to_world(center_x, center_y)
         return {
             "x": center_x,
@@ -683,7 +705,7 @@ class MapSimulation:
     def get_available_layer_kinds(self):
         if self._root_is_building():
             return [self.LOCATION_LAYER_KIND]
-        return [self.LOCATION_LAYER_KIND, self.REGION_LAYER_KIND]
+        return [self.LOCATION_LAYER_KIND, self.GROUND_MATERIALS_LAYER_KIND]
 
     def set_active_layer_kind(self, layer_kind):
         available = self.get_available_layer_kinds()
@@ -1016,12 +1038,14 @@ class MapSimulation:
     def can_create_spatial_feature_draft(self):
         if self._root_is_building():
             return True
-        return self.active_layer_kind == self.REGION_LAYER_KIND
+        return self.active_layer_kind in self.AUTHORABLE_HISTORY_LAYER_KINDS
 
     def get_spatial_feature_draft_button_label(self):
         if self._root_is_building():
             return "New Room"
-        return "New Region"
+        if self.active_layer_kind == self.LOCATION_LAYER_KIND:
+            return "New Location"
+        return f"New {self._format_layer_label(self.active_layer_kind)}"
 
     def can_create_map_square_draft(self):
         if self.active_layer_kind != self.LOCATION_LAYER_KIND:
@@ -1031,6 +1055,45 @@ class MapSimulation:
             return True
 
         return self._can_edit_location_bounds(self.context.root_entity_id)
+
+    def can_create_location_draft(self):
+        return self.active_layer_kind == self.LOCATION_LAYER_KIND
+
+    def _root_planet_has_map_dimensions(self):
+        root_entity = self.get_root_entity()
+        if not isinstance(root_entity, dict):
+            return True
+
+        if root_entity.get("location_class") not in {"planet", "moon"}:
+            return True
+
+        bounds = root_entity.get("bounds") or {}
+        if bounds.get("type") in {"bbox", "polygon", "radius"}:
+            return True
+
+        if root_entity.get("radius_m") not in (None, ""):
+            try:
+                float(root_entity.get("radius_m"))
+                return True
+            except (TypeError, ValueError):
+                pass
+
+        canvas_w = root_entity.get("map_canvas_width_px")
+        canvas_h = root_entity.get("map_canvas_height_px")
+        if canvas_w not in (None, "") and canvas_h not in (None, ""):
+            return True
+
+        return False
+
+    def _root_requires_dimension_rectangle(self):
+        root_entity = self.get_root_entity()
+        if not isinstance(root_entity, dict):
+            return False
+
+        return (
+            root_entity.get("location_class") in {"planet", "moon"}
+            and not self._root_planet_has_map_dimensions()
+        )
 
     def is_square_editor_active(self):
         return self.is_creating_map_square or self.is_editing_map_square
@@ -1063,6 +1126,7 @@ class MapSimulation:
         self.is_creating_map_square = False
         self.map_square_anchor = None
         self.map_square_hover_pos = None
+        self.map_square_target_entity_id = None
         self.is_editing_map_square = False
         self.editing_map_square_entity_id = None
         self.editing_map_square_bounds = None
@@ -1097,11 +1161,12 @@ class MapSimulation:
 
     def get_map_editor_status_label(self):
         if self.is_creating_map_square:
+            noun = "Planet dimensions" if self.map_square_target_entity_id else "Draft rectangle"
             if self.map_square_anchor is None:
-                return "Draft rectangle: choose first corner"
+                return f"{noun}: choose first corner"
             if self.can_finish_map_square_draft():
-                return "Draft rectangle: ready"
-            return "Draft rectangle: choose opposite corner"
+                return f"{noun}: ready"
+            return f"{noun}: choose opposite corner"
 
         if self.is_editing_map_square:
             if self.square_drag_handle:
@@ -1225,6 +1290,29 @@ class MapSimulation:
         )
         return True
 
+    def begin_location_draft(self):
+        if not self.can_create_location_draft():
+            return False
+
+        if not self._root_requires_dimension_rectangle():
+            return self.begin_spatial_feature_draft()
+
+        self._set_all_editor_modes_inactive()
+        self.is_creating_map_square = True
+        self.map_square_target_entity_id = self.context.root_entity_id
+        self._draft_last_click_time = None
+        self._draft_last_click_screen_pos = None
+        self.selected_entity_id = None
+        self.hover_entity_id = None
+        self.selected_spatial_feature_id = None
+        self.hover_spatial_feature_id = None
+        self.hover_screen_pos = None
+
+        logger.info(
+            f"[MapSimulation] Started planet dimension rectangle draft root={self.context.root_entity_id}"
+        )
+        return True
+
     def begin_location_parent_polygon_placement(self, location_id, return_to_repository=True):
         location = self.get_location(location_id)
         if not location:
@@ -1305,6 +1393,7 @@ class MapSimulation:
         self.is_creating_map_square = False
         self.map_square_anchor = None
         self.map_square_hover_pos = None
+        self.map_square_target_entity_id = None
         self._draft_last_click_time = None
         self._draft_last_click_screen_pos = None
 
@@ -1779,6 +1868,7 @@ class MapSimulation:
             return False
 
         region = self._build_draft_spatial_feature_record()
+        is_location_layer = region.get("layer_kind") == self.LOCATION_LAYER_KIND
 
         try:
             self._append_location_record(region)
@@ -1803,9 +1893,9 @@ class MapSimulation:
         self._draft_last_click_time = None
         self._draft_last_click_screen_pos = None
         self.last_saved_spatial_feature_id = region["id"]
-        self.selected_entity_id = None
+        self.selected_entity_id = region["id"] if is_location_layer else None
         self.hover_entity_id = None
-        self.selected_spatial_feature_id = region["id"]
+        self.selected_spatial_feature_id = None if is_location_layer else region["id"]
         self.hover_spatial_feature_id = None
         self.hover_screen_pos = None
 
@@ -1815,13 +1905,47 @@ class MapSimulation:
         self._invalidate_layer_cache()
 
         logger.info(
-            f"[MapSimulation] Saved region draft {region['id']}"
+            f"[MapSimulation] Saved location draft {region['id']}"
         )
         return True
 
     def finish_map_square_draft(self):
         if not self.can_finish_map_square_draft():
             return False
+
+        target_entity_id = self.map_square_target_entity_id
+        if target_entity_id:
+            bounds = self._current_map_square_bounds()
+            if bounds is None:
+                return False
+
+            if not self._update_location_bounds(target_entity_id, bounds):
+                logger.error(
+                    f"[MapSimulation] Failed to save planet dimensions: {target_entity_id}"
+                )
+                return False
+
+            self.is_creating_map_square = False
+            self.map_square_anchor = None
+            self.map_square_hover_pos = None
+            self.map_square_target_entity_id = None
+            self._draft_last_click_time = None
+            self._draft_last_click_screen_pos = None
+            self.last_saved_location_id = target_entity_id
+            self.selected_entity_id = target_entity_id
+            self.hover_entity_id = None
+            self.selected_spatial_feature_id = None
+            self.hover_spatial_feature_id = None
+            self.hover_screen_pos = None
+
+            if hasattr(self.world_model, "refresh"):
+                self.world_model.refresh()
+
+            self.bounds = self._resolve_root_bounds()
+            self._invalidate_layer_cache()
+
+            logger.info(f"[MapSimulation] Saved planet dimensions {target_entity_id}")
+            return True
 
         location = self._build_draft_map_square_location_record()
         if location.get("bounds") is None:
@@ -1838,6 +1962,7 @@ class MapSimulation:
         self.is_creating_map_square = False
         self.map_square_anchor = None
         self.map_square_hover_pos = None
+        self.map_square_target_entity_id = None
         self._draft_last_click_time = None
         self._draft_last_click_screen_pos = None
         self.last_saved_location_id = location["id"]
@@ -1852,7 +1977,7 @@ class MapSimulation:
 
         self._invalidate_layer_cache()
 
-        logger.info(f"[MapSimulation] Saved map rectangle draft {location['id']}")
+        logger.info(f"[MapSimulation] Saved location rectangle draft {location['id']}")
         return True
 
     def get_spatial_feature_draft_preview(self):
@@ -2153,10 +2278,19 @@ class MapSimulation:
                 "entry_status": "draft",
             }
 
-        layer_label = self.get_active_layer_label()
         root_name = self.get_root_name()
-        name = f"Draft {layer_label} Region {index:03d}"
-        notes = f"Draft region polygon created under {root_name}."
+        if self.active_layer_kind == self.LOCATION_LAYER_KIND:
+            feature_id, index = self._allocate_location_draft_id()
+            name = f"Draft Location {index:03d}"
+            notes = f"Draft location polygon created under {root_name}."
+            region_class = "region"
+            location_role = "map_location"
+        else:
+            layer_label = self.get_active_layer_label()
+            name = f"Draft {layer_label} Region {index:03d}"
+            notes = f"Draft region polygon created under {root_name}."
+            region_class = self.active_layer_kind
+            location_role = "map_region"
 
         return {
             "id": feature_id,
@@ -2164,8 +2298,8 @@ class MapSimulation:
             "name": name,
             "type": "location",
             "location_class": "region",
-            "location_role": "map_region",
-            "region_class": self.active_layer_kind,
+            "location_role": location_role,
+            "region_class": region_class,
             "wiki_entry": notes,
             "layer_kind": self.active_layer_kind,
             "parent_location": self.context.root_entity_id,
@@ -2259,8 +2393,8 @@ class MapSimulation:
     def _build_draft_map_square_location_record(self):
         location_id, index = self._allocate_location_draft_id()
         root_name = self.get_root_name()
-        name = f"Draft Map Area {index:03d}"
-        notes = f"Draft rectangle map area created under {root_name}."
+        name = f"Draft Location {index:03d}"
+        notes = f"Draft location rectangle created under {root_name}."
 
         return {
             "id": location_id,
@@ -3596,9 +3730,12 @@ class MapSimulation:
             self._map_point_to_world(x, y)
             for x, y in map_points
         ]
+        feature_layer_kind = feature.get("layer_kind") or self.REGION_LAYER_KIND
         layer_kind = self.REGION_LAYER_KIND
         region_class = feature.get("region_class") or feature.get("layer_kind")
+        ground_material = str(feature.get("ground_material") or "").strip().lower()
         centroid_x, centroid_y = self._polygon_centroid(points)
+        color_key = ground_material if feature_layer_kind == self.GROUND_MATERIALS_LAYER_KIND and ground_material else region_class or layer_kind
 
         return {
             "shape": "polygon",
@@ -3609,9 +3746,12 @@ class MapSimulation:
             "entity_id": feature.get("owner_entity") or feature.get("id"),
             "spatial_feature_id": feature.get("id"),
             "layer_kind": layer_kind,
+            "feature_layer_kind": feature_layer_kind,
             "region_class": region_class,
             "parent_entity": feature.get("parent_location") or feature.get("parent_entity"),
-            "color": self._color_for_spatial_layer(region_class or layer_kind),
+            "ground_material": ground_material,
+            "ground_material_intensity": feature.get("ground_material_intensity"),
+            "color": self._color_for_spatial_layer(color_key),
             "area_world": self._polygon_area(map_points),
             "resolution_m_per_pixel": feature.get("resolution_m_per_pixel"),
             "coverage_mode": feature.get("coverage_mode"),
@@ -3825,6 +3965,9 @@ class MapSimulation:
         layers = self._build_ghost_context_layers()
 
         for feature in self._get_scoped_spatial_features():
+            feature_layer_kind = feature.get("layer_kind") or self.REGION_LAYER_KIND
+            if layer_kind != self.REGION_LAYER_KIND and feature_layer_kind != layer_kind:
+                continue
             layer = self._build_spatial_feature_layer(feature)
             if layer is not None:
                 layers.append(layer)

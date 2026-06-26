@@ -452,6 +452,7 @@ def find_clade_matches(world_model, query, limit=6):
     query = str(query or "").strip().lower()
     if not query:
         return []
+    query_terms = [term for term in query.split() if term]
     matches = []
     for entity_id, entity in get_clade_entities(world_model).items():
         haystack = " ".join(
@@ -464,7 +465,7 @@ def find_clade_matches(world_model, query, limit=6):
                 entity.get("binomial_name"),
             )
         ).lower()
-        if query in haystack:
+        if all(term in haystack for term in query_terms):
             matches.append(entity)
     matches.sort(key=lambda entity: clade_label(entity, entity.get("id")).lower())
     return matches[:limit]
@@ -474,6 +475,7 @@ def find_phylogeny_child_matches(world_model, query, limit=8):
     query = str(query or "").strip().lower()
     if not query:
         return []
+    query_terms = [term for term in query.split() if term]
     matches = []
     for entity_id, entity in get_phylogeny_entities(world_model).items():
         haystack = " ".join(
@@ -486,7 +488,7 @@ def find_phylogeny_child_matches(world_model, query, limit=8):
                 entity.get("binomial_name"),
             )
         ).lower()
-        if query in haystack:
+        if all(term in haystack for term in query_terms):
             matches.append(entity)
     matches.sort(
         key=lambda entity: (

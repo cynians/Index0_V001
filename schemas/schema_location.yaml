@@ -12,6 +12,10 @@ fields:
     type: string
     optional: true
 
+  site_class:
+    type: string
+    optional: true
+
   building_class:
     type: string
     optional: true
@@ -138,6 +142,46 @@ fields:
     target: faction
     optional: true
 
+  operated_by:
+    type: entity_list
+    target:
+      - producers
+      - institutions
+      - factions
+      - pops
+      - people
+    section: Site / Operations
+    optional: true
+
+  site_conditions:
+    type: string_list
+    section: Site / Requirements
+    optional: true
+
+  active_production_technologies:
+    type: entity_list
+    target: technology
+    section: Site / Production
+    optional: true
+
+  assigned_vehicles:
+    type: entity_list
+    target: vehicles
+    section: Site / Production
+    optional: true
+
+  assigned_items:
+    type: entity_list
+    target: item
+    section: Site / Production
+    optional: true
+
+  assigned_components:
+    type: entity_list
+    target: components
+    section: Site / Production
+    optional: true
+
   associated_cultures:
     type: entity_list
     target: culture
@@ -164,6 +208,16 @@ fields:
 
   layer_kind:
     type: string
+    section: Simulation / Map Sim
+    optional: true
+
+  ground_material:
+    type: string
+    section: Simulation / Map Sim
+    optional: true
+
+  ground_material_intensity:
+    type: number
     section: Simulation / Map Sim
     optional: true
 

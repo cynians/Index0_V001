@@ -26,6 +26,10 @@
   <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#TransitiveProperty"/>
 </owl:ObjectProperty>
 
+<owl:ObjectProperty rdf:about="#relation_active_production_technologies"/>
+
+<owl:ObjectProperty rdf:about="#relation_assigned_vehicles"/>
+
 <owl:ObjectProperty rdf:about="#relation_associated_locations"/>
 
 <owl:ObjectProperty rdf:about="#relation_component_equivalent"/>
@@ -58,6 +62,8 @@
 
 <owl:ObjectProperty rdf:about="#relation_output_items"/>
 
+<owl:ObjectProperty rdf:about="#relation_output_materials"/>
+
 <owl:ObjectProperty rdf:about="#relation_output_vehicles"/>
 
 <owl:ObjectProperty rdf:about="#relation_parent_body"/>
@@ -79,6 +85,8 @@
 <owl:ObjectProperty rdf:about="#relation_represented_item"/>
 
 <owl:ObjectProperty rdf:about="#relation_required_components"/>
+
+<owl:ObjectProperty rdf:about="#relation_required_technologies"/>
 
 <owl:ObjectProperty rdf:about="#relation_secondary_materials"/>
 
@@ -236,6 +244,10 @@
 
 <owl:DatatypeProperty rdf:about="#field_geometry"/>
 
+<owl:DatatypeProperty rdf:about="#field_ground_material"/>
+
+<owl:DatatypeProperty rdf:about="#field_ground_material_intensity"/>
+
 <owl:DatatypeProperty rdf:about="#field_habitable_zone_inner_au"/>
 
 <owl:DatatypeProperty rdf:about="#field_habitable_zone_outer_au"/>
@@ -259,8 +271,6 @@
 <owl:DatatypeProperty rdf:about="#field_inclination_deg"/>
 
 <owl:DatatypeProperty rdf:about="#field_influence_domains"/>
-
-<owl:DatatypeProperty rdf:about="#field_input_components"/>
 
 <owl:DatatypeProperty rdf:about="#field_install_contexts"/>
 
@@ -362,8 +372,6 @@
 
 <owl:DatatypeProperty rdf:about="#field_origin_type"/>
 
-<owl:DatatypeProperty rdf:about="#field_output_materials"/>
-
 <owl:DatatypeProperty rdf:about="#field_owner_entity"/>
 
 <owl:DatatypeProperty rdf:about="#field_parent_clade"/>
@@ -391,6 +399,8 @@
 <owl:DatatypeProperty rdf:about="#field_power_kw"/>
 
 <owl:DatatypeProperty rdf:about="#field_pretty_name"/>
+
+<owl:DatatypeProperty rdf:about="#field_primary_color"/>
 
 <owl:DatatypeProperty rdf:about="#field_producer_class"/>
 
@@ -420,6 +430,10 @@
 
 <owl:DatatypeProperty rdf:about="#field_required_site_classes"/>
 
+<owl:DatatypeProperty rdf:about="#field_required_site_conditions"/>
+
+<owl:DatatypeProperty rdf:about="#field_required_vehicle_tags"/>
+
 <owl:DatatypeProperty rdf:about="#field_resolution_m_per_pixel"/>
 
 <owl:DatatypeProperty rdf:about="#field_response_patterns"/>
@@ -429,6 +443,8 @@
 <owl:DatatypeProperty rdf:about="#field_rotation_period_hours"/>
 
 <owl:DatatypeProperty rdf:about="#field_satisfies_categories"/>
+
+<owl:DatatypeProperty rdf:about="#field_secondary_color"/>
 
 <owl:DatatypeProperty rdf:about="#field_semi_major_axis_m"/>
 
@@ -441,6 +457,10 @@
 <owl:DatatypeProperty rdf:about="#field_simulation_notes"/>
 
 <owl:DatatypeProperty rdf:about="#field_simulation_tier_default"/>
+
+<owl:DatatypeProperty rdf:about="#field_site_class"/>
+
+<owl:DatatypeProperty rdf:about="#field_site_conditions"/>
 
 <owl:DatatypeProperty rdf:about="#field_social_structure"/>
 
@@ -478,11 +498,15 @@
 
 <owl:DatatypeProperty rdf:about="#field_system_role"/>
 
+<owl:DatatypeProperty rdf:about="#field_tag_class"/>
+
 <owl:DatatypeProperty rdf:about="#field_tags"/>
 
 <owl:DatatypeProperty rdf:about="#field_task_chain_description"/>
 
 <owl:DatatypeProperty rdf:about="#field_technology_class"/>
+
+<owl:DatatypeProperty rdf:about="#field_technology_subclass"/>
 
 <owl:DatatypeProperty rdf:about="#field_tectonic_model"/>
 
@@ -619,6 +643,10 @@
 </owl:Class>
 
 <owl:Class rdf:about="#species_entry">
+  <rdfs:subClassOf rdf:resource="#Entry"/>
+</owl:Class>
+
+<owl:Class rdf:about="#tag_entry">
   <rdfs:subClassOf rdf:resource="#Entry"/>
 </owl:Class>
 
@@ -10579,6 +10607,8 @@ City-layer aggregate entry. Geography remains on the linked location entry. Urba
   <entryId rdf:datatype="http://www.w3.org/2001/XMLSchema#string">cladis_trechnotheria</entryId>
   <datasetName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">cladistics</datasetName>
   <entityType rdf:datatype="http://www.w3.org/2001/XMLSchema#string">cladistics</entityType>
+  <field_card_color rdf:datatype="http://www.w3.org/2001/XMLSchema#string">#39281b</field_card_color>
+  <field_card_color_source rdf:datatype="http://www.w3.org/2001/XMLSchema#string">derived_offspring</field_card_color_source>
   <field_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Trechnotheria</field_name>
   <field_pretty_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Trechnotheria</field_pretty_name>
   <field_type rdf:datatype="http://www.w3.org/2001/XMLSchema#string">cladistics</field_type>
@@ -15254,7 +15284,7 @@ Expands into iron platforms out to sea</field_wiki_entry>
   <field_entry_status rdf:datatype="http://www.w3.org/2001/XMLSchema#string">draft</field_entry_status>
   <jsonFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">geometry</jsonFieldName>
   <field_geometry rdf:datatype="http://www.w3.org/2001/XMLSchema#string">{"coordinate_space": "map_world", "points": [[52.154, 18.346], [21.351, -11.16], [-46.769, -18.269], [-63.333, 28.5], [22.41, 51.397]], "type": "polygon"}</field_geometry>
-  <field_layer_kind rdf:datatype="http://www.w3.org/2001/XMLSchema#string">regions</field_layer_kind>
+  <field_layer_kind rdf:datatype="http://www.w3.org/2001/XMLSchema#string">locations</field_layer_kind>
   <field_location_class rdf:datatype="http://www.w3.org/2001/XMLSchema#string">region</field_location_class>
   <field_location_role rdf:datatype="http://www.w3.org/2001/XMLSchema#string">map_region</field_location_role>
   <field_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Brothers High Plateau</field_name>
@@ -15282,7 +15312,7 @@ Expands into iron platforms out to sea</field_wiki_entry>
   <field_entry_status rdf:datatype="http://www.w3.org/2001/XMLSchema#string">draft</field_entry_status>
   <jsonFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">geometry</jsonFieldName>
   <field_geometry rdf:datatype="http://www.w3.org/2001/XMLSchema#string">{"coordinate_space": "map_world", "points": ["[-46.769, -18.269]", "[21.517, -11.24]", "[38.486, -33.505]", "[40.996, -73.917]", "[22.983, -75.367]", "[18.635, -61.494]", "[7.661, -45.758]", "[-14.494, -48.864]", "[-22.154, -52.591]", "[-27.124, -56.318]", "[-30.229, -56.318]", "[-39.34, -53.833]", "[-50.52, -50.52]", "[-54.247, -46.379]", "[-60.045, -39.754]", "[-56.732, -28.366]"], "type": "polygon"}</field_geometry>
-  <field_layer_kind rdf:datatype="http://www.w3.org/2001/XMLSchema#string">regions</field_layer_kind>
+  <field_layer_kind rdf:datatype="http://www.w3.org/2001/XMLSchema#string">locations</field_layer_kind>
   <field_location_class rdf:datatype="http://www.w3.org/2001/XMLSchema#string">region</field_location_class>
   <field_location_role rdf:datatype="http://www.w3.org/2001/XMLSchema#string">map_region</field_location_role>
   <field_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Algi Sea</field_name>
@@ -15293,6 +15323,31 @@ Expands into iron platforms out to sea</field_wiki_entry>
   <field_wiki_entry rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Draft region polygon created under Equidorva.</field_wiki_entry>
   <listFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">parents</listFieldName>
   <listFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">related</listFieldName>
+</owl:NamedIndividual>
+
+<owl:NamedIndividual rdf:about="https://index0.local/entity/loc_region_planet_mars_001">
+  <rdf:type rdf:resource="#location_entry"/>
+  <relation_parent_entity rdf:resource="https://index0.local/entity/planet_mars"/>
+  <relation_parent_location rdf:resource="https://index0.local/entity/planet_mars"/>
+  <hasParent rdf:resource="https://index0.local/entity/planet_mars"/>
+  <entryId rdf:datatype="http://www.w3.org/2001/XMLSchema#string">loc_region_planet_mars_001</entryId>
+  <datasetName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">locations</datasetName>
+  <entityType rdf:datatype="http://www.w3.org/2001/XMLSchema#string">location</entityType>
+  <jsonFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">bounds</jsonFieldName>
+  <field_bounds rdf:datatype="http://www.w3.org/2001/XMLSchema#string">{"coordinate_space": "map_world", "points": [[510.8007590132827, -88.83491461100569], [330.66329327429895, -251.69892473118279], [83.89964157706092, -138.1876449504533], [17.27345561880666, 24.676365169723802], [402.22475226649794, 175.20219270503898], [495.9949399114484, 17.27345561880666]], "type": "polygon"}</field_bounds>
+  <field_entry_status rdf:datatype="http://www.w3.org/2001/XMLSchema#string">draft</field_entry_status>
+  <jsonFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">geometry</jsonFieldName>
+  <field_geometry rdf:datatype="http://www.w3.org/2001/XMLSchema#string">{"coordinate_space": "map_world", "points": [[510.8007590132827, -88.83491461100569], [330.66329327429895, -251.69892473118279], [83.89964157706092, -138.1876449504533], [17.27345561880666, 24.676365169723802], [402.22475226649794, 175.20219270503898], [495.9949399114484, 17.27345561880666]], "type": "polygon"}</field_geometry>
+  <field_layer_kind rdf:datatype="http://www.w3.org/2001/XMLSchema#string">locations</field_layer_kind>
+  <field_location_class rdf:datatype="http://www.w3.org/2001/XMLSchema#string">region</field_location_class>
+  <field_location_role rdf:datatype="http://www.w3.org/2001/XMLSchema#string">map_region</field_location_role>
+  <field_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Draft Regions Region 001</field_name>
+  <field_pretty_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Draft Regions Region 001</field_pretty_name>
+  <field_region_class rdf:datatype="http://www.w3.org/2001/XMLSchema#string">regions</field_region_class>
+  <field_start_year rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">2400</field_start_year>
+  <field_type rdf:datatype="http://www.w3.org/2001/XMLSchema#string">location</field_type>
+  <field_wiki_entry rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Draft region polygon created under Mars.</field_wiki_entry>
+  <listFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">parents</listFieldName>
 </owl:NamedIndividual>
 
 <owl:NamedIndividual rdf:about="https://index0.local/entity/loc_republic_of_poland">
@@ -15639,6 +15694,65 @@ Expands into iron platforms out to sea</field_wiki_entry>
   <field_type rdf:datatype="http://www.w3.org/2001/XMLSchema#string">location</field_type>
 </owl:NamedIndividual>
 
+<owl:NamedIndividual rdf:about="https://index0.local/entity/loc_test_iron_mine_site">
+  <rdf:type rdf:resource="#location_entry"/>
+  <relation_active_production_technologies rdf:resource="https://index0.local/entity/tech_test_excavation_technology"/>
+  <relation_active_production_technologies rdf:resource="https://index0.local/entity/tech_test_iron_mining_technology"/>
+  <relation_assigned_vehicles rdf:resource="https://index0.local/entity/veh_test_excavator"/>
+  <relation_parent_location rdf:resource="https://index0.local/entity/loc_test_iron_ore_ground_region"/>
+  <entryId rdf:datatype="http://www.w3.org/2001/XMLSchema#string">loc_test_iron_mine_site</entryId>
+  <datasetName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">locations</datasetName>
+  <entityType rdf:datatype="http://www.w3.org/2001/XMLSchema#string">location</entityType>
+  <jsonFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">bounds</jsonFieldName>
+  <field_bounds rdf:datatype="http://www.w3.org/2001/XMLSchema#string">{"coordinate_space": "map_world", "points": [[-38, -2], [-24, -4], [-18, 8], [-35, 12]], "type": "polygon"}</field_bounds>
+  <field_location_class rdf:datatype="http://www.w3.org/2001/XMLSchema#string">site</field_location_class>
+  <field_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Test Iron Mine Site</field_name>
+  <field_pretty_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Test Iron Mine Site</field_pretty_name>
+  <field_site_class rdf:datatype="http://www.w3.org/2001/XMLSchema#string">production_site</field_site_class>
+  <listFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">site_conditions</listFieldName>
+  <field_site_conditions rdf:datatype="http://www.w3.org/2001/XMLSchema#string">iron_ore_rich_ground</field_site_conditions>
+  <field_start_year rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">2000</field_start_year>
+  <field_type rdf:datatype="http://www.w3.org/2001/XMLSchema#string">location</field_type>
+  <listFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">active_production_technologies</listFieldName>
+  <listFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">assigned_vehicles</listFieldName>
+</owl:NamedIndividual>
+
+<owl:NamedIndividual rdf:about="https://index0.local/entity/loc_test_iron_ore_ground_region">
+  <rdf:type rdf:resource="#location_entry"/>
+  <relation_parent_location rdf:resource="https://index0.local/entity/loc_test_production_chain_planet"/>
+  <entryId rdf:datatype="http://www.w3.org/2001/XMLSchema#string">loc_test_iron_ore_ground_region</entryId>
+  <datasetName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">locations</datasetName>
+  <entityType rdf:datatype="http://www.w3.org/2001/XMLSchema#string">location</entityType>
+  <jsonFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">geometry</jsonFieldName>
+  <field_geometry rdf:datatype="http://www.w3.org/2001/XMLSchema#string">{"coordinate_space": "map_world", "points": [[-52, -14], [-18, -22], [16, -8], [6, 24], [-44, 18]], "type": "polygon"}</field_geometry>
+  <field_ground_material rdf:datatype="http://www.w3.org/2001/XMLSchema#string">iron_ore</field_ground_material>
+  <field_ground_material_intensity rdf:datatype="http://www.w3.org/2001/XMLSchema#decimal">0.82</field_ground_material_intensity>
+  <field_layer_kind rdf:datatype="http://www.w3.org/2001/XMLSchema#string">ground_materials</field_layer_kind>
+  <field_location_class rdf:datatype="http://www.w3.org/2001/XMLSchema#string">region</field_location_class>
+  <field_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Test Iron Ore Ground Region</field_name>
+  <field_pretty_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Test Iron Ore Ground Region</field_pretty_name>
+  <field_region_class rdf:datatype="http://www.w3.org/2001/XMLSchema#string">ground_materials</field_region_class>
+  <field_type rdf:datatype="http://www.w3.org/2001/XMLSchema#string">location</field_type>
+</owl:NamedIndividual>
+
+<owl:NamedIndividual rdf:about="https://index0.local/entity/loc_test_production_chain_planet">
+  <rdf:type rdf:resource="#location_entry"/>
+  <entryId rdf:datatype="http://www.w3.org/2001/XMLSchema#string">loc_test_production_chain_planet</entryId>
+  <datasetName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">locations</datasetName>
+  <entityType rdf:datatype="http://www.w3.org/2001/XMLSchema#string">location</entityType>
+  <jsonFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">bounds</jsonFieldName>
+  <field_bounds rdf:datatype="http://www.w3.org/2001/XMLSchema#string">{"max_x": 180, "max_y": 90, "min_x": -180, "min_y": -90, "type": "bbox"}</field_bounds>
+  <field_location_class rdf:datatype="http://www.w3.org/2001/XMLSchema#string">planet</field_location_class>
+  <field_map_canvas_height_px rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">900</field_map_canvas_height_px>
+  <field_map_canvas_width_px rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">1800</field_map_canvas_width_px>
+  <field_map_projection rdf:datatype="http://www.w3.org/2001/XMLSchema#string">equirectangular</field_map_projection>
+  <field_map_status rdf:datatype="http://www.w3.org/2001/XMLSchema#string">test_ground_materials_seeded</field_map_status>
+  <field_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Test Production Chain Planet</field_name>
+  <field_pretty_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Test Production Chain Planet</field_pretty_name>
+  <field_radius_m rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">6371000</field_radius_m>
+  <field_type rdf:datatype="http://www.w3.org/2001/XMLSchema#string">location</field_type>
+</owl:NamedIndividual>
+
 <owl:NamedIndividual rdf:about="https://index0.local/entity/loc_ukraine">
   <rdf:type rdf:resource="#location_entry"/>
   <relation_constituents rdf:resource="https://index0.local/entity/loc_danube_delta"/>
@@ -15809,6 +15923,18 @@ Expands into iron platforms out to sea</field_wiki_entry>
   <field_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Stainless Steel</field_name>
   <field_pretty_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Stainless Steel</field_pretty_name>
   <field_storage_notes rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Usually stored as stock, plates, bars, or prefabricated forms rather than as loose bulk.</field_storage_notes>
+  <field_type rdf:datatype="http://www.w3.org/2001/XMLSchema#string">material</field_type>
+</owl:NamedIndividual>
+
+<owl:NamedIndividual rdf:about="https://index0.local/entity/mat_test_iron_ore">
+  <rdf:type rdf:resource="#material_entry"/>
+  <entryId rdf:datatype="http://www.w3.org/2001/XMLSchema#string">mat_test_iron_ore</entryId>
+  <datasetName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">materials</datasetName>
+  <entityType rdf:datatype="http://www.w3.org/2001/XMLSchema#string">material</entityType>
+  <field_material_class rdf:datatype="http://www.w3.org/2001/XMLSchema#string">ore</field_material_class>
+  <field_material_form rdf:datatype="http://www.w3.org/2001/XMLSchema#string">raw_bulk_material</field_material_form>
+  <field_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Test Iron Ore</field_name>
+  <field_pretty_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Test Iron Ore</field_pretty_name>
   <field_type rdf:datatype="http://www.w3.org/2001/XMLSchema#string">material</field_type>
 </owl:NamedIndividual>
 
@@ -16599,6 +16725,7 @@ Earthlike map frame derived from a 6,371 km radius, rendered as a 2:1 equirectan
   <rdf:type rdf:resource="#location_entry"/>
   <relation_constituents rdf:resource="https://index0.local/entity/body_deimos"/>
   <relation_constituents rdf:resource="https://index0.local/entity/body_phobos"/>
+  <relation_constituents rdf:resource="https://index0.local/entity/loc_region_planet_mars_001"/>
   <relation_controlling_factions rdf:resource="https://index0.local/entity/fac_new_001"/>
   <relation_location_entity rdf:resource="https://index0.local/entity/planet_mars"/>
   <relation_parent_body rdf:resource="https://index0.local/entity/body_sol"/>
@@ -17580,6 +17707,16 @@ Earthlike map frame derived from a 6,371 km radius, rendered as a 2:1 equirectan
   <field_units_per_hour rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">40</field_units_per_hour>
 </owl:NamedIndividual>
 
+<owl:NamedIndividual rdf:about="https://index0.local/entity/prod_test_iron_producer">
+  <rdf:type rdf:resource="#producer_entry"/>
+  <entryId rdf:datatype="http://www.w3.org/2001/XMLSchema#string">prod_test_iron_producer</entryId>
+  <datasetName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">producers</datasetName>
+  <entityType rdf:datatype="http://www.w3.org/2001/XMLSchema#string">producer</entityType>
+  <field_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Test Iron Producer</field_name>
+  <field_pretty_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Test Iron Producer</field_pretty_name>
+  <field_type rdf:datatype="http://www.w3.org/2001/XMLSchema#string">producer</field_type>
+</owl:NamedIndividual>
+
 <owl:NamedIndividual rdf:about="https://index0.local/entity/prodline_producer_bospor_automat_veh_bospor_1_calcetite">
   <rdf:type rdf:resource="#production_entry"/>
   <relation_output_vehicles rdf:resource="https://index0.local/entity/veh_bospor_1_calcetite"/>
@@ -17587,17 +17724,11 @@ Earthlike map frame derived from a 6,371 km radius, rendered as a 2:1 equirectan
   <entryId rdf:datatype="http://www.w3.org/2001/XMLSchema#string">prodline_producer_bospor_automat_veh_bospor_1_calcetite</entryId>
   <datasetName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">production</datasetName>
   <entityType rdf:datatype="http://www.w3.org/2001/XMLSchema#string">production</entityType>
-  <listFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">input_components</listFieldName>
   <field_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Bospor Automat - Bospor 1 "Calcetite" Production</field_name>
-  <listFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">output_materials</listFieldName>
   <field_pretty_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Bospor Automat - Bospor 1 "Calcetite" Production</field_pretty_name>
   <field_production_class rdf:datatype="http://www.w3.org/2001/XMLSchema#string">production_line</field_production_class>
   <field_production_rate_period rdf:datatype="http://www.w3.org/2001/XMLSchema#string">month</field_production_rate_period>
   <field_type rdf:datatype="http://www.w3.org/2001/XMLSchema#string">production</field_type>
-  <listFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">input_items</listFieldName>
-  <listFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">input_materials</listFieldName>
-  <listFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">output_components</listFieldName>
-  <listFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">output_items</listFieldName>
   <listFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">output_vehicles</listFieldName>
   <listFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">produced_by</listFieldName>
 </owl:NamedIndividual>
@@ -17814,7 +17945,7 @@ Inferred repository producer entry created to anchor the Octa 35P / Patina Surfa
   <field_entry_status rdf:datatype="http://www.w3.org/2001/XMLSchema#string">draft</field_entry_status>
   <jsonFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">geometry</jsonFieldName>
   <field_geometry rdf:datatype="http://www.w3.org/2001/XMLSchema#string">{"coordinate_space": "map_world", "points": [[38.529, -33.342], [79.28, -42.604], [115.586, -18.153], [106.325, 11.114], [52.236, 18.153], [21.487, -11.114]], "type": "polygon"}</field_geometry>
-  <field_layer_kind rdf:datatype="http://www.w3.org/2001/XMLSchema#string">regions</field_layer_kind>
+  <field_layer_kind rdf:datatype="http://www.w3.org/2001/XMLSchema#string">locations</field_layer_kind>
   <field_location_class rdf:datatype="http://www.w3.org/2001/XMLSchema#string">region</field_location_class>
   <field_location_role rdf:datatype="http://www.w3.org/2001/XMLSchema#string">map_region</field_location_role>
   <field_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Elbac Dry Savannah</field_name>
@@ -21781,6 +21912,45 @@ Part of the [[Blue Sector]]
   <field_type rdf:datatype="http://www.w3.org/2001/XMLSchema#string">location</field_type>
 </owl:NamedIndividual>
 
+<owl:NamedIndividual rdf:about="https://index0.local/entity/tag_excavator">
+  <rdf:type rdf:resource="#tag_entry"/>
+  <entryId rdf:datatype="http://www.w3.org/2001/XMLSchema#string">tag_excavator</entryId>
+  <datasetName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">tags</datasetName>
+  <entityType rdf:datatype="http://www.w3.org/2001/XMLSchema#string">tag</entityType>
+  <field_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">excavator</field_name>
+  <field_pretty_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Excavator</field_pretty_name>
+  <field_primary_color rdf:datatype="http://www.w3.org/2001/XMLSchema#string">#b8793d</field_primary_color>
+  <field_secondary_color rdf:datatype="http://www.w3.org/2001/XMLSchema#string">#33454d</field_secondary_color>
+  <field_tag_class rdf:datatype="http://www.w3.org/2001/XMLSchema#string">vehicle_capability</field_tag_class>
+  <field_type rdf:datatype="http://www.w3.org/2001/XMLSchema#string">tag</field_type>
+</owl:NamedIndividual>
+
+<owl:NamedIndividual rdf:about="https://index0.local/entity/tag_iron_ore_rich_ground">
+  <rdf:type rdf:resource="#tag_entry"/>
+  <entryId rdf:datatype="http://www.w3.org/2001/XMLSchema#string">tag_iron_ore_rich_ground</entryId>
+  <datasetName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">tags</datasetName>
+  <entityType rdf:datatype="http://www.w3.org/2001/XMLSchema#string">tag</entityType>
+  <field_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">iron_ore_rich_ground</field_name>
+  <field_pretty_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Iron Ore Rich Ground</field_pretty_name>
+  <field_primary_color rdf:datatype="http://www.w3.org/2001/XMLSchema#string">#a6543f</field_primary_color>
+  <field_secondary_color rdf:datatype="http://www.w3.org/2001/XMLSchema#string">#453835</field_secondary_color>
+  <field_tag_class rdf:datatype="http://www.w3.org/2001/XMLSchema#string">site_condition</field_tag_class>
+  <field_type rdf:datatype="http://www.w3.org/2001/XMLSchema#string">tag</field_type>
+</owl:NamedIndividual>
+
+<owl:NamedIndividual rdf:about="https://index0.local/entity/tag_vehicle">
+  <rdf:type rdf:resource="#tag_entry"/>
+  <entryId rdf:datatype="http://www.w3.org/2001/XMLSchema#string">tag_vehicle</entryId>
+  <datasetName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">tags</datasetName>
+  <entityType rdf:datatype="http://www.w3.org/2001/XMLSchema#string">tag</entityType>
+  <field_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">vehicle</field_name>
+  <field_pretty_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Vehicle</field_pretty_name>
+  <field_primary_color rdf:datatype="http://www.w3.org/2001/XMLSchema#string">#5577aa</field_primary_color>
+  <field_secondary_color rdf:datatype="http://www.w3.org/2001/XMLSchema#string">#263348</field_secondary_color>
+  <field_tag_class rdf:datatype="http://www.w3.org/2001/XMLSchema#string">entity_kind</field_tag_class>
+  <field_type rdf:datatype="http://www.w3.org/2001/XMLSchema#string">tag</field_type>
+</owl:NamedIndividual>
+
 <owl:NamedIndividual rdf:about="https://index0.local/entity/task_add_hierarchy_to_vehicle_repository_browser">
   <rdf:type rdf:resource="#task_entry"/>
   <entryId rdf:datatype="http://www.w3.org/2001/XMLSchema#string">task_add_hierarchy_to_vehicle_repository_browser</entryId>
@@ -22173,6 +22343,40 @@ Later mass produced, but also very sought after.
 Finding Pairs proved economically viable with the establishment of [[Entangled QP Filtering]], and the emergence of [[Entangler Whale Ships]]</field_wiki_entry>
   <jsonFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">wiki_field_colors</jsonFieldName>
   <field_wiki_field_colors rdf:datatype="http://www.w3.org/2001/XMLSchema#string">{"intro": "#67857d"}</field_wiki_field_colors>
+</owl:NamedIndividual>
+
+<owl:NamedIndividual rdf:about="https://index0.local/entity/tech_test_excavation_technology">
+  <rdf:type rdf:resource="#technology_entry"/>
+  <entryId rdf:datatype="http://www.w3.org/2001/XMLSchema#string">tech_test_excavation_technology</entryId>
+  <datasetName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">technology</datasetName>
+  <entityType rdf:datatype="http://www.w3.org/2001/XMLSchema#string">technology</entityType>
+  <field_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Test Excavation Technology</field_name>
+  <field_pretty_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Test Excavation Technology</field_pretty_name>
+  <listFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">required_vehicle_tags</listFieldName>
+  <field_required_vehicle_tags rdf:datatype="http://www.w3.org/2001/XMLSchema#string">excavator</field_required_vehicle_tags>
+  <field_technology_class rdf:datatype="http://www.w3.org/2001/XMLSchema#string">production_technology</field_technology_class>
+  <field_technology_subclass rdf:datatype="http://www.w3.org/2001/XMLSchema#string">extraction_support</field_technology_subclass>
+  <field_type rdf:datatype="http://www.w3.org/2001/XMLSchema#string">technology</field_type>
+</owl:NamedIndividual>
+
+<owl:NamedIndividual rdf:about="https://index0.local/entity/tech_test_iron_mining_technology">
+  <rdf:type rdf:resource="#technology_entry"/>
+  <relation_output_materials rdf:resource="https://index0.local/entity/mat_test_iron_ore"/>
+  <relation_required_technologies rdf:resource="https://index0.local/entity/tech_test_excavation_technology"/>
+  <entryId rdf:datatype="http://www.w3.org/2001/XMLSchema#string">tech_test_iron_mining_technology</entryId>
+  <datasetName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">technology</datasetName>
+  <entityType rdf:datatype="http://www.w3.org/2001/XMLSchema#string">technology</entityType>
+  <field_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Test Iron Mining Technology</field_name>
+  <field_pretty_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Test Iron Mining Technology</field_pretty_name>
+  <field_production_rate_period rdf:datatype="http://www.w3.org/2001/XMLSchema#string">month</field_production_rate_period>
+  <field_production_rate_value rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">100</field_production_rate_value>
+  <listFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">required_site_conditions</listFieldName>
+  <field_required_site_conditions rdf:datatype="http://www.w3.org/2001/XMLSchema#string">iron_ore_rich_ground</field_required_site_conditions>
+  <field_technology_class rdf:datatype="http://www.w3.org/2001/XMLSchema#string">production_technology</field_technology_class>
+  <field_technology_subclass rdf:datatype="http://www.w3.org/2001/XMLSchema#string">mining</field_technology_subclass>
+  <field_type rdf:datatype="http://www.w3.org/2001/XMLSchema#string">technology</field_type>
+  <listFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">output_materials</listFieldName>
+  <listFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">required_technologies</listFieldName>
 </owl:NamedIndividual>
 
 <owl:NamedIndividual rdf:about="https://index0.local/entity/veh_agt_1_geeling_turboprop_aircraft">
@@ -22843,6 +23047,23 @@ Semi-submersible standby posture allows long-term concealment and persistent obs
 
 The class is built around repeated cargo descent and unloading operations on Mars. The design uses detachable modular lifting wings that can be removed and remounted in reversed orientation depending on mission profile and servicing state.
 </field_wiki_entry>
+</owl:NamedIndividual>
+
+<owl:NamedIndividual rdf:about="https://index0.local/entity/veh_test_excavator">
+  <rdf:type rdf:resource="#vehicle_entry"/>
+  <entryId rdf:datatype="http://www.w3.org/2001/XMLSchema#string">veh_test_excavator</entryId>
+  <datasetName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">vehicles</datasetName>
+  <entityType rdf:datatype="http://www.w3.org/2001/XMLSchema#string">vehicle</entityType>
+  <field_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Test Excavator</field_name>
+  <field_pretty_name rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Test Excavator</field_pretty_name>
+  <field_start_year rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">2000</field_start_year>
+  <listFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">tags</listFieldName>
+  <field_tags rdf:datatype="http://www.w3.org/2001/XMLSchema#string">vehicle</field_tags>
+  <field_tags rdf:datatype="http://www.w3.org/2001/XMLSchema#string">ex</field_tags>
+  <field_tags rdf:datatype="http://www.w3.org/2001/XMLSchema#string">excavator</field_tags>
+  <field_type rdf:datatype="http://www.w3.org/2001/XMLSchema#string">vehicle</field_type>
+  <field_vehicle_class rdf:datatype="http://www.w3.org/2001/XMLSchema#string">construction_vehicle</field_vehicle_class>
+  <listFieldName rdf:datatype="http://www.w3.org/2001/XMLSchema#string">related</listFieldName>
 </owl:NamedIndividual>
 
 <owl:NamedIndividual rdf:about="https://index0.local/entity/veh_th_altona">
