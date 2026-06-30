@@ -165,6 +165,32 @@ class CardMetadataCleanupTests(unittest.TestCase):
         self.assertEqual(["loc_northern_spain"], world.get_entity("loc_alps")["overlaps"])
         self.assertEqual(["loc_alps"], card["location_related_entity_update_ids"])
 
+    def test_switching_edit_fields_preserves_uncommitted_drafts(self):
+        entity = {
+            "id": "idea_alpha",
+            "type": "idea",
+            "_dataset": "ideas",
+            "name": "Original",
+            "short_description": "Old description",
+        }
+        card_view = EntityCard(entity, dataset_name="ideas")
+        card = {"is_edit_mode": True, "draft_edit_buffers": {}}
+
+        self.assertTrue(card_view.begin_edit_field(card, "name"))
+        card["edit_buffer"] = "Draft name"
+        card["edit_cursor"] = len(card["edit_buffer"])
+
+        self.assertTrue(card_view.begin_edit_field(card, "short_description"))
+
+        self.assertEqual("Original", entity["name"])
+        self.assertEqual("Draft name", card["draft_edit_buffers"]["name"]["text"])
+        self.assertEqual("short_description", card["active_edit_field"])
+
+        self.assertTrue(card_view.begin_edit_field(card, "name"))
+
+        self.assertEqual("Draft name", card["edit_buffer"])
+        self.assertEqual(len("Draft name"), card["edit_cursor"])
+
     def test_location_topology_matches_only_locations(self):
         world = self._world_with_locations()
         card_view = EntityCard(

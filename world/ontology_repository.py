@@ -70,6 +70,81 @@ class OntologyRepository:
     def get_dataset(self, dataset_name):
         return self.datasets.get(dataset_name, [])
 
+    def set_literal(self, entity_id, field_name, value):
+        entity = self.entities.get(str(entity_id or "").strip())
+        field_name = str(field_name or "").strip()
+        if not isinstance(entity, dict) or not field_name or field_name in {"id", "_dataset"}:
+            return set()
+        if entity.get(field_name) == value:
+            return set()
+        entity[field_name] = value
+        return {str(entity.get("id"))}
+
+    def set_relation(self, source_id, field_name, target_id, reciprocal_field=None):
+        source_id = str(source_id or "").strip()
+        target_id = str(target_id or "").strip()
+        field_name = str(field_name or "").strip()
+        reciprocal_field = str(reciprocal_field or "").strip()
+        if not source_id or not target_id or not field_name:
+            return set()
+        source = self.entities.get(source_id)
+        target = self.entities.get(target_id)
+        if not isinstance(source, dict) or not isinstance(target, dict) or source_id == target_id:
+            return set()
+
+        changed = set()
+        if self._add_relation_id(source, field_name, target_id):
+            changed.add(source_id)
+        if reciprocal_field and self._add_relation_id(target, reciprocal_field, source_id):
+            changed.add(target_id)
+        return changed
+
+    def remove_relation(self, source_id, field_name, target_id, reciprocal_field=None):
+        source_id = str(source_id or "").strip()
+        target_id = str(target_id or "").strip()
+        field_name = str(field_name or "").strip()
+        reciprocal_field = str(reciprocal_field or "").strip()
+        if not source_id or not target_id or not field_name:
+            return set()
+
+        changed = set()
+        source = self.entities.get(source_id)
+        if isinstance(source, dict) and self._remove_relation_id(source, field_name, target_id):
+            changed.add(source_id)
+        target = self.entities.get(target_id)
+        if reciprocal_field and isinstance(target, dict) and self._remove_relation_id(target, reciprocal_field, source_id):
+            changed.add(target_id)
+        return changed
+
+    def _set_relation_ids(self, entity, field_name, relation_ids):
+        normalized = []
+        entity_id = str(entity.get("id") or "")
+        for relation_id in relation_ids or []:
+            relation_id = str(relation_id or "").strip()
+            if relation_id and relation_id != entity_id and relation_id not in normalized:
+                normalized.append(relation_id)
+        if entity.get(field_name) == normalized:
+            return False
+        entity[field_name] = normalized
+        return True
+
+    def _add_relation_id(self, entity, field_name, target_id):
+        relation_ids = self._relation_ids(entity.get(field_name))
+        if target_id in relation_ids:
+            return False
+        relation_ids.append(target_id)
+        return self._set_relation_ids(entity, field_name, relation_ids)
+
+    def _remove_relation_id(self, entity, field_name, target_id):
+        relation_ids = self._relation_ids(entity.get(field_name))
+        if target_id not in relation_ids and field_name not in entity:
+            return False
+        return self._set_relation_ids(
+            entity,
+            field_name,
+            [relation_id for relation_id in relation_ids if relation_id != target_id],
+        )
+
     def materialized_datasets(self):
         datasets = copy.deepcopy(self.datasets)
         projected = OntologyRepository(datasets)
@@ -342,10 +417,10 @@ class OntologyRepository:
                 if isinstance(item, (str, int, float, bool)) and item not in values:
                     values.append(item)
                 elif isinstance(item, dict):
-                    values.append(json.dumps(item, ensure_ascii=False, sort_keys=True))
+                    values.append(json.dumps(item, ensure_ascii=False))
             return values
         if isinstance(value, dict):
-            return [json.dumps(value, ensure_ascii=False, sort_keys=True)]
+            return [json.dumps(value, ensure_ascii=False)]
         return [str(value)]
 
     def _field_uses_json(self, value):

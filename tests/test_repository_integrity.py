@@ -1,10 +1,9 @@
 import re
-import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from world.entity_loader import EntityLoader
+from world.ontology_repository import OntologyRepository
 from world.world_model import WorldModel
 
 
@@ -31,52 +30,110 @@ class RepositoryIntegrityTests(unittest.TestCase):
             self.assertNotIn(task_id, required_ids, f"{task_id} depends on itself")
 
     def test_city_schema_uses_canonical_schema_key(self):
-        schema_path = PROJECT_ROOT / "schemas" / "schema_cities.yaml"
-        schema_text = schema_path.read_text(encoding="utf-8")
-        self.assertNotIn("FULL DIFF", schema_text)
-        self.assertNotIn("NEW FILE", schema_text)
-        self.assertRegex(schema_text, r"(?m)^schema:\s*cities\s*$")
+        model = WorldModel()
+        city_schema = model.schemas.schemas.get("cities")
+        self.assertIsNotNone(city_schema)
+        self.assertEqual("cities", city_schema.get("schema"))
 
-    def test_referenced_project_assets_exist(self):
-        missing = []
-        for entry_path in (PROJECT_ROOT / "entries").rglob("*.yaml"):
-            entry_text = entry_path.read_text(encoding="utf-8")
-            for asset_ref in re.findall(r"assets/[^\s'\"\]]+", entry_text):
-                asset_path = PROJECT_ROOT / asset_ref
-                if not asset_path.exists():
-                    missing.append(f"{entry_path.relative_to(PROJECT_ROOT)} -> {asset_ref}")
-        self.assertEqual([], missing)
+    def test_collection_schema_is_available_from_ontology(self):
+        model = WorldModel()
+        collection_schema = model.schemas.schemas.get("collections")
 
-    def test_yaml_repository_files_parse_when_pyyaml_is_available(self):
-        try:
-            import yaml
-        except ModuleNotFoundError:
-            self.skipTest("PyYAML is not installed in this interpreter")
+        self.assertIsNotNone(collection_schema)
+        self.assertEqual("collections", collection_schema.get("schema"))
+        self.assertEqual("Collections", model.get_entity("schema_collections").get("pretty_name"))
+        field_keys = set(collection_schema.get("fields", {}).keys())
+        self.assertIn("collection_class", field_keys)
+        self.assertIn("includes", field_keys)
+        self.assertIn("featured_entries", field_keys)
 
-        for folder_name in ("schemas", "entries"):
-            for yaml_path in (PROJECT_ROOT / folder_name).rglob("*.yaml"):
-                with self.subTest(path=str(yaml_path.relative_to(PROJECT_ROOT))):
-                    with yaml_path.open("r", encoding="utf-8") as handle:
-                        yaml.safe_load(handle)
-
-    def test_system_bodies_with_location_records_are_canonical_locations(self):
-        try:
-            import yaml
-        except ModuleNotFoundError:
-            self.skipTest("PyYAML is not installed in this interpreter")
-
-        locations = yaml.safe_load((PROJECT_ROOT / "entries" / "locations.yaml").read_text(encoding="utf-8")) or []
-        systems = yaml.safe_load((PROJECT_ROOT / "entries" / "systems.yaml").read_text(encoding="utf-8")) or []
-        location_ids = {entry.get("id") for entry in locations if isinstance(entry, dict)}
-        duplicate_systems = [
-            entry.get("id")
-            for entry in systems
-            if isinstance(entry, dict) and entry.get("location_entity") in location_ids
+    def test_star_system_neighbourhoods_are_present_in_ontology(self):
+        model = WorldModel()
+        systems = [
+            entity for entity in model.loader.entities.values()
+            if isinstance(entity, dict)
+            and (
+                entity.get("location_class") == "star_system"
+                or entity.get("location_role") == "star_system"
+                or entity.get("system_role") == "star_system"
+            )
+        ]
+        system_ids = {entity.get("id") for entity in systems}
+        systems_with_neighbours = [
+            entity for entity in systems
+            if entity.get("stellar_neighbours")
         ]
 
-        self.assertEqual([], duplicate_systems)
+        self.assertGreaterEqual(len(systems), 39)
+        self.assertGreaterEqual(len(systems_with_neighbours), 25)
+        self.assertEqual(
+            [
+                {"distance_ly": 9.08, "system": "system_leskim_system"},
+                {"distance_ly": 12.71, "system": "system_oka_system"},
+                {"distance_ly": 4.24, "system": "system_p_taurini_system"},
+                {"distance_ly": 8.25, "system": "system_ross_system"},
+                {"distance_ly": 11.74, "system": "system_tau_ceti_system"},
+            ],
+            model.get_entity("system_sol").get("stellar_neighbours"),
+        )
+        self.assertEqual(
+            [
+                {"distance_ly": 7.41, "system": "loc_shinogo_system"},
+                {"distance_ly": 8.25, "system": "system_sol"},
+            ],
+            model.get_entity("system_ross_system").get("stellar_neighbours"),
+        )
+        self.assertEqual(
+            "system_ross_system",
+            model.get_entity("star_ross_system_primary").get("parent_location"),
+        )
+        self.assertEqual(
+            "system_ross_system",
+            model.get_entity("star_ross_system_primary").get("star_system"),
+        )
 
+        referenced_neighbour_ids = {
+            row.get("system")
+            for entity in systems
+            for row in (entity.get("stellar_neighbours") or [])
+            if isinstance(row, dict)
+        }
+        self.assertEqual(set(), referenced_neighbour_ids - system_ids)
+
+    def test_referenced_project_assets_exist(self):
         model = WorldModel()
+        missing = []
+
+        def collect_asset_refs(value):
+            if isinstance(value, str):
+                return re.findall(r"assets/[^\s'\"\]]+", value)
+            if isinstance(value, dict):
+                refs = []
+                for item in value.values():
+                    refs.extend(collect_asset_refs(item))
+                return refs
+            if isinstance(value, list):
+                refs = []
+                for item in value:
+                    refs.extend(collect_asset_refs(item))
+                return refs
+            return []
+
+        for entity in model.loader.entities.values():
+            for asset_ref in collect_asset_refs(entity):
+                asset_path = PROJECT_ROOT / asset_ref
+                if not asset_path.exists():
+                    missing.append(f"{entity.get('id')} -> {asset_ref}")
+        self.assertEqual([], missing)
+
+    def test_ontology_repository_loads_entities_and_schemas(self):
+        repository = OntologyRepository.from_owl(PROJECT_ROOT / "ontology" / "index0.owl")
+        self.assertGreaterEqual(len(repository.entities), 1300)
+        self.assertGreaterEqual(len(repository.get_dataset("schemas")), 30)
+
+    def test_system_bodies_with_location_records_are_canonical_locations(self):
+        model = WorldModel()
+        self.assertEqual([], model.loader.datasets.get("systems", []))
         self.assertEqual("planet_earth", model.get_entity("body_earth").get("id"))
 
     def test_spatial_feature_projection_includes_state_and_quarter_locations(self):
@@ -93,34 +150,6 @@ class RepositoryIntegrityTests(unittest.TestCase):
         spatial_ids = {entity["id"] for entity in model.get_entities_by_dataset("spatial_features")}
 
         self.assertEqual({"loc_region", "loc_state", "loc_quarter"}, spatial_ids)
-
-    def test_loader_collapses_obsolete_relations_into_related(self):
-        try:
-            import yaml
-        except ModuleNotFoundError:
-            self.skipTest("PyYAML is not installed in this interpreter")
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            entries_dir = Path(temp_dir)
-            (entries_dir / "ideas.yaml").write_text(
-                "- id: idea_source\n"
-                "  type: idea\n"
-                "  name: Source\n"
-                "  related:\n"
-                "    - idea_existing\n"
-                "  derived_from:\n"
-                "    - idea_derived\n"
-                "  wiki_mentions:\n"
-                "    - idea_wiki\n",
-                encoding="utf-8",
-            )
-            loader = EntityLoader(entries_directory=entries_dir)
-
-            entity = loader.entities["idea_source"]
-
-            self.assertEqual(["idea_existing", "idea_derived", "idea_wiki"], entity["related"])
-            self.assertNotIn("derived_from", entity)
-            self.assertNotIn("wiki_mentions", entity)
 
 
 if __name__ == "__main__":

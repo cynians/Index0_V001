@@ -354,7 +354,7 @@ LP-005 Event / Sync System
 -- Time-aware propagation between simulations
 
 LP-006 Entity System
--- entities.yaml → runtime loader
+-- ontology repository → runtime loader
 -- Active entity filtering by year
 -- Write-back system for simulation changes
 

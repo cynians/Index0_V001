@@ -171,6 +171,25 @@ class MapRenderer:
             pygame.draw.line(screen, (120, 190, 230), (rect.x, rect.y), (rect.x, rect.bottom), 1)
             pygame.draw.line(screen, (120, 190, 230), (rect.right - 1, rect.y), (rect.right - 1, rect.bottom), 1)
 
+    def _draw_gas_giant_bands(self, screen, rect, layer):
+        bands = layer.get("bands") if isinstance(layer.get("bands"), list) else []
+        if not bands:
+            bands = [layer.get("color", (180, 170, 150))]
+        clip = screen.get_clip()
+        screen.set_clip(rect.clip(screen.get_rect()))
+        band_count = max(1, len(bands))
+        for index in range(band_count):
+            color = bands[index]
+            try:
+                color = (int(color[0]), int(color[1]), int(color[2]))
+            except (TypeError, ValueError, IndexError):
+                color = layer.get("color", (180, 170, 150))
+            y0 = rect.y + int(index * rect.height / band_count)
+            y1 = rect.y + int((index + 1) * rect.height / band_count)
+            pygame.draw.rect(screen, color, pygame.Rect(rect.x, y0, rect.width, max(1, y1 - y0)))
+        pygame.draw.line(screen, (238, 238, 232), (rect.x, rect.centery), (rect.right, rect.centery), 1)
+        screen.set_clip(clip)
+
     def _draw_polygon_layer(self, screen, layer, camera, is_selected, is_hovered):
         screen_points = []
 
@@ -505,26 +524,29 @@ class MapRenderer:
                 ):
                     continue
 
-                if not (shape == "map_rect" and layer.get("has_heightmap_base")):
+                if shape == "map_rect" and layer.get("render_style") == "gas_giant_bands":
+                    self._draw_gas_giant_bands(screen, rect, layer)
+                elif not (shape == "map_rect" and layer.get("has_heightmap_base")):
                     pygame.draw.rect(screen, layer["color"], rect)
 
                 if shape == "map_rect":
                     pygame.draw.rect(screen, (220, 220, 220), rect, 3)
 
-                    pygame.draw.line(
-                        screen,
-                        (110, 125, 150),
-                        (rect.x, rect.centery),
-                        (rect.right, rect.centery),
-                        1,
-                    )
-                    pygame.draw.line(
-                        screen,
-                        (110, 125, 150),
-                        (rect.centerx, rect.y),
-                        (rect.centerx, rect.bottom),
-                        1,
-                    )
+                    if layer.get("render_style") != "gas_giant_bands":
+                        pygame.draw.line(
+                            screen,
+                            (110, 125, 150),
+                            (rect.x, rect.centery),
+                            (rect.right, rect.centery),
+                            1,
+                        )
+                        pygame.draw.line(
+                            screen,
+                            (110, 125, 150),
+                            (rect.centerx, rect.y),
+                            (rect.centerx, rect.bottom),
+                            1,
+                        )
                 else:
                     pygame.draw.rect(screen, (220, 220, 220), rect, 2)
 

@@ -1,5 +1,4 @@
 import math
-import re
 import shutil
 import time
 from pathlib import Path
@@ -42,13 +41,7 @@ class MapSimulation:
 
     DEFAULT_PLANET_WORLD_WIDTH = 4000.0
     DEFAULT_PLANET_WORLD_HEIGHT = 2000.0
-    LOCATIONS_ENTRY_PATH = (
-        Path(__file__).resolve().parents[2] / "entries" / "locations.yaml"
-    )
     MAP_ASSET_ROOT = Path(__file__).resolve().parents[2] / "assets" / "maps" / "locations"
-    SPATIAL_FEATURES_ENTRY_PATH = (
-        Path(__file__).resolve().parents[2] / "entries" / "spatial_features.yaml"
-    )
 
     LOCATION_LAYER_KIND = "locations"
     REGION_LAYER_KIND = "regions"
@@ -192,9 +185,6 @@ class MapSimulation:
     def _repository_loader(self):
         return getattr(self.world_model, "loader", None) if self.world_model is not None else None
 
-    def _repository_uses_ontology(self):
-        return bool(getattr(self._repository_loader(), "use_ontology", False))
-
     def _persist_repository_entity(self, entity, dataset_name):
         loader = self._repository_loader()
         if loader is None or not hasattr(loader, "persist_entity"):
@@ -205,8 +195,6 @@ class MapSimulation:
         return loader.persist_entity(entity)
 
     def _update_repository_entity_fields(self, entity_id, updates):
-        if not self._repository_uses_ontology():
-            return None
         loader = self._repository_loader()
         entity = getattr(loader, "entities", {}).get(entity_id) if loader is not None else None
         if not isinstance(entity, dict):
@@ -215,8 +203,6 @@ class MapSimulation:
         return loader.persist_entity(entity) if hasattr(loader, "persist_entity") else False
 
     def _remove_repository_entity(self, entity_id, dataset_name=None):
-        if not self._repository_uses_ontology():
-            return None
         loader = self._repository_loader()
         if loader is None or not hasattr(loader, "remove_entity"):
             return False
@@ -595,6 +581,13 @@ class MapSimulation:
         if card_color is not None:
             return card_color
 
+        display_color = entity.get("display_color")
+        if isinstance(display_color, (list, tuple)) and len(display_color) >= 3:
+            try:
+                return (int(display_color[0]), int(display_color[1]), int(display_color[2]))
+            except (TypeError, ValueError):
+                pass
+
         location_class = entity.get("location_class")
 
         if location_class == "planet":
@@ -626,6 +619,30 @@ class MapSimulation:
 
         return (200, 200, 200)
 
+    def _entity_is_gas_giant(self, entity):
+        atmosphere = entity.get("atmosphere_model") if isinstance(entity, dict) else None
+        tags = set(entity.get("tags") or []) if isinstance(entity, dict) else set()
+        return bool(
+            entity.get("surface_render_mode") == "gas_giant_bands"
+            or entity.get("map_render_mode") == "gas_giant_bands"
+            or "gas_giant" in tags
+            or (isinstance(atmosphere, dict) and atmosphere.get("has_solid_surface") is False)
+        )
+
+    def _gas_giant_bands_for_entity(self, entity):
+        bands = entity.get("atmosphere_bands")
+        if isinstance(bands, list) and bands:
+            return bands
+        atmosphere = entity.get("atmosphere_model")
+        if isinstance(atmosphere, dict):
+            try:
+                from simulations.world_gen.natural_materials import atmospheric_band_palette
+
+                return atmospheric_band_palette(atmosphere).get("bands") or []
+            except ImportError:
+                pass
+        return []
+
     def _coerce_hex_color(self, value):
         if not isinstance(value, str):
             return None
@@ -643,7 +660,7 @@ class MapSimulation:
         """
         Convert stored map coordinates to display/world coordinates.
 
-        This is intentionally identity now. Earth-facing YAML stores latitude
+        This is intentionally identity now. Earth-facing map data stores latitude
         as negative Y so the renderer does not need a hidden flip.
         """
         return float(x), float(y)
@@ -2409,333 +2426,32 @@ class MapSimulation:
             "entry_status": "draft",
         }
 
-    def _format_yaml_scalar(self, value):
-        if value is None:
-            return "null"
-
-        text = str(value).replace("'", "''")
-        if "\n" in text:
-            lines = text.splitlines()
-            if not lines:
-                return "''"
-            return "|\n" + "\n".join(f"    {line}" for line in lines)
-
-        if text == "":
-            return "''"
-
-        return f"'{text}'"
-
-    def _format_yaml_field_lines(self, key, value):
-        scalar = self._format_yaml_scalar(value)
-        if scalar.startswith("|\n"):
-            block_lines = scalar.splitlines()
-            return [f"  {key}: {block_lines[0]}"] + block_lines[1:]
-
-        return [f"  {key}: {scalar}"]
-
-    def _format_yaml_list_field_lines(self, key, values):
-        values = [
-            value for value in list(values or [])
-            if value not in (None, "")
-        ]
-        if not values:
-            return [f"  {key}: []"]
-
-        lines = [f"  {key}:"]
-        for value in values:
-            lines.append(f"    - {value}")
-        return lines
-
-    def _format_yaml_number(self, value):
-        number = float(value)
-        text = f"{number:.3f}".rstrip("0").rstrip(".")
-        return text or "0"
-
-    def _format_spatial_feature_record_yaml(self, feature):
-        lines = [
-            "",
-            f"# ---------- {feature['id']} | {feature['name']} ----------",
-            f"- id: {feature['id']}",
-        ]
-        lines.extend(self._format_yaml_field_lines("pretty_name", feature["pretty_name"]))
-        lines.extend(self._format_yaml_field_lines("name", feature["name"]))
-        lines.extend([
-            "  type: spatial_feature",
-        ])
-        lines.extend(self._format_yaml_field_lines("wiki_entry", feature["wiki_entry"]))
-        lines.extend([
-            f"  layer_kind: {feature['layer_kind']}",
-        ])
-        if feature.get("owner_entity"):
-            lines.append(f"  owner_entity: {feature['owner_entity']}")
-        if feature.get("parent_entity"):
-            lines.append(f"  parent_entity: {feature['parent_entity']}")
-
-        lines.extend([
-            "  geometry:",
-            "    type: polygon",
-            "    coordinate_space: map_world",
-            "    points:",
-        ])
-
-        points = feature["geometry"]["points"]
-        for x, y in points:
-            lines.append(
-                f"      - [{self._format_yaml_number(x)}, "
-                f"{self._format_yaml_number(y)}]"
-            )
-
-        lines.extend(
-            [
-                f"  start_year: {feature['start_year']}",
-            ]
-        )
-        if feature.get("end_year") is not None:
-            lines.append(f"  end_year: {feature['end_year']}")
-        if feature.get("resolution_m_per_pixel") is not None:
-            lines.append(
-                f"  resolution_m_per_pixel: {feature['resolution_m_per_pixel']}"
-            )
-        if feature.get("coverage_mode") is not None:
-            lines.extend(
-                self._format_yaml_field_lines(
-                    "coverage_mode",
-                    feature.get("coverage_mode"),
-                )
-            )
-        if feature.get("draw_order") is not None:
-            lines.append(f"  draw_order: {feature['draw_order']}")
-        if feature.get("related"):
-            lines.extend(
-                self._format_yaml_list_field_lines(
-                    "related",
-                    feature.get("related"),
-                )
-            )
-        lines.append("  entry_status: draft")
-
-        return "\n".join(lines) + "\n"
-
-    def _format_location_bounds_lines(self, bounds):
-        if bounds.get("type") == "polygon":
-            lines = [
-                "  bounds:",
-                "    type: polygon",
-                "    coordinate_space: map_world",
-                "    points:",
-            ]
-            for x, y in bounds.get("points", []):
-                lines.append(
-                    f"      - [{self._format_yaml_number(x)}, "
-                    f"{self._format_yaml_number(y)}]"
-                )
-            return lines
-
-        return [
-            "  bounds:",
-            "    type: bbox",
-            f"    min_x: {self._format_yaml_number(bounds['min_x'])}",
-            f"    max_x: {self._format_yaml_number(bounds['max_x'])}",
-            f"    min_y: {self._format_yaml_number(bounds['min_y'])}",
-            f"    max_y: {self._format_yaml_number(bounds['max_y'])}",
-        ]
-
-    def _format_location_record_yaml(self, location):
-        lines = [
-            "",
-            f"# ---------- {location['id']} | {location['name']} ----------",
-            f"- id: {location['id']}",
-        ]
-        lines.extend(self._format_yaml_field_lines("pretty_name", location["pretty_name"]))
-        lines.extend(self._format_yaml_field_lines("name", location["name"]))
-        lines.extend([
-            "  type: location",
-            f"  location_class: {location['location_class']}",
-        ])
-        if location.get("location_role"):
-            lines.append(f"  location_role: {location['location_role']}")
-        if location.get("building_class"):
-            lines.append(f"  building_class: {location['building_class']}")
-        if location.get("room_class"):
-            lines.append(f"  room_class: {location['room_class']}")
-        if location.get("floor_index") is not None:
-            lines.append(f"  floor_index: {location['floor_index']}")
-        if location.get("floor_label"):
-            lines.extend(self._format_yaml_field_lines("floor_label", location["floor_label"]))
-        if location.get("room_number"):
-            lines.extend(self._format_yaml_field_lines("room_number", location["room_number"]))
-        if location.get("region_class"):
-            lines.append(f"  region_class: {location['region_class']}")
-        if location.get("layer_kind"):
-            lines.append(f"  layer_kind: {location['layer_kind']}")
-        if location.get("parent_location"):
-            lines.append(f"  parent_location: {location['parent_location']}")
-        if location.get("parent_entity"):
-            lines.append(f"  parent_entity: {location['parent_entity']}")
-        if location.get("owner_entity"):
-            lines.append(f"  owner_entity: {location['owner_entity']}")
-        if location.get("parents"):
-            lines.extend(self._format_yaml_list_field_lines("parents", location.get("parents")))
-        lines.extend(self._format_yaml_field_lines("wiki_entry", location["wiki_entry"]))
-        lines.extend(self._format_location_bounds_lines(location["bounds"]))
-        geometry = location.get("geometry")
-        if isinstance(geometry, dict) and geometry.get("type") == "polygon":
-            geometry_lines = self._format_spatial_feature_geometry_lines(
-                geometry.get("points", []),
-            )
-            geometry_lines[0] = "  geometry:"
-            lines.extend(geometry_lines)
-        if location.get("resolution_m_per_pixel") is not None:
-            lines.append(f"  resolution_m_per_pixel: {location['resolution_m_per_pixel']}")
-        if location.get("coverage_mode") is not None:
-            lines.extend(self._format_yaml_field_lines("coverage_mode", location.get("coverage_mode")))
-        if location.get("draw_order") is not None:
-            lines.append(f"  draw_order: {location['draw_order']}")
-        if location.get("related"):
-            lines.extend(self._format_yaml_list_field_lines("related", location.get("related")))
-        lines.append(f"  start_year: {location['start_year']}")
-        if location.get("end_year") is not None:
-            lines.append(f"  end_year: {location['end_year']}")
-        lines.append("  entry_status: draft")
-
-        return "\n".join(lines) + "\n"
-
     def _append_spatial_feature_record(self, feature):
-        if self._repository_uses_ontology():
-            if not self._persist_repository_entity(feature, "spatial_features"):
-                raise OSError("Could not persist spatial feature to ontology")
-            return
-
-        entry_path = self.SPATIAL_FEATURES_ENTRY_PATH
-        entry_path.parent.mkdir(parents=True, exist_ok=True)
-
-        block = self._format_spatial_feature_record_yaml(feature)
-
-        if entry_path.exists():
-            existing_text = entry_path.read_text(encoding="utf-8")
-        else:
-            existing_text = "# ==================================================\n# SPATIAL FEATURES\n# ==================================================\n"
-
-        separator = "" if existing_text.endswith("\n") else "\n"
-        entry_path.write_text(existing_text + separator + block, encoding="utf-8")
+        if not self._persist_repository_entity(feature, "spatial_features"):
+            raise OSError("Could not persist spatial feature to ontology")
 
     def _append_location_record(self, location):
-        if self._repository_uses_ontology():
-            if not self._persist_repository_entity(location, "locations"):
-                raise OSError("Could not persist location to ontology")
-            return
-
-        entry_path = self.LOCATIONS_ENTRY_PATH
-        entry_path.parent.mkdir(parents=True, exist_ok=True)
-
-        block = self._format_location_record_yaml(location)
-
-        if entry_path.exists():
-            existing_text = entry_path.read_text(encoding="utf-8")
-        else:
-            existing_text = "# ==================================================\n# LOCATIONS\n# ==================================================\n"
-
-        found = self._find_yaml_entity_block(existing_text, location["id"])
-        if found is not None:
-            block_start, block_end = found
-            updated_text = existing_text[:block_start] + block.lstrip("\n") + existing_text[block_end:].lstrip("\n")
-            entry_path.write_text(updated_text, encoding="utf-8")
-            return
-
-        separator = "" if existing_text.endswith("\n") else "\n"
-        entry_path.write_text(existing_text + separator + block, encoding="utf-8")
+        if not self._persist_repository_entity(location, "locations"):
+            raise OSError("Could not persist location to ontology")
 
     def _append_offspring_reference_to_location(self, parent_location_id, child_location_id):
         if not parent_location_id or not child_location_id:
             return False
 
-        if self._repository_uses_ontology():
-            loader = self._repository_loader()
-            entities = getattr(loader, "entities", {}) if loader is not None else {}
-            child = entities.get(child_location_id)
-            parent = entities.get(parent_location_id)
-            if not isinstance(child, dict):
-                return False
-            parents = child.get("parents")
-            if not isinstance(parents, list):
-                parents = [] if parents in (None, "") else [parents]
-            if parent_location_id not in parents:
-                parents.append(parent_location_id)
-            child["parents"] = parents
-            persisted = loader.persist_entity(child) if hasattr(loader, "persist_entity") else False
-            if isinstance(parent, dict):
-                constituents = parent.get("constituents")
-                if not isinstance(constituents, list):
-                    constituents = [] if constituents in (None, "") else [constituents]
-                if child_location_id not in constituents:
-                    constituents.append(child_location_id)
-                parent["constituents"] = constituents
-                persisted = bool(loader.persist_entity(parent) if hasattr(loader, "persist_entity") else False) or bool(persisted)
-            return persisted
-
-        entry_path = self.LOCATIONS_ENTRY_PATH
-        if not entry_path.exists():
+        loader = self._repository_loader()
+        if loader is None or not hasattr(loader, "set_relation"):
             return False
-
-        text = entry_path.read_text(encoding="utf-8")
-        found = self._find_yaml_entity_block(text, parent_location_id)
-        if found is None:
-            return False
-
-        block_start, block_end = found
-        block = text[block_start:block_end]
-        updated_block = self._append_yaml_offspring_reference(block, child_location_id)
-        if updated_block == block:
-            return True
-
-        updated_text = text[:block_start] + updated_block + text[block_end:].lstrip("\n")
-        entry_path.write_text(updated_text, encoding="utf-8")
-        return True
-
-    def _append_yaml_offspring_reference(self, block_text, child_location_id):
-        child_location_id = str(child_location_id).strip()
-        if not child_location_id:
-            return block_text
-
-        lines = block_text.rstrip("\n").splitlines()
-        target_prefix = "  offspring:"
-        index = 0
-        while index < len(lines):
-            if not lines[index].startswith(target_prefix):
-                index += 1
-                continue
-
-            end_index = index + 1
-            while end_index < len(lines):
-                line = lines[end_index]
-                if line.startswith("  ") and not line.startswith("    "):
-                    break
-                if line.startswith("- id: "):
-                    break
-                end_index += 1
-
-            offspring_lines = lines[index:end_index]
-            if any(child_location_id in line for line in offspring_lines):
-                return block_text
-
-            child_line = f"    - id: {child_location_id}"
-            if lines[index].strip() == "offspring: []":
-                lines[index:end_index] = ["  offspring:", child_line]
-            else:
-                lines.insert(end_index, child_line)
-            return "\n".join(lines) + "\n"
-
-        child_lines = [
-            "  offspring:",
-            f"    - id: {child_location_id}",
-        ]
-        insert_index = len(lines)
-        for index, line in enumerate(lines):
-            if line.startswith("  entry_status:"):
-                insert_index = index
-                break
-
-        return "\n".join(lines[:insert_index] + child_lines + lines[insert_index:]) + "\n"
+        changed = set()
+        changed.update(loader.set_relation(child_location_id, "parents", parent_location_id, persist=False))
+        changed.update(loader.set_relation(parent_location_id, "constituents", child_location_id, persist=False))
+        child = getattr(loader, "entities", {}).get(child_location_id)
+        if isinstance(child, dict) and not child.get("parent_location"):
+            changed.update(loader.set_literal(child_location_id, "parent_location", parent_location_id, persist=False))
+        if changed:
+            loader.save_ontology_file() if getattr(loader, "use_ontology", False) else loader.save_changed_dataset_files(changed)
+        return bool(changed) or parent_location_id in self._relation_entity_ids(
+            getattr(loader, "entities", {}).get(child_location_id, {}).get("parents")
+        )
 
     def save_selection_inspector_updates(self, target_kind, target_id, updates):
         if target_kind not in {"spatial_feature", "location"}:
@@ -2779,7 +2495,6 @@ class MapSimulation:
             return False
 
         is_location_region = self._is_location_backed_region(target_id)
-        entry_path = self.LOCATIONS_ENTRY_PATH if is_location_region else self.SPATIAL_FEATURES_ENTRY_PATH
         parent_location_id = entity.get("parent_location") or entity.get("parent_entity")
 
         try:
@@ -2789,9 +2504,6 @@ class MapSimulation:
             )
             if removed_from_repository is False:
                 return False
-            if removed_from_repository is None:
-                if not self._delete_yaml_entity_block(entry_path, target_id):
-                    return False
             if removed_from_repository and is_location_region and parent_location_id:
                 self._remove_offspring_reference_from_location(parent_location_id, target_id)
             elif is_location_region and parent_location_id:
@@ -2828,16 +2540,10 @@ class MapSimulation:
             if not self._is_real_spatial_feature_id(target_id):
                 return False
             entity = self.get_spatial_feature(target_id)
-            entry_path = (
-                self.LOCATIONS_ENTRY_PATH
-                if self._is_location_backed_region(target_id)
-                else self.SPATIAL_FEATURES_ENTRY_PATH
-            )
         else:
             if not self._can_open_location_inspector(target_id):
                 return False
             entity = self.get_location(target_id)
-            entry_path = self.LOCATIONS_ENTRY_PATH
 
         if not isinstance(entity, dict):
             return False
@@ -2847,7 +2553,7 @@ class MapSimulation:
             return False
 
         try:
-            if not self._update_entity_temporal_fields(entry_path, target_id, updates):
+            if not self._update_entity_temporal_fields(target_id, updates):
                 return False
         except OSError as exc:
             logger.error(f"[MapSimulation] Failed to reanchor {target_kind}:{target_id}: {exc}")
@@ -2932,295 +2638,25 @@ class MapSimulation:
             and entity.get("location_class") in {"region", "state", "quarter"}
         )
 
-    def _find_yaml_entity_block(self, text, entity_id):
-        start_pattern = rf"(?m)^- id: {re.escape(str(entity_id))}\s*$"
-        start_match = re.search(start_pattern, text)
-        if not start_match:
-            return None
-
-        next_match = re.search(r"(?m)^- id: ", text[start_match.end():])
-        block_start = start_match.start()
-        block_end = start_match.end() + next_match.start() if next_match else len(text)
-        return block_start, block_end
-
-    def _delete_yaml_entity_block(self, entry_path, entity_id):
-        if not entry_path.exists():
-            return False
-
-        text = entry_path.read_text(encoding="utf-8")
-        found = self._find_yaml_entity_block(text, entity_id)
-        if found is None:
-            return False
-
-        block_start, block_end = found
-        before = text[:block_start].rstrip()
-        after = text[block_end:].lstrip("\n")
-        if before and after:
-            updated_text = before + "\n" + after
-        else:
-            updated_text = before + after
-        if updated_text and not updated_text.endswith("\n"):
-            updated_text += "\n"
-
-        entry_path.write_text(updated_text, encoding="utf-8")
-        return True
-
     def _remove_offspring_reference_from_location(self, parent_location_id, child_location_id):
         if not parent_location_id or not child_location_id:
             return False
 
-        if self._repository_uses_ontology():
-            loader = self._repository_loader()
-            entities = getattr(loader, "entities", {}) if loader is not None else {}
-            child = entities.get(child_location_id)
-            parent = entities.get(parent_location_id)
-            if not isinstance(child, dict):
-                return False
-            parents = child.get("parents")
-            if isinstance(parents, list):
-                child["parents"] = [parent_id for parent_id in parents if parent_id != parent_location_id]
-            elif parents == parent_location_id:
-                child["parents"] = []
-            persisted = loader.persist_entity(child) if hasattr(loader, "persist_entity") else False
-            if isinstance(parent, dict):
-                constituents = parent.get("constituents")
-                if isinstance(constituents, list):
-                    parent["constituents"] = [
-                        constituent_id for constituent_id in constituents if constituent_id != child_location_id
-                    ]
-                elif constituents == child_location_id:
-                    parent["constituents"] = []
-                persisted = bool(loader.persist_entity(parent) if hasattr(loader, "persist_entity") else False) or bool(persisted)
-            return persisted
-
-        entry_path = self.LOCATIONS_ENTRY_PATH
-        if not entry_path.exists():
+        loader = self._repository_loader()
+        if loader is None or not hasattr(loader, "remove_relation"):
             return False
+        changed = set()
+        changed.update(loader.remove_relation(child_location_id, "parents", parent_location_id, persist=False))
+        changed.update(loader.remove_relation(parent_location_id, "constituents", child_location_id, persist=False))
+        child = getattr(loader, "entities", {}).get(child_location_id)
+        if isinstance(child, dict) and child.get("parent_location") == parent_location_id:
+            changed.update(loader.set_literal(child_location_id, "parent_location", "", persist=False))
+        if changed:
+            loader.save_ontology_file() if getattr(loader, "use_ontology", False) else loader.save_changed_dataset_files(changed)
+        return bool(changed)
 
-        text = entry_path.read_text(encoding="utf-8")
-        found = self._find_yaml_entity_block(text, parent_location_id)
-        if found is None:
-            return False
-
-        block_start, block_end = found
-        block = text[block_start:block_end]
-        updated_block = self._remove_yaml_offspring_reference(block, child_location_id)
-        if updated_block == block:
-            return True
-
-        updated_text = text[:block_start] + updated_block + text[block_end:].lstrip("\n")
-        entry_path.write_text(updated_text, encoding="utf-8")
-        return True
-
-    def _remove_yaml_offspring_reference(self, block_text, child_location_id):
-        child_location_id = str(child_location_id).strip()
-        if not child_location_id:
-            return block_text
-
-        lines = block_text.rstrip("\n").splitlines()
-        offspring_index = None
-        for index, line in enumerate(lines):
-            if line.startswith("  offspring:"):
-                offspring_index = index
-                break
-
-        if offspring_index is None:
-            return block_text
-
-        section_end = offspring_index + 1
-        while section_end < len(lines):
-            line = lines[section_end]
-            if line.startswith("  ") and not line.startswith("    "):
-                break
-            if line.startswith("- id: "):
-                break
-            section_end += 1
-
-        remove_start = None
-        remove_end = None
-        index = offspring_index + 1
-        while index < section_end:
-            line = lines[index]
-            stripped = line.strip()
-            is_matching_item = (
-                stripped == f"- {child_location_id}"
-                or stripped == f"- id: {child_location_id}"
-            )
-            if is_matching_item:
-                remove_start = index
-                remove_end = index + 1
-                while remove_end < section_end:
-                    next_line = lines[remove_end]
-                    if next_line.startswith("    - "):
-                        break
-                    if next_line.startswith("  ") and not next_line.startswith("    "):
-                        break
-                    remove_end += 1
-                break
-            index += 1
-
-        if remove_start is None:
-            return block_text
-
-        updated_lines = lines[:remove_start] + lines[remove_end:]
-        remaining_offspring_lines = updated_lines[offspring_index + 1:section_end - (remove_end - remove_start)]
-        if not any(line.strip().startswith("-") for line in remaining_offspring_lines):
-            updated_lines[offspring_index:offspring_index + 1] = ["  offspring: []"]
-
-        return "\n".join(updated_lines) + "\n"
-
-    def _replace_yaml_field_in_block(self, block_text, key, value):
-        lines = block_text.rstrip("\n").splitlines()
-        new_field_lines = self._format_yaml_field_lines(key, value)
-
-        target_prefix = f"  {key}:"
-        index = 0
-        while index < len(lines):
-            if not lines[index].startswith(target_prefix):
-                index += 1
-                continue
-
-            end_index = index + 1
-            while end_index < len(lines):
-                line = lines[end_index]
-                if line.startswith("  ") and not line.startswith("    "):
-                    break
-                if line.startswith("- id: "):
-                    break
-                end_index += 1
-
-            return "\n".join(lines[:index] + new_field_lines + lines[end_index:]) + "\n"
-
-        insert_index = 1 if lines and lines[0].startswith("- id: ") else len(lines)
-        return "\n".join(lines[:insert_index] + new_field_lines + lines[insert_index:]) + "\n"
-
-    def _replace_yaml_plain_field_in_block(self, block_text, key, value):
-        lines = block_text.rstrip("\n").splitlines()
-        value_text = "null" if value is None else str(value)
-        new_field_lines = [f"  {key}: {value_text}"]
-
-        target_prefix = f"  {key}:"
-        index = 0
-        while index < len(lines):
-            if not lines[index].startswith(target_prefix):
-                index += 1
-                continue
-
-            end_index = index + 1
-            while end_index < len(lines):
-                line = lines[end_index]
-                if line.startswith("  ") and not line.startswith("    "):
-                    break
-                if line.startswith("- id: "):
-                    break
-                end_index += 1
-
-            return "\n".join(lines[:index] + new_field_lines + lines[end_index:]) + "\n"
-
-        insert_index = len(lines)
-        for index, line in enumerate(lines):
-            if line.startswith("  entry_status:"):
-                insert_index = index
-                break
-
-        return "\n".join(lines[:insert_index] + new_field_lines + lines[insert_index:]) + "\n"
-
-    def _update_entity_temporal_fields(self, entry_path, entity_id, field_values):
-        updated_repository = self._update_repository_entity_fields(entity_id, field_values)
-        if updated_repository is not None:
-            return updated_repository
-
-        if not entry_path.exists():
-            return False
-
-        text = entry_path.read_text(encoding="utf-8")
-        found = self._find_yaml_entity_block(text, entity_id)
-        if found is None:
-            return False
-
-        block_start, block_end = found
-        block = text[block_start:block_end]
-        for key, value in field_values.items():
-            block = self._replace_yaml_plain_field_in_block(block, key, value)
-
-        updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
-        entry_path.write_text(updated_text, encoding="utf-8")
-        return True
-
-    def _format_spatial_feature_geometry_lines(self, points):
-        lines = [
-            "  geometry:",
-            "    type: polygon",
-            "    coordinate_space: map_world",
-            "    points:",
-        ]
-        for x, y in points:
-            lines.append(
-                f"      - [{self._format_yaml_number(x)}, "
-                f"{self._format_yaml_number(y)}]"
-            )
-
-        return lines
-
-    def _replace_yaml_geometry_in_block(self, block_text, points):
-        lines = block_text.rstrip("\n").splitlines()
-        new_geometry_lines = self._format_spatial_feature_geometry_lines(points)
-        target_prefix = "  geometry:"
-
-        index = 0
-        while index < len(lines):
-            if not lines[index].startswith(target_prefix):
-                index += 1
-                continue
-
-            end_index = index + 1
-            while end_index < len(lines):
-                line = lines[end_index]
-                if line.startswith("  ") and not line.startswith("    "):
-                    break
-                if line.startswith("- id: "):
-                    break
-                end_index += 1
-
-            return "\n".join(lines[:index] + new_geometry_lines + lines[end_index:]) + "\n"
-
-        insert_index = len(lines)
-        for index, line in enumerate(lines):
-            if line.startswith("  start_year:") or line.startswith("  entry_status:"):
-                insert_index = index
-                break
-
-        return "\n".join(lines[:insert_index] + new_geometry_lines + lines[insert_index:]) + "\n"
-
-    def _replace_yaml_bounds_in_block(self, block_text, bounds):
-        lines = block_text.rstrip("\n").splitlines()
-        new_bounds_lines = self._format_location_bounds_lines(bounds)
-        target_prefix = "  bounds:"
-
-        index = 0
-        while index < len(lines):
-            if not lines[index].startswith(target_prefix):
-                index += 1
-                continue
-
-            end_index = index + 1
-            while end_index < len(lines):
-                line = lines[end_index]
-                if line.startswith("  ") and not line.startswith("    "):
-                    break
-                if line.startswith("- id: "):
-                    break
-                end_index += 1
-
-            return "\n".join(lines[:index] + new_bounds_lines + lines[end_index:]) + "\n"
-
-        insert_index = len(lines)
-        for index, line in enumerate(lines):
-            if line.startswith("  start_year:") or line.startswith("  entry_status:"):
-                insert_index = index
-                break
-
-        return "\n".join(lines[:insert_index] + new_bounds_lines + lines[insert_index:]) + "\n"
+    def _update_entity_temporal_fields(self, entity_id, field_values):
+        return self._update_repository_entity_fields(entity_id, field_values)
 
     def _update_spatial_feature_text_fields(self, spatial_feature_id, name, notes):
         if self._is_location_backed_region(spatial_feature_id):
@@ -3230,80 +2666,17 @@ class MapSimulation:
             spatial_feature_id,
             {"pretty_name": name, "name": name, "wiki_entry": notes},
         )
-        if updated_repository is not None:
-            return updated_repository
-
-        entry_path = self.SPATIAL_FEATURES_ENTRY_PATH
-        if not entry_path.exists():
-            return False
-
-        text = entry_path.read_text(encoding="utf-8")
-        found = self._find_yaml_entity_block(text, spatial_feature_id)
-        if found is None:
-            return False
-
-        block_start, block_end = found
-        block = text[block_start:block_end]
-        block = self._replace_yaml_field_in_block(block, "pretty_name", name)
-        block = self._replace_yaml_field_in_block(block, "name", name)
-        block = self._replace_yaml_field_in_block(block, "wiki_entry", notes)
-
-        updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
-        entry_path.write_text(updated_text, encoding="utf-8")
-        return True
+        return updated_repository
 
     def _update_location_text_fields(self, location_id, name, notes):
         updated_repository = self._update_repository_entity_fields(
             location_id,
             {"pretty_name": name, "name": name, "wiki_entry": notes},
         )
-        if updated_repository is not None:
-            return updated_repository
-
-        entry_path = self.LOCATIONS_ENTRY_PATH
-        if not entry_path.exists():
-            return False
-
-        text = entry_path.read_text(encoding="utf-8")
-        found = self._find_yaml_entity_block(text, location_id)
-        if found is None:
-            return False
-
-        block_start, block_end = found
-        block = text[block_start:block_end]
-        block = self._replace_yaml_field_in_block(block, "pretty_name", name)
-        block = self._replace_yaml_field_in_block(block, "name", name)
-        block = self._replace_yaml_field_in_block(block, "wiki_entry", notes)
-
-        updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
-        entry_path.write_text(updated_text, encoding="utf-8")
-        return True
+        return updated_repository
 
     def _update_location_map_image_fields(self, location_id, updates):
-        updated_repository = self._update_repository_entity_fields(location_id, dict(updates))
-        if updated_repository is not None:
-            return updated_repository
-
-        entry_path = self.LOCATIONS_ENTRY_PATH
-        if not entry_path.exists():
-            return False
-
-        text = entry_path.read_text(encoding="utf-8")
-        found = self._find_yaml_entity_block(text, location_id)
-        if found is None:
-            return False
-
-        block_start, block_end = found
-        block = text[block_start:block_end]
-        for key, value in updates.items():
-            if key == "map_image_year":
-                block = self._replace_yaml_plain_field_in_block(block, key, value)
-            else:
-                block = self._replace_yaml_field_in_block(block, key, value)
-
-        updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
-        entry_path.write_text(updated_text, encoding="utf-8")
-        return True
+        return self._update_repository_entity_fields(location_id, dict(updates))
 
     def _update_spatial_feature_geometry(self, spatial_feature_id, points):
         if self._is_location_backed_region(spatial_feature_id):
@@ -3328,47 +2701,10 @@ class MapSimulation:
                 }
             },
         )
-        if updated_repository is not None:
-            return updated_repository
-
-        entry_path = self.SPATIAL_FEATURES_ENTRY_PATH
-        if not entry_path.exists():
-            return False
-
-        text = entry_path.read_text(encoding="utf-8")
-        found = self._find_yaml_entity_block(text, spatial_feature_id)
-        if found is None:
-            return False
-
-        block_start, block_end = found
-        block = text[block_start:block_end]
-        block = self._replace_yaml_geometry_in_block(block, points)
-
-        updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
-        entry_path.write_text(updated_text, encoding="utf-8")
-        return True
+        return updated_repository
 
     def _update_location_bounds(self, location_id, bounds):
-        updated_repository = self._update_repository_entity_fields(location_id, {"bounds": bounds})
-        if updated_repository is not None:
-            return updated_repository
-
-        entry_path = self.LOCATIONS_ENTRY_PATH
-        if not entry_path.exists():
-            return False
-
-        text = entry_path.read_text(encoding="utf-8")
-        found = self._find_yaml_entity_block(text, location_id)
-        if found is None:
-            return False
-
-        block_start, block_end = found
-        block = text[block_start:block_end]
-        block = self._replace_yaml_bounds_in_block(block, bounds)
-
-        updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
-        entry_path.write_text(updated_text, encoding="utf-8")
-        return True
+        return self._update_repository_entity_fields(location_id, {"bounds": bounds})
 
     def _update_location_geometry(self, location_id, points):
         updated_repository = self._update_repository_entity_fields(
@@ -3381,25 +2717,7 @@ class MapSimulation:
                 }
             },
         )
-        if updated_repository is not None:
-            return updated_repository
-
-        entry_path = self.LOCATIONS_ENTRY_PATH
-        if not entry_path.exists():
-            return False
-
-        text = entry_path.read_text(encoding="utf-8")
-        found = self._find_yaml_entity_block(text, location_id)
-        if found is None:
-            return False
-
-        block_start, block_end = found
-        block = text[block_start:block_end]
-        block = self._replace_yaml_geometry_in_block(block, points)
-
-        updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
-        entry_path.write_text(updated_text, encoding="utf-8")
-        return True
+        return updated_repository
 
     def _update_location_parent(self, location_id, parent_location_id):
         updated_repository = self._update_repository_entity_fields(
@@ -3409,55 +2727,10 @@ class MapSimulation:
                 "parents": [parent_location_id] if parent_location_id else [],
             },
         )
-        if updated_repository is not None:
-            return updated_repository
-
-        entry_path = self.LOCATIONS_ENTRY_PATH
-        if not entry_path.exists():
-            return False
-
-        text = entry_path.read_text(encoding="utf-8")
-        found = self._find_yaml_entity_block(text, location_id)
-        if found is None:
-            return False
-
-        block_start, block_end = found
-        block = text[block_start:block_end]
-        block = self._replace_yaml_plain_field_in_block(
-            block,
-            "parent_location",
-            parent_location_id,
-        )
-
-        updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
-        entry_path.write_text(updated_text, encoding="utf-8")
-        return True
+        return updated_repository
 
     def _update_spatial_feature_end_year(self, spatial_feature_id, end_year):
-        updated_repository = self._update_repository_entity_fields(spatial_feature_id, {"end_year": end_year})
-        if updated_repository is not None:
-            return updated_repository
-
-        entry_path = (
-            self.LOCATIONS_ENTRY_PATH
-            if self._is_location_backed_region(spatial_feature_id)
-            else self.SPATIAL_FEATURES_ENTRY_PATH
-        )
-        if not entry_path.exists():
-            return False
-
-        text = entry_path.read_text(encoding="utf-8")
-        found = self._find_yaml_entity_block(text, spatial_feature_id)
-        if found is None:
-            return False
-
-        block_start, block_end = found
-        block = text[block_start:block_end]
-        block = self._replace_yaml_plain_field_in_block(block, "end_year", end_year)
-
-        updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
-        entry_path.write_text(updated_text, encoding="utf-8")
-        return True
+        return self._update_repository_entity_fields(spatial_feature_id, {"end_year": end_year})
 
     def _is_draft_double_click(self, screen_pos):
         if self._draft_last_click_time is None:
@@ -4135,6 +3408,7 @@ class MapSimulation:
 
             if location_class in {"planet", "moon"}:
                 rect = self._planet_rect_from_entity(entity)
+                gas_giant = self._entity_is_gas_giant(entity)
 
                 layers.append({
                     "shape": "map_rect",
@@ -4149,7 +3423,9 @@ class MapSimulation:
                     "color": color,
                     "location_class": location_class,
                     "label_position": "below_right",
-                    "has_heightmap_base": isinstance(entity.get("heightmap_model"), dict),
+                    "has_heightmap_base": (not gas_giant) and isinstance(entity.get("heightmap_model"), dict),
+                    "render_style": "gas_giant_bands" if gas_giant else "surface",
+                    "bands": self._gas_giant_bands_for_entity(entity) if gas_giant else [],
                 })
                 continue
 
@@ -4231,6 +3507,8 @@ class MapSimulation:
             return None
 
         if root_entity.get("location_class") not in {"planet", "moon"}:
+            return None
+        if self._entity_is_gas_giant(root_entity):
             return None
 
         heightmap = root_entity.get("heightmap_model")

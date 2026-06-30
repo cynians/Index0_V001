@@ -32,7 +32,7 @@ class Yearer:
         """
         Converts year values to integers when possible.
 
-        Handles YAML values like:
+        Handles repository values like:
         None
         "null"
         "2400"

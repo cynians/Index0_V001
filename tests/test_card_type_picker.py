@@ -34,6 +34,11 @@ class CardTypePickerTests(unittest.TestCase):
         self.assertIn("ideas", dataset_names)
         self.assertCountEqual(["ideas", "vehicles", "materials"], dataset_names)
 
+    def test_collection_template_uses_collection_id_prefix(self):
+        ui = KnowledgeBrowserUI()
+
+        self.assertEqual("coll", ui._template_id_prefix("collections"))
+
     def test_card_type_picker_scrolls_past_first_eight_templates(self):
         ui = KnowledgeBrowserUI()
         templates = [

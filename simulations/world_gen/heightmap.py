@@ -1,5 +1,7 @@
 import math
 
+from simulations.world_gen.map_seed import resolved_map_seed, seed_range
+
 
 def _clamp(value, low, high):
     return max(low, min(high, float(value)))
@@ -63,13 +65,13 @@ def _ridge_belt(nx, ny, phase, latitude_center, amplitude, width):
     return math.exp(-((distance / max(0.001, width)) ** 2))
 
 
-def _crater_signal(nx, ny):
+def _crater_signal(nx, ny, map_seed=""):
     centers = [
-        (0.18, 0.34, 0.055),
-        (0.37, 0.62, 0.042),
-        (0.61, 0.42, 0.05),
-        (0.78, 0.71, 0.045),
-        (0.88, 0.25, 0.038),
+        (seed_range(map_seed, "basin_0_x", 0.05, 0.28), seed_range(map_seed, "basin_0_y", 0.22, 0.45), seed_range(map_seed, "basin_0_r", 0.035, 0.075)),
+        (seed_range(map_seed, "basin_1_x", 0.28, 0.48), seed_range(map_seed, "basin_1_y", 0.52, 0.74), seed_range(map_seed, "basin_1_r", 0.030, 0.065)),
+        (seed_range(map_seed, "basin_2_x", 0.52, 0.70), seed_range(map_seed, "basin_2_y", 0.30, 0.55), seed_range(map_seed, "basin_2_r", 0.035, 0.070)),
+        (seed_range(map_seed, "basin_3_x", 0.70, 0.86), seed_range(map_seed, "basin_3_y", 0.62, 0.82), seed_range(map_seed, "basin_3_r", 0.030, 0.065)),
+        (seed_range(map_seed, "basin_4_x", 0.82, 0.96), seed_range(map_seed, "basin_4_y", 0.15, 0.35), seed_range(map_seed, "basin_4_r", 0.025, 0.055)),
     ]
     value = 0.0
     for cx, cy, radius in centers:
@@ -92,6 +94,39 @@ def _nearest_plate(nx, ny, plates):
             best_distance = distance
             best = plate
     return best
+
+
+def _plate_base_height_m(plate):
+    if not isinstance(plate, dict):
+        return 0.0
+    plate_type = plate.get("plate_type")
+    continentality = float(plate.get("continentality", 0.5) or 0.5)
+    if plate_type == "continental":
+        return 680.0 + continentality * 420.0
+    if plate_type == "mixed":
+        return -750.0 + continentality * 1650.0
+    return -4100.0 + continentality * 850.0
+
+
+def _blended_plate_base_height_m(nx, ny, plates):
+    weighted_height = 0.0
+    total_weight = 0.0
+    nearest = None
+    nearest_distance = 999.0
+    for plate in plates:
+        distance = math.hypot(
+            _wrapped_delta(nx, float(plate.get("center_x", 0.0) or 0.0)),
+            ny - float(plate.get("center_y", 0.0) or 0.0),
+        )
+        if distance < nearest_distance:
+            nearest_distance = distance
+            nearest = plate
+        weight = 1.0 / ((distance + 0.08) ** 2.15)
+        weighted_height += _plate_base_height_m(plate) * weight
+        total_weight += weight
+    if total_weight <= 0:
+        return 0.0, nearest
+    return weighted_height / total_weight, nearest
 
 
 def _point_segment_distance(px, py, x1, y1, x2, y2):
@@ -140,26 +175,22 @@ def _tectonic_height_m(nx, ny, terrain, tectonic_model):
     plates = tectonic_model.get("plates") or []
     if not plates:
         return None
-    plate = _nearest_plate(nx, ny, plates)
+    base, plate = _blended_plate_base_height_m(nx, ny, plates)
     plate_type = plate.get("plate_type") if isinstance(plate, dict) else "mixed"
-    if plate_type == "continental":
-        base = 950.0
-    elif plate_type == "mixed":
-        base = 150.0
-    else:
-        base = -3600.0
 
     longitude = nx * math.tau
     latitude = (ny - 0.5) * math.pi
+    map_seed = str(tectonic_model.get("map_seed") or terrain.get("map_seed") or "")
     broad_relief = (
-        320.0 * math.sin(longitude * 1.3 + latitude * 0.8)
-        + 180.0 * math.cos(longitude * 2.1 - latitude)
+        360.0 * math.sin(longitude * seed_range(map_seed, "tectonic_broad_freq_a", 0.85, 1.45) + latitude * 0.75)
+        + 220.0 * math.cos(longitude * seed_range(map_seed, "tectonic_broad_freq_b", 1.65, 2.55) - latitude)
+        + 95.0 * math.sin(longitude * 4.1 + latitude * 1.7)
     )
     height = base + broad_relief
 
     effects = tectonic_model.get("surface_effects") if isinstance(tectonic_model.get("surface_effects"), dict) else {}
-    uplift_gain = 0.9 + float(effects.get("orogenic_uplift", 0.0) or 0.0) * 1.35
-    basin_gain = 0.8 + float(effects.get("ocean_basin_opening", 0.0) or 0.0) * 1.1
+    uplift_gain = 0.7 + float(effects.get("orogenic_uplift", 0.0) or 0.0) * 0.9
+    basin_gain = 0.65 + float(effects.get("ocean_basin_opening", 0.0) or 0.0) * 0.75
     erosion = float(effects.get("erosion_progress", 0.0) or 0.0)
     boundary_lookup = _boundary_kind_lookup(tectonic_model)
 
@@ -172,22 +203,23 @@ def _tectonic_height_m(nx, ny, terrain, tectonic_model):
             float(segment.get("x2", 0.0) or 0.0),
             float(segment.get("y2", 0.0) or 0.0),
         )
-        if distance > 0.055:
+        if distance > 0.09:
             continue
-        influence = math.exp(-((distance / 0.025) ** 2))
+        influence = math.exp(-((distance / 0.045) ** 2))
+        influence = influence ** 1.18
         kind = boundary_lookup.get(tuple(sorted((segment.get("plate_a"), segment.get("plate_b")))), "passive")
         if kind == "collision":
-            height += 7600.0 * uplift_gain * influence
+            height += 4300.0 * uplift_gain * influence
         elif kind == "subduction":
-            height += 5600.0 * uplift_gain * influence
-            height -= 2600.0 * influence * (1.0 if plate_type == "oceanic" else 0.35)
+            height += 3300.0 * uplift_gain * influence
+            height -= 1800.0 * influence * (1.0 if plate_type == "oceanic" else 0.3)
         elif kind == "divergent":
-            height -= 3600.0 * basin_gain * influence
+            height -= 2100.0 * basin_gain * influence
         elif kind == "transform":
-            height += 1200.0 * influence
+            height += 650.0 * influence
 
     if height > 1000.0:
-        height *= 1.0 - min(0.28, erosion * 0.18)
+        height *= 1.0 - min(0.34, erosion * 0.24)
     return height
 
 
@@ -205,7 +237,7 @@ def _crater_height_adjustment_m(nx, ny, crater_model):
     return adjustment
 
 
-def _wave_height(nx, ny, terrain, tectonic_model=None, crater_model=None):
+def _wave_height(nx, ny, terrain, tectonic_model=None, crater_model=None, map_seed=""):
     heightfield = terrain.get("heightfield") if isinstance(terrain.get("heightfield"), dict) else {}
     tectonics = terrain.get("tectonics") if isinstance(terrain.get("tectonics"), dict) else {}
     cratering = terrain.get("cratering") if isinstance(terrain.get("cratering"), dict) else {}
@@ -217,10 +249,16 @@ def _wave_height(nx, ny, terrain, tectonic_model=None, crater_model=None):
 
     longitude = nx * math.tau
     latitude = (ny - 0.5) * math.pi
+    phase_a = seed_range(map_seed, "wave_phase_a", 0.0, math.tau)
+    phase_b = seed_range(map_seed, "wave_phase_b", 0.0, math.tau)
+    phase_c = seed_range(map_seed, "wave_phase_c", 0.0, math.tau)
+    basin_a = seed_range(map_seed, "basin_freq_a", 0.75, 1.55)
+    basin_b = seed_range(map_seed, "basin_freq_b", 1.25, 2.25)
+    basin_c = seed_range(map_seed, "basin_freq_c", 2.35, 3.75)
     broad_basins = (
-        0.16 * math.sin(longitude * 1.0 + 0.7 * math.sin(latitude))
-        + 0.11 * math.cos(longitude * 1.7 - latitude * 1.2)
-        + 0.07 * math.sin(longitude * 3.0 + latitude * 0.7)
+        0.16 * math.sin(longitude * basin_a + 0.7 * math.sin(latitude + phase_a))
+        + 0.11 * math.cos(longitude * basin_b - latitude * 1.2 + phase_b)
+        + 0.07 * math.sin(longitude * basin_c + latitude * 0.7 + phase_c)
     )
     lowland_bias = -0.12 - water_smoothing * 0.22
     value = lowland_bias + broad_basins * (0.7 + roughness * 0.35)
@@ -233,25 +271,26 @@ def _wave_height(nx, ny, terrain, tectonic_model=None, crater_model=None):
         min_elevation = float(heightfield.get("min_elevation_m", -5000.0) or -5000.0)
         max_elevation = float(heightfield.get("max_elevation_m", 6000.0) or 6000.0)
         span = max(1.0, max_elevation - min_elevation)
-        value = ((tectonic_height - min_elevation) / span) * 2.0 - 1.0
+        tectonic_value = ((tectonic_height - min_elevation) / span) * 2.0 - 1.0
+        value = tectonic_value * 0.78 + value * 0.22
     elif tectonics.get("enabled"):
-        ridge_a = _ridge_belt(nx, ny, phase=0.06, latitude_center=0.38, amplitude=0.075, width=0.034)
-        ridge_b = _ridge_belt(nx, ny, phase=0.43, latitude_center=0.66, amplitude=0.06, width=0.028)
-        ridge_c = _ridge_belt(nx, ny, phase=0.74, latitude_center=0.48, amplitude=0.05, width=0.022)
+        ridge_a = _ridge_belt(nx, ny, phase=seed_range(map_seed, "ridge_a_phase", 0.0, 1.0), latitude_center=seed_range(map_seed, "ridge_a_lat", 0.28, 0.48), amplitude=seed_range(map_seed, "ridge_a_amp", 0.05, 0.095), width=0.034)
+        ridge_b = _ridge_belt(nx, ny, phase=seed_range(map_seed, "ridge_b_phase", 0.0, 1.0), latitude_center=seed_range(map_seed, "ridge_b_lat", 0.55, 0.75), amplitude=seed_range(map_seed, "ridge_b_amp", 0.045, 0.085), width=0.028)
+        ridge_c = _ridge_belt(nx, ny, phase=seed_range(map_seed, "ridge_c_phase", 0.0, 1.0), latitude_center=seed_range(map_seed, "ridge_c_lat", 0.38, 0.62), amplitude=seed_range(map_seed, "ridge_c_amp", 0.03, 0.07), width=0.022)
         ridge_strength = max(ridge_a, ridge_b * 0.78, ridge_c * 0.55)
         trench_strength = max(
-            _ridge_belt(nx, ny, phase=0.09, latitude_center=0.35, amplitude=0.07, width=0.018),
-            _ridge_belt(nx, ny, phase=0.46, latitude_center=0.69, amplitude=0.055, width=0.016),
+            _ridge_belt(nx, ny, phase=seed_range(map_seed, "trench_a_phase", 0.0, 1.0), latitude_center=seed_range(map_seed, "trench_a_lat", 0.25, 0.45), amplitude=0.07, width=0.018),
+            _ridge_belt(nx, ny, phase=seed_range(map_seed, "trench_b_phase", 0.0, 1.0), latitude_center=seed_range(map_seed, "trench_b_lat", 0.58, 0.76), amplitude=0.055, width=0.016),
         )
         value += ridge_strength * (0.72 + roughness * 0.24)
         value -= trench_strength * 0.28
         value += math.sin(longitude * 9.0 + latitude * 2.4) * ridge_strength * 0.07
     else:
-        shield_wave = math.sin(longitude * 2.0 - latitude) * math.cos(latitude * 2.0)
+        shield_wave = math.sin(longitude * seed_range(map_seed, "shield_freq", 1.4, 2.7) - latitude + phase_a) * math.cos(latitude * 2.0 + phase_b)
         value += shield_wave * 0.12 * roughness
 
     if crater_gain > 0.12:
-        value += _crater_signal(nx, ny) * crater_gain * 0.55
+        value += _crater_signal(nx, ny, map_seed=map_seed) * crater_gain * 0.55
     if isinstance(crater_model, dict):
         min_elevation = float(heightfield.get("min_elevation_m", -5000.0) or -5000.0)
         max_elevation = float(heightfield.get("max_elevation_m", 5000.0) or 5000.0)
@@ -262,10 +301,33 @@ def _wave_height(nx, ny, terrain, tectonic_model=None, crater_model=None):
     return _clamp(value, -1.0, 1.0)
 
 
+def _smooth_height_rows(rows, passes=1, blend=0.35):
+    smoothed = [list(row) for row in rows]
+    for _index in range(max(0, int(passes or 0))):
+        next_rows = []
+        height = len(smoothed)
+        width = len(smoothed[0]) if height else 0
+        for row_index, row in enumerate(smoothed):
+            next_row = []
+            for col_index, value in enumerate(row):
+                left = row[(col_index - 1) % width]
+                right = row[(col_index + 1) % width]
+                up = smoothed[max(0, row_index - 1)][col_index]
+                down = smoothed[min(height - 1, row_index + 1)][col_index]
+                neighbor_average = (left + right + up + down) / 4.0
+                next_row.append(round(value * (1.0 - blend) + neighbor_average * blend, 1))
+            if next_row:
+                next_row[-1] = next_row[0]
+            next_rows.append(next_row)
+        smoothed = next_rows
+    return smoothed
+
+
 def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tectonic_model=None, crater_model=None):
     terrain = terrain if isinstance(terrain, dict) else {}
     heightfield = terrain.get("heightfield") if isinstance(terrain.get("heightfield"), dict) else {}
     canvas = terrain.get("map_canvas") if isinstance(terrain.get("map_canvas"), dict) else {}
+    map_seed = terrain.get("map_seed") or resolved_map_seed(seed, planet_id=planet_id)
 
     width_px = int(canvas.get("width_px", 2048) or 2048)
     height_px = int(canvas.get("height_px", 1024) or 1024)
@@ -288,7 +350,7 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         row_values = []
         for col in range(sample_width):
             nx = 0.0 if col == sample_width - 1 else col / max(1, sample_width - 1)
-            normalized = _wave_height(nx, ny, terrain, tectonic_model=tectonic_model, crater_model=crater_model)
+            normalized = _wave_height(nx, ny, terrain, tectonic_model=tectonic_model, crater_model=crater_model, map_seed=map_seed)
             elevation = midpoint + normalized * half_range
             elevation = round(_clamp(elevation, min_elevation, max_elevation), 1)
             row_values.append(elevation)
@@ -296,6 +358,10 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
             row_values[-1] = row_values[0]
         sample_values.extend(row_values)
         rows.append(row_values)
+
+    if isinstance(tectonic_model, dict) and tectonic_model.get("status") == "tectonics_advanced":
+        rows = _smooth_height_rows(rows, passes=2, blend=0.28)
+        sample_values = [value for row in rows for value in row]
 
     sample_count = max(1, len(sample_values))
     broad_plain_fraction = sum(-2000.0 <= value <= 1000.0 for value in sample_values) / sample_count
@@ -308,6 +374,7 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
     return {
         "status": "heightmap_seeded",
         "planet_id": planet_id,
+        "map_seed": map_seed,
         "projection": canvas.get("projection", "equirectangular"),
         "spherical_body": True,
         "wrap_x": True,

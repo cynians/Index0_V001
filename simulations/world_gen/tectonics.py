@@ -1,5 +1,7 @@
 import math
 
+from simulations.world_gen.map_seed import resolved_map_seed, seed_range
+
 
 def _clamp(value, low, high):
     return max(low, min(high, float(value)))
@@ -20,17 +22,17 @@ def _wrapped_distance(ax, ay, bx, by):
     return math.hypot(dx, dy)
 
 
-def _mantle_current_at(nx, ny, cell_count=3):
+def _mantle_current_at(nx, ny, cell_count=3, map_seed=""):
     vx = 0.0
     vy = 0.0
     for index in range(cell_count):
         phase = index / max(1, cell_count)
-        cx = (phase * 0.37 + 0.18) % 1.0
-        cy = 0.24 + (index % 3) * 0.24
+        cx = (phase * seed_range(map_seed, f"cell_{index}_spacing", 0.29, 0.47) + seed_range(map_seed, f"cell_{index}_x", 0.04, 0.34)) % 1.0
+        cy = _clamp(0.18 + (index % 3) * seed_range(map_seed, f"cell_{index}_band", 0.18, 0.28) + seed_range(map_seed, f"cell_{index}_y", -0.05, 0.08), 0.08, 0.92)
         dx = _wrapped_delta(nx, cx)
         dy = ny - cy
         falloff = math.exp(-((dx * dx + dy * dy) / 0.085))
-        swirl = -1.0 if index % 2 else 1.0
+        swirl = -1.0 if seed_range(map_seed, f"cell_{index}_swirl", 0, 1) < 0.5 else 1.0
         vx += (-dy * swirl + 0.18 * math.sin(math.tau * (ny + phase))) * falloff
         vy += (dx * swirl + 0.12 * math.cos(math.tau * (nx - phase))) * falloff
     length = math.hypot(vx, vy)
@@ -44,16 +46,32 @@ def _mantle_current_at(nx, ny, cell_count=3):
     }
 
 
-def _plate_centers(count):
+def _plate_centers(count, map_seed=""):
     centers = []
     golden = 0.61803398875
+    x_offset = seed_range(map_seed, "plate_x_offset", 0.0, 1.0)
+    y_phase = seed_range(map_seed, "plate_y_phase", 0.0, math.tau)
     for index in range(count):
-        nx = (0.12 + index * golden) % 1.0
+        nx = (x_offset + index * golden + seed_range(map_seed, f"plate_{index}_jitter_x", -0.035, 0.035)) % 1.0
         band = index % 4
-        ny = 0.16 + band * 0.22 + 0.055 * math.sin(index * 1.73)
+        ny = 0.16 + band * 0.22 + 0.055 * math.sin(index * 1.73 + y_phase)
+        ny += seed_range(map_seed, f"plate_{index}_jitter_y", -0.045, 0.045)
         ny = _clamp(ny, 0.08, 0.92)
         centers.append((nx, ny))
     return centers
+
+
+def _continent_seed_signal(nx, ny, map_seed=""):
+    longitude = nx * math.tau
+    latitude = (ny - 0.5) * math.pi
+    phase_a = seed_range(map_seed, "continent_phase_a", 0.0, math.tau)
+    phase_b = seed_range(map_seed, "continent_phase_b", 0.0, math.tau)
+    phase_c = seed_range(map_seed, "continent_phase_c", 0.0, math.tau)
+    return (
+        0.52 * math.sin(longitude * seed_range(map_seed, "continent_freq_a", 1.1, 1.9) + latitude * 0.8 + phase_a)
+        + 0.34 * math.cos(longitude * seed_range(map_seed, "continent_freq_b", 2.0, 3.2) - latitude * 1.15 + phase_b)
+        + 0.22 * math.sin(longitude * seed_range(map_seed, "continent_freq_c", 3.2, 5.1) + math.sin(latitude + phase_c))
+    )
 
 
 def _nearest_plate_index(nx, ny, plates):
@@ -92,15 +110,22 @@ def derive_tectonic_model(terrain, seed=None, physics=None, planet_id=""):
     terrain = terrain if isinstance(terrain, dict) else {}
     tectonics = terrain.get("tectonics") if isinstance(terrain.get("tectonics"), dict) else {}
     hydrology = terrain.get("hydrology") if isinstance(terrain.get("hydrology"), dict) else {}
+    map_seed = terrain.get("map_seed") or resolved_map_seed(seed, planet_id=planet_id)
     requested_count = int(tectonics.get("plate_count", 8) or 8)
     plate_count = max(3, min(18, requested_count))
     ocean_fraction = _clamp(hydrology.get("target_ocean_fraction", 0.45), 0.0, 0.92)
 
     plates = []
-    for index, (center_x, center_y) in enumerate(_plate_centers(plate_count)):
-        current = _mantle_current_at(center_x, center_y)
-        plate_type = "oceanic" if ((index / max(1, plate_count - 1)) < ocean_fraction) else "continental"
-        if index % 5 == 0:
+    for index, (center_x, center_y) in enumerate(_plate_centers(plate_count, map_seed=map_seed)):
+        current = _mantle_current_at(center_x, center_y, map_seed=map_seed)
+        continentality = _continent_seed_signal(center_x, center_y, map_seed=map_seed)
+        continentality += (0.5 - ocean_fraction) * 0.65
+        continentality += seed_range(map_seed, f"plate_{index}_continentality_jitter", -0.22, 0.22)
+        if continentality > 0.18:
+            plate_type = "continental"
+        elif continentality < -0.18:
+            plate_type = "oceanic"
+        else:
             plate_type = "mixed"
         speed = current["speed_cm_per_year"]
         plates.append({
@@ -108,6 +133,7 @@ def derive_tectonic_model(terrain, seed=None, physics=None, planet_id=""):
             "center_x": round(center_x, 4),
             "center_y": round(center_y, 4),
             "plate_type": plate_type,
+            "continentality": round(_clamp((continentality + 1.4) / 2.8, 0.0, 1.0), 3),
             "velocity_x_cm_year": round(current["dir_x"] * speed, 3),
             "velocity_y_cm_year": round(current["dir_y"] * speed, 3),
             "speed_cm_per_year": speed,
@@ -118,15 +144,15 @@ def derive_tectonic_model(terrain, seed=None, physics=None, planet_id=""):
         for col in range(5):
             nx = (col + 0.5) / 5.0
             ny = (row + 0.5) / 3.0
-            current = _mantle_current_at(nx, ny)
+            current = _mantle_current_at(nx, ny, map_seed=map_seed)
             currents.append({
                 "pos_x": round(nx, 4),
                 "pos_y": round(ny, 4),
                 **current,
             })
 
-    sample_w = 73
-    sample_h = 37
+    sample_w = 57
+    sample_h = 29
     owner_rows = []
     boundary_segments = []
     boundary_pairs = {}
@@ -159,8 +185,10 @@ def derive_tectonic_model(terrain, seed=None, physics=None, planet_id=""):
                 boundary_pairs[pair] = boundary_pairs.get(pair, 0) + 1
 
     boundaries = []
+    boundary_kind_by_pair = {}
     for (a, b), length in sorted(boundary_pairs.items(), key=lambda item: item[1], reverse=True):
         kind = _boundary_kind(plates[a], plates[b])
+        boundary_kind_by_pair[tuple(sorted((plates[a]["id"], plates[b]["id"])))] = kind
         boundaries.append({
             "plate_a": plates[a]["id"],
             "plate_b": plates[b]["id"],
@@ -169,9 +197,14 @@ def derive_tectonic_model(terrain, seed=None, physics=None, planet_id=""):
             "activity": round(min(1.0, length / max(1, sample_w)), 3),
         })
 
+    for segment in boundary_segments:
+        pair = tuple(sorted((segment.get("plate_a"), segment.get("plate_b"))))
+        segment["kind"] = boundary_kind_by_pair.get(pair, "passive")
+
     return {
         "status": "plates_defined",
         "planet_id": planet_id,
+        "map_seed": map_seed,
         "age_myr": 0.0,
         "plate_count": plate_count,
         "sample_grid": {"width": sample_w, "height": sample_h, "owners": owner_rows},
@@ -204,6 +237,33 @@ def advance_tectonics_model(tectonic_model, terrain, million_years=125.0):
             erosion += activity * 0.35
 
     advanced = dict(tectonic_model)
+    plates = []
+    drift_factor = max(1.0, float(million_years or 1.0)) / 100.0
+    map_seed = str(advanced.get("map_seed") or "")
+    for plate in list(advanced.get("plates") or []):
+        if not isinstance(plate, dict):
+            continue
+        updated = dict(plate)
+        try:
+            cx = float(updated.get("center_x", 0.0) or 0.0)
+            cy = float(updated.get("center_y", 0.5) or 0.5)
+            vx = float(updated.get("velocity_x_cm_year", 0.0) or 0.0)
+            vy = float(updated.get("velocity_y_cm_year", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            plates.append(updated)
+            continue
+        current = _mantle_current_at(cx, cy, map_seed=map_seed)
+        cx = (cx + vx * 0.00022 * drift_factor + current["dir_x"] * 0.0025 * drift_factor) % 1.0
+        cy = _clamp(cy + vy * 0.00016 * drift_factor + current["dir_y"] * 0.0018 * drift_factor, 0.045, 0.955)
+        speed = _clamp(float(updated.get("speed_cm_per_year", current["speed_cm_per_year"]) or 0.0) * 0.88 + current["speed_cm_per_year"] * 0.12, 0.3, 9.5)
+        updated["center_x"] = round(cx, 4)
+        updated["center_y"] = round(cy, 4)
+        updated["velocity_x_cm_year"] = round((float(updated.get("velocity_x_cm_year", 0.0) or 0.0) * 0.82 + current["dir_x"] * speed * 0.18), 3)
+        updated["velocity_y_cm_year"] = round((float(updated.get("velocity_y_cm_year", 0.0) or 0.0) * 0.82 + current["dir_y"] * speed * 0.18), 3)
+        updated["speed_cm_per_year"] = round(speed, 3)
+        plates.append(updated)
+    if plates:
+        advanced["plates"] = plates
     advanced["status"] = "tectonics_advanced"
     advanced["age_myr"] = round(age, 1)
     advanced["geologic_time_step_myr"] = max(1.0, float(million_years or 1.0))
@@ -216,17 +276,28 @@ def advance_tectonics_model(tectonic_model, terrain, million_years=125.0):
     return advanced
 
 
+def mature_tectonics_model(tectonic_model, terrain, cycles=4, million_years_per_cycle=45.0):
+    matured = tectonic_model if isinstance(tectonic_model, dict) else {}
+    for _index in range(max(1, int(cycles or 1))):
+        matured = advance_tectonics_model(matured, terrain, million_years=million_years_per_cycle)
+    matured["maturation_cycles"] = max(1, int(cycles or 1))
+    return matured
+
+
 def derive_crater_model(terrain, seed=None, physics=None, planet_id=""):
     terrain = terrain if isinstance(terrain, dict) else {}
     cratering = terrain.get("cratering") if isinstance(terrain.get("cratering"), dict) else {}
+    map_seed = terrain.get("map_seed") or resolved_map_seed(seed, planet_id=planet_id)
     density = _clamp(cratering.get("density", 0.65), 0.0, 1.0)
     max_km = max(10.0, float(cratering.get("max_crater_diameter_km", 400.0) or 400.0))
     count = int(12 + density * 34)
     craters = []
     golden = 0.61803398875
     for index in range(count):
-        nx = (0.07 + index * golden) % 1.0
-        ny = 0.08 + ((index * 0.37) % 0.84)
+        nx = (seed_range(map_seed, "crater_x_offset", 0.0, 1.0) + index * golden) % 1.0
+        nx = (nx + seed_range(map_seed, f"crater_{index}_jitter_x", -0.025, 0.025)) % 1.0
+        ny = 0.08 + ((index * seed_range(map_seed, "crater_y_step", 0.29, 0.43)) % 0.84)
+        ny = _clamp(ny + seed_range(map_seed, f"crater_{index}_jitter_y", -0.035, 0.035), 0.04, 0.96)
         scale = 1.0 / ((index % 9) + 1)
         diameter = max(3.0, max_km * (0.12 + 0.88 * scale))
         craters.append({
@@ -240,6 +311,7 @@ def derive_crater_model(terrain, seed=None, physics=None, planet_id=""):
     return {
         "status": "craters_seeded",
         "planet_id": planet_id,
+        "map_seed": map_seed,
         "density": round(density, 3),
         "craters": craters,
         "notes": [

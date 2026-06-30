@@ -237,6 +237,34 @@ class OntologyRepositoryTests(unittest.TestCase):
             self.assertTrue(model.loader.use_ontology)
             self.assertEqual("From OWL", model.get_entity("idea_from_owl")["pretty_name"])
 
+    def test_world_model_relation_api_updates_loader_projection(self):
+        ontology = OntologyRepository({
+            "ideas": [
+                {"id": "idea_parent", "type": "idea", "pretty_name": "Parent"},
+                {"id": "idea_child", "type": "idea", "pretty_name": "Child"},
+            ],
+        })
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            entries_dir = temp_path / "entries"
+            entries_dir.mkdir()
+            output_path = temp_path / "ontology" / "index0.owl"
+            try:
+                ontology.save_owl(output_path)
+                model = WorldModel(
+                    entries_directory=entries_dir,
+                    ontology_path=output_path,
+                    use_ontology=True,
+                )
+                changed = model.set_relation("idea_child", "parents", "idea_parent")
+            except OntologyDependencyError as exc:
+                self.skipTest(str(exc))
+
+            self.assertEqual({"idea_child", "idea_parent"}, changed)
+            self.assertEqual(["idea_parent"], model.get_entity("idea_child")["parents"])
+            self.assertEqual([{"id": "idea_child"}], model.get_entity("idea_parent")["offspring"])
+
     def test_ontology_loader_persist_entity_round_trips_to_owl(self):
         ontology = OntologyRepository({
             "ideas": [
@@ -275,6 +303,85 @@ class OntologyRepositoryTests(unittest.TestCase):
             self.assertIn("idea_child", reloaded.entities)
             self.assertEqual(["idea_parent"], reloaded.entities["idea_child"]["parents"])
             self.assertEqual([{"id": "idea_child"}], reloaded.entities["idea_parent"]["offspring"])
+
+    def test_ontology_loader_relation_api_round_trips_to_owl(self):
+        ontology = OntologyRepository({
+            "ideas": [
+                {"id": "idea_parent", "type": "idea", "pretty_name": "Parent"},
+                {"id": "idea_child", "type": "idea", "pretty_name": "Child"},
+            ],
+        })
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            entries_dir = temp_path / "entries"
+            entries_dir.mkdir()
+            output_path = temp_path / "ontology" / "index0.owl"
+            try:
+                ontology.save_owl(output_path)
+                loader = EntityLoader(
+                    entries_directory=entries_dir,
+                    ontology_path=output_path,
+                    use_ontology=True,
+                )
+                self.assertEqual(
+                    {"idea_child", "idea_parent"},
+                    loader.set_relation("idea_child", "parents", "idea_parent"),
+                )
+                self.assertEqual(
+                    {"idea_child"},
+                    loader.set_literal("idea_child", "pretty_name", "Child Prime"),
+                )
+                reloaded = EntityLoader(
+                    entries_directory=entries_dir,
+                    ontology_path=output_path,
+                    use_ontology=True,
+                )
+            except OntologyDependencyError as exc:
+                self.skipTest(str(exc))
+
+            self.assertEqual(["idea_parent"], reloaded.entities["idea_child"]["parents"])
+            self.assertEqual([{"id": "idea_child"}], reloaded.entities["idea_parent"]["offspring"])
+            self.assertEqual("Child Prime", reloaded.entities["idea_child"]["pretty_name"])
+
+    def test_ontology_loader_reciprocal_relation_api_round_trips_to_owl(self):
+        ontology = OntologyRepository({
+            "locations": [
+                {"id": "loc_a", "type": "location", "_dataset": "locations", "name": "A"},
+                {"id": "loc_b", "type": "location", "_dataset": "locations", "name": "B"},
+            ],
+        })
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            entries_dir = temp_path / "entries"
+            entries_dir.mkdir()
+            output_path = temp_path / "ontology" / "index0.owl"
+            try:
+                ontology.save_owl(output_path)
+                loader = EntityLoader(
+                    entries_directory=entries_dir,
+                    ontology_path=output_path,
+                    use_ontology=True,
+                )
+                self.assertEqual(
+                    {"loc_a", "loc_b"},
+                    loader.set_relation("loc_a", "neighbours", "loc_b", reciprocal_field="neighbours"),
+                )
+                self.assertEqual(
+                    {"loc_a", "loc_b"},
+                    loader.remove_relation("loc_a", "neighbours", "loc_b", reciprocal_field="neighbours"),
+                )
+                reloaded = EntityLoader(
+                    entries_directory=entries_dir,
+                    ontology_path=output_path,
+                    use_ontology=True,
+                )
+            except OntologyDependencyError as exc:
+                self.skipTest(str(exc))
+
+            self.assertEqual([], reloaded.entities["loc_a"].get("neighbours", []))
+            self.assertEqual([], reloaded.entities["loc_b"].get("neighbours", []))
 
     def test_location_topology_fields_round_trip_to_owl(self):
         ontology = OntologyRepository({

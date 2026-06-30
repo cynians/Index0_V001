@@ -21,7 +21,17 @@ class VehicleClassRelationTests(unittest.TestCase):
         class_relation_keys = [key for key, _ in sections["Class Relations"]]
         card.set_active_tab("relations")
 
-        self.assertEqual(["operators", "markets", "producers"], class_relation_keys)
+        self.assertEqual(
+            [
+                "production_materials_needed",
+                "production_components_needed",
+                "production_items_needed",
+                "operators",
+                "markets",
+                "producers",
+            ],
+            class_relation_keys,
+        )
         self.assertIn("Class Relations", card._visible_sections())
 
     def test_vehicle_operator_target_accepts_multiple_classes(self):

@@ -1,6 +1,3 @@
-import re
-from pathlib import Path
-
 from engine.clock import Clock
 from engine.logger import logger
 from engine.simulation_manager import SimulationManager
@@ -13,10 +10,8 @@ class PersonSimulation:
 
     This deliberately starts as a thin runtime shell: it owns a selected person,
     exposes timeline/history hooks to UIManager, and persists inspector edits to
-    the backing YAML entry.
+    the repository loader.
     """
-
-    ENTRY_PATH = Path(__file__).resolve().parents[2] / "entries" / "people.yaml"
 
     REFERENCE_FIELDS = (
         "affiliated_factions",
@@ -310,154 +305,17 @@ class PersonSimulation:
         if self.world_model is not None and hasattr(self.world_model, "refresh"):
             self.world_model.refresh()
 
-    def _entry_path_for_person(self, person):
-        dataset_name = person.get("_dataset") or "people"
-        return Path(__file__).resolve().parents[2] / "entries" / f"{dataset_name}.yaml"
-
     def _persist_person_updates(self, person, updates):
         entity_id = person.get("id")
         if not entity_id:
             return False
 
         loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
-        if getattr(loader, "use_ontology", False) and hasattr(loader, "persist_entity"):
-            person.update(updates)
-            if not person.get("_dataset"):
-                person["_dataset"] = "people"
-            return loader.persist_entity(person)
-
-        entry_path = self._entry_path_for_person(person)
-        entry_path.parent.mkdir(parents=True, exist_ok=True)
-
-        try:
-            text = entry_path.read_text(encoding="utf-8") if entry_path.exists() else ""
-        except OSError as exc:
-            logger.error(f"[PersonSimulation] Failed to read {entry_path}: {exc}")
+        if loader is None or not hasattr(loader, "persist_entity"):
+            logger.error("[PersonSimulation] No repository loader available for person persistence")
             return False
 
-        found = self._find_yaml_entity_block(text, entity_id)
-        if found is None:
-            entity = {key: value for key, value in person.items() if not str(key).startswith("_")}
-            entity.update(updates)
-            block = self._format_yaml_entity_block(entity)
-            separator = "" if not text.strip() else "\n"
-            updated_text = text.rstrip() + separator + block
-        else:
-            block_start, block_end = found
-            block = text[block_start:block_end]
-            for key, value in updates.items():
-                block = self._replace_yaml_plain_field_in_block(block, key, value)
-            updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
-
-        try:
-            entry_path.write_text(updated_text, encoding="utf-8")
-        except OSError as exc:
-            logger.error(f"[PersonSimulation] Failed to write {entry_path}: {exc}")
-            return False
-
-        return True
-
-    def _find_yaml_entity_block(self, text, entity_id):
-        start_pattern = rf"(?m)^- id: {re.escape(str(entity_id))}\s*$"
-        start_match = re.search(start_pattern, text)
-        if not start_match:
-            return None
-
-        next_match = re.search(r"(?m)^- id: ", text[start_match.end():])
-        block_start = start_match.start()
-        block_end = start_match.end() + next_match.start() if next_match else len(text)
-        return block_start, block_end
-
-    def _replace_yaml_plain_field_in_block(self, block_text, key, value):
-        lines = block_text.rstrip("\n").splitlines()
-        new_field_lines = self._format_yaml_value_lines(key, value)
-
-        target_prefix = f"  {key}:"
-        index = 0
-        while index < len(lines):
-            if not lines[index].startswith(target_prefix):
-                index += 1
-                continue
-
-            end_index = index + 1
-            while end_index < len(lines):
-                line = lines[end_index]
-                if line.startswith("  ") and not line.startswith("    "):
-                    break
-                if line.startswith("- id: "):
-                    break
-                end_index += 1
-
-            return "\n".join(lines[:index] + new_field_lines + lines[end_index:]) + "\n"
-
-        insert_index = len(lines)
-        for index, line in enumerate(lines):
-            if line.startswith("  entry_status:"):
-                insert_index = index
-                break
-
-        return "\n".join(lines[:insert_index] + new_field_lines + lines[insert_index:]) + "\n"
-
-    def _format_yaml_scalar(self, value):
-        if value is None:
-            return "null"
-        if isinstance(value, bool):
-            return "true" if value else "false"
-        if isinstance(value, (int, float)):
-            return str(value)
-
-        text = str(value)
-        if text == "":
-            return "''"
-        if "\n" in text:
-            lines = text.splitlines()
-            return "|\n" + "\n".join(f"    {line}" for line in lines)
-
-        needs_quote = (
-            text.strip() != text
-            or text.lower() in {"null", "none", "true", "false", "yes", "no"}
-            or any(ch in text for ch in [":", "#", "{", "}", "[", "]", ","])
-        )
-        if needs_quote:
-            return "'" + text.replace("'", "''") + "'"
-        return text
-
-    def _format_yaml_value_lines(self, key, value):
-        if isinstance(value, list):
-            if not value:
-                return [f"  {key}: []"]
-            lines = [f"  {key}:"]
-            lines.extend(f"    - {self._format_yaml_scalar(item)}" for item in value)
-            return lines
-
-        if isinstance(value, dict):
-            if not value:
-                return [f"  {key}: {{}}"]
-            lines = [f"  {key}:"]
-            for child_key, child_value in value.items():
-                lines.append(f"    {child_key}: {self._format_yaml_scalar(child_value)}")
-            return lines
-
-        scalar = self._format_yaml_scalar(value)
-        if scalar.startswith("|\n"):
-            return [f"  {key}: {scalar}"]
-        return [f"  {key}: {scalar}"]
-
-    def _format_yaml_entity_block(self, entity):
-        ordered_keys = ["id", "pretty_name", "name", "type"]
-        keys = [key for key in ordered_keys if key in entity]
-        keys.extend(key for key in entity.keys() if key not in keys and not str(key).startswith("_"))
-
-        lines = []
-        for index, key in enumerate(keys):
-            prefix = "- " if index == 0 else "  "
-            value_lines = self._format_yaml_value_lines(key, entity.get(key))
-            if not value_lines:
-                continue
-            first = value_lines[0]
-            if first.startswith("  "):
-                first = prefix + first[2:]
-            lines.append(first)
-            lines.extend(value_lines[1:])
-
-        return "\n".join(lines).rstrip() + "\n"
+        person.update(updates)
+        if not person.get("_dataset"):
+            person["_dataset"] = "people"
+        return loader.persist_entity(person)

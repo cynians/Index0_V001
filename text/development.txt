@@ -1245,7 +1245,7 @@ Next:
 * define event format
 * implement minimal event bus
 
-5. ENTITY INTEGRATION (entities.yaml)
+5. ENTITY INTEGRATION (ontology repository)
 
 Planned:
 

@@ -213,16 +213,58 @@ class WorldModel:
         self.touch_degrees = TouchDegrees(self.loader, self.schemas)
         self.graph = self.touch_degrees
         self.yearer = Yearer(self.loader)
+        self.repository_revision = 0
 
     def get_entity(self, entity_id):
         return self.loader.get(entity_id)
+
+    def set_literal(self, entity_id, field_name, value, persist=True):
+        changed_entity_ids = self.loader.set_literal(entity_id, field_name, value, persist=persist)
+        self._refresh_after_repository_mutation(changed_entity_ids)
+        return changed_entity_ids
+
+    def set_relation(self, source_id, field_name, target_id, reciprocal_field=None, persist=True):
+        changed_entity_ids = self.loader.set_relation(
+            source_id,
+            field_name,
+            target_id,
+            reciprocal_field=reciprocal_field,
+            persist=persist,
+        )
+        self._refresh_after_repository_mutation(changed_entity_ids)
+        return changed_entity_ids
+
+    def remove_relation(self, source_id, field_name, target_id, reciprocal_field=None, persist=True):
+        changed_entity_ids = self.loader.remove_relation(
+            source_id,
+            field_name,
+            target_id,
+            reciprocal_field=reciprocal_field,
+            persist=persist,
+        )
+        self._refresh_after_repository_mutation(changed_entity_ids)
+        return changed_entity_ids
+
+    def _refresh_after_repository_mutation(self, changed_entity_ids):
+        if not changed_entity_ids:
+            return
+        if hasattr(self.touch_degrees, "refresh"):
+            self.touch_degrees.refresh()
+        self.repository_revision += 1
+
+    def mark_repository_changed(self):
+        if hasattr(self.touch_degrees, "refresh"):
+            self.touch_degrees.refresh()
+        self.yearer = Yearer(self.loader)
+        self.repository_revision += 1
 
     def get_dataset(self, dataset_name):
         if dataset_name == "systems":
             return [
                 entity
                 for entity in self.loader.get_dataset("locations")
-                if entity.get("system_role")
+                if entity.get("system_role") == "star_system"
+                or entity.get("location_class") == "star_system"
             ]
         if dataset_name == "spatial_features":
             return [

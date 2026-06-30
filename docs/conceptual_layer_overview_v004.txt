@@ -1,0 +1,442 @@
+Index0 Conceptual Layer Overview
+Version: v004
+Date: 2026-06-30
+Purpose: Compact conceptual handoff document for discussing and evolving the program model outside the code editor.
+
+INSTRUCTIONS FOR THE NON-EDITING GPT
+Read this whole document before proposing changes.
+Work conceptually: suggest model changes, terminology, missing concepts, relations, workflows, and unresolved design choices.
+Do not write code unless explicitly asked. Prefer concise, structured notes that can later be implemented by Codex.
+When proposing updates, write them under "Changes to next version" using numbered items.
+Preserve the versioning scheme: the next implemented document should become v004, then v005, and so on.
+If something is uncertain, mark it as an open question rather than inventing a final answer.
+
+CHANGES TO NEXT VERSION
+Changes to next version:
+1. Add a planetary formation theory model as the conceptual foundation for future world generation.
+2. Treat protoplanetary disk location and condensation fronts as template-selection inputs for generated planets.
+3. Add formation-theory generation as a star-system worldgen action that may add one or two plausible planets without overwriting authored worlds.
+4. Add volatile delivery/loss and terraforming logistics as explicit future model targets.
+5. Add thermal evolution and mantle-composition-derived tectonics as preferred replacements for manually chosen tectonic modes.
+6. Add Celsius display as a UI expectation wherever Kelvin temperatures are shown to users.
+
+1. PROGRAM IDENTITY
+Is-State:
+Index0 is a repository-driven ontology workspace for worldbuilding, simulation, and structured knowledge editing.
+Entries are typed ontology entities with schema fields, relations, temporal ranges, visual cards, repository visibility, and simulation affordances.
+The user works mainly through the repository browser, card canvas, timeline, and entity-launched simulations.
+Current card tabs include General, Overview, Temporal, Location, Relations, Production, Site, Phylogeny, Operational, Simulation, and Media as applicable.
+The old broad State tab is obsolete and is not part of the current card tab order.
+
+Should-Be State:
+The program should feel like one coherent ontology workspace rather than a set of disconnected editors.
+The user should be able to move from concept, to entity card, to map/orbit/worldgen simulation, to production/logistics consequences without changing mental models.
+Any tab or simulation panel should expose the same underlying entity facts from the angle where they matter most.
+
+2. CURRENT IMPLEMENTATION REALITY
+Is-State:
+The current program is ontology-first.
+`ontology/index0.owl` is the active source for entities, relations, schema definitions, and UI field metadata.
+The old `entries/*.yaml`, `schemas/*.yaml`, YAML repository, and YAML export tooling have been removed from the current workspace.
+`EntityLoader` preserves `loader.datasets` and `loader.entities` projections so existing UI and simulations can work against ontology-backed data.
+`OntologyRepository` round-trips entities through OWL, preserves arbitrary object relation fields, projects `offspring` from `parents`, and supports ontology-backed persist, rename, and remove flows.
+`systems` and `spatial_features` are still projected into `locations` for active repository use.
+There is still compatibility import logic for structured non-ontology data, but it is not the normal source of truth.
+
+Should-Be State:
+New durable facts should be modeled in the ontology first, with projections used only to serve UI and simulation ergonomics.
+The app should not regain a parallel YAML source path.
+Compatibility import paths should remain clearly transitional and should never become a second canonical repository.
+
+3. CORE ENTITY MODEL
+Is-State:
+Everything important becomes an entity when it needs identity, relations, history, simulation behavior, or durable player-facing knowledge.
+Common fields include `id`, `pretty_name`, `name`, `type`, `dataset`, class/subclass fields, `three_word_description`, card color fields, `start_year`, `end_year`, `temporal_periods`, `tags`, `wiki_entry`, `parents`, `related`, derived `offspring`, and `entry_status`.
+Current major entity families include locations, star systems, orbital bodies, spatial features, collections, producers, production records, technologies, vehicles, items, components, materials, factions, institutions, formations, pops, people, cladistics/species, ideas, media, tasks, logistics, and markets.
+Collections now exist as an entity family for encyclopedic grouping entries.
+Materials include ordinary material entries and newer natural/atmospheric material modeling used by world generation.
+
+Should-Be State:
+The model should distinguish corporal entities from conceptual entities.
+Corporal entities are physically embodied things or places: vehicle, mine, person, planet, room, star, cargo load.
+Conceptual entities are abstractions, designs, classes, tags, theories, technologies, collections, recipes, and ideas.
+This distinction should guide schema design, UI display, generation, persistence, and simulation handoff without forcing the user to do extra classification work.
+
+4. ONTOLOGY AND STORAGE PRINCIPLE
+Is-State:
+The ontology is the intended source of truth for conceptual relationships.
+`parents` maps to `hasParent`.
+`offspring` is derived from `parents` / `hasOffspring`.
+`related` maps to `relatedTo`.
+Other entity-reference fields become relation properties.
+Scalar and structured fields become data properties, with JSON encoding for dict/list structures where needed.
+`relation_mirror.py` now mirrors location/simulation facts into relation fields where appropriate, including star-system/parent links and material relations.
+
+Should-Be State:
+If a fact needs to be queried, linked, visualized, simulated, preserved as knowledge, or shared across UI surfaces, it belongs in the ontology model.
+Runtime-only state should stay out of durable ontology facts unless it becomes meaningful history, player-facing knowledge, saved simulation state, or a reproducible generation seed.
+Mirrors should remain helpers for keeping views coherent, not hidden alternative ownership of facts.
+
+5. REPOSITORY VIEW
+Is-State:
+The repository browser supports dataset filters, schemas, period filtering, incomplete-only filtering, and forgiving multi-term search.
+Schemas can appear as browser entries.
+Location/system entries are shown in a unified `Locations / Systems` hierarchy.
+The hierarchy uses fields such as `parent_cluster`, `parent_location`, `parent_entity`, `parent_body`, `star_system`, and `parents`.
+Orbit and surface children can be grouped separately under orbital entities.
+Star systems sort Sol first and then by known stellar-neighbour distance when available.
+Orbital bodies sort by median orbital distance when available.
+Incomplete field counts are filtered by schema relevance, including class-specific location pruning.
+Repository integrity tests currently assert collection schema presence and a restored stellar-neighbourhood graph with many interconnected systems.
+
+Should-Be State:
+The repository should help users discover valid next actions without prior ontology knowledge.
+It should surface missing but relevant fields, hide irrelevant schema noise, and suggest creation/linking workflows based on entity class.
+Collections should become useful browseable entry points rather than just another dataset.
+
+6. CARDS AND UI CONCEPT
+Is-State:
+Cards are the main editing surface for ontology entries.
+The General tab shows title, short description, tags, wiki information, and timeline snapshot text where relevant.
+The Overview tab summarizes identity, classification, dimensions/scale, and metadata.
+The Temporal tab shows temporal fields, commentary, `temporal_periods`, and timeline-oriented editing.
+The Relations tab focuses on meaningful ontology relations and class relations.
+The Location tab manages location history for non-location cards and topology for location cards.
+The Production tab handles producer and production-line workflows.
+The Site tab appears for sites and site-like locations.
+The Simulation tab uses subtabs for Orbital, Map Sim, World Gen, and Data fields.
+The Media tab holds image and media fields.
+The obsolete State tab has been removed; surviving state-like fields belong in simulation, temporal, overview, location, or relation views.
+
+Should-Be State:
+Cards should make entities editable where the user naturally notices the missing fact.
+Tabs should be semantic lenses over the same ontology facts, not separate storage domains.
+Simulation subtabs should expose only durable simulation facts and reproducible generation state, not transient editor internals.
+
+7. LOCATIONS, SYSTEMS, AND SPATIAL FEATURES
+Is-State:
+Locations are the unified spatial entity surface.
+They include surface/map entities, sites, buildings, rooms, orbital bodies, stars, and star systems.
+Important classes include `star_system`, `stellar_system`, `star`, `planet`, `moon`, `dwarf_planet`, `asteroid`, `comet`, `orbital_body`, `continent`, `country`, `state`, `region`, `city`, `quarter`, `site`, `macro_site`, `internal_passage`, `building`, `room`, `island_chain`, `atoll`, and `cluster`.
+Orbital fields can exist on location entries: `system_role`, `system_class`, `star_system`, `body_class`, `parent_body`, `location_entity`, `derived_from_system_body`, `legacy_system_entity_id`, mass/radius fields, orbital elements, `mean_anomaly_deg_at_epoch`, `display_color`, `stellar_neighbours`, `spectral_class`, and `luminosity_solar`.
+Map fields can exist on location entries: `coords`, `bounds`, `geometry`, `layer_kind`, `parent_entity`, `owner_entity`, `coverage_mode`, `resolution_m_per_pixel`, `draw_order`, `map_projection`, `map_status`, and map canvas dimensions.
+
+Should-Be State:
+The folded-location model should remain the user-facing spatial model unless a stronger ontology distinction becomes necessary.
+Systems and spatial features may remain distinct ontology classes internally, but they should project cleanly into the same location-facing workflows.
+Parentage, orbital containment, surface containment, and map geometry should be consistent enough that creating a body in worldgen automatically makes it usable in space sim, map sim, relations, and repository hierarchy.
+
+8. TAG SYSTEM
+Is-State:
+Tags are lightweight conceptual labels.
+Entity cards have editable tag strips.
+Tag suggestions are built from existing string tags and tag-like entries.
+The ontology `tags` schema defines `tag_class`, `primary_color`, and `secondary_color`.
+Tag chip colors can resolve through matching tag entities when those exist.
+Worldgen currently uses operational tags such as `world_gen_unfinished`, `world_gen_complete`, `world_gen_stage_*`, `gas_giant`, and `no_solid_surface`.
+Most tags are still string labels embedded on entities rather than populated tag-card entities.
+
+Should-Be State:
+Tags should remain lightweight, but card-capable.
+A tag should be selectable from a front-page strip and able to open its own card when it has been promoted into an entity.
+Some tags may later become traits, capabilities, controlled vocabulary terms, or ontology classes.
+Planet and worldgen tags should become richer enough to support material inference, environment classification, generation routing, and search.
+
+9. COLLECTIONS
+Is-State:
+Collection is a current entity kind.
+The ontology contains a collections schema, including `collection_class`, and new collection IDs use the `coll` prefix in the type picker path.
+Collections are intended as encyclopedic entries that gather or explain sets of other entries in an informative sense rather than a mechanical containment sense.
+
+Should-Be State:
+Collections should become reader-facing knowledge hubs.
+They should be able to collect entity references, thematic lists, timelines, maps, and explanatory prose without pretending that the collected entries are physically contained by the collection.
+They should help organize lore, scientific categories, design families, regional surveys, and historical overviews.
+
+10. PRODUCTION CONCEPT
+Is-State:
+Production is partly implemented as first-class repository data.
+There are production technologies, production records/lines, and producers.
+The iron/excavator-style requirement chain remains conceptually useful, but not all earlier test seed entities are currently present as canon entries.
+
+Should-Be State:
+Production should connect resources, sites, technologies, vehicles, operators, markets, logistics, and time.
+A production chain should be explainable both as entity relations and as operational consequences in map/logistics simulation.
+Recipes and capabilities should stay declarative; actual operations should be production records.
+
+11. PRODUCTION TECHNOLOGIES
+Is-State:
+Production technologies are a subclass/use of technology.
+Implemented fields include `technology_class`, `technology_subclass`, `developed_by`, `used_by`, `associated_locations`, inputs, outputs, production rate fields, required technologies, required site tags/conditions, and required vehicle/item/component tags.
+Requirement reports evaluate active technology against site conditions, assigned vehicles, assigned items, assigned components, and active supporting technologies.
+
+Should-Be State:
+Technology requirement fields and production-record requirement fields should either be normalized or deliberately separated.
+Production technologies should define reusable capability logic, while production records should describe concrete use of that capability at a site by an operator.
+
+12. PRODUCTION RECORDS AND PRODUCERS
+Is-State:
+Production records are entities in practice.
+Implemented fields include `production_class`, `production_location`, `production_technology`, `operated_by`, inputs, outputs, assigned vehicles/items/components, `produced_by`, rate fields, temporal fields, requirement fields, task-chain description, repair/disassembly support, map notes, and throughput fields.
+Producer cards can find production entities, create `prodline_*` records, assign products, sites, rates, and temporal ranges, group by product or site, and sync operator responsibility to the site.
+Current seeded anchors include `prod_steel_plate_rolling` and `prod_pump_module_assembly`.
+
+Should-Be State:
+Producer cards should increasingly show projections from production records rather than duplicating separate `produced_*` source fields.
+Production records should be the durable trace of actual capability in the world.
+Producer, site, market, and logistics views should all read the same production records from their own angles.
+
+13. SITES
+Is-State:
+Sites are location entities and are not limited to industrial use.
+Current site fields include `site_class`, `operated_by`, `site_conditions`, `active_production_technologies`, `assigned_vehicles`, `assigned_items`, and `assigned_components`.
+The Site tab reports requirement completeness for active production technologies.
+
+Should-Be State:
+Sites should remain generic and reusable: production site, cultural site, launch site, place of worship, mining site, asteroid mining site, research site, and more.
+Site conditions should eventually be derivable from parent regions, map layers, natural materials, infrastructure, and manual declarations.
+The same requirement logic should be reusable by producers, tasks, logistics, UI suggestions, and validation.
+
+14. LOGISTICS AND MARKETS
+Is-State:
+Logistics and markets exist in the repository, but their implementation is skeletal.
+Current logistics schema has `associated_locations`.
+Current markets schema is nearly empty.
+At least one logistics entry exists, and market entries exist.
+Vehicle schema already has `markets`, `operators`, and `producers` class-relation fields.
+
+Should-Be State:
+Logistics should model transport between sites, regions, markets, and other locations.
+It should connect production demand to movement without simulating every person, vehicle, and cargo load at full resolution all the time.
+It should operate through corporal journeys and aggregate throughput without resolving the same demand twice.
+Markets should expose available designs, resources, vehicles, services, prices, and access rules before individual acquisitions become corporal entities.
+Terraforming should be modeled primarily as logistics plus production plus long-running environmental intervention: delivered equipment, volatile imports/exports, orbital infrastructure, site creation, energy budgets, scheduled operations, and durable planetary state changes.
+Player-driven terraforming should influence volatile inventories, surface pressure, temperature, hydrology, atmospheric chemistry, and biosphere readiness through material and logistics chains rather than through one-off manual planet edits.
+
+15. SIMULATION LAUNCH AND NAVIGATION MODEL
+Is-State:
+Star systems launch to root Space Simulation.
+Orbital bodies launch to local Space Simulation or map view depending on class and map fields.
+Planet-like locations can launch to map, worldgen, or local space context.
+Buildings launch to Building Simulation.
+Rooms route to their parent building workspace.
+Normal locations launch to Map Simulation.
+Vehicles launch to Vehicle Simulation.
+People launch to Person Simulation.
+Cladistics/species launch to Phylogeny Simulation.
+Worldgen can be launched from star-system and planet workflows, including existing planet reuse.
+
+Should-Be State:
+Launch behavior should be documented as a semantic affordance of entity classes, not only as UI routing code.
+When multiple launch affordances apply, the UI should guide the user to the most relevant one while preserving alternate routes.
+Launching from a generated entity should not lose the context or data that created it.
+
+16. SPACE SIMULATION
+Is-State:
+The Space Simulation is a top-down 2D interface for orbital visualization and selection.
+It loads active orbital bodies from ontology-backed location/system entries.
+It uses parent body, semi-major axis, eccentricity, mean anomaly, mass, radius, and display color.
+It creates 2D Kepler-style orbits for orbiting objects.
+It renders orbit paths, bodies, selection states, habitable zones, stellar-neighbour layouts, and gas giant atmospheric bands where render data exists.
+It can create a synthetic primary anchor when a system lacks an explicit root star.
+It uses stored `mean_anomaly_deg_at_epoch` or deterministic fallback values so bodies are not always displayed in one row.
+Stellar class helpers infer display profiles and habitable-zone values.
+Stellar-neighbour data is restored in the ontology and tested for Sol, Ross, and a larger connected neighbourhood.
+
+Should-Be State:
+Celestial bodies should use real three-dimensional orbital parameters.
+Their positions and orbital paths should be projected into the 2D simulation view.
+Reference orbit and simulation orbit should be distinguished.
+Spacecraft should eventually have orbital state, propulsion, delta-v, planned trajectories, maneuver nodes, predicted encounters, sphere-of-influence transitions where supported, time acceleration, and interstellar navigation.
+
+17. MAP, BUILDING, AND WORLD GENERATION
+Is-State:
+Map simulation is a repository-backed spatial editor/viewer.
+It loads root locations and child layers, supports image/rectangle/polygon/marker/heightmap-style layers, selection, hover, inspector payloads, imported map images, map history timeline hooks, region drafting, and parent placement.
+It can persist created/edited location geometry into the ontology-backed repository.
+It can render gas giant band views instead of terrestrial surfaces when `surface_render_mode` or `map_render_mode` is `gas_giant_bands`.
+Building simulation extends map simulation for interiors; drafted polygons become room location entries linked to the building.
+World generation is a substantial planet-authoring workspace.
+It supports orbit drafting, generic/eccentric/gas-giant generation routes, existing planet linking, explicit seeded generation, randomized parameter variation, deterministic map seeds derived from system/body identity, resume of unfinished worlds, incomplete/complete worldgen tags, and relation mirroring.
+Worldgen persists `world_gen_seed`, `world_gen_stage`, `world_gen_complete`, crust composition, derived physics, atmosphere, atmospheric materials, natural materials, interior regime, terrain seed, tectonics, craters, heightmap, map recipes, map layers, environment/geology/hydrology/ecology summaries, and render-mode fields.
+Solid worlds can proceed through atmosphere, interior/surface regime, terrain seed, tectonics, heightmap, and complete-worldgen states.
+Gas giants route through atmospheric/envelope generation and completion without creating a solid tectonic surface.
+
+Should-Be State:
+Generated world models stored on a planet should be durable summaries, seeds, scaffolds, and relation facts rather than raw transient editor state.
+Any generated planet should immediately become coherent across card relations, repository hierarchy, space sim, map sim, and future production/environment systems.
+Every valid end of worldgen should offer a Complete Worldgen action.
+Gas giants should have atmospheric band rendering, color derived from atmosphere/materials/temperature, and no accidental terrestrial surface path.
+Heightmaps should remain reproducible from seed while allowing user-set or identity-derived variation.
+Temperature should be shown in Celsius alongside Kelvin in user-facing worldgen panels, while Kelvin remains the internal physics unit.
+
+18. PLANETARY FORMATION THEORY
+Is-State:
+Worldgen currently supports authored orbit drafting, existing planet linking, generic/eccentric/gas-giant randomization, elemental crust/envelope composition, atmosphere modeling, interior/surface regime modeling, terrain seeding, tectonic maturation, heightmap generation, gas-giant band rendering, and complete/unfinished worldgen states.
+Planet templates currently exist as generation presets, but they are not yet selected from a protoplanetary disk formation model.
+The current system does not yet model condensation fronts, formation orbit versus present orbit, disk metallicity, core accretion thresholds, disk gas lifetime, late volatile delivery, volatile loss history, or thermal evolution as first-class worldgen stages.
+Tectonic mode can still enter as a seed/template input, although later stages derive some terrain behavior from physics, atmosphere, water, crust, and regime fields.
+
+Should-Be State:
+Worldgen should start from formation theory when the user chooses that route.
+A formation model should infer plausible template candidates from star properties, current orbit, possible formation orbit, disk temperature, snow line, volatile ice lines, metallicity, local solid inventory, and stochastic exceptions.
+The chosen template should be the base on top of which ordinary worldgen variation runs; the result should be plausible by default but still allow occasional eccentric/gimmick outcomes.
+Formation theory should not overwrite authored worlds.
+When launched from a star system first screen, formation theory may add one or two planets only if the system has not reached a feasible maximum planet count for its current architecture.
+Migration and resonance-chain sculpting are intentionally deferred for now because they would make system generation too unstable for the current workflow.
+Core accretion and gas capture should be represented through core mass, envelope mass fraction, disk gas lifetime, formation timing, and runaway gas accretion likelihood.
+Volatile history should separate primordial volatiles, outgassed volatiles, late-delivered volatiles, and escaped/lost volatiles.
+Thermal evolution should derive as much as possible from mantle/crust composition, radiogenic elements, planet mass/radius, water, crust thickness, pressure, and cooling history; missing parameters may be conservative-random for generic generation and more permissive-random for eccentric generation.
+Tectonic regime should increasingly become an output of thermal evolution rather than a directly chosen mode.
+
+19. MATERIALS AND PLANETARY COMPOSITION
+Is-State:
+Materials are ontology entities.
+Worldgen now distinguishes elemental crust abundance from natural material formation.
+`natural_materials.py` provides a catalog of common natural materials, including minerals, rocks, regolith-like materials, ices, and atmospheric gases.
+Natural materials are inferred from crust composition, planet tags, surface regime, temperature, water/volatile state, and worldgen context.
+Atmospheric materials are inferred from atmosphere composition and are mirrored into material relation fields.
+Gas materials such as molecular hydrogen, helium, methane, ammonia, water vapor/ice, carbon dioxide, carbon monoxide, nitrogen, oxygen, argon, neon, sulfur dioxide, and hydrogen sulfide can participate in atmosphere and gas giant visuals.
+
+Should-Be State:
+The crust should not be treated as only a bag of elements.
+Elements should enable natural materials, and natural materials should then drive map layers, site conditions, production resources, ecology constraints, and visual rendering.
+Natural material should be a clear subclass of Material with fields for scientific classification, formation conditions, required elements, common host planet tags, abundance model, and map/resource implications.
+Planet tags should expand into a controlled vocabulary rich enough to support material inference.
+Elements and atmospheric molecules should be represented as Materials subclasses where they become useful to chemistry, terrain, atmosphere, gas giants, industry, terraforming, or resource extraction.
+Material inference should eventually consume formation-zone inventories, volatile history, thermal evolution, and terraforming interventions.
+
+20. VEHICLES: DESIGN VS INDIVIDUALS
+Is-State:
+Vehicle schema and examples imply a distinction between vehicle type/design and acquired individual vehicle.
+Vehicle Simulation exists as a repository-backed workspace with design, interior, and operational modes.
+It loads dimensions from entity fields, uses a component catalog, supports component placement, and derives requirement status from required categories and placed components.
+
+Should-Be State:
+Vehicle design entries should represent available designs, prototypes, market offerings, and production recipes.
+Individual vehicle entries should represent acquired corporal vehicles with serial-level identity.
+Aggregate logistics may assign vehicle types/counts, while corporal logistics should use individual vehicles when the player interacts with a specific journey.
+
+21. PERSONS AND POPS
+Is-State:
+People and pops are separate but related concepts.
+People schema includes `person_class`, affiliations, associated locations, and participated events.
+Pops schema includes role, faction, location, and culture.
+Person Simulation exists as a thin repository-backed dossier shell with class, temporal anchor, affiliations, locations, notes, timeline/history hooks, inspector edits, and ontology-backed persistence.
+
+Should-Be State:
+The pop system may generate contextual individuals as playable suggestions, including residence, workplace, role, and current task.
+A generated person, vehicle, or other corporal entity should become permanent once meaningfully interacted with by the player.
+People should bridge biography, affiliation, location, event participation, production roles, and current simulation context.
+
+22. TEMPORAL MODEL
+Is-State:
+The current coarse temporal model uses `start_year` and `end_year`.
+WorldModel has hard-coded major periods for timeline display.
+`temporal_periods` define named bands inside a card timeline.
+`start_commentary` and `end_commentary` annotate timeline endpoints.
+Timeline snapshots are stored separately from general wiki text.
+Period filtering exists in repository browser/timeline contexts.
+When a year is selected in the timeline, the UI also includes context for things that happened, began, or ended within 100 years of the selected year.
+
+Should-Be State:
+Production lines, logistics demands, routes, journeys, deployment histories, events, and worldgen histories should become time-bounded where meaningful.
+The timeline should help users understand local context around a selected year without drowning them in all history.
+Event-based changes can be added later, but should not overcomplicate the current year-range model.
+
+23. WIKI AND TASKS
+Is-State:
+Wiki view is general prose plus simple formatting.
+Wiki links can resolve to entity cards.
+Link colors can use referenced entity colors.
+Unnumbered lists start with "-".
+Tasks start with "()".
+Task schema currently includes `checklist` and `entry_status`.
+
+Should-Be State:
+Tasks created through wiki "() Task name" should become lightweight task references.
+Random task selection should use simple task references, not the legacy task system.
+When a task is selected, it should open the relevant card.
+Logistics tasks may later be more structured because they can carry cargo, route, authority, schedule, and obligation details.
+
+24. PHYLOGENY AND COLORS
+Is-State:
+Cladistic/species entries can launch to Phylogeny Simulation.
+Phylogeny rows and nodes can use `card_color`, `card_header_color`, and `wiki_field_colors` from referenced entities.
+
+Should-Be State:
+If a cladistic entry has no custom color, it should be able to average colors from all last-tier descendants that have custom colors.
+This should include indirect descendants, not just direct children.
+Color updates should trigger when entering edit mode and when children are added or connected.
+
+25. CURRENT ANCHORS AND KNOWN GAPS
+Is-State:
+Useful current anchors include `system_sol`, `system_ross_system`, restored stellar-neighbour entries, many orbital body entries, worldgen planet examples, `prod_steel_plate_rolling`, `prod_pump_module_assembly`, `mkt_market_of_the_gold_sector`, `mkt_planetary_period_markets`, `log_new_001`, vehicle/component examples, collection schema entries, and the ontology-backed material catalog.
+Known gaps include an unpopulated tag-entry dataset, skeletal logistics and markets, non-normalized production requirement vocabulary, conceptual-only spacecraft/maneuver planning, runtime orbital motion that is still effectively 2D, thin collection UX/content, early natural-material inference, basic gas-giant band visuals, early formation-theory generation, incomplete volatile-history modeling, absent terraforming logistics workflows, and an unresolved internal distinction between folded locations versus distinct systems/spatial-feature ontology classes.
+
+Should-Be State:
+The next medium-sized projects should reduce cross-surface incoherence: worldgen-to-space/map/card consistency, material/resource inference, collection browseability, logistics/market foundations, or orbital navigation depth.
+Known gaps should be tracked as conceptual gaps unless they already block daily use, in which case they should become concrete implementation tasks.
+
+26. DESIGN PRINCIPLES
+Is-State:
+The current code increasingly follows these principles: ontology facts over UI-only state; durable entities for identity/history/relations/saved plans; runtime state for transient calculations/previews; repository projections over duplicate source truths; guided actions over requiring ontology knowledge; locations as the main spatial/orbital/map-facing surface; production records as first-class entities; tags lightweight but card-capable; search forgiving enough for partial word sequences.
+
+Should-Be State:
+Keep the ontology as the conceptual backbone.
+Keep simulations honest by persisting only what should survive reload, inspection, and relation traversal.
+Keep sites generic, logistics layered, production technologies declarative, and production records concrete.
+Avoid resolving the same demand through both aggregate and corporal simulation at the same time.
+Make conceptual relations visible and editable from the places where users naturally notice them.
+
+27. OPEN QUESTIONS AND LOOSE ENDS
+Is-State:
+Current open questions:
+1. How exactly should corporal vs conceptual entities be represented?
+2. Should the folded-location model become permanent, or should systems/spatial_features remain distinct ontology classes projected into locations?
+3. Should current string tags be migrated into real tag entities now that tag schema/UI support exists?
+4. Should tags remain only tags, or can some become traits/classes/capabilities?
+5. Should collections have formal membership fields, prose-only references, generated query membership, or all three?
+6. What fields define Natural Material as a subclass of Material?
+7. How should natural material abundance become resource layers and site conditions?
+8. Should site conditions be manually assigned, inferred from map/material layers, or both?
+9. Should `production.required_technology` be normalized to `required_technologies`, or should production records keep their own requirement vocabulary?
+10. Should producer `produced_*` fields become projections from production records?
+11. How should markets expose available vehicle designs before individual vehicles are acquired?
+12. How should transport demand, transport jobs, routes, cargo loads, and aggregate throughput be represented in ontology terms?
+13. How should authority and freedom of action be modeled for logistics tasks?
+14. Which entities should launch to map view versus domain-specific simulation view when multiple affordances apply?
+15. Should spacecraft maneuvers be calculated fully in 3D before projection, or directly against the projected 2D simulation orbit?
+16. How much spacecraft flight-plan information should be durable ontology state versus reloadable simulation state?
+17. How should tasks created from wiki be persisted and numbered?
+18. What fields should be pruned from inappropriate location subclasses?
+19. How should ontology class hierarchy guide new-entry creation without overwhelming users?
+20. What maximum feasible planet count heuristic should formation-theory generation use for each star/system architecture?
+21. How much formation history should be durable lore versus reproducible generation seed?
+22. What volatile-loss processes should be represented first: thermal escape, impact erosion, stellar wind stripping, sequestration, or photochemistry?
+23. How should terraforming logistics convert delivered materials and energy into gradual planetary-state changes?
+24. Which mantle/crust composition fields are required before tectonic regime can be fully derived rather than user-chosen?
+
+Should-Be State:
+Open questions should be resolved only when the codebase or design direction forces a choice.
+For each resolution, document whether it is an implemented fact, a near-term design target, or a deferred conceptual direction.
+Future document versions should move resolved items into the relevant Is-State or Should-Be State section rather than leaving them in this list.
+
+28. HANDOFF FORMAT FOR NEXT GPT RESPONSE
+Is-State:
+When suggesting changes, use this format:
+
+Changes to next version:
+1. Replace/add/remove: ...
+2. Open question resolved: ...
+3. New open question: ...
+
+Optional notes:
+- Rationale:
+- Risks:
+- Suggested priority:
+
+Should-Be State:
+Future conceptual edits should preserve the Is-State / Should-Be State structure.
+Is-State should describe only implemented or currently present behavior.
+Should-Be State should describe targets, preferred modeling direction, and unresolved design intent.

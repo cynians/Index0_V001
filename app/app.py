@@ -57,6 +57,18 @@ class App(SimWindow):
 
         return None
 
+    def consumes_global_keydown(self):
+        active_sim = self.get_active_simulation()
+        return bool(
+            active_sim is not None
+            and getattr(active_sim, "consumes_global_keydown", lambda: False)()
+        )
+
+    def _update_frame(self, dt):
+        if not self.consumes_global_keydown():
+            self.camera.update(dt)
+        self.update(dt)
+
     def get_world_units_to_meters(self):
         """
         Return the active simulation's world-unit conversion for scale labels.
@@ -78,6 +90,16 @@ class App(SimWindow):
         self.tab_manager.update(dt)
 
         sim = self.get_active_simulation()
+        if sim is not None and getattr(sim, "request_close_tab", False):
+            self.tab_manager.close_active()
+            if not self.tab_manager.tabs:
+                self.knowledge_layer_active = True
+                self.repository_return_confirm_active = False
+                return
+            sim = self.get_active_simulation()
+            self.camera_controller.setup_for_sim(sim)
+            self.repository_return_confirm_active = False
+
         self.camera_controller.apply_constraints(sim)
 
     def handle_event(self, event):

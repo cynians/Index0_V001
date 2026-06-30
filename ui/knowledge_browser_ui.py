@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pygame
 import tkinter as tk
-import yaml
 from tkinter import filedialog
 
 from ui.ui_types import UIButton
@@ -917,26 +916,21 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         return f"{trimmed}{suffix}" if trimmed else suffix
 
     def _schema_display_label(self, name):
-        text = str(name or "entry").replace(".yaml", "")
+        text = str(name or "entry")
         text = text.replace("_", " ").strip()
         return text.title() if text else "Entry"
 
     def _normalize_schema_name(self, name):
         text = str(name or "").strip().lower()
-        if text.endswith(".yaml") or text.endswith(".yml"):
-            text = os.path.splitext(text)[0]
+        suffix = Path(text).suffix
+        if suffix:
+            text = Path(text).stem
         text = text.replace("-", "_").replace(" ", "_")
         if text.startswith("index0_"):
             text = text[len("index0_"):]
         if text.endswith("_schema"):
             text = text[:-len("_schema")]
         return text
-
-    def _schema_file_base(self, schema_path):
-        stem = Path(schema_path).stem
-        if stem.startswith("schema_"):
-            stem = stem[len("schema_"):]
-        return self._normalize_schema_name(stem)
 
     def _build_schema_field_usage(self):
         """
@@ -1011,16 +1005,11 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         return f"{text}s"
 
     def _entry_dataset_names(self):
-        entry_dir = self.PROJECT_ROOT / "entries"
-        if not entry_dir.exists():
-            return set()
-        return {
-            path.stem
-            for path in entry_dir.glob("*.yml")
-        } | {
-            path.stem
-            for path in entry_dir.glob("*.yaml")
-        }
+        loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
+        datasets = getattr(loader, "datasets", None)
+        if isinstance(datasets, dict):
+            return set(datasets.keys()) - {"schemas"}
+        return set()
 
     def _dataset_name_for_schema(self, schema_name, file_base, existing_datasets):
         candidates = []
@@ -1056,6 +1045,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             "behaviors": "beh",
             "cities": "city",
             "components": "comp",
+            "collections": "coll",
             "conflicts": "conf",
             "cultural_aspects": "cultasp",
             "cultures": "cult",
@@ -1089,24 +1079,19 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         return source[:6] or "entry"
 
     def _load_schema_entry_templates(self):
-        schema_dir = self.PROJECT_ROOT / "schemas"
-        if not schema_dir.exists():
+        if not hasattr(self, "schema_loader"):
             return []
 
         existing_datasets = self._entry_dataset_names()
         templates = []
-        for schema_path in sorted(schema_dir.glob("*.y*ml")):
-            try:
-                with open(schema_path, "r", encoding="utf-8") as f:
-                    schema = yaml.safe_load(f) or {}
-            except (OSError, yaml.YAMLError):
+        for loader_schema_name, schema in sorted(self.schema_loader.schemas.items()):
+            if not isinstance(schema, dict):
                 continue
-
-            file_base = self._schema_file_base(schema_path)
             metadata_name = (schema.get("metadata") or {}).get("name")
-            raw_schema_name = schema.get("schema") or metadata_name or file_base
+            raw_schema_name = schema.get("schema") or metadata_name or loader_schema_name
             schema_name = self._normalize_schema_name(raw_schema_name)
-            if schema_name in self.ABSTRACT_SCHEMA_NAMES or file_base == "core" or schema_name == "systems":
+            file_base = schema_name
+            if schema_name in self.ABSTRACT_SCHEMA_NAMES or schema_name == "entity_core" or schema_name == "systems":
                 continue
 
             dataset_name = self._dataset_name_for_schema(schema_name, file_base, existing_datasets)
@@ -1117,7 +1102,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             templates.append(
                 {
                     "schema_name": schema_name,
-                    "schema_path": str(schema_path),
+                    "schema_path": None,
                     "schema": schema,
                     "dataset_name": dataset_name,
                     "entity_type": entity_type,
@@ -1748,7 +1733,6 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         if not isinstance(schema, dict):
             return None
 
-        schema_path = self.schema_loader.get_schema_file(schema_name)
         card_index = len(self.cards)
         spawn_x = 24 + (card_index % 3) * 40
         spawn_y = 84 + (card_index % 5) * 32
@@ -1769,13 +1753,13 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             "card_view": SchemaCard(
                 schema_name=schema_name,
                 schema=schema,
-                schema_path=schema_path,
+                schema_path=None,
                 usage_by_field=self.schema_field_usage,
             ),
             "schema_name": schema_name,
             "schema_schema_name": schema.get("schema", schema_name),
             "schema_extends": schema.get("extends"),
-            "schema_path": schema_path,
+            "schema_path": None,
             "schema_original": copy.deepcopy(schema),
             "schema_draft_fields": schema_fields,
             "schema_active_field": None,
@@ -3781,101 +3765,6 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             return new_card
         return None
 
-    def _format_schema_scalar(self, value):
-        if value is None:
-            return "null"
-        if isinstance(value, bool):
-            return "true" if value else "false"
-        if isinstance(value, (int, float)):
-            return str(value)
-
-        text = str(value)
-        if text == "":
-            return "''"
-        if re.match(r"^[A-Za-z0-9_./:-]+$", text):
-            return text
-        return "'" + text.replace("'", "''") + "'"
-
-    def _format_schema_value_lines(self, key, value, indent):
-        pad = " " * indent
-        child_pad = " " * (indent + 2)
-
-        if isinstance(value, dict):
-            lines = [f"{pad}{key}:"]
-            for child_key, child_value in value.items():
-                lines.extend(self._format_schema_value_lines(child_key, child_value, indent + 2))
-            return lines
-
-        if isinstance(value, list):
-            lines = [f"{pad}{key}:"]
-            for item in value:
-                if isinstance(item, dict):
-                    lines.append(f"{child_pad}-")
-                    for child_key, child_value in item.items():
-                        lines.extend(self._format_schema_value_lines(child_key, child_value, indent + 4))
-                else:
-                    lines.append(f"{child_pad}- {self._format_schema_scalar(item)}")
-            return lines
-
-        return [f"{pad}{key}: {self._format_schema_scalar(value)}"]
-
-    def _schema_comment_suffix(self, schema_path):
-        if not schema_path:
-            return ""
-
-        try:
-            text = Path(schema_path).read_text(encoding="utf-8")
-        except OSError:
-            return ""
-
-        match = re.search(r"(?m)^# -{5,}\s*$", text)
-        if not match:
-            return ""
-
-        return text[match.start():].strip("\n")
-
-    def _format_schema_file_text(self, schema, schema_path=None):
-        lines = []
-
-        for key in ("schema", "extends"):
-            value = schema.get(key)
-            if value is not None:
-                lines.append(f"{key}: {self._format_schema_scalar(value)}")
-                lines.append("")
-
-        required = schema.get("required")
-        if isinstance(required, list) and required:
-            lines.append("required:")
-            for item in required:
-                lines.append(f"  - {self._format_schema_scalar(item)}")
-            lines.append("")
-
-        for key, value in schema.items():
-            if key in {"schema", "extends", "required", "fields"}:
-                continue
-            lines.extend(self._format_schema_value_lines(key, value, 0))
-            lines.append("")
-
-        lines.append("fields:")
-        lines.append("")
-
-        fields = schema.get("fields", {})
-        for field_name, spec in fields.items():
-            lines.append(f"  {field_name}:")
-            if isinstance(spec, dict):
-                for key, value in spec.items():
-                    lines.extend(self._format_schema_value_lines(key, value, 4))
-            else:
-                lines.append(f"    type: {self._format_schema_scalar(spec)}")
-            lines.append("")
-
-        suffix = self._schema_comment_suffix(schema_path)
-        if suffix:
-            lines.append(suffix)
-            lines.append("")
-
-        return "\n".join(lines).rstrip() + "\n"
-
     def _persist_schema_card(self, card):
         if card.get("card_kind") != "schema":
             return False
@@ -3885,9 +3774,9 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             card_view.commit_edit_field(card)
 
         schema_name = card.get("schema_name")
-        schema_path = card.get("schema_path") or self.schema_loader.get_schema_file(schema_name)
-        if not schema_name or schema_path is None:
-            card["schema_status"] = "No schema file found"
+        loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
+        if not schema_name or loader is None or not hasattr(loader, "persist_entity"):
+            card["schema_status"] = "No schema repository found"
             return False
 
         updated_schema = copy.deepcopy(card.get("schema_original", {}))
@@ -3896,29 +3785,34 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             updated_schema["extends"] = card.get("schema_extends")
         updated_schema["fields"] = copy.deepcopy(card.get("schema_draft_fields", {}))
 
-        schema_path = Path(schema_path)
-        schema_path.write_text(
-            self._format_schema_file_text(updated_schema, schema_path=schema_path),
-            encoding="utf-8",
-        )
+        schema_entity = {
+            "id": f"schema_{schema_name}",
+            "type": "schema",
+            "_dataset": "schemas",
+            "name": updated_schema.get("schema", schema_name),
+            "pretty_name": self._schema_display_label(updated_schema.get("schema", schema_name)),
+            **updated_schema,
+        }
+        if not loader.persist_entity(schema_entity):
+            card["schema_status"] = "Save failed"
+            return False
 
         self.schema_loader.load_schemas()
         self.schema_field_usage = self._build_schema_field_usage()
 
         refreshed_schema = self.schema_loader.schemas.get(schema_name, updated_schema)
-        refreshed_path = self.schema_loader.get_schema_file(schema_name) or schema_path
         card["schema_original"] = copy.deepcopy(refreshed_schema)
         card["schema_draft_fields"] = copy.deepcopy(refreshed_schema.get("fields", {}))
         card["schema_schema_name"] = refreshed_schema.get("schema", schema_name)
         card["schema_extends"] = refreshed_schema.get("extends")
-        card["schema_path"] = refreshed_path
+        card["schema_path"] = None
         card["schema_dirty"] = False
         card["schema_status"] = "Saved"
         card["subtitle"] = f"schema | {card.get('schema_extends') or 'root'}"
         card["card_view"] = SchemaCard(
             schema_name=schema_name,
             schema=refreshed_schema,
-            schema_path=refreshed_path,
+            schema_path=None,
             usage_by_field=self.schema_field_usage,
         )
         return True
@@ -3945,9 +3839,6 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             service = KnowledgeRepositoryService(self)
             self._knowledge_repository_service = service
         return service
-
-    def _entry_file_path_for_dataset(self, dataset_name):
-        return self._repository_service()._entry_file_path_for_dataset(dataset_name)
 
     def _load_card_drafts(self):
         return self._repository_service()._load_card_drafts()
@@ -3999,18 +3890,6 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
     def _hydrate_draft_entities(self, world_model):
         return self._repository_service()._hydrate_draft_entities(world_model)
-
-    def _format_yaml_scalar(self, value):
-        return self._repository_service()._format_yaml_scalar(value)
-
-    def _format_yaml_value_lines(self, key, value, prefix):
-        return self._repository_service()._format_yaml_value_lines(key, value, prefix)
-
-    def _format_yaml_entity_block(self, entity):
-        return self._repository_service()._format_yaml_entity_block(entity)
-
-    def _find_yaml_entity_block(self, text, entity_id):
-        return self._repository_service()._find_yaml_entity_block(text, entity_id)
 
     def _persist_entity_to_repository(self, entity, previous_entity_id=None):
         return self._repository_service()._persist_entity_to_repository(
@@ -4077,12 +3956,29 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 return None
         return None
 
-    def _entity_custom_rgb_for_average(self, entity):
+    def _entity_custom_rgb_for_average(self, entity, role="body"):
         if not isinstance(entity, dict):
             return None
         if entity.get("card_color_source") == "derived_offspring":
             return None
-        color_value = entity.get("card_color") or entity.get("wiki_link_color")
+        role = str(role or "body").strip().lower()
+        if role == "header":
+            color_value = entity.get("card_header_color") or entity.get("card_color") or entity.get("wiki_link_color")
+        elif role == "wiki_default":
+            colors = entity.get("wiki_field_colors")
+            colors = colors if isinstance(colors, dict) else {}
+            color_value = colors.get("default") or entity.get("card_color") or entity.get("wiki_link_color")
+        elif role == "wiki_alternate":
+            colors = entity.get("wiki_field_colors")
+            colors = colors if isinstance(colors, dict) else {}
+            color_value = (
+                colors.get("alternate")
+                or colors.get("default")
+                or entity.get("card_color")
+                or entity.get("wiki_link_color")
+            )
+        else:
+            color_value = entity.get("card_color") or entity.get("wiki_link_color")
         if isinstance(color_value, (list, tuple)) and len(color_value) >= 3:
             try:
                 return tuple(max(0, min(255, int(part))) for part in color_value[:3])
@@ -4199,10 +4095,48 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             return False
 
         average = tuple(round(sum(color[index] for color in colors) / len(colors)) for index in range(3))
-        color_hex = self._rgb_to_hex(average)
-        if clade.get("card_color") == color_hex and clade.get("card_color_source") == "derived_offspring":
+        palette = {"card_color": self._rgb_to_hex(average)}
+        for role, field_key in (
+            ("header", "card_header_color"),
+            ("wiki_default", "wiki_default"),
+            ("wiki_alternate", "wiki_alternate"),
+        ):
+            role_colors = []
+            for descendant_id in self._terminal_phylogeny_descendant_ids(clade_id):
+                descendant = self.world_model.get_entity(descendant_id)
+                rgb = self._entity_custom_rgb_for_average(descendant, role=role)
+                if rgb is not None:
+                    role_colors.append(rgb)
+            if role_colors:
+                role_average = tuple(
+                    round(sum(color[index] for color in role_colors) / len(role_colors))
+                    for index in range(3)
+                )
+                palette[field_key] = self._rgb_to_hex(role_average)
+
+        existing_wiki_colors = clade.get("wiki_field_colors")
+        existing_wiki_colors = existing_wiki_colors if isinstance(existing_wiki_colors, dict) else {}
+        unchanged = (
+            clade.get("card_color") == palette.get("card_color")
+            and clade.get("card_header_color") == palette.get("card_header_color")
+            and existing_wiki_colors.get("default") == palette.get("wiki_default")
+            and existing_wiki_colors.get("alternate") == palette.get("wiki_alternate")
+            and clade.get("card_color_source") == "derived_offspring"
+        )
+        if unchanged:
             return False
-        clade["card_color"] = color_hex
+        clade["card_color"] = palette["card_color"]
+        if palette.get("card_header_color"):
+            clade["card_header_color"] = palette["card_header_color"]
+        wiki_colors = clade.get("wiki_field_colors")
+        if not isinstance(wiki_colors, dict):
+            wiki_colors = {}
+        if palette.get("wiki_default"):
+            wiki_colors["default"] = palette["wiki_default"]
+        if palette.get("wiki_alternate"):
+            wiki_colors["alternate"] = palette["wiki_alternate"]
+        if wiki_colors:
+            clade["wiki_field_colors"] = wiki_colors
         clade["card_color_source"] = "derived_offspring"
         card = self._find_card_by_entity_id(clade_id)
         if card is not None and isinstance(card.get("card_view"), EntityCard):

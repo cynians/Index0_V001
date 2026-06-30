@@ -1,5 +1,4 @@
 import json
-import yaml
 from pathlib import Path
 import logging
 from world.ontology_repository import OntologyRepository
@@ -9,19 +8,10 @@ logger = logging.getLogger(__name__)
 
 class EntityLoader:
     """
-    Loads entity datasets from the entries directory.
+    Loads entity datasets from the ontology repository.
 
-    Supported formats
-    -----------------
-    JSON / YAML
-
-    Dataset structure
-    -----------------
-    Each dataset file contains a list of entities:
-
-    - id: entity_id
-      name: ...
-      type: ...
+    A JSON file-import path remains for explicit compatibility imports, but the
+    normal application path is ontology-backed.
     """
 
     CORE_DEFAULTS = {
@@ -78,7 +68,7 @@ class EntityLoader:
 
         self.entries_directory = Path(entries_directory)
         self.ontology_path = Path(ontology_path)
-        self.use_ontology = self.ontology_path.exists() if use_ontology is None else bool(use_ontology)
+        self.use_ontology = True if use_ontology is None else bool(use_ontology)
         self.auto_save_normalized = auto_save_normalized
 
         self.datasets = {}
@@ -162,7 +152,7 @@ class EntityLoader:
 
     def _fold_system_entities_into_locations(self):
         """
-        Present legacy systems.yaml rows as location-class entries.
+        Present legacy system rows as location-class entries.
 
         Orbital bodies with an explicit location_entity are merged into that
         canonical location so planets do not appear twice in the repository
@@ -407,32 +397,31 @@ class EntityLoader:
     def _save_dataset_file(self, file, data):
         data = self._serializable_data(data)
 
-        if file.suffix.lower() in (".yaml", ".yml"):
-            with file.open("w", encoding="utf-8") as f:
-                yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
-            return
-
         with file.open("w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
             f.write("\n")
 
     def load_datasets(self):
         """
-        Load all entity datasets from the entries directory.
+        Load all entity datasets.
 
         Behavior
         --------
-        * Recurses through subdirectories under entries/
-        * Keeps top-level file behavior compatible with the old loader
-        * Treats files inside entries/locations/ as one logical dataset named
-          'locations' so location entries can be split across multiple files
-          without breaking existing world queries
+        * Uses the ontology by default.
+        * For explicit compatibility imports, recurses through a JSON directory.
+        * Treats files inside a locations/ subdirectory as one logical dataset
+          named 'locations'.
         """
         self.datasets = {}
         self.entity_aliases = {}
         self._dataset_file_records = []
 
-        if self.use_ontology and self.ontology_path.exists():
+        if self.use_ontology:
+            if not self.ontology_path.exists():
+                raise FileNotFoundError(
+                    f"Ontology repository not found: {self.ontology_path}. "
+                    "Create ontology/index0.owl before starting the app."
+                )
             self.load_ontology_datasets()
             return
 
@@ -443,7 +432,7 @@ class EntityLoader:
         files = sorted(
             [
                 p for p in self.entries_directory.rglob("*")
-                if p.is_file() and p.suffix.lower() in (".yaml", ".yml", ".json")
+                if p.is_file() and p.suffix.lower() == ".json"
             ]
         )
 
@@ -451,19 +440,15 @@ class EntityLoader:
             rel_parts = file.relative_to(self.entries_directory).parts
 
             # Compatibility rule:
-            # entries/locations/*.yaml -> one logical dataset named "locations"
+            # locations/*.json -> one logical dataset named "locations"
             if len(rel_parts) >= 2 and rel_parts[0] == "locations":
                 dataset_name = "locations"
             else:
                 dataset_name = file.stem
 
             try:
-                if file.suffix.lower() in (".yaml", ".yml"):
-                    with file.open("r", encoding="utf-8") as f:
-                        data = yaml.safe_load(f) or []
-                else:
-                    with file.open("r", encoding="utf-8") as f:
-                        data = json.load(f) or []
+                with file.open("r", encoding="utf-8") as f:
+                    data = json.load(f) or []
 
                 if not isinstance(data, list):
                     logger.warning("Dataset file is not a list: %s", file)
@@ -625,6 +610,47 @@ class EntityLoader:
         if self.use_ontology:
             self.save_ontology_file()
         return True
+
+    def set_literal(self, entity_id, field_name, value, persist=True):
+        repository = OntologyRepository(self.datasets)
+        changed_entity_ids = repository.set_literal(entity_id, field_name, value)
+        return self._apply_repository_mutation(repository, changed_entity_ids, persist=persist)
+
+    def set_relation(self, source_id, field_name, target_id, reciprocal_field=None, persist=True):
+        repository = OntologyRepository(self.datasets)
+        changed_entity_ids = repository.set_relation(
+            source_id,
+            field_name,
+            target_id,
+            reciprocal_field=reciprocal_field,
+        )
+        return self._apply_repository_mutation(repository, changed_entity_ids, persist=persist)
+
+    def remove_relation(self, source_id, field_name, target_id, reciprocal_field=None, persist=True):
+        repository = OntologyRepository(self.datasets)
+        changed_entity_ids = repository.remove_relation(
+            source_id,
+            field_name,
+            target_id,
+            reciprocal_field=reciprocal_field,
+        )
+        return self._apply_repository_mutation(repository, changed_entity_ids, persist=persist)
+
+    def _apply_repository_mutation(self, repository, changed_entity_ids, persist=True):
+        changed_entity_ids = set(changed_entity_ids or [])
+        if not changed_entity_ids:
+            return set()
+
+        self.datasets = repository.datasets
+        self.build_entity_index()
+        changed_entity_ids.update(self.populate_offspring())
+        self.build_reference_graph()
+        if persist:
+            if self.use_ontology:
+                self.save_ontology_file()
+            else:
+                self.save_changed_dataset_files(changed_entity_ids)
+        return changed_entity_ids
 
     def remove_entity(self, entity_id, dataset_name=None):
         entity_id = str(entity_id or "").strip()

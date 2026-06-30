@@ -1,13 +1,6 @@
 import json
 import os
 
-from world.repository_yaml import (
-    find_yaml_entity_block,
-    format_yaml_entity_block,
-    format_yaml_scalar,
-    format_yaml_value_lines,
-)
-
 
 class KnowledgeRepositoryService:
     def __init__(self, host):
@@ -18,11 +11,6 @@ class KnowledgeRepositoryService:
 
     def __setattr__(self, name, value):
         setattr(self.host, name, value)
-
-    def _entry_file_path_for_dataset(self, dataset_name):
-        if not dataset_name:
-            return None
-        return str(self.PROJECT_ROOT / "entries" / f"{dataset_name}.yaml")
 
     def _load_card_drafts(self):
         try:
@@ -244,61 +232,14 @@ class KnowledgeRepositoryService:
                 world_model.loader.datasets.setdefault(dataset_name, []).append(entity)
             world_model.loader.entities[entity_id] = entity
 
-    def _format_yaml_scalar(self, value):
-        return format_yaml_scalar(value)
-
-    def _format_yaml_value_lines(self, key, value, prefix):
-        return format_yaml_value_lines(key, value, prefix)
-
-    def _format_yaml_entity_block(self, entity):
-        if self._is_species_entity(entity):
-            self._normalize_species_entity(entity)
-            ordered_keys = ["id", "common_name", "binomial_name", "type"]
-        else:
-            ordered_keys = ["id", "pretty_name", "name", "type"]
-        return format_yaml_entity_block(entity, ordered_keys)
-
-    def _find_yaml_entity_block(self, text, entity_id):
-        return find_yaml_entity_block(text, entity_id)
-
     def _persist_entity_to_repository(self, entity, previous_entity_id=None):
         if not isinstance(entity, dict):
             return False
 
         loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
-        if getattr(loader, "use_ontology", False) and hasattr(loader, "persist_entity"):
-            return loader.persist_entity(entity, previous_entity_id=previous_entity_id)
-
-        entity_id = entity.get("id")
-        lookup_entity_id = previous_entity_id or entity_id
-        dataset_name = entity.get("_dataset", entity.get("type"))
-        entry_path = self._entry_file_path_for_dataset(dataset_name)
-        if not entity_id or entry_path is None:
+        if loader is None or not hasattr(loader, "persist_entity"):
             return False
-
-        os.makedirs(os.path.dirname(entry_path), exist_ok=True)
-        if os.path.exists(entry_path):
-            with open(entry_path, "r", encoding="utf-8") as f:
-                text = f.read()
-        else:
-            text = ""
-
-        if text.strip() == "[]":
-            text = ""
-
-        block = self._format_yaml_entity_block(entity)
-        found = self._find_yaml_entity_block(text, lookup_entity_id)
-        if found is None:
-            separator = "" if not text.strip() else "\n"
-            updated_text = text.rstrip() + separator + block
-        else:
-            block_start, block_end = found
-            updated_text = text[:block_start] + block + text[block_end:].lstrip("\n")
-
-        with open(entry_path, "w", encoding="utf-8") as f:
-            f.write(updated_text)
-
-        return True
+        return loader.persist_entity(entity, previous_entity_id=previous_entity_id)
 
     def _sync_bidirectional_relations(self, persist=True):
         if self.world_model is None or getattr(self.world_model, "loader", None) is None:
@@ -339,9 +280,13 @@ class KnowledgeRepositoryService:
                     normalized.append(value)
             if not normalized and key not in entity:
                 return
-            if entity.get(key) != normalized:
+            if entity.get(key) == normalized:
+                return
+            if hasattr(loader, "set_literal"):
+                changed_entity_ids.update(loader.set_literal(entity_id, key, normalized, persist=False))
+            else:
                 entity[key] = normalized
-                changed_entity_ids.add(str(entity.get("id") or ""))
+                changed_entity_ids.add(entity_id)
 
         for entity_id, entity in list(entities.items()):
             if not is_location(entity):
@@ -356,8 +301,19 @@ class KnowledgeRepositoryService:
                         continue
                     reciprocal = relation_ids(target.get(field_key))
                     if entity_id not in reciprocal:
-                        reciprocal.append(entity_id)
-                        set_unique_list(target, field_key, reciprocal)
+                        if hasattr(loader, "set_relation"):
+                            changed_entity_ids.update(
+                                loader.set_relation(
+                                    entity_id,
+                                    field_key,
+                                    target_id,
+                                    reciprocal_field=field_key,
+                                    persist=False,
+                                )
+                            )
+                        else:
+                            reciprocal.append(entity_id)
+                            set_unique_list(target, field_key, reciprocal)
 
             constituent_ids = relation_ids(entity.get("constituents"))
             set_unique_list(entity, "constituents", constituent_ids)
@@ -367,18 +323,28 @@ class KnowledgeRepositoryService:
                     continue
                 parents = relation_ids(child.get("parents"))
                 if entity_id not in parents:
-                    parents.append(entity_id)
-                    child["parents"] = parents
-                    changed_entity_ids.add(child_id)
+                    if hasattr(loader, "set_relation"):
+                        changed_entity_ids.update(
+                            loader.set_relation(child_id, "parents", entity_id, persist=False)
+                        )
+                    else:
+                        parents.append(entity_id)
+                        child["parents"] = parents
+                        changed_entity_ids.add(child_id)
                 if not child.get("parent_location"):
-                    child["parent_location"] = entity_id
-                    changed_entity_ids.add(child_id)
+                    if hasattr(loader, "set_literal"):
+                        changed_entity_ids.update(
+                            loader.set_literal(child_id, "parent_location", entity_id, persist=False)
+                        )
+                    else:
+                        child["parent_location"] = entity_id
+                        changed_entity_ids.add(child_id)
 
         if hasattr(loader, "populate_offspring"):
             changed_entity_ids.update(loader.populate_offspring())
 
         if changed_entity_ids and persist:
-            if getattr(loader, "use_ontology", False) and hasattr(loader, "save_changed_dataset_files"):
+            if hasattr(loader, "save_changed_dataset_files"):
                 loader.save_changed_dataset_files(changed_entity_ids)
                 failed_persist_ids = []
             else:
@@ -513,25 +479,9 @@ class KnowledgeRepositoryService:
 
     def _remove_entity_from_repository(self, dataset_name, entity_id):
         loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
-        if getattr(loader, "use_ontology", False) and hasattr(loader, "remove_entity"):
-            return loader.remove_entity(entity_id, dataset_name=dataset_name)
-
-        entry_path = self.host._entry_file_path_for_dataset(dataset_name)
-        if not entry_path or not os.path.exists(entry_path):
+        if loader is None or not hasattr(loader, "remove_entity"):
             return False
-
-        with open(entry_path, "r", encoding="utf-8") as f:
-            text = f.read()
-
-        found = self._find_yaml_entity_block(text, entity_id)
-        if found is None:
-            return False
-
-        block_start, block_end = found
-        updated_text = text[:block_start] + text[block_end:].lstrip("\n")
-        with open(entry_path, "w", encoding="utf-8") as f:
-            f.write(updated_text)
-        return True
+        return loader.remove_entity(entity_id, dataset_name=dataset_name)
 
     def _delete_card_entry(self, card):
         entity = self._entity_for_card(card)

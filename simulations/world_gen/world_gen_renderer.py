@@ -284,16 +284,25 @@ class WorldGenRenderer:
         pygame.draw.rect(screen, (188, 196, 212), panel, 1)
 
         selected_planet = payload.get("selected_planet") or {}
-        title = f"World Generation: {selected_planet.get('name', selected_planet.get('id', 'Planet'))} Crust Composition"
+        planet_class = str(payload.get("planet_class") or "").lower()
+        is_envelope_body = planet_class in {"gas_giant", "ice_giant", "hot_gas_giant"}
+        panel_label = "Envelope / Bulk Composition" if is_envelope_body else "Crust Composition"
+        title = f"World Generation: {selected_planet.get('name', selected_planet.get('id', 'Planet'))} {panel_label}"
         title_surface = font.render(title, True, (244, 244, 244))
         screen.blit(title_surface, (panel.x + 16, panel.y + 12))
 
-        subtitle = "Major crust elements must total 99%; trace elements are implicit unless promoted."
+        if is_envelope_body:
+            subtitle = "Gas and ice giants use envelope/bulk elemental inventory; refractory crust sliders are not assumed."
+        else:
+            subtitle = "Major crust elements must total 99%; trace elements are implicit unless promoted."
         subtitle_surface = font.render(subtitle, True, (158, 170, 190))
         screen.blit(subtitle_surface, (panel.x + 16, panel.y + 34))
 
         composition = payload.get("crust_composition") or {}
-        elements = list(composition.get("major_elements") or [])
+        elements = sorted(
+            list(composition.get("major_elements") or []),
+            key=lambda item: -float(item.get("abundance_percent", 0.0) or 0.0),
+        )
         slider_rects = {}
         y = panel.y + 70
         label_w = 180
@@ -333,11 +342,16 @@ class WorldGenRenderer:
         pygame.draw.rect(screen, (25, 29, 40), summary)
         pygame.draw.rect(screen, (96, 108, 132), summary, 1)
         physics = payload.get("derived_planet_physics") or {}
+        trace_rows = sorted(
+            list(composition.get("trace_elements") or []),
+            key=lambda item: -float(item.get("abundance_percent", 0.0) or 0.0),
+        )
         summary_lines = [
+            f"Template: {payload.get('planet_template_label', 'unknown')}",
             f"Explicit total: {payload.get('crust_major_total_percent', 0.0):.2f}%",
             f"Trace reserve: {payload.get('trace_reserve_percent', 1.0):.2f}%",
-            f"Crust type: {payload.get('crust_type', 'unknown')}",
-            f"Crust density: {payload.get('crust_density_kg_m3', 0.0):.0f} kg/m3",
+            f"Type: {payload.get('planet_class') or payload.get('crust_type', 'unknown')}",
+            f"Density proxy: {payload.get('crust_density_kg_m3', 0.0):.0f} kg/m3",
             f"Mass: {physics.get('mass_earth', 0.0):.3f} Earth",
             f"Mean density: {physics.get('mean_density_kg_m3', 0.0):.0f} kg/m3",
             f"Gravity: {physics.get('surface_gravity_g', 0.0):.2f} g",
@@ -351,6 +365,19 @@ class WorldGenRenderer:
             surface = font.render(line, True, (196, 210, 228))
             screen.blit(surface, (summary.x + 12, sy))
             sy += 22
+
+        if trace_rows:
+            sy += 4
+            screen.blit(font.render("Trace Inventory", True, (232, 238, 246)), (summary.x + 12, sy))
+            sy += 24
+            for trace in trace_rows[:4]:
+                line = (
+                    f"{trace.get('symbol')} "
+                    f"{float(trace.get('abundance_percent', 0.0) or 0.0):.3f}% "
+                    f"{trace.get('rarity', '')}"
+                )
+                screen.blit(font.render(line, True, (176, 188, 208)), (summary.x + 12, sy))
+                sy += 20
 
         seed_field_rects = {}
         sy += 10
@@ -377,8 +404,14 @@ class WorldGenRenderer:
             screen.blit(value_surface, (input_rect.x + 6, input_rect.y + 4))
             sy += 30
 
-        add_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 228, 30)
-        save_rect = pygame.Rect(add_rect.right + 12, panel.bottom - 48, 154, 30)
+        generic_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 132, 30)
+        eccentric_rect = pygame.Rect(generic_rect.right + 8, panel.bottom - 48, 148, 30)
+        gas_rect = pygame.Rect(eccentric_rect.right + 8, panel.bottom - 48, 132, 30)
+        add_rect = pygame.Rect(gas_rect.right + 8, panel.bottom - 48, 184, 30)
+        save_rect = pygame.Rect(add_rect.right + 10, panel.bottom - 48, 154, 30)
+        self._draw_panel_button(screen, font, generic_rect, "Generate Generic")
+        self._draw_panel_button(screen, font, eccentric_rect, "Generate Eccentric")
+        self._draw_panel_button(screen, font, gas_rect, "Gas / Ice Giant")
         self._draw_panel_button(screen, font, add_rect, "Add Abundant Trace Element")
         self._draw_panel_button(screen, font, save_rect, "Save Composition", primary=True)
 
@@ -397,6 +430,9 @@ class WorldGenRenderer:
             save_rect=save_rect,
             periodic_rect=periodic_rect,
             element_rects=element_rects,
+            random_generic_rect=generic_rect,
+            random_eccentric_rect=eccentric_rect,
+            random_gas_giant_rect=gas_rect,
         )
         sim.set_seed_field_rects(seed_field_rects)
         sim.set_control_panel_rect(panel)
@@ -475,6 +511,8 @@ class WorldGenRenderer:
         pygame.draw.rect(screen, (96, 108, 132), right, 1)
 
         lines = [
+            f"Atmosphere class: {atmosphere.get('atmosphere_class', 'unknown')}",
+            f"Solid surface: {'yes' if atmosphere.get('has_solid_surface', True) else 'no'}",
             f"Equilibrium temp: {atmosphere.get('equilibrium_temperature_k', 0.0):.1f} K",
             f"Surface temp est.: {atmosphere.get('estimated_surface_temperature_k', 0.0):.1f} K",
             f"Greenhouse delta: {atmosphere.get('greenhouse_delta_k', 0.0):.1f} K",
@@ -494,7 +532,7 @@ class WorldGenRenderer:
         y += 12
         screen.blit(font.render("Molecule Retention", True, (232, 238, 246)), (left.x + 12, y))
         y += 26
-        for row in atmosphere.get("retention", [])[:10]:
+        for row in atmosphere.get("retention", [])[:13]:
             molecule = row.get("molecule")
             status = row.get("status")
             ratio = row.get("escape_speed_ratio", 0.0)
@@ -508,7 +546,7 @@ class WorldGenRenderer:
         y += 30
         bar_x = right.x + 118
         bar_w = max(160, right.width - 210)
-        for item in atmosphere.get("composition", [])[:8]:
+        for item in atmosphere.get("composition", [])[:12]:
             molecule = item.get("molecule")
             percent = float(item.get("percent", 0.0))
             screen.blit(font.render(molecule, True, (216, 224, 238)), (right.x + 12, y))
@@ -531,14 +569,24 @@ class WorldGenRenderer:
                 break
 
         save_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 164, 30)
+        can_complete = bool(getattr(sim, "_world_gen_can_finish", lambda: False)())
+        complete_rect = pygame.Rect(save_rect.right + 12, panel.bottom - 48, 204, 30) if can_complete else None
         self._draw_panel_button(screen, font, save_rect, "Save Atmosphere", primary=True)
+        if complete_rect is not None:
+            self._draw_panel_button(screen, font, complete_rect, "Complete Worldgen")
         status = payload.get("commit_status") or ""
         if status:
-            screen.blit(font.render(status, True, (178, 210, 244)), (save_rect.right + 18, panel.bottom - 41))
-        hint = font.render("Enter saves atmosphere. Esc exits selected planet. Later: atmospheric chemistry and climate iteration.", True, (142, 152, 170))
+            status_x = (complete_rect.right + 18) if complete_rect is not None else (save_rect.right + 18)
+            screen.blit(font.render(status, True, (178, 210, 244)), (status_x, panel.bottom - 41))
+        hint_text = (
+            "Save atmosphere, then complete worldgen for gas giants. Esc exits selected planet."
+            if can_complete else
+            "Enter saves atmosphere. Esc exits selected planet. Later: atmospheric chemistry and climate iteration."
+        )
+        hint = font.render(hint_text, True, (142, 152, 170))
         screen.blit(hint, (panel.x + 16, panel.bottom - 76))
 
-        sim.set_crust_ui_rects(save_rect=save_rect)
+        sim.set_crust_ui_rects(save_rect=save_rect, complete_rect=complete_rect)
         sim.set_seed_field_rects({})
         sim.set_control_panel_rect(panel)
 
@@ -641,6 +689,7 @@ class WorldGenRenderer:
 
         selected_planet = payload.get("selected_planet") or {}
         terrain = payload.get("terrain_seed_model") or {}
+        natural_materials = payload.get("natural_material_model") or {}
         heightfield = terrain.get("heightfield") or {}
         tectonics = terrain.get("tectonics") or {}
         cratering = terrain.get("cratering") or {}
@@ -706,20 +755,20 @@ class WorldGenRenderer:
         y = columns[2].y + 14
         screen.blit(font.render("Map Layers", True, (232, 238, 246)), (columns[2].x + 12, y))
         y += 30
-        for layer in (terrain.get("map_layers") or [])[:10]:
+        for layer in (terrain.get("map_layers") or [])[:6]:
             label = f"{layer.get('id', 'layer')} | {layer.get('kind', 'layer')}"
             for wrapped in self._wrap_text(label, font, columns[2].width - 30):
                 screen.blit(font.render(wrapped, True, (196, 210, 228)), (columns[2].x + 18, y))
                 y += 19
-            if y > columns[2].bottom - 100:
+            if y > columns[2].bottom - 138:
                 break
 
         y += 8
-        screen.blit(font.render("Recipe Tail", True, (232, 238, 246)), (columns[2].x + 12, y))
+        screen.blit(font.render("Natural Materials", True, (232, 238, 246)), (columns[2].x + 12, y))
         y += 24
-        for step in (terrain.get("map_recipe") or [])[-5:]:
-            text = step.replace("_", " ")
-            for wrapped in self._wrap_text(f"- {text}", font, columns[2].width - 30):
+        for item in (natural_materials.get("likely_materials") or [])[:5]:
+            text = f"{item.get('name', 'material')} | {item.get('occurrence', 'possible')} {float(item.get('confidence', 0.0)):.2f}"
+            for wrapped in self._wrap_text(text, font, columns[2].width - 30):
                 screen.blit(font.render(wrapped, True, (154, 166, 188)), (columns[2].x + 18, y))
                 y += 19
             if y > columns[2].bottom - 20:
@@ -1127,21 +1176,29 @@ class WorldGenRenderer:
                 screen.blit(font.render(wrapped, True, (154, 166, 188)), (sidebar.x + 18, y))
                 y += 19
 
+        can_finish = bool(getattr(sim, "_world_gen_can_finish", lambda: False)())
         can_advance_tectonics = bool(getattr(sim, "_heightmap_can_advance_tectonics", lambda: False)())
+        can_complete = can_finish and not can_advance_tectonics
         button_label = "Advance Tectonics" if can_advance_tectonics else "Refresh Heightmap"
         save_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 188, 30)
+        complete_rect = pygame.Rect(save_rect.right + 12, panel.bottom - 48, 204, 30) if can_complete else None
         self._draw_panel_button(screen, font, save_rect, button_label, primary=True)
+        if complete_rect is not None:
+            self._draw_panel_button(screen, font, complete_rect, "Complete Worldgen")
         status = payload.get("commit_status") or ""
         if status:
-            screen.blit(font.render(status, True, (178, 210, 244)), (save_rect.right + 18, panel.bottom - 41))
+            status_x = (complete_rect.right + 18) if complete_rect is not None else (save_rect.right + 18)
+            screen.blit(font.render(status, True, (178, 210, 244)), (status_x, panel.bottom - 41))
         if can_advance_tectonics:
             hint_text = "Enter advances tectonics 25 Myr. Mouse wheel over preview zooms heightmap. Esc exits selected planet."
+        elif can_complete:
+            hint_text = "Use Complete Worldgen to finalize this planet. Mouse wheel over preview zooms heightmap. Esc exits selected planet."
         else:
             hint_text = "Mouse wheel over preview zooms heightmap. Marker density follows preview zoom. Esc exits selected planet."
         hint = font.render(hint_text, True, (142, 152, 170))
         screen.blit(hint, (panel.x + 16, panel.bottom - 76))
 
-        sim.set_crust_ui_rects(save_rect=save_rect)
+        sim.set_crust_ui_rects(save_rect=save_rect, complete_rect=complete_rect)
         sim.set_seed_field_rects({})
         sim.set_control_panel_rect(panel)
         sim.set_heightmap_preview_rect(preview)

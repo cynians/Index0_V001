@@ -11,7 +11,105 @@ from world.simulation_context import SimulationContext
 class FakeWorldModel:
     def __init__(self, entities):
         self.entities = {entity["id"]: dict(entity) for entity in entities}
+        self.loader = SimpleNamespace(
+            entities=self.entities,
+            datasets={"locations": list(self.entities.values())},
+            persist_entity=self.persist_entity,
+            remove_entity=self.remove_entity,
+            set_literal=self.set_literal,
+            set_relation=self.set_relation,
+            remove_relation=self.remove_relation,
+            save_changed_dataset_files=self.save_changed_dataset_files,
+        )
         self.refresh_count = 0
+
+    def persist_entity(self, entity, previous_entity_id=None):
+        entity_id = entity.get("id")
+        if not entity_id:
+            return False
+        previous_entity_id = previous_entity_id or None
+        if previous_entity_id and previous_entity_id != entity_id:
+            self.entities.pop(previous_entity_id, None)
+        entity["_dataset"] = entity.get("_dataset") or "locations"
+        self.entities[entity_id] = entity
+        dataset = self.loader.datasets.setdefault(entity["_dataset"], [])
+        dataset[:] = [
+            item for item in dataset
+            if not (isinstance(item, dict) and item.get("id") in {entity_id, previous_entity_id})
+        ]
+        dataset.append(entity)
+        return True
+
+    def remove_entity(self, entity_id, dataset_name=None):
+        removed = self.entities.pop(entity_id, None) is not None
+        dataset_names = [dataset_name] if dataset_name else list(self.loader.datasets)
+        for candidate_name in dataset_names:
+            dataset = self.loader.datasets.get(candidate_name, [])
+            before_count = len(dataset)
+            dataset[:] = [
+                item for item in dataset
+                if not (isinstance(item, dict) and item.get("id") == entity_id)
+            ]
+            removed = removed or len(dataset) != before_count
+        return removed
+
+    def _relation_ids(self, value):
+        if isinstance(value, str):
+            return [value] if value else []
+        if isinstance(value, dict):
+            entity_id = value.get("id") or value.get("entity_id")
+            return [entity_id] if entity_id else []
+        if isinstance(value, list):
+            ids = []
+            for item in value:
+                for entity_id in self._relation_ids(item):
+                    if entity_id not in ids:
+                        ids.append(entity_id)
+            return ids
+        return []
+
+    def set_literal(self, entity_id, field_name, value, persist=True):
+        entity = self.entities.get(entity_id)
+        if not isinstance(entity, dict) or entity.get(field_name) == value:
+            return set()
+        entity[field_name] = value
+        return {entity_id}
+
+    def set_relation(self, source_id, field_name, target_id, reciprocal_field=None, persist=True):
+        source = self.entities.get(source_id)
+        target = self.entities.get(target_id)
+        if not isinstance(source, dict) or not isinstance(target, dict):
+            return set()
+        changed = set()
+        values = self._relation_ids(source.get(field_name))
+        if target_id not in values:
+            source[field_name] = values + [target_id]
+            changed.add(source_id)
+        if reciprocal_field:
+            reciprocal = self._relation_ids(target.get(reciprocal_field))
+            if source_id not in reciprocal:
+                target[reciprocal_field] = reciprocal + [source_id]
+                changed.add(target_id)
+        return changed
+
+    def remove_relation(self, source_id, field_name, target_id, reciprocal_field=None, persist=True):
+        source = self.entities.get(source_id)
+        changed = set()
+        if isinstance(source, dict):
+            values = self._relation_ids(source.get(field_name))
+            if target_id in values:
+                source[field_name] = [value for value in values if value != target_id]
+                changed.add(source_id)
+        target = self.entities.get(target_id)
+        if reciprocal_field and isinstance(target, dict):
+            reciprocal = self._relation_ids(target.get(reciprocal_field))
+            if source_id in reciprocal:
+                target[reciprocal_field] = [value for value in reciprocal if value != source_id]
+                changed.add(target_id)
+        return changed
+
+    def save_changed_dataset_files(self, changed_entity_ids=None):
+        return None
 
     def get_entity(self, entity_id):
         return self.entities.get(entity_id)
@@ -59,17 +157,6 @@ class BuildingSimulationTests(unittest.TestCase):
             world_model=world_model,
         )
         sim = BuildingSimulation(context)
-        sim.LOCATIONS_ENTRY_PATH = Path(temp_dir) / "locations.yaml"
-        sim.LOCATIONS_ENTRY_PATH.write_text(
-            "- id: loc_archive_building\n"
-            "  pretty_name: Archive Building\n"
-            "  name: Archive Building\n"
-            "  type: location\n"
-            "  location_class: building\n"
-            "  offspring: []\n"
-            "  start_year: 100\n",
-            encoding="utf-8",
-        )
         return sim
 
     def test_building_sim_reuses_map_renderer_mode(self):
@@ -194,15 +281,16 @@ class BuildingSimulationTests(unittest.TestCase):
 
             self.assertTrue(sim.finish_spatial_feature_draft())
 
-            text = sim.LOCATIONS_ENTRY_PATH.read_text(encoding="utf-8")
-            self.assertIn("type: location", text)
-            self.assertIn("location_class: room", text)
-            self.assertIn("room_class: room", text)
-            self.assertIn("parent_location: loc_archive_building", text)
-            self.assertIn("- id: loc_room_loc_archive_building_001", text)
-            self.assertIn("    - id: loc_room_loc_archive_building_001", text)
+            room = sim.world_model.get_entity("loc_room_loc_archive_building_001")
+            building = sim.world_model.get_entity("loc_archive_building")
+            self.assertEqual("location", room["type"])
+            self.assertEqual("room", room["location_class"])
+            self.assertEqual("room", room["room_class"])
+            self.assertEqual("loc_archive_building", room["parent_location"])
+            self.assertIn("loc_archive_building", room["parents"])
+            self.assertIn("loc_room_loc_archive_building_001", building["constituents"])
 
-    def test_building_sim_finishes_room_when_parent_yaml_block_is_missing(self):
+    def test_building_sim_finishes_room_when_parent_has_no_existing_constituents(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             building = {
                 "id": "loc_draft_building",
@@ -218,18 +306,15 @@ class BuildingSimulationTests(unittest.TestCase):
                 root_entity_id=building["id"],
                 world_model=world_model,
             ))
-            sim.LOCATIONS_ENTRY_PATH = Path(temp_dir) / "locations.yaml"
-            sim.LOCATIONS_ENTRY_PATH.write_text("", encoding="utf-8")
             sim.begin_spatial_feature_draft()
             sim.draft_spatial_feature_points = [(1, 1), (8, 1), (8, 6), (1, 6)]
 
             self.assertTrue(sim.finish_spatial_feature_draft())
 
-            text = sim.LOCATIONS_ENTRY_PATH.read_text(encoding="utf-8")
-            self.assertIn("- id: loc_room_loc_draft_building_001", text)
-            self.assertIn("type: location", text)
-            self.assertIn("location_class: room", text)
-            self.assertIn("parent_location: loc_draft_building", text)
+            room = world_model.get_entity("loc_room_loc_draft_building_001")
+            self.assertEqual("location", room["type"])
+            self.assertEqual("room", room["location_class"])
+            self.assertEqual("loc_draft_building", room["parent_location"])
             self.assertFalse(sim.is_creating_spatial_feature)
 
     def test_map_region_finish_uses_location_record_without_required_parent_patch(self):
@@ -248,19 +333,15 @@ class BuildingSimulationTests(unittest.TestCase):
                 root_entity_id=root["id"],
                 world_model=world_model,
             ))
-            sim.LOCATIONS_ENTRY_PATH = Path(temp_dir) / "locations.yaml"
-            sim.LOCATIONS_ENTRY_PATH.write_text("", encoding="utf-8")
-            sim.active_layer_kind = sim.REGION_LAYER_KIND
+            sim.active_layer_kind = sim.LOCATION_LAYER_KIND
             sim.begin_spatial_feature_draft()
             sim.draft_spatial_feature_points = [(1, 1), (8, 1), (8, 6), (1, 6)]
 
             self.assertTrue(sim.finish_spatial_feature_draft())
 
-            text = sim.LOCATIONS_ENTRY_PATH.read_text(encoding="utf-8")
-            self.assertIn("- id: loc_region_loc_region_root_001", text)
-            self.assertIn("type: location", text)
-            self.assertIn("location_class: region", text)
-            self.assertNotIn("type: spatial_feature", text)
+            region = world_model.get_entity("loc_draft_loc_region_root_001")
+            self.assertEqual("location", region["type"])
+            self.assertEqual("region", region["location_class"])
 
     def test_location_record_append_replaces_existing_failed_finish_record(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -286,30 +367,15 @@ class BuildingSimulationTests(unittest.TestCase):
             room["wiki_entry"] = "Retry pass."
             sim._append_location_record(room)
 
-            text = sim.LOCATIONS_ENTRY_PATH.read_text(encoding="utf-8")
-            self.assertEqual(1, text.count("- id: loc_room_loc_archive_building_001"))
-            self.assertIn("Retry pass.", text)
+            locations = [
+                entity for entity in sim.world_model.loader.datasets["locations"]
+                if entity.get("id") == "loc_room_loc_archive_building_001"
+            ]
+            self.assertEqual(1, len(locations))
+            self.assertEqual("Retry pass.", locations[0]["wiki_entry"])
 
     def test_map_sim_edits_location_polygon_bounds(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            location_path = Path(temp_dir) / "locations.yaml"
-            location_path.write_text(
-                "- id: loc_room_alpha\n"
-                "  pretty_name: Alpha Room\n"
-                "  name: Alpha Room\n"
-                "  type: location\n"
-                "  location_class: room\n"
-                "  bounds:\n"
-                "    type: polygon\n"
-                "    coordinate_space: map_world\n"
-                "    points:\n"
-                "      - [0, 0]\n"
-                "      - [4, 0]\n"
-                "      - [4, 4]\n"
-                "      - [0, 4]\n"
-                "  start_year: 1\n",
-                encoding="utf-8",
-            )
             world_model = FakeWorldModel([
                 {
                     "id": "loc_room_alpha",
@@ -324,14 +390,12 @@ class BuildingSimulationTests(unittest.TestCase):
                 }
             ])
             sim = MapSimulation(SimpleNamespace(year=1, root_entity_id="loc_room_alpha", world_model=world_model))
-            sim.LOCATIONS_ENTRY_PATH = location_path
 
             self.assertTrue(sim.begin_spatial_feature_polygon_edit("location", "loc_room_alpha"))
             sim.editing_spatial_feature_points = [(0, 0), (6, 0), (6, 5), (0, 5)]
             self.assertTrue(sim.finish_spatial_feature_polygon_edit())
 
-            text = location_path.read_text(encoding="utf-8")
-            self.assertIn("- [6, 5]", text)
+            self.assertIn((6, 5), world_model.get_entity("loc_room_alpha")["bounds"]["points"])
             self.assertEqual("loc_room_alpha", sim.selected_entity_id)
             self.assertIsNone(sim.selected_spatial_feature_id)
 

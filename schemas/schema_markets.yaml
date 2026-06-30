@@ -1,5 +1,0 @@
-schema: market
-
-extends: entity_core
-
-fields: {}

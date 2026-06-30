@@ -23,6 +23,37 @@ class DummyLoader:
     def build_reference_graph(self):
         self.reference_graph_rebuilt = True
 
+    def persist_entity(self, entity, previous_entity_id=None):
+        entity_id = entity.get("id")
+        if not entity_id:
+            return False
+        previous_entity_id = previous_entity_id or None
+        if previous_entity_id and previous_entity_id != entity_id:
+            self.entities.pop(previous_entity_id, None)
+        dataset_name = entity.get("_dataset") or entity.get("type") or "ideas"
+        entity["_dataset"] = dataset_name
+        dataset = self.datasets.setdefault(dataset_name, [])
+        dataset[:] = [
+            item for item in dataset
+            if not (isinstance(item, dict) and item.get("id") in {entity_id, previous_entity_id})
+        ]
+        dataset.append(entity)
+        self.entities[entity_id] = entity
+        return True
+
+    def remove_entity(self, entity_id, dataset_name=None):
+        removed = self.entities.pop(entity_id, None) is not None
+        dataset_names = [dataset_name] if dataset_name else list(self.datasets)
+        for candidate_name in dataset_names:
+            dataset = self.datasets.get(candidate_name, [])
+            before_count = len(dataset)
+            dataset[:] = [
+                item for item in dataset
+                if not (isinstance(item, dict) and item.get("id") == entity_id)
+            ]
+            removed = removed or len(dataset) != before_count
+        return removed
+
 
 class DummyTouches:
     def __init__(self):
@@ -68,6 +99,7 @@ class KnowledgeBrowserHarness(KnowledgeBrowserUI):
         self.entry_name_prompt = None
         self.stellar_neighbourhood_prompt = None
         self.layout = None
+        self.font_for_layout = None
         self.show_template_picker = False
         self.template_picker_search_active = False
         self.timeline_edit_target = None
@@ -82,11 +114,6 @@ class KnowledgeBrowserHarness(KnowledgeBrowserUI):
 
     def _write_card_drafts(self):
         return True
-
-    def _entry_file_path_for_dataset(self, dataset_name):
-        if self.entry_dir is not None:
-            return str(Path(self.entry_dir) / f"{dataset_name}.yaml")
-        return super()._entry_file_path_for_dataset(dataset_name)
 
     def _build_browser_items(self, world_model):
         return []
@@ -220,7 +247,7 @@ class EntityIdUpdateTests(unittest.TestCase):
         self.assertTrue(ui.world_model.touch_degrees.refreshed)
         self.assertTrue(ui.world_model.loader.reference_graph_rebuilt)
 
-    def test_delete_card_entry_removes_repository_block_and_loader_entity(self):
+    def test_delete_card_entry_removes_repository_entity_and_loader_entity(self):
         entity = {
             "id": "idea_delete_me",
             "type": "idea",
@@ -229,17 +256,8 @@ class EntityIdUpdateTests(unittest.TestCase):
             "name": "Delete Me",
         }
         with tempfile.TemporaryDirectory() as temp_dir:
-            entry_path = Path(temp_dir) / "ideas.yaml"
-            entry_path.write_text(
-                "- id: idea_keep\n"
-                "  type: idea\n"
-                "  name: Keep\n"
-                "- id: idea_delete_me\n"
-                "  type: idea\n"
-                "  name: Delete Me\n",
-                encoding="utf-8",
-            )
-            ui = KnowledgeBrowserHarness({"idea_delete_me": entity}, entry_dir=temp_dir)
+            keep = {"id": "idea_keep", "type": "idea", "_dataset": "ideas", "name": "Keep"}
+            ui = KnowledgeBrowserHarness({"idea_keep": keep, "idea_delete_me": entity}, entry_dir=temp_dir)
             ui.card_drafts["idea_delete_me"] = {"entity": entity}
             card = {
                 "entity_id": "idea_delete_me",
@@ -251,11 +269,9 @@ class EntityIdUpdateTests(unittest.TestCase):
 
             self.assertTrue(ui._delete_card_entry(card))
 
-            text = entry_path.read_text(encoding="utf-8")
-            self.assertIn("idea_keep", text)
-            self.assertNotIn("idea_delete_me", text)
+            self.assertIn("idea_keep", ui.world_model.loader.entities)
             self.assertNotIn("idea_delete_me", ui.world_model.loader.entities)
-            self.assertEqual([], ui.world_model.loader.datasets["ideas"])
+            self.assertEqual(["idea_keep"], [item["id"] for item in ui.world_model.loader.datasets["ideas"]])
             self.assertNotIn("idea_delete_me", ui.card_drafts)
             self.assertEqual([], ui.cards)
             self.assertTrue(ui.world_model.touch_degrees.refreshed)
@@ -280,7 +296,7 @@ class EntityIdUpdateTests(unittest.TestCase):
 
             self.assertIsInstance(ui._repository_service(), KnowledgeRepositoryService)
             self.assertTrue(ui._delete_card_entry(card))
-            self.assertFalse((Path(temp_dir) / "ideas.yaml").exists())
+            self.assertEqual([], list(Path(temp_dir).iterdir()))
             self.assertNotIn("idea_draft_delete", ui.world_model.loader.entities)
             self.assertEqual([], ui.cards)
 
@@ -458,6 +474,48 @@ class EntityIdUpdateTests(unittest.TestCase):
         self.assertIn("clade_bad", ui.relation_link_status)
         self.assertTrue(ui.world_model.loader.reference_graph_rebuilt)
 
+    def test_derived_clade_color_sets_full_card_palette(self):
+        root = {
+            "id": "clade_root",
+            "type": "cladistics",
+            "_dataset": "cladistics",
+            "name": "Root",
+        }
+        species_a = {
+            "id": "species_a",
+            "type": "species",
+            "_dataset": "species",
+            "name": "Species A",
+            "parents": ["clade_root"],
+            "card_color": "#000000",
+            "card_header_color": "#100000",
+            "wiki_field_colors": {"default": "#001000", "alternate": "#000010"},
+        }
+        species_b = {
+            "id": "species_b",
+            "type": "species",
+            "_dataset": "species",
+            "name": "Species B",
+            "parents": ["clade_root"],
+            "card_color": "#202020",
+            "card_header_color": "#302020",
+            "wiki_field_colors": {"default": "#203020", "alternate": "#202030"},
+        }
+        ui = KnowledgeBrowserHarness({
+            "clade_root": root,
+            "species_a": species_a,
+            "species_b": species_b,
+        })
+
+        changed = ui._update_derived_clade_color("clade_root", persist=True)
+
+        self.assertTrue(changed)
+        self.assertEqual("#101010", root["card_color"])
+        self.assertEqual("#201010", root["card_header_color"])
+        self.assertEqual({"default": "#102010", "alternate": "#101020"}, root["wiki_field_colors"])
+        self.assertEqual("derived_offspring", root["card_color_source"])
+        self.assertIn(("clade_root", None), ui.persisted_ids)
+
     def test_card_name_edit_consumes_typing_before_browser_search(self):
         entity = {
             "id": "idea_edit_name",
@@ -561,6 +619,10 @@ class EntityIdUpdateTests(unittest.TestCase):
             "card_view": SimpleNamespace(
                 entity=entity,
                 handle_location_click=lambda card_arg, mouse_pos: False,
+                handle_production_click=lambda card_arg, mouse_pos: False,
+                handle_timeline_click=lambda card_arg, mouse_pos: False,
+                handle_phylogeny_click=lambda card_arg, mouse_pos: False,
+                handle_pixeltile_click=lambda card_arg, mouse_pos: False,
             ),
             "toolbelt_hitboxes": [
                 (

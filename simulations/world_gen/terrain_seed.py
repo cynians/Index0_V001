@@ -1,3 +1,6 @@
+from simulations.world_gen.map_seed import resolved_map_seed, seed_range
+
+
 def _clamp(value, low, high):
     return max(low, min(high, float(value)))
 
@@ -34,18 +37,39 @@ def _plate_count(radius_earth, internal_heat_w_m2, water_fraction):
     return int(round(_clamp(8.0 * radius_factor * heat_factor * water_factor, 3.0, 28.0)))
 
 
-def derive_terrain_seed_model(seed, physics, atmosphere, regime):
+def _element_profile(seed):
+    composition = seed.get("crust_composition") if isinstance(seed.get("crust_composition"), dict) else {}
+    profile = {}
+    for group_name in ("major_elements", "trace_elements"):
+        for row in composition.get(group_name) or []:
+            if not isinstance(row, dict):
+                continue
+            symbol = str(row.get("symbol") or "").strip()
+            if not symbol:
+                continue
+            try:
+                amount = float(row.get("abundance_percent", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                amount = 0.0
+            profile[symbol] = max(profile.get(symbol, 0.0), amount)
+    return profile
+
+
+def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", system_id=""):
     seed = seed if isinstance(seed, dict) else {}
     physics = physics if isinstance(physics, dict) else {}
     atmosphere = atmosphere if isinstance(atmosphere, dict) else {}
     regime = regime if isinstance(regime, dict) else {}
     interior = regime.get("interior") if isinstance(regime.get("interior"), dict) else {}
     surface = regime.get("surface_processes") if isinstance(regime.get("surface_processes"), dict) else {}
+    map_seed = resolved_map_seed(seed, planet_id=planet_id, system_id=system_id)
 
     radius_earth = max(0.01, float(physics.get("radius_earth", seed.get("radius_earth", 1.0)) or 1.0))
     radius_m = max(1.0, float(physics.get("radius_m", radius_earth * 6_371_000.0) or 1.0))
+    gravity_g = max(0.05, float(physics.get("surface_gravity_g", 1.0) or 1.0))
     water_fraction = _clamp(seed.get("water_fraction", 0.0), 0.0, 1.0)
     pressure_bar = _surface_pressure_bar(atmosphere)
+    surface_temp_k = max(0.0, float(atmosphere.get("estimated_surface_temperature_k", 0.0) or 0.0))
     internal_heat = max(0.0, float(interior.get("internal_heat_w_m2", 0.0) or 0.0))
     tectonics = str(interior.get("tectonic_regime") or "unknown")
     hydrology = str(surface.get("hydrologic_cycle") or "none")
@@ -57,6 +81,13 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime):
     partial_resurfacing = tectonics in {"episodic_lid", "heat_pipe"}
     liquid_water = bool(surface.get("liquid_water_possible"))
     erosion = _erosion_strength(surface, pressure_bar)
+    elements = _element_profile(seed)
+    silica = elements.get("Si", 0.0)
+    mafic = elements.get("Fe", 0.0) + elements.get("Mg", 0.0) + elements.get("Ni", 0.0)
+    volatile_elements = elements.get("C", 0.0) + elements.get("N", 0.0) + elements.get("S", 0.0)
+    gravity_relief_factor = _clamp(1.0 / (gravity_g ** 0.5), 0.55, 1.45)
+    silica_relief_factor = 1.0 + _clamp((silica - 24.0) / 80.0, -0.18, 0.22)
+    mafic_roughness_bonus = _clamp((mafic - 8.0) / 90.0, -0.08, 0.18)
 
     if mobile_plates:
         max_elevation_m = 8200.0 + radius_earth * 1800.0
@@ -79,9 +110,21 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime):
         roughness = 0.46
         relief_driver = "stagnant_lid_relief"
 
-    max_elevation_m *= 1.0 - erosion * 0.22
-    min_elevation_m *= 1.0 - erosion * 0.16
-    target_ocean_fraction = water_fraction if liquid_water else 0.0
+    max_elevation_m *= gravity_relief_factor * silica_relief_factor * (1.0 - erosion * 0.22)
+    min_elevation_m *= gravity_relief_factor * (1.0 - erosion * 0.16)
+    roughness = _clamp(roughness + mafic_roughness_bonus - erosion * 0.08, 0.18, 0.9)
+    ocean_bias = seed_range(map_seed, "ocean_bias", -0.18, 0.18)
+    temp_ocean_factor = _clamp(1.0 - abs(surface_temp_k - 288.0) / 155.0, 0.12, 1.0)
+    pressure_ocean_factor = _clamp(0.55 + pressure_bar * 0.32, 0.35, 1.18)
+    volatile_ocean_bonus = _clamp(volatile_elements / 80.0, 0.0, 0.12)
+    target_ocean_fraction = (
+        water_fraction
+        * seed_range(map_seed, "ocean_scale", 0.75, 1.18)
+        * temp_ocean_factor
+        * pressure_ocean_factor
+        + ocean_bias
+        + volatile_ocean_bonus
+    ) if liquid_water else 0.0
     target_ocean_fraction = _clamp(target_ocean_fraction, 0.0, 0.92)
 
     if crater_retention == "high":
@@ -91,6 +134,8 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime):
     else:
         crater_density = 0.08
     crater_density *= 1.0 - erosion * 0.35
+    crater_density *= 1.0 - _clamp(pressure_bar / 8.0, 0.0, 0.22)
+    crater_density *= 1.0 - _clamp(internal_heat / 0.35, 0.0, 0.18)
     crater_density = _clamp(crater_density, 0.0, 1.0)
 
     layers = [
@@ -117,6 +162,8 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime):
 
     return {
         "status": "terrain_seeded",
+        "map_seed": map_seed,
+        "map_seed_input": str(seed.get("map_seed") or "auto"),
         "map_canvas": {
             "projection": "equirectangular",
             "width_px": 2048,
@@ -145,7 +192,12 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime):
             "enabled": crater_density > 0.02,
             "retention": crater_retention,
             "density": round(crater_density, 3),
-            "max_crater_diameter_km": round((radius_m / 1000.0) * (0.055 if crater_retention == "high" else 0.025), 1),
+            "max_crater_diameter_km": round(
+                (radius_m / 1000.0)
+                * (0.055 if crater_retention == "high" else 0.025)
+                * _clamp(1.25 / gravity_g, 0.55, 1.75),
+                1,
+            ),
         },
         "erosion": {
             "processes": erosion_processes,

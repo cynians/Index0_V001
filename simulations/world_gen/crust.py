@@ -3,6 +3,8 @@ MAJOR_CRUST_TARGET_PERCENT = 100.0 - TRACE_RESERVE_PERCENT
 
 
 CRUST_ELEMENT_DENSITY_PROXY_KG_M3 = {
+    "H": 90.0,
+    "He": 170.0,
     "O": 2650.0,
     "Si": 2650.0,
     "Al": 2700.0,
@@ -44,6 +46,57 @@ EARTH_CRUST_MAJOR_ELEMENTS = [
 ]
 
 
+TRACE_ELEMENT_RARITY = {
+    "Ti": "common",
+    "Mn": "common",
+    "P": "common",
+    "S": "common",
+    "C": "common",
+    "Ni": "common",
+    "Cr": "common",
+    "Cu": "uncommon",
+    "Zn": "uncommon",
+    "Mo": "uncommon",
+    "Sn": "uncommon",
+    "Pb": "uncommon",
+    "Ag": "rare",
+    "W": "rare",
+    "Re": "very_rare",
+    "Ir": "very_rare",
+    "Os": "very_rare",
+    "Pt": "very_rare",
+    "Au": "very_rare",
+    "Th": "very_rare",
+    "U": "very_rare",
+    "Tc": "synthetic_or_transient",
+    "Pm": "synthetic_or_transient",
+    "Po": "synthetic_or_transient",
+    "At": "synthetic_or_transient",
+    "Fr": "synthetic_or_transient",
+    "Ra": "very_rare",
+    "Ac": "very_rare",
+    "Pa": "very_rare",
+}
+
+
+TRACE_RARITY_WEIGHTS = {
+    "common": 1.0,
+    "uncommon": 0.42,
+    "rare": 0.12,
+    "very_rare": 0.025,
+    "synthetic_or_transient": 0.001,
+}
+
+
+TRACE_PROMOTION_ABUNDANCE_BY_RARITY = {
+    "common": 0.85,
+    "uncommon": 0.45,
+    "rare": 0.18,
+    "very_rare": 0.05,
+    "synthetic_or_transient": 0.01,
+}
+
+
 ELEMENT_NAMES = {
     "H": "Hydrogen", "He": "Helium",
     "Li": "Lithium", "Be": "Beryllium", "B": "Boron", "C": "Carbon", "N": "Nitrogen", "O": "Oxygen",
@@ -82,9 +135,28 @@ PERIODIC_TABLE_ROWS = [
     ["", "", "", "Th", "Pa", "U", "", "", "", "", "", "", "", "", "", "", "", ""],
 ]
 
+from simulations.world_gen.material_catalog import (
+    ELEMENT_NAMES,
+    TRACE_ELEMENT_RARITY,
+    TRACE_PROMOTION_ABUNDANCE_BY_RARITY,
+    TRACE_RARITY_WEIGHTS,
+)
+
 
 def element_name(symbol):
     return ELEMENT_NAMES.get(symbol, symbol)
+
+
+def trace_element_rarity(symbol):
+    return TRACE_ELEMENT_RARITY.get(str(symbol or "").strip(), "uncommon")
+
+
+def trace_element_weight(symbol):
+    return TRACE_RARITY_WEIGHTS.get(trace_element_rarity(symbol), 0.25)
+
+
+def trace_promotion_abundance(symbol):
+    return TRACE_PROMOTION_ABUNDANCE_BY_RARITY.get(trace_element_rarity(symbol), 0.25)
 
 
 def normalize_major_elements(elements):
@@ -97,11 +169,14 @@ def normalize_major_elements(elements):
             abundance = max(0.0, float(element.get("abundance_percent", 0.0)))
         except (TypeError, ValueError):
             abundance = 0.0
-        clean.append({
+        row = {
             "symbol": symbol,
             "name": str(element.get("name") or element_name(symbol)),
             "abundance_percent": abundance,
-        })
+        }
+        if element.get("rarity"):
+            row["rarity"] = element.get("rarity")
+        clean.append(row)
 
     if not clean:
         clean = [dict(element) for element in EARTH_CRUST_MAJOR_ELEMENTS]
@@ -176,10 +251,17 @@ def add_abundant_trace_element(composition, symbol, initial_abundance=1.0):
     if any(element["symbol"] == symbol for element in elements):
         return composition
 
+    try:
+        requested = float(initial_abundance)
+    except (TypeError, ValueError):
+        requested = trace_promotion_abundance(symbol)
+    abundance = min(max(0.0, requested), trace_promotion_abundance(symbol))
+
     elements.append({
         "symbol": symbol,
         "name": element_name(symbol),
-        "abundance_percent": max(0.0, float(initial_abundance)),
+        "abundance_percent": abundance,
+        "rarity": trace_element_rarity(symbol),
     })
     composition["major_elements"] = normalize_major_elements(elements)
     composition["trace_reserve_percent"] = TRACE_RESERVE_PERCENT

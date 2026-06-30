@@ -31,6 +31,13 @@ class InputController:
                 self.running = False
 
             elif event.type == 768:  # pygame.KEYDOWN
+                if (
+                    hasattr(self.simulation, "consumes_global_keydown")
+                    and self.simulation.consumes_global_keydown()
+                    and hasattr(self.simulation, "handle_event")
+                ):
+                    self.simulation.handle_event(event)
+                    continue
 
                 if event.key == 27:  # ESC
                     pass

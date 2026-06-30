@@ -67,6 +67,22 @@ class TabManager:
 
     # --------------------------------------------------
 
+    def close_active(self):
+        if not self.tabs:
+            return None
+
+        if self.active_index < 0 or self.active_index >= len(self.tabs):
+            return None
+
+        closed = self.tabs.pop(self.active_index)
+        if self.tabs:
+            self.active_index = min(self.active_index, len(self.tabs) - 1)
+        else:
+            self.active_index = 0
+        return closed
+
+    # --------------------------------------------------
+
     def update(self, dt):
         for i, tab in enumerate(self.tabs):
             tab.active = (i == self.active_index)

@@ -119,6 +119,34 @@ class TimelineTickTests(unittest.TestCase):
         self.assertEqual({"loc_one", "veh_one"}, visible_ids)
         self.assertEqual({"engineering", "locations"}, timeline.active_filter_groups)
 
+    def test_contemporary_filter_includes_selected_year_context_window(self):
+        timeline = TimelineUI()
+        timeline.set_rect(pygame.Rect(0, 0, 500, 180))
+        timeline.view_min_year = 1800
+        timeline.view_max_year = 2200
+        timeline._view_range_initialized = True
+        timeline.set_items(
+            [
+                {"entity_id": "period_context", "timeline_kind": "major_period", "start_year": 1800, "end_year": 2200},
+                {"entity_id": "active", "dataset": "events", "start_year": 1990, "end_year": 2010},
+                {"entity_id": "near_start", "dataset": "events", "start_year": 1900, "end_year": 1910},
+                {"entity_id": "near_end", "dataset": "events", "start_year": 2090, "end_year": 2100},
+                {"entity_id": "too_early", "dataset": "events", "start_year": 1800, "end_year": 1850},
+                {"entity_id": "too_late", "dataset": "events", "start_year": 2150, "end_year": 2160},
+            ]
+        )
+        timeline.set_selected_year(2000)
+        timeline.active_category_filter = "contemporary"
+
+        visible_ids = {item["entity_id"] for item in timeline._filtered_visible_items()}
+
+        self.assertIn("period_context", visible_ids)
+        self.assertIn("active", visible_ids)
+        self.assertIn("near_start", visible_ids)
+        self.assertIn("near_end", visible_ids)
+        self.assertNotIn("too_early", visible_ids)
+        self.assertNotIn("too_late", visible_ids)
+
     def test_species_animals_and_cladistics_are_hidden_by_default(self):
         timeline = TimelineUI()
         timeline.set_rect(pygame.Rect(0, 0, 500, 180))

@@ -1090,12 +1090,18 @@ class TimelineUI:
 
     def _contemporary_visible_items(self, visible_items):
         if self.selected_year is not None:
+            context_start = self.selected_year - 100
+            context_end = self.selected_year + 100
             return [
                 item for item in visible_items
                 if item.get("timeline_kind") == "major_period"
                 or (
                     (year_range := self._item_year_range(item)) is not None
-                    and year_range[0] <= self.selected_year <= year_range[1]
+                    and (
+                        year_range[0] <= self.selected_year <= year_range[1]
+                        or context_start <= year_range[0] <= context_end
+                        or context_start <= year_range[1] <= context_end
+                    )
                 )
             ]
 

@@ -44,6 +44,7 @@ class SpaceSimulation:
             root_system_id=self.root_system_id,
             root_body_id=self.root_body_id,
         )
+        self._loaded_repository_revision = getattr(self.world_model, "repository_revision", 0)
 
     def get_center(self):
         return 0.0, 0.0
@@ -62,6 +63,19 @@ class SpaceSimulation:
         return "Local planetary space"
 
     def update(self, dt):
+        repository_revision = getattr(self.world_model, "repository_revision", 0)
+        if repository_revision != self._loaded_repository_revision:
+            self.system.populate_from_world_model(
+                world_model=self.world_model,
+                year=self.year,
+                root_system_id=self.root_system_id,
+                root_body_id=self.root_body_id,
+            )
+            self._loaded_repository_revision = repository_revision
+            self.selected_space_object = None
+            self.selected_system_entity_id = None
+            self.hover_space_object = None
+            self.hover_system_entity_id = None
         self.sim_manager.update(dt)
 
     def get_entity(self, space_object, world_model=None):
@@ -80,7 +94,7 @@ class SpaceSimulation:
 
     def get_selected_body_entity(self):
         """
-        Return the source systems.yaml entity for the currently selected body.
+        Return the source orbital entity for the currently selected body.
         """
         if self.selected_space_object is None:
             return None

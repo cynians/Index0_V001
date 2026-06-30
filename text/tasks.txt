@@ -1959,15 +1959,15 @@ TASK-204
 Status: PARTIAL
 Difficulty: 5
 Requires: TASK-019, TASK-020, TASK-132
-Description: Split location entry storage by system into separate files while preserving one logical locations dataset, including:
-- Physical separation such as entries/locations/sol.yaml and entries/locations/nanhai_system.yaml
-- Recursive entity loading from subdirectories
-- Merging of split location files into one logical locations dataset for runtime use
+Description: Split location authoring/projection by system while preserving one logical locations dataset, including:
+- Physical separation by star system in the ontology projection and editor views
+- Recursive entity grouping for nested orbital systems
+- Merging of grouped locations into one logical locations dataset for runtime use
 - Preservation of current world-model queries against locations
 - Current state:
-  - recursive entry loading exists
-  - loader already merges entries/locations/* into one logical locations dataset
-  - authored split location files and generation/writeback workflow are not yet fully established
+  - ontology-backed location projection exists
+  - loader already presents orbital and spatial entities through one logical locations dataset
+  - authored grouped location views and generation workflow are not yet fully established
 
 TASK-205
 Status: TODO
@@ -2360,8 +2360,8 @@ Difficulty: 4
 Requires: TASK-207, TASK-210, TASK-215, TASK-230
 Description: Refine and expand the existing vehicle repository set using idea-derived real vehicle entries, including:
 - Continue replacing remaining placeholder or weak vehicle entries with repository-safe idea-derived vehicles where needed
-- Refine already-added vehicle entries in vehicles.yaml rather than treating the file as mostly placeholder content
-- Adapt ideas step-by-step into vehicles.yaml using the current repository schema
+- Refine already-added vehicle entries in the ontology rather than treating the set as mostly placeholder content
+- Adapt ideas step-by-step into vehicle entities using the current repository schema
 - Keep entries descriptive and repository-safe even when simulation/runtime fields are still incomplete
 - Preserve ability to review and adjust each converted or refined vehicle entry individually before wider batch normalization
 
@@ -2483,7 +2483,7 @@ TASK-249
 Status: TODO
 Difficulty: 3
 Requires: TASK-231, TASK-237
-Description: Rework the vehicle design catalog and component repository workflow. First, make the lower Vehicle Design panel vertically resizable by dragging its upper border, similar to an IDE/log panel. Then replace the flat catalog list with a grouped card-based inventory view where card footprint reflects the placed top-down size of the component or assembly. Keep the lower panel as the canonical catalog UI layer and avoid duplicate renderer-side catalog drawing. For repository scaling, keep a single shared component schema but split component data into a small number of broad functional files rather than one giant YAML or many tiny per-vehicle files.
+Description: Rework the vehicle design catalog and component repository workflow. First, make the lower Vehicle Design panel vertically resizable by dragging its upper border, similar to an IDE/log panel. Then replace the flat catalog list with a grouped card-based inventory view where card footprint reflects the placed top-down size of the component or assembly. Keep the lower panel as the canonical catalog UI layer and avoid duplicate renderer-side catalog drawing. For repository scaling, keep a single shared component schema but group component data into a small number of broad functional ontology categories rather than one giant undifferentiated component set or many tiny per-vehicle buckets.
 Use broad buckets such as structural, running gear, powertrain, control/crew, cargo/support, sensors/weapons, and vehicle-specific assemblies. Continue LuAZ-967 component development using a two-phase workflow: first collect candidate components/assemblies and classify them into generic reusable parts versus vehicle-specific assemblies, then produce replacement diffs for the appropriate component data files.
 
 
@@ -2519,8 +2519,8 @@ Description: Add the Center of Gravity as the first dedicated city-layer reposit
 - Linkage to existing CoG ideas and later quarter/site concretization
 
 Notes:
-- city_cog is present in entries/cities.yaml.
-- loc_central_asian_steppe_cog is present in entries/locations.yaml as the linked physical/map anchor.
+- city_cog is present in the ontology.
+- loc_central_asian_steppe_cog is present in the ontology as the linked physical/map anchor.
 
 TASK-246
 Status: TODO

@@ -41,8 +41,16 @@ class InputRouter:
         Route global keydown events into navigation.
         """
         if event.type == pygame.KEYDOWN:
+            active_sim = self.app.get_active_simulation()
+            if (
+                active_sim is not None
+                and bool(getattr(active_sim, "consumes_global_keydown", lambda: False)())
+                and hasattr(active_sim, "handle_event")
+            ):
+                active_sim.handle_event(event)
+                return True
+
             if event.key == pygame.K_ESCAPE:
-                active_sim = self.app.get_active_simulation()
                 if (
                     active_sim is not None
                     and bool(getattr(active_sim, "consumes_global_escape", lambda: False)())

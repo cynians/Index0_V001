@@ -144,8 +144,8 @@ class SpaceRenderer:
         angle = self._stable_angle_for_id(system_id)
         return (anchor_pos[0] + math.cos(angle) * radius, anchor_pos[1] + math.sin(angle) * radius)
 
-    def _stellar_neighbour_layout(self, sim):
-        graph = self._stellar_neighbour_graph(sim)
+    def _stellar_neighbour_layout(self, sim, graph=None):
+        graph = graph or self._stellar_neighbour_graph(sim)
         root_id = graph["root_id"]
         entities = graph["entities"]
         depths = graph["depths"]
@@ -235,15 +235,34 @@ class SpaceRenderer:
 
         return layout
 
+    def _should_draw_stellar_neighbourhood(self, graph, camera, view):
+        edges = graph.get("edges", []) if isinstance(graph, dict) else []
+        if not edges:
+            return False
+        distances = []
+        for edge in edges:
+            try:
+                distance = float(edge.get("distance_ly"))
+            except (TypeError, ValueError):
+                continue
+            if distance > 0:
+                distances.append(distance)
+        if not distances:
+            return False
+        nearest_px = min(distances) * LY_M * float(getattr(camera, "zoom", 0.0) or 0.0)
+        return nearest_px <= max(view.width, view.height) * 1.25
+
     def _draw_stellar_neighbourhood(self, screen, sim, camera):
         if getattr(sim, "root_body_id", None) is not None:
             return
         graph = self._stellar_neighbour_graph(sim)
-        layout = self._stellar_neighbour_layout(sim)
+        view = self.app_view
+        if not self._should_draw_stellar_neighbourhood(graph, camera, view):
+            return
+        layout = self._stellar_neighbour_layout(sim, graph=graph)
         if len(layout) <= 1:
             return
 
-        view = self.app_view
         root_id = getattr(sim, "root_system_id", None)
 
         font = view.default_font
@@ -313,10 +332,19 @@ class SpaceRenderer:
         if center is None:
             return
 
-        inner_px = int(inner_au * AU_M * camera.zoom)
-        outer_px = int(outer_au * AU_M * camera.zoom)
+        inner_px_float = inner_au * AU_M * camera.zoom
+        outer_px_float = outer_au * AU_M * camera.zoom
+        if not math.isfinite(inner_px_float) or not math.isfinite(outer_px_float):
+            return
+        inner_px = int(inner_px_float)
+        outer_px = int(outer_px_float)
         if outer_px <= 1:
             return
+        max_radius_px = max(screen.get_width(), screen.get_height()) * 4
+        if inner_px > max_radius_px and outer_px > max_radius_px:
+            return
+        inner_px = max(0, min(inner_px, max_radius_px))
+        outer_px = max(0, min(outer_px, max_radius_px))
 
         zone_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
         pygame.draw.circle(zone_surface, (94, 132, 86, 36), (int(center[0]), int(center[1])), outer_px)
@@ -326,6 +354,26 @@ class SpaceRenderer:
         if inner_px > 0:
             pygame.draw.circle(zone_surface, (150, 196, 138, 110), (int(center[0]), int(center[1])), inner_px, 2)
         screen.blit(zone_surface, (0, 0))
+
+    def _draw_gas_giant_bands(self, screen, rect, layer):
+        bands = layer.get("bands") if isinstance(layer.get("bands"), list) else []
+        if not bands:
+            bands = [layer.get("color", (180, 170, 150))]
+        clip = screen.get_clip()
+        screen.set_clip(rect.clip(screen.get_rect()))
+        band_count = max(1, len(bands))
+        for index in range(band_count):
+            color = bands[index]
+            try:
+                color = (int(color[0]), int(color[1]), int(color[2]))
+            except (TypeError, ValueError, IndexError):
+                color = layer.get("color", (180, 170, 150))
+            y0 = rect.y + int(index * rect.height / band_count)
+            y1 = rect.y + int((index + 1) * rect.height / band_count)
+            pygame.draw.rect(screen, color, pygame.Rect(rect.x, y0, rect.width, max(1, y1 - y0)))
+        pygame.draw.ellipse(screen, (18, 20, 24), rect, max(1, rect.width // 28))
+        pygame.draw.ellipse(screen, (226, 226, 220), rect, 2)
+        screen.set_clip(clip)
 
     def draw(self, screen, sim):
         view = self.app_view
@@ -350,10 +398,19 @@ class SpaceRenderer:
             obj = body["object"]
             bx, by = obj.get_position()
             source_entity = sim.system.get_source_entity_for_space_object(obj)
+            orbit = getattr(obj, "orbit", None)
+            parent_obj = getattr(orbit, "parent", None) if orbit is not None else None
+            grandparent_obj = None
+            if parent_obj is not None:
+                parent_orbit = getattr(parent_obj, "orbit", None)
+                if parent_orbit is not None:
+                    grandparent_obj = getattr(parent_orbit, "parent", None)
             is_star = isinstance(source_entity, dict) and (
                 source_entity.get("location_class") == "star"
                 or source_entity.get("body_class") == "star"
             )
+            is_primary_system_member = (parent_obj is not None and grandparent_obj is None)
+            is_subsystem_body = (parent_obj is not None and grandparent_obj is not None)
 
             layer_stack = body["layers"]
             layers = layer_stack.get_layers() if layer_stack else []
@@ -374,6 +431,10 @@ class SpaceRenderer:
                 pixel_size = max(1, int(size * camera.zoom))
                 if is_star:
                     pixel_size = max(18, pixel_size)
+                elif is_primary_system_member:
+                    pixel_size = max(7, pixel_size)
+                elif is_subsystem_body:
+                    pixel_size = max(4, pixel_size)
 
                 rect = pygame.Rect(
                     int(center[0] - pixel_size / 2),
@@ -427,6 +488,8 @@ class SpaceRenderer:
                         max(8, pixel_size // 2 + 2),
                         1,
                     )
+                elif layer.get("render_style") == "gas_giant_bands":
+                    self._draw_gas_giant_bands(screen, rect, layer)
                 else:
                     pygame.draw.rect(screen, layer["color"], rect)
                     pygame.draw.rect(screen, (220, 220, 220), rect, 2)
@@ -445,18 +508,7 @@ class SpaceRenderer:
             if body_rect is None:
                 continue
 
-            orbit = getattr(obj, "orbit", None)
-            parent_obj = getattr(orbit, "parent", None) if orbit is not None else None
-            grandparent_obj = None
-
-            if parent_obj is not None:
-                parent_orbit = getattr(parent_obj, "orbit", None)
-                if parent_orbit is not None:
-                    grandparent_obj = getattr(parent_orbit, "parent", None)
-
             is_root_body = orbit is None
-            is_primary_system_member = (parent_obj is not None and grandparent_obj is None)
-            is_subsystem_body = (parent_obj is not None and grandparent_obj is not None)
 
             show_label = False
 

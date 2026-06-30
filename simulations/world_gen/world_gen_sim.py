@@ -1,7 +1,7 @@
+import random
 import re
 from pathlib import Path
 
-import yaml
 
 from simulations.space.stellar import habitable_zone_for_luminosity
 from simulations.world_gen.atmosphere import derive_atmosphere_model
@@ -13,19 +13,37 @@ from simulations.world_gen.crust import (
     classify_crust_type,
     crust_composition_from_seed,
     default_crust_composition,
+    element_name,
     estimate_crust_density_kg_m3,
     set_major_element_abundance,
+    trace_element_rarity,
+    trace_element_weight,
+    trace_promotion_abundance,
+)
+from simulations.world_gen.formation_theory import (
+    candidate_orbits_au,
+    formation_model_for_orbit,
+    max_feasible_planets,
 )
 from simulations.world_gen.heightmap import derive_heightmap_model
 from simulations.world_gen.interior_regime import derive_interior_regime_model
+from simulations.world_gen.map_seed import resolved_map_seed, seed_range
+from simulations.world_gen.material_catalog import element_symbols_by_rarity
+from simulations.world_gen.natural_materials import (
+    atmospheric_band_palette,
+    derive_atmospheric_material_model,
+    derive_natural_material_model,
+    derive_planet_material_tags,
+)
 from simulations.world_gen.planetary_physics import derive_planet_physics
 from simulations.world_gen.terrain_seed import derive_terrain_seed_model
 from simulations.world_gen.tectonics import (
-    advance_tectonics_model,
     derive_crater_model,
     derive_tectonic_model,
+    mature_tectonics_model,
 )
 from world.year_utils import parse_year
+from world.relation_mirror import mirror_location_sim_relations
 
 
 class WorldGenSimulation:
@@ -52,6 +70,7 @@ class WorldGenSimulation:
         ("water_fraction", "Surface Water"),
         ("volatile_inventory", "Volatiles"),
         ("tectonics_mode", "Tectonics"),
+        ("map_seed", "Map Seed"),
     ]
     DEFAULT_SEED = {
         "radius_earth": 1.0,
@@ -61,6 +80,86 @@ class WorldGenSimulation:
         "water_fraction": 0.5,
         "volatile_inventory": "earthlike",
         "tectonics_mode": "unknown",
+        "map_seed": "auto",
+    }
+    PLANET_TEMPLATES = {
+        "silicate_terrestrial": {
+            "label": "Silicate terrestrial",
+            "planet_class": "terrestrial",
+            "major_elements": [
+                ("O", 46.86), ("Si", 27.84), ("Al", 8.14), ("Fe", 5.03),
+                ("Ca", 3.62), ("Na", 2.81), ("K", 2.61), ("Mg", 2.11),
+            ],
+            "water_range": (0.12, 0.74),
+            "volatile_options": ["dry", "wet", "earthlike"],
+            "tectonics_options": ["stagnant_lid", "mobile_lid", "unknown"],
+        },
+        "ocean_world": {
+            "label": "Ocean world",
+            "planet_class": "ocean_world",
+            "major_elements": [
+                ("O", 51.0), ("Si", 22.0), ("Mg", 7.0), ("Fe", 6.0),
+                ("Al", 5.0), ("Ca", 3.0), ("Na", 3.0), ("C", 1.0), ("S", 1.0),
+            ],
+            "water_range": (0.72, 0.98),
+            "volatile_options": ["wet", "earthlike", "dense"],
+            "tectonics_options": ["stagnant_lid", "mobile_lid", "episodic_lid"],
+        },
+        "desiccated_former_ocean": {
+            "label": "Desiccated former ocean",
+            "planet_class": "desert_terrestrial",
+            "major_elements": [
+                ("O", 43.0), ("Si", 26.0), ("Fe", 8.0), ("Mg", 6.0),
+                ("Al", 7.0), ("Ca", 4.0), ("Na", 2.5), ("S", 1.6), ("C", 0.9),
+            ],
+            "water_range": (0.0, 0.08),
+            "volatile_options": ["dry", "thin", "dense"],
+            "tectonics_options": ["inactive", "stagnant_lid", "episodic_lid"],
+        },
+        "cratered_airless": {
+            "label": "Cratered airless body",
+            "planet_class": "airless_rocky",
+            "major_elements": [
+                ("O", 42.0), ("Si", 21.0), ("Fe", 12.0), ("Mg", 9.0),
+                ("Al", 6.0), ("Ca", 5.0), ("Ti", 2.0), ("Na", 1.5), ("S", 0.5),
+            ],
+            "water_range": (0.0, 0.025),
+            "volatile_options": ["none", "thin"],
+            "tectonics_options": ["inactive"],
+        },
+        "carbon_rich": {
+            "label": "Carbon-rich rocky",
+            "planet_class": "carbon_rich_terrestrial",
+            "major_elements": [
+                ("O", 24.0), ("Si", 23.0), ("C", 18.0), ("Fe", 12.0),
+                ("Mg", 9.0), ("Al", 5.0), ("Ca", 3.0), ("S", 2.0), ("Ni", 1.0),
+            ],
+            "water_range": (0.0, 0.35),
+            "volatile_options": ["dry", "thin", "dense"],
+            "tectonics_options": ["inactive", "stagnant_lid", "heat_pipe", "unknown"],
+        },
+        "gas_giant": {
+            "label": "Gas giant",
+            "planet_class": "gas_giant",
+            "major_elements": [
+                ("H", 72.5), ("He", 24.5), ("O", 1.15), ("C", 0.78),
+                ("N", 0.34), ("S", 0.22), ("Ne", 0.16), ("Ar", 0.08),
+            ],
+            "water_range": (0.0, 0.12),
+            "volatile_options": ["dense"],
+            "tectonics_options": ["inactive"],
+        },
+        "ice_giant": {
+            "label": "Ice giant",
+            "planet_class": "ice_giant",
+            "major_elements": [
+                ("H", 48.0), ("He", 14.0), ("O", 18.0), ("C", 8.5),
+                ("N", 5.0), ("S", 2.0), ("Ne", 1.0), ("Ar", 0.5), ("Si", 1.0), ("Fe", 1.0),
+            ],
+            "water_range": (0.08, 0.35),
+            "volatile_options": ["dense"],
+            "tectonics_options": ["inactive"],
+        },
     }
     VISIBLE_PHYSICAL_FIELD_IDS = {
         "radius_earth",
@@ -68,12 +167,14 @@ class WorldGenSimulation:
         "crust_thickness_km",
         "angular_velocity_deg_per_hour",
         "water_fraction",
+        "map_seed",
     }
 
     def __init__(self, world_model=None, planet_location_id=None, parent_system_id=None, year=2400):
         from engine.clock import Clock
 
         self.render_mode = "world_gen"
+        self.request_close_tab = False
         self.year = year
         if world_model is None:
             from world.world_model import WorldModel
@@ -98,7 +199,12 @@ class WorldGenSimulation:
         self.seed_field_rects = {}
         self.crust_slider_rects = {}
         self.crust_add_trace_button_rect = None
+        self.crust_random_generic_button_rect = None
+        self.crust_random_eccentric_button_rect = None
+        self.crust_random_gas_giant_button_rect = None
+        self.formation_theory_button_rect = None
         self.crust_save_button_rect = None
+        self.world_gen_complete_button_rect = None
         self.periodic_table_rect = None
         self.periodic_element_rects = {}
         self.control_panel_rect = None
@@ -117,6 +223,7 @@ class WorldGenSimulation:
             for field_id, value in self.DEFAULT_SEED.items()
         }
         self.crust_composition = default_crust_composition()
+        self.active_planet_template = "silicate_terrestrial"
         self.active_crust_slider_symbol = None
         self.periodic_table_open = False
         self.editor_stage = "crust"
@@ -127,6 +234,9 @@ class WorldGenSimulation:
         self.star_entity = self._resolve_primary_star()
         self.star_luminosity_solar = self._estimate_star_luminosity_solar(self.star_entity)
         self.planetary_model = {}
+        if isinstance(self.planet_entity, dict):
+            self._repair_gas_giant_route_if_needed(self.planet_entity)
+            self.editor_stage = self._resume_stage_for_planet(self.planet_entity)
         self._recalculate_model()
 
     def get_center(self):
@@ -152,6 +262,9 @@ class WorldGenSimulation:
     def consumes_global_escape(self):
         return self.is_fullscreen_editor_active()
 
+    def consumes_global_keydown(self):
+        return self.planet_name_prompt_active
+
     def update(self, dt):
         self.sim_clock.update(dt)
 
@@ -161,21 +274,53 @@ class WorldGenSimulation:
     def set_seed_field_rects(self, rects):
         self.seed_field_rects = dict(rects or {})
 
-    def set_crust_ui_rects(self, slider_rects=None, add_trace_rect=None, save_rect=None, periodic_rect=None, element_rects=None):
+    def set_crust_ui_rects(
+        self,
+        slider_rects=None,
+        add_trace_rect=None,
+        save_rect=None,
+        periodic_rect=None,
+        element_rects=None,
+        random_generic_rect=None,
+        random_eccentric_rect=None,
+        random_gas_giant_rect=None,
+        complete_rect=None,
+    ):
         self.crust_slider_rects = dict(slider_rects or {})
         self.crust_add_trace_button_rect = add_trace_rect
+        self.crust_random_generic_button_rect = random_generic_rect
+        self.crust_random_eccentric_button_rect = random_eccentric_rect
+        self.crust_random_gas_giant_button_rect = random_gas_giant_rect
         self.crust_save_button_rect = save_rect
+        self.world_gen_complete_button_rect = complete_rect
         self.periodic_table_rect = periodic_rect
         self.periodic_element_rects = dict(element_rects or {})
 
     def set_control_panel_rect(self, rect):
         self.control_panel_rect = rect
 
+    def set_formation_theory_button_rect(self, rect):
+        self.formation_theory_button_rect = rect
+
     def set_heightmap_preview_rect(self, rect):
         self.heightmap_preview_rect = rect
 
     def set_planet_hitboxes(self, hitboxes):
         self.planet_hitboxes = list(hitboxes or [])
+
+    def _clear_editor_hitboxes(self):
+        self.seed_field_rects = {}
+        self.crust_slider_rects = {}
+        self.crust_add_trace_button_rect = None
+        self.crust_random_generic_button_rect = None
+        self.crust_random_eccentric_button_rect = None
+        self.crust_random_gas_giant_button_rect = None
+        self.formation_theory_button_rect = None
+        self.crust_save_button_rect = None
+        self.world_gen_complete_button_rect = None
+        self.periodic_table_rect = None
+        self.periodic_element_rects = {}
+        self.control_panel_rect = None
 
     def _screen_pos_from_event_or_mouse(self, event):
         pos = getattr(event, "pos", None)
@@ -416,41 +561,63 @@ class WorldGenSimulation:
             index += 1
         return f"{base_id}_{index:02d}"
 
+    def _iter_location_entities(self):
+        seen = set()
+        if hasattr(self.world_model, "get_entities_by_dataset"):
+            for entity in self.world_model.get_entities_by_dataset("locations"):
+                entity_id = entity.get("id") if isinstance(entity, dict) else None
+                if entity_id in seen:
+                    continue
+                seen.add(entity_id)
+                yield entity
+
+        loader = getattr(self.world_model, "loader", None)
+        locations = getattr(loader, "datasets", {}).get("locations", []) if loader is not None else []
+        for entity in locations:
+            entity_id = entity.get("id") if isinstance(entity, dict) else None
+            if entity_id in seen:
+                continue
+            seen.add(entity_id)
+            yield entity
+
+    def _find_existing_planet_entity(self, planet_name):
+        slug = self._slug_from_text(planet_name)
+        name_key = str(planet_name or "").strip().lower()
+        candidate_ids = {f"planet_{slug}", f"loc_{slug}", slug}
+        soft_match = None
+
+        for entity in self._iter_location_entities():
+            if not isinstance(entity, dict):
+                continue
+            class_key = str(entity.get("location_class") or entity.get("body_class") or "").strip().lower()
+            if class_key != "planet":
+                continue
+            entity_system = self._resolve_entity_id(entity.get("star_system"))
+            if entity_system and entity_system != self.parent_system_id:
+                continue
+            entity_id = str(entity.get("id") or "")
+            label = str(entity.get("name") or entity.get("pretty_name") or "").strip().lower()
+            if entity_id in candidate_ids:
+                return entity
+            if label == name_key:
+                soft_match = entity
+
+        return soft_match
+
     def _primary_star_id(self):
         if isinstance(self.star_entity, dict) and self.star_entity.get("id"):
             return self.star_entity.get("id")
         return None
 
-    def _locations_entry_path(self):
-        loader = getattr(self.world_model, "loader", None)
-        entries_directory = getattr(loader, "entries_directory", None)
-        if entries_directory is not None:
-            return Path(entries_directory) / "locations.yaml"
-        return Path(__file__).resolve().parents[2] / "entries" / "locations.yaml"
-
     def _persist_location_entity(self, entity):
         loader = getattr(self.world_model, "loader", None)
-        if getattr(loader, "use_ontology", False) and hasattr(loader, "persist_entity"):
-            entity["_dataset"] = "locations"
-            return loader.persist_entity(entity)
-
-        entry_path = self._locations_entry_path()
-        entry_path.parent.mkdir(parents=True, exist_ok=True)
-        block = yaml.safe_dump([self._serializable_entity(entity)], sort_keys=False, allow_unicode=True).rstrip() + "\n"
-        try:
-            text = entry_path.read_text(encoding="utf-8") if entry_path.exists() else ""
-            separator = "" if not text.strip() or text.rstrip().endswith("\n\n") else "\n"
-            entry_path.write_text(text.rstrip() + separator + block, encoding="utf-8")
-        except OSError:
+        if loader is None or not hasattr(loader, "persist_entity"):
             return False
-        return True
-
-    def _serializable_entity(self, entity):
-        return {
-            key: value
-            for key, value in entity.items()
-            if not str(key).startswith("_")
-        }
+        entity["_dataset"] = "locations"
+        persisted = loader.persist_entity(entity)
+        if persisted and hasattr(self.world_model, "mark_repository_changed"):
+            self.world_model.mark_repository_changed()
+        return persisted
 
     def _register_location_entity(self, entity):
         loader = getattr(self.world_model, "loader", None)
@@ -470,6 +637,51 @@ class WorldGenSimulation:
         if graph is not None and hasattr(graph, "refresh"):
             graph.refresh()
 
+    def _committed_planet_fields(self, planet_name, model):
+        semi_major_au = model.get("semi_major_axis_au")
+        eccentricity = model.get("eccentricity")
+        periapsis_au = model.get("periapsis_au")
+        apoapsis_au = model.get("apoapsis_au")
+        parent_star_id = self._primary_star_id()
+        anomaly_seed = f"{self.parent_system_id}:{self._slug_from_text(planet_name)}:{semi_major_au:.6f}:{eccentricity:.6f}"
+        return {
+            "pretty_name": planet_name,
+            "name": planet_name,
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "location_role": "orbital_body",
+            "system_role": "orbital_body",
+            "star_system": self.parent_system_id,
+            "parent_location": parent_star_id,
+            "parent_body": parent_star_id,
+            "semi_major_axis_m": semi_major_au * self.AU_M,
+            "eccentricity": eccentricity,
+            "periapsis_au": periapsis_au,
+            "apoapsis_au": apoapsis_au,
+            "mean_anomaly_deg_at_epoch": round(seed_range(anomaly_seed, "mean_anomaly", 0.0, 360.0), 3),
+            "map_projection": "equirectangular",
+            "map_canvas_width_px": 2048,
+            "map_canvas_height_px": 1024,
+            "map_status": "orbit_locked",
+            "bounds": {
+                "type": "bbox",
+                "min_x": -180.0,
+                "max_x": 180.0,
+                "min_y": -90.0,
+                "max_y": 90.0,
+            },
+            "display_color": [92, 148, 206],
+            "environment_summary": {
+                "status": "orbit_locked",
+                "summary": "Initial world-generation seed: orbital placement locked; physical planet model pending.",
+            },
+            "geology_summary": {
+                "status": "pending",
+                "start_condition": "Define radius, mass, rotation, volatile inventory, and plate tectonics mode.",
+            },
+        }
+
     def _build_committed_planet_entity(self, name):
         model = self._recalculate_model()
         if not model.get("orbit_valid"):
@@ -479,42 +691,32 @@ class WorldGenSimulation:
         if not planet_name:
             return None
 
-        semi_major_au = model.get("semi_major_axis_au")
-        eccentricity = model.get("eccentricity")
-        periapsis_au = model.get("periapsis_au")
-        apoapsis_au = model.get("apoapsis_au")
-        parent_star_id = self._primary_star_id()
+        fields = self._committed_planet_fields(planet_name, model)
+        existing_planet = self._find_existing_planet_entity(planet_name)
+        if existing_planet is not None:
+            existing_planet.update(fields)
+            tags = list(existing_planet.get("tags") or [])
+            for tag in ("world_gen_candidate", "orbit_locked"):
+                if tag not in tags:
+                    tags.append(tag)
+            existing_planet["tags"] = tags
+            existing_planet.setdefault("offspring", [])
+            self._set_world_gen_progress(existing_planet, "crust", complete=False)
+            mirror_location_sim_relations(existing_planet)
+            return existing_planet
+
         base_id = f"planet_{self._slug_from_text(planet_name)}"
         entity_id = self._unique_entity_id(base_id)
 
-        return {
+        entity = {
             "id": entity_id,
-            "pretty_name": planet_name,
-            "name": planet_name,
-            "type": "location",
-            "_dataset": "locations",
-            "location_class": "planet",
-            "location_role": "orbital_body",
-            "star_system": self.parent_system_id,
-            "parent_location": parent_star_id,
-            "parent_body": parent_star_id,
-            "semi_major_axis_m": semi_major_au * self.AU_M,
-            "eccentricity": eccentricity,
-            "periapsis_au": periapsis_au,
-            "apoapsis_au": apoapsis_au,
-            "mean_anomaly_deg_at_epoch": 0.0,
-            "display_color": [92, 148, 206],
             "tags": ["world_gen_candidate", "orbit_locked"],
-            "environment_summary": {
-                "status": "orbit_locked",
-                "summary": "Initial world-generation seed: orbital placement locked; physical planet model pending.",
-            },
-            "geology_summary": {
-                "status": "pending",
-                "start_condition": "Define radius, mass, rotation, volatile inventory, and plate tectonics mode.",
-            },
             "offspring": [],
         }
+        entity.update(fields)
+        self._set_world_gen_progress(entity, "crust", complete=False)
+        mirror_location_sim_relations(entity)
+        return entity
 
     def _selected_planet_entity(self):
         if not self.selected_world_gen_planet_id or self.world_model is None:
@@ -536,7 +738,119 @@ class WorldGenSimulation:
             self.seed_input_buffers[field_id] = self._format_seed_input(seed.get(field_id, default_value))
         if self.active_seed_field not in self.seed_input_buffers:
             self.active_seed_field = "radius_earth"
+        template_id = str(seed.get("planet_template") or "").strip()
+        if template_id not in self.PLANET_TEMPLATES:
+            template_id = "gas_giant" if self._seed_payload_is_gas_giant(seed) else "silicate_terrestrial"
+        self.active_planet_template = template_id
         self.crust_composition = crust_composition_from_seed(seed)
+
+    def _seed_payload_is_gas_giant(self, seed):
+        seed = seed if isinstance(seed, dict) else {}
+        class_key = str(seed.get("planet_class") or seed.get("planet_template") or "").strip().lower()
+        if class_key in {"gas_giant", "ice_giant", "hot_gas_giant"}:
+            return True
+        physics = seed.get("derived_planet_physics") if isinstance(seed.get("derived_planet_physics"), dict) else {}
+        for value in (physics.get("radius_earth"), seed.get("radius_earth")):
+            try:
+                if float(value or 0.0) >= 3.0:
+                    return True
+            except (TypeError, ValueError):
+                pass
+        for value in (physics.get("mass_earth"), seed.get("mass_earth")):
+            try:
+                if float(value or 0.0) >= 12.0:
+                    return True
+            except (TypeError, ValueError):
+                pass
+        return False
+
+    def _planet_is_gas_giant_candidate(self, planet):
+        if not isinstance(planet, dict):
+            return False
+        tags = set(planet.get("tags") or [])
+        atmosphere = planet.get("atmosphere_model") if isinstance(planet.get("atmosphere_model"), dict) else {}
+        if (
+            "gas_giant" in tags
+            or planet.get("surface_render_mode") == "gas_giant_bands"
+            or planet.get("map_render_mode") == "gas_giant_bands"
+            or atmosphere.get("has_solid_surface") is False
+            or str(planet.get("body_subclass") or planet.get("planetary_class") or "").strip().lower() in {"gas_giant", "ice_giant", "hot_gas_giant"}
+        ):
+            return True
+        seed = planet.get("world_gen_seed") if isinstance(planet.get("world_gen_seed"), dict) else {}
+        if self._seed_payload_is_gas_giant(seed):
+            return True
+        try:
+            return float(planet.get("radius_m", 0.0) or 0.0) >= 3.0 * 6_371_000.0
+        except (TypeError, ValueError):
+            return False
+
+    def _apply_gas_giant_envelope_fields(self, planet, atmosphere, atmospheric_material_model=None):
+        atmospheric_material_model = atmospheric_material_model or self._apply_atmospheric_materials(planet, atmosphere)
+        planet["map_status"] = "gas_giant_envelope_modeled"
+        planet["body_subclass"] = atmosphere.get("atmosphere_class") or "gas_giant"
+        planet["planetary_class"] = atmosphere.get("atmosphere_class") or "gas_giant"
+        planet["surface_render_mode"] = "gas_giant_bands"
+        planet["map_render_mode"] = "gas_giant_bands"
+        planet["environment_summary"] = {
+            "status": "gas_giant_modeled",
+            "atmosphere_class": atmosphere.get("atmosphere_class"),
+            "dominant_gases": [
+                item.get("molecule")
+                for item in atmosphere.get("composition", [])[:3]
+                if isinstance(item, dict)
+            ],
+            "dominant_materials": list(atmospheric_material_model.get("dominant_materials") or []),
+        }
+        planet["geology_summary"] = {
+            "status": "not_applicable",
+            "reason": "Gas giant envelope has no normal solid terrain route.",
+        }
+        for key in ("terrain_seed_model", "tectonic_model", "crater_model", "heightmap_model", "surface_process_model", "hydrology_summary"):
+            planet.pop(key, None)
+        tags = list(planet.get("tags") or [])
+        for tag in ("gas_giant", "atmospheric_body", "no_solid_surface", "gas_giant_bands"):
+            if tag not in tags:
+                tags.append(tag)
+        planet["tags"] = tags
+        return planet
+
+    def _repair_gas_giant_route_if_needed(self, planet):
+        if not self._planet_is_gas_giant_candidate(planet):
+            return False
+        seed = self._coerce_seed_payload()
+        if seed is None:
+            return False
+        atmosphere = planet.get("atmosphere_model") if isinstance(planet.get("atmosphere_model"), dict) else None
+        needs_repair = (
+            not isinstance(atmosphere, dict)
+            or atmosphere.get("has_solid_surface") is not False
+            or isinstance(planet.get("heightmap_model"), dict)
+            or isinstance(planet.get("terrain_seed_model"), dict)
+            or planet.get("surface_render_mode") != "gas_giant_bands"
+        )
+        if not needs_repair:
+            return False
+        atmosphere = self._derive_atmosphere_model(seed, seed["derived_planet_physics"])
+        if atmosphere.get("has_solid_surface") is not False:
+            return False
+        planet["world_gen_seed"] = seed
+        planet["atmosphere_model"] = atmosphere
+        planet["atmosphere_summary"] = {
+            "status": "modeled",
+            "atmosphere_class": atmosphere.get("atmosphere_class", "unknown"),
+            "has_solid_surface": False,
+            "surface_pressure_bar": atmosphere["surface_pressure_bar"],
+            "estimated_surface_temperature_k": atmosphere["estimated_surface_temperature_k"],
+            "dominant_gases": [
+                item["molecule"]
+                for item in atmosphere.get("composition", [])[:3]
+            ],
+        }
+        self._apply_gas_giant_envelope_fields(planet, atmosphere)
+        self._set_world_gen_progress(planet, "complete" if planet.get("world_gen_complete") else "atmosphere", complete=bool(planet.get("world_gen_complete")))
+        self._mirror_and_persist_planet(planet)
+        return True
 
     def _select_planet_for_worldgen(self, entity_id):
         self.selected_world_gen_planet_id = entity_id
@@ -544,11 +858,15 @@ class WorldGenSimulation:
         if planet is None:
             return False
         self._load_seed_buffers_from_planet(planet)
-        self.editor_stage = "crust"
+        repaired = self._repair_gas_giant_route_if_needed(planet)
+        self.editor_stage = self._resume_stage_for_planet(planet)
         name = planet.get("name", entity_id)
         self.pending_orbit_radius_au = None
         self.orbit_pick_stage = "first"
-        self.commit_status = f"Selected {name}; define physical seed"
+        self.commit_status = (
+            f"Repaired gas giant envelope for {name}; stage {self.editor_stage}"
+            if repaired else f"Selected {name}; stage {self.editor_stage}"
+        )
         return True
 
     def _coerce_seed_payload(self):
@@ -576,6 +894,14 @@ class WorldGenSimulation:
                 seed[field_id] = value
             else:
                 seed[field_id] = text or self.DEFAULT_SEED[field_id]
+        planet = self._selected_planet_entity() or {}
+        seed["planet_id"] = planet.get("id") or self.selected_world_gen_planet_id or self.planet_location_id or ""
+        seed["parent_system_id"] = self.parent_system_id
+        template = self.PLANET_TEMPLATES.get(self.active_planet_template, self.PLANET_TEMPLATES["silicate_terrestrial"])
+        seed["planet_template"] = self.active_planet_template
+        seed["planet_template_label"] = template.get("label", self.active_planet_template)
+        seed["planet_class"] = template.get("planet_class", "terrestrial")
+        seed["resolved_map_seed"] = resolved_map_seed(seed, planet_id=seed["planet_id"], system_id=self.parent_system_id)
         seed["crust_composition"] = self._serializable_crust_composition()
         seed["derived_planet_physics"] = self._derive_planet_physics(seed)
         seed["mass_earth"] = seed["derived_planet_physics"]["mass_earth"]
@@ -589,10 +915,21 @@ class WorldGenSimulation:
                 "symbol": element["symbol"],
                 "name": element["name"],
                 "abundance_percent": round(float(element["abundance_percent"]), 4),
+                **({"rarity": element.get("rarity")} if element.get("rarity") else {}),
             }
             for element in composition.get("major_elements", [])
         ]
         composition["trace_reserve_percent"] = TRACE_RESERVE_PERCENT
+        composition["trace_elements"] = [
+            {
+                "symbol": element.get("symbol"),
+                "name": element.get("name") or element_name(element.get("symbol")),
+                "abundance_percent": round(float(element.get("abundance_percent", 0.0) or 0.0), 4),
+                "rarity": element.get("rarity") or trace_element_rarity(element.get("symbol")),
+            }
+            for element in composition.get("trace_elements", [])
+            if element.get("symbol")
+        ]
         return composition
 
     def _crust_major_total(self):
@@ -615,6 +952,14 @@ class WorldGenSimulation:
                     seed[field_id] = self.DEFAULT_SEED[field_id]
             else:
                 seed[field_id] = text or self.DEFAULT_SEED[field_id]
+        planet = self._selected_planet_entity() or {}
+        seed["planet_id"] = planet.get("id") or self.selected_world_gen_planet_id or self.planet_location_id or ""
+        seed["parent_system_id"] = self.parent_system_id
+        template = self.PLANET_TEMPLATES.get(self.active_planet_template, self.PLANET_TEMPLATES["silicate_terrestrial"])
+        seed["planet_template"] = self.active_planet_template
+        seed["planet_template_label"] = template.get("label", self.active_planet_template)
+        seed["planet_class"] = template.get("planet_class", "terrestrial")
+        seed["resolved_map_seed"] = resolved_map_seed(seed, planet_id=seed["planet_id"], system_id=self.parent_system_id)
         seed["crust_composition"] = self._serializable_crust_composition()
         return seed
 
@@ -626,6 +971,122 @@ class WorldGenSimulation:
 
     def _crust_classification(self):
         return classify_crust_type(self.crust_composition)
+
+    def _reset_worldgen_seed_inputs(self):
+        self.seed_input_buffers = {
+            field_id: self._format_seed_input(value)
+            for field_id, value in self.DEFAULT_SEED.items()
+        }
+        self.crust_composition = default_crust_composition()
+        self.active_planet_template = "silicate_terrestrial"
+        self.active_seed_field = "radius_earth"
+        self.periodic_table_open = False
+        self._clear_editor_hitboxes()
+
+    def _reset_orbit_draft(self, clear_inputs=True):
+        self.pending_orbit_radius_au = None
+        self.orbit_pick_stage = "first"
+        self.selected_world_gen_planet_id = None
+        self.planet_entity = None
+        self.editor_stage = "crust"
+        self._clear_editor_hitboxes()
+        if clear_inputs:
+            self.input_buffers = {"periapsis_au": "", "apoapsis_au": ""}
+            self._recalculate_model()
+        self._reset_worldgen_seed_inputs()
+
+    def _resume_stage_for_planet(self, planet):
+        if self._planet_is_gas_giant_candidate(planet):
+            return "atmosphere"
+        stage = str((planet or {}).get("world_gen_stage") or "").strip().lower()
+        if stage in {"crust", "atmosphere", "regime", "terrain", "tectonics", "heightmap"}:
+            return stage
+        if planet.get("world_gen_complete"):
+            return "heightmap"
+        if not isinstance(planet.get("world_gen_seed"), dict):
+            return "crust"
+        if not isinstance(planet.get("atmosphere_model"), dict):
+            return "atmosphere"
+        atmosphere = planet.get("atmosphere_model") or {}
+        if atmosphere.get("has_solid_surface") is False:
+            return "atmosphere"
+        if not isinstance(planet.get("interior_regime_model"), dict):
+            return "regime"
+        if not isinstance(planet.get("terrain_seed_model"), dict):
+            return "terrain"
+        if isinstance(planet.get("tectonic_model"), dict) and not isinstance(planet.get("heightmap_model"), dict):
+            return "tectonics"
+        return "heightmap"
+
+    def _set_world_gen_progress(self, planet, stage, complete=False):
+        if not isinstance(planet, dict):
+            return
+        stage = str(stage or "crust")
+        tags = list(planet.get("tags") or [])
+        for tag in list(tags):
+            if tag.startswith("world_gen_stage_") or tag in {"world_gen_unfinished", "world_gen_complete"}:
+                tags.remove(tag)
+        tags.append("world_gen_complete" if complete else "world_gen_unfinished")
+        if complete:
+            planet["world_gen_complete"] = True
+            planet["world_gen_stage"] = "complete"
+            planet["world_gen_status_color"] = [92, 166, 126]
+            tags.append("world_gen_stage_complete")
+        else:
+            planet["world_gen_complete"] = False
+            planet["world_gen_stage"] = stage
+            planet["world_gen_status_color"] = [210, 154, 74]
+            tags.append(f"world_gen_stage_{stage}")
+        if not planet.get("display_color") or planet.get("display_color") in ([92, 148, 206], [210, 154, 74], [92, 166, 126]):
+            planet["display_color"] = planet["world_gen_status_color"]
+        planet["tags"] = tags
+
+    def _normalize_orbital_planet_fields(self, planet):
+        if not isinstance(planet, dict):
+            return planet
+        planet["_dataset"] = "locations"
+        planet["type"] = "location"
+        planet["location_class"] = "planet"
+        planet["location_role"] = "orbital_body"
+        planet["system_role"] = "orbital_body"
+        if not planet.get("star_system") and self.parent_system_id:
+            planet["star_system"] = self.parent_system_id
+        if not planet.get("parent_body") and planet.get("parent_location"):
+            planet["parent_body"] = planet.get("parent_location")
+        if not planet.get("parent_location") and planet.get("parent_body"):
+            planet["parent_location"] = planet.get("parent_body")
+        if not planet.get("parent_body") and self._primary_star_id():
+            parent_star_id = self._primary_star_id()
+            planet["parent_body"] = parent_star_id
+            planet["parent_location"] = parent_star_id
+        return planet
+
+    def _mirror_and_persist_planet(self, planet):
+        self._normalize_orbital_planet_fields(planet)
+        mirror_location_sim_relations(planet)
+        return self._persist_existing_location_entity(planet)
+
+    def _derive_natural_material_model(self, seed=None, atmosphere=None, regime=None, terrain=None):
+        seed = seed or self._current_seed_values()
+        crust_type = self._crust_classification()
+        planet_tags = derive_planet_material_tags(
+            seed=seed,
+            atmosphere=atmosphere,
+            regime=regime,
+            terrain=terrain,
+            crust_type=crust_type,
+        )
+        return derive_natural_material_model(seed.get("crust_composition"), planet_tags)
+
+    def _apply_atmospheric_materials(self, planet, atmosphere):
+        atmospheric_material_model = derive_atmospheric_material_model(atmosphere)
+        palette = atmospheric_band_palette(atmosphere)
+        planet["atmospheric_material_model"] = atmospheric_material_model
+        planet["atmospheric_materials"] = list(atmospheric_material_model.get("dominant_materials") or [])
+        planet["atmosphere_bands"] = list(palette.get("bands") or [])
+        if palette.get("base_color"):
+            planet["display_color"] = list(palette["base_color"])
+        return atmospheric_material_model
 
     def _selected_semi_major_axis_au(self):
         planet = self._selected_planet_entity()
@@ -664,23 +1125,26 @@ class WorldGenSimulation:
             crust_type=self._crust_classification(),
         )
 
-    def _derive_terrain_seed_model(self, seed=None, physics=None, atmosphere=None, regime=None):
+    def _derive_terrain_seed_model(self, seed=None, physics=None, atmosphere=None, regime=None, planet=None):
         seed = seed or self._current_seed_values()
         physics = physics or self._derive_planet_physics(seed)
         atmosphere = atmosphere or self._derive_atmosphere_model(seed, physics)
         regime = regime or self._derive_interior_regime_model(seed, physics, atmosphere)
+        planet = planet or self._selected_planet_entity() or {}
         return derive_terrain_seed_model(
             seed=seed,
             physics=physics,
             atmosphere=atmosphere,
             regime=regime,
+            planet_id=planet.get("id", ""),
+            system_id=self.parent_system_id,
         )
 
     def _derive_heightmap_model(self, terrain=None, seed=None, physics=None, planet=None):
         seed = seed or self._current_seed_values()
         physics = physics or self._derive_planet_physics(seed)
-        terrain = terrain or self._derive_terrain_seed_model(seed, physics)
         planet = planet or self._selected_planet_entity() or {}
+        terrain = terrain or self._derive_terrain_seed_model(seed, physics, planet=planet)
         return derive_heightmap_model(
             terrain=terrain,
             seed=seed,
@@ -693,8 +1157,8 @@ class WorldGenSimulation:
     def _derive_tectonic_model(self, terrain=None, seed=None, physics=None, planet=None):
         seed = seed or self._current_seed_values()
         physics = physics or self._derive_planet_physics(seed)
-        terrain = terrain or self._derive_terrain_seed_model(seed, physics)
         planet = planet or self._selected_planet_entity() or {}
+        terrain = terrain or self._derive_terrain_seed_model(seed, physics, planet=planet)
         return derive_tectonic_model(
             terrain=terrain,
             seed=seed,
@@ -705,8 +1169,8 @@ class WorldGenSimulation:
     def _derive_crater_model(self, terrain=None, seed=None, physics=None, planet=None):
         seed = seed or self._current_seed_values()
         physics = physics or self._derive_planet_physics(seed)
-        terrain = terrain or self._derive_terrain_seed_model(seed, physics)
         planet = planet or self._selected_planet_entity() or {}
+        terrain = terrain or self._derive_terrain_seed_model(seed, physics, planet=planet)
         return derive_crater_model(
             terrain=terrain,
             seed=seed,
@@ -729,43 +1193,231 @@ class WorldGenSimulation:
 
     def _add_abundant_trace_element(self, symbol):
         before = [element.get("symbol") for element in self.crust_composition.get("major_elements", [])]
-        self.crust_composition = add_abundant_trace_element(self.crust_composition, symbol)
+        self.crust_composition = add_abundant_trace_element(
+            self.crust_composition,
+            symbol,
+            initial_abundance=trace_promotion_abundance(symbol),
+        )
         after = [element.get("symbol") for element in self.crust_composition.get("major_elements", [])]
         self.periodic_table_open = False
         if before == after:
             self.commit_status = f"{symbol} is already explicit"
             return False
-        self.commit_status = f"Added {symbol} to explicit crust composition"
+        self.commit_status = f"Added {symbol} ({trace_element_rarity(symbol)}) to explicit composition"
+        return True
+
+    def _random_float(self, rng, low, high):
+        return low + (high - low) * rng.random()
+
+    def _random_choice(self, rng, values):
+        return values[int(rng.random() * len(values)) % len(values)]
+
+    def _weighted_choice(self, rng, weighted_values):
+        total = sum(max(0.0, float(weight)) for _value, weight in weighted_values)
+        if total <= 0:
+            return weighted_values[0][0]
+        cursor = rng.random() * total
+        for value, weight in weighted_values:
+            cursor -= max(0.0, float(weight))
+            if cursor <= 0:
+                return value
+        return weighted_values[-1][0]
+
+    def _choose_planet_template(self, rng, mode):
+        if mode == "gas_giant":
+            return self._weighted_choice(rng, [("gas_giant", 0.68), ("ice_giant", 0.32)])
+        if mode == "eccentric":
+            return self._weighted_choice(
+                rng,
+                [
+                    ("silicate_terrestrial", 0.24),
+                    ("ocean_world", 0.18),
+                    ("desiccated_former_ocean", 0.18),
+                    ("cratered_airless", 0.18),
+                    ("carbon_rich", 0.22),
+                ],
+            )
+        return self._weighted_choice(
+            rng,
+            [
+                ("silicate_terrestrial", 0.46),
+                ("ocean_world", 0.20),
+                ("desiccated_former_ocean", 0.18),
+                ("cratered_airless", 0.16),
+            ],
+        )
+
+    def _randomized_major_elements(self, rng, mode, template_id=None):
+        template = self.PLANET_TEMPLATES.get(template_id or self.active_planet_template)
+        base_rows = template.get("major_elements") if template else None
+        base_elements = [
+            {
+                "symbol": symbol,
+                "name": element_name(symbol),
+                "abundance_percent": abundance,
+            }
+            for symbol, abundance in (base_rows or [])
+        ] or default_crust_composition().get("major_elements", [])
+        elements = []
+        for element in base_elements:
+            abundance = float(element.get("abundance_percent", 0.0))
+            if mode == "gas_giant":
+                factor = self._random_float(rng, 0.76, 1.28)
+            elif mode == "eccentric":
+                factor = self._random_float(rng, 0.35, 2.75)
+            else:
+                factor = self._random_float(rng, 0.82, 1.22)
+            elements.append({
+                "symbol": element.get("symbol"),
+                "name": element.get("name"),
+                "abundance_percent": max(0.01, abundance * factor),
+            })
+
+        if mode == "eccentric" and template_id not in {"gas_giant", "ice_giant"}:
+            extra_pool = ["Ti", "Mn", "P", "S", "C", "Ni", "Cr"]
+            for symbol in rng.sample(extra_pool, k=2):
+                elements.append({
+                    "symbol": symbol,
+                    "name": element_name(symbol),
+                    "abundance_percent": self._random_float(rng, 0.25, 4.5),
+                })
+
+        return crust_composition_from_seed({"crust_composition": {"major_elements": elements}})["major_elements"]
+
+    def _weighted_trace_sample(self, rng, pool, count):
+        available = list(dict.fromkeys(pool))
+        selected = []
+        while available and len(selected) < count:
+            symbol = self._weighted_choice(rng, [(item, trace_element_weight(item)) for item in available])
+            selected.append(symbol)
+            available.remove(symbol)
+        return selected
+
+    def _randomized_trace_elements(self, rng, mode, template_id=None):
+        if mode == "gas_giant" or template_id in {"gas_giant", "ice_giant"}:
+            pool = ["C", "N", "O", "S", "Ne", "Ar", "Kr", "Xe", "P"]
+            count = 3 + int(rng.random() * 3)
+            high_by_rarity = {
+                "common": 0.11,
+                "uncommon": 0.045,
+                "rare": 0.018,
+                "very_rare": 0.006,
+                "synthetic_or_transient": 0.001,
+            }
+            max_total = TRACE_RESERVE_PERCENT * 0.45
+        elif mode == "eccentric":
+            pool = [
+                symbol for symbol in element_symbols_by_rarity("common", "uncommon", "rare", "very_rare")
+                if symbol not in {"H", "He", "O", "Si", "Al", "Fe", "Ca", "Na", "K", "Mg"}
+            ]
+            count = 4 + int(rng.random() * 4)
+            high_by_rarity = {
+                "common": 0.18,
+                "uncommon": 0.11,
+                "rare": 0.045,
+                "very_rare": 0.014,
+                "synthetic_or_transient": 0.002,
+            }
+            max_total = TRACE_RESERVE_PERCENT * 0.82
+        else:
+            pool = [
+                symbol for symbol in element_symbols_by_rarity("common", "uncommon", "rare")
+                if symbol not in {"H", "He", "O", "Si", "Al", "Fe", "Ca", "Na", "K", "Mg"}
+            ]
+            count = 2 + int(rng.random() * 3)
+            high_by_rarity = {
+                "common": 0.08,
+                "uncommon": 0.035,
+                "rare": 0.012,
+                "very_rare": 0.004,
+                "synthetic_or_transient": 0.001,
+            }
+            max_total = TRACE_RESERVE_PERCENT * 0.35
+
+        selected = self._weighted_trace_sample(rng, pool, count)
+        traces = []
+        for symbol in selected:
+            rarity = trace_element_rarity(symbol)
+            high = high_by_rarity.get(rarity, 0.02)
+            traces.append({
+                "symbol": symbol,
+                "name": element_name(symbol),
+                "rarity": rarity,
+                "abundance_percent": round(self._random_float(rng, max(0.001, high * 0.08), high), 4),
+            })
+        total = sum(element["abundance_percent"] for element in traces)
+        if total > max_total and total > 0:
+            scale = max_total / total
+            for element in traces:
+                element["abundance_percent"] = round(element["abundance_percent"] * scale, 4)
+        return traces
+
+    def randomize_seed(self, mode="generic", rng=None):
+        mode = "gas_giant" if mode == "gas_giant" else ("eccentric" if mode == "eccentric" else "generic")
+        rng = rng or random.Random()
+        template_id = self._choose_planet_template(rng, mode)
+        template = self.PLANET_TEMPLATES.get(template_id, self.PLANET_TEMPLATES["silicate_terrestrial"])
+        self.active_planet_template = template_id
+
+        if mode == "gas_giant":
+            numeric_ranges = {
+                "radius_earth": (3.2, 11.8) if template_id == "gas_giant" else (2.8, 4.4),
+                "core_radius_fraction": (0.02, 0.22),
+                "crust_thickness_km": (0.2, 8.0),
+                "angular_velocity_deg_per_hour": (18.0, 78.0),
+                "water_fraction": template.get("water_range", (0.0, 0.35)),
+            }
+            volatile_options = template.get("volatile_options", ["dense"])
+            tectonics_options = template.get("tectonics_options", ["inactive"])
+            status = f"Generated {template.get('label', 'gas giant').lower()} seed"
+        elif mode == "eccentric":
+            numeric_ranges = {
+                "radius_earth": (0.22, 2.6),
+                "core_radius_fraction": (0.08, 0.82),
+                "crust_thickness_km": (4.0, 145.0),
+                "angular_velocity_deg_per_hour": (3.0, 95.0),
+                "water_fraction": template.get("water_range", (0.0, 1.0)),
+            }
+            volatile_options = template.get("volatile_options", ["none", "thin", "dry", "wet", "earthlike", "dense"])
+            tectonics_options = template.get("tectonics_options", ["inactive", "stagnant_lid", "mobile_lid", "episodic_lid", "heat_pipe", "unknown"])
+            status = f"Generated eccentric {template.get('label', 'planet').lower()} seed"
+        else:
+            numeric_ranges = {
+                "radius_earth": (0.75, 1.35),
+                "core_radius_fraction": (0.42, 0.68),
+                "crust_thickness_km": (18.0, 55.0),
+                "angular_velocity_deg_per_hour": (9.0, 24.0),
+                "water_fraction": template.get("water_range", (0.15, 0.78)),
+            }
+            volatile_options = template.get("volatile_options", ["dry", "wet", "earthlike"])
+            tectonics_options = template.get("tectonics_options", ["stagnant_lid", "mobile_lid", "unknown"])
+            status = f"Generated generic {template.get('label', 'planet').lower()} seed"
+
+        for field_id, (low, high) in numeric_ranges.items():
+            self.seed_input_buffers[field_id] = self._format_seed_input(
+                round(self._random_float(rng, low, high), 4)
+            )
+        self.seed_input_buffers["volatile_inventory"] = self._random_choice(rng, volatile_options)
+        self.seed_input_buffers["tectonics_mode"] = self._random_choice(rng, tectonics_options)
+        self.seed_input_buffers["map_seed"] = f"{mode}-{rng.randrange(16 ** 8):08x}"
+        self.crust_composition = {
+            "major_elements": self._randomized_major_elements(rng, mode, template_id=template_id),
+            "trace_reserve_percent": TRACE_RESERVE_PERCENT,
+            "trace_elements": self._randomized_trace_elements(rng, mode, template_id=template_id),
+        }
+        self.periodic_table_open = False
+        self.commit_status = status
         return True
 
     def _persist_existing_location_entity(self, entity):
         loader = getattr(self.world_model, "loader", None)
-        if getattr(loader, "use_ontology", False) and hasattr(loader, "persist_entity"):
-            entity["_dataset"] = "locations"
-            return loader.persist_entity(entity)
-
-        entry_path = self._locations_entry_path()
-        try:
-            data = yaml.safe_load(entry_path.read_text(encoding="utf-8")) if entry_path.exists() else []
-        except (OSError, yaml.YAMLError):
+        if loader is None or not hasattr(loader, "persist_entity"):
             return False
-
-        if not isinstance(data, list):
-            return False
-
-        entity_id = entity.get("id")
-        for index, item in enumerate(data):
-            if isinstance(item, dict) and item.get("id") == entity_id:
-                data[index] = self._serializable_entity(entity)
-                try:
-                    entry_path.write_text(
-                        yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
-                        encoding="utf-8",
-                    )
-                except OSError:
-                    return False
-                return True
-        return False
+        entity["_dataset"] = "locations"
+        persisted = loader.persist_entity(entity)
+        if persisted and hasattr(self.world_model, "mark_repository_changed"):
+            self.world_model.mark_repository_changed()
+        return persisted
 
     def _save_selected_planet_seed(self):
         planet = self._selected_planet_entity()
@@ -801,20 +1453,21 @@ class WorldGenSimulation:
         }
         planet["crust_composition"] = seed["crust_composition"]
         planet["derived_planet_physics"] = seed["derived_planet_physics"]
+        planet["planetary_class"] = seed.get("planet_class", planet.get("planetary_class"))
+        planet["world_gen_template"] = seed.get("planet_template")
         planet["mass_kg"] = seed["derived_planet_physics"]["mass_kg"]
         planet["radius_m"] = seed["derived_planet_physics"]["radius_m"]
         planet["rotation_period_hours"] = seed["derived_planet_physics"]["rotation_period_hours"]
 
-        loader = getattr(self.world_model, "loader", None)
-        if loader is not None and hasattr(loader, "save_changed_dataset_files"):
-            loader.save_changed_dataset_files({planet.get("id")})
-        persisted = self._persist_existing_location_entity(planet)
+        self._set_world_gen_progress(planet, "atmosphere", complete=False)
+        persisted = self._mirror_and_persist_planet(planet)
+        seed_label = "Envelope" if self._seed_payload_is_gas_giant(seed) else "Crust"
         self.commit_status = "Saved planet seed" if persisted else "Seed saved in memory"
         self.editor_stage = "atmosphere"
         if persisted:
-            self.commit_status = "Crust saved; atmosphere model ready"
+            self.commit_status = f"{seed_label} saved; atmosphere model ready"
         else:
-            self.commit_status = "Crust saved in memory; atmosphere model ready"
+            self.commit_status = f"{seed_label} saved in memory; atmosphere model ready"
         return True
 
     def _save_atmosphere_model(self):
@@ -830,8 +1483,11 @@ class WorldGenSimulation:
 
         atmosphere = self._derive_atmosphere_model(seed, seed["derived_planet_physics"])
         planet["atmosphere_model"] = atmosphere
+        atmospheric_material_model = self._apply_atmospheric_materials(planet, atmosphere)
         planet["atmosphere_summary"] = {
             "status": "modeled",
+            "atmosphere_class": atmosphere.get("atmosphere_class", "unknown"),
+            "has_solid_surface": atmosphere.get("has_solid_surface", True),
             "surface_pressure_bar": atmosphere["surface_pressure_bar"],
             "estimated_surface_temperature_k": atmosphere["estimated_surface_temperature_k"],
             "dominant_gases": [
@@ -844,10 +1500,16 @@ class WorldGenSimulation:
             tags.append("atmosphere_modeled")
         planet["tags"] = tags
 
-        loader = getattr(self.world_model, "loader", None)
-        if loader is not None and hasattr(loader, "save_changed_dataset_files"):
-            loader.save_changed_dataset_files({planet.get("id")})
-        persisted = self._persist_existing_location_entity(planet)
+        if atmosphere.get("has_solid_surface") is False:
+            self._apply_gas_giant_envelope_fields(planet, atmosphere, atmospheric_material_model)
+            self._set_world_gen_progress(planet, "atmosphere", complete=False)
+            persisted = self._mirror_and_persist_planet(planet)
+            self.editor_stage = "atmosphere"
+            self.commit_status = "Gas giant atmosphere ready; complete worldgen" if persisted else "Gas giant ready in memory; complete worldgen"
+            return True
+
+        self._set_world_gen_progress(planet, "regime", complete=False)
+        persisted = self._mirror_and_persist_planet(planet)
         self.editor_stage = "regime"
         if persisted:
             self.commit_status = "Atmosphere saved; interior regime ready"
@@ -896,10 +1558,8 @@ class WorldGenSimulation:
                 tags.append(tag)
         planet["tags"] = tags
 
-        loader = getattr(self.world_model, "loader", None)
-        if loader is not None and hasattr(loader, "save_changed_dataset_files"):
-            loader.save_changed_dataset_files({planet.get("id")})
-        persisted = self._persist_existing_location_entity(planet)
+        self._set_world_gen_progress(planet, "terrain", complete=False)
+        persisted = self._mirror_and_persist_planet(planet)
         self.editor_stage = "terrain"
         if persisted:
             self.commit_status = "Regime saved; terrain seed ready"
@@ -918,6 +1578,29 @@ class WorldGenSimulation:
             self.commit_status = "Seed invalid: fix physical inputs before terrain"
             return False
 
+        if self._seed_payload_is_gas_giant(seed):
+            atmosphere = self._derive_atmosphere_model(seed, seed["derived_planet_physics"])
+            if atmosphere.get("has_solid_surface") is False:
+                planet["world_gen_seed"] = seed
+                planet["atmosphere_model"] = atmosphere
+                planet["atmosphere_summary"] = {
+                    "status": "modeled",
+                    "atmosphere_class": atmosphere.get("atmosphere_class", "unknown"),
+                    "has_solid_surface": False,
+                    "surface_pressure_bar": atmosphere["surface_pressure_bar"],
+                    "estimated_surface_temperature_k": atmosphere["estimated_surface_temperature_k"],
+                    "dominant_gases": [
+                        item["molecule"]
+                        for item in atmosphere.get("composition", [])[:3]
+                    ],
+                }
+                self._apply_gas_giant_envelope_fields(planet, atmosphere)
+                self._set_world_gen_progress(planet, "atmosphere", complete=False)
+                persisted = self._mirror_and_persist_planet(planet)
+                self.editor_stage = "atmosphere"
+                self.commit_status = "Gas giant envelope ready; complete worldgen" if persisted else "Gas giant envelope ready in memory; complete worldgen"
+                return True
+
         physics = seed["derived_planet_physics"]
         atmosphere = planet.get("atmosphere_model")
         if not isinstance(atmosphere, dict):
@@ -931,8 +1614,11 @@ class WorldGenSimulation:
             planet["surface_process_model"] = regime.get("surface_processes", {})
 
         terrain = self._derive_terrain_seed_model(seed, physics, atmosphere, regime)
+        natural_material_model = self._derive_natural_material_model(seed, atmosphere, regime, terrain)
         canvas = terrain.get("map_canvas", {})
         planet["terrain_seed_model"] = terrain
+        planet["natural_material_model"] = natural_material_model
+        planet["natural_materials"] = list(natural_material_model.get("dominant_materials") or [])
         planet["map_generation_recipe"] = terrain.get("map_recipe", [])
         planet["map_layers"] = terrain.get("map_layers", [])
         planet["map_projection"] = canvas.get("projection", "equirectangular")
@@ -940,12 +1626,14 @@ class WorldGenSimulation:
         planet["map_canvas_height_px"] = canvas.get("height_px", 1024)
         if terrain.get("tectonics", {}).get("enabled"):
             tectonic_model = self._derive_tectonic_model(terrain, seed, physics, planet)
+            tectonic_model = mature_tectonics_model(tectonic_model, terrain, cycles=4, million_years_per_cycle=45.0)
             planet["tectonic_model"] = tectonic_model
             planet.pop("crater_model", None)
-            planet.pop("heightmap_model", None)
-            map_status = "tectonic_plates_defined"
-            geology_status = "tectonic_plates_defined"
-            self.editor_stage = "tectonics"
+            heightmap = self._derive_heightmap_model(terrain, seed, physics, planet)
+            planet["heightmap_model"] = heightmap
+            map_status = "tectonics_matured_heightmap_seeded"
+            geology_status = "tectonics_matured_heightmap_seeded"
+            self.editor_stage = "heightmap"
         else:
             crater_model = self._derive_crater_model(terrain, seed, physics, planet)
             planet["crater_model"] = crater_model
@@ -975,6 +1663,12 @@ class WorldGenSimulation:
             "target_ocean_fraction": terrain["hydrology"]["target_ocean_fraction"],
             "drainage_enabled": terrain["hydrology"]["drainage_enabled"],
         }
+        planet["materials_summary"] = {
+            "status": "natural_materials_inferred",
+            "catalog_version": natural_material_model.get("catalog_version"),
+            "dominant_materials": list(natural_material_model.get("dominant_materials") or []),
+            "likely_material_count": len(natural_material_model.get("likely_materials") or []),
+        }
         planet["environment_summary"] = {
             "status": map_status,
             "erosion_processes": list(terrain["erosion"].get("processes", [])),
@@ -984,20 +1678,24 @@ class WorldGenSimulation:
         tags = list(planet.get("tags") or [])
         stage_tags = ["terrain_seeded", "map_layers_seeded"]
         if terrain.get("tectonics", {}).get("enabled"):
-            stage_tags.extend(["tectonic_plates_defined"])
+            stage_tags.extend(["tectonic_plates_defined", "tectonics_advanced", "heightfield_seeded", "heightmap_seeded"])
+            next_stage = "heightmap"
+            complete = False
         else:
             stage_tags.extend(["crater_field_seeded", "heightfield_seeded", "heightmap_seeded"])
+            next_stage = "heightmap"
+            complete = False
+        stage_tags.extend(natural_material_model.get("planet_tags") or [])
+        stage_tags.append("natural_materials_inferred")
         for tag in stage_tags:
             if tag not in tags:
                 tags.append(tag)
         planet["tags"] = tags
 
-        loader = getattr(self.world_model, "loader", None)
-        if loader is not None and hasattr(loader, "save_changed_dataset_files"):
-            loader.save_changed_dataset_files({planet.get("id")})
-        persisted = self._persist_existing_location_entity(planet)
+        self._set_world_gen_progress(planet, next_stage, complete=complete)
+        persisted = self._mirror_and_persist_planet(planet)
         if terrain.get("tectonics", {}).get("enabled"):
-            self.commit_status = "Tectonic plates ready"
+            self.commit_status = "Matured tectonics; heightmap ready"
         else:
             self.commit_status = "Cratered heightmap ready"
         if not persisted:
@@ -1027,7 +1725,7 @@ class WorldGenSimulation:
         if not isinstance(tectonic_model, dict):
             tectonic_model = self._derive_tectonic_model(terrain, seed, seed["derived_planet_physics"], planet)
 
-        advanced = advance_tectonics_model(tectonic_model, terrain, million_years=125.0)
+        advanced = mature_tectonics_model(tectonic_model, terrain, cycles=2, million_years_per_cycle=35.0)
         planet["tectonic_model"] = advanced
         planet.pop("crater_model", None)
         heightmap = derive_heightmap_model(
@@ -1057,10 +1755,8 @@ class WorldGenSimulation:
                 tags.append(tag)
         planet["tags"] = tags
 
-        loader = getattr(self.world_model, "loader", None)
-        if loader is not None and hasattr(loader, "save_changed_dataset_files"):
-            loader.save_changed_dataset_files({planet.get("id")})
-        persisted = self._persist_existing_location_entity(planet)
+        self._set_world_gen_progress(planet, "heightmap", complete=False)
+        persisted = self._mirror_and_persist_planet(planet)
         self.editor_stage = "heightmap"
         self.commit_status = "Advanced tectonics; heightmap ready" if persisted else "Advanced tectonics in memory; heightmap ready"
         return True
@@ -1092,10 +1788,8 @@ class WorldGenSimulation:
                 heightmap["min_elevation_m"],
                 heightmap["max_elevation_m"],
             ]
-        loader = getattr(self.world_model, "loader", None)
-        if loader is not None and hasattr(loader, "save_changed_dataset_files"):
-            loader.save_changed_dataset_files({planet.get("id")})
-        persisted = self._persist_existing_location_entity(planet)
+        self._set_world_gen_progress(planet, "heightmap", complete=False)
+        persisted = self._mirror_and_persist_planet(planet)
         self.commit_status = "Refreshed heightmap" if persisted else "Refreshed heightmap in memory"
         return True
 
@@ -1103,9 +1797,14 @@ class WorldGenSimulation:
         planet = self._selected_planet_entity()
         if not isinstance(planet, dict):
             return False
+        if planet.get("world_gen_complete"):
+            return False
         if isinstance(planet.get("crater_model"), dict):
             return False
         if planet.get("map_status") == "crater_heightmap_seeded":
+            return False
+        tectonic_model = planet.get("tectonic_model")
+        if isinstance(tectonic_model, dict) and tectonic_model.get("status") == "tectonics_advanced" and isinstance(planet.get("heightmap_model"), dict):
             return False
         terrain = planet.get("terrain_seed_model")
         if isinstance(terrain, dict) and bool((terrain.get("tectonics") or {}).get("enabled")):
@@ -1121,8 +1820,33 @@ class WorldGenSimulation:
         surface = planet.get("surface_process_model")
         if isinstance(surface, dict) and surface.get("primary_topography") == "plate_boundaries_mountain_belts_and_trenches":
             return True
-        tectonic_model = planet.get("tectonic_model")
         return isinstance(tectonic_model, dict) and bool(tectonic_model.get("plates"))
+
+    def _world_gen_can_finish(self):
+        planet = self._selected_planet_entity()
+        if not isinstance(planet, dict):
+            return False
+        if planet.get("world_gen_complete"):
+            return False
+        if isinstance(planet.get("heightmap_model"), dict):
+            return True
+        atmosphere = planet.get("atmosphere_model")
+        return isinstance(atmosphere, dict) and atmosphere.get("has_solid_surface") is False
+
+    def _finish_world_gen(self):
+        planet = self._selected_planet_entity()
+        if not isinstance(planet, dict):
+            self.commit_status = "Select a planet first"
+            return False
+        if not self._world_gen_can_finish():
+            self.commit_status = "Complete the current worldgen stage first"
+            return False
+        self._set_world_gen_progress(planet, "complete", complete=True)
+        persisted = self._mirror_and_persist_planet(planet)
+        self.commit_status = "World generation complete" if persisted else "World generation complete in memory"
+        if persisted:
+            self.request_close_tab = True
+        return True
 
     def _handle_heightmap_primary_action(self):
         if self._heightmap_can_advance_tectonics():
@@ -1138,9 +1862,11 @@ class WorldGenSimulation:
     def _cancel_planet_name_prompt(self):
         self.planet_name_prompt_active = False
         self.planet_name_buffer = ""
+        self._reset_orbit_draft(clear_inputs=True)
         self.commit_status = ""
 
     def _commit_named_planet(self):
+        existing_planet = self._find_existing_planet_entity(self.planet_name_buffer)
         planet = self._build_committed_planet_entity(self.planet_name_buffer)
         if planet is None:
             self.commit_status = "Enter a planet name"
@@ -1150,11 +1876,15 @@ class WorldGenSimulation:
         persisted = self._persist_location_entity(planet)
         if not self.explicit_parent_system_id:
             self.planet_location_id = planet["id"]
-            self.planet_entity = planet
+        self.planet_entity = planet
         self.selected_world_gen_planet_id = planet["id"]
+        self.editor_stage = self._resume_stage_for_planet(planet)
         self.planet_name_prompt_active = False
         self.planet_name_buffer = ""
-        self.commit_status = f"Created planet: {planet['name']}" if persisted else "Created in memory; save failed"
+        self.pending_orbit_radius_au = None
+        self.orbit_pick_stage = "first"
+        action = "Linked planet" if existing_planet is planet else "Created planet"
+        self.commit_status = f"{action}: {planet['name']}" if persisted else f"{action} in memory; save failed"
         return True
 
     def _recalculate_model(self):
@@ -1238,6 +1968,9 @@ class WorldGenSimulation:
             "trace_reserve_percent": TRACE_RESERVE_PERCENT,
             "crust_density_kg_m3": self._estimate_crust_density(),
             "crust_type": self._crust_classification(),
+            "planet_template": self.active_planet_template,
+            "planet_template_label": self.PLANET_TEMPLATES.get(self.active_planet_template, {}).get("label", self.active_planet_template),
+            "planet_class": self.PLANET_TEMPLATES.get(self.active_planet_template, {}).get("planet_class", "terrestrial"),
             "derived_planet_physics": self._derive_planet_physics(),
             "periodic_table_open": self.periodic_table_open,
             "periodic_table_rows": PERIODIC_TABLE_ROWS,
@@ -1245,6 +1978,11 @@ class WorldGenSimulation:
             "atmosphere_model": self._derive_atmosphere_model(),
             "interior_regime_model": self._derive_interior_regime_model(),
             "terrain_seed_model": terrain_model,
+            "natural_material_model": (
+                selected_planet.get("natural_material_model")
+                if isinstance(selected_planet, dict) and isinstance(selected_planet.get("natural_material_model"), dict)
+                else self._derive_natural_material_model(terrain=terrain_model)
+            ),
             "heightmap_model": heightmap_model,
             "tectonic_model": (
                 selected_planet.get("tectonic_model")
@@ -1320,7 +2058,7 @@ class WorldGenSimulation:
                     if self.periodic_table_open:
                         self.periodic_table_open = False
                     else:
-                        self.selected_world_gen_planet_id = None
+                        self._reset_orbit_draft(clear_inputs=False)
                     self.commit_status = ""
                     return
                 if event.key == pygame.K_TAB:
@@ -1427,7 +2165,17 @@ class WorldGenSimulation:
                 self.periodic_table_open = False
             return
 
+        selected_planet = self._selected_planet_entity()
         if self.control_panel_rect is not None and self.control_panel_rect.collidepoint(screen_pos):
+            if selected_planet is None and self.editor_stage != "crust":
+                self._reset_orbit_draft(clear_inputs=False)
+                return
+            if (
+                self.world_gen_complete_button_rect is not None
+                and self.world_gen_complete_button_rect.collidepoint(screen_pos)
+            ):
+                self._finish_world_gen()
+                return
             if self.editor_stage == "atmosphere":
                 if self.crust_save_button_rect is not None and self.crust_save_button_rect.collidepoint(screen_pos):
                     self._save_atmosphere_model()
@@ -1447,6 +2195,24 @@ class WorldGenSimulation:
             if self.editor_stage == "tectonics":
                 if self.crust_save_button_rect is not None and self.crust_save_button_rect.collidepoint(screen_pos):
                     self._advance_tectonics_model()
+                return
+            if (
+                self.crust_random_generic_button_rect is not None
+                and self.crust_random_generic_button_rect.collidepoint(screen_pos)
+            ):
+                self.randomize_seed("generic")
+                return
+            if (
+                self.crust_random_eccentric_button_rect is not None
+                and self.crust_random_eccentric_button_rect.collidepoint(screen_pos)
+            ):
+                self.randomize_seed("eccentric")
+                return
+            if (
+                self.crust_random_gas_giant_button_rect is not None
+                and self.crust_random_gas_giant_button_rect.collidepoint(screen_pos)
+            ):
+                self.randomize_seed("gas_giant")
                 return
             if self.crust_add_trace_button_rect is not None and self.crust_add_trace_button_rect.collidepoint(screen_pos):
                 self.periodic_table_open = True
@@ -1471,7 +2237,8 @@ class WorldGenSimulation:
         if radius_au is None:
             return
 
-        self.selected_world_gen_planet_id = None
+        if self.selected_world_gen_planet_id is not None or self.editor_stage != "crust":
+            self._reset_orbit_draft(clear_inputs=False)
         if self.orbit_pick_stage == "second" and self.pending_orbit_radius_au is not None:
             self._set_elliptical_orbit_from_radius(radius_au)
             return

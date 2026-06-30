@@ -109,12 +109,12 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         "Temporal",
         "Relations",
         "Class Relations",
-        "State / Layout",
+        "Simulation / Data",
         "Metadata",
     ]
 
     SUBTAB_H = 22
-    TAB_ORDER = ["general", "overview", "temporal", "location", "relations", "state", "simulation", "media"]
+    TAB_ORDER = ["general", "overview", "temporal", "location", "relations", "simulation", "media"]
     DATASET_TAB_ORDER = {
         "ideas": ["general", "overview", "temporal", "location", "relations", "media"],
         "cladistics": ["general", "overview", "phylogeny", "relations", "temporal", "location", "media"],
@@ -131,16 +131,16 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         "location": "Location",
         "relations": "Relations",
         "phylogeny": "Phylogeny",
-        "state": "State",
         "simulation": "Simulation",
         "operational": "Operational",
         "media": "Media",
     }
-    SIMULATION_SUBTAB_ORDER = ["orbital", "map", "world_gen"]
+    SIMULATION_SUBTAB_ORDER = ["orbital", "map", "world_gen", "data"]
     SIMULATION_SUBTAB_LABELS = {
         "orbital": "Orbital",
         "map": "Map Sim",
         "world_gen": "World Gen",
+        "data": "Data",
     }
     TAB_SECTIONS = {
         "general": [],
@@ -149,7 +149,6 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         "temporal": ["Temporal"],
         "location": [],
         "relations": ["Relations", "Class Relations"],
-        "state": ["State / Layout"],
         "operational": ["Operational"],
         "simulation": [],
         "media": ["Media"],
@@ -158,6 +157,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         "orbital": ["Simulation / Orbital"],
         "map": ["Simulation / Map Sim"],
         "world_gen": ["Simulation / World Gen"],
+        "data": ["Simulation / Data"],
     }
     TEMPORAL_FIELDS = {
         "year",
@@ -337,12 +337,13 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             "Temporal": False,
             "Relations": False,
             "Class Relations": False,
-            "State / Layout": True,
+            "Simulation / Data": True,
             "Metadata": False,
             "Media": False,
             "Simulation / Orbital": False,
             "Simulation / Map Sim": False,
             "Simulation / World Gen": False,
+            "Simulation / Data": False,
             "Phylogeny Parents": False,
             "Phylogeny Children": False,
             "Members": False,
@@ -1531,6 +1532,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         classification_keys = [
             "vehicle_class",
             "component_class",
+            "collection_class",
             "idea_class",
             "location_class",
         ]
@@ -1679,7 +1681,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             "Temporal": temporal_values,
             "Relations": relation_values,
             "Class Relations": class_relation_values,
-            "State / Layout": state_values,
+            "Simulation / Data": state_values,
             "Metadata": metadata_values,
             "Media": media_values,
             "Simulation / Orbital": space_sim_values,
@@ -2223,6 +2225,18 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
         return self.begin_edit_field(card, field_order[target_index])
 
+    def _stash_active_edit_draft(self, card):
+        field_key = card.get("active_edit_field")
+        if not field_key:
+            return False
+        draft_buffers = card.setdefault("draft_edit_buffers", {})
+        draft_buffers[field_key] = {
+            "text": card.get("edit_buffer", ""),
+            "cursor": int(card.get("edit_cursor", 0)),
+        }
+        card["last_edit_action"] = "draft"
+        return True
+
     def begin_edit_field(self, card, field_key):
         if not card.get("is_edit_mode", False):
             return False
@@ -2234,7 +2248,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
         active_field = card.get("active_edit_field")
         if active_field and active_field != field_key:
-            self.commit_edit_field(card)
+            self._stash_active_edit_draft(card)
         elif active_field == field_key:
             return True
 
@@ -2755,7 +2769,6 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             "location": 82,
             "relations": 76,
             "phylogeny": 86,
-            "state": 54,
             "simulation": 92,
             "operational": 92,
             "media": 54,
@@ -2786,6 +2799,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 "orbital": 86,
                 "map": 72,
                 "world_gen": 82,
+                "data": 58,
             }
             available_subtab_w = max(120, rect.width - 24)
             total_subtab_w = sum(subtab_widths[name] for name in subtab_order) + subtab_gap * max(0, len(subtab_order) - 1)
@@ -4459,7 +4473,6 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 "location": "Loc",
                 "relations": "Rel",
                 "phylogeny": "Phylo",
-                "state": "State",
                 "simulation": "Sim",
                 "operational": "Ops",
                 "media": "Media",
