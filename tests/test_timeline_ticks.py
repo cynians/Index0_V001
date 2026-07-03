@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 import pygame
 
+from ui.knowledge_browser_ui import KnowledgeBrowserUI
 from ui.timeline_ui import TimelineUI
 
 
@@ -668,6 +669,171 @@ class TimelineTickTests(unittest.TestCase):
 
         self.assertEqual("timeline_sort_changed", action["kind"])
         self.assertEqual("offspring", timeline.timeline_sort_mode)
+
+    def test_rebuild_layout_skips_unchanged_work(self):
+        timeline = TimelineUI()
+        timeline.set_rect(pygame.Rect(0, 0, 500, 200))
+        timeline.set_items(
+            [
+                {"entity_id": "event_alpha", "label": "Alpha", "dataset": "events", "start_year": 1940, "end_year": 1950},
+                {"entity_id": "event_beta", "label": "Beta", "dataset": "events", "start_year": 1960, "end_year": 1970},
+            ]
+        )
+
+        self.assertTrue(timeline.rebuild_layout())
+        self.assertFalse(timeline.rebuild_layout())
+
+        timeline.set_open_canvas_entity_ids(["event_alpha"])
+        self.assertTrue(timeline.rebuild_layout())
+        self.assertFalse(timeline.rebuild_layout())
+
+    def test_entity_lookup_location_fields_invalidate_layout_cache(self):
+        timeline = TimelineUI()
+        timeline.set_rect(pygame.Rect(0, 0, 500, 200))
+        timeline.view_min_year = 1900
+        timeline.view_max_year = 2000
+        timeline._view_range_initialized = True
+        timeline.set_location_focus_enabled(True)
+        timeline.set_items(
+            [
+                {"entity_id": "event_alpha", "label": "Alpha", "dataset": "events", "start_year": 1940, "end_year": 1950},
+            ]
+        )
+        timeline.set_entity_lookup(
+            {
+                "loc_one": {"id": "loc_one", "_dataset": "locations", "name": "One"},
+                "event_alpha": {"id": "event_alpha", "_dataset": "events"},
+            }
+        )
+        timeline.set_location_focus("One")
+
+        self.assertFalse(timeline.rebuild_layout())
+        self.assertFalse(timeline.layout_items)
+
+        timeline.set_entity_lookup(
+            {
+                "loc_one": {"id": "loc_one", "_dataset": "locations", "name": "One"},
+                "event_alpha": {"id": "event_alpha", "_dataset": "events", "location_entity": "loc_one"},
+            }
+        )
+
+        self.assertTrue(timeline.rebuild_layout())
+        self.assertEqual(["event_alpha"], [item["entity_id"] for item in timeline.layout_items])
+
+    def test_timeline_collapse_toggle_restores_previous_height(self):
+        ui = KnowledgeBrowserUI()
+        ui.app_width = 900
+        ui.app_height = 700
+        ui.timeline_panel_height = 154
+        calls = []
+        ui._refresh_layout_geometry = lambda: calls.append("layout")
+
+        self.assertTrue(ui._toggle_timeline_collapsed())
+        self.assertTrue(ui.timeline_collapsed)
+        self.assertEqual(154, ui.timeline_expanded_panel_height)
+
+        self.assertTrue(ui._toggle_timeline_collapsed())
+        self.assertFalse(ui.timeline_collapsed)
+        self.assertEqual(154, ui.timeline_panel_height)
+        self.assertEqual(["layout", "layout"], calls)
+
+    def test_timeline_splitter_center_click_toggles_without_dragging(self):
+        ui = KnowledgeBrowserUI()
+        ui.app_width = 900
+        ui.app_height = 700
+        ui.layout = ui._build_layout(ui.app_width, ui.app_height)
+        calls = []
+        ui._toggle_timeline_collapsed = lambda: calls.append("toggle") or True
+        event = type(
+            "Event",
+            (),
+            {
+                "type": pygame.MOUSEBUTTONDOWN,
+                "button": 1,
+                "pos": ui.timeline_splitter_toggle_rect.center,
+            },
+        )()
+
+        result = ui.handle_event(event)
+        self.assertEqual("__ui_consumed__", result)
+        self.assertEqual([], calls)
+        self.assertTrue(ui.timeline_splitter_click_pending)
+
+        result = ui.handle_event(
+            type(
+                "Event",
+                (),
+                {
+                    "type": pygame.MOUSEBUTTONUP,
+                    "button": 1,
+                    "pos": ui.timeline_splitter_toggle_rect.center,
+                },
+            )()
+        )
+
+        self.assertEqual("__ui_consumed__", result)
+        self.assertEqual(["toggle"], calls)
+        self.assertFalse(ui.active_timeline_resize)
+
+    def test_timeline_splitter_side_click_starts_resize(self):
+        ui = KnowledgeBrowserUI()
+        ui.app_width = 900
+        ui.app_height = 700
+        ui.layout = ui._build_layout(ui.app_width, ui.app_height)
+        pos = (ui.timeline_splitter_rect.x + 4, ui.timeline_splitter_rect.centery)
+        event = type(
+            "Event",
+            (),
+            {
+                "type": pygame.MOUSEBUTTONDOWN,
+                "button": 1,
+                "pos": pos,
+            },
+        )()
+
+        result = ui.handle_event(event)
+
+        self.assertEqual("__ui_consumed__", result)
+        self.assertTrue(ui.active_timeline_resize)
+        self.assertFalse(ui.timeline_splitter_click_pending)
+        self.assertEqual(pos[1], ui.timeline_resize_start_mouse_y)
+
+    def test_timeline_splitter_center_drag_resizes_instead_of_toggling(self):
+        ui = KnowledgeBrowserUI()
+        ui.app_width = 900
+        ui.app_height = 700
+        ui.timeline_panel_height = 132
+        ui.layout = ui._build_layout(ui.app_width, ui.app_height)
+        ui._refresh_layout_geometry = lambda: None
+        calls = []
+        ui._toggle_timeline_collapsed = lambda: calls.append("toggle") or True
+        start_pos = ui.timeline_splitter_toggle_rect.center
+
+        down = type(
+            "Event",
+            (),
+            {
+                "type": pygame.MOUSEBUTTONDOWN,
+                "button": 1,
+                "pos": start_pos,
+            },
+        )()
+        motion = type(
+            "Event",
+            (),
+            {
+                "type": pygame.MOUSEMOTION,
+                "pos": (start_pos[0], start_pos[1] + 12),
+            },
+        )()
+
+        self.assertEqual("__ui_consumed__", ui.handle_event(down))
+        self.assertEqual("__ui_consumed__", ui.handle_event(motion))
+
+        self.assertTrue(ui.active_timeline_resize)
+        self.assertFalse(ui.timeline_splitter_click_pending)
+        self.assertEqual([], calls)
+        self.assertGreater(ui.timeline_panel_height, 132)
 
 
 if __name__ == "__main__":

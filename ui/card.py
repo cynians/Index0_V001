@@ -19,6 +19,9 @@ from simulations.space.stellar import STELLAR_CLASS_HELP, is_valid_stellar_class
 
 class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, CardSiteMixin, CardSimulationMixin, CardTaskMixin):
     PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    IMAGE_SURFACE_CACHE = {}
+    SCALED_PREVIEW_CACHE = {}
+    MAX_IMAGE_CACHE_ITEMS = 128
     """
     Reusable renderer + interaction helper for one repository entity card.
     """
@@ -914,6 +917,18 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
     def _card_background_color(self, role="body", section_id=None):
         return self._coerce_hex_color(self._card_color_hex(role=role, section_id=section_id), fallback=(28, 30, 38))
+
+    def _card_button_palette(self, index=0, selected=False):
+        role = "wiki" if int(index or 0) % 2 == 0 else "wiki_alt"
+        fill = self._card_background_color(role=role)
+        text_color = self._readable_text_color(fill)
+        if selected:
+            fill = self._mix_color(fill, text_color, 0.16)
+            text_color = self._readable_text_color(fill)
+            border = self._mix_color(fill, text_color, 0.58)
+        else:
+            border = self._mix_color(fill, text_color, 0.34)
+        return fill, border, text_color
 
     @staticmethod
     def _readable_text_color(background, light=(246, 248, 252), dark=(20, 24, 32)):
@@ -2631,10 +2646,22 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         for candidate in candidate_paths:
             if not os.path.exists(candidate):
                 continue
+            cache_path = os.path.abspath(candidate)
             try:
-                return pygame.image.load(candidate).convert_alpha()
+                cache_key = (cache_path, os.path.getmtime(cache_path))
+            except OSError:
+                continue
+            if cache_key in self.IMAGE_SURFACE_CACHE:
+                return self.IMAGE_SURFACE_CACHE[cache_key]
+            try:
+                surface = pygame.image.load(candidate).convert_alpha()
             except Exception:
                 return None
+            if len(self.IMAGE_SURFACE_CACHE) >= self.MAX_IMAGE_CACHE_ITEMS:
+                self.IMAGE_SURFACE_CACHE.clear()
+                self.SCALED_PREVIEW_CACHE.clear()
+            self.IMAGE_SURFACE_CACHE[cache_key] = surface
+            return surface
 
         return None
 
@@ -2828,11 +2855,11 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         if card.get("is_edit_mode", False):
             time_anchor_rect = pygame.Rect(rect.right - 96, rect.y + 12, 20, 20)
             delete_rect = pygame.Rect(rect.right - 120, rect.y + 12, 20, 20)
-            header_reserved_w = 168
+            template_button_rect = pygame.Rect(rect.right - 144, rect.y + 12, 20, 20)
+            header_reserved_w = 192
         else:
             relation_tree_rect = pygame.Rect(rect.right - 96, rect.y + 12, 20, 20)
-            template_button_rect = pygame.Rect(rect.right - 120, rect.y + 12, 20, 20)
-            header_reserved_w = 168
+            header_reserved_w = 144
 
         header_icon_ref = self._resolve_card_icon_reference()
         header_icon_rect = pygame.Rect(rect.x + 10, rect.y + 8, 34, 34) if header_icon_ref else None
@@ -4022,7 +4049,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             screen.blit(description_surface, (subtitle_x, rect.y + 29))
         if type_label_rect is not None:
             hover_pos = pygame.mouse.get_pos()
-            if type_label_rect.collidepoint(hover_pos):
+            if card.get("is_edit_mode", False) and type_label_rect.collidepoint(hover_pos):
                 pygame.draw.rect(screen, (42, 48, 62), type_label_rect)
                 pygame.draw.rect(screen, (130, 150, 190), type_label_rect, 1)
         subtitle_y = rect.y + (47 if (header_description or card.get("is_edit_mode", False)) else 30)
@@ -4467,11 +4494,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             pygame.draw.line(screen, color, (rect.x + offset, rect.y), (rect.x + offset, rect.bottom - 1))
 
     def _draw_tabs(self, screen, font, card):
-        for tab_name, tab_rect in card.get("tab_hitboxes", []):
+        for tab_index, (tab_name, tab_rect) in enumerate(card.get("tab_hitboxes", [])):
             selected = tab_name == self.active_tab
-            fill = (58, 64, 78) if selected else (36, 40, 50)
-            border = (200, 200, 210) if selected else (110, 110, 120)
-            text_color = (245, 245, 245) if selected else (195, 195, 195)
+            fill, border, text_color = self._card_button_palette(tab_index, selected=selected)
 
             pygame.draw.rect(screen, fill, tab_rect)
             pygame.draw.rect(screen, border, tab_rect, 1)
@@ -4495,14 +4520,12 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             screen.blit(text_surface, text_rect)
 
     def _draw_subtabs(self, screen, font, card):
-        for tab_name, subtab_name, subtab_rect in card.get("subtab_hitboxes", []):
+        for subtab_index, (tab_name, subtab_name, subtab_rect) in enumerate(card.get("subtab_hitboxes", [])):
             if tab_name != self.active_tab:
                 continue
 
             selected = tab_name == "simulation" and subtab_name == self.active_simulation_subtab
-            fill = (50, 58, 72) if selected else (32, 36, 46)
-            border = (184, 194, 214) if selected else (92, 102, 122)
-            text_color = (240, 244, 250) if selected else (176, 184, 198)
+            fill, border, text_color = self._card_button_palette(subtab_index, selected=selected)
 
             pygame.draw.rect(screen, fill, subtab_rect)
             pygame.draw.rect(screen, border, subtab_rect, 1)
@@ -4526,7 +4549,13 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
         target_w = max(1, int(src_w * scale))
         target_h = max(1, int(src_h * scale))
-        scaled = pygame.transform.smoothscale(image_surface, (target_w, target_h))
+        cache_key = (id(image_surface), target_w, target_h)
+        scaled = self.SCALED_PREVIEW_CACHE.get(cache_key)
+        if scaled is None:
+            if len(self.SCALED_PREVIEW_CACHE) >= self.MAX_IMAGE_CACHE_ITEMS:
+                self.SCALED_PREVIEW_CACHE.clear()
+            scaled = pygame.transform.smoothscale(image_surface, (target_w, target_h))
+            self.SCALED_PREVIEW_CACHE[cache_key] = scaled
         scaled_rect = scaled.get_rect(center=inner_rect.center)
         screen.blit(scaled, scaled_rect)
 

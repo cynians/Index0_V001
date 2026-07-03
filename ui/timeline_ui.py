@@ -61,6 +61,15 @@ class TimelineUI:
         self.rect = pygame.Rect(0, 0, 0, 0)
         self.title = "Repository Timeline"
         self.items = []
+        self._items_signature = ()
+        self._entity_lookup_signature = ()
+        self._available_filter_categories_cache = None
+        self._filter_groups_cache = None
+        self._layout_cache_key = None
+        self._filter_hitbox_cache_key = None
+        self._full_range_cache_key = None
+        self._full_range_cache_value = None
+        self._label_width_cache = {}
         self.period_layout_items = []
         self.layout_items = []
         self.coverage_segments = []
@@ -117,21 +126,43 @@ class TimelineUI:
         self.axis_y = 0
 
     def set_rect(self, rect):
-        self.rect = pygame.Rect(rect)
+        rect = pygame.Rect(rect)
+        changed = rect != self.rect
+        self.rect = rect
+        if changed:
+            self._layout_cache_key = None
+            self._filter_hitbox_cache_key = None
+        return changed
 
     def set_font(self, font):
+        changed = font is not self.layout_font
         self.layout_font = font
+        if changed:
+            self._layout_cache_key = None
+            self._filter_hitbox_cache_key = None
+            self._label_width_cache = {}
+        return changed
 
     def set_title(self, title):
         self.title = str(title or "Timeline")
 
     def set_items(self, items):
         had_focus_item = self._items_have_default_focus_item(self.items)
-        self.items = list(items or [])
+        new_items = list(items or [])
+        new_signature = self._make_items_signature(new_items)
+        changed = new_signature != self._items_signature
+        self.items = new_items
+        self._items_signature = new_signature
+        if changed:
+            self._layout_cache_key = None
+            self._filter_hitbox_cache_key = None
+            self._available_filter_categories_cache = None
+            self._filter_groups_cache = None
         has_focus_item = self._items_have_default_focus_item(self.items)
         if has_focus_item and not had_focus_item:
             self._view_range_initialized = False
         self._ensure_active_filter_valid()
+        return changed
 
     def set_entity_lookup(self, entity_lookup):
         self.entity_lookup = {
@@ -139,15 +170,105 @@ class TimelineUI:
             for entity_id, entity in (entity_lookup or {}).items()
             if str(entity_id or "").strip() and isinstance(entity, dict)
         }
+        signature = self._make_entity_lookup_signature(self.entity_lookup)
+        changed = signature != self._entity_lookup_signature
+        self._entity_lookup_signature = signature
+        if changed:
+            self._layout_cache_key = None
+            self._filter_hitbox_cache_key = None
         self._refresh_location_focus_matches()
+        return changed
 
     def set_open_canvas_entity_ids(self, entity_ids):
-        self.open_canvas_entity_ids = {
+        open_ids = {
             str(entity_id)
             for entity_id in (entity_ids or [])
             if str(entity_id or "").strip()
         }
-        self._ensure_active_filter_valid()
+        changed = open_ids != self.open_canvas_entity_ids
+        self.open_canvas_entity_ids = open_ids
+        if changed:
+            self._layout_cache_key = None
+            self._filter_hitbox_cache_key = None
+            self._ensure_active_filter_valid()
+        return changed
+
+    def _make_items_signature(self, items):
+        return tuple(
+            (
+                item.get("entity_id"),
+                item.get("timeline_kind"),
+                item.get("dataset"),
+                item.get("entity_type"),
+                item.get("start_year"),
+                item.get("end_year"),
+                item.get("label"),
+                item.get("card_color"),
+                item.get("commentary"),
+                item.get("start_commentary"),
+                item.get("end_commentary"),
+            )
+            for item in items
+            if isinstance(item, dict)
+        )
+
+    def _make_entity_lookup_signature(self, entity_lookup):
+        relation_fields = (
+            "id",
+            "parents",
+            "parent_entity",
+            "parent_location",
+            "parent_body",
+            "offspring",
+            "constituents",
+            "location_entity",
+            "location",
+            "locations",
+            "associated_location",
+            "associated_locations",
+            "location_history",
+            "place",
+            "places",
+            "owner_entity",
+            "neighbours",
+            "overlaps",
+            "location_class",
+            "type",
+            "_dataset",
+            "pretty_name",
+            "name",
+            "common_name",
+            "short_name",
+        )
+        signature = []
+        relation_field_names = {
+            "parents",
+            "parent_entity",
+            "parent_location",
+            "parent_body",
+            "offspring",
+            "constituents",
+            "location_entity",
+            "location",
+            "locations",
+            "associated_location",
+            "associated_locations",
+            "location_history",
+            "place",
+            "places",
+            "owner_entity",
+            "neighbours",
+            "overlaps",
+        }
+        for entity_id, entity in sorted(entity_lookup.items()):
+            values = []
+            for field_key in relation_fields:
+                if field_key in relation_field_names:
+                    values.append(tuple(self._relation_entity_ids(entity.get(field_key))))
+                else:
+                    values.append(entity.get(field_key))
+            signature.append((entity_id, tuple(values)))
+        return tuple(signature)
 
     def set_year_selection_enabled(self, enabled):
         self.year_selection_enabled = bool(enabled)
@@ -514,6 +635,9 @@ class TimelineUI:
         return old_range != self.period_filter_range or old_pending != self.period_filter_pending_start
 
     def _available_filter_categories(self):
+        if self._available_filter_categories_cache is not None:
+            return set(self._available_filter_categories_cache)
+
         categories = {"all", "open_canvas", "contemporary"}
         for item in self.items:
             if item.get("timeline_kind") == "major_period":
@@ -524,6 +648,7 @@ class TimelineUI:
             if dataset_name:
                 categories.add(str(dataset_name))
 
+        self._available_filter_categories_cache = frozenset(categories)
         return categories
 
     def _group_for_category(self, category_name):
@@ -536,6 +661,9 @@ class TimelineUI:
         return "ideas"
 
     def get_filter_groups(self):
+        if self._filter_groups_cache is not None:
+            return list(self._filter_groups_cache)
+
         categories = self._available_filter_categories()
         groups = []
         assigned = set()
@@ -548,6 +676,10 @@ class TimelineUI:
         remaining = sorted(name for name in categories if name not in assigned)
         if remaining:
             groups.append(("other", "Other", remaining))
+        self._filter_groups_cache = tuple(
+            (group_id, group_label, tuple(group_categories))
+            for group_id, group_label, group_categories in groups
+        )
         return groups
 
     def _categories_for_group(self, group_id):
@@ -1131,9 +1263,16 @@ class TimelineUI:
         return contemporary
 
     def _compute_full_range(self):
+        cache_key = (self._items_signature, self.selected_year, self.working_year_range)
+        if cache_key == self._full_range_cache_key and self._full_range_cache_value is not None:
+            self.full_min_year, self.full_max_year = self._full_range_cache_value
+            return
+
         if not self.items:
             self.full_min_year = 0
             self.full_max_year = 1
+            self._full_range_cache_key = cache_key
+            self._full_range_cache_value = (self.full_min_year, self.full_max_year)
             return
 
         years = []
@@ -1154,6 +1293,8 @@ class TimelineUI:
         if not years:
             self.full_min_year = 0
             self.full_max_year = 1
+            self._full_range_cache_key = cache_key
+            self._full_range_cache_value = (self.full_min_year, self.full_max_year)
             return
 
         min_year = min(years)
@@ -1162,11 +1303,15 @@ class TimelineUI:
         if min_year == max_year:
             self.full_min_year = min_year - 1
             self.full_max_year = max_year + 1
+            self._full_range_cache_key = cache_key
+            self._full_range_cache_value = (self.full_min_year, self.full_max_year)
             return
 
         padding = max(1, int((max_year - min_year) * 0.03))
         self.full_min_year = min_year - padding
         self.full_max_year = max_year + padding
+        self._full_range_cache_key = cache_key
+        self._full_range_cache_value = (self.full_min_year, self.full_max_year)
 
     def _ensure_view_range_initialized(self):
         current_span = self.view_max_year - self.view_min_year
@@ -1458,7 +1603,12 @@ class TimelineUI:
         label = str(label or "")
 
         if self.layout_font is not None:
-            return self.layout_font.size(label)[0]
+            cache_key = (id(self.layout_font), label)
+            cached_width = self._label_width_cache.get(cache_key)
+            if cached_width is None:
+                cached_width = self.layout_font.size(label)[0]
+                self._label_width_cache[cache_key] = cached_width
+            return cached_width
 
         return max(28, len(label) * 7)
 
@@ -1636,10 +1786,11 @@ class TimelineUI:
 
         return layout_items, len(layout_items)
 
-    def _assign_period_lanes(self):
+    def _assign_period_lanes(self, visible_items=None):
+        visible_items = self._filtered_visible_items() if visible_items is None else visible_items
         period_items = [
             item
-            for item in self._filtered_visible_items()
+            for item in visible_items
             if item.get("timeline_kind") == "major_period"
         ]
         self.period_layout_items, self.period_lane_count = self._assign_items_to_lanes(
@@ -1647,10 +1798,11 @@ class TimelineUI:
             allow_touching=True,
         )
 
-    def _assign_lanes(self):
+    def _assign_lanes(self, visible_items=None):
+        visible_items = self._filtered_visible_items() if visible_items is None else visible_items
         timeline_items = [
             item
-            for item in self._filtered_visible_items()
+            for item in visible_items
             if item.get("timeline_kind") != "major_period"
         ]
         if self.timeline_sort_mode == "offspring":
@@ -1659,10 +1811,11 @@ class TimelineUI:
             self.layout_items, lane_count = self._assign_items_to_lanes(timeline_items)
         self.lane_count = max(1, lane_count)
 
-    def _build_coverage_segments(self):
+    def _build_coverage_segments(self, visible_items=None):
+        visible_items = self._filtered_visible_items() if visible_items is None else visible_items
         delta_by_year = {}
 
-        for item in self._filtered_visible_items():
+        for item in visible_items:
             if item.get("timeline_kind") == "major_period":
                 continue
 
@@ -1700,6 +1853,32 @@ class TimelineUI:
             )
             self.coverage_max_density = max(self.coverage_max_density, running_density)
 
+    def _layout_state_key(self):
+        font_key = None
+        if self.layout_font is not None:
+            font_key = (id(self.layout_font), self.layout_font.get_linesize())
+        return (
+            (self.rect.x, self.rect.y, self.rect.width, self.rect.height),
+            font_key,
+            self._items_signature,
+            self._entity_lookup_signature,
+            tuple(sorted(self.open_canvas_entity_ids)),
+            self.active_filter_mode,
+            self.active_category_filter,
+            tuple(sorted(self.active_filter_groups)),
+            self.timeline_sort_mode,
+            self.period_filter_range,
+            self.period_filter_pending_start,
+            self.selected_year,
+            self.working_year_range,
+            self.location_focus_id,
+            self.view_min_year,
+            self.view_max_year,
+            self.full_min_year,
+            self.full_max_year,
+            self._view_range_initialized,
+        )
+
     def rebuild_layout(self):
         self.content_rect = pygame.Rect(
             self.rect.x + self.LEFT_PAD,
@@ -1710,17 +1889,48 @@ class TimelineUI:
         self.axis_y = self.content_rect.y + self.AXIS_H
         self._compute_full_range()
         self._ensure_view_range_initialized()
-        self._build_coverage_segments()
-        self._assign_period_lanes()
-        self._assign_lanes()
+        layout_key = self._layout_state_key()
+        if layout_key == self._layout_cache_key:
+            return False
+
+        self._label_width_cache = {}
+        visible_items = self._filtered_visible_items()
+        self._build_coverage_segments(visible_items)
+        self._assign_period_lanes(visible_items)
+        self._assign_lanes(visible_items)
+        self._layout_cache_key = layout_key
+        return True
 
     def _rebuild_filter_hitboxes(self):
+        if self.layout_font is None:
+            self.filter_hitboxes = []
+            self.filter_group_hitboxes = []
+            self.sort_mode_hitboxes = []
+            self._filter_hitbox_cache_key = None
+            return
+
+        filter_groups = self.get_filter_groups()
+        filter_categories = tuple(
+            (category_name, self._format_filter_label(category_name))
+            for category_name in self.get_filter_categories()
+        )
+        cache_key = (
+            (self.rect.x, self.rect.y, self.rect.width, self.rect.height),
+            id(self.layout_font),
+            self.layout_font.get_linesize(),
+            self.working_year_enabled,
+            self._format_working_year_display_value(),
+            self.location_focus_enabled,
+            self._format_location_focus_display_value(),
+            tuple(filter_groups),
+            filter_categories,
+        )
+        if cache_key == self._filter_hitbox_cache_key:
+            return
+
         self.filter_hitboxes = []
         self.filter_group_hitboxes = []
         self.sort_mode_hitboxes = []
-        if self.layout_font is None:
-            return
-
         self._layout_working_year_rect(self.layout_font)
         self._layout_location_focus_rect(self.layout_font)
         self._layout_random_working_year_rect(self.layout_font)
@@ -1737,7 +1947,7 @@ class TimelineUI:
         if self.sort_mode_hitboxes:
             group_max_right = min(group_max_right, self.sort_mode_hitboxes[0][2].x - 8)
 
-        for group_id, group_label, _ in self.get_filter_groups():
+        for group_id, group_label, _ in filter_groups:
             chip_w = self.layout_font.size(group_label)[0] + 16
             chip_rect = pygame.Rect(x, y, chip_w, chip_h)
             if chip_rect.right > group_max_right:
@@ -1747,14 +1957,14 @@ class TimelineUI:
 
         x = self.rect.x + 180
         y = self.rect.y + 58
-        for category_name in self.get_filter_categories():
-            label = self._format_filter_label(category_name)
+        for category_name, label in filter_categories:
             chip_w = self.layout_font.size(label)[0] + 16
             chip_rect = pygame.Rect(x, y, chip_w, chip_h)
             if chip_rect.right > max_right:
                 break
             self.filter_hitboxes.append((category_name, label, chip_rect))
             x = chip_rect.right + gap
+        self._filter_hitbox_cache_key = cache_key
 
     def _layout_sort_mode_hitboxes(self, font):
         self.sort_mode_hitboxes = []
@@ -1839,12 +2049,13 @@ class TimelineUI:
             font,
         )
 
-    def _draw_working_year_input(self, screen, font):
+    def _draw_working_year_input(self, screen, font, layout=True):
         if not self.working_year_enabled:
             return
 
-        self._layout_working_year_rect(font)
-        self._layout_random_working_year_rect(font)
+        if layout:
+            self._layout_working_year_rect(font)
+            self._layout_random_working_year_rect(font)
         if self.working_year_rect.width <= 0:
             return
 
@@ -1886,12 +2097,13 @@ class TimelineUI:
 
         self._draw_small_button(screen, font, self.random_working_year_rect, "Random Year")
 
-    def _draw_location_focus_input(self, screen, font):
+    def _draw_location_focus_input(self, screen, font, layout=True):
         if not self.location_focus_enabled:
             return
 
-        self._layout_location_focus_rect(font)
-        self._layout_random_location_focus_rect(font)
+        if layout:
+            self._layout_location_focus_rect(font)
+            self._layout_random_location_focus_rect(font)
         if self.location_focus_rect.width <= 0:
             return
 
@@ -2496,8 +2708,8 @@ class TimelineUI:
             self._rebuild_filter_hitboxes()
             title = font.render(self.title, True, (240, 240, 240))
             screen.blit(title, (self.rect.x + 12, self.rect.y + 8))
-            self._draw_working_year_input(screen, font)
-            self._draw_location_focus_input(screen, font)
+            self._draw_working_year_input(screen, font, layout=False)
+            self._draw_location_focus_input(screen, font, layout=False)
 
             for mode, label, chip_rect in self.sort_mode_hitboxes:
                 selected = mode == self.timeline_sort_mode
@@ -2604,6 +2816,8 @@ class TimelineUI:
                 for segment in self.coverage_segments:
                     x1 = self._year_to_x(segment["start_year"])
                     x2 = self._year_to_x(segment["end_year"])
+                    if x2 < axis_left or x1 > axis_right:
+                        continue
                     bar_w = max(2, x2 - x1 + 1)
                     density_ratio = segment["density"] / float(self.coverage_max_density)
                     fill_color = (
@@ -2621,6 +2835,10 @@ class TimelineUI:
                 x1 = self._year_to_x(item["start_year"])
                 x2 = self._year_to_x(item["end_year"])
                 y = period_base_y + lane * (self.PERIOD_H + self.PERIOD_GAP)
+                if y > self.rect.bottom or y + self.PERIOD_H < self.content_rect.y:
+                    continue
+                if x2 < axis_left or x1 > axis_right:
+                    continue
                 fill_color = self._coerce_color(item.get("card_color"), (70, 76, 108))
                 border_color = self._mix_color(fill_color, (240, 230, 180), 0.55)
                 label_color = self._readable_text_color(fill_color)
@@ -2642,6 +2860,7 @@ class TimelineUI:
                 )
 
             lane_base_y = period_base_y + period_section_h
+            lane_pitch = self._lane_pitch()
 
             for item in self.layout_items:
                 lane = item["lane"]
@@ -2651,9 +2870,16 @@ class TimelineUI:
                 depth = max(0, int(item.get("nest_depth", 0) or 0))
                 is_point = start_year == end_year
 
-                y = lane_base_y + lane * self._lane_pitch()
+                y = lane_base_y + lane * lane_pitch
+                if y > self.rect.bottom or y + lane_pitch < self.content_rect.y:
+                    continue
                 x1 = self._year_to_x(start_year)
                 x2 = self._year_to_x(end_year)
+                if is_point:
+                    if x1 < axis_left or x1 > axis_right:
+                        continue
+                elif x2 < axis_left or x1 > axis_right:
+                    continue
 
                 color = self._coerce_color(item.get("card_color"), (110, 140, 220) if is_point else (80, 110, 180))
                 border_color = self._mix_color(color, (210, 225, 255), 0.55)

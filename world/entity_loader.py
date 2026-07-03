@@ -492,30 +492,33 @@ class EntityLoader:
 
     # --------------------------------------------------
 
-    def _normalize_parent_relations(self, entity):
-        parent_ideas = entity.get("parents", entity.get("parent_ideas", []))
-        parent_ids = []
+    def _relation_ids(self, value):
+        if isinstance(value, str):
+            stripped = value.strip()
+            return [stripped] if stripped else []
+        if isinstance(value, dict):
+            entity_id = str(value.get("id") or "").strip()
+            return [entity_id] if entity_id else []
+        if isinstance(value, list):
+            ids = []
+            for item in value:
+                for entity_id in self._relation_ids(item):
+                    if entity_id not in ids:
+                        ids.append(entity_id)
+            return ids
+        return []
 
-        if isinstance(parent_ideas, str):
-            parent_ids.append(parent_ideas)
-        elif isinstance(parent_ideas, list):
-            parent_ids.extend(
-                parent_id
-                for parent_id in parent_ideas
-                if isinstance(parent_id, str)
-            )
-
-        parent_entity = entity.get("parent_entity")
-        if isinstance(parent_entity, str):
-            if entity.get("type") == "idea":
-                parent_ids.append(parent_entity)
-
-        normalized = []
-        for parent_id in parent_ids:
-            if parent_id in self.entities and parent_id not in normalized:
-                normalized.append(parent_id)
-
-        return normalized
+    def _parent_ids_for_entity(self, entity):
+        parent_ids = self._relation_ids(entity.get("parents", entity.get("parent_ideas", [])))
+        if entity.get("type") == "idea":
+            for entity_id in self._relation_ids(entity.get("parent_entity")):
+                if entity_id not in parent_ids:
+                    parent_ids.append(entity_id)
+        return [
+            parent_id
+            for parent_id in parent_ids
+            if parent_id in self.entities
+        ]
 
     def _build_offspring_tree(self, entity_id, children_by_parent, ancestry=None):
         ancestry = set(ancestry or [])
@@ -540,13 +543,17 @@ class EntityLoader:
         return nodes
 
     def populate_offspring(self):
-        ontology = OntologyRepository(self.datasets)
-        ontology.materialize_inverse_relations()
+        children_by_parent = {}
+        for entity_id, entity in self.entities.items():
+            for parent_id in self._parent_ids_for_entity(entity):
+                children = children_by_parent.setdefault(parent_id, [])
+                if entity_id not in children:
+                    children.append(entity_id)
+
         changed_entities = set()
 
         for entity_id, entity in self.entities.items():
-            projected = ontology.entities.get(entity_id, {})
-            offspring = projected.get("offspring", [])
+            offspring = self._build_offspring_tree(entity_id, children_by_parent)
             if entity.get("offspring") != offspring:
                 entity["offspring"] = offspring
                 changed_entities.add(entity_id)

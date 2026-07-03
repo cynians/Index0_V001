@@ -1209,13 +1209,17 @@ class WorldGenRenderer:
         max_elevation = float(heightmap.get("max_elevation_m", 4000.0) or 4000.0)
         land_span = max(1.0, max_elevation - sea_level)
         ocean_span = max(1.0, sea_level - min_elevation)
-        cell_w = map_rect.width / max(1, sample_w - 1)
-        cell_h = map_rect.height / max(1, sample_h - 1)
+        cell_cols = max(1, sample_w - 1)
+        cell_rows = max(1, sample_h - 1)
+        x_edges = [map_rect.x + int(col_index * map_rect.width / cell_cols) for col_index in range(cell_cols + 1)]
+        y_edges = [map_rect.y + int(row_index * map_rect.height / cell_rows) for row_index in range(cell_rows + 1)]
 
         previous_clip = screen.get_clip()
         screen.set_clip(clip_rect)
         try:
             for row_index, row in enumerate(rows[:sample_h - 1]):
+                y0 = y_edges[row_index]
+                y1 = y_edges[row_index + 1]
                 for col_index, value in enumerate(row[:sample_w - 1]):
                     try:
                         elevation = float(value)
@@ -1241,11 +1245,13 @@ class WorldGenRenderer:
                             color = self._mix_rgb(land_mid, land_high, (height - 0.45) / 0.37)
                         else:
                             color = self._mix_rgb(land_high, (214, 212, 196), (height - 0.82) / 0.18)
+                    x0 = x_edges[col_index]
+                    x1 = x_edges[col_index + 1]
                     rect = pygame.Rect(
-                        int(map_rect.x + col_index * cell_w),
-                        int(map_rect.y + row_index * cell_h),
-                        max(1, int(math.ceil(cell_w))),
-                        max(1, int(math.ceil(cell_h))),
+                        x0,
+                        y0,
+                        max(1, x1 - x0),
+                        max(1, y1 - y0),
                     )
                     pygame.draw.rect(screen, color, rect)
         finally:

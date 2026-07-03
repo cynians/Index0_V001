@@ -122,14 +122,29 @@ class MapRenderer:
             screen.blit(text, (rect.x + 6, rect.y + 6))
 
     def _heightmap_color(self, elevation, heightmap, has_ice=False, layer=None):
-        sea_level_value = heightmap.get("sea_level_m")
-        has_ocean = sea_level_value is not None
-        sea_level = 0.0 if sea_level_value is None else float(sea_level_value or 0.0)
-        min_elevation = float(heightmap.get("min_elevation_m", -4000.0) or -4000.0)
-        max_elevation = float(heightmap.get("max_elevation_m", 4000.0) or 4000.0)
-        layer = layer if isinstance(layer, dict) else {}
-        land_dark, land_mid, land_high, land_shadow = self._surface_palette_colors(layer)
+        return self._heightmap_color_from_context(
+            elevation,
+            self._heightmap_color_context(heightmap, layer),
+            has_ice=has_ice,
+        )
 
+    def _heightmap_color_context(self, heightmap, layer=None):
+        sea_level_value = heightmap.get("sea_level_m")
+        layer = layer if isinstance(layer, dict) else {}
+        return {
+            "has_ocean": sea_level_value is not None,
+            "sea_level": 0.0 if sea_level_value is None else float(sea_level_value or 0.0),
+            "min_elevation": float(heightmap.get("min_elevation_m", -4000.0) or -4000.0),
+            "max_elevation": float(heightmap.get("max_elevation_m", 4000.0) or 4000.0),
+            "palette": self._surface_palette_colors(layer),
+        }
+
+    def _heightmap_color_from_context(self, elevation, context, has_ice=False):
+        has_ocean = context["has_ocean"]
+        sea_level = context["sea_level"]
+        min_elevation = context["min_elevation"]
+        max_elevation = context["max_elevation"]
+        land_dark, land_mid, land_high, land_shadow = context["palette"]
         elevation = float(elevation or 0.0)
         if has_ice:
             relief = min(1.0, (elevation - min_elevation) / max(1.0, max_elevation - min_elevation))
@@ -184,16 +199,19 @@ class MapRenderer:
         cell_rows = max(1, len(rows) - 1)
         masks = heightmap.get("surface_masks") if isinstance(heightmap.get("surface_masks"), dict) else {}
         ice_rows = masks.get("ice_rows") if isinstance(masks.get("ice_rows"), list) else []
+        color_context = self._heightmap_color_context(heightmap, layer)
+        x_edges = [rect.x + int(col_index * rect.width / cell_cols) for col_index in range(cell_cols + 1)]
+        y_edges = [rect.y + int(row_index * rect.height / cell_rows) for row_index in range(cell_rows + 1)]
         clip = screen.get_clip()
         screen.set_clip(rect.clip(screen.get_rect()))
         for row_index in range(cell_rows):
             row_a = rows[row_index]
             row_b = rows[min(row_index + 1, len(rows) - 1)]
-            y0 = rect.y + int(row_index * rect.height / cell_rows)
-            y1 = rect.y + int((row_index + 1) * rect.height / cell_rows)
+            y0 = y_edges[row_index]
+            y1 = y_edges[row_index + 1]
             for col_index in range(cell_cols):
-                x0 = rect.x + int(col_index * rect.width / cell_cols)
-                x1 = rect.x + int((col_index + 1) * rect.width / cell_cols)
+                x0 = x_edges[col_index]
+                x1 = x_edges[col_index + 1]
                 values = (
                     row_a[col_index],
                     row_a[min(col_index + 1, len(row_a) - 1)],
@@ -209,7 +227,7 @@ class MapRenderer:
                 )
                 pygame.draw.rect(
                     screen,
-                    self._heightmap_color(elevation, heightmap, has_ice=has_ice, layer=layer),
+                    self._heightmap_color_from_context(elevation, color_context, has_ice=has_ice),
                     pygame.Rect(x0, y0, max(1, x1 - x0), max(1, y1 - y0)),
                 )
         screen.set_clip(clip)

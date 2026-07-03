@@ -611,6 +611,33 @@ class CardMetadataCleanupTests(unittest.TestCase):
         self.assertEqual((176, 104, 107), palette["border"])
         self.assertEqual((51, 153, 102), palette["band"])
 
+    def test_card_tab_palette_alternates_wiki_colors(self):
+        card = EntityCard(
+            {
+                "id": "idea_source",
+                "type": "idea",
+                "_dataset": "ideas",
+                "name": "Source",
+                "wiki_field_colors": {
+                    "default": "#123456",
+                    "alternate": "#abcdef",
+                },
+            },
+            dataset_name="ideas",
+        )
+
+        first_fill, first_border, first_text = card._card_button_palette(0)
+        second_fill, second_border, second_text = card._card_button_palette(1)
+        selected_fill, _selected_border, selected_text = card._card_button_palette(0, selected=True)
+
+        self.assertEqual((18, 52, 86), first_fill)
+        self.assertEqual((171, 205, 239), second_fill)
+        self.assertNotEqual(first_border, first_fill)
+        self.assertNotEqual(second_border, second_fill)
+        self.assertNotEqual(first_text, second_text)
+        self.assertNotEqual(selected_fill, first_fill)
+        self.assertIn(selected_text, ((246, 248, 252), (20, 24, 32)))
+
     def test_phylogeny_rows_use_referenced_card_color(self):
         target = {
             "id": "clade_target",

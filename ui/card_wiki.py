@@ -15,6 +15,9 @@ class CardWikiRenderer:
     EMPTY_HINT = "No general article yet. Add text and embed images with ![caption](path)"
     LINK_PATTERN = re.compile(r"\[\[([^\]]+)\]\]")
     TASK_PATTERN = re.compile(r"^\s*\(\)\s+(.+?)\s*$")
+    IMAGE_SURFACE_CACHE = {}
+    SCALED_IMAGE_CACHE = {}
+    MAX_IMAGE_CACHE_ITEMS = 128
 
     @classmethod
     def extract_link_refs(cls, wiki_text):
@@ -238,8 +241,8 @@ class CardWikiRenderer:
             y += line_h
         return hitboxes, y
 
-    @staticmethod
-    def _load_image_surface(image_path):
+    @classmethod
+    def _load_image_surface(cls, image_path):
         if not image_path:
             return None
 
@@ -251,12 +254,35 @@ class CardWikiRenderer:
         for candidate in candidate_paths:
             if not os.path.exists(candidate):
                 continue
+            cache_path = os.path.abspath(candidate)
             try:
-                return pygame.image.load(candidate).convert_alpha()
+                cache_key = (cache_path, os.path.getmtime(cache_path))
+            except OSError:
+                continue
+            if cache_key in cls.IMAGE_SURFACE_CACHE:
+                return cls.IMAGE_SURFACE_CACHE[cache_key]
+            try:
+                surface = pygame.image.load(candidate).convert_alpha()
             except Exception:
                 return None
+            if len(cls.IMAGE_SURFACE_CACHE) >= cls.MAX_IMAGE_CACHE_ITEMS:
+                cls.IMAGE_SURFACE_CACHE.clear()
+                cls.SCALED_IMAGE_CACHE.clear()
+            cls.IMAGE_SURFACE_CACHE[cache_key] = surface
+            return surface
 
         return None
+
+    @classmethod
+    def _scaled_image_surface(cls, image_surface, target_w, target_h):
+        cache_key = (id(image_surface), target_w, target_h)
+        scaled = cls.SCALED_IMAGE_CACHE.get(cache_key)
+        if scaled is None:
+            if len(cls.SCALED_IMAGE_CACHE) >= cls.MAX_IMAGE_CACHE_ITEMS:
+                cls.SCALED_IMAGE_CACHE.clear()
+            scaled = pygame.transform.smoothscale(image_surface, (target_w, target_h))
+            cls.SCALED_IMAGE_CACHE[cache_key] = scaled
+        return scaled
 
     @staticmethod
     def _wrap_text_lines(text, font, max_width):
@@ -811,7 +837,7 @@ class CardWikiRenderer:
                             scale = min(section["content_rect"].width / src_w, 240 / src_h)
                             target_w = max(1, int(src_w * scale))
                             target_h = max(60, int(src_h * scale))
-                            scaled = pygame.transform.smoothscale(image_surface, (target_w, target_h))
+                            scaled = cls._scaled_image_surface(image_surface, target_w, target_h)
                             image_rect = scaled.get_rect(topleft=(section["content_rect"].x, y))
                             pygame.draw.rect(screen, (24, 28, 38), image_rect.inflate(6, 6))
                             pygame.draw.rect(screen, border, image_rect.inflate(6, 6), 1)

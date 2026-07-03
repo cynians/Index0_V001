@@ -262,6 +262,7 @@ class CardTypePickerTests(unittest.TestCase):
             "entity_id": "idea_seed",
             "title": "Seed",
             "card_view": SimpleNamespace(entity=entity),
+            "is_edit_mode": True,
             "type_picker_open": True,
             "type_picker_hitboxes": [],
             "type_picker_rect": pygame.Rect(0, 0, 10, 10),
@@ -276,6 +277,28 @@ class CardTypePickerTests(unittest.TestCase):
         self.assertIs(card, ui.template_picker_context.get("card"))
         self.assertFalse(card["type_picker_open"])
 
+    def test_card_class_picker_requires_edit_mode(self):
+        ui = KnowledgeBrowserUI()
+        entity = {
+            "id": "idea_seed",
+            "type": "idea",
+            "_dataset": "ideas",
+            "pretty_name": "Seed",
+        }
+        card = {
+            "entity_id": "idea_seed",
+            "title": "Seed",
+            "card_view": SimpleNamespace(entity=entity),
+            "is_edit_mode": False,
+            "type_picker_open": True,
+        }
+        ui.cards = [card]
+
+        self.assertFalse(ui._open_card_class_template_picker(card))
+
+        self.assertFalse(ui.show_template_picker)
+        self.assertEqual("create", ui.template_picker_mode)
+
     def test_template_picker_convert_uses_retained_card_reference(self):
         ui = KnowledgeBrowserUI()
         entity = {
@@ -288,6 +311,7 @@ class CardTypePickerTests(unittest.TestCase):
             "entity_id": "idea_renamed",
             "title": "Seed",
             "card_view": SimpleNamespace(entity=entity),
+            "is_edit_mode": True,
         }
         ui.cards = [card]
         ui.template_picker_mode = "convert"
@@ -314,6 +338,7 @@ class CardTypePickerTests(unittest.TestCase):
             "entity_id": "idea_seed",
             "title": "Seed",
             "card_view": SimpleNamespace(entity=entity),
+            "is_edit_mode": True,
         }
         ui.cards = [card]
         ui.template_picker_mode = "convert"
@@ -328,6 +353,34 @@ class CardTypePickerTests(unittest.TestCase):
 
         self.assertTrue(ui._select_template_picker_template({"dataset_name": "locations"}))
         self.assertEqual([card], converted)
+
+    def test_template_picker_convert_selection_requires_edit_mode(self):
+        ui = KnowledgeBrowserUI()
+        entity = {
+            "id": "idea_seed",
+            "type": "idea",
+            "_dataset": "ideas",
+            "pretty_name": "Seed",
+        }
+        card = {
+            "entity_id": "idea_seed",
+            "title": "Seed",
+            "card_view": SimpleNamespace(entity=entity),
+            "is_edit_mode": False,
+        }
+        ui.cards = [card]
+        ui.template_picker_mode = "convert"
+        ui.template_picker_context = {
+            "entity_id": "idea_seed",
+            "card": card,
+        }
+        converted = []
+        ui._convert_card_to_template = lambda selected_card, template: converted.append(selected_card) or True
+
+        self.assertFalse(ui._select_template_picker_template({"dataset_name": "locations"}))
+
+        self.assertEqual([], converted)
+        self.assertEqual("Edit mode required", ui.template_picker_status)
 
     def test_subclass_initial_fields_apply_to_created_entry(self):
         ui = KnowledgeBrowserUI()
@@ -360,6 +413,7 @@ class CardTypePickerTests(unittest.TestCase):
             "_dataset": "ideas",
             "pretty_name": "Test Building",
             "name": "Test Building",
+            "wiki_entry": "Original article body.",
         }
         ui.world_model = self._world_model_with({"ideas": [entity], "locations": []})
         card = {
@@ -381,7 +435,10 @@ class CardTypePickerTests(unittest.TestCase):
             "id_prefix": "loc",
             "subclass_field": "location_class",
             "subclass_value": "building",
-            "initial_fields": {"location_class": "building"},
+            "initial_fields": {
+                "location_class": "building",
+                "wiki_entry": "Template article stub.",
+            },
         }
 
         self.assertTrue(ui._convert_card_to_template(card, building_template))
@@ -390,6 +447,7 @@ class CardTypePickerTests(unittest.TestCase):
         self.assertEqual("locations", converted["_dataset"])
         self.assertEqual("location", converted["type"])
         self.assertEqual("building", converted["location_class"])
+        self.assertEqual("Original article body.", converted["wiki_entry"])
         self.assertEqual("Location | Building", card["subtitle"])
 
     def test_card_subtitle_uses_class_and_subclass_labels(self):

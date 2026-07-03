@@ -380,16 +380,16 @@ class OntologyRepository:
             if individual is None:
                 continue
 
-            for field_name, property_class in field_properties.items():
-                if field_name not in entity:
+            for field_name, value in entity.items():
+                property_class = field_properties.get(field_name)
+                if property_class is None:
                     continue
-                value = entity.get(field_name)
                 if isinstance(value, list):
                     individual.listFieldName.append(field_name)
                 if self._field_uses_json(value):
                     individual.jsonFieldName.append(field_name)
-                for value in self._data_values(entity.get(field_name)):
-                    getattr(individual, property_class.python_name).append(value)
+                for data_value in self._data_values(value):
+                    getattr(individual, property_class.python_name).append(data_value)
 
     def _assign_object_properties(self, individuals, object_properties):
         for entity_id, entity in self.entities.items():
@@ -397,11 +397,14 @@ class OntologyRepository:
             if individual is None:
                 continue
 
-            for field_name, property_class in object_properties.items():
-                if isinstance(entity.get(field_name), list):
+            for field_name, value in entity.items():
+                property_class = object_properties.get(field_name)
+                if property_class is None:
+                    continue
+                if isinstance(value, list):
                     individual.listFieldName.append(field_name)
                 targets = getattr(individual, property_class.python_name)
-                for target_id in self._object_relation_ids_for_field(field_name, entity.get(field_name)):
+                for target_id in self._object_relation_ids_for_field(field_name, value):
                     target = individuals.get(target_id)
                     if target is not None and target not in targets:
                         targets.append(target)
@@ -432,8 +435,6 @@ class OntologyRepository:
 
     def _object_relation_ids_for_field(self, field_name, value):
         ids = self._relation_ids(value)
-        if field_name in self.SPECIAL_OBJECT_PROPERTIES:
-            return [entity_id for entity_id in ids if entity_id in self.entities]
         return [entity_id for entity_id in ids if entity_id in self.entities]
 
     def _load_ontology(self, path):

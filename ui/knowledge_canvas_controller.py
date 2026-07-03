@@ -6,6 +6,22 @@ from simulations.phylogeny.clade_graph import find_clade_matches
 
 class KnowledgeCanvasController:
     MAX_CARD_CANVAS_H = 8000
+    CARD_CANVAS_HITBOX_KEYS = (
+        "resize_hitboxes",
+        "corner_handle_rects",
+        "tab_hitboxes",
+        "subtab_hitboxes",
+        "editable_field_hitboxes",
+        "relation_hitboxes",
+        "wiki_link_hitboxes",
+        "wiki_section_hitboxes",
+        "toolbelt_hitboxes",
+        "section_hitboxes",
+        "year_hitboxes",
+        "media_import_hitboxes",
+        "media_pixel_art_hitboxes",
+        "media_illustration_link_hitboxes",
+    )
 
     def __init__(self, host):
         object.__setattr__(self, "host", host)
@@ -15,6 +31,14 @@ class KnowledgeCanvasController:
 
     def __setattr__(self, name, value):
         setattr(self.host, name, value)
+
+    def _cards_top_to_bottom(self):
+        for index in range(len(self.cards) - 1, -1, -1):
+            yield index, self.cards[index]
+
+    def _clear_card_canvas_hitboxes(self, card):
+        for key in self.CARD_CANVAS_HITBOX_KEYS:
+            card[key] = []
 
     def _normalize_tag_lookup_value(self, value):
         return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
@@ -56,57 +80,59 @@ class KnowledgeCanvasController:
             return bool(card_view._add_tag_value(card, tag_value))
         raw_parts = str(card.get("edit_buffer") or "").replace(",", "\n").splitlines()
         tags = []
+        tag_keys = set()
         for part in raw_parts:
             text = str(part or "").strip()
-            if text and text.lower() not in {tag.lower() for tag in tags}:
+            text_key = text.lower()
+            if text and text_key not in tag_keys:
                 tags.append(text)
-        if tag_value.lower() not in {tag.lower() for tag in tags}:
+                tag_keys.add(text_key)
+        if tag_value.lower() not in tag_keys:
             tags.append(tag_value)
         card["edit_buffer"] = "\n".join(tags)
         card["edit_cursor"] = len(card["edit_buffer"])
         return True
 
-    def _computed_tag_chip_hit_at(self, card, mouse_pos):
+    def _computed_tag_chip_rects(self, card, remove_mode=False):
         card_view = card.get("card_view") if isinstance(card, dict) else None
         rect = card.get("tag_bar_rect") if isinstance(card, dict) else None
         font = card.get("layout_font") or self.font_for_layout
         if card_view is None or rect is None or font is None:
-            return None
+            return []
         tags = card_view._tag_values() if hasattr(card_view, "_tag_values") else []
         chip_x = rect.x + 52
         chip_y = rect.y + 6
         chip_right = rect.right - 8
+        hitboxes = []
         for tag in tags:
-            label = card_view._ellipsize_text(tag, font, 120) if hasattr(card_view, "_ellipsize_text") else str(tag)
-            chip_w = min(134, max(42, font.size(label)[0] + 14))
+            max_label_w = 104 if remove_mode else 120
+            label = (
+                card_view._ellipsize_text(tag, font, max_label_w)
+                if hasattr(card_view, "_ellipsize_text")
+                else str(tag)
+            )
+            base_w = font.size(label)[0] + (30 if remove_mode else 14)
+            chip_w = min(132 if remove_mode else 134, max(48 if remove_mode else 42, base_w))
             if chip_x + chip_w > chip_right:
                 break
             chip_rect = pygame.Rect(chip_x, chip_y, chip_w, 22)
-            if chip_rect.collidepoint(mouse_pos):
-                return {"tag": tag, "rect": chip_rect}
+            hit_rect = pygame.Rect(chip_rect.right - 20, chip_rect.y + 3, 16, 16) if remove_mode else chip_rect
+            hitboxes.append({"tag": tag, "rect": hit_rect})
             chip_x = chip_rect.right + 6
+        return hitboxes
+
+    def _computed_tag_chip_hit_at(self, card, mouse_pos):
+        for hitbox in self._computed_tag_chip_rects(card):
+            rect = hitbox.get("rect")
+            if rect is not None and rect.collidepoint(mouse_pos):
+                return hitbox
         return None
 
     def _computed_tag_remove_hit_at(self, card, mouse_pos):
-        card_view = card.get("card_view") if isinstance(card, dict) else None
-        rect = card.get("tag_bar_rect") if isinstance(card, dict) else None
-        font = card.get("layout_font") or self.font_for_layout
-        if card_view is None or rect is None or font is None:
-            return None
-        tags = card_view._tag_values() if hasattr(card_view, "_tag_values") else []
-        chip_x = rect.x + 52
-        chip_y = rect.y + 6
-        chip_right = rect.right - 8
-        for tag in tags:
-            label = card_view._ellipsize_text(tag, font, 104) if hasattr(card_view, "_ellipsize_text") else str(tag)
-            chip_w = min(132, max(48, font.size(label)[0] + 30))
-            if chip_x + chip_w > chip_right:
-                break
-            chip_rect = pygame.Rect(chip_x, chip_y, chip_w, 22)
-            remove_rect = pygame.Rect(chip_rect.right - 20, chip_rect.y + 3, 16, 16)
-            if remove_rect.collidepoint(mouse_pos):
-                return {"tag": tag, "rect": remove_rect}
-            chip_x = chip_rect.right + 6
+        for hitbox in self._computed_tag_chip_rects(card, remove_mode=True):
+            rect = hitbox.get("rect")
+            if rect is not None and rect.collidepoint(mouse_pos):
+                return hitbox
         return None
 
     def _open_pending_production_site_prompt(self, card):
@@ -207,8 +233,8 @@ class KnowledgeCanvasController:
 
         self.canvas_content_width = max(0, max_right + 24)
         self.canvas_content_height = max(0, max_bottom + 24)
-        self.timeline_ui.set_open_canvas_entity_ids(card.get("entity_id") for card in self.cards)
-        self.timeline_ui.rebuild_layout()
+        if self.timeline_ui.set_open_canvas_entity_ids(card.get("entity_id") for card in self.cards):
+            self.timeline_ui.rebuild_layout()
         self._layout_canvas_relation_controls()
         self._rebuild_canvas_relation_edges()
 
@@ -222,20 +248,7 @@ class KnowledgeCanvasController:
         card["close_rect"] = None
         card["template_button_rect"] = None
         card["resize_handle_rect"] = pygame.Rect(rect.right - 12, rect.bottom - 12, 10, 10)
-        card["resize_hitboxes"] = []
-        card["corner_handle_rects"] = []
-        card["tab_hitboxes"] = []
-        card["subtab_hitboxes"] = []
-        card["editable_field_hitboxes"] = []
-        card["relation_hitboxes"] = []
-        card["wiki_link_hitboxes"] = []
-        card["wiki_section_hitboxes"] = []
-        card["toolbelt_hitboxes"] = []
-        card["section_hitboxes"] = []
-        card["year_hitboxes"] = []
-        card["media_import_hitboxes"] = []
-        card["media_pixel_art_hitboxes"] = []
-        card["media_illustration_link_hitboxes"] = []
+        self._clear_card_canvas_hitboxes(card)
 
     def _is_compact_canvas_mode(self):
         return self.canvas_zoom <= self.compact_canvas_zoom_threshold
@@ -254,20 +267,7 @@ class KnowledgeCanvasController:
         card["close_rect"] = close_rect
         card["template_button_rect"] = None
         card["resize_handle_rect"] = pygame.Rect(rect.right - 12, rect.bottom - 12, 10, 10)
-        card["resize_hitboxes"] = []
-        card["corner_handle_rects"] = []
-        card["tab_hitboxes"] = []
-        card["subtab_hitboxes"] = []
-        card["editable_field_hitboxes"] = []
-        card["relation_hitboxes"] = []
-        card["wiki_link_hitboxes"] = []
-        card["wiki_section_hitboxes"] = []
-        card["toolbelt_hitboxes"] = []
-        card["media_import_hitboxes"] = []
-        card["media_pixel_art_hitboxes"] = []
-        card["media_illustration_link_hitboxes"] = []
-        card["section_hitboxes"] = []
-        card["year_hitboxes"] = []
+        self._clear_card_canvas_hitboxes(card)
         card["canvas_relation_add_rect"] = None
         card["screen_scale"] = zoom
 
@@ -370,8 +370,7 @@ class KnowledgeCanvasController:
         self._layout_all_cards()
 
     def _scroll_card_at(self, mouse_pos, wheel_y):
-        for index in range(len(self.cards) - 1, -1, -1):
-            card = self.cards[index]
+        for _index, card in self._cards_top_to_bottom():
             card_rect = card.get("rect")
             if card_rect is None or not card_rect.collidepoint(mouse_pos):
                 continue
@@ -391,8 +390,7 @@ class KnowledgeCanvasController:
         return False
 
     def _scroll_phylogeny_parent_at(self, mouse_pos, wheel_y):
-        for index in range(len(self.cards) - 1, -1, -1):
-            card = self.cards[index]
+        for _index, card in self._cards_top_to_bottom():
             card_rect = card.get("rect")
             panel_rect = card.get("phylogeny_parent_panel_rect")
             card_view = card.get("card_view")
@@ -418,8 +416,7 @@ class KnowledgeCanvasController:
         return False
 
     def _scroll_type_picker_at(self, mouse_pos, wheel_y):
-        for index in range(len(self.cards) - 1, -1, -1):
-            card = self.cards[index]
+        for _index, card in self._cards_top_to_bottom():
             if not card.get("type_picker_open", False):
                 continue
 
@@ -807,8 +804,7 @@ class KnowledgeCanvasController:
         if self.canvas_relation_link_source_id is None:
             return None
 
-        for index in range(len(self.cards) - 1, -1, -1):
-            card = self.cards[index]
+        for index, card in self._cards_top_to_bottom():
             visual_rect = self._card_visual_rect(card)
             if visual_rect is None or not visual_rect.collidepoint(mouse_pos):
                 continue
@@ -912,8 +908,7 @@ class KnowledgeCanvasController:
         source_card = self.relation_link_target.get("source_card")
         source_entity_id = self.relation_link_target.get("source_entity_id")
 
-        for index in range(len(self.cards) - 1, -1, -1):
-            card = self.cards[index]
+        for index, card in self._cards_top_to_bottom():
             visual_rect = self._card_visual_rect(card)
             if visual_rect is None or not visual_rect.collidepoint(mouse_pos):
                 continue
@@ -1087,8 +1082,7 @@ class KnowledgeCanvasController:
         if not right_rect.collidepoint(mouse_pos):
             return None
 
-        for index in range(len(self.cards) - 1, -1, -1):
-            card = self.cards[index]
+        for index, card in self._cards_top_to_bottom():
             card_view = card.get("card_view")
 
             close_rect = card.get("close_rect")
@@ -1129,7 +1123,12 @@ class KnowledgeCanvasController:
                 return "__ui_consumed__"
 
             template_button_rect = card.get("template_button_rect")
-            if template_button_rect is not None and template_button_rect.collidepoint(mouse_pos) and card_view is not None:
+            if (
+                template_button_rect is not None
+                and template_button_rect.collidepoint(mouse_pos)
+                and card_view is not None
+                and card.get("is_edit_mode", False)
+            ):
                 card_obj = self._bring_card_to_front(index)
                 if self._open_card_class_template_picker(card_obj):
                     self._relayout_cards()
@@ -1149,13 +1148,18 @@ class KnowledgeCanvasController:
                 return "__ui_consumed__"
 
             for template, type_rect in card.get("type_picker_hitboxes", []):
-                if type_rect.collidepoint(mouse_pos):
+                if type_rect.collidepoint(mouse_pos) and card.get("is_edit_mode", False):
                     card_obj = self._bring_card_to_front(index)
                     self._convert_card_to_template(card_obj, template)
                     return "__ui_consumed__"
 
             type_label_rect = card.get("type_label_rect")
-            if type_label_rect is not None and type_label_rect.collidepoint(mouse_pos) and card_view is not None:
+            if (
+                type_label_rect is not None
+                and type_label_rect.collidepoint(mouse_pos)
+                and card_view is not None
+                and card.get("is_edit_mode", False)
+            ):
                 card_obj = self._bring_card_to_front(index)
                 if self._open_card_class_template_picker(card_obj):
                     self._relayout_cards()

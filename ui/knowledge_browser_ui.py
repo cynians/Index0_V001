@@ -255,10 +255,16 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.font_for_layout = None
         self.timeline_ui = TimelineUI()
         self.timeline_panel_height = self.TIMELINE_DEFAULT_H
+        self.timeline_expanded_panel_height = self.TIMELINE_DEFAULT_H
+        self.timeline_collapsed = False
         self.timeline_splitter_rect = pygame.Rect(0, 0, 0, 0)
+        self.timeline_splitter_toggle_rect = pygame.Rect(0, 0, 0, 0)
         self.active_timeline_resize = False
         self.timeline_resize_start_mouse_y = None
         self.timeline_resize_start_height = None
+        self.timeline_splitter_click_pending = False
+        self.timeline_splitter_pending_toggle = False
+        self.timeline_splitter_pending_mouse_pos = None
         self.timeline_edit_target = None
         self.active_timeline_pan = False
         self.timeline_pan_last_mouse_x = None
@@ -413,6 +419,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         timeline_rect = self.layout["timeline_rect"]
         self.timeline_ui.set_rect(timeline_rect)
         self.timeline_ui.set_font(self.font_for_layout)
+        if self.timeline_collapsed:
+            return
         self.timeline_ui.set_working_year_enabled(True)
         self.timeline_ui.set_location_focus_enabled(True)
         self.timeline_ui.set_entity_lookup(
@@ -426,6 +434,53 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             self.timeline_ui.set_period_filter(*self.browser_period_filter)
         self.timeline_ui.set_items(timeline_items)
         self.timeline_ui.rebuild_layout()
+
+    def _toggle_timeline_collapsed(self):
+        if self.timeline_collapsed:
+            self.timeline_collapsed = False
+            self.timeline_panel_height = self._clamp_timeline_panel_height(
+                self.app_height,
+                self.timeline_expanded_panel_height,
+            )
+        else:
+            self.timeline_expanded_panel_height = self._clamp_timeline_panel_height(
+                self.app_height,
+                self.timeline_panel_height,
+            )
+            self.timeline_collapsed = True
+        self.active_timeline_resize = False
+        self.active_timeline_pan = False
+        self._refresh_layout_geometry()
+        return True
+
+    def _begin_timeline_resize(self, mouse_pos):
+        self.active_timeline_resize = True
+        self.timeline_resize_start_mouse_y = mouse_pos[1]
+        self.timeline_resize_start_height = self.timeline_panel_height
+        self.timeline_splitter_click_pending = False
+        self.timeline_splitter_pending_toggle = False
+        self.timeline_splitter_pending_mouse_pos = None
+        return True
+
+    def _begin_timeline_splitter_click(self, mouse_pos, toggle=False):
+        if self.timeline_collapsed:
+            self.timeline_splitter_click_pending = True
+            self.timeline_splitter_pending_toggle = True
+            self.timeline_splitter_pending_mouse_pos = mouse_pos
+            return True
+        if toggle:
+            self.timeline_splitter_click_pending = True
+            self.timeline_splitter_pending_toggle = True
+            self.timeline_splitter_pending_mouse_pos = mouse_pos
+            self.timeline_resize_start_mouse_y = mouse_pos[1]
+            self.timeline_resize_start_height = self.timeline_panel_height
+            return True
+        return self._begin_timeline_resize(mouse_pos)
+
+    def _clear_timeline_splitter_click(self):
+        self.timeline_splitter_click_pending = False
+        self.timeline_splitter_pending_toggle = False
+        self.timeline_splitter_pending_mouse_pos = None
 
     def _stellar_neighbour_prompt_controller(self):
         controller = getattr(self, "_stellar_neighbour_prompt_ui", None)
@@ -730,8 +785,12 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         return False
 
     def _build_layout(self, app_width, app_height):
-        timeline_h = self._clamp_timeline_panel_height(app_height)
-        self.timeline_panel_height = timeline_h
+        if self.timeline_collapsed:
+            timeline_h = self.TIMELINE_GAP
+        else:
+            timeline_h = self._clamp_timeline_panel_height(app_height)
+            self.timeline_panel_height = timeline_h
+            self.timeline_expanded_panel_height = timeline_h
 
         content_x = self.OUTER_MARGIN
         content_y = self.OUTER_MARGIN + self.HEADER_H + timeline_h
@@ -759,7 +818,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             self.OUTER_MARGIN,
             self.OUTER_MARGIN + self.HEADER_H,
             content_w,
-            max(1, timeline_h - self.TIMELINE_GAP),
+            0 if self.timeline_collapsed else max(1, timeline_h - self.TIMELINE_GAP),
         )
 
         splitter_y = timeline_rect.bottom + max(1, (self.TIMELINE_GAP - self.TIMELINE_SPLITTER_H) // 2)
@@ -768,6 +827,13 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             splitter_y,
             content_w,
             self.TIMELINE_SPLITTER_H,
+        )
+        toggle_w = min(46, max(32, content_w // 12))
+        self.timeline_splitter_toggle_rect = pygame.Rect(
+            self.timeline_splitter_rect.centerx - toggle_w // 2,
+            self.timeline_splitter_rect.y,
+            toggle_w,
+            self.timeline_splitter_rect.height,
         )
 
         return {
@@ -2944,6 +3010,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         return self._open_entry_name_prompt(template)
 
     def _open_card_class_template_picker(self, card):
+        if not isinstance(card, dict) or not card.get("is_edit_mode", False):
+            return False
         entity = self._entity_for_card(card)
         if not isinstance(entity, dict):
             return False
@@ -2974,6 +3042,9 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 card = self._find_card_by_entity_id(entity_id)
             if card is None:
                 self.template_picker_status = "Card no longer open"
+                return False
+            if not card.get("is_edit_mode", False):
+                self.template_picker_status = "Edit mode required"
                 return False
             if not self._convert_card_to_template(card, template):
                 self.template_picker_status = "Could not change class"
@@ -3315,7 +3386,10 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
         self._populate_required_schema_fields(converted, template)
         for field_key, value in self._template_initial_fields(template).items():
-            if field_key not in {"id", "_dataset", "pretty_name", "name", "type"}:
+            if (
+                field_key not in {"id", "_dataset", "pretty_name", "name", "type"}
+                and converted.get(field_key) in (None, "", [])
+            ):
                 converted[field_key] = value
 
         entity.clear()
@@ -4917,6 +4991,18 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         if event.button != 1:
             return None
 
+        if self.timeline_splitter_click_pending:
+            should_toggle = self.timeline_splitter_pending_toggle
+            self._clear_timeline_splitter_click()
+            self.active_timeline_resize = False
+            self.active_timeline_pan = False
+            self.timeline_resize_start_mouse_y = None
+            self.timeline_resize_start_height = None
+            self.timeline_pan_last_mouse_x = None
+            if should_toggle:
+                self._toggle_timeline_collapsed()
+            return "__ui_consumed__"
+
         self.active_timeline_resize = False
         self.active_timeline_pan = False
         self.timeline_resize_start_mouse_y = None
@@ -4939,6 +5025,17 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         return "__ui_consumed__"
 
     def _handle_mousemotion_event(self, event):
+        if self.timeline_splitter_click_pending:
+            start_pos = self.timeline_splitter_pending_mouse_pos
+            if start_pos is None:
+                start_pos = event.pos
+            moved_y = abs(event.pos[1] - start_pos[1])
+            moved_x = abs(event.pos[0] - start_pos[0])
+            if not self.timeline_collapsed and (moved_y >= 3 or moved_x >= 6):
+                self._begin_timeline_resize(start_pos)
+            else:
+                return "__ui_consumed__"
+
         if self.active_timeline_resize:
             dy = event.pos[1] - self.timeline_resize_start_mouse_y
             self.timeline_panel_height = self._clamp_timeline_panel_height(
@@ -5877,7 +5974,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
         self.timeline_ui.set_rect(timeline_rect)
         self.timeline_ui.set_font(font)
-        self.timeline_ui.draw(screen, font)
+        if not self.timeline_collapsed and timeline_rect.height > 0:
+            self.timeline_ui.draw(screen, font)
 
         pygame.draw.rect(screen, (28, 32, 46), timeline_splitter_rect)
         pygame.draw.line(
@@ -5890,14 +5988,20 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
         grip_half_w = 26
         grip_center_x = timeline_splitter_rect.centerx
-        for offset in (-3, 0, 3):
-            pygame.draw.line(
-                screen,
-                (170, 176, 196),
-                (grip_center_x - grip_half_w, timeline_splitter_rect.centery + offset),
-                (grip_center_x + grip_half_w, timeline_splitter_rect.centery + offset),
-                1,
-            )
+        toggle_rect = getattr(self, "timeline_splitter_toggle_rect", None)
+        if toggle_rect is not None and toggle_rect.width > 0:
+            toggle_fill = (46, 52, 70) if self.timeline_collapsed else (36, 42, 58)
+            pygame.draw.rect(screen, toggle_fill, toggle_rect)
+            pygame.draw.rect(screen, (150, 160, 182), toggle_rect, 1)
+            toggle_bar_half_w = max(8, min(grip_half_w, toggle_rect.width // 2 - 8))
+            for offset in (-2, 2):
+                pygame.draw.line(
+                    screen,
+                    (226, 232, 244),
+                    (toggle_rect.centerx - toggle_bar_half_w, toggle_rect.centery + offset),
+                    (toggle_rect.centerx + toggle_bar_half_w, toggle_rect.centery + offset),
+                    1,
+                )
 
         pygame.draw.rect(screen, (12, 12, 20), left_rect)
         pygame.draw.rect(screen, (200, 200, 200), left_rect, 1)
@@ -6221,6 +6325,14 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             self.timeline_pan_last_mouse_x = mouse_pos[0]
             return "__ui_consumed__"
 
+        if timeline_splitter_rect.collidepoint(mouse_pos):
+            toggle_hit = (
+                self.timeline_splitter_toggle_rect is not None
+                and self.timeline_splitter_toggle_rect.collidepoint(mouse_pos)
+            )
+            self._begin_timeline_splitter_click(mouse_pos, toggle=toggle_hit)
+            return "__ui_consumed__"
+
         if self.random_entry_button is not None and self.random_entry_button.rect.collidepoint(mouse_pos):
             self._create_random_entry_card()
             return "__ui_consumed__"
@@ -6280,12 +6392,6 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         template_picker_result = self._handle_template_picker_click(mouse_pos)
         if template_picker_result is not None:
             return template_picker_result
-
-        if timeline_splitter_rect.collidepoint(mouse_pos):
-            self.active_timeline_resize = True
-            self.timeline_resize_start_mouse_y = mouse_pos[1]
-            self.timeline_resize_start_height = self.timeline_panel_height
-            return "__ui_consumed__"
 
         left_result = self._handle_left_panel_click(mouse_pos, left_rect)
         if left_result is not None:
