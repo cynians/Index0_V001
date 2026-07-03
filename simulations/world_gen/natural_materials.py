@@ -13,6 +13,7 @@ NATURAL_MATERIAL_CATALOG = [
         "chemical_formula": "SiO2",
         "material_subclass": "mineral",
         "scientific_classification": "silicate mineral; tectosilicate; silica group",
+        "display_color": [190, 189, 185],
         "required_element_thresholds": {"O": 20.0, "Si": 8.0},
         "favorable_planet_tags": ["silica_rich_crust", "felsic_crust", "intermediate_silicate_crust", "weathered_surface"],
     },
@@ -23,6 +24,7 @@ NATURAL_MATERIAL_CATALOG = [
         "chemical_formula": "(Na,Ca)(Al,Si)4O8",
         "material_subclass": "mineral",
         "scientific_classification": "silicate mineral; tectosilicate; feldspar group",
+        "display_color": [176, 166, 148],
         "required_element_thresholds": {"O": 25.0, "Si": 8.0, "Al": 3.0},
         "required_element_groups": [{"elements": ["Na", "Ca"], "threshold": 1.0}],
         "favorable_planet_tags": ["silicate_crust", "felsic_crust", "intermediate_silicate_crust", "mafic_crust"],
@@ -34,6 +36,7 @@ NATURAL_MATERIAL_CATALOG = [
         "chemical_formula": "KAlSi3O8",
         "material_subclass": "mineral",
         "scientific_classification": "silicate mineral; tectosilicate; feldspar group",
+        "display_color": [196, 178, 150],
         "required_element_thresholds": {"O": 20.0, "Si": 8.0, "Al": 2.0, "K": 0.8},
         "favorable_planet_tags": ["felsic_crust", "silica_rich_crust"],
     },
@@ -44,6 +47,7 @@ NATURAL_MATERIAL_CATALOG = [
         "chemical_formula": "(Mg,Fe)2SiO4",
         "material_subclass": "mineral",
         "scientific_classification": "silicate mineral; nesosilicate; olivine group",
+        "display_color": [122, 136, 82],
         "required_element_thresholds": {"O": 18.0, "Si": 6.0},
         "required_element_groups": [{"elements": ["Mg", "Fe"], "threshold": 3.0}],
         "favorable_planet_tags": ["mafic_crust", "ultramafic_tendency", "volcanic_surface"],
@@ -55,6 +59,7 @@ NATURAL_MATERIAL_CATALOG = [
         "chemical_formula": "XY(Si,Al)2O6",
         "material_subclass": "mineral",
         "scientific_classification": "silicate mineral; single-chain inosilicate; pyroxene group",
+        "display_color": [88, 104, 82],
         "required_element_thresholds": {"O": 18.0, "Si": 6.0},
         "required_element_groups": [{"elements": ["Mg", "Fe", "Ca"], "threshold": 3.0}],
         "favorable_planet_tags": ["mafic_crust", "volcanic_surface", "basaltic_surface"],
@@ -66,6 +71,7 @@ NATURAL_MATERIAL_CATALOG = [
         "chemical_formula": "A0-1B2C5T8O22(OH,F,Cl)2",
         "material_subclass": "mineral",
         "scientific_classification": "silicate mineral; double-chain inosilicate; amphibole group",
+        "display_color": [76, 92, 74],
         "required_element_thresholds": {"O": 18.0, "Si": 6.0, "Ca": 0.8},
         "required_element_groups": [{"elements": ["Mg", "Fe"], "threshold": 2.0}],
         "favorable_planet_tags": ["hydrated_crust", "active_hydrology", "plate_tectonic_surface"],
@@ -77,6 +83,7 @@ NATURAL_MATERIAL_CATALOG = [
         "chemical_formula": "K(Mg,Fe)3AlSi3O10(OH)2",
         "material_subclass": "mineral",
         "scientific_classification": "silicate mineral; phyllosilicate; mica group",
+        "display_color": [78, 64, 50],
         "required_element_thresholds": {"O": 18.0, "Si": 6.0, "Al": 2.0, "K": 0.6},
         "required_element_groups": [{"elements": ["Mg", "Fe"], "threshold": 2.0}],
         "favorable_planet_tags": ["hydrated_crust", "felsic_crust", "intermediate_silicate_crust"],
@@ -88,6 +95,7 @@ NATURAL_MATERIAL_CATALOG = [
         "chemical_formula": "CaCO3",
         "material_subclass": "mineral",
         "scientific_classification": "carbonate mineral; calcite group",
+        "display_color": [210, 207, 190],
         "required_element_thresholds": {"O": 12.0, "Ca": 1.0, "C": 0.02},
         "favorable_planet_tags": ["carbonate_favorable", "active_hydrology", "co2_bearing_atmosphere"],
     },
@@ -98,6 +106,7 @@ NATURAL_MATERIAL_CATALOG = [
         "chemical_formula": "CaSO4*2H2O",
         "material_subclass": "mineral",
         "scientific_classification": "sulfate mineral; gypsum group",
+        "display_color": [218, 213, 194],
         "required_element_thresholds": {"O": 12.0, "Ca": 1.0, "S": 0.02},
         "favorable_planet_tags": ["evaporite_favorable", "active_hydrology", "arid_surface"],
     },
@@ -108,6 +117,7 @@ NATURAL_MATERIAL_CATALOG = [
         "chemical_formula": "Fe2O3",
         "material_subclass": "mineral",
         "scientific_classification": "oxide mineral; hematite group",
+        "display_color": [150, 68, 50],
         "required_element_thresholds": {"O": 12.0, "Fe": 2.0},
         "favorable_planet_tags": ["oxidizing_surface", "iron_rich_crust", "weathered_surface"],
     },
@@ -118,6 +128,7 @@ NATURAL_MATERIAL_CATALOG = [
         "chemical_formula": "Fe3O4",
         "material_subclass": "mineral",
         "scientific_classification": "oxide mineral; spinel group",
+        "display_color": [52, 50, 48],
         "required_element_thresholds": {"O": 12.0, "Fe": 2.5},
         "favorable_planet_tags": ["iron_rich_crust", "mafic_crust", "basaltic_surface"],
     },
@@ -128,6 +139,7 @@ NATURAL_MATERIAL_CATALOG = [
         "chemical_formula": "FeTiO3",
         "material_subclass": "mineral",
         "scientific_classification": "oxide mineral; ilmenite group",
+        "display_color": [62, 58, 56],
         "required_element_thresholds": {"O": 12.0, "Fe": 1.0, "Ti": 0.05},
         "favorable_planet_tags": ["titanium_bearing_crust", "mafic_crust", "basaltic_surface"],
     },
@@ -138,6 +150,7 @@ NATURAL_MATERIAL_CATALOG = [
         "chemical_formula": "mafic silicate rock",
         "material_subclass": "rock",
         "scientific_classification": "igneous rock; volcanic; mafic",
+        "display_color": [72, 76, 70],
         "required_element_thresholds": {"O": 20.0, "Si": 8.0, "Fe": 1.5, "Mg": 0.8},
         "favorable_planet_tags": ["mafic_crust", "volcanic_surface", "basaltic_surface"],
     },
@@ -148,6 +161,7 @@ NATURAL_MATERIAL_CATALOG = [
         "chemical_formula": "felsic intrusive silicate rock",
         "material_subclass": "rock",
         "scientific_classification": "igneous rock; plutonic; felsic",
+        "display_color": [174, 162, 146],
         "required_element_thresholds": {"O": 22.0, "Si": 10.0, "Al": 3.0, "K": 0.5},
         "favorable_planet_tags": ["felsic_crust", "silica_rich_crust", "plate_tectonic_surface"],
     },
@@ -158,8 +172,20 @@ NATURAL_MATERIAL_CATALOG = [
         "chemical_formula": "siliciclastic sedimentary rock",
         "material_subclass": "rock",
         "scientific_classification": "sedimentary rock; clastic; arenite/wacke spectrum",
+        "display_color": [178, 150, 116],
         "required_element_thresholds": {"O": 20.0, "Si": 8.0},
         "favorable_planet_tags": ["active_hydrology", "aeolian_surface", "weathered_surface"],
+    },
+    {
+        "id": "mat_silica_sand",
+        "name": "Silica Sand",
+        "scientific_name": "quartz sand",
+        "chemical_formula": "SiO2-dominant granular sediment",
+        "material_subclass": "sediment",
+        "scientific_classification": "unconsolidated sediment; siliciclastic; quartz-rich sand",
+        "display_color": [188, 174, 140],
+        "required_element_thresholds": {"O": 20.0, "Si": 8.0},
+        "favorable_planet_tags": ["aeolian_surface", "active_hydrology", "weathered_surface", "silica_rich_crust"],
     },
     {
         "id": "mat_clay_rich_regolith",
@@ -168,6 +194,7 @@ NATURAL_MATERIAL_CATALOG = [
         "chemical_formula": "hydrated aluminosilicate regolith",
         "material_subclass": "regolith",
         "scientific_classification": "unconsolidated regolith; secondary phyllosilicate assemblage",
+        "display_color": [132, 118, 92],
         "required_element_thresholds": {"O": 20.0, "Si": 8.0, "Al": 2.0},
         "favorable_planet_tags": ["weathered_surface", "active_hydrology", "hydrated_crust"],
     },
@@ -178,6 +205,7 @@ NATURAL_MATERIAL_CATALOG = [
         "chemical_formula": "fragmental host-rock mixture",
         "material_subclass": "regolith",
         "scientific_classification": "impactite; breccia; clastic rock/regolith",
+        "display_color": [118, 112, 104],
         "required_element_thresholds": {"O": 12.0, "Si": 4.0},
         "favorable_planet_tags": ["cratered_regolith", "airless_regolith", "impact_gardening"],
     },
@@ -323,6 +351,47 @@ GAS_MATERIAL_BY_MOLECULE = {
     for material in ATMOSPHERIC_MATERIAL_CATALOG
 }
 
+MATERIAL_BY_ID = {
+    material["id"]: material
+    for material in [*ELEMENT_MATERIAL_CATALOG, *NATURAL_MATERIAL_CATALOG, *ATMOSPHERIC_MATERIAL_CATALOG]
+}
+
+
+def _coerce_color(value, fallback=None):
+    if isinstance(value, (list, tuple)) and len(value) >= 3:
+        try:
+            return [max(0, min(255, int(value[index]))) for index in range(3)]
+        except (TypeError, ValueError):
+            return fallback
+    return fallback
+
+
+def material_display_color(material_id, fallback=None):
+    material = MATERIAL_BY_ID.get(str(material_id or ""))
+    if not isinstance(material, dict):
+        return _coerce_color(fallback, [142, 142, 136])
+    return _coerce_color(material.get("display_color"), _coerce_color(material.get("band_color"), _coerce_color(fallback, [142, 142, 136])))
+
+
+def _blend_colors(weighted_colors, fallback=(132, 126, 116)):
+    total = sum(max(0.0, float(weight or 0.0)) for _color, weight in weighted_colors)
+    if total <= 0.0:
+        return list(fallback)
+    channels = [0.0, 0.0, 0.0]
+    for color, weight in weighted_colors:
+        color = _coerce_color(color)
+        if color is None:
+            continue
+        weight = max(0.0, float(weight or 0.0))
+        for index in range(3):
+            channels[index] += color[index] * weight
+    return [max(24, min(238, int(round(value / total)))) for value in channels]
+
+
+def _shift_color(color, offset):
+    color = _coerce_color(color, [132, 126, 116])
+    return [max(20, min(245, int(channel + offset))) for channel in color]
+
 
 def natural_material_entries():
     entries = []
@@ -352,7 +421,7 @@ def natural_material_entries():
             "favorable_planet_tags": list(material.get("favorable_planet_tags") or []),
             "atmosphere_molecule": material.get("atmosphere_molecule"),
             "molar_mass_kg_mol": material.get("molar_mass_kg_mol"),
-            "display_color": list(material.get("band_color") or []),
+            "display_color": material_display_color(material["id"]),
             "tags": [
                 material.get("material_class", "natural_material"),
                 material["material_subclass"],
@@ -401,6 +470,7 @@ def derive_atmospheric_material_model(atmosphere):
             "fraction": round(fraction, 6),
             "percent": round(fraction * 100.0, 3),
             "band_color": list(material["band_color"]),
+            "display_color": material_display_color(material["id"], material["band_color"]),
         })
     candidates.sort(key=lambda item: (-item["fraction"], item["name"]))
     return {
@@ -587,12 +657,17 @@ def derive_natural_material_model(crust_composition, planet_tags):
             "material_subclass": material["material_subclass"],
             "scientific_classification": material["scientific_classification"],
             "chemical_formula": material["chemical_formula"],
+            "display_color": material_display_color(material["id"]),
             "confidence": confidence,
             "occurrence": occurrence,
             "evidence_tags": favorable,
         })
 
     candidates.sort(key=lambda item: (-item["confidence"], item["name"]))
+    palette = derive_planet_surface_palette({
+        "likely_materials": candidates,
+        "element_profile": elements,
+    })
     return {
         "status": "inferred",
         "catalog_version": NATURAL_MATERIAL_CATALOG_VERSION,
@@ -600,4 +675,72 @@ def derive_natural_material_model(crust_composition, planet_tags):
         "element_profile": elements,
         "likely_materials": candidates,
         "dominant_materials": [item["material_id"] for item in candidates[:5]],
+        "surface_palette": palette,
+    }
+
+
+def derive_planet_surface_palette(material_model, atmosphere=None, terrain=None):
+    material_model = material_model if isinstance(material_model, dict) else {}
+    atmosphere = atmosphere if isinstance(atmosphere, dict) else {}
+    terrain = terrain if isinstance(terrain, dict) else {}
+    weighted = []
+    evidence = []
+
+    for index, item in enumerate(material_model.get("likely_materials") or []):
+        if not isinstance(item, dict):
+            continue
+        material_id = item.get("material_id")
+        color = material_display_color(material_id, item.get("display_color"))
+        confidence = max(0.05, float(item.get("confidence", item.get("fraction", 0.0)) or 0.0))
+        rank_weight = max(0.25, 1.0 - index * 0.11)
+        weight = confidence * rank_weight
+        weighted.append((color, weight))
+        evidence.append({
+            "material_id": material_id,
+            "name": item.get("name"),
+            "weight": round(weight, 4),
+            "display_color": color,
+        })
+        if index >= 7:
+            break
+
+    element_profile = material_model.get("element_profile") if isinstance(material_model.get("element_profile"), dict) else {}
+    for symbol, abundance in sorted(element_profile.items(), key=lambda row: -float(row[1] or 0.0))[:4]:
+        element_id = f"mat_element_{str(symbol).lower()}"
+        color = material_display_color(element_id)
+        weight = max(0.0, float(abundance or 0.0)) / 100.0 * 0.35
+        weighted.append((color, weight))
+        evidence.append({
+            "material_id": element_id,
+            "name": symbol,
+            "weight": round(weight, 4),
+            "display_color": color,
+        })
+
+    hydrology = terrain.get("hydrology") if isinstance(terrain.get("hydrology"), dict) else {}
+    try:
+        ocean_fraction = float(hydrology.get("target_ocean_fraction", 0.0) or 0.0)
+        ice_fraction = float(hydrology.get("target_ice_fraction", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        ocean_fraction = 0.0
+        ice_fraction = 0.0
+    if ocean_fraction > 0.02:
+        weighted.append(([36, 82, 128], min(0.8, ocean_fraction * 1.15)))
+    if ice_fraction > 0.02:
+        weighted.append(([210, 224, 232], min(0.65, ice_fraction * 1.0)))
+
+    if not weighted and isinstance(atmosphere.get("composition"), list):
+        atmosphere_palette = atmospheric_band_palette(atmosphere)
+        weighted.append((atmosphere_palette.get("base_color", [150, 160, 172]), 1.0))
+
+    surface = _blend_colors(weighted)
+    return {
+        "surface_color": surface,
+        "palette": [
+            _shift_color(surface, -28),
+            surface,
+            _shift_color(surface, 24),
+            _shift_color(surface, -12),
+        ],
+        "evidence": evidence[:8],
     }

@@ -44,6 +44,29 @@ def _tectonic_regime(seed, physics, internal_heat_w_m2, mantle_present, liquid_w
     return "stagnant_lid"
 
 
+def _element_abundance_percent(seed, symbol):
+    composition = seed.get("crust_composition") if isinstance(seed.get("crust_composition"), dict) else {}
+    total = 0.0
+    for bucket in ("major_elements", "trace_elements"):
+        for element in composition.get(bucket, []) or []:
+            if element.get("symbol") == symbol:
+                try:
+                    total += float(element.get("abundance_percent", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    pass
+    return total
+
+
+def _radiogenic_heat_multiplier(seed):
+    potassium = _element_abundance_percent(seed, "K")
+    uranium = _element_abundance_percent(seed, "U")
+    thorium = _element_abundance_percent(seed, "Th")
+    multiplier = 0.72 + min(1.1, potassium / 2.7 * 0.18)
+    multiplier += min(0.9, uranium / 0.00018 * 0.26)
+    multiplier += min(0.9, thorium / 0.00075 * 0.24)
+    return _clamp(multiplier, 0.35, 2.4)
+
+
 def derive_interior_regime_model(seed, physics, atmosphere, crust_type="unknown"):
     seed = seed if isinstance(seed, dict) else {}
     physics = physics if isinstance(physics, dict) else {}
@@ -73,7 +96,8 @@ def derive_interior_regime_model(seed, physics, atmosphere, crust_type="unknown"
     size_factor = radius_earth ** 0.75
     core_heat_factor = 0.35 + core_fraction
     mantle_heat_factor = _clamp(mantle_fraction / 0.44, 0.0, 1.4)
-    internal_heat_w_m2 = 0.087 * size_factor * core_heat_factor * mantle_heat_factor
+    radiogenic_multiplier = _radiogenic_heat_multiplier(seed)
+    internal_heat_w_m2 = 0.087 * size_factor * core_heat_factor * mantle_heat_factor * radiogenic_multiplier
     internal_heat_w_m2 = max(0.0, internal_heat_w_m2)
 
     liquid_water_possible = (
@@ -171,13 +195,29 @@ def derive_interior_regime_model(seed, physics, atmosphere, crust_type="unknown"
             "mantle_present": mantle_present,
             "crust_thickness_km": crust_thickness_km,
             "internal_heat_w_m2": internal_heat_w_m2,
+            "radiogenic_heat_multiplier": radiogenic_multiplier,
             "tectonic_regime": tectonics,
             "volcanic_activity": volcanic_activity,
             "crust_type": crust_type,
         },
+        "thermal_evolution": {
+            "model_version": "thermal_evolution_v001",
+            "radiogenic_elements": {
+                "K_percent": round(_element_abundance_percent(seed, "K"), 5),
+                "U_percent": round(_element_abundance_percent(seed, "U"), 6),
+                "Th_percent": round(_element_abundance_percent(seed, "Th"), 6),
+            },
+            "radiogenic_heat_multiplier": round(radiogenic_multiplier, 3),
+            "internal_heat_w_m2": round(internal_heat_w_m2, 5),
+            "mantle_fraction": round(mantle_fraction, 4),
+            "water_weakening_factor": round(1.0 + water_fraction * 0.35, 3),
+            "derived_tectonic_regime": tectonics,
+            "note": "Initial thermal model derives heat from size, core/mantle geometry, and K/U/Th abundance; explicit seed modes may still override until the workflow is fully derived.",
+        },
         "surface_processes": {
             "surface_pressure_bar": pressure_bar,
             "surface_temperature_k": surface_temp_k,
+            "surface_temperature_c": surface_temp_k - 273.15,
             "surface_gravity_g": gravity_g,
             "liquid_water_possible": liquid_water_possible,
             "hydrologic_cycle": hydrologic_cycle,

@@ -323,21 +323,39 @@ def _smooth_height_rows(rows, passes=1, blend=0.35):
     return smoothed
 
 
+def _ice_score(nx, ny, elevation, min_elevation, max_elevation, map_seed=""):
+    latitude_polarity = abs(ny - 0.5) * 2.0
+    elevation_norm = (float(elevation) - float(min_elevation)) / max(1.0, float(max_elevation) - float(min_elevation))
+    ridge_noise = (
+        math.sin(nx * math.tau * seed_range(map_seed, "ice_freq_a", 1.2, 2.8) + seed_range(map_seed, "ice_phase_a", 0.0, math.tau))
+        + math.cos((nx + ny) * math.tau * seed_range(map_seed, "ice_freq_b", 0.8, 1.9) + seed_range(map_seed, "ice_phase_b", 0.0, math.tau))
+    ) * 0.08
+    return latitude_polarity * 0.68 + elevation_norm * 0.22 + ridge_noise
+
+
 def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tectonic_model=None, crater_model=None):
     terrain = terrain if isinstance(terrain, dict) else {}
     heightfield = terrain.get("heightfield") if isinstance(terrain.get("heightfield"), dict) else {}
     canvas = terrain.get("map_canvas") if isinstance(terrain.get("map_canvas"), dict) else {}
     map_seed = terrain.get("map_seed") or resolved_map_seed(seed, planet_id=planet_id)
+    simulated_age_myr = float(terrain.get("simulated_age_myr", 0.0) or 0.0)
 
     width_px = int(canvas.get("width_px", 2048) or 2048)
     height_px = int(canvas.get("height_px", 1024) or 1024)
     min_elevation = float(heightfield.get("min_elevation_m", -4000.0) or -4000.0)
     max_elevation = float(heightfield.get("max_elevation_m", 4000.0) or 4000.0)
     sea_level = heightfield.get("sea_level_m")
-    if sea_level is None:
-        hydrology = terrain.get("hydrology") if isinstance(terrain.get("hydrology"), dict) else {}
-        if hydrology.get("liquid_water_possible") or float(hydrology.get("target_ocean_fraction", 0.0) or 0.0) > 0:
-            sea_level = 0.0
+    hydrology = terrain.get("hydrology") if isinstance(terrain.get("hydrology"), dict) else {}
+    try:
+        target_ocean_fraction = _clamp(hydrology.get("target_ocean_fraction", 0.0), 0.0, 0.92)
+    except (TypeError, ValueError):
+        target_ocean_fraction = 0.0
+    try:
+        target_ice_fraction = _clamp(hydrology.get("target_ice_fraction", 0.0), 0.0, 0.86)
+    except (TypeError, ValueError):
+        target_ice_fraction = 0.0
+    if sea_level is None and not hydrology.get("liquid_water_possible"):
+        target_ocean_fraction = 0.0
     midpoint = (max_elevation + min_elevation) * 0.5
     half_range = max(1.0, (max_elevation - min_elevation) * 0.5)
 
@@ -345,6 +363,7 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
     sample_height = 33
     rows = []
     sample_values = []
+    sample_positions = []
     for row in range(sample_height):
         ny = row / max(1, sample_height - 1)
         row_values = []
@@ -354,6 +373,7 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
             elevation = midpoint + normalized * half_range
             elevation = round(_clamp(elevation, min_elevation, max_elevation), 1)
             row_values.append(elevation)
+            sample_positions.append((col, row, nx, ny, elevation))
         if row_values:
             row_values[-1] = row_values[0]
         sample_values.extend(row_values)
@@ -362,14 +382,65 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
     if isinstance(tectonic_model, dict) and tectonic_model.get("status") == "tectonics_advanced":
         rows = _smooth_height_rows(rows, passes=2, blend=0.28)
         sample_values = [value for row in rows for value in row]
+        sample_positions = [
+            (
+                col,
+                row,
+                0.0 if col == sample_width - 1 else col / max(1, sample_width - 1),
+                row / max(1, sample_height - 1),
+                rows[row][col],
+            )
+            for row in range(sample_height)
+            for col in range(sample_width)
+        ]
+    if simulated_age_myr > 0.0:
+        age_passes = min(5, max(1, int(simulated_age_myr // 25.0)))
+        erosion_blend = min(0.34, 0.08 + simulated_age_myr / 1400.0)
+        if target_ice_fraction > 0.0:
+            erosion_blend += min(0.08, target_ice_fraction * 0.08)
+        rows = _smooth_height_rows(rows, passes=age_passes, blend=erosion_blend)
+        sample_values = [value for row in rows for value in row]
+        sample_positions = [
+            (
+                col,
+                row,
+                0.0 if col == sample_width - 1 else col / max(1, sample_width - 1),
+                row / max(1, sample_height - 1),
+                rows[row][col],
+            )
+            for row in range(sample_height)
+            for col in range(sample_width)
+        ]
 
     sample_count = max(1, len(sample_values))
+    if sea_level is None and target_ocean_fraction > 0.0 and sample_values:
+        sorted_values = sorted(sample_values)
+        index = max(0, min(len(sorted_values) - 1, int(round(target_ocean_fraction * (len(sorted_values) - 1)))))
+        sea_level = sorted_values[index]
     broad_plain_fraction = sum(-2000.0 <= value <= 1000.0 for value in sample_values) / sample_count
     mountain_fraction = sum(value > 2000.0 for value in sample_values) / sample_count
     deep_basin_fraction = sum(value < -2000.0 for value in sample_values) / sample_count
-    sea_level_value = 0.0 if sea_level is None else float(sea_level)
-    ocean_fraction = sum(value < sea_level_value for value in sample_values) / sample_count
+    sea_level_value = None if sea_level is None else float(sea_level)
+    ocean_fraction = 0.0 if sea_level_value is None else sum(value < sea_level_value for value in sample_values) / sample_count
     land_fraction = 1.0 - ocean_fraction
+    ice_rows = [[False for _col in range(sample_width)] for _row in range(sample_height)]
+    if target_ice_fraction > 0.0 and sample_positions:
+        scored = [
+            (
+                _ice_score(nx, ny, elevation, min_elevation, max_elevation, map_seed=map_seed),
+                col,
+                row,
+            )
+            for col, row, nx, ny, elevation in sample_positions
+        ]
+        scored.sort(reverse=True)
+        ice_count = int(round(target_ice_fraction * len(scored)))
+        for _score, col, row in scored[:ice_count]:
+            ice_rows[row][col] = True
+        for row in range(sample_height):
+            ice_rows[row][-1] = ice_rows[row][0]
+    ice_count = sum(1 for row in ice_rows for value in row if value)
+    ice_fraction = ice_count / sample_count
 
     return {
         "status": "heightmap_seeded",
@@ -387,6 +458,7 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         "min_elevation_m": round(min_elevation, 1),
         "max_elevation_m": round(max_elevation, 1),
         "sea_level_m": None if sea_level is None else round(float(sea_level), 1),
+        "simulated_age_myr": round(simulated_age_myr, 1),
         "sample_grid": {
             "width": sample_width,
             "height": sample_height,
@@ -396,12 +468,18 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
             "spacing_y_px": round(height_px / max(1, sample_height - 1), 4),
             "rows": rows,
         },
+        "surface_masks": {
+            "ice_rows": ice_rows,
+            "ice_source": "frozen_water_inventory" if target_ice_fraction > 0.0 else None,
+            "target_ice_fraction": round(target_ice_fraction, 3),
+        },
         "hypsometry_summary": {
             "broad_plain_fraction": round(broad_plain_fraction, 3),
             "mountain_fraction_above_2000m": round(mountain_fraction, 3),
             "deep_basin_fraction_below_minus_2000m": round(deep_basin_fraction, 3),
             "land_fraction": round(land_fraction, 3),
             "ocean_fraction": round(ocean_fraction, 3),
+            "ice_fraction": round(ice_fraction, 3),
         },
         "storage": {
             "kind": "chunked_heightfield_seed",

@@ -2820,6 +2820,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         close_rect = pygame.Rect(rect.right - 24, rect.y + 12, 18, 18)
         edit_toggle_rect = pygame.Rect(rect.right - 48, rect.y + 12, 20, 20)
         idea_button_rect = pygame.Rect(rect.right - 72, rect.y + 12, 20, 20)
+        template_button_rect = None
         relation_tree_rect = None
         time_anchor_rect = None
         delete_rect = None
@@ -2830,7 +2831,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             header_reserved_w = 168
         else:
             relation_tree_rect = pygame.Rect(rect.right - 96, rect.y + 12, 20, 20)
-            header_reserved_w = 144
+            template_button_rect = pygame.Rect(rect.right - 120, rect.y + 12, 20, 20)
+            header_reserved_w = 168
 
         header_icon_ref = self._resolve_card_icon_reference()
         header_icon_rect = pygame.Rect(rect.x + 10, rect.y + 8, 34, 34) if header_icon_ref else None
@@ -3758,6 +3760,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         card["resize_hitboxes"] = resize_hitboxes
         card["edit_toggle_rect"] = edit_toggle_rect
         card["idea_button_rect"] = idea_button_rect
+        card["template_button_rect"] = template_button_rect
         card["relation_tree_rect"] = relation_tree_rect
         card["header_icon_ref"] = header_icon_ref
         card["header_icon_rect"] = header_icon_rect
@@ -4027,6 +4030,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
         edit_toggle_rect = card.get("edit_toggle_rect")
         idea_button_rect = card.get("idea_button_rect")
+        template_button_rect = card.get("template_button_rect")
         relation_tree_rect = card.get("relation_tree_rect")
         time_anchor_rect = card.get("time_anchor_rect")
         delete_rect = card.get("delete_rect")
@@ -4037,6 +4041,13 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             idea_text = font.render("I", True, (230, 244, 218))
             idea_text_rect = idea_text.get_rect(center=idea_button_rect.center)
             screen.blit(idea_text, idea_text_rect)
+
+        if template_button_rect is not None:
+            pygame.draw.rect(screen, (54, 50, 66), template_button_rect)
+            pygame.draw.rect(screen, (176, 160, 210), template_button_rect, 1)
+            template_text = font.render("T", True, (238, 230, 255))
+            template_text_rect = template_text.get_rect(center=template_button_rect.center)
+            screen.blit(template_text, template_text_rect)
 
         if relation_tree_rect is not None:
             pygame.draw.rect(screen, (52, 56, 68), relation_tree_rect)

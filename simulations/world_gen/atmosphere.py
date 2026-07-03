@@ -1,6 +1,7 @@
 import math
 
 from simulations.world_gen.planetary_physics import GRAVITATIONAL_CONSTANT
+from simulations.world_gen.formation_theory import volatile_history_from_seed
 
 
 AU_M = 149_597_870_700.0
@@ -322,6 +323,7 @@ def derive_atmosphere_model(seed, physics, stellar_luminosity_solar, semi_major_
         adjusted = {"CO2": 1.0}
         total = 1.0
     retained_column_fraction = total / raw_total if raw_total > 0 else 0.0
+    volatile_history = volatile_history_from_seed(seed, retained_column_fraction=retained_column_fraction)
     if gas_giant:
         pressure_bar = max(100.0, volatile_supply_bar * retained_column_fraction)
     else:
@@ -370,11 +372,15 @@ def derive_atmosphere_model(seed, physics, stellar_luminosity_solar, semi_major_
         "atmosphere_class": atmosphere_class,
         "has_solid_surface": not gas_giant,
         "equilibrium_temperature_k": equilibrium_temp,
+        "equilibrium_temperature_c": equilibrium_temp - 273.15,
         "estimated_surface_temperature_k": surface_temp,
+        "estimated_surface_temperature_c": surface_temp - 273.15,
         "greenhouse_delta_k": greenhouse_k,
         "exobase_temperature_k": exobase_temp,
+        "exobase_temperature_c": exobase_temp - 273.15,
         "escape_velocity_m_s": escape_velocity,
         "volatile_supply_bar": volatile_supply_bar,
+        "volatile_history": volatile_history,
         "retained_column_fraction": retained_column_fraction,
         "surface_pressure_bar": pressure_bar,
         "composition": composition,

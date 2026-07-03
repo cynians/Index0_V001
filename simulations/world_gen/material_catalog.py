@@ -112,6 +112,74 @@ TRACE_PROMOTION_ABUNDANCE_BY_RARITY = {
     "synthetic_or_transient": 0.01,
 }
 
+ELEMENT_GROUP_COLORS = {
+    "nonmetal": [168, 168, 160],
+    "noble_gas": [198, 188, 218],
+    "alkali_metal": [186, 166, 120],
+    "alkaline_earth_metal": [184, 178, 148],
+    "metalloid": [126, 132, 118],
+    "halogen": [170, 164, 110],
+    "post_transition_metal": [154, 158, 158],
+    "transition_metal": [138, 136, 132],
+    "lanthanide": [160, 150, 128],
+    "actinide": [126, 138, 112],
+}
+
+ELEMENT_DISPLAY_COLORS = {
+    "H": [218, 207, 178],
+    "He": [224, 216, 195],
+    "C": [42, 42, 38],
+    "N": [156, 172, 194],
+    "O": [150, 176, 204],
+    "F": [178, 190, 110],
+    "Ne": [190, 160, 178],
+    "Na": [190, 176, 142],
+    "Mg": [178, 180, 170],
+    "Al": [174, 178, 180],
+    "Si": [116, 116, 108],
+    "P": [184, 118, 74],
+    "S": [214, 188, 62],
+    "Cl": [162, 180, 92],
+    "Ar": [160, 156, 170],
+    "K": [166, 148, 116],
+    "Ca": [192, 188, 170],
+    "Ti": [132, 134, 138],
+    "Cr": [114, 128, 116],
+    "Mn": [134, 124, 120],
+    "Fe": [112, 92, 76],
+    "Co": [78, 96, 148],
+    "Ni": [154, 152, 136],
+    "Cu": [184, 104, 56],
+    "Zn": [154, 160, 164],
+    "As": [120, 126, 110],
+    "Se": [150, 74, 62],
+    "Br": [110, 62, 46],
+    "Ag": [196, 198, 194],
+    "Sn": [168, 170, 166],
+    "I": [78, 58, 96],
+    "Xe": [164, 150, 188],
+    "Ba": [168, 154, 104],
+    "W": [118, 116, 112],
+    "Pt": [198, 198, 188],
+    "Au": [214, 166, 52],
+    "Hg": [166, 168, 172],
+    "Pb": [86, 88, 92],
+    "Bi": [158, 146, 150],
+    "Th": [104, 116, 92],
+    "U": [84, 112, 72],
+}
+
+
+def element_display_color(symbol):
+    symbol = str(symbol or "").strip()
+    if symbol in ELEMENT_DISPLAY_COLORS:
+        return list(ELEMENT_DISPLAY_COLORS[symbol])
+    for candidate_symbol, _name, _atomic_number, group, _rarity, _phase in ELEMENT_CORE_DATA:
+        if candidate_symbol == symbol:
+            return list(ELEMENT_GROUP_COLORS.get(group, [142, 142, 136]))
+    return [142, 142, 136]
+
+
 ELEMENT_MATERIAL_CATALOG = [
     {
         "id": f"mat_element_{symbol.lower()}",
@@ -126,6 +194,7 @@ ELEMENT_MATERIAL_CATALOG = [
         "element_group": group,
         "rarity": rarity,
         "standard_phase": phase,
+        "display_color": element_display_color(symbol),
         "scientific_classification": f"chemical element; {group.replace('_', ' ')}",
     }
     for symbol, name, atomic_number, group, rarity, phase in ELEMENT_CORE_DATA

@@ -13,6 +13,40 @@ class MapRenderer:
         self._image_cache = {}
         self._scaled_image_cache = {}
 
+    def _coerce_rgb(self, value, fallback=(82, 78, 70)):
+        if isinstance(value, (list, tuple)) and len(value) >= 3:
+            try:
+                return tuple(max(0, min(255, int(value[index]))) for index in range(3))
+            except (TypeError, ValueError):
+                return fallback
+        return fallback
+
+    def _mix_rgb(self, color_a, color_b, weight_b):
+        weight_b = max(0.0, min(1.0, float(weight_b or 0.0)))
+        weight_a = 1.0 - weight_b
+        return tuple(
+            max(0, min(255, int(color_a[index] * weight_a + color_b[index] * weight_b)))
+            for index in range(3)
+        )
+
+    def _surface_palette_colors(self, layer):
+        palette = layer.get("surface_palette") if isinstance(layer.get("surface_palette"), dict) else {}
+        palette_colors = palette.get("palette") if isinstance(palette.get("palette"), list) else []
+        colors = [self._coerce_rgb(color) for color in palette_colors[:4]]
+        if len(colors) >= 4:
+            return colors
+
+        base_source = palette.get("surface_color") if palette else None
+        if base_source is None:
+            base_source = layer.get("color") or layer.get("display_color")
+        base = self._coerce_rgb(base_source, fallback=(82, 78, 70))
+        return [
+            self._mix_rgb(base, (12, 14, 14), 0.36),
+            base,
+            self._mix_rgb(base, (218, 214, 198), 0.34),
+            self._mix_rgb(base, (46, 48, 44), 0.18),
+        ]
+
     def _resolve_image_path(self, image_path):
         if not image_path:
             return None
@@ -87,31 +121,37 @@ class MapRenderer:
             )
             screen.blit(text, (rect.x + 6, rect.y + 6))
 
-    def _heightmap_color(self, elevation, heightmap):
-        sea_level = heightmap.get("sea_level_m")
-        sea_level = 0.0 if sea_level is None else float(sea_level or 0.0)
+    def _heightmap_color(self, elevation, heightmap, has_ice=False, layer=None):
+        sea_level_value = heightmap.get("sea_level_m")
+        has_ocean = sea_level_value is not None
+        sea_level = 0.0 if sea_level_value is None else float(sea_level_value or 0.0)
         min_elevation = float(heightmap.get("min_elevation_m", -4000.0) or -4000.0)
         max_elevation = float(heightmap.get("max_elevation_m", 4000.0) or 4000.0)
+        layer = layer if isinstance(layer, dict) else {}
+        land_dark, land_mid, land_high, land_shadow = self._surface_palette_colors(layer)
 
         elevation = float(elevation or 0.0)
-        if elevation < sea_level:
+        if has_ice:
+            relief = min(1.0, (elevation - min_elevation) / max(1.0, max_elevation - min_elevation))
+            return self._mix_rgb(
+                self._mix_rgb((182, 204, 216), land_mid, 0.14),
+                self._mix_rgb((232, 242, 246), land_high, 0.10),
+                relief,
+            )
+        if has_ocean and elevation < sea_level:
             depth = min(1.0, (sea_level - elevation) / max(1.0, sea_level - min_elevation))
-            return (
-                int(14 + 18 * (1.0 - depth)),
-                int(42 + 35 * (1.0 - depth)),
-                int(72 + 78 * (1.0 - depth)),
+            return self._mix_rgb(
+                self._mix_rgb((28, 78, 124), land_mid, 0.08),
+                self._mix_rgb((8, 26, 48), land_shadow, 0.10),
+                depth,
             )
 
         relief = min(1.0, (elevation - sea_level) / max(1.0, max_elevation - sea_level))
-        if relief < 0.24:
-            t = relief / 0.24
-            return (int(50 + 30 * t), int(82 + 48 * t), int(55 + 28 * t))
-        if relief < 0.62:
-            t = (relief - 0.24) / 0.38
-            return (int(80 + 76 * t), int(130 + 42 * t), int(83 + 12 * t))
-        t = (relief - 0.62) / 0.38
-        value = int(156 + 68 * t)
-        return (value, value, int(150 + 72 * t))
+        if relief < 0.45:
+            return self._mix_rgb(land_dark, land_mid, relief / 0.45)
+        if relief < 0.82:
+            return self._mix_rgb(land_mid, land_high, (relief - 0.45) / 0.37)
+        return self._mix_rgb(land_high, (214, 212, 196), (relief - 0.82) / 0.18)
 
     def _draw_heightmap_base_layer(self, screen, layer, camera):
         heightmap = layer.get("heightmap_model") if isinstance(layer, dict) else None
@@ -142,6 +182,8 @@ class MapRenderer:
 
         cell_cols = max(1, min(len(row) for row in rows) - 1)
         cell_rows = max(1, len(rows) - 1)
+        masks = heightmap.get("surface_masks") if isinstance(heightmap.get("surface_masks"), dict) else {}
+        ice_rows = masks.get("ice_rows") if isinstance(masks.get("ice_rows"), list) else []
         clip = screen.get_clip()
         screen.set_clip(rect.clip(screen.get_rect()))
         for row_index in range(cell_rows):
@@ -159,9 +201,15 @@ class MapRenderer:
                     row_b[min(col_index + 1, len(row_b) - 1)],
                 )
                 elevation = sum(float(value or 0.0) for value in values) / 4.0
+                has_ice = (
+                    row_index < len(ice_rows)
+                    and isinstance(ice_rows[row_index], list)
+                    and col_index < len(ice_rows[row_index])
+                    and bool(ice_rows[row_index][col_index])
+                )
                 pygame.draw.rect(
                     screen,
-                    self._heightmap_color(elevation, heightmap),
+                    self._heightmap_color(elevation, heightmap, has_ice=has_ice, layer=layer),
                     pygame.Rect(x0, y0, max(1, x1 - x0), max(1, y1 - y0)),
                 )
         screen.set_clip(clip)

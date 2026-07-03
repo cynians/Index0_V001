@@ -1,6 +1,6 @@
 Index0 Conceptual Layer Overview
 Version: v004
-Date: 2026-06-30
+Date: 2026-07-01
 Purpose: Compact conceptual handoff document for discussing and evolving the program model outside the code editor.
 
 INSTRUCTIONS FOR THE NON-EDITING GPT
@@ -8,98 +8,94 @@ Read this whole document before proposing changes.
 Work conceptually: suggest model changes, terminology, missing concepts, relations, workflows, and unresolved design choices.
 Do not write code unless explicitly asked. Prefer concise, structured notes that can later be implemented by Codex.
 When proposing updates, write them under "Changes to next version" using numbered items.
-Preserve the versioning scheme: the next implemented document should become v004, then v005, and so on.
+Preserve the versioning scheme: the next implemented document should become v005, then v006, and so on.
 If something is uncertain, mark it as an open question rather than inventing a final answer.
 
 CHANGES TO NEXT VERSION
 Changes to next version:
-1. Add a planetary formation theory model as the conceptual foundation for future world generation.
-2. Treat protoplanetary disk location and condensation fronts as template-selection inputs for generated planets.
-3. Add formation-theory generation as a star-system worldgen action that may add one or two plausible planets without overwriting authored worlds.
-4. Add volatile delivery/loss and terraforming logistics as explicit future model targets.
-5. Add thermal evolution and mantle-composition-derived tectonics as preferred replacements for manually chosen tectonic modes.
-6. Add Celsius display as a UI expectation wherever Kelvin temperatures are shown to users.
-+1. Add: Vehicle-card journey planning should become a near-term conceptual target for extant corporal vehicles. From an individual vehicle card, the user should be able to choose an origin location and a destination location, then let Index0 propose a staged journey plan based on location hierarchy, vehicle capabilities, propulsion, surface/domain constraints, and available contextual support.
-+
-+2. Add: Journey planning should initially use a hybrid persistence model. Simple exploratory route previews may remain runtime-only, but accepted, launched, consequential, or multi-stage journeys should be persisted as `activity_periods` on the extant corporal vehicle rather than requiring a new journey entity immediately. Later, important journeys may be promoted into dedicated entities such as transport jobs, missions, voyages, expeditions, or flight plans.
-+
-+3. Add: Individual corporal vehicles should distinguish broad `temporal_periods` from concrete `activity_periods`. `temporal_periods` describe narrative or historical bands such as service eras, ownership eras, or deployment eras. `activity_periods` describe operational episodes such as planned journeys, active journeys, completed journeys, failed journeys, storage, maintenance, loading, refuelling, orbital transfer, landing, and assignment to a site or formation.
-+
-+4. Add: Journey periods should use a simple planning UI but a staged internal model. The user-facing planner may begin with origin, destination, and intent/mode, while the saved activity period can contain stages such as map surface route, atmospheric ascent, orbital transfer, atmospheric entry, landing, interstellar transfer, docking, loading, unloading, and local surface route.
-+
-+5. Add: Journey stage generation should use automatic first drafts with manual override. Index0 should propose required stages from the selected origin/destination, their shared spatial/orbital/star-system context, atmospheric boundary data, parent bodies, stellar-neighbour links, and the vehicle’s propulsion/capability profile. The user should be able to inspect, edit, insert, remove, or replace stages.
-+
-+6. Add: Parent-scope validity should depend on journey domain rather than using one strict same-parent rule. Ground and map routes require a shared map parent or reachable map ancestor. Building/interior routes require a shared building/interior parent. Orbital routes require a shared parent body or local space context. Interplanetary routes require bodies within the same star system. Interstellar routes require origin and destination systems connected through the stellar-neighbourhood graph.
-+
-+7. Add: Vehicle capability should expand routes rather than merely block them. If the selected corporal vehicle cannot complete a journey alone, the planner should propose support stages based on present ontology context: ownership, operator, faction, formation, institution, person role, market access, logistics providers, available sites, ports, launch sites, hangars, orbital stations, and other contextual affordances.
-+
-+8. Add: Journey planning should take propulsion type, propulsion capabilities, and vehicle quirks into account at every stage. Ground surface compatibility, amphibious capability, runway or launch requirements, atmospheric ceiling, ascent capability, delta-v, fuel/energy limits, docking ability, interstellar drive type, reliability quirks, and special restrictions should all be treated as route-shaping constraints.
-+
-+9. Open question resolved: For now, journey plans do not require a new first-class journey entity. The near-term model should persist meaningful plans as vehicle `activity_periods`, with later promotion to mission/job/voyage entities when the plan gains independent identity, obligation, cargo, passengers, authority, or historical importance.
-+
-+10. Open question resolved: The planner should not use one universal same-parent rule. It should resolve the relevant shared scope according to travel domain: map, building, orbital, interplanetary, or interstellar.
-+
-+11. New open question: What exact fields should an `activity_period` support on corporal vehicles, and should this be a generic corporal-entity field shared by vehicles, people, animals, cargo loads, and formations?
-+
-+12. New open question: How should the planner rank support suggestions when multiple contextually available options exist: ownership, authority, cost, speed, safety, legality, faction access, market access, or player preference?
-+
-+13. New open question: Which vehicle capability fields should be normalized first so that route planning can reason over ground surfaces, asphalt/road dependence, atmospheric flight, orbital insertion, interplanetary transfer, and interstellar travel?
-+
-+14. New open question: How should atmospheric boundary data from worldgen be exposed to journey planning so that map trajectory can hand off to planetary orbital simulation at the correct altitude or condition?
 
-+15. Add: Materials should be able to dictate the visual coloration of corporal components. Component illustrations should support a material-tinted rendering workflow where the component stores or references a greyscale base illustration, and the visible color is derived from the assigned material or material mixture.
++ Add: `activity_periods` should use a hybrid persistence model. Ordinary operational episodes remain embedded on the corporal entity. Important episodes may be promoted into standalone records/entities when they gain historical, logistical, legal, mission, ecological, combat, or narrative importance.
 +
-+16. Add: Component illustrations should distinguish material-tintable regions from effect/accent regions. The main component body may be greyscale and recolored by material data, while effect parts such as lights, heat glow, screens, markings, active energy surfaces, warning stripes, or exposed emissive elements may retain explicit color even inside an otherwise greyscale component illustration.
++ Add: Activity-period promotion should use a mixed rule. Major categories may auto-promote, medium-importance activities should trigger a promotion suggestion, and ordinary actions should remain embedded. Promotion may be triggered by cargo, passengers, combat, ecological impact, damage, delay, death, discovery, legal obligation, contract status, orbital/interstellar travel, or large-scale consequence.
 +
-+17. Add: Pixel-editor support should be updated with a reusable greyscale/material-mask mode. When an illustration is connected to a component view through a parent relation or equivalent component-illustration relationship, the editor should enter greyscale mode by default. The normal color picker may remain available for effect/accent layers, but the editor should also show a greyscale palette whose values are interpretable by the rendering system.
++ Add: Card embedded timelines should show both events and periods. Periods represent duration or state. Events represent point-like or short-duration changes. Activity periods represent operational episodes. Promoted activities should appear as timeline items that link to their own cards.
 +
-+18. Add: The greyscale palette should not merely be artistic color choice. It should represent semantic material zones or tint weights that the system can interpret. For example, distinct greyscale bands may indicate primary material, secondary material, trim material, darkened recesses, highlights, wear zones, transparent surfaces, or reserved mask classes.
++ Add: Timeline detail should be simulation-relative rather than globally fixed. The same activity may appear as low detail on a nation card, medium detail on a formation card, and high detail on a driver/person/vehicle card.
 +
-+19. Add: The greyscale/material-mask editor should be implemented as a reusable editor mode rather than as component-only UI. A basic version may later be reused for maps, resource masks, material layers, heightmap-adjacent editing, infrastructure overlays, biome masks, or worldgen-derived map coloration.
++ Add: Low, medium, and high detail timeline views should depend on the viewer entity, source simulation, and scale. For example, a nation may only need “service in campaign,” a formation may need convoy operations and deployments, while the driver may need route stages, incidents, and local actions.
 +
-+20. Add: Material entities should eventually expose visual rendering hints such as base color, secondary color, roughness/shine class, transparency, emissive behavior, corrosion/weathering tendency, and possible palette variants. These hints can be used by component rendering, map rendering, site/resource display, and worldgen visuals.
++ Add: A higher-level Simulation Matrix should define how each simulation appears inside other simulations or entity cards at different scales. It should describe visible summaries, hidden details, promotion triggers, and timeline detail level for cross-simulation views.
 +
-+21. New open question: How many greyscale/material-mask bands should the system support at first, and should they be fixed semantic bands or configurable per illustration/component?
++ Add: The Simulation Matrix should begin as hardcoded Python design logic in a `.py` file. Each simulation can define initial rules for how its activity, events, and summaries appear from other entity/simulation viewpoints. This should remain hardcoded until stable patterns justify config or ontology-backed matrix entries.
 +
-+22. New open question: Should component material coloration come from one assigned material, a list of component materials, subcomponent assignments, production recipe outputs, or user-selected overrides?
++ New open question: What should the first `simulation_matrix.py` structure look like: simple dictionaries, dataclasses, rule functions, or a registry of source/viewer/detail mappings?
 +
-+23. New open question: How should explicit effect/accent colors be stored so they survive material tinting without becoming confused with material-derived colors?
-+
-+24. New open question: Should the greyscale editor store raw pixel values only, or should it store a higher-level mask layer model that can later be reused by maps and worldgen?
++ New open question: Which source simulations should be included in the first matrix pass: logistics, BioSim, formation/army, space, production, building, person, vehicle, and map?
 
-+25. Add: BioSim should be modeled as a bioregion-first simulation layer with scale-dependent biological resolution. The main simulation object is a bioregion or biosphere context, while species, populations, colonies, nests, individuals, trails, and visitor events are resolved differently depending on the current simulation extent and grain.
++ Add: Animal behaviour should be represented through reusable behaviour modules assigned by tag or tag-like controlled labels. Behaviour modules may be assigned to clades or species. Species inherit behaviour modules from parent clades, producing a resolved species behaviour profile.
 +
-+26. Add: Species representation in BioSim should depend on scale. At a 1 km² scale, ants may be represented as nests, population patches, and foraging pressure. In a 30 × 30 m simulation, the same ant population may be resolved into trails or individual ants. Conversely, a large animal such as an anteater may not be viable as a resident of a 30 × 30 m patch, but may appear as an external visitor event if its range overlaps through a parent bioregion.
++ Add: Behaviour inheritance should use category-based override logic. If a child clade or species defines a behaviour in the same category as an inherited parent behaviour, the child behaviour replaces the inherited one for that category. This allows behaviours to evolve at broad clade levels and later be replaced by more specialized behaviours.
 +
-+27. Add: Biosphere should be the user-facing and ontology-facing term for a reusable viable ecological assemblage. A Biosphere may be created from a stable BioSim patch after an establishment period proves that its ecological structure is viable.
++ Add: Behaviour categories should be freely creatable from the beginning, but cladistics may impose required categories for minimal simulation. Animals may require broad categories such as feeding/nutrition, reproduction, movement, activity cycle, and risk response. More specific clades may impose additional required categories such as flight, nesting, colony organization, burrowing, migration, or pack structure.
 +
-+28. Add: Biospheres should be loosely hierarchical and overlap-capable. Parent biospheres may summarize child biospheres, child simulations may expand abstract parent populations into finer biological detail, and overlapping biospheres or ranges may introduce visitors, edge effects, competition, predation, or disturbance events.
++ Add: Behaviour setup should scale to large numbers of species. The preferred editing surface should be behaviour tags or a template-generation path similar to planet/worldgen templates, rather than manual species-by-species behaviour editing.
 +
-+29. Add: A Biosphere card should contain full ecological structure as readable card content: producers, consumers, decomposers, predator/prey relations, symbioses, competition, nest or colony structures, population bands, seasonal pressures, stability notes, and failure modes.
++ Add: The Phylogeny/Cladistics view should support a behaviour overlay. The overlay should make inherited behaviours, locally assigned behaviours, overridden behaviours, missing required categories, and convergent behaviours visible or toggleable.
 +
-+30. Add: A Biosphere should also function as a reusable simulation recipe in different modes. Army view may consume it as cover, visibility, passability, wildlife presence, disease/vector risk, forage availability, and event triggers. Logistics view may consume it as roadside wildlife, ground difficulty, vegetation, route hazards, and encounter context. BioSim may consume it as species/population initialization and ecological interaction rules.
++ Add: Missing required behaviour categories should not block simulation. BioSim should generate conservative defaults from clade, body size, diet, habitat, and ecological role until the user provides better behaviour data. Missing defaults should remain visible as incomplete or inferred values.
 +
-+31. Add: Person-scale logistics should support a road-strip or corridor mode. This is a person-layer mode of logistics simulation, not a separate top-level simulation. It generates a route ribbon and surrounding context from parent parameters such as topography, biosphere/wildlife, ground material, vegetation, road quality, weather, and settlement density.
++ Add: Behaviour modules should be usable by BioSim, person-layer encounters, logistics hazards, army/formation views, biosphere stability, and ecological event generation. A behaviour should not remain only a prose tag if it affects simulation.
 +
-+32. Add: Every major simulation type should eventually support a person-level mode. Examples include soldier in a formation, captain or crew member aboard a spacecraft, driver in a convoy, hunter or warden in a biosphere, worker at a production site, resident or guard in a building, and traveler in logistics.
++ New open question: What minimal behaviour categories should be imposed by the broadest animal clades, and which should only appear in narrower clades?
 +
-+33. Add: Person-level simulation should normally be anchored to a concrete person entity. If no suitable person exists, the system may use a role slot as fallback and generate or select a suitable person from the current faction, formation, site, vehicle, or institutional context. Person-level simulation may also be situated through a corporal host entity such as a vehicle, ship, formation, station, drone, or tracked animal.
++ New open question: Should behaviour modules become their own card-capable ontology entities immediately, or begin as tag-resolved Python/config definitions?
 +
-+34. Add: Person-layer actions in BioSim and related simulations should be able to feed back into the parent simulation as ecological disturbance or intervention. Examples include observing species, disturbing habitat, hunting, harvesting, seeding, introducing species, removing invasive species, building paths, patrolling, burning, clearing, irrigating, collecting samples, or triggering animal flight/aggression.
++ New open question: How should convergent behaviours be displayed when the same behaviour module appears in unrelated clades?
+
++ Add: Plant and soil generation should be constrained by parent climate, worldgen, location context, natural materials, hydrology, terrain, atmosphere, and existing or overlapping Biospheres. A Biosphere should not be applied to a blank abstract surface; it should check the target area's inherited environmental and material context.
 +
-+35. Add: Write-back from person-layer ecological action should use both a threshold model and an authority model. Tiny actions may remain local. Repeated, large, rare, destructive, constructive, or narratively selected actions should write back to parent biospheres. Official or role-authorized actors such as wardens, researchers, officers, or site managers may update stronger or more trusted knowledge records than random travelers.
++ Add: Soil profiles should derive primarily from worldgen natural materials, then be modified by climate, hydrology, terrain, weathering, organic activity, and terraforming interventions. Soil should not be modeled as a single loose tag such as `fertile_soil`.
 +
-+36. Add: Parent/offspring reciprocity should be enforced consistently across all card types. If a child card links a parent, the parent card’s Relations tab should immediately show that child as offspring. If offspring is linked from the parent side, the child should show the reciprocal parent. This should reflect the ontology model where parent and offspring are reciprocal projections, not independent manually maintained lists.
++ Add: A target area and a Biosphere may each expose soil profiles. The area soil profile describes the current local material/ecological substrate. The Biosphere soil profile describes the soil state required, produced, or stabilized by the Biosphere assemblage.
 +
-+37. New open question: What exact fields define a Biosphere entity: species assemblage, population bands, ecological roles, stability period, establishment conditions, compatible environment tags, failure modes, scale rules, and transfer constraints?
++ Add: Biosphere cards should carry a distinct generated soil profile that is exposed to BioSim and other simulations. This profile may include organic layer, topsoil, subsoil, parent material, moisture capacity, pH, salinity, nutrients, microbial activity, drainage, compaction, erosion risk, and root-depth constraints.
 +
-+38. New open question: How should BioSim decide which organisms become individuals, groups, colonies, nests, population patches, abstract pressures, or external visitor events at a given extent and grain?
++ Add: Terraforming should be able to modify soil profiles through material delivery, atmospheric change, hydrology change, temperature change, engineered organisms, fertilization, irrigation, erosion control, or long-running site operations.
 +
-+39. New open question: How should overlapping biospheres resolve conflict, mixing, invasive species, predation, edge effects, and transient visitors?
++ Add: Plants should mirror the animal resolution model. Plant representation depends on simulation type, scale, grain, and narrative/operational importance. Plants may appear as functional groups, vegetation layers, patches, stands, clusters, individual plants, roots, litter, or local microhabitat effects.
 +
-+40. New open question: How long and under what criteria must a simulated patch remain stable before it unlocks a reusable Biosphere card?
++ Add: BioSim should support plant functional profiles generated from clade/species inheritance, function tags, soil profile, climate, hydrology, Biosphere template, disturbance state, and terraforming state. Plant functional modules may include growth form, root profile, reproductive strategy, disturbance response, water strategy, light strategy, nutrient strategy, and succession role.
 +
-+41. New open question: Which parts of a person-layer BioSim or logistics simulation should write back as durable ontology facts, and which should remain transient local simulation state?
++ Add: Soil and plants should co-develop. Soil constrains vegetation, but vegetation also feeds back into soil through organic matter, litter, roots, shade, water uptake, nutrient cycling, erosion resistance, compaction effects, and microbial/fungal activity.
++
++ Add: Plant-to-soil feedback should use a hybrid threshold model. At large scales, plants modify aggregate soil summaries. At small scales, individual roots, litter, shade, and decomposition can affect local patches. At narrative or operational thresholds, local plant-soil changes may write upward into parent Biosphere or location summaries.
++
++ New open question: What fields should define the first reusable `soil_profile` structure, and which fields are required versus inferred?
++
++ New open question: How should terraforming interventions modify soil profiles over time without bypassing material, hydrology, climate, and logistics systems?
++
++ New open question: Which plant functional categories should broad plant clades impose by default, and which should remain freely extensible like animal behaviour categories?
++ Add to Program Identity / Should-Be State: Index0 simulations should be card-launched and mode-situated. A card should not launch only one fixed simulation. Depending on entity type, relations, scale, and available context, the same card may launch different situated simulation modes. For example, a formation card may launch a soldier/person view, commander view, convoy route, individual tank or truck, smaller subformation, patrol, camp/site operation, or wider operational map.
++
++ Add to Program Identity / Should-Be State: Simulation modes should be defined by access card, launched subject, scale, and context dependencies. The important design question is not simply which simulation appears inside another, but from which card the user enters, what subject is being simulated, at what scale, and which other systems are drawn on.
++
++ Add to Simulation Launch and Navigation Model / Should-Be State: Entity launch behavior should support multiple situated modes per card where appropriate. The UI should expose available modes from the card’s relations and context, using existing linked entities where possible and generating missing corporal detail when the current simulation needs it.
++
++ Add to Simulation Launch and Navigation Model / Should-Be State: From a formation card, possible launch modes may include person mode for a soldier or commander, vehicle mode for an assigned tank/truck, convoy mode for route execution, subformation mode for a squad/platoon/detachment, patrol mode, camp/site mode, and wider operation mode. These modes should draw on the same underlying formation, person, vehicle, logistics, map, BioSim, species, terrain, and authority facts rather than separate scenario data.
++
++ Add to Simulation Launch and Navigation Model / Should-Be State: From a logistics entity or transport task, possible launch modes may include person-task mode, vehicle/convoy mode, producer-route mode, route-corridor mode, and regional/planetary influence mode. These modes should differ by subject and scale, not by disconnected storage.
++
++ Add to Design Principles / Should-Be State: Prefer situated simulation modes over isolated simulation silos. A simulation mode should be understood as a viewpoint and scale over ontology facts: access card, launched subject, scale, active relations, and dependent systems.
++
++ Add to Design Principles / Should-Be State: When aggregate systems need corporal detail, the system may use existing related entities or generate new contextual people, vehicles, subformations, cargo loads, animals, or sites. Generated entities should become durable only when meaningfully interacted with or when their history becomes important.
++
++ Add to Known Gaps / Is-State: There is not yet a formal card-launched simulation-mode matrix. Current launch behavior exists for major entity classes, but situated launch modes such as soldier-from-formation, convoy-from-logistics, tank-from-formation, or warden-from-biosphere remain conceptual.
++
++ New open question: What should the first hardcoded `simulation_matrix.py` contain: access card types, launchable mode names, launched subject type, scale, required relations, optional generated entities, dependent systems, and default timeline detail?
++
++ New open question: Which card types should receive situated launch modes first: formation, logistics, vehicle, person, biosphere, site, spacecraft, producer, or location?
++
++ New open question: How should the UI present multiple possible simulation modes from one card without cluttering the card or confusing the existing Launch button?
 
 
 1. PROGRAM IDENTITY
@@ -142,6 +138,8 @@ Should-Be State:
 The model should distinguish corporal entities from conceptual entities.
 Corporal entities are physically embodied things or places: vehicle, mine, person, planet, room, star, cargo load.
 Conceptual entities are abstractions, designs, classes, tags, theories, technologies, collections, recipes, and ideas.
+Biospheres should become a reusable ecological entity family: conceptually readable ecological assemblages that can also act as simulation recipes when applied to compatible places or modes.
+Corporal entities should be able to accumulate concrete operational episodes through activity-like history structures when needed, without forcing every episode to become a separate full entity immediately.
 This distinction should guide schema design, UI display, generation, persistence, and simulation handoff without forcing the user to do extra classification work.
 
 4. ONTOLOGY AND STORAGE PRINCIPLE
@@ -158,6 +156,8 @@ Should-Be State:
 If a fact needs to be queried, linked, visualized, simulated, preserved as knowledge, or shared across UI surfaces, it belongs in the ontology model.
 Runtime-only state should stay out of durable ontology facts unless it becomes meaningful history, player-facing knowledge, saved simulation state, or a reproducible generation seed.
 Mirrors should remain helpers for keeping views coherent, not hidden alternative ownership of facts.
+Parent and offspring should behave as reciprocal projections across all entity/card types. If a child links a parent, the parent should expose that child as offspring; if offspring is linked from the parent side, the child should show the reciprocal parent.
+Reciprocal relation behavior should be visible in card relation tabs as well as ontology projections, so users do not have to maintain both sides manually.
 
 5. REPOSITORY VIEW
 Is-State:
@@ -194,6 +194,8 @@ Should-Be State:
 Cards should make entities editable where the user naturally notices the missing fact.
 Tabs should be semantic lenses over the same ontology facts, not separate storage domains.
 Simulation subtabs should expose only durable simulation facts and reproducible generation state, not transient editor internals.
+The Relations tab should consistently reflect reciprocal parent/offspring relationships immediately after edits, regardless of whether the relation was created from the parent card, child card, phylogeny view, location workflow, or another card type.
+Media and pixel-editing workflows should support material-aware illustration authoring where relevant, including a reusable Semantic Greyscale Mask Editor mode for mask-based component and map/resource visuals.
 
 7. LOCATIONS, SYSTEMS, AND SPATIAL FEATURES
 Is-State:
@@ -292,6 +294,9 @@ Logistics should model transport between sites, regions, markets, and other loca
 It should connect production demand to movement without simulating every person, vehicle, and cargo load at full resolution all the time.
 It should operate through corporal journeys and aggregate throughput without resolving the same demand twice.
 Markets should expose available designs, resources, vehicles, services, prices, and access rules before individual acquisitions become corporal entities.
+Vehicle-card journey planning should connect individual corporal vehicles to logistics. From an extant vehicle card, the user should be able to choose an origin location and a destination location, then let Index0 propose a staged journey plan from location hierarchy, route domain, vehicle capabilities, propulsion, surface constraints, and current support context.
+If the selected corporal vehicle cannot complete a route alone, logistics should expand the route rather than merely reject it. Support stages may be suggested from ownership, operator, faction, formation, institution, person role, market access, logistics providers, nearby sites, ports, launch sites, hangars, orbital stations, and other contextual affordances.
+Person-scale logistics should support a road-strip or corridor mode. This is a person-layer mode of logistics simulation, not a separate top-level simulation. It generates a route ribbon and surrounding context from parent parameters such as topography, biosphere/wildlife, ground material, vegetation, road quality, weather, and settlement density.
 Terraforming should be modeled primarily as logistics plus production plus long-running environmental intervention: delivered equipment, volatile imports/exports, orbital infrastructure, site creation, energy budgets, scheduled operations, and durable planetary state changes.
 Player-driven terraforming should influence volatile inventories, surface pressure, temperature, hydrology, atmospheric chemistry, and biosphere readiness through material and logistics chains rather than through one-off manual planet edits.
 
@@ -312,6 +317,9 @@ Should-Be State:
 Launch behavior should be documented as a semantic affordance of entity classes, not only as UI routing code.
 When multiple launch affordances apply, the UI should guide the user to the most relevant one while preserving alternate routes.
 Launching from a generated entity should not lose the context or data that created it.
+Journey planning should use automatic first drafts with manual override. The user may begin with origin, destination, and intent/mode, while Index0 proposes required stages from shared map scope, building/interior scope, parent body, star-system context, atmospheric boundary data, stellar-neighbour links, and the vehicle's propulsion/capability profile.
+Parent-scope validity should depend on journey domain rather than one strict same-parent rule. Ground and map routes require a shared map parent or reachable map ancestor. Building/interior routes require a shared building/interior parent. Orbital routes require a shared parent body or local space context. Interplanetary routes require bodies within the same star system. Interstellar routes require origin and destination systems connected through the stellar-neighbourhood graph.
+Every major simulation type should eventually support a person-level mode. Examples include soldier in a formation, captain or crew member aboard a spacecraft, driver in a convoy, hunter or warden in a biosphere, worker at a production site, resident or guard in a building, and traveler in logistics.
 
 16. SPACE SIMULATION
 Is-State:
@@ -330,6 +338,9 @@ Celestial bodies should use real three-dimensional orbital parameters.
 Their positions and orbital paths should be projected into the 2D simulation view.
 Reference orbit and simulation orbit should be distinguished.
 Spacecraft should eventually have orbital state, propulsion, delta-v, planned trajectories, maneuver nodes, predicted encounters, sphere-of-influence transitions where supported, time acceleration, and interstellar navigation.
+Journey planning should hand off from map trajectory to planetary orbital simulation when a vehicle crosses the atmospheric boundary or otherwise leaves the local map domain. Atmospheric boundary data should be available from worldgen or planetary model fields.
+Interplanetary arrival should load the relevant destination body or local context when the craft's orbital/interception logic reaches the target. Interstellar routing should use connected star systems from the stellar-neighbourhood graph.
+Space and atmospheric stages should take propulsion type, propulsion capability, delta-v/fuel/energy limits, docking ability, ascent/descent ability, interstellar drive type, reliability quirks, and special restrictions into account.
 
 17. MAP, BUILDING, AND WORLD GENERATION
 Is-State:
@@ -351,6 +362,8 @@ Every valid end of worldgen should offer a Complete Worldgen action.
 Gas giants should have atmospheric band rendering, color derived from atmosphere/materials/temperature, and no accidental terrestrial surface path.
 Heightmaps should remain reproducible from seed while allowing user-set or identity-derived variation.
 Temperature should be shown in Celsius alongside Kelvin in user-facing worldgen panels, while Kelvin remains the internal physics unit.
+Worldgen should expose atmospheric boundary or atmospheric-line data in a form that can be consumed by journey planning and simulation handoff, especially for atmospheric ascent, entry, orbital transition, and vehicles that cross between map and space contexts.
+Map, resource, and visual editors should be able to reuse the Semantic Greyscale Mask Editor where greyscale bands need semantic interpretation, such as material masks, resource masks, heightmap-adjacent layers, infrastructure overlays, biome masks, or worldgen-derived map coloration.
 
 18. PLANETARY FORMATION THEORY
 Is-State:
@@ -387,8 +400,28 @@ Natural material should be a clear subclass of Material with fields for scientif
 Planet tags should expand into a controlled vocabulary rich enough to support material inference.
 Elements and atmospheric molecules should be represented as Materials subclasses where they become useful to chemistry, terrain, atmosphere, gas giants, industry, terraforming, or resource extraction.
 Material inference should eventually consume formation-zone inventories, volatile history, thermal evolution, and terraforming interventions.
+Material entities should eventually expose visual rendering hints such as base color, secondary color, roughness/shine class, transparency, emissive behavior, corrosion/weathering tendency, and possible palette variants.
+Materials should be able to dictate the visual coloration of corporal components. Component illustrations should support a material-tinted rendering workflow where the component stores or references a greyscale base illustration, and the visible color is derived from the assigned material or material mixture.
+Component illustrations should distinguish material-tintable regions from explicit effect/accent regions. The main component body may be greyscale and recolored by material data, while effect parts such as lights, heat glow, screens, markings, active energy surfaces, warning stripes, or exposed emissive elements may retain explicit color even inside an otherwise greyscale component illustration.
+The Semantic Greyscale Mask Editor should support greyscale bands as semantic material zones or tint weights rather than mere artistic color choices. Bands may indicate primary material, secondary material, trim material, darkened recesses, highlights, wear zones, transparent surfaces, or reserved mask classes.
 
-20. VEHICLES: DESIGN VS INDIVIDUALS
+20. BIOSPHERES AND BIOSIM
+Is-State:
+BioSim does not yet have a dedicated mature implementation section in the current document.
+The current conceptual foundations are spread across locations, map/worldgen, ecology summaries, materials, phylogeny/species, person simulation, logistics, and entity-launched simulations.
+Worldgen already persists environment, hydrology, and ecology summaries on generated planets, and species/cladistics can launch to Phylogeny Simulation.
+
+Should-Be State:
+BioSim should be modeled as a bioregion-first simulation layer with scale-dependent biological resolution. The main simulation object is a bioregion or biosphere context, while species, populations, colonies, nests, individuals, trails, and visitor events are resolved differently depending on the current simulation extent and grain.
+Species representation in BioSim should depend on scale. At a 1 km² scale, ants may be represented as nests, population patches, and foraging pressure. In a 30 × 30 m simulation, the same ant population may be resolved into trails or individual ants. Conversely, a large animal such as an anteater may not be viable as a resident of a 30 × 30 m patch, but may appear as an external visitor event if its range overlaps through a parent bioregion.
+Biosphere should be the user-facing and ontology-facing term for a reusable viable ecological assemblage. A Biosphere may be created from a stable BioSim patch after an establishment period proves that its ecological structure is viable.
+Biospheres should be loosely hierarchical and overlap-capable. Parent biospheres may summarize child biospheres, child simulations may expand abstract parent populations into finer biological detail, and overlapping biospheres or ranges may introduce visitors, edge effects, competition, predation, or disturbance events.
+A Biosphere card should contain full ecological structure as readable card content: producers, consumers, decomposers, predator/prey relations, symbioses, competition, nest or colony structures, population bands, seasonal pressures, stability notes, and failure modes.
+A Biosphere should also function as a reusable simulation recipe in different modes. Army view may consume it as cover, visibility, passability, wildlife presence, disease/vector risk, forage availability, and event triggers. Logistics view may consume it as roadside wildlife, ground difficulty, vegetation, route hazards, and encounter context. BioSim may consume it as species/population initialization and ecological interaction rules.
+Person-layer actions in BioSim and related simulations should be able to feed back into the parent simulation as ecological disturbance or intervention. Examples include observing species, disturbing habitat, hunting, harvesting, seeding, introducing species, removing invasive species, building paths, patrolling, burning, clearing, irrigating, collecting samples, or triggering animal flight/aggression.
+Write-back from person-layer ecological action should use both a threshold model and an authority model. Tiny actions may remain local. Repeated, large, rare, destructive, constructive, or narratively selected actions should write back to parent biospheres. Official or role-authorized actors such as wardens, researchers, officers, or site managers may update stronger or more trusted knowledge records than random travelers.
+
+21. VEHICLES: DESIGN VS INDIVIDUALS
 Is-State:
 Vehicle schema and examples imply a distinction between vehicle type/design and acquired individual vehicle.
 Vehicle Simulation exists as a repository-backed workspace with design, interior, and operational modes.
@@ -398,8 +431,13 @@ Should-Be State:
 Vehicle design entries should represent available designs, prototypes, market offerings, and production recipes.
 Individual vehicle entries should represent acquired corporal vehicles with serial-level identity.
 Aggregate logistics may assign vehicle types/counts, while corporal logistics should use individual vehicles when the player interacts with a specific journey.
+From an individual corporal vehicle card, the user should be able to plan a journey by choosing an origin location and destination location. The visible UI may start simply, but the saved plan should be able to store a staged internal model.
+Journey stages may include map surface route, building/interior movement, atmospheric ascent, orbital transfer, atmospheric entry, landing, interstellar transfer, docking, loading, unloading, and local surface route.
+Journey planning should take propulsion type, propulsion capabilities, and vehicle quirks into account at every stage. Ground surface compatibility, amphibious capability, asphalt/road dependence, runway or launch requirements, atmospheric ceiling, ascent capability, delta-v, fuel/energy limits, docking ability, interstellar drive type, reliability quirks, and special restrictions should all be treated as route-shaping constraints.
+Accepted, launched, consequential, or multi-stage journeys should initially be persisted as `activity_periods` on the extant corporal vehicle rather than requiring a dedicated journey entity. Later, important journeys may be promoted into transport job, mission, voyage, expedition, or flight-plan entities when they gain independent identity, obligation, cargo, passengers, authority, or historical importance.
+Components should support material-tinted illustrations. When an illustration is connected to a component view through a parent relation or equivalent component-illustration relationship, the pixel editor should enter Semantic Greyscale Mask Editor mode by default, while preserving explicit effect/accent color editing.
 
-21. PERSONS AND POPS
+22. PERSONS AND POPS
 Is-State:
 People and pops are separate but related concepts.
 People schema includes `person_class`, affiliations, associated locations, and participated events.
@@ -410,8 +448,10 @@ Should-Be State:
 The pop system may generate contextual individuals as playable suggestions, including residence, workplace, role, and current task.
 A generated person, vehicle, or other corporal entity should become permanent once meaningfully interacted with by the player.
 People should bridge biography, affiliation, location, event participation, production roles, and current simulation context.
+Person-level simulation should normally be anchored to a concrete person entity. If no suitable person exists, the system may use a role slot as fallback and generate or select a suitable person from the current faction, formation, site, vehicle, or institutional context.
+Person-level simulation may also be situated through a corporal host entity such as a vehicle, ship, formation, station, drone, or tracked animal. Examples include a soldier inside a formation, a spaceship captain aboard a vessel, a convoy driver inside a vehicle, a hunter or warden in a biosphere, or a worker at a production site.
 
-22. TEMPORAL MODEL
+23. TEMPORAL MODEL
 Is-State:
 The current coarse temporal model uses `start_year` and `end_year`.
 WorldModel has hard-coded major periods for timeline display.
@@ -425,8 +465,12 @@ Should-Be State:
 Production lines, logistics demands, routes, journeys, deployment histories, events, and worldgen histories should become time-bounded where meaningful.
 The timeline should help users understand local context around a selected year without drowning them in all history.
 Event-based changes can be added later, but should not overcomplicate the current year-range model.
+Individual corporal vehicles should distinguish broad `temporal_periods` from concrete `activity_periods`.
+`temporal_periods` describe narrative or historical bands such as service eras, ownership eras, or deployment eras.
+`activity_periods` describe operational episodes such as planned journeys, active journeys, completed journeys, failed journeys, interrupted journeys, storage, maintenance, loading, unloading, refuelling, orbital transfer, landing, assignment to a site or formation, or other concrete states of use.
+The same activity-period idea may later be generalized to other corporal entities such as people, animals, cargo loads, formations, ships, stations, or sites if the design proves useful.
 
-23. WIKI AND TASKS
+24. WIKI AND TASKS
 Is-State:
 Wiki view is general prose plus simple formatting.
 Wiki links can resolve to entity cards.
@@ -441,7 +485,7 @@ Random task selection should use simple task references, not the legacy task sys
 When a task is selected, it should open the relevant card.
 Logistics tasks may later be more structured because they can carry cargo, route, authority, schedule, and obligation details.
 
-24. PHYLOGENY AND COLORS
+25. PHYLOGENY AND COLORS
 Is-State:
 Cladistic/species entries can launch to Phylogeny Simulation.
 Phylogeny rows and nodes can use `card_color`, `card_header_color`, and `wiki_field_colors` from referenced entities.
@@ -451,16 +495,16 @@ If a cladistic entry has no custom color, it should be able to average colors fr
 This should include indirect descendants, not just direct children.
 Color updates should trigger when entering edit mode and when children are added or connected.
 
-25. CURRENT ANCHORS AND KNOWN GAPS
+26. CURRENT ANCHORS AND KNOWN GAPS
 Is-State:
 Useful current anchors include `system_sol`, `system_ross_system`, restored stellar-neighbour entries, many orbital body entries, worldgen planet examples, `prod_steel_plate_rolling`, `prod_pump_module_assembly`, `mkt_market_of_the_gold_sector`, `mkt_planetary_period_markets`, `log_new_001`, vehicle/component examples, collection schema entries, and the ontology-backed material catalog.
-Known gaps include an unpopulated tag-entry dataset, skeletal logistics and markets, non-normalized production requirement vocabulary, conceptual-only spacecraft/maneuver planning, runtime orbital motion that is still effectively 2D, thin collection UX/content, early natural-material inference, basic gas-giant band visuals, early formation-theory generation, incomplete volatile-history modeling, absent terraforming logistics workflows, and an unresolved internal distinction between folded locations versus distinct systems/spatial-feature ontology classes.
+Known gaps include an unpopulated tag-entry dataset, skeletal logistics and markets, non-normalized production requirement vocabulary, conceptual-only spacecraft/maneuver planning, runtime orbital motion that is still effectively 2D, thin collection UX/content, early natural-material inference, basic gas-giant band visuals, early formation-theory generation, incomplete volatile-history modeling, absent terraforming logistics workflows, missing vehicle journey planning, no mature BioSim/Biosphere implementation, no person-layer mode for most simulations, no Semantic Greyscale Mask Editor, no material-tinted component illustration workflow, and an unresolved internal distinction between folded locations versus distinct systems/spatial-feature ontology classes.
 
 Should-Be State:
-The next medium-sized projects should reduce cross-surface incoherence: worldgen-to-space/map/card consistency, material/resource inference, collection browseability, logistics/market foundations, or orbital navigation depth.
+The next medium-sized projects should reduce cross-surface incoherence: worldgen-to-space/map/card consistency, material/resource inference, collection browseability, logistics/market foundations, vehicle journey planning, BioSim/Biosphere foundations, material-aware component visuals, or orbital navigation depth.
 Known gaps should be tracked as conceptual gaps unless they already block daily use, in which case they should become concrete implementation tasks.
 
-26. DESIGN PRINCIPLES
+27. DESIGN PRINCIPLES
 Is-State:
 The current code increasingly follows these principles: ontology facts over UI-only state; durable entities for identity/history/relations/saved plans; runtime state for transient calculations/previews; repository projections over duplicate source truths; guided actions over requiring ontology knowledge; locations as the main spatial/orbital/map-facing surface; production records as first-class entities; tags lightweight but card-capable; search forgiving enough for partial word sequences.
 
@@ -470,8 +514,12 @@ Keep simulations honest by persisting only what should survive reload, inspectio
 Keep sites generic, logistics layered, production technologies declarative, and production records concrete.
 Avoid resolving the same demand through both aggregate and corporal simulation at the same time.
 Make conceptual relations visible and editable from the places where users naturally notice them.
+Prefer context-generated suggestions over hard-coded route rejection when a vehicle cannot complete a journey alone.
+Use scale-dependent representation in BioSim: entities may appear as individuals, groups, nests, population patches, abstract pressures, or external visitors depending on simulation grain and extent.
+Allow person-level modes to expose local slices of larger simulations without making every local interaction a durable ontology fact.
+Keep material-driven visuals reusable by separating semantic masks, material rendering hints, and explicit effect/accent colors.
 
-27. OPEN QUESTIONS AND LOOSE ENDS
+28. OPEN QUESTIONS AND LOOSE ENDS
 Is-State:
 Current open questions:
 1. How exactly should corporal vs conceptual entities be represented?
@@ -498,27 +546,27 @@ Current open questions:
 22. What volatile-loss processes should be represented first: thermal escape, impact erosion, stellar wind stripping, sequestration, or photochemistry?
 23. How should terraforming logistics convert delivered materials and energy into gradual planetary-state changes?
 24. Which mantle/crust composition fields are required before tectonic regime can be fully derived rather than user-chosen?
+25. What exact fields should an `activity_period` support on corporal vehicles, and should this be a generic corporal-entity field shared by vehicles, people, animals, cargo loads, and formations?
+26. How should the journey planner rank support suggestions when multiple contextually available options exist: ownership, authority, cost, speed, safety, legality, faction access, market access, or player preference?
+27. Which vehicle capability fields should be normalized first so that route planning can reason over ground surfaces, asphalt/road dependence, atmospheric flight, orbital insertion, interplanetary transfer, and interstellar travel?
+28. How should atmospheric boundary data from worldgen be exposed to journey planning so that map trajectory can hand off to planetary orbital simulation at the correct altitude or condition?
+29. How many greyscale/material-mask bands should the Semantic Greyscale Mask Editor support at first, and should they be fixed semantic bands or configurable per illustration/component?
+30. Should component material coloration come from one assigned material, a list of component materials, subcomponent assignments, production recipe outputs, or user-selected overrides?
+31. How should explicit effect/accent colors be stored so they survive material tinting without becoming confused with material-derived colors?
+32. Should the Semantic Greyscale Mask Editor store raw pixel values only, or should it store a higher-level mask layer model that can later be reused by maps and worldgen?
+33. What exact fields define a Biosphere entity: species assemblage, population bands, ecological roles, stability period, establishment conditions, compatible environment tags, failure modes, scale rules, and transfer constraints?
+34. How should BioSim decide which organisms become individuals, groups, colonies, nests, population patches, abstract pressures, or external visitor events at a given extent and grain?
+35. How should overlapping biospheres resolve conflict, mixing, invasive species, predation, edge effects, and transient visitors?
+36. How long and under what criteria must a simulated patch remain stable before it unlocks a reusable Biosphere card?
+37. Which parts of a person-layer BioSim or logistics simulation should write back as durable ontology facts, and which should remain transient local simulation state?
 
 Should-Be State:
 Open questions should be resolved only when the codebase or design direction forces a choice.
 For each resolution, document whether it is an implemented fact, a near-term design target, or a deferred conceptual direction.
 Future document versions should move resolved items into the relevant Is-State or Should-Be State section rather than leaving them in this list.
 
-28. HANDOFF FORMAT FOR NEXT GPT RESPONSE
+29. HANDOFF FORMAT FOR NEXT GPT RESPONSE
 Is-State:
 When suggesting changes, use this format:
 
 Changes to next version:
-1. Replace/add/remove: ...
-2. Open question resolved: ...
-3. New open question: ...
-
-Optional notes:
-- Rationale:
-- Risks:
-- Suggested priority:
-
-Should-Be State:
-Future conceptual edits should preserve the Is-State / Should-Be State structure.
-Is-State should describe only implemented or currently present behavior.
-Should-Be State should describe targets, preferred modeling direction, and unresolved design intent.

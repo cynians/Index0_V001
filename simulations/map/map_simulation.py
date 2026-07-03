@@ -3529,6 +3529,9 @@ class MapSimulation:
             "canvas_width_px": rect["canvas_width_px"],
             "canvas_height_px": rect["canvas_height_px"],
             "heightmap_model": heightmap,
+            "surface_palette": root_entity.get("surface_palette"),
+            "color": root_entity.get("display_color") or root_entity.get("color"),
+            "display_color": root_entity.get("display_color"),
             "name": root_entity.get("name"),
             "entity_id": root_entity.get("id"),
         }

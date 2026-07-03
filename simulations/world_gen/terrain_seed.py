@@ -80,6 +80,7 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
     mobile_plates = tectonics in {"plate_tectonics", "mobile_lid"}
     partial_resurfacing = tectonics in {"episodic_lid", "heat_pipe"}
     liquid_water = bool(surface.get("liquid_water_possible"))
+    frozen_water = water_fraction > 0.015 and surface_temp_k < 273.15
     erosion = _erosion_strength(surface, pressure_bar)
     elements = _element_profile(seed)
     silica = elements.get("Si", 0.0)
@@ -126,6 +127,18 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
         + volatile_ocean_bonus
     ) if liquid_water else 0.0
     target_ocean_fraction = _clamp(target_ocean_fraction, 0.0, 0.92)
+    cold_ice_factor = _clamp((273.15 - surface_temp_k) / 95.0, 0.0, 1.0)
+    pressure_ice_factor = _clamp(0.78 + pressure_bar * 0.08, 0.55, 1.08)
+    target_ice_fraction = (
+        water_fraction
+        * seed_range(map_seed, "ice_scale", 0.62, 1.32)
+        * cold_ice_factor
+        * pressure_ice_factor
+        + seed_range(map_seed, "ice_bias", -0.04, 0.08)
+    ) if frozen_water else 0.0
+    if liquid_water and surface_temp_k < 286.0:
+        target_ice_fraction += target_ocean_fraction * _clamp((286.0 - surface_temp_k) / 42.0, 0.0, 0.55)
+    target_ice_fraction = _clamp(target_ice_fraction, 0.0, 0.86)
 
     if crater_retention == "high":
         crater_density = 0.85
@@ -149,6 +162,8 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
         layers.append({"id": "crater_population", "kind": "feature_set", "source": "impact_seed"})
     if target_ocean_fraction > 0:
         layers.append({"id": "water_mask", "kind": "raster_mask", "source": "sea_level"})
+    if target_ice_fraction > 0:
+        layers.append({"id": "ice_mask", "kind": "raster_mask", "source": "frozen_volatile_inventory"})
     if erosion_processes:
         layers.append({"id": "erosion_potential", "kind": "raster", "source": "surface_process_model"})
     layers.append({"id": "climate_stub", "kind": "placeholder", "source": "atmosphere_model"})
@@ -207,7 +222,9 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
         "hydrology": {
             "cycle": hydrology,
             "liquid_water_possible": liquid_water,
+            "frozen_water_possible": frozen_water,
             "target_ocean_fraction": round(target_ocean_fraction, 3),
+            "target_ice_fraction": round(target_ice_fraction, 3),
             "drainage_enabled": hydrology in {"active", "limited"},
         },
         "map_layers": layers,

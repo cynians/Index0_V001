@@ -19,6 +19,48 @@ class WorldGenRenderer:
     def __init__(self, app_view):
         self.app_view = app_view
 
+    def _coerce_rgb(self, value, fallback=(122, 176, 232)):
+        if isinstance(value, (list, tuple)) and len(value) >= 3:
+            try:
+                return tuple(max(0, min(255, int(value[index]))) for index in range(3))
+            except (TypeError, ValueError):
+                return fallback
+        return fallback
+
+    def _mix_rgb(self, color_a, color_b, weight_b):
+        weight_b = max(0.0, min(1.0, float(weight_b or 0.0)))
+        weight_a = 1.0 - weight_b
+        return tuple(
+            max(0, min(255, int(color_a[index] * weight_a + color_b[index] * weight_b)))
+            for index in range(3)
+        )
+
+    def _surface_palette_colors(self, entity=None, material_model=None):
+        if isinstance(material_model, dict):
+            palette = material_model.get("surface_palette")
+        else:
+            palette = None
+        if not isinstance(palette, dict) and isinstance(entity, dict):
+            palette = entity.get("surface_palette")
+        if not isinstance(palette, dict):
+            palette = {}
+
+        palette_colors = palette.get("palette") if isinstance(palette.get("palette"), list) else []
+        colors = [self._coerce_rgb(color, fallback=(80, 78, 72)) for color in palette_colors[:4]]
+        if len(colors) >= 4:
+            return colors
+
+        fallback_source = palette.get("surface_color") if palette else None
+        if fallback_source is None and isinstance(entity, dict):
+            fallback_source = entity.get("display_color")
+        base = self._coerce_rgb(fallback_source, fallback=(82, 78, 70))
+        return [
+            self._mix_rgb(base, (12, 14, 14), 0.36),
+            base,
+            self._mix_rgb(base, (218, 214, 198), 0.34),
+            self._mix_rgb(base, (46, 48, 44), 0.18),
+        ]
+
     def _world_point_for_au(self, au_x, au_y):
         return au_x * self.AU_M, au_y * self.AU_M
 
@@ -118,7 +160,9 @@ class WorldGenRenderer:
 
             entity_id = body.get("id")
             selected = entity_id == selected_id
-            color = (122, 176, 232) if not selected else (178, 222, 255)
+            color = self._coerce_rgb(body.get("display_color"), fallback=(122, 176, 232))
+            if selected:
+                color = tuple(min(255, int(channel * 1.18 + 28)) for channel in color)
             radius = 5 if not selected else 7
             pygame.draw.circle(screen, color, (int(point[0]), int(point[1])), radius)
             pygame.draw.circle(screen, (214, 236, 255), (int(point[0]), int(point[1])), radius + 2, 1)
@@ -182,7 +226,7 @@ class WorldGenRenderer:
             return
 
         panel_w = 430
-        panel_h = 232
+        panel_h = 270
         panel = pygame.Rect(20, screen.get_height() - panel_h - 24, panel_w, panel_h)
         pygame.draw.rect(screen, (22, 25, 34), panel)
         pygame.draw.rect(screen, (188, 196, 212), panel, 1)
@@ -215,10 +259,15 @@ class WorldGenRenderer:
             screen.blit(surface, (panel.x + 12, y))
             y += 22
 
+        formation_rect = pygame.Rect(panel.x + 12, panel.bottom - 66, 172, 30)
+        self._draw_panel_button(screen, font, formation_rect, "Formation Theory", primary=True)
+        if hasattr(sim, "set_formation_theory_button_rect"):
+            sim.set_formation_theory_button_rect(formation_rect)
+
         status = payload.get("commit_status") or ""
         if status:
             status_surface = font.render(status, True, (178, 210, 244))
-            screen.blit(status_surface, (panel.x + 12, panel.bottom - 52))
+            screen.blit(status_surface, (formation_rect.right + 14, panel.bottom - 59))
 
         if payload.get("planet_name_prompt_active"):
             hint_text = "Type planet name. Enter creates planet. Esc cancels."
@@ -276,6 +325,13 @@ class WorldGenRenderer:
                 current = word
         lines.append(current)
         return lines
+
+    def _format_temp_k_c(self, value):
+        try:
+            kelvin = float(value or 0.0)
+        except (TypeError, ValueError):
+            kelvin = 0.0
+        return f"{kelvin:.1f} K / {kelvin - 273.15:.1f} C"
 
     def _draw_crust_composition_panel(self, screen, sim, payload):
         font = self.app_view.default_font
@@ -404,6 +460,18 @@ class WorldGenRenderer:
             screen.blit(value_surface, (input_rect.x + 6, input_rect.y + 4))
             sy += 30
 
+        material_top = max(y + 12, panel.y + 346)
+        material_bottom = panel.bottom - 94
+        material_rect = pygame.Rect(
+            panel.x + 16,
+            material_top,
+            max(260, summary.x - panel.x - 34),
+            max(80, material_bottom - material_top),
+        )
+        self._draw_crust_material_candidates(screen, font, material_rect, payload)
+
+        back_rect = pygame.Rect(panel.x + 16, panel.bottom - 84, 92, 26)
+        self._draw_panel_button(screen, font, back_rect, "Back")
         generic_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 132, 30)
         eccentric_rect = pygame.Rect(generic_rect.right + 8, panel.bottom - 48, 148, 30)
         gas_rect = pygame.Rect(eccentric_rect.right + 8, panel.bottom - 48, 132, 30)
@@ -433,9 +501,74 @@ class WorldGenRenderer:
             random_generic_rect=generic_rect,
             random_eccentric_rect=eccentric_rect,
             random_gas_giant_rect=gas_rect,
+            back_rect=back_rect,
         )
         sim.set_seed_field_rects(seed_field_rects)
         sim.set_control_panel_rect(panel)
+
+    def _draw_crust_material_candidates(self, screen, font, rect, payload):
+        pygame.draw.rect(screen, (18, 21, 30), rect)
+        pygame.draw.rect(screen, (76, 86, 106), rect, 1)
+        screen.blit(font.render("Possible Materials", True, (232, 238, 246)), (rect.x + 12, rect.y + 10))
+
+        model = payload.get("natural_material_model") if isinstance(payload.get("natural_material_model"), dict) else {}
+        candidates = model.get("likely_materials") if isinstance(model.get("likely_materials"), list) else []
+        if not candidates:
+            message = "No material candidates yet; adjust the elemental inventory or save composition."
+            screen.blit(font.render(message, True, (154, 166, 188)), (rect.x + 12, rect.y + 38))
+            return
+
+        groups = {}
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            subclass = str(candidate.get("material_subclass") or "material").replace("_", " ").title()
+            groups.setdefault(subclass, []).append(candidate)
+
+        sorted_groups = sorted(
+            groups.items(),
+            key=lambda item: -max(float(candidate.get("confidence", 0.0) or 0.0) for candidate in item[1]),
+        )
+        columns = 2 if rect.width >= 760 else 1
+        column_gap = 18
+        column_w = int((rect.width - 24 - column_gap * (columns - 1)) / columns)
+        x_positions = [rect.x + 12 + index * (column_w + column_gap) for index in range(columns)]
+        y_positions = [rect.y + 38 for _ in range(columns)]
+        bottom = rect.bottom - 10
+
+        group_index = 0
+        for subclass, items in sorted_groups:
+            column = group_index % columns
+            x = x_positions[column]
+            y = y_positions[column]
+            if y + 46 > bottom:
+                group_index += 1
+                continue
+            screen.blit(font.render(subclass, True, (192, 204, 224)), (x, y))
+            y += 22
+            for item in sorted(items, key=lambda candidate: -float(candidate.get("confidence", 0.0) or 0.0))[:5]:
+                if y + 22 > bottom:
+                    break
+                swatch = pygame.Rect(x, y + 4, 12, 12)
+                color = self._coerce_rgb(item.get("display_color"), fallback=(142, 136, 122))
+                pygame.draw.rect(screen, color, swatch)
+                pygame.draw.rect(screen, (42, 46, 58), swatch, 1)
+                name = str(item.get("name") or item.get("material_id") or "material")
+                formula = str(item.get("chemical_formula") or "")
+                occurrence = str(item.get("occurrence") or "possible")
+                confidence = float(item.get("confidence", 0.0) or 0.0)
+                label = f"{name} | {occurrence} {confidence * 100:.0f}%"
+                if formula:
+                    label = f"{label} | {formula}"
+                clipped = label
+                while font.size(clipped)[0] > column_w - 20 and len(clipped) > 12:
+                    clipped = clipped[:-2]
+                if clipped != label:
+                    clipped = f"{clipped}."
+                screen.blit(font.render(clipped, True, (206, 216, 230)), (x + 18, y))
+                y += 20
+            y_positions[column] = y + 10
+            group_index += 1
 
     def _draw_periodic_table_popup(self, screen, font, payload, current_elements):
         if not payload.get("periodic_table_open"):
@@ -513,14 +646,14 @@ class WorldGenRenderer:
         lines = [
             f"Atmosphere class: {atmosphere.get('atmosphere_class', 'unknown')}",
             f"Solid surface: {'yes' if atmosphere.get('has_solid_surface', True) else 'no'}",
-            f"Equilibrium temp: {atmosphere.get('equilibrium_temperature_k', 0.0):.1f} K",
-            f"Surface temp est.: {atmosphere.get('estimated_surface_temperature_k', 0.0):.1f} K",
+            f"Equilibrium temp: {self._format_temp_k_c(atmosphere.get('equilibrium_temperature_k', 0.0))}",
+            f"Surface temp est.: {self._format_temp_k_c(atmosphere.get('estimated_surface_temperature_k', 0.0))}",
             f"Greenhouse delta: {atmosphere.get('greenhouse_delta_k', 0.0):.1f} K",
             f"Volatile supply: {atmosphere.get('volatile_supply_bar', 0.0):.2f} bar",
             f"Retained column: {atmosphere.get('retained_column_fraction', 0.0) * 100.0:.1f}%",
             f"Pressure estimate: {atmosphere.get('surface_pressure_bar', 0.0):.3f} bar",
             f"Escape velocity: {atmosphere.get('escape_velocity_m_s', 0.0):.0f} m/s",
-            f"Exobase temp: {atmosphere.get('exobase_temperature_k', 0.0):.1f} K",
+            f"Exobase temp: {self._format_temp_k_c(atmosphere.get('exobase_temperature_k', 0.0))}",
         ]
         y = left.y + 14
         screen.blit(font.render("Thermal / Retention Model", True, (232, 238, 246)), (left.x + 12, y))
@@ -568,9 +701,11 @@ class WorldGenRenderer:
             if y > right.bottom - 28:
                 break
 
-        save_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 164, 30)
+        back_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 92, 30)
+        save_rect = pygame.Rect(back_rect.right + 12, panel.bottom - 48, 164, 30)
         can_complete = bool(getattr(sim, "_world_gen_can_finish", lambda: False)())
         complete_rect = pygame.Rect(save_rect.right + 12, panel.bottom - 48, 204, 30) if can_complete else None
+        self._draw_panel_button(screen, font, back_rect, "Back")
         self._draw_panel_button(screen, font, save_rect, "Save Atmosphere", primary=True)
         if complete_rect is not None:
             self._draw_panel_button(screen, font, complete_rect, "Complete Worldgen")
@@ -586,7 +721,7 @@ class WorldGenRenderer:
         hint = font.render(hint_text, True, (142, 152, 170))
         screen.blit(hint, (panel.x + 16, panel.bottom - 76))
 
-        sim.set_crust_ui_rects(save_rect=save_rect, complete_rect=complete_rect)
+        sim.set_crust_ui_rects(save_rect=save_rect, complete_rect=complete_rect, back_rect=back_rect)
         sim.set_seed_field_rects({})
         sim.set_control_panel_rect(panel)
 
@@ -642,7 +777,7 @@ class WorldGenRenderer:
         y += 32
         process_rows = [
             ("Pressure", f"{float(surface.get('surface_pressure_bar', 0.0)):.3f} bar"),
-            ("Temperature", f"{float(surface.get('surface_temperature_k', 0.0)):.1f} K"),
+            ("Temperature", self._format_temp_k_c(surface.get("surface_temperature_k", 0.0))),
             ("Liquid water", "possible" if surface.get("liquid_water_possible") else "not stable"),
             ("Hydrology", surface.get("hydrologic_cycle", "unknown")),
             ("Wind erosion", surface.get("aeolian_activity", "unknown")),
@@ -669,7 +804,9 @@ class WorldGenRenderer:
             if y > right.bottom - 24:
                 break
 
-        save_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 188, 30)
+        back_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 92, 30)
+        save_rect = pygame.Rect(back_rect.right + 12, panel.bottom - 48, 188, 30)
+        self._draw_panel_button(screen, font, back_rect, "Back")
         self._draw_panel_button(screen, font, save_rect, "Save Regime", primary=True)
         status = payload.get("commit_status") or ""
         if status:
@@ -677,7 +814,7 @@ class WorldGenRenderer:
         hint = font.render("Enter saves regime. Esc exits selected planet. Next: generate first heightfield/map layers.", True, (142, 152, 170))
         screen.blit(hint, (panel.x + 16, panel.bottom - 76))
 
-        sim.set_crust_ui_rects(save_rect=save_rect)
+        sim.set_crust_ui_rects(save_rect=save_rect, back_rect=back_rect)
         sim.set_seed_field_rects({})
         sim.set_control_panel_rect(panel)
 
@@ -724,6 +861,7 @@ class WorldGenRenderer:
             ("Max elevation", f"{float(heightfield.get('max_elevation_m', 0.0)):.0f} m"),
             ("Roughness", f"{float(heightfield.get('roughness', 0.0)):.2f}"),
             ("Ocean target", f"{float(heightfield.get('target_ocean_fraction', 0.0)) * 100.0:.1f}%"),
+            ("Ice target", f"{float(hydrology.get('target_ice_fraction', 0.0)) * 100.0:.1f}%"),
         ]
         for label, value in height_rows:
             row_rect = pygame.Rect(columns[0].x + 12, y, columns[0].width - 24, 24)
@@ -740,6 +878,7 @@ class WorldGenRenderer:
             ("Cratering", f"{cratering.get('retention', 'unknown')} | {float(cratering.get('density', 0.0)):.2f}"),
             ("Max crater", f"{float(cratering.get('max_crater_diameter_km', 0.0)):.1f} km"),
             ("Hydrology", hydrology.get("cycle", "unknown")),
+            ("Frozen water", "possible" if hydrology.get("frozen_water_possible") else "not stable"),
             ("Drainage", "enabled" if hydrology.get("drainage_enabled") else "disabled"),
         ]
         for label, value in driver_rows:
@@ -767,14 +906,20 @@ class WorldGenRenderer:
         screen.blit(font.render("Natural Materials", True, (232, 238, 246)), (columns[2].x + 12, y))
         y += 24
         for item in (natural_materials.get("likely_materials") or [])[:5]:
+            swatch = self._coerce_rgb(item.get("display_color"), fallback=(134, 134, 126))
+            swatch_rect = pygame.Rect(columns[2].x + 18, y + 3, 12, 12)
+            pygame.draw.rect(screen, swatch, swatch_rect)
+            pygame.draw.rect(screen, (86, 92, 104), swatch_rect, 1)
             text = f"{item.get('name', 'material')} | {item.get('occurrence', 'possible')} {float(item.get('confidence', 0.0)):.2f}"
-            for wrapped in self._wrap_text(text, font, columns[2].width - 30):
-                screen.blit(font.render(wrapped, True, (154, 166, 188)), (columns[2].x + 18, y))
+            for wrapped in self._wrap_text(text, font, columns[2].width - 46):
+                screen.blit(font.render(wrapped, True, (154, 166, 188)), (columns[2].x + 36, y))
                 y += 19
             if y > columns[2].bottom - 20:
                 break
 
-        save_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 180, 30)
+        back_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 92, 30)
+        save_rect = pygame.Rect(back_rect.right + 12, panel.bottom - 48, 180, 30)
+        self._draw_panel_button(screen, font, back_rect, "Back")
         self._draw_panel_button(screen, font, save_rect, "Save Terrain", primary=True)
         status = payload.get("commit_status") or ""
         if status:
@@ -782,7 +927,7 @@ class WorldGenRenderer:
         hint = font.render("Enter saves terrain seed. Esc exits selected planet. Next: preview/render map layers.", True, (142, 152, 170))
         screen.blit(hint, (panel.x + 16, panel.bottom - 76))
 
-        sim.set_crust_ui_rects(save_rect=save_rect)
+        sim.set_crust_ui_rects(save_rect=save_rect, back_rect=back_rect)
         sim.set_seed_field_rects({})
         sim.set_control_panel_rect(panel)
 
@@ -934,7 +1079,9 @@ class WorldGenRenderer:
             screen.blit(font.render(text, True, (176, 188, 208)), (sidebar.x + 38, y))
             y += 22
 
-        save_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 188, 30)
+        back_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 92, 30)
+        save_rect = pygame.Rect(back_rect.right + 12, panel.bottom - 48, 188, 30)
+        self._draw_panel_button(screen, font, back_rect, "Back")
         self._draw_panel_button(screen, font, save_rect, "Advance Tectonics", primary=True)
         status = payload.get("commit_status") or ""
         if status:
@@ -942,7 +1089,7 @@ class WorldGenRenderer:
         hint = font.render("Enter advances 25 Myr. Esc exits selected planet. Next: heightmap from uplift, basins, and erosion.", True, (142, 152, 170))
         screen.blit(hint, (panel.x + 16, panel.bottom - 76))
 
-        sim.set_crust_ui_rects(save_rect=save_rect)
+        sim.set_crust_ui_rects(save_rect=save_rect, back_rect=back_rect)
         sim.set_seed_field_rects({})
         sim.set_control_panel_rect(panel)
 
@@ -1036,20 +1183,28 @@ class WorldGenRenderer:
             screen.set_clip(previous_clip)
 
         sea_level = heightmap.get("sea_level_m")
-        label = "0 m datum" if sea_level is None else "0 m sea level"
+        label = "0 m datum" if sea_level is None else f"{float(sea_level):.0f} m sea level"
         label_surface = font.render(label, True, (164, 204, 238))
         screen.blit(label_surface, (clip_rect.x + 10, clip_rect.y + 10))
 
-    def _draw_heightmap_land_ocean(self, screen, map_rect, clip_rect, heightmap):
+    def _draw_heightmap_land_ocean(self, screen, map_rect, clip_rect, heightmap, selected_planet=None, material_model=None):
         grid = heightmap.get("sample_grid") if isinstance(heightmap.get("sample_grid"), dict) else {}
         rows = grid.get("rows") if isinstance(grid.get("rows"), list) else []
         sample_h = int(grid.get("height", len(rows)) or len(rows))
         sample_w = int(grid.get("width", len(rows[0]) if rows else 0) or 0)
         if sample_w < 2 or sample_h < 2:
             return
+        masks = heightmap.get("surface_masks") if isinstance(heightmap.get("surface_masks"), dict) else {}
+        ice_rows = masks.get("ice_rows") if isinstance(masks.get("ice_rows"), list) else []
+        land_dark, land_mid, land_high, land_shadow = self._surface_palette_colors(selected_planet, material_model)
+        ice_low = self._mix_rgb((182, 204, 216), land_mid, 0.14)
+        ice_high = self._mix_rgb((232, 242, 246), land_high, 0.10)
+        ocean_deep = self._mix_rgb((8, 26, 48), land_shadow, 0.10)
+        ocean_shallow = self._mix_rgb((28, 78, 124), land_mid, 0.08)
 
-        sea_level = heightmap.get("sea_level_m")
-        sea_level = 0.0 if sea_level is None else float(sea_level)
+        sea_level_value = heightmap.get("sea_level_m")
+        has_ocean = sea_level_value is not None
+        sea_level = 0.0 if sea_level_value is None else float(sea_level_value)
         min_elevation = float(heightmap.get("min_elevation_m", -4000.0) or -4000.0)
         max_elevation = float(heightmap.get("max_elevation_m", 4000.0) or 4000.0)
         land_span = max(1.0, max_elevation - sea_level)
@@ -1066,20 +1221,26 @@ class WorldGenRenderer:
                         elevation = float(value)
                     except (TypeError, ValueError):
                         continue
-                    if elevation < sea_level:
+                    has_ice = (
+                        row_index < len(ice_rows)
+                        and isinstance(ice_rows[row_index], list)
+                        and col_index < len(ice_rows[row_index])
+                        and bool(ice_rows[row_index][col_index])
+                    )
+                    if has_ice:
+                        height = min(1.0, (elevation - min_elevation) / max(1.0, max_elevation - min_elevation))
+                        color = self._mix_rgb(ice_low, ice_high, height)
+                    elif has_ocean and elevation < sea_level:
                         depth = min(1.0, (sea_level - elevation) / ocean_span)
-                        color = (
-                            int(8 + depth * 12),
-                            int(26 + depth * 34),
-                            int(48 + depth * 72),
-                        )
+                        color = self._mix_rgb(ocean_shallow, ocean_deep, depth)
                     else:
                         height = min(1.0, (elevation - sea_level) / land_span)
-                        color = (
-                            int(28 + height * 38),
-                            int(40 + height * 48),
-                            int(34 + height * 26),
-                        )
+                        if height < 0.45:
+                            color = self._mix_rgb(land_dark, land_mid, height / 0.45)
+                        elif height < 0.82:
+                            color = self._mix_rgb(land_mid, land_high, (height - 0.45) / 0.37)
+                        else:
+                            color = self._mix_rgb(land_high, (214, 212, 196), (height - 0.82) / 0.18)
                     rect = pygame.Rect(
                         int(map_rect.x + col_index * cell_w),
                         int(map_rect.y + row_index * cell_h),
@@ -1127,7 +1288,15 @@ class WorldGenRenderer:
         screen.set_clip(preview)
         pygame.draw.rect(screen, (10, 13, 18), map_rect)
         screen.set_clip(previous_clip)
-        self._draw_heightmap_land_ocean(screen, map_rect, preview, heightmap)
+        material_model = payload.get("natural_material_model") if isinstance(payload.get("natural_material_model"), dict) else None
+        self._draw_heightmap_land_ocean(
+            screen,
+            map_rect,
+            preview,
+            heightmap,
+            selected_planet=selected_planet,
+            material_model=material_model,
+        )
         previous_clip = screen.get_clip()
         screen.set_clip(preview)
         pygame.draw.rect(screen, (74, 86, 106), map_rect, 1)
@@ -1140,15 +1309,24 @@ class WorldGenRenderer:
         storage = heightmap.get("storage") if isinstance(heightmap.get("storage"), dict) else {}
         sample = heightmap.get("sample_grid") if isinstance(heightmap.get("sample_grid"), dict) else {}
         hypsometry = heightmap.get("hypsometry_summary") if isinstance(heightmap.get("hypsometry_summary"), dict) else {}
+        tectonic_model = selected_planet.get("tectonic_model") if isinstance(selected_planet.get("tectonic_model"), dict) else {}
+        simulated_age = (
+            heightmap.get("simulated_age_myr")
+            or selected_planet.get("simulated_geology_age_myr")
+            or tectonic_model.get("age_myr")
+            or 0.0
+        )
         rows = [
             ("Projection", heightmap.get("projection", "unknown")),
             ("Canvas", f"{canvas_w} x {canvas_h} px"),
             ("Samples", f"{sample.get('width', 0)} x {sample.get('height', 0)}"),
             ("Chunks", f"{storage.get('chunk_cols', 0)} x {storage.get('chunk_rows', 0)}"),
             ("Chunk size", f"{storage.get('chunk_width_px', 0)} x {storage.get('chunk_height_px', 0)} px"),
+            ("Simulated age", f"{float(simulated_age or 0.0):.1f} Myr"),
             ("Elevation", f"{float(heightmap.get('min_elevation_m', 0.0)):.0f} to {float(heightmap.get('max_elevation_m', 0.0)):.0f} m"),
             ("Land", f"{float(hypsometry.get('land_fraction', 0.0)) * 100.0:.0f}%"),
             ("Ocean", f"{float(hypsometry.get('ocean_fraction', 0.0)) * 100.0:.0f}%"),
+            ("Ice", f"{float(hypsometry.get('ice_fraction', 0.0)) * 100.0:.0f}%"),
             ("Broad plains", f"{float(hypsometry.get('broad_plain_fraction', 0.0)) * 100.0:.0f}%"),
             ("Mountains", f"{float(hypsometry.get('mountain_fraction_above_2000m', 0.0)) * 100.0:.0f}% >2km"),
             ("Preview zoom", f"x{preview_zoom:.2f}"),
@@ -1179,9 +1357,11 @@ class WorldGenRenderer:
         can_finish = bool(getattr(sim, "_world_gen_can_finish", lambda: False)())
         can_advance_tectonics = bool(getattr(sim, "_heightmap_can_advance_tectonics", lambda: False)())
         can_complete = can_finish and not can_advance_tectonics
-        button_label = "Advance Tectonics" if can_advance_tectonics else "Refresh Heightmap"
-        save_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 188, 30)
+        button_label = "Advance Tectonics" if can_advance_tectonics else "Advance Heightmap"
+        back_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 92, 30)
+        save_rect = pygame.Rect(back_rect.right + 12, panel.bottom - 48, 188, 30)
         complete_rect = pygame.Rect(save_rect.right + 12, panel.bottom - 48, 204, 30) if can_complete else None
+        self._draw_panel_button(screen, font, back_rect, "Back")
         self._draw_panel_button(screen, font, save_rect, button_label, primary=True)
         if complete_rect is not None:
             self._draw_panel_button(screen, font, complete_rect, "Complete Worldgen")
@@ -1192,13 +1372,13 @@ class WorldGenRenderer:
         if can_advance_tectonics:
             hint_text = "Enter advances tectonics 25 Myr. Mouse wheel over preview zooms heightmap. Esc exits selected planet."
         elif can_complete:
-            hint_text = "Use Complete Worldgen to finalize this planet. Mouse wheel over preview zooms heightmap. Esc exits selected planet."
+            hint_text = "Advance Heightmap simulates 25 Myr. Complete Worldgen finalizes this planet. Esc exits selected planet."
         else:
             hint_text = "Mouse wheel over preview zooms heightmap. Marker density follows preview zoom. Esc exits selected planet."
         hint = font.render(hint_text, True, (142, 152, 170))
         screen.blit(hint, (panel.x + 16, panel.bottom - 76))
 
-        sim.set_crust_ui_rects(save_rect=save_rect, complete_rect=complete_rect)
+        sim.set_crust_ui_rects(save_rect=save_rect, complete_rect=complete_rect, back_rect=back_rect)
         sim.set_seed_field_rects({})
         sim.set_control_panel_rect(panel)
         sim.set_heightmap_preview_rect(preview)

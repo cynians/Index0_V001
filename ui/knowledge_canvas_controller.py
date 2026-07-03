@@ -220,6 +220,7 @@ class KnowledgeCanvasController:
         card["toolbelt_rect"] = None
         card["header_drag_rect"] = rect
         card["close_rect"] = None
+        card["template_button_rect"] = None
         card["resize_handle_rect"] = pygame.Rect(rect.right - 12, rect.bottom - 12, 10, 10)
         card["resize_hitboxes"] = []
         card["corner_handle_rects"] = []
@@ -251,6 +252,7 @@ class KnowledgeCanvasController:
         card["toolbelt_rect"] = None
         card["header_drag_rect"] = rect
         card["close_rect"] = close_rect
+        card["template_button_rect"] = None
         card["resize_handle_rect"] = pygame.Rect(rect.right - 12, rect.bottom - 12, 10, 10)
         card["resize_hitboxes"] = []
         card["corner_handle_rects"] = []
@@ -1124,6 +1126,13 @@ class KnowledgeCanvasController:
                 card_obj = self._bring_card_to_front(index)
                 self._open_idea_name_prompt(card_obj)
                 self._relayout_cards()
+                return "__ui_consumed__"
+
+            template_button_rect = card.get("template_button_rect")
+            if template_button_rect is not None and template_button_rect.collidepoint(mouse_pos) and card_view is not None:
+                card_obj = self._bring_card_to_front(index)
+                if self._open_card_class_template_picker(card_obj):
+                    self._relayout_cards()
                 return "__ui_consumed__"
 
             relation_tree_rect = card.get("relation_tree_rect")
