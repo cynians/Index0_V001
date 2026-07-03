@@ -273,6 +273,144 @@ class BuildingSimulationTests(unittest.TestCase):
         )
         self.assertTrue(planet_rect["has_heightmap_base"])
 
+    def test_map_sim_exposes_material_heatmap_layer_for_planet_root(self):
+        planet = {
+            "id": "loc_planet_blue",
+            "name": "Blue Planet",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "bounds": {
+                "type": "bbox",
+                "min_x": -180,
+                "max_x": 180,
+                "min_y": -90,
+                "max_y": 90,
+            },
+            "heightmap_model": {
+                "status": "heightmap_seeded",
+                "sample_grid": {
+                    "width": 3,
+                    "height": 3,
+                    "rows": [
+                        [0.0, 100.0, 0.0],
+                        [-500.0, 1200.0, -500.0],
+                        [0.0, 50.0, 0.0],
+                    ],
+                },
+            },
+            "material_heatmap_model": {
+                "status": "generated",
+                "composite_layer": {
+                    "name": "Composite Material Heatmap",
+                    "image_path": "assets/maps/material_heatmaps/loc_planet_blue/composite_materials.png",
+                },
+                "layers": [
+                    {
+                        "id": "heatmap_mat_basalt",
+                        "material_id": "mat_basalt",
+                        "name": "Basalt",
+                        "image_path": "assets/maps/material_heatmaps/loc_planet_blue/mat_basalt.png",
+                        "confidence": 0.82,
+                    }
+                ],
+            },
+            "start_year": 2400,
+        }
+        world_model = FakeWorldModel([planet])
+        sim = MapSimulation(SimulationContext(
+            year=2400,
+            root_entity_id=planet["id"],
+            world_model=world_model,
+        ))
+
+        self.assertIn(sim.MATERIAL_HEATMAP_LAYER_KIND, sim.get_available_layer_kinds())
+        self.assertTrue(sim.set_active_layer_kind(sim.MATERIAL_HEATMAP_LAYER_KIND))
+        layers = sim.get_layers()
+
+        self.assertEqual(1, len(layers))
+        self.assertEqual("image_rect", layers[0]["shape"])
+        self.assertEqual("loc_planet_blue", layers[0]["entity_id"])
+        self.assertEqual("assets/maps/material_heatmaps/loc_planet_blue/composite_materials.png", layers[0]["image_path"])
+
+        items = sim.get_material_distribution_items()
+        self.assertEqual(["composite", "mat_basalt"], [item["id"] for item in items])
+        self.assertTrue(sim.set_active_material_distribution_item("mat_basalt"))
+        self.assertEqual("assets/maps/material_heatmaps/loc_planet_blue/mat_basalt.png", sim.get_layers()[0]["image_path"])
+
+    def test_map_sim_defaults_to_visual_map_layer(self):
+        planet = {
+            "id": "loc_planet_blue",
+            "name": "Blue Planet",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "bounds": {
+                "type": "bbox",
+                "min_x": -180,
+                "max_x": 180,
+                "min_y": -90,
+                "max_y": 90,
+            },
+            "start_year": 2400,
+        }
+        world_model = FakeWorldModel([planet])
+        sim = MapSimulation(SimulationContext(
+            year=2400,
+            root_entity_id=planet["id"],
+            world_model=world_model,
+        ))
+
+        self.assertEqual(sim.VISUAL_MAP_LAYER_KIND, sim.get_active_layer_kind())
+        self.assertEqual("Visual Map", sim.get_active_layer_label())
+        self.assertEqual("map_rect", sim.get_layers()[0]["shape"])
+
+    def test_location_layer_tree_preserves_hierarchy(self):
+        planet = {
+            "id": "loc_planet_blue",
+            "name": "Blue Planet",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "constituents": ["loc_region_alpha"],
+            "start_year": 2400,
+        }
+        region = {
+            "id": "loc_region_alpha",
+            "name": "Alpha Region",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "region",
+            "parent_location": "loc_planet_blue",
+            "constituents": ["loc_site_beta"],
+            "start_year": 2400,
+        }
+        site = {
+            "id": "loc_site_beta",
+            "name": "Beta Site",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "site",
+            "parent_location": "loc_region_alpha",
+            "start_year": 2400,
+        }
+        world_model = FakeWorldModel([planet, region, site])
+        sim = MapSimulation(SimulationContext(
+            year=2400,
+            root_entity_id=planet["id"],
+            world_model=world_model,
+        ))
+
+        items = sim.get_location_layer_tree_items()
+
+        self.assertEqual(
+            [("loc_region_alpha", 0), ("loc_site_beta", 1)],
+            [(item["id"], item["depth"]) for item in items],
+        )
+        self.assertTrue(sim.select_location_from_layer_tree("loc_site_beta"))
+        self.assertEqual("locations", sim.get_active_layer_kind())
+        self.assertEqual("loc_site_beta", sim.selected_entity_id)
+
     def test_building_sim_drafts_rooms_as_location_polygons(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             sim = self._building_sim(temp_dir)
@@ -342,6 +480,39 @@ class BuildingSimulationTests(unittest.TestCase):
             region = world_model.get_entity("loc_draft_loc_region_root_001")
             self.assertEqual("location", region["type"])
             self.assertEqual("region", region["location_class"])
+
+    def test_ground_material_layer_finish_uses_location_record(self):
+        root = {
+            "id": "loc_region_root",
+            "name": "Root Region",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "region",
+            "start_year": 2400,
+        }
+        world_model = FakeWorldModel([root])
+        sim = MapSimulation(SimulationContext(
+            year=2400,
+            root_entity_id=root["id"],
+            world_model=world_model,
+        ))
+        self.assertTrue(sim.set_active_layer_kind(sim.GROUND_MATERIALS_LAYER_KIND))
+        sim.begin_spatial_feature_draft()
+        sim.draft_spatial_feature_points = [(1, 1), (8, 1), (8, 6), (1, 6)]
+
+        self.assertTrue(sim.finish_spatial_feature_draft())
+
+        region = next(
+            entity
+            for entity in world_model.entities.values()
+            if entity.get("parent_location") == "loc_region_root"
+            and entity.get("layer_kind") == sim.GROUND_MATERIALS_LAYER_KIND
+        )
+        self.assertEqual("location", region["type"])
+        self.assertEqual("locations", region["_dataset"])
+        self.assertEqual("region", region["location_class"])
+        self.assertEqual(sim.GROUND_MATERIALS_LAYER_KIND, region["layer_kind"])
+        self.assertNotIn("spatial_features", world_model.loader.datasets)
 
     def test_location_record_append_replaces_existing_failed_finish_record(self):
         with tempfile.TemporaryDirectory() as temp_dir:

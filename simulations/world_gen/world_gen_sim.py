@@ -30,6 +30,7 @@ from simulations.world_gen.heightmap import derive_heightmap_model
 from simulations.world_gen.interior_regime import derive_interior_regime_model
 from simulations.world_gen.map_seed import resolved_map_seed, seed_range
 from simulations.world_gen.material_catalog import element_symbols_by_rarity
+from simulations.world_gen.material_heatmaps import generate_material_heatmap_model
 from simulations.world_gen.natural_materials import (
     atmospheric_band_palette,
     derive_atmospheric_material_model,
@@ -1036,7 +1037,19 @@ class WorldGenSimulation:
             "status": "not_applicable",
             "reason": "Gas giant envelope has no normal solid terrain route.",
         }
-        for key in ("terrain_seed_model", "tectonic_model", "crater_model", "heightmap_model", "surface_process_model", "hydrology_summary"):
+        for key in (
+            "terrain_seed_model",
+            "tectonic_model",
+            "crater_model",
+            "heightmap_model",
+            "material_heatmap_model",
+            "material_heatmap_composite",
+            "material_heatmaps",
+            "material_heatmap_status",
+            "material_heatmap_layer_count",
+            "surface_process_model",
+            "hydrology_summary",
+        ):
             planet.pop(key, None)
         tags = list(planet.get("tags") or [])
         for tag in ("gas_giant", "atmospheric_body", "no_solid_surface", "gas_giant_bands"):
@@ -1344,6 +1357,57 @@ class WorldGenSimulation:
         if palette.get("surface_color"):
             planet["display_color"] = list(palette["surface_color"])
         return palette
+
+    def _material_heatmap_roots(self):
+        loader = getattr(self.world_model, "loader", None)
+        entries_directory = getattr(loader, "entries_directory", None)
+        if entries_directory is not None:
+            entries_directory = Path(entries_directory).resolve()
+            storage_root = entries_directory.parent if entries_directory.name == "entries" else entries_directory
+        else:
+            storage_root = Path(__file__).resolve().parents[2]
+        return storage_root / "assets" / "maps" / "material_heatmaps", storage_root
+
+    def _apply_material_heatmaps(self, planet, natural_material_model=None, terrain=None, heightmap=None):
+        if not isinstance(planet, dict):
+            return None
+        natural_material_model = (
+            natural_material_model
+            if isinstance(natural_material_model, dict)
+            else planet.get("natural_material_model")
+        )
+        terrain = terrain if isinstance(terrain, dict) else planet.get("terrain_seed_model")
+        heightmap = heightmap if isinstance(heightmap, dict) else planet.get("heightmap_model")
+        if not isinstance(natural_material_model, dict) or not isinstance(terrain, dict) or not isinstance(heightmap, dict):
+            self._clear_planet_material_heatmap_fields(planet)
+            return None
+
+        output_root, storage_root = self._material_heatmap_roots()
+        heatmap_model = generate_material_heatmap_model(
+            planet=planet,
+            natural_material_model=natural_material_model,
+            terrain=terrain,
+            heightmap=heightmap,
+            output_root=output_root,
+            storage_root=storage_root,
+        )
+        planet["material_heatmap_model"] = heatmap_model
+        for key in ("material_heatmap_composite", "material_heatmaps", "material_heatmap_status", "material_heatmap_layer_count"):
+            planet.pop(key, None)
+        if isinstance(planet.get("materials_summary"), dict):
+            planet["materials_summary"]["heatmap_status"] = heatmap_model.get("status")
+            planet["materials_summary"]["heatmap_layer_count"] = len(heatmap_model.get("layers") or [])
+        return heatmap_model
+
+    def _clear_planet_material_heatmap_fields(self, planet):
+        for key in (
+            "material_heatmap_model",
+            "material_heatmap_composite",
+            "material_heatmaps",
+            "material_heatmap_status",
+            "material_heatmap_layer_count",
+        ):
+            planet.pop(key, None)
 
     def _apply_elemental_seed_palette(self, planet, seed):
         composition = crust_composition_from_seed({"crust_composition": seed.get("crust_composition")})
@@ -1917,6 +1981,7 @@ class WorldGenSimulation:
             planet.pop("crater_model", None)
             heightmap = self._derive_heightmap_model(terrain, seed, physics, planet)
             planet["heightmap_model"] = heightmap
+            self._apply_material_heatmaps(planet, natural_material_model, terrain, heightmap)
             map_status = "tectonics_matured_heightmap_seeded"
             geology_status = "tectonics_matured_heightmap_seeded"
             self.editor_stage = "heightmap"
@@ -1926,6 +1991,7 @@ class WorldGenSimulation:
             planet.pop("tectonic_model", None)
             heightmap = self._derive_heightmap_model(terrain, seed, physics, planet)
             planet["heightmap_model"] = heightmap
+            self._apply_material_heatmaps(planet, natural_material_model, terrain, heightmap)
             map_status = "crater_heightmap_seeded"
             geology_status = "crater_heightmap_seeded"
             self.editor_stage = "heightmap"
@@ -1957,6 +2023,8 @@ class WorldGenSimulation:
             "dominant_materials": list(natural_material_model.get("dominant_materials") or []),
             "likely_material_count": len(natural_material_model.get("likely_materials") or []),
             "surface_color": list(surface_palette.get("surface_color") or []),
+            "heatmap_status": (planet.get("material_heatmap_model") or {}).get("status"),
+            "heatmap_layer_count": len((planet.get("material_heatmap_model") or {}).get("layers") or []),
         }
         planet["environment_summary"] = {
             "status": map_status,
@@ -2028,6 +2096,7 @@ class WorldGenSimulation:
         )
         heightmap["simulated_age_myr"] = terrain_for_heightmap["simulated_age_myr"]
         planet["heightmap_model"] = heightmap
+        self._apply_material_heatmaps(planet, terrain=terrain_for_heightmap, heightmap=heightmap)
         planet["simulated_geology_age_myr"] = terrain_for_heightmap["simulated_age_myr"]
         planet["map_status"] = "tectonics_advanced"
         planet["geology_summary"] = {
@@ -2091,6 +2160,7 @@ class WorldGenSimulation:
         )
         heightmap["simulated_age_myr"] = next_age
         planet["heightmap_model"] = heightmap
+        self._apply_material_heatmaps(planet, terrain=terrain, heightmap=heightmap)
         planet["simulated_geology_age_myr"] = next_age
         if isinstance(planet.get("geology_summary"), dict):
             planet["geology_summary"]["elevation_range_m"] = [
@@ -2192,6 +2262,11 @@ class WorldGenSimulation:
                 "tectonic_model",
                 "crater_model",
                 "heightmap_model",
+                "material_heatmap_model",
+                "material_heatmap_composite",
+                "material_heatmaps",
+                "material_heatmap_status",
+                "material_heatmap_layer_count",
                 "map_generation_recipe",
                 "map_layers",
                 "hydrology_summary",
@@ -2208,6 +2283,11 @@ class WorldGenSimulation:
                 "tectonic_model",
                 "crater_model",
                 "heightmap_model",
+                "material_heatmap_model",
+                "material_heatmap_composite",
+                "material_heatmaps",
+                "material_heatmap_status",
+                "material_heatmap_layer_count",
                 "map_generation_recipe",
                 "map_layers",
                 "hydrology_summary",
@@ -2222,6 +2302,11 @@ class WorldGenSimulation:
                 "tectonic_model",
                 "crater_model",
                 "heightmap_model",
+                "material_heatmap_model",
+                "material_heatmap_composite",
+                "material_heatmaps",
+                "material_heatmap_status",
+                "material_heatmap_layer_count",
                 "map_generation_recipe",
                 "map_layers",
                 "hydrology_summary",
@@ -2229,7 +2314,16 @@ class WorldGenSimulation:
             ):
                 planet.pop(key, None)
         elif target == "terrain":
-            for key in ("tectonic_model", "crater_model", "heightmap_model"):
+            for key in (
+                "tectonic_model",
+                "crater_model",
+                "heightmap_model",
+                "material_heatmap_model",
+                "material_heatmap_composite",
+                "material_heatmaps",
+                "material_heatmap_status",
+                "material_heatmap_layer_count",
+            ):
                 planet.pop(key, None)
             planet["map_status"] = "terrain_seeded"
         self.pending_back_stage = None

@@ -240,6 +240,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.active_card_resize_id = None
         self.active_card_color_slider = None
         self.card_drag_mouse_offset = (0, 0)
+        self.card_drag_last_mouse_pos = None
         self.card_resize_start_mouse = None
         self.card_resize_start_size = None
         self.card_resize_start_position = None
@@ -5009,6 +5010,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.timeline_resize_start_height = None
         self.timeline_pan_last_mouse_x = None
         active_color_slider = self.active_card_color_slider
+        had_card_drag = self.active_card_drag_id is not None
+        had_card_resize = self.active_card_resize_id is not None
         if active_color_slider is not None:
             self._finalize_card_color_slider_edit(active_color_slider)
         self.active_card_drag_id = None
@@ -5016,12 +5019,15 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.active_card_color_slider = None
         self.active_canvas_pan = False
         self.card_drag_mouse_offset = (0, 0)
+        self.card_drag_last_mouse_pos = None
         self.card_resize_start_mouse = None
         self.card_resize_start_size = None
         self.card_resize_start_position = None
         self.card_resize_edges = None
         self.canvas_pan_start_mouse = None
         self.canvas_pan_start_offset = None
+        if had_card_drag or had_card_resize:
+            self._relayout_cards()
         return "__ui_consumed__"
 
     def _handle_mousemotion_event(self, event):
@@ -5074,10 +5080,18 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         if self.active_card_drag_id is not None:
             for card in self.cards:
                 if card.get("entity_id") == self.active_card_drag_id:
+                    last_pos = self.card_drag_last_mouse_pos
                     canvas_x, canvas_y = self._screen_to_canvas_pos(event.pos)
                     card["canvas_x"] = canvas_x - self.card_drag_mouse_offset[0]
                     card["canvas_y"] = canvas_y - self.card_drag_mouse_offset[1]
-                    self._relayout_cards()
+                    if last_pos is None:
+                        self._relayout_cards()
+                    else:
+                        dx = event.pos[0] - last_pos[0]
+                        dy = event.pos[1] - last_pos[1]
+                        if dx or dy:
+                            self._canvas_controller()._move_card_screen_layout(card, dx, dy)
+                    self.card_drag_last_mouse_pos = event.pos
                     return "__ui_consumed__"
 
         if self.active_card_resize_id is not None:

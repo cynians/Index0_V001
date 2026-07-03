@@ -18,6 +18,7 @@ from simulations.world_gen.heightmap import (
     height_marker_interval_m,
 )
 from simulations.world_gen.interior_regime import derive_interior_regime_model
+from simulations.world_gen.material_heatmaps import generate_material_heatmap_model
 from simulations.world_gen.terrain_seed import derive_terrain_seed_model
 from simulations.world_gen.world_gen_sim import WorldGenSimulation
 
@@ -1177,6 +1178,112 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         self.assertLessEqual(max(sample_values), heightmap["max_elevation_m"])
         self.assertGreater(heightmap["hypsometry_summary"]["broad_plain_fraction"], 0.55)
         self.assertLess(heightmap["hypsometry_summary"]["mountain_fraction_above_2000m"], 0.18)
+
+    def test_material_heatmap_generator_writes_png_layers(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir)
+            heightmap = {
+                "status": "heightmap_seeded",
+                "planet_id": "planet_blue",
+                "map_seed": "heatmap-test",
+                "projection": "equirectangular",
+                "wrap_x": True,
+                "wrap_y": False,
+                "min_elevation_m": -1000.0,
+                "max_elevation_m": 2000.0,
+                "sea_level_m": 0.0,
+                "sample_grid": {
+                    "width": 3,
+                    "height": 3,
+                    "rows": [
+                        [-500.0, 900.0, -500.0],
+                        [100.0, 1600.0, 100.0],
+                        [-300.0, 700.0, -300.0],
+                    ],
+                },
+            }
+            natural_material_model = {
+                "planet_tags": ["active_hydrology", "weathered_surface", "basaltic_surface"],
+                "likely_materials": [
+                    {
+                        "material_id": "mat_basalt",
+                        "name": "Basalt",
+                        "confidence": 0.82,
+                        "display_color": [72, 76, 70],
+                        "evidence_tags": ["basaltic_surface"],
+                    },
+                    {
+                        "material_id": "mat_clay_rich_regolith",
+                        "name": "Clay-Rich Regolith",
+                        "confidence": 0.66,
+                        "display_color": [132, 118, 92],
+                        "evidence_tags": ["active_hydrology", "weathered_surface"],
+                    },
+                ],
+            }
+
+            model = generate_material_heatmap_model(
+                planet={"id": "planet_blue"},
+                natural_material_model=natural_material_model,
+                terrain={"map_seed": "heatmap-test", "hydrology": {"cycle": "active", "target_ocean_fraction": 0.35}},
+                heightmap=heightmap,
+                output_root=storage_root / "assets" / "maps" / "material_heatmaps",
+                storage_root=storage_root,
+                image_size=(32, 16),
+            )
+
+            self.assertEqual("generated", model["status"])
+            self.assertEqual("png", model["image_format"])
+            self.assertEqual("deterministic_generated_truth", model["truth_model"])
+            self.assertEqual("inferred", model["default_confidence_state"])
+            self.assertEqual(2, len(model["layers"]))
+            self.assertTrue((storage_root / model["composite_layer"]["image_path"]).exists())
+            for layer in model["layers"]:
+                self.assertTrue((storage_root / layer["image_path"]).exists())
+
+    def test_solid_worldgen_adds_material_heatmap_metadata_after_heightmap(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            world_model = FakeWorldModel(entries_directory=temp_dir)
+            sim = WorldGenSimulation(
+                world_model=world_model,
+                parent_system_id="system_alpha",
+                year=2400,
+            )
+            planet = {
+                "id": "planet_blue",
+                "name": "Blue",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "planet",
+                "star_system": "system_alpha",
+                "semi_major_axis_m": sim.AU_M,
+                "tags": ["world_gen_candidate"],
+            }
+            world_model.loader.entities["planet_blue"] = planet
+            world_model.loader.datasets["locations"].append(planet)
+            sim.selected_world_gen_planet_id = "planet_blue"
+            sim.seed_input_buffers.update({
+                "radius_earth": "0.35",
+                "core_radius_fraction": "0.2",
+                "crust_thickness_km": "80",
+                "angular_velocity_deg_per_hour": "9",
+                "water_fraction": "0.0",
+                "volatile_inventory": "none",
+                "tectonics_mode": "inactive",
+            })
+            sim._save_selected_planet_seed()
+            sim._save_atmosphere_model()
+            sim._save_interior_regime_model()
+
+            self.assertTrue(sim._save_terrain_seed_model())
+
+            heatmap_model = planet.get("material_heatmap_model")
+            self.assertIsInstance(heatmap_model, dict)
+            self.assertEqual("generated", heatmap_model["status"])
+            self.assertGreaterEqual(len(heatmap_model["layers"]), 1)
+            self.assertNotIn("material_heatmaps", world_model.loader.datasets)
+            self.assertEqual("generated", planet["materials_summary"]["heatmap_status"])
+            self.assertTrue((Path(temp_dir) / heatmap_model["composite_layer"]["image_path"]).exists())
 
     def test_height_marker_interval_gets_finer_with_zoom(self):
         self.assertEqual(100, height_marker_interval_m(0.1))

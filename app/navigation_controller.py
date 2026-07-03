@@ -637,6 +637,27 @@ class NavigationController:
                 set_year(action.get("year"))
             return True
 
+        if action_id == "set_map_layer" and active_sim is not None:
+            return bool(
+                getattr(active_sim, "set_active_layer_kind", lambda _layer_kind: False)(
+                    action.get("layer_kind")
+                )
+            )
+
+        if action_id == "set_map_material_distribution_item" and active_sim is not None:
+            return bool(
+                getattr(active_sim, "set_active_material_distribution_item", lambda _item_id: False)(
+                    action.get("material_id")
+                )
+            )
+
+        if action_id == "select_map_location" and active_sim is not None:
+            return bool(
+                getattr(active_sim, "select_location_from_layer_tree", lambda _entity_id: False)(
+                    action.get("entity_id")
+                )
+            )
+
         if action_id == "selection_inspector_reanchor_time" and active_sim is not None:
             return bool(
                 getattr(active_sim, "reanchor_selection_time", lambda *_args: False)(

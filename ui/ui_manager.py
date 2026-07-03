@@ -76,6 +76,7 @@ class UIManager:
         self.map_history_timeline_drag_start_pos = None
         self.map_history_timeline_drag_last_x = None
         self.map_history_timeline_reanchor_target = None
+        self.map_layer_menu_mode = "root"
         self.app_font = pygame.font.SysFont("consolas", 16)
 
     def is_text_input_active(self):
@@ -135,6 +136,125 @@ class UIManager:
         self.time_lines = []
         self.timeline_fraction = 0.0
         self.mouse_world_label = None
+
+    def _short_button_label(self, label, max_chars=24):
+        text = str(label or "").strip()
+        if len(text) <= max_chars:
+            return text
+        return text[: max(1, max_chars - 1)].rstrip() + "..."
+
+    def _append_map_layer_button(self, button_id, label, x, y, width, height, active=False, enabled=True, depth=0):
+        indent = max(0, int(depth or 0)) * 16
+        rect = pygame.Rect(x + indent, y, max(80, width - indent), height)
+        button = UIButton(button_id, self._short_button_label(label), rect, enabled=enabled)
+        button.map_layer_active = bool(active)
+        button.map_layer_depth = max(0, int(depth or 0))
+        self.buttons.append(button)
+        return y + height + 6
+
+    def _rebuild_map_layer_menu(self, active_sim, x, y, width=226):
+        button_h = 28
+        available_layers = set(getattr(active_sim, "get_available_layer_kinds", lambda: [])())
+        active_layer = getattr(active_sim, "get_active_layer_kind", lambda: None)()
+        has_materials = bool(getattr(active_sim, "get_material_distribution_items", lambda: [])())
+
+        if self.map_layer_menu_mode == "materials" and not has_materials:
+            self.map_layer_menu_mode = "root"
+        if self.map_layer_menu_mode not in {"root", "materials", "locations"}:
+            self.map_layer_menu_mode = "root"
+
+        if self.map_layer_menu_mode == "materials":
+            y = self._append_map_layer_button("map_layer_menu_root", "Back", x, y, width, button_h)
+            for item in getattr(active_sim, "get_material_distribution_items", lambda: [])():
+                item_id = str(item.get("id") or "")
+                if not item_id:
+                    continue
+                label = item.get("label") or item_id
+                if item.get("confidence") not in (None, ""):
+                    label = f"{label} ({float(item.get('confidence')):.2f})"
+                y = self._append_map_layer_button(
+                    f"map_select_material:{item_id}",
+                    label,
+                    x,
+                    y,
+                    width,
+                    button_h,
+                    active=bool(item.get("active")) and active_layer == "material_heatmaps",
+                )
+            return y
+
+        if self.map_layer_menu_mode == "locations":
+            y = self._append_map_layer_button("map_layer_menu_root", "Back", x, y, width, button_h)
+            items = getattr(active_sim, "get_location_layer_tree_items", lambda: [])()
+            if not items:
+                y = self._append_map_layer_button(
+                    "map_set_layer:locations",
+                    "No child locations",
+                    x,
+                    y,
+                    width,
+                    button_h,
+                    active=active_layer == "locations",
+                    enabled=False,
+                )
+            for item in items:
+                item_id = str(item.get("id") or "")
+                if not item_id:
+                    continue
+                y = self._append_map_layer_button(
+                    f"map_select_location:{item_id}",
+                    item.get("label") or item_id,
+                    x,
+                    y,
+                    width,
+                    button_h,
+                    active=bool(item.get("active")) and active_layer == "locations",
+                    depth=item.get("depth", 0),
+                )
+            if bool(getattr(active_sim, "can_create_location_draft", lambda: False)()):
+                y += 4
+                y = self._append_map_layer_button(
+                    "new_map_selection",
+                    "New Location",
+                    x,
+                    y,
+                    width,
+                    button_h,
+                    active=False,
+                )
+            return y
+
+        if "visual_map" in available_layers:
+            y = self._append_map_layer_button(
+                "map_set_layer:visual_map",
+                "Visual Map",
+                x,
+                y,
+                width,
+                button_h,
+                active=active_layer == "visual_map",
+            )
+        if "locations" in available_layers:
+            y = self._append_map_layer_button(
+                "map_open_layer_menu:locations",
+                "Locations",
+                x,
+                y,
+                width,
+                button_h,
+                active=active_layer == "locations",
+            )
+        if has_materials:
+            y = self._append_map_layer_button(
+                "map_open_layer_menu:materials",
+                "Material Distribution",
+                x,
+                y,
+                width,
+                button_h,
+                active=active_layer == "material_heatmaps",
+            )
+        return y
 
     def _rebuild_simulation_panel_tab_hitboxes(self):
         self.simulation_panel_tab_hitboxes = []
@@ -575,10 +695,12 @@ class UIManager:
                 else:
                     self.breadcrumb_label = draft_status_line
 
-            next_button_y = button_y
+            map_control_x = 20
+            map_control_w = 226
+            next_button_y = self._rebuild_map_layer_menu(active_sim, map_control_x, 230, width=map_control_w) + 12
             self.buttons.append(
                 UIButton("open_repository", "Open Repository",
-                         pygame.Rect(button_x, next_button_y, button_width, button_height))
+                         pygame.Rect(map_control_x, next_button_y, map_control_w, button_height))
             )
             next_button_y += 40
 
@@ -595,20 +717,10 @@ class UIManager:
                 image_button_label = "Upload Map Image"
             self.buttons.append(
                 UIButton("import_map_image", image_button_label,
-                         pygame.Rect(button_x, next_button_y, button_width, button_height),
+                         pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
                          enabled=can_import_map_image)
             )
             next_button_y += 40
-
-            if hasattr(active_sim, "get_active_layer_label"):
-                available_layer_count = len(active_sim.get_available_layer_kinds())
-                layer_button_label = f"Layer: {active_sim.get_active_layer_label()}"
-                self.buttons.append(
-                    UIButton("cycle_map_layer", layer_button_label,
-                             pygame.Rect(button_x, next_button_y, button_width, button_height),
-                             enabled=available_layer_count > 1)
-                )
-                next_button_y += 40
 
             if is_editing_map_selection:
                 can_finish = bool(
@@ -616,46 +728,15 @@ class UIManager:
                 )
                 self.buttons.append(
                     UIButton("finish_map_selection", "Finish Selection",
-                             pygame.Rect(button_x, next_button_y, button_width, button_height),
+                             pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
                              enabled=can_finish)
                 )
                 next_button_y += 40
                 self.buttons.append(
                     UIButton("cancel_map_selection", "Cancel Selection",
-                    pygame.Rect(button_x, next_button_y, button_width, button_height))
+                    pygame.Rect(map_control_x, next_button_y, map_control_w, button_height))
                 )
                 next_button_y += 40
-            else:
-                active_layer_kind = getattr(
-                    active_sim,
-                    "get_active_layer_kind",
-                    lambda: None,
-                )()
-                if active_layer_kind == "locations":
-                    can_create_location = bool(
-                        getattr(active_sim, "can_create_location_draft", lambda: False)()
-                    )
-                    self.buttons.append(
-                        UIButton("new_map_selection", "New Location",
-                                 pygame.Rect(button_x, next_button_y, button_width, button_height),
-                                 enabled=can_create_location)
-                    )
-                    next_button_y += 40
-                else:
-                    can_create_selection = bool(
-                        getattr(active_sim, "can_create_spatial_feature_draft", lambda: False)()
-                    )
-                    if can_create_selection:
-                        selection_label = getattr(
-                            active_sim,
-                            "get_spatial_feature_draft_button_label",
-                            lambda: "New Region",
-                        )()
-                        self.buttons.append(
-                            UIButton("new_map_selection", selection_label,
-                                     pygame.Rect(button_x, next_button_y, button_width, button_height))
-                        )
-                        next_button_y += 40
 
             selected_entity_id = getattr(active_sim, "selected_entity_id", None)
             root_entity_id = getattr(active_sim.context, "root_entity_id", None)
@@ -663,7 +744,7 @@ class UIManager:
             if selected_entity_id is not None and selected_entity_id != root_entity_id:
                 self.buttons.append(
                     UIButton("open_region_map", "Open Region Map",
-                             pygame.Rect(button_x, next_button_y, button_width, button_height))
+                             pygame.Rect(map_control_x, next_button_y, map_control_w, button_height))
                 )
                 next_button_y += 40
 
@@ -672,7 +753,7 @@ class UIManager:
             if parent_root_entity_id is not None:
                 self.buttons.append(
                     UIButton("open_parent_region_map", "Up To Parent",
-                             pygame.Rect(button_x, next_button_y, button_width, button_height))
+                             pygame.Rect(map_control_x, next_button_y, map_control_w, button_height))
                 )
                 next_button_y += 40
 
@@ -1095,8 +1176,13 @@ class UIManager:
             screen.blit(text_surface_3, (hitbox.x + 6, text_y + 28))
 
     def _draw_button(self, screen, font, button):
-        fill_color = (55, 55, 55) if button.enabled else (35, 35, 35)
-        border_color = (210, 210, 210) if button.enabled else (100, 100, 100)
+        is_map_layer_active = bool(getattr(button, "map_layer_active", False))
+        if is_map_layer_active and button.enabled:
+            fill_color = (68, 78, 110)
+            border_color = (232, 218, 154)
+        else:
+            fill_color = (55, 55, 55) if button.enabled else (35, 35, 35)
+            border_color = (210, 210, 210) if button.enabled else (100, 100, 100)
         text_color = (245, 245, 245) if button.enabled else (140, 140, 140)
 
         pygame.draw.rect(screen, fill_color, button.rect)
@@ -1564,6 +1650,50 @@ class UIManager:
         self.map_history_timeline_drag_last_x = mouse_pos[0]
         return "__ui_consumed__"
 
+    def _map_layer_button_action(self, button_id):
+        button_id = str(button_id or "")
+        if button_id == "map_layer_menu_root":
+            self.map_layer_menu_mode = "root"
+            return "__ui_consumed__"
+        if button_id.startswith("map_set_layer:"):
+            layer_kind = button_id.split(":", 1)[1]
+            self.map_layer_menu_mode = "root"
+            return {
+                "id": "set_map_layer",
+                "layer_kind": layer_kind,
+            }
+        if button_id.startswith("map_open_layer_menu:"):
+            mode = button_id.split(":", 1)[1]
+            if mode == "materials":
+                self.map_layer_menu_mode = "materials"
+                return {
+                    "id": "set_map_layer",
+                    "layer_kind": "material_heatmaps",
+                }
+            if mode == "locations":
+                self.map_layer_menu_mode = "locations"
+                return {
+                    "id": "set_map_layer",
+                    "layer_kind": "locations",
+                }
+            self.map_layer_menu_mode = "root"
+            return "__ui_consumed__"
+        if button_id.startswith("map_select_material:"):
+            material_id = button_id.split(":", 1)[1]
+            self.map_layer_menu_mode = "materials"
+            return {
+                "id": "set_map_material_distribution_item",
+                "material_id": material_id,
+            }
+        if button_id.startswith("map_select_location:"):
+            location_id = button_id.split(":", 1)[1]
+            self.map_layer_menu_mode = "locations"
+            return {
+                "id": "select_map_location",
+                "entity_id": location_id,
+            }
+        return None
+
     def handle_event(self, event):
         if self.repository_return_confirm_active:
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -1662,6 +1792,9 @@ class UIManager:
                     continue
 
                 if button.rect.collidepoint(mouse_pos):
+                    map_layer_action = self._map_layer_button_action(button.id)
+                    if map_layer_action is not None:
+                        return map_layer_action
                     return button.id
 
             for button in self.simulation_selection_buttons:

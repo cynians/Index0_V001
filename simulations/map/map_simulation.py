@@ -43,14 +43,18 @@ class MapSimulation:
     DEFAULT_PLANET_WORLD_HEIGHT = 2000.0
     MAP_ASSET_ROOT = Path(__file__).resolve().parents[2] / "assets" / "maps" / "locations"
 
+    VISUAL_MAP_LAYER_KIND = "visual_map"
     LOCATION_LAYER_KIND = "locations"
     REGION_LAYER_KIND = "regions"
     GROUND_MATERIALS_LAYER_KIND = "ground_materials"
+    MATERIAL_HEATMAP_LAYER_KIND = "material_heatmaps"
 
     LAYER_LABELS = {
+        "visual_map": "Visual Map",
         "locations": "Locations",
         "regions": "Regions",
-        "ground_materials": "Ground Materials Layer",
+        "ground_materials": "Ground Material Regions",
+        "material_heatmaps": "Material Distribution",
     }
 
     SPATIAL_LAYER_COLORS = {
@@ -97,7 +101,8 @@ class MapSimulation:
         self._cache_year = None
         self._cache_layer_kind = None
 
-        self.active_layer_kind = self.LOCATION_LAYER_KIND
+        self.active_layer_kind = self.VISUAL_MAP_LAYER_KIND
+        self.active_material_heatmap_layer_id = "composite"
 
         self.selected_entity_id = None
         self.hover_entity_id = None
@@ -722,7 +727,15 @@ class MapSimulation:
     def get_available_layer_kinds(self):
         if self._root_is_building():
             return [self.LOCATION_LAYER_KIND]
-        return [self.LOCATION_LAYER_KIND, self.GROUND_MATERIALS_LAYER_KIND]
+        layers = [self.VISUAL_MAP_LAYER_KIND, self.LOCATION_LAYER_KIND, self.GROUND_MATERIALS_LAYER_KIND]
+        root = self.get_root_entity()
+        heatmap_model = root.get("material_heatmap_model") if isinstance(root, dict) else None
+        if isinstance(heatmap_model, dict) and (
+            isinstance(heatmap_model.get("composite_layer"), dict)
+            or heatmap_model.get("layers")
+        ):
+            layers.append(self.MATERIAL_HEATMAP_LAYER_KIND)
+        return layers
 
     def set_active_layer_kind(self, layer_kind):
         available = self.get_available_layer_kinds()
@@ -760,6 +773,153 @@ class MapSimulation:
         current_index = available.index(self.active_layer_kind)
         next_index = (current_index + 1) % len(available)
         return self.set_active_layer_kind(available[next_index])
+
+    def get_material_distribution_items(self):
+        root_entity = self.get_root_entity()
+        if not isinstance(root_entity, dict):
+            return []
+
+        heatmap_model = root_entity.get("material_heatmap_model")
+        if not isinstance(heatmap_model, dict):
+            return []
+
+        items = []
+        composite_layer = heatmap_model.get("composite_layer")
+        if isinstance(composite_layer, dict) and composite_layer.get("image_path"):
+            items.append({
+                "id": "composite",
+                "label": composite_layer.get("name") or "Composite",
+                "active": self.active_material_heatmap_layer_id in {None, "", "composite"},
+            })
+
+        for layer in heatmap_model.get("layers") or []:
+            if not isinstance(layer, dict) or not layer.get("image_path"):
+                continue
+            item_id = str(
+                layer.get("material_id")
+                or layer.get("id")
+                or layer.get("image_path")
+            )
+            items.append({
+                "id": item_id,
+                "label": layer.get("name") or item_id,
+                "active": item_id == self.active_material_heatmap_layer_id,
+                "confidence": layer.get("confidence"),
+            })
+
+        return items
+
+    def set_active_material_distribution_item(self, item_id):
+        item_id = str(item_id or "composite")
+        valid_ids = {str(item.get("id")) for item in self.get_material_distribution_items()}
+        if item_id not in valid_ids:
+            item_id = "composite" if "composite" in valid_ids else next(iter(valid_ids), "")
+        if not item_id:
+            return False
+
+        changed = item_id != self.active_material_heatmap_layer_id
+        self.active_material_heatmap_layer_id = item_id
+        layer_changed = self.set_active_layer_kind(self.MATERIAL_HEATMAP_LAYER_KIND)
+        if changed and not layer_changed:
+            self._invalidate_layer_cache()
+        return changed or layer_changed
+
+    def _relation_ids(self, value):
+        if isinstance(value, str):
+            return [value] if value else []
+        if isinstance(value, dict):
+            entity_id = value.get("id") or value.get("entity_id")
+            return [str(entity_id)] if entity_id else []
+        if isinstance(value, (list, tuple, set)):
+            ids = []
+            for item in value:
+                for entity_id in self._relation_ids(item):
+                    if entity_id not in ids:
+                        ids.append(entity_id)
+            return ids
+        return []
+
+    def _location_parent_ids(self, entity):
+        parent_ids = []
+        for key in ("parent_location", "parent_entity", "parents"):
+            for entity_id in self._relation_ids(entity.get(key)):
+                if entity_id not in parent_ids:
+                    parent_ids.append(entity_id)
+        return parent_ids
+
+    def get_location_layer_tree_items(self):
+        root_entity = self.get_root_entity()
+        root_id = str(getattr(self.context, "root_entity_id", "") or "")
+        active_locations = [
+            entity
+            for entity in self.context.get_active_locations()
+            if isinstance(entity, dict)
+        ]
+        by_id = {str(entity.get("id")): entity for entity in active_locations if entity.get("id")}
+        children_by_parent = {}
+
+        for entity in active_locations:
+            entity_id = str(entity.get("id") or "")
+            if not entity_id:
+                continue
+            for parent_id in self._location_parent_ids(entity):
+                if parent_id:
+                    children_by_parent.setdefault(str(parent_id), []).append(entity)
+
+        if isinstance(root_entity, dict):
+            for child_id in self._relation_ids(root_entity.get("constituents")):
+                child = by_id.get(str(child_id))
+                if child is not None:
+                    children_by_parent.setdefault(root_id, []).append(child)
+
+        def sort_entities(entities):
+            deduped = {}
+            for entity in entities:
+                deduped[str(entity.get("id"))] = entity
+            return sorted(
+                deduped.values(),
+                key=lambda item: str(item.get("name") or item.get("pretty_name") or item.get("id") or "").lower(),
+            )
+
+        items = []
+        visited = set()
+
+        def append_entity(entity, depth):
+            entity_id = str(entity.get("id") or "")
+            if not entity_id or entity_id in visited:
+                return
+            visited.add(entity_id)
+            items.append({
+                "id": entity_id,
+                "label": entity.get("name") or entity.get("pretty_name") or entity_id,
+                "depth": max(0, int(depth)),
+                "active": entity_id == self.selected_entity_id,
+                "location_class": entity.get("location_class"),
+            })
+            for child in sort_entities(children_by_parent.get(entity_id, [])):
+                append_entity(child, depth + 1)
+
+        for child in sort_entities(children_by_parent.get(root_id, [])):
+            append_entity(child, 0)
+
+        for entity in sort_entities(active_locations):
+            entity_id = str(entity.get("id") or "")
+            if entity_id != root_id and entity_id not in visited:
+                append_entity(entity, 0)
+
+        return items
+
+    def select_location_from_layer_tree(self, entity_id):
+        entity_id = str(entity_id or "")
+        if not entity_id or self.world_model.get_entity(entity_id) is None:
+            return False
+        self.set_active_layer_kind(self.LOCATION_LAYER_KIND)
+        self.selected_entity_id = entity_id
+        self.selected_spatial_feature_id = None
+        self.hover_entity_id = entity_id
+        self.hover_spatial_feature_id = None
+        self.hover_screen_pos = None
+        return True
 
     def get_spatial_feature(self, spatial_feature_id):
         if not spatial_feature_id:
@@ -2427,8 +2587,12 @@ class MapSimulation:
         }
 
     def _append_spatial_feature_record(self, feature):
-        if not self._persist_repository_entity(feature, "spatial_features"):
-            raise OSError("Could not persist spatial feature to ontology")
+        feature["type"] = "location"
+        feature["_dataset"] = "locations"
+        if not feature.get("location_class"):
+            feature["location_class"] = "region"
+        if not self._persist_repository_entity(feature, "locations"):
+            raise OSError("Could not persist spatial feature location to ontology")
 
     def _append_location_record(self, location):
         if not self._persist_repository_entity(location, "locations"):
@@ -2500,7 +2664,7 @@ class MapSimulation:
         try:
             removed_from_repository = self._remove_repository_entity(
                 target_id,
-                dataset_name="locations" if is_location_region else "spatial_features",
+                dataset_name="locations",
             )
             if removed_from_repository is False:
                 return False
@@ -3344,6 +3508,116 @@ class MapSimulation:
                 layers.append(layer)
         return layers
 
+    def _selected_material_heatmap_layer(self, heatmap_model):
+        selected_id = str(self.active_material_heatmap_layer_id or "composite")
+        if selected_id == "composite":
+            composite = heatmap_model.get("composite_layer")
+            if isinstance(composite, dict) and composite.get("image_path"):
+                return composite
+
+        for layer in heatmap_model.get("layers") or []:
+            if not isinstance(layer, dict):
+                continue
+            layer_ids = {
+                str(layer.get("material_id") or ""),
+                str(layer.get("id") or ""),
+                str(layer.get("image_path") or ""),
+            }
+            if selected_id in layer_ids and layer.get("image_path"):
+                return layer
+
+        composite = heatmap_model.get("composite_layer")
+        if isinstance(composite, dict) and composite.get("image_path"):
+            self.active_material_heatmap_layer_id = "composite"
+            return composite
+
+        return next(
+            (
+                layer
+                for layer in heatmap_model.get("layers") or []
+                if isinstance(layer, dict) and layer.get("image_path")
+            ),
+            {},
+        )
+
+    def _build_material_heatmap_layers(self):
+        root_entity = self.get_root_entity()
+        if not isinstance(root_entity, dict):
+            return []
+        if root_entity.get("location_class") not in {"planet", "moon"}:
+            return []
+
+        heatmap_model = root_entity.get("material_heatmap_model")
+        if not isinstance(heatmap_model, dict):
+            return []
+
+        selected_layer = self._selected_material_heatmap_layer(heatmap_model)
+        image_path = selected_layer.get("image_path")
+        if not image_path:
+            return []
+
+        rect = self._planet_rect_from_entity(root_entity)
+        return [{
+            "shape": "image_rect",
+            "x": rect["x"],
+            "y": rect["y"],
+            "width_world": rect["width_world"],
+            "height_world": rect["height_world"],
+            "image_path": image_path,
+            "fit": "stretch_to_bounds",
+            "name": selected_layer.get("name") or "Material Distribution",
+            "entity_id": root_entity.get("id"),
+            "draw_order": -950,
+            "alpha": 232,
+            "pickable": False,
+            "material_heatmap_model": heatmap_model,
+        }]
+
+    def _build_visual_map_layers(self):
+        root_entity = self.get_root_entity()
+        if not isinstance(root_entity, dict):
+            return []
+
+        layers = []
+        image_rect = self._map_image_rect_from_entity(root_entity)
+        image_path = root_entity.get("map_image_path")
+        if image_path and image_rect is not None:
+            layers.append({
+                "shape": "image_rect",
+                "x": image_rect["x"],
+                "y": image_rect["y"],
+                "width_world": image_rect["width_world"],
+                "height_world": image_rect["height_world"],
+                "image_path": image_path,
+                "image_year": root_entity.get("map_image_year"),
+                "fit": root_entity.get("map_image_fit", "stretch_to_bounds"),
+                "name": root_entity.get("name"),
+                "entity_id": root_entity.get("id"),
+            })
+
+        if root_entity.get("location_class") in {"planet", "moon"}:
+            rect = self._planet_rect_from_entity(root_entity)
+            gas_giant = self._entity_is_gas_giant(root_entity)
+            layers.append({
+                "shape": "map_rect",
+                "x": rect["x"],
+                "y": rect["y"],
+                "width_world": rect["width_world"],
+                "height_world": rect["height_world"],
+                "canvas_width_px": rect["canvas_width_px"],
+                "canvas_height_px": rect["canvas_height_px"],
+                "name": root_entity.get("name"),
+                "entity_id": root_entity.get("id"),
+                "color": self._color_for_entity(root_entity),
+                "location_class": root_entity.get("location_class"),
+                "label_position": "below_right",
+                "has_heightmap_base": (not gas_giant) and isinstance(root_entity.get("heightmap_model"), dict),
+                "render_style": "gas_giant_bands" if gas_giant else "surface",
+                "bands": self._gas_giant_bands_for_entity(root_entity) if gas_giant else [],
+            })
+
+        return layers
+
     def _build_layers(self, year):
         """
         Build render layers from active entities.
@@ -3354,6 +3628,10 @@ class MapSimulation:
         * point place  -> marker
         """
         self.get_active_layer_kind()
+        if self.active_layer_kind == self.VISUAL_MAP_LAYER_KIND:
+            return self._build_visual_map_layers()
+        if self.active_layer_kind == self.MATERIAL_HEATMAP_LAYER_KIND:
+            return self._build_material_heatmap_layers()
         if self.active_layer_kind != self.LOCATION_LAYER_KIND:
             return self._build_spatial_feature_layers(year, self.active_layer_kind)
 

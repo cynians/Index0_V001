@@ -83,9 +83,13 @@ class KnowledgeBrowserHarness(KnowledgeBrowserUI):
         self.active_timeline_pan = False
         self.timeline_resize_start_mouse_y = None
         self.timeline_resize_start_height = None
+        self.timeline_splitter_click_pending = False
+        self.timeline_splitter_pending_mouse_pos = None
+        self.timeline_collapsed = False
         self.timeline_pan_last_mouse_x = None
         self.active_canvas_pan = False
         self.card_drag_mouse_offset = (0, 0)
+        self.card_drag_last_mouse_pos = None
         self.card_resize_start_mouse = None
         self.card_resize_start_size = None
         self.card_resize_start_position = None
@@ -142,6 +146,84 @@ class KnowledgeBrowserHarness(KnowledgeBrowserUI):
 
 
 class EntityIdUpdateTests(unittest.TestCase):
+    def test_rich_card_header_drag_starts_before_body_hit_testing(self):
+        pygame.font.init()
+        ui = KnowledgeBrowserHarness({"rich_card": {"id": "rich_card", "type": "idea"}})
+        ui.layout = {
+            "right_rect": pygame.Rect(300, 80, 700, 520),
+        }
+        ui.canvas_zoom = 1.0
+        ui.canvas_offset_x = 0
+        ui.canvas_offset_y = 0
+        ui.canvas_content_width = 0
+        ui.canvas_content_height = 0
+        ui.compact_canvas_zoom_threshold = 0.62
+        ui.card_font_cache = {}
+        ui.font_for_layout = pygame.font.SysFont("consolas", 16)
+        ui.timeline_ui = SimpleNamespace(
+            set_open_canvas_entity_ids=lambda _ids: False,
+            rebuild_layout=lambda: None,
+        )
+        ui.canvas_relation_edges = []
+        ui.relation_tree_neighbor_cache = {}
+        ui.cards = [
+            {
+                "entity_id": "rich_card",
+                "canvas_x": 24,
+                "canvas_y": 84,
+                "canvas_w": 420,
+                "canvas_h": 1200,
+                "auto_canvas_h": True,
+                "rect": pygame.Rect(324, 164, 420, 1200),
+                "header_drag_rect": pygame.Rect(324, 164, 420, 66),
+                "close_rect": None,
+                "resize_hitboxes": [],
+                "resize_handle_rect": pygame.Rect(728, 1348, 14, 14),
+                "card_view": None,
+                "relation_hitboxes": [
+                    ({"kind": "existing", "entity_id": f"ref_{index}"}, pygame.Rect(330, 240 + index * 20, 360, 18))
+                    for index in range(200)
+                ],
+            }
+        ]
+
+        result = ui._canvas_controller()._handle_card_canvas_click((340, 180), ui.layout["right_rect"])
+
+        self.assertEqual("__ui_consumed__", result)
+        self.assertEqual("rich_card", ui.active_card_drag_id)
+        self.assertEqual((340, 180), ui.card_drag_last_mouse_pos)
+
+    def test_active_card_drag_moves_existing_layout_without_full_relayout(self):
+        ui = KnowledgeBrowserHarness({"rich_card": {"id": "rich_card", "type": "idea"}})
+        ui.layout = {
+            "right_rect": pygame.Rect(300, 80, 700, 520),
+        }
+        ui.canvas_zoom = 1.0
+        ui.canvas_offset_x = 0
+        ui.canvas_offset_y = 0
+        ui.canvas_relation_edges = []
+        ui.active_card_drag_id = "rich_card"
+        ui.card_drag_mouse_offset = (16, 16)
+        ui.card_drag_last_mouse_pos = (340, 180)
+        ui.cards = [
+            {
+                "entity_id": "rich_card",
+                "canvas_x": 24,
+                "canvas_y": 84,
+                "rect": pygame.Rect(324, 164, 420, 520),
+                "header_drag_rect": pygame.Rect(324, 164, 420, 66),
+                "canvas_relation_add_rect": pygame.Rect(700, 390, 28, 28),
+            }
+        ]
+        before_relayout_count = ui.relayout_count
+
+        result = ui._handle_mousemotion_event(SimpleNamespace(pos=(360, 205)))
+
+        self.assertEqual("__ui_consumed__", result)
+        self.assertEqual(before_relayout_count, ui.relayout_count)
+        self.assertEqual(pygame.Rect(344, 189, 420, 520), ui.cards[0]["rect"])
+        self.assertEqual((360, 205), ui.card_drag_last_mouse_pos)
+
     def test_generated_id_uses_entry_name_slug(self):
         ui = KnowledgeBrowserHarness()
         template = {

@@ -6,6 +6,8 @@ from simulations.phylogeny.clade_graph import find_clade_matches
 
 class KnowledgeCanvasController:
     MAX_CARD_CANVAS_H = 8000
+    MIN_AUTO_CARD_CANVAS_H = 340
+    AUTO_CARD_VIEWPORT_MARGIN = 56
     CARD_CANVAS_HITBOX_KEYS = (
         "resize_hitboxes",
         "corner_handle_rects",
@@ -21,6 +23,83 @@ class KnowledgeCanvasController:
         "media_import_hitboxes",
         "media_pixel_art_hitboxes",
         "media_illustration_link_hitboxes",
+    )
+    CARD_DRAG_LAYOUT_KEYS = (
+        "rect",
+        "toolbelt_rect",
+        "header_drag_rect",
+        "close_rect",
+        "template_button_rect",
+        "resize_handle_rect",
+        "canvas_relation_add_rect",
+        "type_label_rect",
+        "edit_toggle_rect",
+        "idea_button_rect",
+        "relation_tree_rect",
+        "time_anchor_rect",
+        "delete_rect",
+        "title_edit_rect",
+        "header_description_rect",
+        "header_icon_rect",
+        "content_viewport_rect",
+        "launch_rect",
+        "tag_bar_rect",
+        "general_content_rect",
+        "timeline_snapshot_rect",
+        "task_finish_checkbox_rect",
+        "task_checklist_input_rect",
+        "media_add_illustration_rect",
+        "phylogeny_parent_section_rect",
+        "phylogeny_parent_panel_rect",
+        "phylogeny_parent_panel_content_rect",
+        "phylogeny_child_section_rect",
+        "phylogeny_diagram_section_rect",
+        "phylogeny_parent_input_rect",
+        "phylogeny_child_input_rect",
+        "location_section_rect",
+        "location_mode_rect",
+        "location_query_rect",
+        "location_start_rect",
+        "location_end_rect",
+        "location_add_rect",
+        "location_topology_place_rect",
+        "production_section_rect",
+        "production_group_toggle_rect",
+        "production_product_input_rect",
+        "production_product_add_rect",
+        "production_empty_rect",
+        "schema_save_rect",
+    )
+    CARD_DRAG_LAYOUT_COLLECTION_KEYS = CARD_CANVAS_HITBOX_KEYS + (
+        "field_rows",
+        "section_draw_rects",
+        "relation_picker_hitboxes",
+        "tag_chip_hitboxes",
+        "tag_suggestion_hitboxes",
+        "tag_remove_hitboxes",
+        "task_checklist_hitboxes",
+        "type_picker_hitboxes",
+        "phylogeny_node_hitboxes",
+        "phylogeny_parent_match_rows",
+        "phylogeny_child_match_rows",
+        "phylogeny_parent_tree_rows",
+        "phylogeny_child_tree_rows",
+        "phylogeny_local_tree_rows",
+        "location_rows",
+        "location_match_rows",
+        "location_topology_rows",
+        "location_topology_match_rows",
+        "location_topology_section_rects",
+        "location_topology_input_rects",
+        "location_topology_add_rects",
+        "production_line_rows",
+        "production_site_group_rows",
+        "production_hitboxes",
+        "production_match_rows",
+        "site_section_rects",
+        "site_rows",
+        "schema_field_hitboxes",
+        "media_illustration_rows",
     )
 
     def __init__(self, host):
@@ -207,9 +286,10 @@ class KnowledgeCanvasController:
                 minimum_h = 260
 
             if auto_canvas_h:
-                card_h = max(260, min(self.MAX_CARD_CANVAS_H, minimum_h))
+                auto_h_limit = self._auto_card_canvas_height_limit(right_rect)
+                card_h = max(260, min(auto_h_limit, minimum_h))
             else:
-                card_h = max(260, min(self.MAX_CARD_CANVAS_H, max(requested_h, minimum_h)))
+                card_h = max(260, min(self.MAX_CARD_CANVAS_H, requested_h))
             card["canvas_h"] = card_h
             card["layout_font"] = card_font
 
@@ -237,6 +317,15 @@ class KnowledgeCanvasController:
             self.timeline_ui.rebuild_layout()
         self._layout_canvas_relation_controls()
         self._rebuild_canvas_relation_edges()
+
+    def _auto_card_canvas_height_limit(self, right_rect):
+        viewport_h = int(getattr(right_rect, "height", 0) or 0)
+        if viewport_h <= 0:
+            return self.MAX_CARD_CANVAS_H
+        return max(
+            self.MIN_AUTO_CARD_CANVAS_H,
+            min(self.MAX_CARD_CANVAS_H, viewport_h - self.AUTO_CARD_VIEWPORT_MARGIN),
+        )
 
     def _layout_offscreen_card(self, card, rect, card_h):
         card["is_compact_canvas_card"] = False
@@ -481,6 +570,37 @@ class KnowledgeCanvasController:
         self.card_resize_start_position = (card_obj.get("canvas_x", 24), card_obj.get("canvas_y", 84))
         self.card_resize_edges = resize_edges
 
+    def _begin_card_drag(self, card_obj, mouse_pos):
+        self.active_card_drag_id = card_obj["entity_id"]
+        canvas_x, canvas_y = self._screen_to_canvas_pos(mouse_pos)
+        self.card_drag_mouse_offset = (
+            canvas_x - card_obj.get("canvas_x", 24),
+            canvas_y - card_obj.get("canvas_y", 84),
+        )
+        self.card_drag_last_mouse_pos = mouse_pos
+
+    def _move_rect_value(self, value, dx, dy):
+        if isinstance(value, pygame.Rect):
+            return value.move(dx, dy)
+        if isinstance(value, list):
+            return [self._move_rect_value(item, dx, dy) for item in value]
+        if isinstance(value, tuple):
+            return tuple(self._move_rect_value(item, dx, dy) for item in value)
+        if isinstance(value, dict):
+            return {
+                key: self._move_rect_value(item, dx, dy)
+                for key, item in value.items()
+            }
+        return value
+
+    def _move_card_screen_layout(self, card, dx, dy):
+        for key in self.CARD_DRAG_LAYOUT_KEYS:
+            if key in card:
+                card[key] = self._move_rect_value(card.get(key), dx, dy)
+        for key in self.CARD_DRAG_LAYOUT_COLLECTION_KEYS:
+            if key in card:
+                card[key] = self._move_rect_value(card.get(key), dx, dy)
+        self._layout_canvas_relation_controls()
 
     def _card_visual_rect(self, card):
         if not isinstance(card, dict):
@@ -1094,12 +1214,7 @@ class KnowledgeCanvasController:
                 rect = card.get("rect")
                 if rect is not None and rect.collidepoint(mouse_pos):
                     card_obj = self._bring_card_to_front(index)
-                    self.active_card_drag_id = card_obj["entity_id"]
-                    canvas_x, canvas_y = self._screen_to_canvas_pos(mouse_pos)
-                    self.card_drag_mouse_offset = (
-                        canvas_x - card_obj.get("canvas_x", 24),
-                        canvas_y - card_obj.get("canvas_y", 84),
-                    )
+                    self._begin_card_drag(card_obj, mouse_pos)
                     self._layout_all_cards()
                     return "__ui_consumed__"
                 continue
@@ -1242,6 +1357,25 @@ class KnowledgeCanvasController:
                     self._close_wiki_link_picker(card_obj)
                     self._close_relation_picker(card_obj)
                 self._relayout_cards()
+                return "__ui_consumed__"
+
+            for resize_edges, hitbox in card.get("resize_hitboxes", []):
+                if hitbox.collidepoint(mouse_pos):
+                    card_obj = self._bring_card_to_front(index)
+                    self._begin_card_resize(card_obj, mouse_pos, resize_edges)
+                    self._layout_all_cards()
+                    return "__ui_consumed__"
+
+            if card.get("resize_handle_rect") is not None and card["resize_handle_rect"].collidepoint(mouse_pos):
+                card_obj = self._bring_card_to_front(index)
+                self._begin_card_resize(card_obj, mouse_pos, "bottom_right")
+                self._layout_all_cards()
+                return "__ui_consumed__"
+
+            if card.get("header_drag_rect") is not None and card["header_drag_rect"].collidepoint(mouse_pos):
+                card_obj = self._bring_card_to_front(index)
+                self._begin_card_drag(card_obj, mouse_pos)
+                self._layout_all_cards()
                 return "__ui_consumed__"
 
             for match_index, match_rect in card.get("relation_picker_hitboxes", []):
@@ -1557,30 +1691,6 @@ class KnowledgeCanvasController:
                         }
                     self._open_toolbelt_name_prompt(card_obj, tool_info)
                     return "__ui_consumed__"
-
-            for resize_edges, hitbox in card.get("resize_hitboxes", []):
-                if hitbox.collidepoint(mouse_pos):
-                    card_obj = self._bring_card_to_front(index)
-                    self._begin_card_resize(card_obj, mouse_pos, resize_edges)
-                    self._layout_all_cards()
-                    return "__ui_consumed__"
-
-            if card["resize_handle_rect"].collidepoint(mouse_pos):
-                card_obj = self._bring_card_to_front(index)
-                self._begin_card_resize(card_obj, mouse_pos, "bottom_right")
-                self._layout_all_cards()
-                return "__ui_consumed__"
-
-            if card["header_drag_rect"].collidepoint(mouse_pos):
-                card_obj = self._bring_card_to_front(index)
-                self.active_card_drag_id = card_obj["entity_id"]
-                canvas_x, canvas_y = self._screen_to_canvas_pos(mouse_pos)
-                self.card_drag_mouse_offset = (
-                    canvas_x - card_obj.get("canvas_x", 24),
-                    canvas_y - card_obj.get("canvas_y", 84),
-                )
-                self._layout_all_cards()
-                return "__ui_consumed__"
 
             for tab_name, tab_rect in card.get("tab_hitboxes", []):
                 if tab_rect.collidepoint(mouse_pos) and card_view is not None:
