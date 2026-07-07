@@ -117,6 +117,7 @@ class BioregionGrid:
                         "plant_biomass": 0.0,
                         "plant_health": 0.0,
                         "habitat_type": "bare",
+                        "active": True,
                     }
                 )
 
@@ -154,10 +155,11 @@ class BioregionGrid:
 
         return self.get_cell(row, col)
 
-    def iter_cells(self):
+    def iter_cells(self, include_inactive=False):
         for row_cells in self.cells:
             for cell in row_cells:
-                yield cell
+                if include_inactive or cell.get("active", True):
+                    yield cell
 
     def get_average_surface_water(self):
         total = 0.0

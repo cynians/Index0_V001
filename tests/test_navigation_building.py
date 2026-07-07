@@ -94,6 +94,63 @@ class NavigationBuildingTests(unittest.TestCase):
         self.assertTrue(handled)
         self.assertEqual([True], finish_attempts)
 
+    def test_create_biosphere_launches_micro_biosphere_tab(self):
+        controller = self._controller([
+            {
+                "id": "coll_micro",
+                "type": "collections",
+                "_dataset": "collections",
+                "includes": ["spec_one"],
+            },
+            {
+                "id": "spec_one",
+                "type": "species",
+                "_dataset": "species",
+                "common_name": "One",
+            },
+        ])
+        active_sim = SimpleNamespace(
+            get_biosphere_launch_context=lambda: {
+                "patch_location_id": "loc_patch",
+                "patch_name": "Patch",
+                "root_name": "Meadow",
+                "species_collection_id": "coll_micro",
+                "map_size_m": 10.0,
+            }
+        )
+
+        handled = controller.handle_ui_action("create_biosphere", active_sim)
+
+        self.assertTrue(handled)
+        tab = controller.app.tab_manager.tabs[0]
+        self.assertEqual(("biosphere", "loc_patch"), tab.tab_key)
+        self.assertEqual("Biosphere: Patch", tab.name)
+        self.assertEqual(10.0, tab.sim_instance.simulation.get_map_size())
+
+    def test_world_gen_space_action_opens_parent_space_sim(self):
+        controller = self._controller([
+            {
+                "id": "system_alpha",
+                "name": "Alpha",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "star_system",
+            }
+        ])
+
+        handled = controller.handle_ui_action(
+            {
+                "id": "open_space_from_world_gen",
+                "system_id": "system_alpha",
+            },
+            active_sim=None,
+        )
+
+        self.assertTrue(handled)
+        tab = controller.app.tab_manager.tabs[0]
+        self.assertEqual(("space", "system_alpha"), tab.tab_key)
+        self.assertEqual("System: Alpha", tab.name)
+
     def test_place_location_on_parent_uses_constituents_parent(self):
         controller = self._controller([
             {

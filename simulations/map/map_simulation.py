@@ -48,6 +48,9 @@ class MapSimulation:
     REGION_LAYER_KIND = "regions"
     GROUND_MATERIALS_LAYER_KIND = "ground_materials"
     MATERIAL_HEATMAP_LAYER_KIND = "material_heatmaps"
+    BIOSPHERE_PATCH_LOCATION_CLASS = "biosphere_patch"
+    BIOSPHERE_SPECIES_COLLECTION_ID = "coll_micro_biosphere_species_starter"
+    LOCALIZED_BIOSPHERE_ROSTER_CLASS = "localized_biosphere_species_roster"
 
     LAYER_LABELS = {
         "visual_map": "Visual Map",
@@ -111,6 +114,7 @@ class MapSimulation:
         self.hover_screen_pos = None
 
         self.is_creating_spatial_feature = False
+        self.is_creating_biosphere_patch = False
         self.draft_spatial_feature_points = []
         self.draft_hover_map_pos = None
         self.is_editing_spatial_feature_polygon = False
@@ -407,6 +411,33 @@ class MapSimulation:
 
         return width_px, height_px
 
+    def _planet_bbox_matches_radius_scale(self, width_world, height_world, radius_m):
+        try:
+            width_world = abs(float(width_world))
+            height_world = abs(float(height_world))
+            radius_width, radius_height = self._planet_world_size_from_radius(radius_m)
+        except (TypeError, ValueError):
+            return True
+        if width_world <= 0.0 or height_world <= 0.0:
+            return False
+        aspect = width_world / max(0.0001, height_world)
+        if not 1.6 <= aspect <= 2.4:
+            return False
+        return width_world >= radius_width * 0.5 and height_world >= radius_height * 0.5
+
+    def _planet_rect_from_radius(self, center_x, center_y, radius_m):
+        width_world, height_world = self._planet_world_size_from_radius(radius_m)
+        canvas_w, canvas_h = self._planet_canvas_size_from_radius(radius_m)
+        center_x, center_y = self._map_point_to_world(center_x, center_y)
+        return {
+            "x": center_x,
+            "y": center_y,
+            "width_world": width_world,
+            "height_world": height_world,
+            "canvas_width_px": canvas_w,
+            "canvas_height_px": canvas_h,
+        }
+
     def _planet_rect_from_entity(self, entity):
         """
         Resolve a planet rect from either bbox or radius data.
@@ -421,6 +452,8 @@ class MapSimulation:
             center_x = coords.get("x", 0.0)
             center_y = coords.get("y", 0.0)
 
+        radius_m = entity.get("radius_m")
+
         if bounds.get("type") == "bbox":
             min_x = bounds.get("min_x", -self.DEFAULT_PLANET_WORLD_WIDTH / 2)
             max_x = bounds.get("max_x", self.DEFAULT_PLANET_WORLD_WIDTH / 2)
@@ -429,6 +462,12 @@ class MapSimulation:
 
             width_world = max_x - min_x
             height_world = max_y - min_y
+
+            if (
+                radius_m not in (None, "")
+                and not self._planet_bbox_matches_radius_scale(width_world, height_world, radius_m)
+            ):
+                return self._planet_rect_from_radius(center_x, center_y, radius_m)
 
             if coords.get("type") != "point":
                 center_x = (min_x + max_x) / 2.0
@@ -462,20 +501,9 @@ class MapSimulation:
                 "canvas_height_px": canvas_h,
             }
 
-        radius_m = entity.get("radius_m")
         if radius_m not in (None, ""):
             try:
-                width_world, height_world = self._planet_world_size_from_radius(radius_m)
-                canvas_w, canvas_h = self._planet_canvas_size_from_radius(radius_m)
-                center_x, center_y = self._map_point_to_world(center_x, center_y)
-                return {
-                    "x": center_x,
-                    "y": center_y,
-                    "width_world": width_world,
-                    "height_world": height_world,
-                    "canvas_width_px": canvas_w,
-                    "canvas_height_px": canvas_h,
-                }
+                return self._planet_rect_from_radius(center_x, center_y, radius_m)
             except (TypeError, ValueError):
                 pass
 
@@ -518,6 +546,26 @@ class MapSimulation:
                 "min_y": -16.0,
                 "max_y": 16.0,
             }
+
+        if (
+            root_entity.get("location_class") in {"planet", "moon"}
+            and bounds.get("type") == "bbox"
+            and root_entity.get("radius_m") not in (None, "")
+        ):
+            min_x = bounds.get("min_x", -self.DEFAULT_PLANET_WORLD_WIDTH / 2)
+            max_x = bounds.get("max_x", self.DEFAULT_PLANET_WORLD_WIDTH / 2)
+            min_y = bounds.get("min_y", -self.DEFAULT_PLANET_WORLD_HEIGHT / 2)
+            max_y = bounds.get("max_y", self.DEFAULT_PLANET_WORLD_HEIGHT / 2)
+            if not self._planet_bbox_matches_radius_scale(max_x - min_x, max_y - min_y, root_entity.get("radius_m")):
+                rect = self._planet_rect_from_entity(root_entity)
+                half_w = rect["width_world"] / 2.0
+                half_h = rect["height_world"] / 2.0
+                return {
+                    "min_x": rect["x"] - half_w,
+                    "max_x": rect["x"] + half_w,
+                    "min_y": rect["y"] - half_h,
+                    "max_y": rect["y"] + half_h,
+                }
 
         if bounds.get("type") == "bbox":
             min_x = bounds.get("min_x", -self.DEFAULT_PLANET_WORLD_WIDTH / 2)
@@ -1286,6 +1334,7 @@ class MapSimulation:
 
     def _set_all_editor_modes_inactive(self):
         self.is_creating_spatial_feature = False
+        self.is_creating_biosphere_patch = False
         self.draft_spatial_feature_points = []
         self.draft_hover_map_pos = None
         self.is_editing_spatial_feature_polygon = False
@@ -1351,6 +1400,11 @@ class MapSimulation:
             return "Edit rectangle: drag a handle"
 
         if self.is_polygon_editor_active():
+            if self.is_creating_biosphere_patch:
+                area_label = self.get_draft_area_label()
+                if area_label:
+                    return f"Biosphere patch: {self.get_polygon_editor_point_count()} points | {area_label}"
+                return f"Biosphere patch: {self.get_polygon_editor_point_count()} points"
             return f"{self.get_polygon_editor_mode_label()}: {self.get_polygon_editor_point_count()} points"
 
         return ""
@@ -1406,6 +1460,8 @@ class MapSimulation:
             return "Edit polygon"
 
         if self.is_creating_spatial_feature:
+            if self.is_creating_biosphere_patch:
+                return "Biosphere patch"
             return "Draft selection"
 
         return "Polygon"
@@ -1439,6 +1495,34 @@ class MapSimulation:
         logger.info(
             f"[MapSimulation] Started spatial feature draft "
             f"layer={self.active_layer_kind}"
+        )
+        return True
+
+    def can_create_biosphere_patch_draft(self):
+        return self.LOCATION_LAYER_KIND in self.get_available_layer_kinds()
+
+    def begin_biosphere_patch_draft(self):
+        if not self.can_create_biosphere_patch_draft():
+            self.set_active_layer_kind(self.LOCATION_LAYER_KIND)
+
+        if not self.can_create_biosphere_patch_draft():
+            return False
+
+        self._set_all_editor_modes_inactive()
+        self.active_layer_kind = self.LOCATION_LAYER_KIND
+        self.is_creating_spatial_feature = True
+        self.is_creating_biosphere_patch = True
+        self._draft_last_click_time = None
+        self._draft_last_click_screen_pos = None
+        self.selected_entity_id = None
+        self.hover_entity_id = None
+        self.selected_spatial_feature_id = None
+        self.hover_spatial_feature_id = None
+        self.hover_screen_pos = None
+        self._invalidate_layer_cache()
+
+        logger.info(
+            f"[MapSimulation] Started biosphere patch draft root={self.context.root_entity_id}"
         )
         return True
 
@@ -1555,6 +1639,7 @@ class MapSimulation:
             return False
 
         self.is_creating_spatial_feature = False
+        self.is_creating_biosphere_patch = False
         self.draft_spatial_feature_points = []
         self.draft_hover_map_pos = None
         self._draft_last_click_time = None
@@ -1698,6 +1783,7 @@ class MapSimulation:
             self.active_layer_kind = self.LOCATION_LAYER_KIND
 
         self.is_creating_spatial_feature = False
+        self.is_creating_biosphere_patch = False
         self.draft_spatial_feature_points = []
         self.draft_hover_map_pos = None
         self.is_evolving_spatial_feature_polygon = False
@@ -2046,9 +2132,16 @@ class MapSimulation:
 
         region = self._build_draft_spatial_feature_record()
         is_location_layer = region.get("layer_kind") == self.LOCATION_LAYER_KIND
+        biosphere_roster = (
+            self._build_biosphere_roster_collection_record(region)
+            if region.get("location_class") == self.BIOSPHERE_PATCH_LOCATION_CLASS
+            else None
+        )
 
         try:
             self._append_location_record(region)
+            if biosphere_roster is not None:
+                self._append_collection_record(biosphere_roster)
             linked_parent = self._append_offspring_reference_to_location(
                 self.context.root_entity_id,
                 region["id"],
@@ -2085,6 +2178,44 @@ class MapSimulation:
             f"[MapSimulation] Saved location draft {region['id']}"
         )
         return True
+
+    def can_create_biosphere_from_selection(self):
+        if not self.selected_entity_id:
+            return False
+
+        entity = self.get_location(self.selected_entity_id)
+        if not isinstance(entity, dict):
+            return False
+
+        if entity.get("location_class") != self.BIOSPHERE_PATCH_LOCATION_CLASS:
+            return False
+
+        bounds = entity.get("bounds") or entity.get("geometry") or {}
+        return len(self._get_geometry_points(bounds)) >= 3
+
+    def get_biosphere_launch_context(self):
+        if not self.can_create_biosphere_from_selection():
+            return None
+
+        patch = self.get_location(self.selected_entity_id)
+        root = self.get_root_entity() or {}
+        metrics = self._biosphere_polygon_metrics(self._get_geometry_points(patch.get("bounds") or patch.get("geometry") or {}))
+        return {
+            "patch_location_id": patch.get("id"),
+            "patch_name": patch.get("name") or patch.get("pretty_name") or patch.get("id"),
+            "parent_location_id": patch.get("parent_location") or self.context.root_entity_id,
+            "root_location_id": self.context.root_entity_id,
+            "root_name": root.get("name") or root.get("pretty_name") or self.context.root_entity_id,
+            "year": self.year,
+            "source_bounds": patch.get("bounds") or patch.get("geometry"),
+            "biosphere_shape": patch.get("biosphere_shape") or metrics.get("shape"),
+            "biosphere_area_m2": patch.get("biosphere_area_m2") or metrics.get("area_m2"),
+            "biosphere_width_m": patch.get("biosphere_width_m") or metrics.get("width_m"),
+            "biosphere_height_m": patch.get("biosphere_height_m") or metrics.get("height_m"),
+            "map_context_inherited": bool(patch.get("inherits_location_context_layers", True)),
+            "map_size_m": patch.get("biosphere_map_size_m") or metrics.get("map_size_m") or 10.0,
+            "species_collection_id": patch.get("biosphere_species_collection") or self.BIOSPHERE_SPECIES_COLLECTION_ID,
+        }
 
     def finish_map_square_draft(self):
         if not self.can_finish_map_square_draft():
@@ -2211,6 +2342,9 @@ class MapSimulation:
         editor_points = self.get_polygon_editor_points()
         if len(editor_points) < 3:
             return None
+
+        if self.is_creating_biosphere_patch:
+            return self._format_area(self._biosphere_polygon_metrics(editor_points)["area_m2"])
 
         area_square_meters = self._polygon_area_square_meters(editor_points)
         return self._format_area(area_square_meters)
@@ -2353,6 +2487,48 @@ class MapSimulation:
 
         return f"{area_square_meters:,.0f} sq m"
 
+    def _biosphere_polygon_metrics(self, points):
+        parsed = []
+        for point in points or []:
+            if not isinstance(point, (list, tuple)) or len(point) < 2:
+                continue
+            try:
+                parsed.append((float(point[0]), float(point[1])))
+            except (TypeError, ValueError):
+                continue
+        if len(parsed) < 3:
+            return {
+                "area_m2": 100.0,
+                "width_m": 10.0,
+                "height_m": 10.0,
+                "map_size_m": 10.0,
+                "shape": {
+                    "type": "polygon",
+                    "coordinate_space": "biosphere_local_m",
+                    "points": [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)],
+                },
+            }
+
+        xs = [point[0] for point in parsed]
+        ys = [point[1] for point in parsed]
+        min_x = min(xs)
+        min_y = min(ys)
+        local_points = [(x - min_x, y - min_y) for x, y in parsed]
+        width_m = max(0.01, max(xs) - min_x)
+        height_m = max(0.01, max(ys) - min_y)
+        area_m2 = max(0.01, self._polygon_area(local_points))
+        return {
+            "area_m2": round(area_m2, 3),
+            "width_m": round(width_m, 3),
+            "height_m": round(height_m, 3),
+            "map_size_m": round(max(width_m, height_m), 3),
+            "shape": {
+                "type": "polygon",
+                "coordinate_space": "biosphere_local_m",
+                "points": local_points,
+            },
+        }
+
     def _get_existing_entity_ids(self):
         loader = getattr(self.world_model, "loader", None)
         entities = getattr(loader, "entities", None)
@@ -2421,6 +2597,31 @@ class MapSimulation:
                 return location_id, index
             index += 1
 
+    def _allocate_biosphere_patch_id(self):
+        existing_ids = self._get_existing_entity_ids()
+        root_id = self._sanitize_identifier_part(self.context.root_entity_id)
+
+        index = 1
+        while True:
+            location_id = f"loc_biosphere_patch_{root_id}_{index:03d}"
+            if location_id not in existing_ids:
+                return location_id, index
+            index += 1
+
+    def _allocate_biosphere_roster_id(self, patch_location_id):
+        existing_ids = self._get_existing_entity_ids()
+        patch_part = self._sanitize_identifier_part(patch_location_id)
+        base_id = f"coll_biosphere_roster_{patch_part}"
+        if base_id not in existing_ids:
+            return base_id
+
+        index = 2
+        while True:
+            collection_id = f"{base_id}_{index:03d}"
+            if collection_id not in existing_ids:
+                return collection_id
+            index += 1
+
     def _build_draft_spatial_feature_record(self):
         feature_id, index = self._allocate_spatial_feature_draft_id()
         if self._root_is_building():
@@ -2456,6 +2657,53 @@ class MapSimulation:
             }
 
         root_name = self.get_root_name()
+        if self.is_creating_biosphere_patch:
+            feature_id, index = self._allocate_biosphere_patch_id()
+            roster_id = self._allocate_biosphere_roster_id(feature_id)
+            name = f"Biosphere Patch {index:03d}"
+            points = list(self.draft_spatial_feature_points)
+            metrics = self._biosphere_polygon_metrics(points)
+            notes = (
+                f"Draft biosphere design patch selected under {root_name}. "
+                "The source polygon remains on the location map while BioSim resolves "
+                "soil, hydrology, vegetation, and species at micro scale."
+            )
+            return {
+                "id": feature_id,
+                "pretty_name": name,
+                "name": name,
+                "type": "location",
+                "location_class": self.BIOSPHERE_PATCH_LOCATION_CLASS,
+                "location_role": "biosphere_design_patch",
+                "region_class": self.BIOSPHERE_PATCH_LOCATION_CLASS,
+                "wiki_entry": notes,
+                "layer_kind": self.LOCATION_LAYER_KIND,
+                "parent_location": self.context.root_entity_id,
+                "parent_entity": self.context.root_entity_id,
+                "parents": [self.context.root_entity_id],
+                "geometry": {
+                    "type": "polygon",
+                    "coordinate_space": "map_world",
+                    "points": points,
+                },
+                "bounds": {
+                    "type": "polygon",
+                    "coordinate_space": "map_world",
+                    "points": points,
+                },
+                "biosphere_scale": "micro_polygon",
+                "biosphere_area_target_m2": metrics["area_m2"],
+                "biosphere_area_m2": metrics["area_m2"],
+                "biosphere_width_m": metrics["width_m"],
+                "biosphere_height_m": metrics["height_m"],
+                "biosphere_map_size_m": metrics["map_size_m"],
+                "biosphere_shape": metrics["shape"],
+                "biosphere_species_collection": roster_id,
+                "inherits_location_context_layers": True,
+                "start_year": self.year,
+                "entry_status": "draft",
+            }
+
         if self.active_layer_kind == self.LOCATION_LAYER_KIND:
             feature_id, index = self._allocate_location_draft_id()
             name = f"Draft Location {index:03d}"
@@ -2492,6 +2740,32 @@ class MapSimulation:
                 "coordinate_space": "map_world",
                 "points": list(self.draft_spatial_feature_points),
             },
+            "start_year": self.year,
+            "entry_status": "draft",
+        }
+
+    def _build_biosphere_roster_collection_record(self, patch):
+        patch_id = patch.get("id")
+        collection_id = patch.get("biosphere_species_collection")
+        if not patch_id or not collection_id:
+            return None
+
+        patch_name = patch.get("name") or patch.get("pretty_name") or patch_id
+        parent_name = self.get_root_name()
+        name = f"{patch_name} Species Roster"
+        return {
+            "id": collection_id,
+            "pretty_name": name,
+            "name": name,
+            "type": "collections",
+            "_dataset": "collections",
+            "collection_class": self.LOCALIZED_BIOSPHERE_ROSTER_CLASS,
+            "biosphere_location": patch_id,
+            "scope": f"Species roster for {patch_name} under {parent_name}.",
+            "wiki_entry": (
+                f"Localized biosphere species roster for {patch_name}. "
+                "Link species into the roster buckets to make them selectable in BioSim."
+            ),
             "start_year": self.year,
             "entry_status": "draft",
         }
@@ -2597,6 +2871,15 @@ class MapSimulation:
     def _append_location_record(self, location):
         if not self._persist_repository_entity(location, "locations"):
             raise OSError("Could not persist location to ontology")
+
+    def _append_collection_record(self, collection):
+        if not isinstance(collection, dict):
+            return False
+        collection["type"] = "collections"
+        collection["_dataset"] = "collections"
+        if not self._persist_repository_entity(collection, "collections"):
+            raise OSError("Could not persist collection to ontology")
+        return True
 
     def _append_offspring_reference_to_location(self, parent_location_id, child_location_id):
         if not parent_location_id or not child_location_id:

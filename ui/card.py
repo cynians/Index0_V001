@@ -1,5 +1,6 @@
 import os
 import colorsys
+import re
 
 import pygame
 
@@ -79,6 +80,24 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
     LOCATION_TOPOLOGY_SYMMETRIC_FIELDS = {"neighbours", "overlaps"}
     LOCATION_TOPOLOGY_FIELD_PREFIX = "location_topology:"
     TIMELINE_SNAPSHOT_FIELD = "timeline_snapshot_entry"
+    BIOSPHERE_ROSTER_SECTION_FIELDS = {
+        "biosphere_species_collection",
+        "biosphere_location",
+        "biosphere_scale",
+        "biosphere_area_target_m2",
+        "biosphere_area_m2",
+        "biosphere_width_m",
+        "biosphere_height_m",
+        "biosphere_map_size_m",
+        "biosphere_shape",
+        "microfauna_species",
+        "small_animal_species",
+        "medium_animal_species",
+        "large_animal_species",
+        "megafauna_species",
+        "sessile_life_species",
+        "plant_species",
+    }
     IDEA_GENERIC_FIELDS = {
         "id",
         "pretty_name",
@@ -95,9 +114,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         "wiki_field_colors",
         "tags",
         "start_year",
-        "start_commentary",
+        "snapshot_year",
         "end_year",
-        "end_commentary",
         "temporal_periods",
         "parents",
         "related",
@@ -112,6 +130,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         "Temporal",
         "Relations",
         "Class Relations",
+        "Biosphere Species Roster",
+        "Simulation / Plant Ecology",
         "Simulation / Data",
         "Metadata",
     ]
@@ -121,7 +141,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
     DATASET_TAB_ORDER = {
         "ideas": ["general", "overview", "temporal", "location", "relations", "media"],
         "cladistics": ["general", "overview", "phylogeny", "relations", "temporal", "location", "media"],
-        "species": ["general", "overview", "phylogeny", "relations", "temporal", "location", "media"],
+        "species": ["general", "overview", "phylogeny", "relations", "temporal", "location", "simulation", "media"],
         "components": ["general", "overview", "temporal", "location", "relations", "operational", "simulation", "media"],
         "producers": ["general", "overview", "production", "temporal", "location", "relations", "media"],
     }
@@ -138,12 +158,40 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         "operational": "Operational",
         "media": "Media",
     }
-    SIMULATION_SUBTAB_ORDER = ["orbital", "map", "world_gen", "data"]
+    SIMULATION_SUBTAB_ORDER = ["orbital", "map", "world_gen", "materials", "plant_ecology", "data"]
+    PERSON_SIMULATION_SUBTAB_ORDER = ["quotes", "data"]
     SIMULATION_SUBTAB_LABELS = {
         "orbital": "Orbital",
         "map": "Map Sim",
         "world_gen": "World Gen",
+        "materials": "Materials",
+        "plant_ecology": "Plant Eco",
+        "quotes": "Quotes",
         "data": "Data",
+    }
+    PERSON_QUOTE_FIELD = "person_quotes"
+    PERSON_CONVERSATION_FIELD = "person_conversations"
+    PERSON_QUOTE_TEXT_FIELD = "person_quote_draft_quote"
+    PERSON_QUOTE_DATE_FIELD = "person_quote_draft_date"
+    PERSON_QUOTE_CONTEXT_FIELD = "person_quote_draft_context"
+    PERSON_CONVERSATION_SPEAKER_FIELD = "person_conversation_draft_speaker"
+    PERSON_CONVERSATION_DATE_FIELD = "person_conversation_draft_date"
+    PERSON_CONVERSATION_MESSAGE_FIELD = "person_conversation_draft_message"
+    PERSON_QUOTE_INPUT_FIELDS = (
+        PERSON_QUOTE_TEXT_FIELD,
+        PERSON_QUOTE_DATE_FIELD,
+        PERSON_QUOTE_CONTEXT_FIELD,
+        PERSON_CONVERSATION_SPEAKER_FIELD,
+        PERSON_CONVERSATION_DATE_FIELD,
+        PERSON_CONVERSATION_MESSAGE_FIELD,
+    )
+    PERSON_QUOTE_FIELD_LABELS = {
+        PERSON_QUOTE_TEXT_FIELD: "Quote",
+        PERSON_QUOTE_DATE_FIELD: "Date",
+        PERSON_QUOTE_CONTEXT_FIELD: "Context",
+        PERSON_CONVERSATION_SPEAKER_FIELD: "Speaker",
+        PERSON_CONVERSATION_DATE_FIELD: "Date",
+        PERSON_CONVERSATION_MESSAGE_FIELD: "Message",
     }
     TAB_SECTIONS = {
         "general": [],
@@ -151,7 +199,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         "production": [],
         "temporal": ["Temporal"],
         "location": [],
-        "relations": ["Relations", "Class Relations"],
+        "relations": ["Relations", "Class Relations", "Biosphere Species Roster"],
         "operational": ["Operational"],
         "simulation": [],
         "media": ["Media"],
@@ -160,6 +208,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         "orbital": ["Simulation / Orbital"],
         "map": ["Simulation / Map Sim"],
         "world_gen": ["Simulation / World Gen"],
+        "materials": ["Simulation / Materials"],
+        "plant_ecology": ["Simulation / Plant Ecology"],
         "data": ["Simulation / Data"],
     }
     TEMPORAL_FIELDS = {
@@ -167,9 +217,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         "year_number",
         "start_year",
         "end_year",
+        "snapshot_year",
         "effective_year",
-        "start_commentary",
-        "end_commentary",
         "temporal_periods",
         "end_condition",
         "era",
@@ -241,6 +290,46 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         "geology_summary",
         "hydrology_summary",
         "ecology_summary",
+    }
+    MATERIAL_SIM_FIELDS = {
+        "natural_material_model",
+        "natural_materials",
+        "materials_summary",
+        "material_heatmap_model",
+        "surface_palette",
+        "atmospheric_material_model",
+        "atmospheric_materials",
+        "primary_material",
+        "secondary_materials",
+        "primary_atmospheric_material",
+        "secondary_atmospheric_materials",
+    }
+    PLANT_ECOLOGY_SIM_FIELDS = {
+        "plant_growth_form",
+        "plant_life_cycle",
+        "plant_canopy_layer",
+        "photosynthesis_pathway",
+        "light_tolerance",
+        "moisture_tolerance",
+        "soil_texture_tolerance",
+        "soil_drainage_tolerance",
+        "soil_ph_tolerance",
+        "temperature_tolerance_c",
+        "frost_tolerance_c",
+        "disturbance_tolerance",
+        "trampling_tolerance",
+        "salinity_tolerance",
+        "altitude_tolerance_m",
+        "worldgen_suitability_profile",
+        "biosphere_growth_profile",
+        "establishment_requirements",
+        "rooting_profile",
+        "reproductive_strategy",
+        "dispersal_vectors",
+        "succession_roles",
+        "pollination_vectors",
+        "biotic_interactions",
+        "simulation_notes",
     }
     TOOLBELT_TOOL_DEFINITIONS = [
         {
@@ -340,12 +429,14 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             "Temporal": False,
             "Relations": False,
             "Class Relations": False,
+            "Biosphere Species Roster": False,
             "Simulation / Data": True,
             "Metadata": False,
             "Media": False,
             "Simulation / Orbital": False,
             "Simulation / Map Sim": False,
             "Simulation / World Gen": False,
+            "Simulation / Materials": False,
             "Simulation / Data": False,
             "Phylogeny Parents": False,
             "Phylogeny Children": False,
@@ -354,6 +445,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
     def _is_idea_card(self):
         return self.dataset_name == "ideas" or self.entity.get("type") == "idea"
+
+    def _is_person_card(self):
+        return self.dataset_name in {"people", "persons"} or self.entity.get("type") == "person"
 
     def _title_edit_field(self):
         return "common_name" if self._is_species_card() else "name"
@@ -456,6 +550,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         card["edit_buffer"] = ""
         card["edit_cursor"] = 0
         card["tag_selected_index"] = 0
+        card["tag_keyboard_selection_active"] = False
         card["last_edit_action"] = "commit"
         card["last_committed_field"] = "tags"
         return True
@@ -464,7 +559,18 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         matches = self._tag_search_matches(card, limit=6)
         query = self._tag_search_query(card)
         tag_value = ""
-        if matches:
+        exact_match = next(
+            (
+                match for match in matches
+                if self._tag_lookup_key(match) == self._tag_lookup_key(query)
+            ),
+            None,
+        )
+        if exact_match:
+            tag_value = exact_match
+        elif query and not card.get("tag_keyboard_selection_active"):
+            tag_value = query
+        elif matches:
             index = max(0, min(int(card.get("tag_selected_index", 0) or 0), len(matches) - 1))
             tag_value = matches[index]
         elif query:
@@ -506,7 +612,12 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 self.active_simulation_subtab = self._default_simulation_subtab()
 
     def set_active_subtab(self, tab_name, subtab_name):
-        if tab_name == "simulation" and subtab_name in self.SIMULATION_SUBTAB_ORDER:
+        allowed_subtabs = (
+            self.PERSON_SIMULATION_SUBTAB_ORDER
+            if self._is_person_card()
+            else self.SIMULATION_SUBTAB_ORDER
+        )
+        if tab_name == "simulation" and subtab_name in allowed_subtabs:
             self.active_tab = tab_name
             self.active_simulation_subtab = subtab_name
             return True
@@ -560,6 +671,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
     def is_relation_edit_field(self, field_key):
         if self.is_location_topology_relation_field(field_key):
             return True
+        if field_key in {"biosphere_species_collection", "biosphere_location"}:
+            return True
         if field_key in self.CORE_RELATION_FIELDS:
             return True
         spec = self._field_spec(field_key)
@@ -579,6 +692,10 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
     def _relation_field_target(self, field_key):
         if self.is_location_topology_relation_field(field_key):
+            return "locations"
+        if field_key == "biosphere_species_collection":
+            return "collections"
+        if field_key == "biosphere_location":
             return "locations"
         if field_key in self.CORE_RELATION_FIELDS:
             return "entity_core"
@@ -1109,6 +1226,73 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             start_year, end_year = end_year, start_year
         return start_year, end_year
 
+    def _timeline_snapshot_draft_key(self, card=None, year_range=None):
+        if year_range is None:
+            year_range = self._timeline_snapshot_range(card)
+        if not isinstance(year_range, (list, tuple)) or len(year_range) != 2:
+            return self.TIMELINE_SNAPSHOT_FIELD
+        try:
+            start_year = int(year_range[0])
+            end_year = int(year_range[1])
+        except (TypeError, ValueError):
+            return self.TIMELINE_SNAPSHOT_FIELD
+        if end_year < start_year:
+            start_year, end_year = end_year, start_year
+        return f"{self.TIMELINE_SNAPSHOT_FIELD}:{start_year}:{end_year}"
+
+    def _timeline_snapshot_draft_buffer(self, card=None, year_range=None):
+        if card is None:
+            return None
+        draft_buffers = card.get("draft_edit_buffers")
+        if not isinstance(draft_buffers, dict):
+            return None
+        draft_key = self._timeline_snapshot_draft_key(card, year_range=year_range)
+        draft = draft_buffers.get(draft_key)
+        if isinstance(draft, dict) and "text" in draft:
+            return draft
+        legacy_draft = draft_buffers.get(self.TIMELINE_SNAPSHOT_FIELD)
+        if isinstance(legacy_draft, dict) and "text" in legacy_draft:
+            return legacy_draft
+        return None
+
+    def _has_timeline_snapshot_draft(self, card=None, year_range=None):
+        return self._timeline_snapshot_draft_buffer(card, year_range=year_range) is not None
+
+    def _load_timeline_snapshot_edit_buffer(self, card):
+        year_range = self._timeline_snapshot_range(card)
+        draft_key = self._timeline_snapshot_draft_key(card, year_range=year_range)
+        card["active_timeline_snapshot_draft_key"] = draft_key
+        card["timeline_snapshot_edit_range"] = year_range
+        draft_buffer = self._timeline_snapshot_draft_buffer(card, year_range=year_range)
+        if isinstance(draft_buffer, dict) and "text" in draft_buffer:
+            card["edit_buffer"] = str(draft_buffer.get("text", ""))
+            card["edit_cursor"] = int(draft_buffer.get("cursor", len(card["edit_buffer"])))
+            self._clamp_edit_cursor(card)
+            return True
+
+        card["edit_buffer"] = self._saved_timeline_snapshot_text(card)
+        card["edit_cursor"] = len(card["edit_buffer"])
+        return True
+
+    def _sync_timeline_snapshot_edit_range(self, card):
+        if not isinstance(card, dict):
+            return False
+        if card.get("active_edit_field") != self.TIMELINE_SNAPSHOT_FIELD:
+            return False
+        current_key = self._timeline_snapshot_draft_key(card)
+        active_key = card.get("active_timeline_snapshot_draft_key") or current_key
+        if active_key == current_key:
+            return False
+
+        draft_buffers = card.setdefault("draft_edit_buffers", {})
+        draft_buffers[active_key] = {
+            "text": card.get("edit_buffer", ""),
+            "cursor": int(card.get("edit_cursor", 0)),
+        }
+        self._load_timeline_snapshot_edit_buffer(card)
+        card["last_edit_action"] = "draft"
+        return True
+
     def _timeline_snapshot_entries(self):
         raw_entries = self.entity.get("timeline_snapshots")
         if isinstance(raw_entries, dict):
@@ -1127,12 +1311,17 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         return []
 
     def _timeline_snapshot_text(self, card=None):
+        if card is not None:
+            self._sync_timeline_snapshot_edit_range(card)
         if card is not None and card.get("is_edit_mode", False) and card.get("active_edit_field") == self.TIMELINE_SNAPSHOT_FIELD:
             return card.get("edit_buffer", "")
         if card is not None:
-            draft_buffer = card.get("draft_edit_buffers", {}).get(self.TIMELINE_SNAPSHOT_FIELD)
+            draft_buffer = self._timeline_snapshot_draft_buffer(card)
             if isinstance(draft_buffer, dict) and "text" in draft_buffer:
                 return str(draft_buffer.get("text", ""))
+        return self._saved_timeline_snapshot_text(card)
+
+    def _saved_timeline_snapshot_text(self, card=None):
         year_range = self._timeline_snapshot_range(card)
         if year_range is None:
             return ""
@@ -1177,7 +1366,38 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 }
             )
         self.entity["timeline_snapshots"] = entries
+        self._apply_snapshot_year_to_mentions(start_year, text)
         return True
+
+    def _snapshot_link_refs(self, text):
+        refs = []
+        for match in re.finditer(r"\[\[([^\]]+)\]\]", str(text or "")):
+            ref = match.group(1).split("|", 1)[0].strip()
+            if ref:
+                refs.append(ref)
+        return refs
+
+    def _apply_snapshot_year_to_mentions(self, snapshot_year, text):
+        try:
+            snapshot_year = int(snapshot_year)
+        except (TypeError, ValueError):
+            return False
+
+        touched = False
+        self.entity["snapshot_year"] = snapshot_year
+        touched = True
+        if self.world_model is None:
+            return touched
+
+        own_id = str(self.entity.get("id") or "").strip()
+        for ref in self._snapshot_link_refs(text):
+            if ref == own_id:
+                continue
+            linked_entity = self.world_model.get_entity(ref)
+            if isinstance(linked_entity, dict):
+                linked_entity["snapshot_year"] = snapshot_year
+                touched = True
+        return touched
 
     def _resolve_wiki_link_label(self, entity_ref):
         if self.world_model is None:
@@ -1466,7 +1686,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         if self._simulation_section_for_key(field_key):
             return False
 
-        if field_key in {"start_commentary", "end_commentary", "start_event", "end_event", "temporal_periods"}:
+        if field_key in {"start_event", "end_event", "temporal_periods"}:
             return True
 
         if field_key in self.TEMPORAL_FIELDS:
@@ -1578,6 +1798,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         space_sim_values = []
         map_sim_values = []
         world_gen_sim_values = []
+        material_sim_values = []
+        plant_ecology_sim_values = []
+        biosphere_roster_values = []
 
         media_keys = self._media_field_keys()
 
@@ -1599,6 +1822,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         handled_keys = {
             "id", "pretty_name", "name", "common_name", "binomial_name", "type", "_dataset",
             "card_color", "card_header_color", "wiki_field_colors", "wiki_link_color",
+            self.PERSON_QUOTE_FIELD,
+            self.PERSON_CONVERSATION_FIELD,
         }
         handled_keys.update(key for key, _ in classification)
         handled_keys.update(key for key, _ in overview_dims)
@@ -1648,6 +1873,12 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             if simulation_section == "Simulation / World Gen":
                 world_gen_sim_values.append((key, value))
                 continue
+            if simulation_section == "Simulation / Materials":
+                material_sim_values.append((key, value))
+                continue
+            if simulation_section == "Simulation / Plant Ecology":
+                plant_ecology_sim_values.append((key, value))
+                continue
 
             if self._is_temporal_field(key, spec):
                 temporal_values.append((key, value))
@@ -1655,6 +1886,14 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
             if section_name == "class relations":
                 class_relation_values.append((key, value))
+                continue
+
+            if section_name == "biosphere species roster":
+                biosphere_roster_values.append((key, value))
+                continue
+
+            if key in self.BIOSPHERE_ROSTER_SECTION_FIELDS:
+                biosphere_roster_values.append((key, value))
                 continue
 
             if section_name == "relations" or key in self.STANDARD_RELATION_FIELDS:
@@ -1696,12 +1935,15 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             "Temporal": temporal_values,
             "Relations": relation_values,
             "Class Relations": class_relation_values,
+            "Biosphere Species Roster": biosphere_roster_values,
             "Simulation / Data": state_values,
             "Metadata": metadata_values,
             "Media": media_values,
             "Simulation / Orbital": space_sim_values,
             "Simulation / Map Sim": map_sim_values,
             "Simulation / World Gen": world_gen_sim_values,
+            "Simulation / Materials": material_sim_values,
+            "Simulation / Plant Ecology": plant_ecology_sim_values,
             "Operational": dims + operational_values if self._is_component_card() else operational_values,
         }
         sections["Simulation / Space Sim"] = space_sim_values
@@ -2003,14 +2245,50 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         card["edit_cursor"] = cursor
         return cursor
 
+    def _edit_selection_range(self, card):
+        if "edit_selection_anchor" not in card:
+            return None
+        buffer_text = card.get("edit_buffer", "")
+        anchor = TextEditing.clamp_cursor(buffer_text, card.get("edit_selection_anchor", 0))
+        cursor = TextEditing.clamp_cursor(buffer_text, card.get("edit_cursor", anchor))
+        if anchor == cursor:
+            return None
+        return (min(anchor, cursor), max(anchor, cursor))
+
+    def _clear_edit_selection(self, card):
+        card.pop("edit_selection_anchor", None)
+
+    def _set_edit_selection(self, card, anchor, cursor):
+        buffer_text = card.get("edit_buffer", "")
+        anchor = TextEditing.clamp_cursor(buffer_text, anchor)
+        cursor = TextEditing.clamp_cursor(buffer_text, cursor)
+        card["edit_cursor"] = cursor
+        if anchor == cursor:
+            self._clear_edit_selection(card)
+        else:
+            card["edit_selection_anchor"] = anchor
+
+    def _delete_edit_selection(self, card):
+        selection = self._edit_selection_range(card)
+        if selection is None:
+            return False
+        start, end = selection
+        buffer_text = card.get("edit_buffer", "")
+        card["edit_buffer"] = buffer_text[:start] + buffer_text[end:]
+        card["edit_cursor"] = start
+        self._clear_edit_selection(card)
+        return True
+
     def _set_edit_cursor(self, card, cursor):
         buffer_text = card.get("edit_buffer", "")
         card["edit_cursor"] = TextEditing.clamp_cursor(buffer_text, cursor)
+        self._clear_edit_selection(card)
 
     def _insert_edit_text(self, card, text):
         if not text:
             return False
 
+        self._delete_edit_selection(card)
         buffer_text = card.get("edit_buffer", "")
         cursor = self._clamp_edit_cursor(card)
         card["edit_buffer"], card["edit_cursor"] = TextEditing.insert_text(
@@ -2021,6 +2299,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         return True
 
     def _delete_before_cursor(self, card):
+        if self._delete_edit_selection(card):
+            return True
         buffer_text = card.get("edit_buffer", "")
         cursor = self._clamp_edit_cursor(card)
         card["edit_buffer"], card["edit_cursor"] = TextEditing.delete_before_cursor(
@@ -2030,6 +2310,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         return True
 
     def _delete_after_cursor(self, card):
+        if self._delete_edit_selection(card):
+            return True
         buffer_text = card.get("edit_buffer", "")
         cursor = self._clamp_edit_cursor(card)
         card["edit_buffer"], card["edit_cursor"] = TextEditing.delete_after_cursor(
@@ -2045,6 +2327,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         return TextEditing.word_end_after_cursor(buffer_text, cursor)
 
     def _delete_word_before_cursor(self, card):
+        if self._delete_edit_selection(card):
+            return True
         buffer_text = card.get("edit_buffer", "")
         cursor = self._clamp_edit_cursor(card)
         card["edit_buffer"], card["edit_cursor"] = TextEditing.delete_word_before_cursor(
@@ -2054,6 +2338,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         return True
 
     def _delete_word_after_cursor(self, card):
+        if self._delete_edit_selection(card):
+            return True
         buffer_text = card.get("edit_buffer", "")
         cursor = self._clamp_edit_cursor(card)
         card["edit_buffer"], card["edit_cursor"] = TextEditing.delete_word_after_cursor(
@@ -2070,11 +2356,14 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
     def _wiki_edit_lines(self, card):
         active_field = card.get("active_edit_field")
-        general_rect = (
-            card.get("timeline_snapshot_rect")
-            if active_field == self.TIMELINE_SNAPSHOT_FIELD
-            else card.get("general_content_rect")
-        )
+        if self._is_person_quote_wiki_field(active_field):
+            general_rect = (card.get("person_quote_input_rects") or {}).get(active_field)
+        else:
+            general_rect = (
+                card.get("timeline_snapshot_rect")
+                if active_field == self.TIMELINE_SNAPSHOT_FIELD
+                else card.get("general_content_rect")
+            )
         font = card.get("layout_font")
         if general_rect is None or font is None:
             return []
@@ -2200,8 +2489,11 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         currently_enabled = bool(card.get("is_edit_mode", False))
         if currently_enabled and card.get("active_edit_field"):
             field_key = card.get("active_edit_field")
+            draft_key = field_key
+            if field_key == self.TIMELINE_SNAPSHOT_FIELD:
+                draft_key = card.get("active_timeline_snapshot_draft_key") or self._timeline_snapshot_draft_key(card)
             draft_buffers = card.setdefault("draft_edit_buffers", {})
-            draft_buffers[field_key] = {
+            draft_buffers[draft_key] = {
                 "text": card.get("edit_buffer", ""),
                 "cursor": int(card.get("edit_cursor", 0)),
             }
@@ -2212,6 +2504,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         if not card["is_edit_mode"]:
             card["delete_confirm_active"] = False
             card["active_edit_field"] = None
+            card["person_quote_active_field"] = None
             card["edit_buffer"] = ""
             card["edit_original_value"] = None
             card["edit_cursor"] = 0
@@ -2244,8 +2537,11 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         field_key = card.get("active_edit_field")
         if not field_key:
             return False
+        draft_key = field_key
+        if field_key == self.TIMELINE_SNAPSHOT_FIELD:
+            draft_key = card.get("active_timeline_snapshot_draft_key") or self._timeline_snapshot_draft_key(card)
         draft_buffers = card.setdefault("draft_edit_buffers", {})
-        draft_buffers[field_key] = {
+        draft_buffers[draft_key] = {
             "text": card.get("edit_buffer", ""),
             "cursor": int(card.get("edit_cursor", 0)),
         }
@@ -2265,6 +2561,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         if active_field and active_field != field_key:
             self._stash_active_edit_draft(card)
         elif active_field == field_key:
+            if field_key == self.TIMELINE_SNAPSHOT_FIELD:
+                self._sync_timeline_snapshot_edit_range(card)
             return True
 
         card["active_edit_field"] = field_key
@@ -2272,6 +2570,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         if field_key == "tags":
             card["tag_selected_index"] = 0
         self._clear_edit_preferred_column(card)
+        if field_key == self.TIMELINE_SNAPSHOT_FIELD:
+            return self._load_timeline_snapshot_edit_buffer(card)
         draft_buffer = card.get("draft_edit_buffers", {}).get(field_key)
         if isinstance(draft_buffer, dict) and "text" in draft_buffer:
             card["edit_buffer"] = str(draft_buffer.get("text", ""))
@@ -2288,6 +2588,17 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         if not field_key:
             return False
 
+        if self._is_person_quote_virtual_field(field_key):
+            self._sync_active_person_quote_edit_buffer(card)
+            card["active_edit_field"] = None
+            card["person_quote_active_field"] = None
+            card["edit_buffer"] = ""
+            card["edit_original_value"] = None
+            card["edit_cursor"] = 0
+            self._clear_edit_preferred_column(card)
+            card["last_edit_action"] = None
+            return True
+
         if field_key == "tags":
             draft_buffers = card.get("draft_edit_buffers")
             if isinstance(draft_buffers, dict):
@@ -2296,6 +2607,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             card["edit_buffer"] = ""
             card["edit_original_value"] = None
             card["edit_cursor"] = 0
+            card.pop("active_timeline_snapshot_draft_key", None)
+            card.pop("timeline_snapshot_edit_range", None)
             card["tag_selected_index"] = 0
             self._clear_edit_preferred_column(card)
             card["last_edit_action"] = "commit"
@@ -2303,14 +2616,18 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             return True
 
         if field_key == self.TIMELINE_SNAPSHOT_FIELD:
+            self._sync_timeline_snapshot_edit_range(card)
             self._set_timeline_snapshot_text(card, card.get("edit_buffer", ""))
             draft_buffers = card.get("draft_edit_buffers")
             if isinstance(draft_buffers, dict):
                 draft_buffers.pop(field_key, None)
+                draft_buffers.pop(card.get("active_timeline_snapshot_draft_key") or self._timeline_snapshot_draft_key(card), None)
             card["active_edit_field"] = None
             card["edit_buffer"] = ""
             card["edit_original_value"] = None
             card["edit_cursor"] = 0
+            card.pop("active_timeline_snapshot_draft_key", None)
+            card.pop("timeline_snapshot_edit_range", None)
             self._clear_edit_preferred_column(card)
             card["last_edit_action"] = "commit"
             card["last_committed_field"] = "timeline_snapshots"
@@ -2356,18 +2673,33 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         if not card.get("active_edit_field"):
             return False
 
+        if self._is_person_quote_virtual_field(card.get("active_edit_field")):
+            card["last_edit_action"] = "cancel"
+            card["active_edit_field"] = None
+            card["person_quote_active_field"] = None
+            card["edit_buffer"] = ""
+            card["edit_original_value"] = None
+            card["edit_cursor"] = 0
+            self._clear_edit_preferred_column(card)
+            return True
+
         card["last_edit_action"] = "cancel"
         card.pop("edit_validation_message", None)
         card["active_edit_field"] = None
         card["edit_buffer"] = ""
         card["edit_original_value"] = None
         card["edit_cursor"] = 0
+        card.pop("active_timeline_snapshot_draft_key", None)
+        card.pop("timeline_snapshot_edit_range", None)
         self._clear_edit_preferred_column(card)
         return True
 
     def handle_keydown(self, card, event):
         if not card.get("is_edit_mode", False):
             return False
+
+        if self._handle_person_quote_keydown(card, event):
+            return True
 
         if self._handle_production_keydown(card, event):
             return True
@@ -2386,7 +2718,13 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 return True
             return False
 
-        if active_field in {"wiki_entry", self.TIMELINE_SNAPSHOT_FIELD}:
+        if event.key == pygame.K_a and (event.mod & pygame.KMOD_CTRL):
+            self._clear_edit_preferred_column(card)
+            self._set_edit_selection(card, 0, len(card.get("edit_buffer", "")))
+            card["last_edit_action"] = "draft"
+            return True
+
+        if active_field in {"wiki_entry", self.TIMELINE_SNAPSHOT_FIELD} or self._is_person_quote_wiki_field(active_field):
             if event.key == pygame.K_s and (event.mod & pygame.KMOD_CTRL):
                 return self.commit_edit_field(card)
 
@@ -2412,9 +2750,11 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             matches = self._tag_search_matches(card, limit=6)
             if event.key == pygame.K_UP and matches:
                 card["tag_selected_index"] = max(0, int(card.get("tag_selected_index", 0) or 0) - 1)
+                card["tag_keyboard_selection_active"] = True
                 return True
             if event.key == pygame.K_DOWN and matches:
                 card["tag_selected_index"] = min(len(matches) - 1, int(card.get("tag_selected_index", 0) or 0) + 1)
+                card["tag_keyboard_selection_active"] = True
                 return True
             if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 return self.confirm_tag_search(card)
@@ -2476,6 +2816,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 self._delete_before_cursor(card)
             if active_field == "tags":
                 card["tag_selected_index"] = 0
+                card["tag_keyboard_selection_active"] = False
             card["last_edit_action"] = "draft"
             return True
 
@@ -2487,6 +2828,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 self._delete_after_cursor(card)
             if active_field == "tags":
                 card["tag_selected_index"] = 0
+                card["tag_keyboard_selection_active"] = False
             card["last_edit_action"] = "draft"
             return True
 
@@ -2496,6 +2838,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             self._insert_edit_text(card, text)
             if active_field == "tags":
                 card["tag_selected_index"] = 0
+                card["tag_keyboard_selection_active"] = False
             card["last_edit_action"] = "draft"
             return True
 
@@ -2526,19 +2869,25 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         return True
 
     def set_edit_cursor_from_pos(self, card, field_key, mouse_pos, font):
-        if field_key not in {"wiki_entry", self.TIMELINE_SNAPSHOT_FIELD}:
+        if field_key not in {"wiki_entry", self.TIMELINE_SNAPSHOT_FIELD} and not self._is_person_quote_wiki_field(field_key):
             return False
 
-        general_rect = (
-            card.get("timeline_snapshot_rect")
-            if field_key == self.TIMELINE_SNAPSHOT_FIELD
-            else card.get("general_content_rect")
-        )
+        if self._is_person_quote_wiki_field(field_key):
+            general_rect = (card.get("person_quote_input_rects") or {}).get(field_key)
+        else:
+            general_rect = (
+                card.get("timeline_snapshot_rect")
+                if field_key == self.TIMELINE_SNAPSHOT_FIELD
+                else card.get("general_content_rect")
+            )
         if general_rect is None or font is None:
             return False
 
         if card.get("active_edit_field") != field_key:
-            self.begin_edit_field(card, field_key)
+            if self._is_person_quote_virtual_field(field_key):
+                self._set_person_quote_active_field(card, field_key)
+            else:
+                self.begin_edit_field(card, field_key)
 
         buffer_text = card.get("edit_buffer", "")
         inner_rect = general_rect.inflate(-10, -10)
@@ -2566,6 +2915,44 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         self._set_edit_cursor(card, line_info["start"] + best_offset)
         self._clear_edit_preferred_column(card)
         return True
+
+    def edit_cursor_from_pos(self, card, field_key, mouse_pos, font):
+        if field_key not in {"wiki_entry", self.TIMELINE_SNAPSHOT_FIELD} and not self._is_person_quote_wiki_field(field_key):
+            return None
+
+        if self._is_person_quote_wiki_field(field_key):
+            general_rect = (card.get("person_quote_input_rects") or {}).get(field_key)
+        else:
+            general_rect = (
+                card.get("timeline_snapshot_rect")
+                if field_key == self.TIMELINE_SNAPSHOT_FIELD
+                else card.get("general_content_rect")
+            )
+        if general_rect is None or font is None:
+            return None
+
+        buffer_text = card.get("edit_buffer", "")
+        inner_rect = general_rect.inflate(-10, -10)
+        lines = CardWikiRenderer.wrap_edit_lines(buffer_text, font, inner_rect.width)
+        if not lines:
+            return 0
+
+        scroll_y = max(0, int(card.get("scroll_y", 0) or 0))
+        line_index = int((mouse_pos[1] - inner_rect.y + scroll_y) // max(1, font.get_linesize()))
+        line_index = max(0, min(len(lines) - 1, line_index))
+        line_info = lines[line_index]
+        line_text = line_info["text"]
+        rel_x = max(0, mouse_pos[0] - inner_rect.x)
+
+        best_offset = 0
+        best_distance = None
+        for offset in range(len(line_text) + 1):
+            width = font.size(line_text[:offset])[0]
+            distance = abs(width - rel_x)
+            if best_distance is None or distance < best_distance:
+                best_distance = distance
+                best_offset = offset
+        return line_info["start"] + best_offset
 
     def _wrap_text_lines(self, text, font, max_width):
         """
@@ -2687,12 +3074,79 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             return self.TEXT_LINE_H
         return max(self.TEXT_LINE_H, int(font.get_linesize()))
 
+    def _is_material_model_field(self, field_key):
+        return field_key in {"natural_material_model", "atmospheric_material_model"}
+
+    def _material_model_items(self, model, max_items=12):
+        if not isinstance(model, dict):
+            return []
+        items = [item for item in model.get("likely_materials") or [] if isinstance(item, dict)]
+        return items[:max(0, int(max_items))]
+
+    def _material_item_color(self, item):
+        raw_color = item.get("display_color") or item.get("band_color")
+        if not isinstance(raw_color, (list, tuple)) or len(raw_color) < 3:
+            return (156, 156, 148)
+        try:
+            return tuple(max(0, min(255, int(component))) for component in raw_color[:3])
+        except (TypeError, ValueError):
+            return (156, 156, 148)
+
+    def _material_item_line(self, item):
+        name = str(item.get("name") or item.get("material_id") or "material").strip()
+        formula = str(item.get("chemical_formula") or item.get("molecule") or "").strip()
+        if item.get("percent") is not None:
+            try:
+                measure = f"{float(item.get('percent')):.1f}%"
+            except (TypeError, ValueError):
+                measure = ""
+        else:
+            occurrence = str(item.get("occurrence") or "possible").strip()
+            try:
+                measure = f"{occurrence} {float(item.get('confidence', 0.0)) * 100:.0f}%"
+            except (TypeError, ValueError):
+                measure = occurrence
+        parts = [part for part in (name, measure, formula) if part]
+        return " | ".join(parts)
+
+    def _format_table_value(self, key, value):
+        if self._is_material_model_field(key) and isinstance(value, dict):
+            items = self._material_model_items(value)
+            if not items:
+                return str(value.get("status") or "No inferred materials")
+            return "\n".join(self._material_item_line(item) for item in items)
+        if key == "materials_summary" and isinstance(value, dict):
+            lines = []
+            if value.get("status"):
+                lines.append(f"status: {value.get('status')}")
+            if value.get("catalog_version"):
+                lines.append(f"catalog: {value.get('catalog_version')}")
+            if value.get("likely_material_count") is not None:
+                lines.append(f"likely materials: {value.get('likely_material_count')}")
+            if value.get("heatmap_status"):
+                lines.append(f"heatmap: {value.get('heatmap_status')}")
+            if value.get("dominant_materials"):
+                lines.append("dominant: " + ", ".join(str(item) for item in value.get("dominant_materials") or []))
+            return "\n".join(lines) if lines else self._format_value(value)
+        if key == "material_heatmap_model" and isinstance(value, dict):
+            layers = value.get("layers") or []
+            return "\n".join([
+                f"status: {value.get('status', '')}",
+                f"layers: {len(layers)}",
+                f"composite: {(value.get('composite_layer') or {}).get('image_path', '')}",
+            ]).strip()
+        return self._format_value(value)
+
     def _measure_table_row(self, font, key, value, key_column_w, value_column_w):
         rendered_key = f"{self._field_display_label(key)}:"
         key_lines = self._wrap_text_lines(rendered_key, font, max(20, key_column_w - 12))
-        rendered_value = self._format_value(value)
+        rendered_value = self._format_table_value(key, value)
         wrapped_lines = self._wrap_text_lines(rendered_value, font, value_column_w)
-        content_h = max(1, len(key_lines), len(wrapped_lines)) * self._table_line_height(font)
+        if self._is_material_model_field(key) and isinstance(value, dict):
+            item_count = max(1, len(self._material_model_items(value)))
+            content_h = max(len(key_lines), item_count) * self._table_line_height(font)
+        else:
+            content_h = max(1, len(key_lines), len(wrapped_lines)) * self._table_line_height(font)
         row_h = content_h + self.TABLE_ROW_PAD_Y * 2
         return key_lines, wrapped_lines, row_h
 
@@ -2700,10 +3154,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         labels = {
             "start_year": "start year",
             "end_year": "end year",
-            "start_commentary": "  commentary",
-            "end_commentary": "  commentary",
             "start_event": "  commentary",
             "end_event": "  commentary",
+            "snapshot_year": "snapshot year",
             "temporal_periods": "periods",
         }
         return labels.get(field_key, str(field_key or ""))
@@ -2756,6 +3209,635 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         value = illustration.get("media_path")
         return value.strip() if isinstance(value, str) else ""
 
+    def _is_person_quotes_mode(self):
+        return (
+            self.active_tab == "simulation"
+            and self._is_person_card()
+            and self.active_simulation_subtab == "quotes"
+        )
+
+    def _person_quote_entries(self):
+        entries = []
+        for raw_entry in self.entity.get(self.PERSON_QUOTE_FIELD) or []:
+            if not isinstance(raw_entry, dict):
+                continue
+            quote = str(raw_entry.get("quote") or raw_entry.get("text") or "").strip()
+            date = str(raw_entry.get("date") or raw_entry.get("year") or "").strip()
+            context = str(raw_entry.get("context") or raw_entry.get("commentary") or "").strip()
+            if not quote and not date and not context:
+                continue
+            entry = {"quote": quote, "date": date, "context": context}
+            if raw_entry.get("id"):
+                entry["id"] = str(raw_entry.get("id"))
+            entries.append(entry)
+        return entries
+
+    def _person_conversation_entries(self):
+        entries = []
+        for raw_entry in self.entity.get(self.PERSON_CONVERSATION_FIELD) or []:
+            if not isinstance(raw_entry, dict):
+                continue
+            speaker = str(raw_entry.get("speaker") or raw_entry.get("person") or raw_entry.get("name") or "").strip()
+            message = str(raw_entry.get("message") or raw_entry.get("text") or raw_entry.get("quote") or "").strip()
+            date = str(raw_entry.get("date") or raw_entry.get("year") or "").strip()
+            if not speaker and not message and not date:
+                continue
+            entry = {"speaker": speaker, "message": message, "date": date}
+            if raw_entry.get("id"):
+                entry["id"] = str(raw_entry.get("id"))
+            entries.append(entry)
+        return entries
+
+    def _person_quote_capture_mode(self, card):
+        mode = str(card.get("person_quote_capture_mode") or "quotes").strip().lower() if isinstance(card, dict) else "quotes"
+        return "conversations" if mode == "conversations" else "quotes"
+
+    def _set_person_quote_capture_mode(self, card, mode):
+        mode = "conversations" if str(mode or "").strip().lower() == "conversations" else "quotes"
+        self._sync_active_person_quote_edit_buffer(card)
+        card["person_quote_capture_mode"] = mode
+        card["active_edit_field"] = None
+        card["person_quote_active_field"] = None
+        card["edit_buffer"] = ""
+        card["edit_cursor"] = 0
+        return True
+
+    def _person_quote_capture_fields(self, card):
+        if self._person_quote_capture_mode(card) == "conversations":
+            return (
+                self.PERSON_CONVERSATION_SPEAKER_FIELD,
+                self.PERSON_CONVERSATION_DATE_FIELD,
+                self.PERSON_CONVERSATION_MESSAGE_FIELD,
+            )
+        return (
+            self.PERSON_QUOTE_TEXT_FIELD,
+            self.PERSON_QUOTE_DATE_FIELD,
+            self.PERSON_QUOTE_CONTEXT_FIELD,
+        )
+
+    def _default_person_quote_date(self, card):
+        selected_year = card.get("selected_year") if isinstance(card, dict) else None
+        if selected_year not in (None, ""):
+            return str(selected_year)
+        working_range = card.get("working_year_range") if isinstance(card, dict) else None
+        if isinstance(working_range, (list, tuple)) and working_range:
+            start_year = working_range[0]
+            end_year = working_range[1] if len(working_range) > 1 else start_year
+            if start_year not in (None, ""):
+                if end_year not in (None, "", start_year):
+                    return f"{start_year}-{end_year}"
+                return str(start_year)
+        return ""
+
+    def _person_quote_buffers(self, card):
+        buffers = card.setdefault("person_quote_buffers", {})
+        if "quote" not in buffers:
+            buffers["quote"] = ""
+        if "date" not in buffers:
+            buffers["date"] = self._default_person_quote_date(card)
+        if "context" not in buffers:
+            buffers["context"] = ""
+        if "conversation_speaker" not in buffers:
+            buffers["conversation_speaker"] = self._entity_display_label(self.entity)
+        if "conversation_date" not in buffers:
+            buffers["conversation_date"] = self._default_person_quote_date(card)
+        if "conversation_message" not in buffers:
+            buffers["conversation_message"] = ""
+        return buffers
+
+    def _person_quote_buffer_key(self, field_key):
+        return {
+            self.PERSON_QUOTE_TEXT_FIELD: "quote",
+            self.PERSON_QUOTE_DATE_FIELD: "date",
+            self.PERSON_QUOTE_CONTEXT_FIELD: "context",
+            self.PERSON_CONVERSATION_SPEAKER_FIELD: "conversation_speaker",
+            self.PERSON_CONVERSATION_DATE_FIELD: "conversation_date",
+            self.PERSON_CONVERSATION_MESSAGE_FIELD: "conversation_message",
+            "quote": "quote",
+            "date": "date",
+            "context": "context",
+            "speaker": "conversation_speaker",
+            "message": "conversation_message",
+        }.get(field_key, "")
+
+    def _is_person_quote_virtual_field(self, field_key):
+        return field_key in self.PERSON_QUOTE_INPUT_FIELDS
+
+    def _is_person_quote_wiki_field(self, field_key):
+        return field_key in {
+            self.PERSON_QUOTE_TEXT_FIELD,
+            self.PERSON_QUOTE_CONTEXT_FIELD,
+            self.PERSON_CONVERSATION_MESSAGE_FIELD,
+        }
+
+    def _person_quote_buffer_text(self, card, field_key):
+        buffer_key = self._person_quote_buffer_key(field_key)
+        if not buffer_key:
+            return ""
+        if card.get("active_edit_field") == field_key:
+            return str(card.get("edit_buffer") or "")
+        return str(self._person_quote_buffers(card).get(buffer_key, ""))
+
+    def _set_person_quote_buffer_text(self, card, field_key, text):
+        buffers = self._person_quote_buffers(card)
+        buffer_key = self._person_quote_buffer_key(field_key)
+        if not buffer_key:
+            return
+        buffers[buffer_key] = str(text or "")
+
+    def _sync_active_person_quote_edit_buffer(self, card):
+        field_key = card.get("active_edit_field")
+        if not self._is_person_quote_virtual_field(field_key):
+            return False
+        self._set_person_quote_buffer_text(card, field_key, card.get("edit_buffer", ""))
+        return True
+
+    def _set_person_quote_active_field(self, card, field_key):
+        field_key = {
+            "quote": self.PERSON_QUOTE_TEXT_FIELD,
+            "date": self.PERSON_QUOTE_DATE_FIELD,
+            "context": self.PERSON_QUOTE_CONTEXT_FIELD,
+            "speaker": self.PERSON_CONVERSATION_SPEAKER_FIELD,
+            "message": self.PERSON_CONVERSATION_MESSAGE_FIELD,
+        }.get(field_key, field_key)
+        if field_key not in self.PERSON_QUOTE_INPUT_FIELDS:
+            return False
+        self._sync_active_person_quote_edit_buffer(card)
+        self._person_quote_buffers(card)
+        target_text = self._person_quote_buffer_text(card, field_key)
+        card["person_quote_active_field"] = field_key
+        card["active_edit_field"] = field_key
+        card["edit_original_value"] = target_text
+        card["edit_buffer"] = target_text
+        card["edit_cursor"] = len(card["edit_buffer"])
+        card["edit_selection_anchor"] = card["edit_cursor"]
+        card["edit_selection_cursor"] = card["edit_cursor"]
+        card.pop("edit_validation_message", None)
+        return True
+
+    def _cycle_person_quote_field(self, card, direction=1):
+        active_field = card.get("active_edit_field") or card.get("person_quote_active_field")
+        field_order = self._person_quote_capture_fields(card)
+        if active_field not in field_order:
+            target_index = 0 if direction >= 0 else len(field_order) - 1
+        else:
+            target_index = (field_order.index(active_field) + direction) % len(field_order)
+        return self._set_person_quote_active_field(card, field_order[target_index])
+
+    def add_person_quote_from_buffers(self, card):
+        self._sync_active_person_quote_edit_buffer(card)
+        buffers = self._person_quote_buffers(card)
+        quote = str(buffers.get("quote") or "").strip()
+        date = str(buffers.get("date") or "").strip()
+        context = str(buffers.get("context") or "").strip()
+        if not quote:
+            card["person_quote_status"] = "Quote text required"
+            return False
+
+        entries = self._person_quote_entries()
+        entry = {"quote": quote}
+        if date:
+            entry["date"] = date
+        if context:
+            entry["context"] = context
+        entries.append(entry)
+        self.entity[self.PERSON_QUOTE_FIELD] = entries
+
+        buffers["quote"] = ""
+        buffers["context"] = ""
+        if not date:
+            buffers["date"] = self._default_person_quote_date(card)
+        card["person_quote_active_field"] = self.PERSON_QUOTE_TEXT_FIELD
+        card["active_edit_field"] = self.PERSON_QUOTE_TEXT_FIELD
+        card["edit_buffer"] = ""
+        card["edit_cursor"] = 0
+        card["edit_original_value"] = ""
+        card["person_quote_status"] = "Quote added"
+        card["last_edit_action"] = "commit"
+        card["last_committed_field"] = self.PERSON_QUOTE_FIELD
+        return True
+
+    def add_person_conversation_from_buffers(self, card):
+        self._sync_active_person_quote_edit_buffer(card)
+        buffers = self._person_quote_buffers(card)
+        speaker = str(buffers.get("conversation_speaker") or "").strip()
+        date = str(buffers.get("conversation_date") or "").strip()
+        message = str(buffers.get("conversation_message") or "").strip()
+        if not message:
+            card["person_quote_status"] = "Message text required"
+            return False
+
+        entries = self._person_conversation_entries()
+        entry = {"message": message}
+        if speaker:
+            entry["speaker"] = speaker
+        if date:
+            entry["date"] = date
+        entries.append(entry)
+        self.entity[self.PERSON_CONVERSATION_FIELD] = entries
+
+        buffers["conversation_message"] = ""
+        if not date:
+            buffers["conversation_date"] = self._default_person_quote_date(card)
+        card["person_quote_active_field"] = self.PERSON_CONVERSATION_MESSAGE_FIELD
+        card["active_edit_field"] = self.PERSON_CONVERSATION_MESSAGE_FIELD
+        card["edit_buffer"] = ""
+        card["edit_cursor"] = 0
+        card["edit_original_value"] = ""
+        card["person_quote_status"] = "Message added"
+        card["last_edit_action"] = "commit"
+        card["last_committed_field"] = self.PERSON_CONVERSATION_FIELD
+        return True
+
+    def add_person_quote_or_conversation_from_buffers(self, card):
+        if self._person_quote_capture_mode(card) == "conversations":
+            return self.add_person_conversation_from_buffers(card)
+        return self.add_person_quote_from_buffers(card)
+
+    def remove_person_quote_at_index(self, card, quote_index):
+        entries = self._person_quote_entries()
+        try:
+            quote_index = int(quote_index)
+        except (TypeError, ValueError):
+            return False
+        if quote_index < 0 or quote_index >= len(entries):
+            return False
+        entries.pop(quote_index)
+        self.entity[self.PERSON_QUOTE_FIELD] = entries
+        card["person_quote_status"] = "Quote removed"
+        card["last_edit_action"] = "commit"
+        card["last_committed_field"] = self.PERSON_QUOTE_FIELD
+        return True
+
+    def remove_person_conversation_at_index(self, card, message_index):
+        entries = self._person_conversation_entries()
+        try:
+            message_index = int(message_index)
+        except (TypeError, ValueError):
+            return False
+        if message_index < 0 or message_index >= len(entries):
+            return False
+        entries.pop(message_index)
+        self.entity[self.PERSON_CONVERSATION_FIELD] = entries
+        card["person_quote_status"] = "Message removed"
+        card["last_edit_action"] = "commit"
+        card["last_committed_field"] = self.PERSON_CONVERSATION_FIELD
+        return True
+
+    def _measure_person_quotes_height(self, font, width, card):
+        line_h = self._table_line_height(font)
+        total_h = self.SECTION_HEADER_H + self.SECTION_GAP + 34
+        if card.get("is_edit_mode", False):
+            if self._person_quote_capture_mode(card) == "conversations":
+                total_h += line_h + 30 + 6 + line_h + 92 + 10
+            else:
+                total_h += line_h + 88 + 6 + line_h + 30 + 6 + line_h + 82 + 10
+        entries = self._person_conversation_entries() if self._person_quote_capture_mode(card) == "conversations" else self._person_quote_entries()
+        if not entries:
+            total_h += 42
+        elif self._person_quote_capture_mode(card) == "conversations":
+            bubble_w = max(80, int(width * 0.74))
+            for entry in entries:
+                message_lines = self._wrap_text_lines(entry.get("message", ""), font, bubble_w - 18)[:5]
+                total_h += max(48, 24 + len(message_lines) * line_h + 12) + 8
+        else:
+            text_w = max(40, width - 22)
+            for entry in reversed(entries):
+                quote_lines = self._wrap_text_lines(entry.get("quote", ""), font, text_w)[:4]
+                context = str(entry.get("context") or "").strip()
+                context_lines = self._wrap_text_lines(context, font, text_w)[:2] if context else []
+                total_h += max(54, 22 + len(quote_lines) * line_h + len(context_lines) * line_h + 12) + 8
+        return total_h
+
+    def _layout_person_quotes_content(self, card, x, y, width):
+        font = card["layout_font"]
+        line_h = self._table_line_height(font)
+        section_rect = pygame.Rect(x, y, width, self.SECTION_HEADER_H)
+        card["person_quote_section_rect"] = section_rect
+        y = section_rect.bottom + self.SECTION_GAP + 6
+        card["person_quote_mode_hitboxes"] = []
+
+        mode_y = y
+        mode_w = max(82, min(128, (width - 8) // 2))
+        quote_mode_rect = pygame.Rect(x, mode_y, mode_w, 24)
+        conversation_mode_rect = pygame.Rect(quote_mode_rect.right + 8, mode_y, mode_w + 20, 24)
+        card["person_quote_mode_hitboxes"] = [
+            ("quotes", quote_mode_rect),
+            ("conversations", conversation_mode_rect),
+        ]
+        y = quote_mode_rect.bottom + 10
+
+        card["person_quote_input_rects"] = {}
+        card["person_quote_add_rect"] = None
+        mode = self._person_quote_capture_mode(card)
+        if card.get("is_edit_mode", False) and mode == "conversations":
+            add_w = 92
+            speaker_w = max(120, min(180, (width - add_w - 24) // 2))
+            date_w = 104
+            speaker_rect = pygame.Rect(x, y + line_h, speaker_w, 24)
+            date_rect = pygame.Rect(speaker_rect.right + 8, y + line_h, date_w, 24)
+            add_rect = pygame.Rect(x + width - add_w, y + line_h, add_w, 24)
+            y = speaker_rect.bottom + 6
+            message_rect = pygame.Rect(x, y + line_h, width, 92)
+            y = message_rect.bottom + 10
+            card["person_quote_input_rects"] = {
+                self.PERSON_CONVERSATION_SPEAKER_FIELD: speaker_rect,
+                self.PERSON_CONVERSATION_DATE_FIELD: date_rect,
+                self.PERSON_CONVERSATION_MESSAGE_FIELD: message_rect,
+            }
+            card["person_quote_add_rect"] = add_rect
+        elif card.get("is_edit_mode", False):
+            quote_rect = pygame.Rect(x, y + line_h, width, 88)
+            y = quote_rect.bottom + 6
+            add_w = 72
+            date_rect = pygame.Rect(x, y + line_h, 98, 24)
+            add_rect = pygame.Rect(x + width - add_w, y + line_h, add_w, 24)
+            y = date_rect.bottom + 6
+            context_rect = pygame.Rect(x, y + line_h, width, 82)
+            y = context_rect.bottom + 10
+            card["person_quote_input_rects"] = {
+                self.PERSON_QUOTE_TEXT_FIELD: quote_rect,
+                self.PERSON_QUOTE_DATE_FIELD: date_rect,
+                self.PERSON_QUOTE_CONTEXT_FIELD: context_rect,
+            }
+            card["person_quote_add_rect"] = add_rect
+
+        rows = []
+        entries = self._person_conversation_entries() if mode == "conversations" else self._person_quote_entries()
+        if not entries:
+            empty_rect = pygame.Rect(x, y, width, 42)
+            card["person_quote_empty_rect"] = empty_rect
+            y = empty_rect.bottom + 8
+        elif mode == "conversations":
+            card["person_quote_empty_rect"] = None
+            person_name = self._entity_display_label(self.entity).strip().lower()
+            for message_index, entry in enumerate(entries):
+                bubble_w = max(80, int(width * 0.74))
+                speaker = str(entry.get("speaker") or "").strip()
+                mine = bool(speaker and speaker.lower() == person_name)
+                bubble_x = x + width - bubble_w if mine else x
+                message_lines = self._wrap_text_lines(entry.get("message", ""), font, bubble_w - 18)[:5]
+                row_h = max(48, 24 + len(message_lines) * line_h + 12)
+                row_rect = pygame.Rect(bubble_x, y, bubble_w, row_h)
+                remove_rect = None
+                if card.get("is_edit_mode", False):
+                    remove_rect = pygame.Rect(row_rect.right - 24, row_rect.y + 6, 18, 18)
+                rows.append(
+                    {
+                        "mode": "conversation",
+                        "index": message_index,
+                        "entry": entry,
+                        "rect": row_rect,
+                        "message_lines": message_lines,
+                        "remove_rect": remove_rect,
+                        "mine": mine,
+                    }
+                )
+                y = row_rect.bottom + 8
+        else:
+            card["person_quote_empty_rect"] = None
+            for quote_index, entry in reversed(list(enumerate(entries))):
+                text_w = width - 22
+                if card.get("is_edit_mode", False):
+                    text_w -= 28
+                quote_lines = self._wrap_text_lines(entry.get("quote", ""), font, max(40, text_w))[:4]
+                context = str(entry.get("context") or "").strip()
+                context_lines = self._wrap_text_lines(context, font, max(40, text_w))[:2] if context else []
+                row_h = max(54, 22 + len(quote_lines) * line_h + len(context_lines) * line_h + 12)
+                row_rect = pygame.Rect(x, y, width, row_h)
+                remove_rect = None
+                if card.get("is_edit_mode", False):
+                    remove_rect = pygame.Rect(row_rect.right - 24, row_rect.y + 6, 18, 18)
+                rows.append(
+                    {
+                        "mode": "quote",
+                        "index": quote_index,
+                        "entry": entry,
+                        "rect": row_rect,
+                        "quote_lines": quote_lines,
+                        "context_lines": context_lines,
+                        "remove_rect": remove_rect,
+                    }
+                )
+                y = row_rect.bottom + 8
+        card["person_quote_rows"] = rows
+        return y
+
+    def _draw_person_quote_text_input(self, screen, font, card, field_key, rect, placeholder):
+        active = card.get("active_edit_field") == field_key
+        fill = (48, 54, 68) if active else (36, 41, 54)
+        border = (182, 202, 236) if active else (90, 104, 128)
+        text = self._person_quote_buffer_text(card, field_key)
+        if self._is_person_quote_wiki_field(field_key):
+            CardWikiRenderer.draw_content(
+                screen,
+                font,
+                rect,
+                text or placeholder,
+                is_editing=active,
+                resolve_link_label=self._resolve_wiki_link_label,
+                resolve_link_color=self._resolve_wiki_link_color,
+                resolve_link_palette=self._resolve_wiki_link_palette,
+                section_colors=self._wiki_field_colors(),
+                cursor_index=card.get("edit_cursor", 0),
+                scroll_y=0,
+                selection_range=self._edit_selection_range(card),
+            )
+            if not text and not active:
+                overlay = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+                overlay.fill((24, 28, 38, 72))
+                screen.blit(overlay, rect)
+            return
+
+        pygame.draw.rect(screen, fill, rect)
+        pygame.draw.rect(screen, border, rect, 1)
+        display = text if text else placeholder
+        color = (238, 242, 250) if text else (136, 146, 166)
+        screen.blit(
+            font.render(self._ellipsize_text(display, font, rect.width - 12), True, color),
+            (rect.x + 6, rect.y + 5),
+        )
+        if active:
+            cursor = TextEditing.clamp_cursor(text, card.get("edit_cursor", len(text)))
+            cursor_text = text[:cursor]
+            cursor_x = rect.x + 6 + min(rect.width - 14, font.size(cursor_text)[0])
+            pygame.draw.line(screen, (238, 242, 250), (cursor_x, rect.y + 5), (cursor_x, rect.y + rect.height - 6), 1)
+
+    def _draw_person_quotes_content(self, screen, font, card):
+        section_rect = card.get("person_quote_section_rect")
+        if section_rect is None:
+            return
+        pygame.draw.rect(screen, (36, 40, 50), section_rect)
+        pygame.draw.rect(screen, (110, 110, 120), section_rect, 1)
+        count = len(self._person_quote_entries())
+        conversation_count = len(self._person_conversation_entries())
+        mode = self._person_quote_capture_mode(card)
+        title = "Quotes" if mode == "quotes" else "Conversations"
+        if mode == "quotes" and count == 1:
+            title = "Quotes (1)"
+        elif mode == "quotes" and count > 1:
+            title = f"Quotes ({count})"
+        elif mode == "conversations":
+            title = f"Conversations ({conversation_count})" if conversation_count else "Conversations"
+        screen.blit(font.render(title, True, (235, 235, 235)), (section_rect.x + 8, section_rect.y + 3))
+
+        for mode_id, mode_rect in card.get("person_quote_mode_hitboxes", []):
+            selected = mode_id == mode
+            fill = (66, 82, 108) if selected else (42, 48, 62)
+            border = (184, 202, 232) if selected else (94, 108, 132)
+            pygame.draw.rect(screen, fill, mode_rect)
+            pygame.draw.rect(screen, border, mode_rect, 1)
+            label = "Quotes" if mode_id == "quotes" else "Conversations"
+            label_surface = font.render(self._ellipsize_text(label, font, mode_rect.width - 10), True, (238, 242, 250))
+            screen.blit(label_surface, label_surface.get_rect(center=mode_rect.center))
+
+        if card.get("is_edit_mode", False):
+            label_y = section_rect.bottom + self.SECTION_GAP + 6
+            input_rects = card.get("person_quote_input_rects") or {}
+            if mode == "conversations":
+                speaker_rect = input_rects.get(self.PERSON_CONVERSATION_SPEAKER_FIELD)
+                date_rect = input_rects.get(self.PERSON_CONVERSATION_DATE_FIELD)
+                message_rect = input_rects.get(self.PERSON_CONVERSATION_MESSAGE_FIELD)
+                if speaker_rect is not None:
+                    screen.blit(font.render("Speaker", True, (184, 196, 216)), (speaker_rect.x, speaker_rect.y - self._table_line_height(font)))
+                    self._draw_person_quote_text_input(screen, font, card, self.PERSON_CONVERSATION_SPEAKER_FIELD, speaker_rect, "Speaker")
+                if date_rect is not None:
+                    screen.blit(font.render("Date", True, (184, 196, 216)), (date_rect.x, date_rect.y - self._table_line_height(font)))
+                    self._draw_person_quote_text_input(screen, font, card, self.PERSON_CONVERSATION_DATE_FIELD, date_rect, "Date")
+                if message_rect is not None:
+                    screen.blit(font.render("Message", True, (184, 196, 216)), (message_rect.x, message_rect.y - self._table_line_height(font)))
+                    self._draw_person_quote_text_input(screen, font, card, self.PERSON_CONVERSATION_MESSAGE_FIELD, message_rect, "Type message")
+            else:
+                quote_rect = input_rects.get(self.PERSON_QUOTE_TEXT_FIELD)
+                date_rect = input_rects.get(self.PERSON_QUOTE_DATE_FIELD)
+                context_rect = input_rects.get(self.PERSON_QUOTE_CONTEXT_FIELD)
+                if quote_rect is not None:
+                    screen.blit(font.render("Quote", True, (184, 196, 216)), (quote_rect.x, quote_rect.y - self._table_line_height(font)))
+                    self._draw_person_quote_text_input(screen, font, card, self.PERSON_QUOTE_TEXT_FIELD, quote_rect, "Type quote")
+                if date_rect is not None:
+                    screen.blit(font.render("Date", True, (184, 196, 216)), (date_rect.x, date_rect.y - self._table_line_height(font)))
+                    self._draw_person_quote_text_input(screen, font, card, self.PERSON_QUOTE_DATE_FIELD, date_rect, "Date")
+                if context_rect is not None:
+                    screen.blit(font.render("Context", True, (184, 196, 216)), (context_rect.x, context_rect.y - self._table_line_height(font)))
+                    self._draw_person_quote_text_input(screen, font, card, self.PERSON_QUOTE_CONTEXT_FIELD, context_rect, "Commentary")
+
+            add_rect = card.get("person_quote_add_rect")
+            if add_rect is not None:
+                hovered = add_rect.collidepoint(pygame.mouse.get_pos())
+                pygame.draw.rect(screen, (66, 82, 108) if hovered else (52, 62, 84), add_rect)
+                pygame.draw.rect(screen, (184, 202, 232), add_rect, 1)
+                add_surface = font.render("+ Add", True, (244, 246, 252))
+                screen.blit(add_surface, add_surface.get_rect(center=add_rect.center))
+
+        empty_rect = card.get("person_quote_empty_rect")
+        if empty_rect is not None:
+            pygame.draw.rect(screen, (32, 36, 46), empty_rect)
+            pygame.draw.rect(screen, (82, 90, 108), empty_rect, 1)
+            empty_text = font.render("No quotes recorded", True, (146, 156, 176))
+            screen.blit(empty_text, empty_text.get_rect(center=empty_rect.center))
+
+        for row in card.get("person_quote_rows", []):
+            row_rect = row.get("rect")
+            entry = row.get("entry") or {}
+            if row_rect is None:
+                continue
+            if row.get("mode") == "conversation":
+                fill = (42, 62, 78) if row.get("mine") else (36, 42, 54)
+                border = (108, 146, 168) if row.get("mine") else (82, 94, 116)
+                pygame.draw.rect(screen, fill, row_rect)
+                pygame.draw.rect(screen, border, row_rect, 1)
+                speaker = str(entry.get("speaker") or "Speaker").strip()
+                date = str(entry.get("date") or "").strip()
+                meta = speaker if not date else f"{speaker} | {date}"
+                screen.blit(font.render(self._ellipsize_text(meta, font, row_rect.width - 40), True, (174, 194, 218)), (row_rect.x + 10, row_rect.y + 6))
+                message_y = row_rect.y + 24
+                for line in row.get("message_lines") or []:
+                    screen.blit(font.render(line, True, (236, 240, 246)), (row_rect.x + 10, message_y))
+                    message_y += self._table_line_height(font)
+                remove_rect = row.get("remove_rect")
+                if remove_rect is not None:
+                    pygame.draw.rect(screen, (70, 40, 46), remove_rect)
+                    pygame.draw.rect(screen, (178, 116, 124), remove_rect, 1)
+                    remove_surface = font.render("x", True, (250, 220, 224))
+                    screen.blit(remove_surface, remove_surface.get_rect(center=remove_rect.center))
+                continue
+
+            pygame.draw.rect(screen, (32, 36, 46), row_rect)
+            pygame.draw.rect(screen, (82, 90, 108), row_rect, 1)
+            date = str(entry.get("date") or "").strip()
+            if date:
+                date_surface = font.render(date, True, (168, 184, 214))
+                screen.blit(date_surface, (row_rect.x + 10, row_rect.y + 6))
+            quote_y = row_rect.y + 22
+            for line in row.get("quote_lines") or []:
+                screen.blit(font.render(line, True, (232, 236, 244)), (row_rect.x + 10, quote_y))
+                quote_y += self._table_line_height(font)
+            for line in row.get("context_lines") or []:
+                screen.blit(font.render(line, True, (166, 176, 194)), (row_rect.x + 10, quote_y))
+                quote_y += self._table_line_height(font)
+            remove_rect = row.get("remove_rect")
+            if remove_rect is not None:
+                pygame.draw.rect(screen, (70, 40, 46), remove_rect)
+                pygame.draw.rect(screen, (178, 116, 124), remove_rect, 1)
+                remove_surface = font.render("x", True, (250, 220, 224))
+                screen.blit(remove_surface, remove_surface.get_rect(center=remove_rect.center))
+
+    def handle_person_quotes_click(self, card, mouse_pos):
+        if not self._is_person_quotes_mode() or not card.get("is_edit_mode", False):
+            return False
+        for mode_id, mode_rect in card.get("person_quote_mode_hitboxes", []):
+            if mode_rect is not None and mode_rect.collidepoint(mouse_pos):
+                return self._set_person_quote_capture_mode(card, mode_id)
+        for field_key, input_rect in (card.get("person_quote_input_rects") or {}).items():
+            if input_rect is not None and input_rect.collidepoint(mouse_pos):
+                if not self._set_person_quote_active_field(card, field_key):
+                    return False
+                if self._is_person_quote_wiki_field(field_key):
+                    self.set_edit_cursor_from_pos(card, field_key, mouse_pos, card.get("layout_font"))
+                return True
+
+        add_rect = card.get("person_quote_add_rect")
+        if add_rect is not None and add_rect.collidepoint(mouse_pos):
+            return self.add_person_quote_or_conversation_from_buffers(card) or True
+
+        for row in card.get("person_quote_rows", []):
+            remove_rect = row.get("remove_rect")
+            if remove_rect is not None and remove_rect.collidepoint(mouse_pos):
+                if row.get("mode") == "conversation":
+                    return self.remove_person_conversation_at_index(card, row.get("index"))
+                return self.remove_person_quote_at_index(card, row.get("index"))
+        return False
+
+    def _handle_person_quote_keydown(self, card, event):
+        if not self._is_person_quotes_mode() or not card.get("is_edit_mode", False):
+            return False
+
+        active_field = card.get("active_edit_field") or card.get("person_quote_active_field")
+        if active_field not in self.PERSON_QUOTE_INPUT_FIELDS:
+            if event.key == pygame.K_TAB:
+                return self._cycle_person_quote_field(card, direction=-1 if (event.mod & pygame.KMOD_SHIFT) else 1)
+            if event.key == pygame.K_ESCAPE:
+                card["last_edit_action"] = "cancel"
+                card["is_edit_mode"] = False
+                return True
+            return False
+
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER) and (event.mod & pygame.KMOD_CTRL):
+            return self.add_person_quote_or_conversation_from_buffers(card) or True
+
+        if event.key == pygame.K_ESCAPE:
+            self._sync_active_person_quote_edit_buffer(card)
+            card["person_quote_active_field"] = None
+            card["active_edit_field"] = None
+            card["edit_buffer"] = ""
+            card["edit_cursor"] = 0
+            return True
+
+        if event.key == pygame.K_TAB:
+            return self._cycle_person_quote_field(card, direction=-1 if (event.mod & pygame.KMOD_SHIFT) else 1)
+
+        return False
+
     def layout_card(self, card, rect):
         section_hitboxes = []
         tab_hitboxes = []
@@ -2782,6 +3864,12 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         task_finish_checkbox_rect = None
         task_checklist_hitboxes = []
         task_checklist_input_rect = None
+        person_quote_section_rect = None
+        person_quote_input_rects = {}
+        person_quote_mode_hitboxes = []
+        person_quote_add_rect = None
+        person_quote_rows = []
+        person_quote_empty_rect = None
         schema_field_specs = self._get_schema_field_specs()
 
         tab_y = rect.y + self.HEADER_H + 6
@@ -2826,6 +3914,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 "orbital": 86,
                 "map": 72,
                 "world_gen": 82,
+                "materials": 82,
+                "plant_ecology": 82,
+                "quotes": 72,
                 "data": 58,
             }
             available_subtab_w = max(120, rect.width - 24)
@@ -3034,6 +4125,25 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                     task_checklist_rect.width - 36,
                     22,
                 )
+        elif self._is_person_quotes_mode():
+            image_rect = None
+            for key, value in (
+                ("phylogeny_parent_section_rect", None),
+                ("phylogeny_parent_panel_rect", None),
+                ("phylogeny_parent_panel_content_rect", None),
+                ("phylogeny_child_section_rect", None),
+                ("phylogeny_diagram_section_rect", None),
+                ("phylogeny_parent_input_rect", None),
+                ("phylogeny_child_input_rect", None),
+                ("phylogeny_parent_match_rows", []),
+                ("phylogeny_child_match_rows", []),
+                ("phylogeny_parent_tree_rows", []),
+                ("phylogeny_child_tree_rows", []),
+                ("phylogeny_local_tree_rows", []),
+                ("phylogeny_node_hitboxes", []),
+            ):
+                card[key] = value
+            content_end_y = self._layout_person_quotes_content(card, content_left, current_y, text_width)
         elif self._is_phylogeny_mode():
             image_rect = None
             content_end_y = self._layout_phylogeny_content(card, content_left, current_y, text_width)
@@ -3133,6 +4243,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                             {
                                 "section": section_name,
                                 "key": key,
+                                "value": value,
                                 "row_rect": row_rect,
                                 "key_rect": key_rect,
                                 "value_rect": value_rect,
@@ -3434,6 +4545,48 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                     shifted_row["rect"] = shifted_rect.clip(content_viewport_rect)
                     visible_rows.append(shifted_row)
                 card["site_rows"] = visible_rows
+            elif self._is_person_quotes_mode():
+                for rect_key in ("person_quote_section_rect", "person_quote_add_rect", "person_quote_empty_rect"):
+                    rect_value = card.get(rect_key)
+                    if rect_value is not None:
+                        shifted_rect = rect_value.move(0, -scroll_y)
+                        card[rect_key] = (
+                            shifted_rect.clip(content_viewport_rect)
+                            if shifted_rect.colliderect(content_viewport_rect)
+                            else None
+                        )
+                card["person_quote_input_rects"] = {
+                    field_key: shifted_rect.clip(content_viewport_rect)
+                    for field_key, input_rect in (card.get("person_quote_input_rects") or {}).items()
+                    for shifted_rect in [input_rect.move(0, -scroll_y)]
+                    if shifted_rect.colliderect(content_viewport_rect)
+                }
+                card["person_quote_mode_hitboxes"] = [
+                    (mode_id, shifted_rect.clip(content_viewport_rect))
+                    for mode_id, mode_rect in card.get("person_quote_mode_hitboxes", [])
+                    for shifted_rect in [mode_rect.move(0, -scroll_y)]
+                    if shifted_rect.colliderect(content_viewport_rect)
+                ]
+                visible_rows = []
+                for row in card.get("person_quote_rows", []):
+                    row_rect = row.get("rect")
+                    if row_rect is None:
+                        continue
+                    shifted_rect = row_rect.move(0, -scroll_y)
+                    if not shifted_rect.colliderect(content_viewport_rect):
+                        continue
+                    shifted_row = dict(row)
+                    shifted_row["rect"] = shifted_rect.clip(content_viewport_rect)
+                    remove_rect = row.get("remove_rect")
+                    if remove_rect is not None:
+                        shifted_remove = remove_rect.move(0, -scroll_y)
+                        shifted_row["remove_rect"] = (
+                            shifted_remove.clip(content_viewport_rect)
+                            if shifted_remove.colliderect(content_viewport_rect)
+                            else None
+                        )
+                    visible_rows.append(shifted_row)
+                card["person_quote_rows"] = visible_rows
 
             shifted_section_hitboxes = []
             for section_name, section_rect in section_hitboxes:
@@ -3626,6 +4779,39 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                     for row in card.get("site_rows", [])
                     if row.get("rect") is not None and row["rect"].colliderect(content_viewport_rect)
                 ]
+            elif self._is_person_quotes_mode():
+                for rect_key in ("person_quote_section_rect", "person_quote_add_rect", "person_quote_empty_rect"):
+                    rect_value = card.get(rect_key)
+                    if rect_value is not None:
+                        card[rect_key] = (
+                            rect_value.clip(content_viewport_rect)
+                            if rect_value.colliderect(content_viewport_rect)
+                            else None
+                        )
+                card["person_quote_input_rects"] = {
+                    field_key: input_rect.clip(content_viewport_rect)
+                    for field_key, input_rect in (card.get("person_quote_input_rects") or {}).items()
+                    if input_rect is not None and input_rect.colliderect(content_viewport_rect)
+                }
+                card["person_quote_mode_hitboxes"] = [
+                    (mode_id, mode_rect.clip(content_viewport_rect))
+                    for mode_id, mode_rect in card.get("person_quote_mode_hitboxes", [])
+                    if mode_rect is not None and mode_rect.colliderect(content_viewport_rect)
+                ]
+                card["person_quote_rows"] = [
+                    {
+                        **row,
+                        "rect": row["rect"].clip(content_viewport_rect),
+                        "remove_rect": (
+                            row["remove_rect"].clip(content_viewport_rect)
+                            if row.get("remove_rect") is not None
+                            and row["remove_rect"].colliderect(content_viewport_rect)
+                            else None
+                        ),
+                    }
+                    for row in card.get("person_quote_rows", [])
+                    if row.get("rect") is not None and row["rect"].colliderect(content_viewport_rect)
+                ]
             section_hitboxes = [
                 (section_name, section_rect.clip(content_viewport_rect))
                 for section_name, section_rect in section_hitboxes
@@ -3765,6 +4951,13 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         card["task_finish_checkbox_rect"] = task_finish_checkbox_rect
         card["task_checklist_hitboxes"] = task_checklist_hitboxes
         card["task_checklist_input_rect"] = task_checklist_input_rect
+        if not self._is_person_quotes_mode():
+            card["person_quote_section_rect"] = person_quote_section_rect
+            card["person_quote_input_rects"] = person_quote_input_rects
+            card["person_quote_mode_hitboxes"] = person_quote_mode_hitboxes
+            card["person_quote_add_rect"] = person_quote_add_rect
+            card["person_quote_rows"] = person_quote_rows
+            card["person_quote_empty_rect"] = person_quote_empty_rect
         card["timeline_label_y"] = timeline_label_y
         card["timeline_y"] = timeline_y
         card["launch_rect"] = launch_rect
@@ -3932,6 +5125,19 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             requirement_count = sum(max(1, len(report.get("checks") or [])) + 1 for report in reports)
             row_count = 2 + operator_count + condition_count + max(1, requirement_count)
             current_y = tabs_bottom_y + 10 + 2 * (self.SECTION_HEADER_H + self.SECTION_GAP + 4) + row_count * 30
+            timeline_label_y = current_y + 12
+            timeline_y = timeline_label_y + 18
+            center_y = timeline_y + 10
+            launch_top = center_y + self.TIMELINE_TO_LAUNCH_GAP
+            resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
+            return max(340, resize_bottom + 8)
+
+        if self._is_person_quotes_mode():
+            tabs_bottom_y = self.HEADER_H + 6 + self.TAB_H
+            if self._active_subtab_order():
+                tabs_bottom_y += 5 + self.SUBTAB_H
+            content_w = max(120, int(card.get("canvas_w", 420)) - 24)
+            current_y = tabs_bottom_y + 10 + self._measure_person_quotes_height(font, content_w, card)
             timeline_label_y = current_y + 12
             timeline_y = timeline_label_y + 18
             center_y = timeline_y + 10
@@ -4124,10 +5330,17 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
         if card.get("is_edit_mode", False):
             active_field = card.get("active_edit_field")
+            active_quote_field = card.get("person_quote_active_field")
             if card.get("delete_confirm_active", False):
                 edit_status = "Confirm delete | Click ! again to remove this entry | Esc cancel"
             elif card.get("timeline_reanchor_active", False):
                 edit_status = "Reanchoring card | Click timeline to set | Esc cancel"
+            elif self._is_person_quotes_mode() and active_quote_field:
+                quote_field_label = self.PERSON_QUOTE_FIELD_LABELS.get(active_quote_field, "Quote")
+                if self._is_person_quote_wiki_field(active_quote_field):
+                    edit_status = f"Editing {quote_field_label} | Enter newline | Ctrl+Enter add | Tab next"
+                else:
+                    edit_status = f"Editing {quote_field_label} | Ctrl+Enter add | Tab next | Esc blur"
             elif active_field:
                 validation_message = str(card.get("edit_validation_message") or "")
                 if validation_message:
@@ -4153,6 +5366,15 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         self._draw_subtabs(screen, font, card)
         if self._is_general_mode():
             self._draw_general_content(screen, font, card)
+        elif self._is_person_quotes_mode():
+            content_clip = card.get("content_viewport_rect")
+            previous_clip = screen.get_clip()
+            if content_clip is not None:
+                screen.set_clip(previous_clip.clip(content_clip))
+            try:
+                self._draw_person_quotes_content(screen, font, card)
+            finally:
+                screen.set_clip(previous_clip)
         elif self._is_phylogeny_mode():
             content_clip = card.get("content_viewport_rect")
             previous_clip = screen.get_clip()
@@ -4536,6 +5758,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                     "space": "Space",
                     "map": "Map",
                     "world_gen": "World",
+                    "materials": "Mat",
+                    "plant_ecology": "Plant",
+                    "quotes": "Quote",
                 }
                 label = abbreviations.get(subtab_name, label[:5])
             text_surface = font.render(label, True, text_color)
@@ -4738,6 +5963,40 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             screen.blit(surf, (image_rect.x + 10, current_y))
             current_y += self.IMAGE_TEXT_LINE_H
 
+    def _draw_material_model_value(self, screen, font, value_rect, model):
+        items = self._material_model_items(model)
+        line_h = self._table_line_height(font)
+        current_y = value_rect.y + self.TABLE_ROW_PAD_Y
+        swatch_size = max(8, min(12, line_h - 4))
+
+        if not items:
+            label = str(model.get("status") or "No inferred materials")
+            surface = font.render(self._ellipsize_text(label, font, value_rect.width - 4), True, (180, 180, 180))
+            screen.blit(surface, (value_rect.x + 2, current_y))
+            return
+
+        for item in items:
+            if current_y + line_h > value_rect.bottom:
+                break
+            swatch_rect = pygame.Rect(
+                value_rect.x + 2,
+                current_y + max(1, (line_h - swatch_size) // 2),
+                swatch_size,
+                swatch_size,
+            )
+            pygame.draw.rect(screen, self._material_item_color(item), swatch_rect)
+            pygame.draw.rect(screen, (224, 224, 216), swatch_rect, 1)
+            label = self._material_item_line(item)
+            text_x = swatch_rect.right + 7
+            text_max_w = max(20, value_rect.right - text_x - 4)
+            text_surface = font.render(
+                self._ellipsize_text(label, font, text_max_w),
+                True,
+                (210, 218, 232),
+            )
+            screen.blit(text_surface, (text_x, current_y))
+            current_y += line_h
+
     def _draw_sections(self, screen, font, card):
         if self._is_general_mode():
             return
@@ -4773,6 +6032,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
             for row_index, row in enumerate(rows_by_section.get(section_name, [])):
                 key = row["key"]
+                value = row.get("value")
                 row_rect = row["row_rect"]
                 is_active_field = key == card.get("active_edit_field")
                 is_relation_link_target = key == card.get("active_relation_link_field")
@@ -4829,7 +6089,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                     wrapped_lines = row["wrapped_lines"]
 
                 relation_chips = row.get("relation_chips", [])
-                if relation_chips and not is_active_field:
+                if self._is_material_model_field(key) and isinstance(value, dict) and not is_active_field:
+                    self._draw_material_model_value(screen, font, row["value_rect"], value)
+                elif relation_chips and not is_active_field:
                     for chip in relation_chips:
                         chip_rect = chip["rect"]
                         chip_fill, chip_border, chip_text_color = self._relation_chip_colors(
@@ -4898,18 +6160,28 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             section_colors=self._wiki_field_colors(),
             cursor_index=card.get("edit_cursor", 0),
             scroll_y=card.get("scroll_y", 0),
+            selection_range=self._edit_selection_range(card),
         )
 
         snapshot_rect = card.get("timeline_snapshot_rect")
         if snapshot_rect is not None:
             label_rect = pygame.Rect(snapshot_rect.x, snapshot_rect.y, snapshot_rect.width, 18)
-            pygame.draw.rect(screen, (30, 36, 50), label_rect)
-            pygame.draw.rect(screen, (88, 104, 132), snapshot_rect, 1)
+            snapshot_editing = (
+                card.get("is_edit_mode", False)
+                and card.get("active_edit_field") == self.TIMELINE_SNAPSHOT_FIELD
+            )
+            has_snapshot_draft = self._has_timeline_snapshot_draft(card)
+            label_fill = (40, 52, 76) if has_snapshot_draft or snapshot_editing else (30, 36, 50)
+            border_color = (178, 202, 244) if has_snapshot_draft or snapshot_editing else (88, 104, 132)
+            pygame.draw.rect(screen, label_fill, label_rect)
+            pygame.draw.rect(screen, border_color, snapshot_rect, 1)
             label = self._working_year_wiki_stub(card) or "Timeline Snapshot"
+            if has_snapshot_draft and not snapshot_editing:
+                label = f"{label} (draft)"
             label_surface = font.render(
                 self._ellipsize_text(label, font, snapshot_rect.width - 16),
                 True,
-                (210, 222, 244),
+                (232, 240, 255) if has_snapshot_draft or snapshot_editing else (210, 222, 244),
             )
             screen.blit(label_surface, (snapshot_rect.x + 8, snapshot_rect.y + 2))
             content_rect = pygame.Rect(
@@ -4917,10 +6189,6 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 snapshot_rect.y + 18,
                 snapshot_rect.width,
                 max(20, snapshot_rect.height - 18),
-            )
-            snapshot_editing = (
-                card.get("is_edit_mode", False)
-                and card.get("active_edit_field") == self.TIMELINE_SNAPSHOT_FIELD
             )
             CardWikiRenderer.draw_content(
                 screen,
@@ -4934,6 +6202,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 section_colors=self._wiki_field_colors(),
                 cursor_index=card.get("edit_cursor", 0),
                 scroll_y=card.get("scroll_y", 0),
+                selection_range=self._edit_selection_range(card),
             )
 
         if card.get("wiki_link_picker_open", False):

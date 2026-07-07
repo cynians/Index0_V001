@@ -165,6 +165,40 @@ class NavigationController:
         self.app.knowledge_layer_active = False
         self.app.camera_controller.setup_for_sim(new_bioregion_sim)
 
+    def launch_biosphere_design_tab(self, active_sim):
+        if active_sim is None:
+            return False
+
+        context = getattr(active_sim, "get_biosphere_launch_context", lambda: None)()
+        if not isinstance(context, dict):
+            return False
+
+        patch_id = context.get("patch_location_id")
+        if not patch_id:
+            return False
+
+        tab_key = ("biosphere", patch_id)
+        if self.focus_existing_tab_by_key(tab_key):
+            self.app.knowledge_layer_active = False
+            return True
+
+        new_bioregion_sim = BioregionSimulation(
+            world_model=self.app.world_model,
+            biosphere_context=context,
+        )
+        patch_name = context.get("patch_name") or patch_id
+        new_tab = Tab(
+            SimulationInstance(new_bioregion_sim),
+            name=f"Biosphere: {patch_name}",
+            tab_key=tab_key,
+        )
+
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+        self.app.camera_controller.setup_for_sim(new_bioregion_sim)
+        return True
+
     def launch_vehicle_tab(self, vehicle_entity_id="veh_test_rig_01"):
         """
         Open or focus a repository-backed vehicle simulation tab.
@@ -625,6 +659,11 @@ class NavigationController:
             tab_index = action.get("tab_index")
             return self.activate_tab_index(tab_index)
 
+        if action_id == "open_space_from_world_gen":
+            system_id = action.get("system_id") or getattr(active_sim, "parent_system_id", None) or "system_sol"
+            self.launch_space_root_tab(system_id)
+            return True
+
         if action_id == "simulation_panel_tab_select" and active_sim is not None:
             tab_id = action.get("tab_id")
             return bool(
@@ -949,6 +988,16 @@ class NavigationController:
 
         if action_id == "import_map_image" and active_sim is not None:
             return bool(getattr(active_sim, "import_map_image_for_current_target", lambda: False)())
+
+        if action_id == "new_biosphere_patch" and active_sim is not None:
+            return bool(getattr(active_sim, "begin_biosphere_patch_draft", lambda: False)())
+
+        if action_id == "create_biosphere" and active_sim is not None:
+            return self.launch_biosphere_design_tab(active_sim)
+
+        if str(action_id).startswith("biosphere_toggle_species:") and active_sim is not None:
+            species_id = str(action_id).split(":", 1)[1]
+            return bool(getattr(active_sim, "toggle_species_selection", lambda _species_id: False)(species_id))
 
         if action_id == "new_map_selection" and active_sim is not None:
             if (

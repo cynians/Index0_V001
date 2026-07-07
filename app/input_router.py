@@ -125,6 +125,7 @@ class InputRouter:
         """
         Forward pointer motion and map-edit pointer events to the active simulation.
         """
+        handled_pointer = False
         if active_sim and hasattr(active_sim, "handle_pointer_motion"):
             if event.type == pygame.MOUSEMOTION:
                 active_sim.handle_pointer_motion(
@@ -140,12 +141,21 @@ class InputRouter:
                     camera=self.app.camera,
                     screen_pos=event.pos,
                 )
+                handled_pointer = True
             elif event.type == pygame.MOUSEBUTTONUP and event.button in (1, 3):
                 active_sim.handle_pointer_event(
                     event=event,
                     camera=self.app.camera,
                     screen_pos=event.pos,
                 )
+                handled_pointer = True
+
+        if handled_pointer and active_sim is not None:
+            consume_action = getattr(active_sim, "consume_pending_navigation_action", None)
+            if consume_action is not None:
+                action = consume_action()
+                if action is not None:
+                    self.app.navigation.handle_ui_action(action, active_sim)
 
     def route_event(self, event):
         """

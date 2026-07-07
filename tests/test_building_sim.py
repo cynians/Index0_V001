@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from simulations.building.building_sim import BuildingSimulation
+from simulations.bioregion.bioregion_simulation import BioregionSimulation
 from simulations.map.map_simulation import MapSimulation
 from world.simulation_context import SimulationContext
 
@@ -272,6 +273,49 @@ class BuildingSimulationTests(unittest.TestCase):
             if layer.get("shape") == "map_rect" and layer.get("entity_id") == "loc_planet_blue"
         )
         self.assertTrue(planet_rect["has_heightmap_base"])
+
+    def test_planet_radius_overrides_tiny_placeholder_bbox(self):
+        planet = {
+            "id": "loc_planet_blue",
+            "name": "Blue Planet",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "radius_m": 6_371_000.0,
+            "bounds": {
+                "type": "bbox",
+                "min_x": -0.5,
+                "max_x": 0.5,
+                "min_y": -0.25,
+                "max_y": 0.25,
+            },
+            "heightmap_model": {
+                "status": "heightmap_seeded",
+                "sample_grid": {
+                    "width": 3,
+                    "height": 3,
+                    "rows": [
+                        [0.0, 100.0, 0.0],
+                        [-500.0, 1200.0, -500.0],
+                        [0.0, 50.0, 0.0],
+                    ],
+                },
+            },
+        }
+        world_model = FakeWorldModel([planet])
+        sim = MapSimulation(SimulationContext(
+            year=2400,
+            root_entity_id=planet["id"],
+            world_model=world_model,
+        ))
+
+        base_layer = sim.get_heightmap_base_layer()
+
+        self.assertIsNotNone(base_layer)
+        self.assertGreater(base_layer["width_world"], 350.0)
+        self.assertGreater(base_layer["height_world"], 175.0)
+        self.assertGreater(sim.bounds["max_x"] - sim.bounds["min_x"], 350.0)
+        self.assertGreater(sim.bounds["max_y"] - sim.bounds["min_y"], 175.0)
 
     def test_map_sim_exposes_material_heatmap_layer_for_planet_root(self):
         planet = {
@@ -620,6 +664,323 @@ class BuildingSimulationTests(unittest.TestCase):
         self.assertIn("loc_neighbour", ghost_entity_ids)
         self.assertIn("loc_bioregion", ghost_entity_ids)
         self.assertIn("loc_state", ghost_entity_ids)
+
+    def test_map_context_includes_timeless_locations_linked_by_parents(self):
+        world_model = FakeWorldModel([
+            {
+                "id": "planet_earth",
+                "name": "Earth",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "planet",
+            },
+            {
+                "id": "loc_eurasia",
+                "name": "Eurasia",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "continent",
+                "parents": ["planet_earth"],
+                "bounds": {"type": "polygon", "points": [(0, 0), (20, 0), (20, 20), (0, 20)]},
+            },
+            {
+                "id": "loc_asia",
+                "name": "Asia",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "continent",
+                "parents": ["loc_eurasia"],
+                "bounds": {"type": "polygon", "points": [(1, 1), (19, 1), (19, 18), (1, 18)]},
+            },
+        ])
+        context = SimulationContext(year=2400, root_entity_id="planet_earth", world_model=world_model)
+
+        active_ids = {entity.get("id") for entity in context.get_active_locations()}
+
+        self.assertIn("loc_eurasia", active_ids)
+        self.assertIn("loc_asia", active_ids)
+
+    def test_map_sim_creates_biosphere_patch_as_location_polygon(self):
+        root = {
+            "id": "loc_meadow",
+            "name": "Meadow",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "region",
+            "bounds": {"type": "polygon", "points": [(0, 0), (20, 0), (20, 20), (0, 20)]},
+        }
+        world_model = FakeWorldModel([root])
+        sim = MapSimulation(SimulationContext(year=2400, root_entity_id="loc_meadow", world_model=world_model))
+
+        self.assertTrue(sim.can_create_biosphere_patch_draft())
+        self.assertTrue(sim.begin_biosphere_patch_draft())
+        self.assertEqual(sim.LOCATION_LAYER_KIND, sim.get_active_layer_kind())
+        self.assertTrue(sim.is_creating_biosphere_patch)
+
+        sim.draft_spatial_feature_points = [(1, 1), (4, 1), (4, 5), (1, 5)]
+        self.assertTrue(sim.finish_map_editor())
+
+        patch = world_model.get_entity(sim.selected_entity_id)
+        self.assertEqual("biosphere_patch", patch["location_class"])
+        self.assertEqual("micro_polygon", patch["biosphere_scale"])
+        self.assertEqual(
+            "coll_biosphere_roster_loc_biosphere_patch_loc_meadow_001",
+            patch["biosphere_species_collection"],
+        )
+        self.assertEqual("loc_meadow", patch["parent_location"])
+        self.assertEqual(["loc_meadow"], patch["parents"])
+        self.assertIn("loc_biosphere_patch_loc_meadow_001", world_model.get_entity("loc_meadow")["constituents"])
+        roster = world_model.get_entity(patch["biosphere_species_collection"])
+        self.assertEqual("collections", roster["_dataset"])
+        self.assertEqual("localized_biosphere_species_roster", roster["collection_class"])
+        self.assertEqual(patch["id"], roster["biosphere_location"])
+        self.assertEqual([(1, 1), (4, 1), (4, 5), (1, 5)], patch["bounds"]["points"])
+        self.assertEqual(12.0, patch["biosphere_area_m2"])
+        self.assertEqual(3.0, patch["biosphere_width_m"])
+        self.assertEqual(4.0, patch["biosphere_height_m"])
+        self.assertEqual(
+            [(0.0, 0.0), (3.0, 0.0), (3.0, 4.0), (0.0, 4.0)],
+            patch["biosphere_shape"]["points"],
+        )
+
+        launch_context = sim.get_biosphere_launch_context()
+        self.assertEqual(patch["id"], launch_context["patch_location_id"])
+        self.assertEqual(patch["biosphere_species_collection"], launch_context["species_collection_id"])
+        self.assertEqual(4.0, launch_context["map_size_m"])
+        self.assertEqual(12.0, launch_context["biosphere_area_m2"])
+        self.assertEqual(patch["biosphere_shape"], launch_context["biosphere_shape"])
+
+    def test_bioregion_micro_context_loads_species_collection(self):
+        species = [
+            {"id": "spec_one", "type": "species", "_dataset": "species", "common_name": "One"},
+            {"id": "spec_two", "type": "species", "_dataset": "species", "common_name": "Two"},
+        ]
+        collection = {
+            "id": "coll_micro",
+            "type": "collections",
+            "_dataset": "collections",
+            "includes": ["spec_one", "spec_two"],
+        }
+        world_model = FakeWorldModel([collection] + species)
+
+        sim = BioregionSimulation(
+            world_model=world_model,
+            biosphere_context={
+                "patch_location_id": "loc_patch",
+                "patch_name": "Patch",
+                "root_name": "Meadow",
+                "species_collection_id": "coll_micro",
+                "map_size_m": 10.0,
+            },
+        )
+
+        self.assertEqual(10.0, sim.get_map_size())
+        self.assertEqual(1.0, sim.get_subsection_size())
+        self.assertEqual(["spec_one", "spec_two"], [entry["id"] for entry in sim.get_species_catalog_entries()])
+        self.assertTrue(sim.toggle_species_selection("spec_two"))
+        selected = [entry for entry in sim.get_species_catalog_entries() if entry["selected"]]
+        self.assertEqual(["spec_two"], [entry["id"] for entry in selected])
+
+    def test_bioregion_micro_context_loads_biosphere_roster_buckets(self):
+        species = [
+            {"id": "spec_micro", "type": "species", "_dataset": "species", "common_name": "Micro"},
+            {"id": "spec_small", "type": "species", "_dataset": "species", "common_name": "Small"},
+            {"id": "spec_plant", "type": "species", "_dataset": "species", "common_name": "Plant"},
+        ]
+        collection = {
+            "id": "coll_roster",
+            "type": "collections",
+            "_dataset": "collections",
+            "collection_class": "localized_biosphere_species_roster",
+            "microfauna_species": ["spec_micro"],
+            "small_animal_species": ["spec_small"],
+            "sessile_life_species": ["spec_plant"],
+            "includes": ["spec_legacy"],
+        }
+        world_model = FakeWorldModel([collection] + species)
+
+        sim = BioregionSimulation(
+            world_model=world_model,
+            biosphere_context={
+                "patch_location_id": "loc_patch",
+                "patch_name": "Patch",
+                "root_name": "Meadow",
+                "species_collection_id": "coll_roster",
+                "map_size_m": 10.0,
+            },
+        )
+
+        self.assertEqual(
+            ["spec_micro", "spec_small", "spec_plant"],
+            [entry["id"] for entry in sim.get_species_catalog_entries()],
+        )
+
+    def test_empty_localized_biosphere_roster_does_not_use_starter_species(self):
+        collection = {
+            "id": "coll_roster",
+            "type": "collections",
+            "_dataset": "collections",
+            "collection_class": "localized_biosphere_species_roster",
+            "biosphere_location": "loc_patch",
+        }
+        world_model = FakeWorldModel([collection])
+
+        sim = BioregionSimulation(
+            world_model=world_model,
+            biosphere_context={
+                "patch_location_id": "loc_patch",
+                "patch_name": "Patch",
+                "root_name": "Meadow",
+                "species_collection_id": "coll_roster",
+                "map_size_m": 10.0,
+            },
+        )
+
+        self.assertEqual([], sim.get_species_catalog_entries())
+
+    def test_bioregion_micro_context_uses_polygon_shape_and_mask(self):
+        sim = BioregionSimulation(
+            biosphere_context={
+                "patch_location_id": "loc_patch",
+                "patch_name": "Patch",
+                "map_size_m": 4.0,
+                "biosphere_width_m": 4.0,
+                "biosphere_height_m": 4.0,
+                "biosphere_area_m2": 8.0,
+                "biosphere_shape": {
+                    "type": "polygon",
+                    "coordinate_space": "biosphere_local_m",
+                    "points": [(0.0, 0.0), (4.0, 0.0), (0.0, 4.0)],
+                },
+            },
+        )
+
+        self.assertEqual(4.0, sim.get_map_size())
+        self.assertEqual(4.0, sim.get_biosphere_width())
+        self.assertEqual(4.0, sim.get_biosphere_height())
+        self.assertEqual(8.0, sim.get_biosphere_area())
+        self.assertEqual([(0.0, 0.0), (4.0, 0.0), (0.0, 4.0)], sim.get_biosphere_shape_points())
+        self.assertIsNone(sim.world_to_cell_indices(3.8, 3.8))
+        self.assertIsNotNone(sim.world_to_cell_indices(0.4, 0.4))
+
+    def test_bioregion_micro_context_samples_parent_worldgen(self):
+        planet = {
+            "id": "loc_planet",
+            "name": "Worldgen Planet",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "bounds": {"type": "bbox", "min_x": -180, "max_x": 180, "min_y": -90, "max_y": 90},
+            "heightmap_model": {
+                "status": "heightmap_seeded",
+                "min_elevation_m": 0.0,
+                "max_elevation_m": 1000.0,
+                "sea_level_m": 250.0,
+                "sample_grid": {
+                    "width": 2,
+                    "height": 2,
+                    "rows": [
+                        [0.0, 500.0],
+                        [500.0, 1000.0],
+                    ],
+                },
+            },
+            "hydrology_summary": {
+                "cycle": "active",
+                "liquid_water_possible": True,
+            },
+            "materials_summary": {
+                "dominant_materials": ["mat_basalt", "mat_clay"],
+            },
+        }
+        patch = {
+            "id": "loc_patch",
+            "name": "Patch",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "biosphere_patch",
+            "parent_location": "loc_planet",
+            "bounds": {
+                "type": "polygon",
+                "points": [(-180, -90), (180, -90), (180, 90), (-180, 90)],
+            },
+        }
+        world_model = FakeWorldModel([planet, patch])
+
+        sim = BioregionSimulation(
+            world_model=world_model,
+            biosphere_context={
+                "patch_location_id": "loc_patch",
+                "parent_location_id": "loc_planet",
+                "root_location_id": "loc_planet",
+                "patch_name": "Patch",
+                "root_name": "Worldgen Planet",
+                "source_bounds": patch["bounds"],
+                "map_size_m": 10.0,
+            },
+        )
+
+        low_cell = sim.grid.get_cell(0, 0)
+        high_cell = sim.grid.get_cell(sim.grid.total_cells_side - 1, sim.grid.total_cells_side - 1)
+
+        self.assertEqual("loc_planet", low_cell["worldgen_source_entity_id"])
+        self.assertLess(low_cell["elevation_m"], high_cell["elevation_m"])
+        self.assertLess(low_cell["altitude"], high_cell["altitude"])
+        self.assertEqual("basalt", low_cell["bedrock_type"])
+        self.assertIn(low_cell["soil_type"], {"clay_loam", "heavy_clay"})
+        self.assertGreaterEqual(low_cell["surface_water"], 0.45)
+        self.assertIn("terrain from Worldgen Planet", sim.get_scope_breadcrumb())
+
+    def test_bioregion_species_catalog_includes_worldgen_suitability(self):
+        species = {
+            "id": "spec_plant",
+            "type": "species",
+            "_dataset": "species",
+            "common_name": "Patch Plant",
+            "worldgen_suitability_profile": {
+                "soil_types": ["loam"],
+                "moisture": {"min": 0.1, "optimum": 0.45, "max": 0.9},
+                "elevation_m": {"min": 0, "optimum": 50, "max": 120},
+            },
+        }
+        collection = {
+            "id": "coll_micro",
+            "type": "collections",
+            "_dataset": "collections",
+            "includes": ["spec_plant"],
+        }
+        planet = {
+            "id": "loc_planet",
+            "name": "Worldgen Planet",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "bounds": {"type": "bbox", "min_x": -180, "max_x": 180, "min_y": -90, "max_y": 90},
+            "heightmap_model": {
+                "min_elevation_m": 0.0,
+                "max_elevation_m": 100.0,
+                "sample_grid": {"width": 2, "height": 2, "rows": [[40.0, 50.0], [50.0, 60.0]]},
+            },
+        }
+        world_model = FakeWorldModel([collection, species, planet])
+
+        sim = BioregionSimulation(
+            world_model=world_model,
+            biosphere_context={
+                "patch_location_id": "loc_patch",
+                "parent_location_id": "loc_planet",
+                "root_location_id": "loc_planet",
+                "species_collection_id": "coll_micro",
+                "source_bounds": {"type": "polygon", "points": [(-10, -10), (10, -10), (10, 10), (-10, 10)]},
+                "map_size_m": 10.0,
+            },
+        )
+
+        entries = sim.get_species_catalog_entries()
+
+        self.assertEqual("spec_plant", entries[0]["id"])
+        self.assertIsInstance(entries[0]["suitability"], float)
+        self.assertGreater(entries[0]["suitability"], 0.5)
 
     def test_scoped_spatial_features_include_states_and_quarters(self):
         world_model = FakeWorldModel([

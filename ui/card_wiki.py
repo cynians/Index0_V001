@@ -357,10 +357,28 @@ class CardWikiRenderer:
         return lines
 
     @classmethod
-    def _draw_edit_text(cls, screen, font, inner_rect, text, cursor_index=None, show_cursor=False):
+    def _draw_edit_text(
+        cls,
+        screen,
+        font,
+        inner_rect,
+        text,
+        cursor_index=None,
+        show_cursor=False,
+        selection_range=None,
+    ):
         text = str(text or "")
         cursor_index = max(0, min(len(text), int(cursor_index or 0)))
         color = (240, 240, 240)
+        if isinstance(selection_range, (list, tuple)) and len(selection_range) == 2:
+            selection_start = max(0, min(len(text), int(selection_range[0])))
+            selection_end = max(0, min(len(text), int(selection_range[1])))
+            if selection_start > selection_end:
+                selection_start, selection_end = selection_end, selection_start
+            if selection_start == selection_end:
+                selection_start = selection_end = None
+        else:
+            selection_start = selection_end = None
         lines = cls.wrap_edit_lines(text, font, inner_rect.width)
         y = inner_rect.y
         cursor_drawn = False
@@ -369,6 +387,22 @@ class CardWikiRenderer:
             line_text = line_info["text"]
             line_start = line_info["start"]
             line_end = line_info["end"]
+
+            if selection_start is not None:
+                highlight_start = max(selection_start, line_start)
+                highlight_end = min(selection_end, line_end)
+                if highlight_start < highlight_end:
+                    start_offset = max(0, highlight_start - line_start)
+                    end_offset = max(0, highlight_end - line_start)
+                    x1 = inner_rect.x + font.size(line_text[:start_offset])[0]
+                    x2 = inner_rect.x + font.size(line_text[:end_offset])[0]
+                    highlight_rect = pygame.Rect(
+                        x1,
+                        y,
+                        max(2, x2 - x1),
+                        max(1, font.get_linesize() - 2),
+                    )
+                    pygame.draw.rect(screen, (68, 94, 142), highlight_rect)
 
             line_surface = font.render(line_text, True, color)
             screen.blit(line_surface, (inner_rect.x, y))
@@ -711,6 +745,7 @@ class CardWikiRenderer:
         text_color=None,
         cursor_index=None,
         scroll_y=0,
+        selection_range=None,
     ):
         pygame.draw.rect(screen, (34, 38, 48), rect)
         pygame.draw.rect(screen, (104, 110, 124), rect, 1)
@@ -730,7 +765,15 @@ class CardWikiRenderer:
                     inner_rect.width,
                     inner_rect.height + scroll_y,
                 )
-                cls._draw_edit_text(screen, font, edit_rect, wiki_text, cursor_index=cursor_index, show_cursor=show_cursor)
+                cls._draw_edit_text(
+                    screen,
+                    font,
+                    edit_rect,
+                    wiki_text,
+                    cursor_index=cursor_index,
+                    show_cursor=show_cursor,
+                    selection_range=selection_range,
+                )
                 return
 
             section_colors = section_colors if isinstance(section_colors, dict) else {}

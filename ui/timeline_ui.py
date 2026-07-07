@@ -2546,14 +2546,15 @@ class TimelineUI:
                 }
 
         if self.location_focus_rect.collidepoint(mouse_pos):
-            self.location_focus_active = True
+            self.location_focus_active = False
             self.working_year_active = False
             self.location_focus_invalid = False
             self.location_focus_buffer = self.location_focus_label or ""
             self.location_focus_keyboard_active = False
-            self._refresh_location_focus_matches()
+            self.location_focus_matches = []
+            self.location_focus_suggestion_hitboxes = []
             return {
-                "kind": "location_focus_focus",
+                "kind": "location_focus_browse",
                 "location_id": self.location_focus_id,
                 "changed": False,
             }
@@ -2889,7 +2890,16 @@ class TimelineUI:
                     label_prefix += "> "
                 render_label = f"{label_prefix}{label}"
 
-                if is_point:
+                is_snapshot = item.get("timeline_kind") in {"snapshot", "wiki_snapshot", "mentioned_wiki_snapshot"}
+                if is_point and is_snapshot:
+                    label_surface = font.render(render_label, True, label_color)
+                    chip_w = min(max(28, label_surface.get_width() + 14), max(28, axis_right - x1))
+                    chip_rect = pygame.Rect(x1 + 4, y - 1, chip_w, self.ITEM_H + 2)
+                    pygame.draw.rect(screen, color, chip_rect)
+                    pygame.draw.rect(screen, border_color, chip_rect, 1)
+                    screen.blit(label_surface, (chip_rect.x + 7, y - 1))
+                    pygame.draw.line(screen, color, (x1, self.axis_y), (x1, chip_rect.centery), 1)
+                elif is_point:
                     pygame.draw.line(screen, color, (x1, self.axis_y), (x1, y + self.ITEM_H // 2), 1)
                     pygame.draw.circle(screen, border_color, (x1, y + self.ITEM_H // 2), 4)
                     label_surface = font.render(render_label, True, (220, 220, 220))

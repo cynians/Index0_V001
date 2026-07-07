@@ -3,16 +3,28 @@ class CardSimulationMixin:
         return self.dataset_name == "components" or self.entity.get("type") in {"component", "assembly"}
 
     def _has_simulation_fields(self):
+        if self._is_person_card():
+            return True
         keys = set(self.entity.keys()) | set(self._get_schema_field_specs().keys())
-        simulation_keys = self.SPACE_SIM_FIELDS | self.MAP_SIM_FIELDS | self.WORLD_GEN_SIM_FIELDS
+        simulation_keys = (
+            self.SPACE_SIM_FIELDS
+            | self.MAP_SIM_FIELDS
+            | self.WORLD_GEN_SIM_FIELDS
+            | self.MATERIAL_SIM_FIELDS
+            | self.PLANT_ECOLOGY_SIM_FIELDS
+        )
         return bool(keys & simulation_keys)
 
     def _active_subtab_order(self):
         if self.active_tab == "simulation":
+            if self._is_person_card():
+                return self.PERSON_SIMULATION_SUBTAB_ORDER
             return self.SIMULATION_SUBTAB_ORDER
         return []
 
     def _default_simulation_subtab(self):
+        if self._is_person_card():
+            return "quotes"
         keys = set(self.entity.keys())
         if keys & (self.SPACE_SIM_FIELDS | {"mass_kg"}) and self._is_space_sim_context():
             return "orbital"
@@ -20,10 +32,18 @@ class CardSimulationMixin:
             return "map"
         if keys & self.WORLD_GEN_SIM_FIELDS:
             return "world_gen"
+        if keys & self.MATERIAL_SIM_FIELDS:
+            return "materials"
+        if keys & self.PLANT_ECOLOGY_SIM_FIELDS:
+            return "plant_ecology"
         return self.active_simulation_subtab if self.active_simulation_subtab in self.SIMULATION_SUBTAB_ORDER else "orbital"
 
     def _visible_sections(self):
         if self.active_tab == "simulation":
+            if self._is_person_card() and self.active_simulation_subtab == "quotes":
+                return []
+            if self._is_person_card() and self.active_simulation_subtab == "data":
+                return self.SIMULATION_SUBTAB_SECTIONS["data"]
             return self.SIMULATION_SUBTAB_SECTIONS.get(
                 self.active_simulation_subtab,
                 self.SIMULATION_SUBTAB_SECTIONS["orbital"],
@@ -96,6 +116,10 @@ class CardSimulationMixin:
             return "Simulation / Orbital"
         if key in self.MAP_SIM_FIELDS:
             return "Simulation / Map Sim"
+        if key in self.MATERIAL_SIM_FIELDS:
+            return "Simulation / Materials"
         if key in self.WORLD_GEN_SIM_FIELDS:
             return "Simulation / World Gen"
+        if key in self.PLANT_ECOLOGY_SIM_FIELDS:
+            return "Simulation / Plant Ecology"
         return None

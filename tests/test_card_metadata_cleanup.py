@@ -113,6 +113,168 @@ class CardMetadataCleanupTests(unittest.TestCase):
         self.assertEqual("exclusive", person_card._location_mode_value())
         self.assertEqual("multiple", vehicle_card._location_mode_value())
 
+    def test_person_cards_expose_quote_simulation_subtab(self):
+        person_card = EntityCard(
+            {"id": "person_alpha", "_dataset": "people", "type": "person"},
+            dataset_name="people",
+        )
+
+        self.assertIn("simulation", person_card._tab_order())
+
+        person_card.set_active_tab("simulation")
+
+        self.assertEqual("quotes", person_card.active_simulation_subtab)
+        self.assertEqual(["quotes", "data"], person_card._active_subtab_order())
+        self.assertEqual([], person_card._visible_sections())
+
+    def test_person_quote_capture_writes_structured_record(self):
+        entity = {"id": "person_alpha", "_dataset": "people", "type": "person"}
+        person_card = EntityCard(entity, dataset_name="people")
+        person_card.set_active_tab("simulation")
+        card = {
+            "is_edit_mode": True,
+            "selected_year": 2401,
+        }
+
+        person_card._set_person_quote_active_field(card, "quote")
+        card["edit_buffer"] = "The bridge remembers us."
+        card["person_quote_buffers"]["date"] = "2401-04-02"
+        card["person_quote_buffers"]["context"] = "Said after docking."
+
+        self.assertTrue(person_card.add_person_quote_from_buffers(card))
+
+        self.assertEqual(
+            [
+                {
+                    "quote": "The bridge remembers us.",
+                    "date": "2401-04-02",
+                    "context": "Said after docking.",
+                }
+            ],
+            entity["person_quotes"],
+        )
+        self.assertEqual("commit", card["last_edit_action"])
+        self.assertEqual("person_quotes", card["last_committed_field"])
+        self.assertEqual("", card["person_quote_buffers"]["quote"])
+
+    def test_person_quote_context_does_not_inherit_quote_draft(self):
+        entity = {"id": "person_alpha", "_dataset": "people", "type": "person"}
+        person_card = EntityCard(entity, dataset_name="people")
+        card = {"is_edit_mode": True}
+
+        self.assertTrue(person_card._set_person_quote_active_field(card, "quote"))
+        card["edit_buffer"] = "Quote draft."
+
+        self.assertTrue(person_card._set_person_quote_active_field(card, "context"))
+
+        self.assertEqual("Quote draft.", card["person_quote_buffers"]["quote"])
+        self.assertEqual("", card["person_quote_buffers"]["context"])
+        self.assertEqual("", card["edit_buffer"])
+
+    def test_person_conversation_capture_writes_structured_message(self):
+        entity = {"id": "person_alpha", "_dataset": "people", "type": "person", "name": "Person Alpha"}
+        person_card = EntityCard(entity, dataset_name="people")
+        person_card.set_active_tab("simulation")
+        card = {
+            "is_edit_mode": True,
+            "person_quote_capture_mode": "conversations",
+        }
+
+        person_card._set_person_quote_active_field(card, person_card.PERSON_CONVERSATION_MESSAGE_FIELD)
+        card["edit_buffer"] = "We should leave before dawn."
+        card["person_quote_buffers"]["conversation_speaker"] = "Scout"
+        card["person_quote_buffers"]["conversation_date"] = "2402"
+
+        self.assertTrue(person_card.add_person_conversation_from_buffers(card))
+
+        self.assertEqual(
+            [{"message": "We should leave before dawn.", "speaker": "Scout", "date": "2402"}],
+            entity["person_conversations"],
+        )
+        self.assertEqual("commit", card["last_edit_action"])
+        self.assertEqual("person_conversations", card["last_committed_field"])
+
+    def test_person_conversation_layout_uses_chat_rows(self):
+        pygame.font.init()
+        font = pygame.font.SysFont("consolas", 14)
+        entity = {
+            "id": "person_alpha",
+            "_dataset": "people",
+            "type": "person",
+            "name": "Person Alpha",
+            "person_conversations": [
+                {"speaker": "Person Alpha", "date": "2402", "message": "I will hold the west gate."},
+                {"speaker": "Scout", "date": "2402", "message": "Then I will take the ridge."},
+            ],
+        }
+        person_card = EntityCard(entity, dataset_name="people")
+        person_card.set_active_tab("simulation")
+        card = {
+            "entity_id": "person_alpha",
+            "is_edit_mode": True,
+            "person_quote_capture_mode": "conversations",
+            "layout_font": font,
+            "years": [],
+        }
+
+        person_card.layout_card(card, pygame.Rect(0, 0, 500, 760))
+
+        self.assertIn(person_card.PERSON_CONVERSATION_MESSAGE_FIELD, card["person_quote_input_rects"])
+        self.assertEqual(2, len(card["person_quote_rows"]))
+        self.assertTrue(all(row.get("mode") == "conversation" for row in card["person_quote_rows"]))
+        self.assertTrue(card["person_quote_rows"][0]["mine"])
+        self.assertFalse(card["person_quote_rows"][1]["mine"])
+
+    def test_person_quote_layout_creates_capture_and_remove_hitboxes(self):
+        pygame.font.init()
+        font = pygame.font.SysFont("consolas", 14)
+        entity = {
+            "id": "person_alpha",
+            "_dataset": "people",
+            "type": "person",
+            "person_quotes": [
+                {
+                    "quote": "The bridge remembers us.",
+                    "date": "2401",
+                    "context": "Said after docking.",
+                }
+            ],
+        }
+        person_card = EntityCard(entity, dataset_name="people")
+        person_card.set_active_tab("simulation")
+        card = {
+            "entity_id": "person_alpha",
+            "is_edit_mode": True,
+            "layout_font": font,
+            "years": [],
+        }
+
+        person_card.layout_card(card, pygame.Rect(0, 0, 440, 680))
+
+        self.assertIn(person_card.PERSON_QUOTE_TEXT_FIELD, card["person_quote_input_rects"])
+        self.assertIn(person_card.PERSON_QUOTE_CONTEXT_FIELD, card["person_quote_input_rects"])
+        self.assertIsNotNone(card["person_quote_add_rect"])
+        self.assertEqual(1, len(card["person_quote_rows"]))
+        self.assertIsNotNone(card["person_quote_rows"][0]["remove_rect"])
+
+    def test_person_quote_remove_commits_person_quotes_field(self):
+        entity = {
+            "id": "person_alpha",
+            "_dataset": "people",
+            "type": "person",
+            "person_quotes": [
+                {"quote": "First", "date": "2400"},
+                {"quote": "Second", "date": "2401"},
+            ],
+        }
+        person_card = EntityCard(entity, dataset_name="people")
+        card = {}
+
+        self.assertTrue(person_card.remove_person_quote_at_index(card, 0))
+
+        self.assertEqual([{"quote": "Second", "date": "2401", "context": ""}], entity["person_quotes"])
+        self.assertEqual("commit", card["last_edit_action"])
+
     def test_location_topology_neighbours_are_reciprocal(self):
         world = self._world_with_locations()
         planet = world.get_entity("loc_planet_x")
@@ -302,6 +464,50 @@ class CardMetadataCleanupTests(unittest.TestCase):
 
         self.assertEqual("Draft [[loc_northern_spain]] note.", card_view._timeline_snapshot_text(card))
 
+    def test_timeline_snapshot_drafts_are_scoped_to_year_range(self):
+        entity = {
+            "id": "evt_test",
+            "_dataset": "events",
+            "type": "event",
+            "pretty_name": "Northern Campaign",
+        }
+        card_view = EntityCard(entity, dataset_name="events")
+        card = {
+            "title": "Northern Campaign",
+            "working_year_range": (2016, 2016),
+            "is_edit_mode": True,
+            "draft_edit_buffers": {},
+        }
+
+        self.assertTrue(card_view.begin_edit_field(card, card_view.TIMELINE_SNAPSHOT_FIELD))
+        card["edit_buffer"] = "Draft for 2016."
+        card["edit_cursor"] = len(card["edit_buffer"])
+
+        card["working_year_range"] = (2017, 2017)
+        self.assertTrue(card_view._sync_timeline_snapshot_edit_range(card))
+        self.assertIn(
+            f"{card_view.TIMELINE_SNAPSHOT_FIELD}:2016:2016",
+            card["draft_edit_buffers"],
+        )
+        self.assertNotEqual("Draft for 2016.", card["edit_buffer"])
+        self.assertTrue(card["edit_buffer"].startswith("Northern Campaign in the Year 2017"))
+
+        card["edit_buffer"] = "Draft for 2017."
+        card["edit_cursor"] = len(card["edit_buffer"])
+        card["working_year_range"] = (2016, 2016)
+        self.assertTrue(card_view._sync_timeline_snapshot_edit_range(card))
+        self.assertEqual("Draft for 2016.", card["edit_buffer"])
+
+        self.assertTrue(card_view.commit_edit_field(card))
+        self.assertEqual(
+            [{"start_year": 2016, "end_year": 2016, "wiki_entry": "Draft for 2016."}],
+            entity["timeline_snapshots"],
+        )
+        self.assertIn(
+            f"{card_view.TIMELINE_SNAPSHOT_FIELD}:2017:2017",
+            card["draft_edit_buffers"],
+        )
+
     def test_image_fields_are_media_rows(self):
         card = EntityCard(
             {
@@ -484,6 +690,172 @@ class CardMetadataCleanupTests(unittest.TestCase):
         self.assertIn("environment_summary", world_keys)
         self.assertIn("map_image_path", media_keys)
         self.assertNotIn("map_image_path", map_keys)
+
+    def test_planet_material_fields_are_materials_simulation_rows(self):
+        card = EntityCard(
+            {
+                "id": "planet_test",
+                "pretty_name": "Test Planet",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "planet",
+                "natural_material_model": {
+                    "status": "inferred",
+                    "likely_materials": [
+                        {
+                            "material_id": "mat_basalt",
+                            "name": "Basalt",
+                            "chemical_formula": "mafic silicate rock",
+                            "display_color": [72, 76, 70],
+                            "confidence": 0.91,
+                            "occurrence": "common",
+                        }
+                    ],
+                },
+                "materials_summary": {
+                    "status": "natural_materials_inferred",
+                    "likely_material_count": 1,
+                },
+            },
+            dataset_name="locations",
+        )
+
+        card.set_active_tab("simulation")
+        sections = card._sectioned_fields()
+        material_keys = [key for key, _ in sections["Simulation / Materials"]]
+        data_keys = [key for key, _ in sections["Simulation / Data"]]
+
+        self.assertEqual("materials", card.active_simulation_subtab)
+        self.assertIn("natural_material_model", material_keys)
+        self.assertIn("materials_summary", material_keys)
+        self.assertNotIn("natural_material_model", data_keys)
+
+    def test_plant_ecology_fields_are_simulation_rows(self):
+        card = EntityCard(
+            {
+                "id": "spec_plantago_major",
+                "common_name": "Broadleaf Plantain",
+                "binomial_name": "Plantago major",
+                "type": "species",
+                "_dataset": "species",
+                "plant_growth_form": "perennial_forb_rosette",
+                "worldgen_suitability_profile": {
+                    "soil_types": ["loam"],
+                    "moisture": {"min": 0.1, "optimum": 0.4, "max": 0.8},
+                },
+            },
+            dataset_name="species",
+        )
+
+        self.assertIn("simulation", card._tab_order())
+        card.set_active_tab("simulation")
+        self.assertEqual("plant_ecology", card.active_simulation_subtab)
+
+        sections = card._sectioned_fields()
+        plant_keys = [key for key, _ in sections["Simulation / Plant Ecology"]]
+
+        self.assertIn("plant_growth_form", plant_keys)
+        self.assertIn("worldgen_suitability_profile", plant_keys)
+
+    def test_biosphere_roster_collection_fields_are_relation_rows(self):
+        card = EntityCard(
+            {
+                "id": "coll_micro",
+                "pretty_name": "Micro Roster",
+                "type": "collections",
+                "_dataset": "collections",
+                "collection_class": "localized_biosphere_species_roster",
+                "biosphere_location": "loc_patch",
+                "sessile_life_species": ["spec_plantago_major"],
+            },
+            dataset_name="collections",
+        )
+
+        card.set_active_tab("relations")
+        sections = card._sectioned_fields()
+        roster_keys = [key for key, _ in sections["Biosphere Species Roster"]]
+
+        self.assertIn("biosphere_location", roster_keys)
+        self.assertIn("sessile_life_species", roster_keys)
+        self.assertIn("microfauna_species", roster_keys)
+        self.assertIn("Biosphere Species Roster", card._visible_sections())
+        self.assertTrue(card.is_relation_edit_field("sessile_life_species"))
+        self.assertEqual("species", card._relation_field_target("sessile_life_species"))
+        self.assertTrue(card.is_relation_edit_field("biosphere_location"))
+        self.assertEqual("locations", card._relation_field_target("biosphere_location"))
+
+    def test_biosphere_patch_collection_link_is_roster_relation_row(self):
+        card = EntityCard(
+            {
+                "id": "loc_patch",
+                "pretty_name": "Patch",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "biosphere_patch",
+                "biosphere_species_collection": "coll_roster",
+            },
+            dataset_name="locations",
+        )
+
+        card.set_active_tab("relations")
+        sections = card._sectioned_fields()
+        roster_keys = [key for key, _ in sections["Biosphere Species Roster"]]
+
+        self.assertIn("biosphere_species_collection", roster_keys)
+        self.assertTrue(card.is_relation_edit_field("biosphere_species_collection"))
+        self.assertEqual("collections", card._relation_field_target("biosphere_species_collection"))
+
+    def test_tag_confirm_prefers_typed_value_over_partial_suggestion(self):
+        world_model = SimpleNamespace(
+            loader=SimpleNamespace(
+                entities={
+                    "loc_ring": {
+                        "id": "loc_ring",
+                        "_dataset": "locations",
+                        "type": "location",
+                        "tags": ["ring_city"],
+                    }
+                }
+            )
+        )
+        card_view = EntityCard(
+            {"id": "loc_test", "type": "location", "_dataset": "locations", "tags": []},
+            dataset_name="locations",
+            world_model=world_model,
+        )
+        card = {"edit_buffer": "city", "tag_selected_index": 0}
+
+        self.assertTrue(card_view.confirm_tag_search(card))
+
+        self.assertEqual(["city"], card_view.entity["tags"])
+
+    def test_tag_confirm_uses_keyboard_selected_suggestion(self):
+        world_model = SimpleNamespace(
+            loader=SimpleNamespace(
+                entities={
+                    "loc_ring": {
+                        "id": "loc_ring",
+                        "_dataset": "locations",
+                        "type": "location",
+                        "tags": ["ring_city"],
+                    }
+                }
+            )
+        )
+        card_view = EntityCard(
+            {"id": "loc_test", "type": "location", "_dataset": "locations", "tags": []},
+            dataset_name="locations",
+            world_model=world_model,
+        )
+        card = {
+            "edit_buffer": "city",
+            "tag_selected_index": 0,
+            "tag_keyboard_selection_active": True,
+        }
+
+        self.assertTrue(card_view.confirm_tag_search(card))
+
+        self.assertEqual(["ring_city"], card_view.entity["tags"])
 
     def test_stellar_toolbelt_action_uses_full_row_hitbox(self):
         pygame.font.init()

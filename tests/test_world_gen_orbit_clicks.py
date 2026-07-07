@@ -19,7 +19,9 @@ from simulations.world_gen.heightmap import (
 )
 from simulations.world_gen.interior_regime import derive_interior_regime_model
 from simulations.world_gen.material_heatmaps import generate_material_heatmap_model
+from simulations.world_gen.natural_materials import NATURAL_MATERIAL_CATALOG, NATURAL_MATERIAL_CATALOG_VERSION
 from simulations.world_gen.terrain_seed import derive_terrain_seed_model
+from simulations.world_gen.water_cycle import derive_water_cycle_model
 from simulations.world_gen.world_gen_sim import WorldGenSimulation
 
 
@@ -114,6 +116,15 @@ class WorldGenOrbitClickTests(unittest.TestCase):
     def _click(self, pos):
         return SimpleNamespace(type=pygame.MOUSEBUTTONDOWN, button=1, pos=pos)
 
+    def test_natural_material_catalog_has_expanded_surface_coverage(self):
+        material_ids = {material["id"] for material in NATURAL_MATERIAL_CATALOG}
+
+        self.assertEqual("natural-materials-v2", NATURAL_MATERIAL_CATALOG_VERSION)
+        self.assertGreaterEqual(len(NATURAL_MATERIAL_CATALOG), 48)
+        self.assertIn("mat_limestone", material_ids)
+        self.assertIn("mat_chalcopyrite", material_ids)
+        self.assertIn("mat_water_ice", material_ids)
+
     def test_first_orbit_click_sets_circular_candidate(self):
         sim = self._sim()
         camera = FakeCamera({(10, 10): (sim.AU_M, 0.0)})
@@ -152,6 +163,18 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         self.assertEqual("", sim.input_buffers["periapsis_au"])
         self.assertEqual("", sim.input_buffers["apoapsis_au"])
         self.assertFalse(sim.planetary_model["orbit_valid"])
+
+    def test_space_jump_button_requests_parent_space_navigation(self):
+        sim = self._sim()
+        sim.set_control_panel_rect(pygame.Rect(0, 0, 240, 80))
+        sim.set_world_gen_space_button_rect(pygame.Rect(10, 10, 120, 30))
+
+        sim.handle_pointer_event(self._click((20, 20)), None, (20, 20))
+
+        action = sim.consume_pending_navigation_action()
+        self.assertEqual("open_space_from_world_gen", action["id"])
+        self.assertEqual("system_alpha", action["system_id"])
+        self.assertIsNone(sim.consume_pending_navigation_action())
 
     def test_enter_names_and_persists_planet_from_locked_orbit(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -621,6 +644,12 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         self.assertGreater(planet["heightmap_model"]["hypsometry_summary"]["land_fraction"], 0.05)
         self.assertGreater(planet["heightmap_model"]["hypsometry_summary"]["ocean_fraction"], 0.05)
 
+        self.assertFalse(sim._world_gen_can_finish())
+        self.assertTrue(sim._save_water_cycle_model())
+        self.assertEqual("water_cycle", sim.editor_stage)
+        self.assertIn("water_cycle_model", planet)
+        self.assertIn("climate_zone_model", planet)
+        self.assertIn("river_model", planet)
         self.assertTrue(sim._world_gen_can_finish())
         self.assertTrue(sim._finish_world_gen())
         self.assertTrue(planet["world_gen_complete"])
@@ -1233,13 +1262,63 @@ class WorldGenOrbitClickTests(unittest.TestCase):
             )
 
             self.assertEqual("generated", model["status"])
+            self.assertEqual("sparse_dominant_regions", model["distribution_mode"])
             self.assertEqual("png", model["image_format"])
             self.assertEqual("deterministic_generated_truth", model["truth_model"])
             self.assertEqual("inferred", model["default_confidence_state"])
             self.assertEqual(2, len(model["layers"]))
+            self.assertEqual("dominant_material_color", model["composite_layer"]["render_mode"])
             self.assertTrue((storage_root / model["composite_layer"]["image_path"]).exists())
             for layer in model["layers"]:
                 self.assertTrue((storage_root / layer["image_path"]).exists())
+                self.assertIn("coverage_fraction", layer)
+                self.assertLessEqual(layer["coverage_fraction"], 1.0)
+
+    def test_water_cycle_model_derives_climate_grid_and_rivers_from_heightmap(self):
+        heightmap = {
+            "status": "heightmap_seeded",
+            "planet_id": "planet_blue",
+            "map_seed": "water-cycle-test",
+            "projection": "equirectangular",
+            "wrap_x": True,
+            "wrap_y": False,
+            "min_elevation_m": -1000.0,
+            "max_elevation_m": 2600.0,
+            "sea_level_m": 0.0,
+            "sample_grid": {
+                "width": 5,
+                "height": 5,
+                "rows": [
+                    [-500.0, -400.0, 600.0, 200.0, -500.0],
+                    [-300.0, 500.0, 2200.0, 800.0, -300.0],
+                    [-200.0, 900.0, 2600.0, 1200.0, -200.0],
+                    [-300.0, 500.0, 1700.0, 700.0, -300.0],
+                    [-500.0, -400.0, 300.0, 100.0, -500.0],
+                ],
+            },
+        }
+        model = derive_water_cycle_model(
+            terrain={
+                "map_seed": "water-cycle-test",
+                "hydrology": {
+                    "cycle": "active",
+                    "liquid_water_possible": True,
+                    "drainage_enabled": True,
+                    "target_ocean_fraction": 0.42,
+                },
+            },
+            heightmap=heightmap,
+            atmosphere={"surface_pressure_bar": 1.0, "estimated_surface_temperature_k": 290.0},
+            seed={"map_seed": "water-cycle-test"},
+            planet_id="planet_blue",
+        )
+
+        self.assertEqual("water_cycle_seeded", model["status"])
+        self.assertEqual(5, model["climate_grid"]["width"])
+        self.assertEqual(5, model["climate_grid"]["height"])
+        self.assertGreaterEqual(len(model["climate_zones"]), 2)
+        self.assertGreaterEqual(model["river_count"], 1)
+        self.assertIn("points", model["rivers"][0])
 
     def test_solid_worldgen_adds_material_heatmap_metadata_after_heightmap(self):
         with tempfile.TemporaryDirectory() as temp_dir:

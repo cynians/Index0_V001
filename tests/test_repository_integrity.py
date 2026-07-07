@@ -46,6 +46,22 @@ class RepositoryIntegrityTests(unittest.TestCase):
         self.assertIn("collection_class", field_keys)
         self.assertIn("includes", field_keys)
         self.assertIn("featured_entries", field_keys)
+        for field_key in (
+            "microfauna_species",
+            "small_animal_species",
+            "medium_animal_species",
+            "large_animal_species",
+            "megafauna_species",
+            "sessile_life_species",
+        ):
+            self.assertIn(field_key, field_keys)
+            self.assertEqual("species", collection_schema["fields"][field_key].get("target"))
+        self.assertIn("biosphere_location", field_keys)
+        self.assertEqual("locations", collection_schema["fields"]["biosphere_location"].get("target"))
+
+        starter_roster = model.get_entity("coll_micro_biosphere_species_starter")
+        self.assertEqual("biosphere_species_roster", starter_roster.get("collection_class"))
+        self.assertIn("spec_plantago_major", starter_roster.get("sessile_life_species", []))
 
     def test_star_system_neighbourhoods_are_present_in_ontology(self):
         model = WorldModel()

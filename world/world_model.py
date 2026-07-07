@@ -1,3 +1,5 @@
+import re
+
 from world.entity_loader import EntityLoader
 from world.relationship_graph import TouchDegrees
 from world.schema_loader import SchemaLoader
@@ -397,11 +399,7 @@ class WorldModel:
         for entity_id, entity in self.loader.entities.items():
             start_year = self.yearer.normalize_year(entity.get("start_year"))
             end_year = self.yearer.normalize_year(entity.get("end_year"))
-
-            if start_year is None:
-                continue
-            if end_year is None:
-                end_year = start_year
+            snapshot_year = self.yearer.normalize_year(entity.get("snapshot_year"))
 
             dataset_name = entity.get("_dataset", entity.get("type", "entity"))
             if dataset_name == "species" or entity.get("type") == "species":
@@ -414,13 +412,30 @@ class WorldModel:
             else:
                 label = entity.get("pretty_name") or entity.get("name") or entity_id
             card_color = entity.get("card_color", "")
-            commentary_parts = []
-            start_commentary = str(entity.get("start_commentary") or entity.get("start_event") or "").strip()
-            end_commentary = str(entity.get("end_commentary") or entity.get("end_event") or "").strip()
-            if start_commentary:
-                commentary_parts.append(f"Start: {start_commentary}")
-            if end_commentary:
-                commentary_parts.append(f"End: {end_commentary}")
+
+            if snapshot_year is not None:
+                items.append(
+                    {
+                        "entity_id": entity_id,
+                        "label": str(label),
+                        "dataset": dataset_name,
+                        "entity_type": entity.get("type", "entity"),
+                        "start_year": snapshot_year,
+                        "end_year": snapshot_year,
+                        "is_point": True,
+                        "card_color": card_color,
+                        "timeline_kind": "snapshot",
+                        "commentary": "Snapshot",
+                    }
+                )
+
+            for snapshot_item in self._timeline_snapshot_items(entity_id, entity, str(label), dataset_name, card_color):
+                items.append(snapshot_item)
+
+            if start_year is None:
+                continue
+            if end_year is None:
+                end_year = start_year
 
             items.append(
                 {
@@ -432,11 +447,62 @@ class WorldModel:
                     "end_year": end_year,
                     "is_point": start_year == end_year,
                     "card_color": card_color,
-                    "commentary": " / ".join(commentary_parts),
+                    "commentary": "",
                 }
             )
 
         return items
+
+    def _timeline_snapshot_items(self, entity_id, entity, label, dataset_name, card_color):
+        raw_entries = entity.get("timeline_snapshots")
+        if not isinstance(raw_entries, list):
+            return []
+
+        items = []
+        for entry in raw_entries:
+            if not isinstance(entry, dict):
+                continue
+            start_year = self.yearer.normalize_year(entry.get("start_year"))
+            if start_year is None:
+                continue
+            end_year = self.yearer.normalize_year(entry.get("end_year")) or start_year
+            if end_year < start_year:
+                start_year, end_year = end_year, start_year
+            wiki_text = str(entry.get("wiki_entry") or "").strip()
+            commentary = "Wiki entry in this year"
+            if wiki_text:
+                commentary = wiki_text.splitlines()[0][:120]
+            base_item = {
+                "entity_id": entity_id,
+                "label": str(label),
+                "dataset": dataset_name,
+                "entity_type": entity.get("type", "entity"),
+                "start_year": start_year,
+                "end_year": end_year,
+                "is_point": start_year == end_year,
+                "card_color": card_color,
+                "timeline_kind": "wiki_snapshot",
+                "commentary": commentary,
+                "source_entity_id": entity_id,
+            }
+            items.append(base_item)
+            for ref in self._wiki_link_refs(wiki_text):
+                if ref == entity_id or self.get_entity(ref) is None:
+                    continue
+                mentioned_item = dict(base_item)
+                mentioned_item["entity_id"] = ref
+                mentioned_item["timeline_kind"] = "mentioned_wiki_snapshot"
+                mentioned_item["source_entity_id"] = entity_id
+                items.append(mentioned_item)
+        return items
+
+    def _wiki_link_refs(self, text):
+        refs = []
+        for match in re.finditer(r"\[\[([^\]]+)\]\]", str(text or "")):
+            ref = match.group(1).split("|", 1)[0].strip()
+            if ref:
+                refs.append(ref)
+        return refs
 
     def refresh(self):
         self.loader.refresh()

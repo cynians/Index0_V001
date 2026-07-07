@@ -48,6 +48,9 @@ class KnowledgeCanvasController:
         "timeline_snapshot_rect",
         "task_finish_checkbox_rect",
         "task_checklist_input_rect",
+        "person_quote_section_rect",
+        "person_quote_add_rect",
+        "person_quote_empty_rect",
         "media_add_illustration_rect",
         "phylogeny_parent_section_rect",
         "phylogeny_parent_panel_rect",
@@ -78,6 +81,9 @@ class KnowledgeCanvasController:
         "tag_suggestion_hitboxes",
         "tag_remove_hitboxes",
         "task_checklist_hitboxes",
+        "person_quote_input_rects",
+        "person_quote_mode_hitboxes",
+        "person_quote_rows",
         "type_picker_hitboxes",
         "phylogeny_node_hitboxes",
         "phylogeny_parent_match_rows",
@@ -422,6 +428,19 @@ class KnowledgeCanvasController:
     def _relayout_cards(self):
         self._layout_all_cards()
 
+    def _relayout_single_card(self, card):
+        if not isinstance(card, dict):
+            return False
+        card_view = card.get("card_view")
+        rect = card.get("rect")
+        if card_view is None or rect is None:
+            return False
+        if card.get("layout_font") is None:
+            card["layout_font"] = self._card_font_for_zoom()
+        card_view.layout_card(card, rect)
+        self._layout_canvas_relation_controls()
+        return True
+
     def _card_font_for_zoom(self):
         base_size = 16
         if self.font_for_layout is not None:
@@ -473,7 +492,7 @@ class KnowledgeCanvasController:
             new_scroll = max(0, min(max_scroll, old_scroll - int(wheel_y) * line_step))
             if new_scroll != old_scroll:
                 card["scroll_y"] = new_scroll
-                self._relayout_cards()
+                self._relayout_single_card(card)
             return True
 
         return False
@@ -538,6 +557,12 @@ class KnowledgeCanvasController:
 
         closing_card = self.cards.pop(index)
         closing_entity_id = closing_card.get("entity_id")
+        if (
+            closing_entity_id
+            and closing_entity_id == getattr(self, "repository_scope_entity_id", None)
+            and hasattr(self, "dismissed_repository_scope_entity_ids")
+        ):
+            self.dismissed_repository_scope_entity_ids.add(closing_entity_id)
 
         if self.selected_entity_id == closing_entity_id:
             self.selected_entity_id = self.cards[-1].get("entity_id") if self.cards else None
@@ -1021,6 +1046,30 @@ class KnowledgeCanvasController:
         self._relayout_cards()
         return True
 
+    def _begin_location_focus_browser_pick(self):
+        self.relation_link_target = {
+            "mode": "timeline_location_focus",
+            "field_key": "Location",
+            "target": "locations",
+        }
+        self.relation_link_status = "Choose a location in the repository browser"
+        self.browser_filter_dataset = "locations"
+        self.browser_filter_incomplete_only = False
+        self.browser_collapsed = False
+        self.browser_search_active = True
+        self.browser_search_query = ""
+        self.browser_scroll = 0
+        if getattr(self, "timeline_ui", None) is not None:
+            self.timeline_ui.location_focus_active = False
+            self.timeline_ui.location_focus_matches = []
+            self.timeline_ui.location_focus_suggestion_hitboxes = []
+        self.browser_items = self._build_browser_items(self.world_model)
+        self.show_template_picker = False
+        self._build_template_picker_hitboxes()
+        self._rebuild_browser_hitboxes()
+        self._relayout_cards()
+        return True
+
     def _handle_relation_card_link_target_click(self, mouse_pos):
         if self.relation_link_target is None:
             return None
@@ -1063,6 +1112,21 @@ class KnowledgeCanvasController:
         if entity is None:
             self.relation_link_status = "That repository row is not an entry"
             return False
+
+        if self.relation_link_target.get("mode") == "timeline_location_focus":
+            if not self._entity_matches_relation_target(entity, "locations"):
+                self.relation_link_status = "Pick a location entry"
+                return False
+            if getattr(self, "timeline_ui", None) is None:
+                self.relation_link_status = "The timeline is not available"
+                return False
+            changed = self.timeline_ui.set_location_focus(entity_id)
+            label = self._entity_display_label(entity, fallback=entity_id)
+            self.relation_link_status = f"Location focus: {label}"
+            self._finish_relation_browser_link()
+            if changed:
+                self._refresh_timeline_items()
+            return True
 
         source_card = self.relation_link_target.get("source_card")
         if not isinstance(source_card, dict):
@@ -1429,6 +1493,20 @@ class KnowledgeCanvasController:
                     if self._handle_wiki_link_click(card_obj, link_info):
                         self._relayout_cards()
                         return "__ui_consumed__"
+
+            if (
+                card_view is not None
+                and hasattr(card_view, "handle_person_quotes_click")
+                and card_view.handle_person_quotes_click(card, mouse_pos)
+            ):
+                card_obj = self._bring_card_to_front(index)
+                if card_obj.get("last_edit_action") == "commit":
+                    self._persist_card_entity(card_obj)
+                    self._sync_card_years_from_entity(card_obj)
+                    self._refresh_timeline_items()
+                card_obj["last_edit_action"] = None
+                self._relayout_cards()
+                return "__ui_consumed__"
 
             if card_view is not None and card_view.handle_location_click(card, mouse_pos):
                 card_obj = self._bring_card_to_front(index)

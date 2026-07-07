@@ -46,6 +46,7 @@ from simulations.world_gen.tectonics import (
     derive_tectonic_model,
     mature_tectonics_model,
 )
+from simulations.world_gen.water_cycle import derive_water_cycle_model
 from world.year_utils import parse_year
 from world.relation_mirror import mirror_location_sim_relations
 
@@ -210,6 +211,8 @@ class WorldGenSimulation:
         self.crust_save_button_rect = None
         self.world_gen_back_button_rect = None
         self.world_gen_complete_button_rect = None
+        self.world_gen_space_button_rect = None
+        self.pending_navigation_action = None
         self.periodic_table_rect = None
         self.periodic_element_rects = {}
         self.control_panel_rect = None
@@ -292,6 +295,7 @@ class WorldGenSimulation:
         random_gas_giant_rect=None,
         complete_rect=None,
         back_rect=None,
+        space_rect=None,
     ):
         self.crust_slider_rects = dict(slider_rects or {})
         self.crust_add_trace_button_rect = add_trace_rect
@@ -301,8 +305,26 @@ class WorldGenSimulation:
         self.crust_save_button_rect = save_rect
         self.world_gen_complete_button_rect = complete_rect
         self.world_gen_back_button_rect = back_rect
+        self.world_gen_space_button_rect = space_rect
         self.periodic_table_rect = periodic_rect
         self.periodic_element_rects = dict(element_rects or {})
+
+    def set_world_gen_space_button_rect(self, rect):
+        self.world_gen_space_button_rect = rect
+
+    def consume_pending_navigation_action(self):
+        action = self.pending_navigation_action
+        self.pending_navigation_action = None
+        return action
+
+    def _request_space_sim_navigation(self):
+        system_id = self.parent_system_id or "system_sol"
+        self.pending_navigation_action = {
+            "id": "open_space_from_world_gen",
+            "system_id": system_id,
+        }
+        self.commit_status = "Opening space simulation"
+        return True
 
     def set_control_panel_rect(self, rect):
         self.control_panel_rect = rect
@@ -327,6 +349,7 @@ class WorldGenSimulation:
         self.crust_save_button_rect = None
         self.world_gen_back_button_rect = None
         self.world_gen_complete_button_rect = None
+        self.world_gen_space_button_rect = None
         self.periodic_table_rect = None
         self.periodic_element_rects = {}
         self.control_panel_rect = None
@@ -1047,6 +1070,10 @@ class WorldGenSimulation:
             "material_heatmaps",
             "material_heatmap_status",
             "material_heatmap_layer_count",
+            "water_cycle_model",
+            "river_model",
+            "climate_zone_model",
+            "climate_summary",
             "surface_process_model",
             "hydrology_summary",
         ):
@@ -1252,10 +1279,10 @@ class WorldGenSimulation:
         if self._planet_is_gas_giant_candidate(planet):
             return "atmosphere"
         stage = str((planet or {}).get("world_gen_stage") or "").strip().lower()
-        if stage in {"crust", "atmosphere", "regime", "terrain", "tectonics", "heightmap"}:
+        if stage in {"crust", "atmosphere", "regime", "terrain", "tectonics", "heightmap", "water_cycle"}:
             return stage
         if planet.get("world_gen_complete"):
-            return "heightmap"
+            return "water_cycle" if isinstance(planet.get("water_cycle_model"), dict) else "heightmap"
         if not isinstance(planet.get("world_gen_seed"), dict):
             return "crust"
         if not isinstance(planet.get("atmosphere_model"), dict):
@@ -1269,6 +1296,8 @@ class WorldGenSimulation:
             return "terrain"
         if isinstance(planet.get("tectonic_model"), dict) and not isinstance(planet.get("heightmap_model"), dict):
             return "tectonics"
+        if isinstance(planet.get("heightmap_model"), dict) and isinstance(planet.get("water_cycle_model"), dict):
+            return "water_cycle"
         return "heightmap"
 
     def _set_world_gen_progress(self, planet, stage, complete=False):
@@ -1406,6 +1435,15 @@ class WorldGenSimulation:
             "material_heatmaps",
             "material_heatmap_status",
             "material_heatmap_layer_count",
+        ):
+            planet.pop(key, None)
+
+    def _clear_planet_water_cycle_fields(self, planet):
+        for key in (
+            "water_cycle_model",
+            "river_model",
+            "climate_zone_model",
+            "climate_summary",
         ):
             planet.pop(key, None)
 
@@ -1978,10 +2016,14 @@ class WorldGenSimulation:
             tectonic_model = self._derive_tectonic_model(terrain, seed, physics, planet)
             tectonic_model = mature_tectonics_model(tectonic_model, terrain, cycles=4, million_years_per_cycle=45.0)
             planet["tectonic_model"] = tectonic_model
-            planet.pop("crater_model", None)
+            if terrain.get("cratering", {}).get("enabled") and float(terrain.get("cratering", {}).get("density", 0.0) or 0.0) > 0.12:
+                planet["crater_model"] = self._derive_crater_model(terrain, seed, physics, planet)
+            else:
+                planet.pop("crater_model", None)
             heightmap = self._derive_heightmap_model(terrain, seed, physics, planet)
             planet["heightmap_model"] = heightmap
             self._apply_material_heatmaps(planet, natural_material_model, terrain, heightmap)
+            self._clear_planet_water_cycle_fields(planet)
             map_status = "tectonics_matured_heightmap_seeded"
             geology_status = "tectonics_matured_heightmap_seeded"
             self.editor_stage = "heightmap"
@@ -1992,6 +2034,7 @@ class WorldGenSimulation:
             heightmap = self._derive_heightmap_model(terrain, seed, physics, planet)
             planet["heightmap_model"] = heightmap
             self._apply_material_heatmaps(planet, natural_material_model, terrain, heightmap)
+            self._clear_planet_water_cycle_fields(planet)
             map_status = "crater_heightmap_seeded"
             geology_status = "crater_heightmap_seeded"
             self.editor_stage = "heightmap"
@@ -2097,6 +2140,7 @@ class WorldGenSimulation:
         heightmap["simulated_age_myr"] = terrain_for_heightmap["simulated_age_myr"]
         planet["heightmap_model"] = heightmap
         self._apply_material_heatmaps(planet, terrain=terrain_for_heightmap, heightmap=heightmap)
+        self._clear_planet_water_cycle_fields(planet)
         planet["simulated_geology_age_myr"] = terrain_for_heightmap["simulated_age_myr"]
         planet["map_status"] = "tectonics_advanced"
         planet["geology_summary"] = {
@@ -2161,6 +2205,7 @@ class WorldGenSimulation:
         heightmap["simulated_age_myr"] = next_age
         planet["heightmap_model"] = heightmap
         self._apply_material_heatmaps(planet, terrain=terrain, heightmap=heightmap)
+        self._clear_planet_water_cycle_fields(planet)
         planet["simulated_geology_age_myr"] = next_age
         if isinstance(planet.get("geology_summary"), dict):
             planet["geology_summary"]["elevation_range_m"] = [
@@ -2171,6 +2216,88 @@ class WorldGenSimulation:
         self._set_world_gen_progress(planet, "heightmap", complete=False)
         persisted = self._mirror_and_persist_planet(planet)
         self.commit_status = f"Advanced heightmap to {next_age:.1f} Myr" if persisted else f"Advanced heightmap to {next_age:.1f} Myr in memory"
+        return True
+
+    def _save_water_cycle_model(self):
+        planet = self._selected_planet_entity()
+        if planet is None:
+            self.commit_status = "Select a planet first"
+            return False
+        terrain = planet.get("terrain_seed_model")
+        heightmap = planet.get("heightmap_model")
+        if not isinstance(terrain, dict) or not isinstance(heightmap, dict):
+            self.commit_status = "Generate the heightmap before the water cycle"
+            return False
+
+        seed = self._coerce_seed_payload()
+        atmosphere = planet.get("atmosphere_model") if isinstance(planet.get("atmosphere_model"), dict) else None
+        model = derive_water_cycle_model(
+            terrain=terrain,
+            heightmap=heightmap,
+            atmosphere=atmosphere,
+            seed=seed or planet.get("world_gen_seed") or {},
+            planet_id=planet.get("id", ""),
+        )
+        planet["water_cycle_model"] = model
+        planet["river_model"] = {
+            "status": model.get("status"),
+            "model_version": model.get("model_version"),
+            "projection": model.get("projection"),
+            "wrap_x": model.get("wrap_x"),
+            "wrap_y": model.get("wrap_y"),
+            "rivers": list(model.get("rivers") or []),
+            "river_count": int(model.get("river_count", 0) or 0),
+        }
+        planet["climate_zone_model"] = {
+            "status": model.get("status"),
+            "model_version": model.get("model_version"),
+            "projection": model.get("projection"),
+            "wrap_x": model.get("wrap_x"),
+            "wrap_y": model.get("wrap_y"),
+            "climate_grid": model.get("climate_grid"),
+            "climate_zones": list(model.get("climate_zones") or []),
+        }
+        dominant_zones = [
+            zone.get("id")
+            for zone in (model.get("climate_zones") or [])[:3]
+            if isinstance(zone, dict) and zone.get("id")
+        ]
+        planet["climate_summary"] = {
+            "status": model.get("status"),
+            "dominant_climate_zones": dominant_zones,
+            "river_count": int(model.get("river_count", 0) or 0),
+            "liquid_water_possible": bool(model.get("liquid_water_possible")),
+            "hydrology_enabled": bool(model.get("hydrology_enabled")),
+        }
+        if isinstance(planet.get("hydrology_summary"), dict):
+            planet["hydrology_summary"].update({
+                "status": model.get("status"),
+                "water_cycle_status": model.get("status"),
+                "river_count": int(model.get("river_count", 0) or 0),
+                "dominant_climate_zones": dominant_zones,
+            })
+        if isinstance(planet.get("environment_summary"), dict):
+            planet["environment_summary"].update({
+                "status": model.get("status"),
+                "climate_zone_count": len(model.get("climate_zones") or []),
+                "river_count": int(model.get("river_count", 0) or 0),
+                "dominant_climate_zones": dominant_zones,
+            })
+
+        tags = list(planet.get("tags") or [])
+        for tag in ("water_cycle_seeded", "climate_zones_seeded"):
+            if tag not in tags:
+                tags.append(tag)
+        if int(model.get("river_count", 0) or 0) > 0 and "river_network_seeded" not in tags:
+            tags.append("river_network_seeded")
+        planet["tags"] = tags
+
+        self._set_world_gen_progress(planet, "water_cycle", complete=False)
+        persisted = self._mirror_and_persist_planet(planet)
+        self.editor_stage = "water_cycle"
+        river_count = int(model.get("river_count", 0) or 0)
+        status = f"Water cycle ready: {len(model.get('climate_zones') or [])} climates, {river_count} rivers"
+        self.commit_status = status if persisted else f"{status} in memory"
         return True
 
     def _heightmap_can_advance_tectonics(self):
@@ -2208,7 +2335,7 @@ class WorldGenSimulation:
             return False
         if planet.get("world_gen_complete"):
             return False
-        if isinstance(planet.get("heightmap_model"), dict):
+        if isinstance(planet.get("water_cycle_model"), dict):
             return True
         atmosphere = planet.get("atmosphere_model")
         return isinstance(atmosphere, dict) and atmosphere.get("has_solid_surface") is False
@@ -2220,6 +2347,7 @@ class WorldGenSimulation:
             "terrain": "regime",
             "tectonics": "terrain",
             "heightmap": "terrain",
+            "water_cycle": "heightmap",
         }.get(self.editor_stage)
 
     def _request_previous_worldgen_stage(self):
@@ -2267,6 +2395,10 @@ class WorldGenSimulation:
                 "material_heatmaps",
                 "material_heatmap_status",
                 "material_heatmap_layer_count",
+                "water_cycle_model",
+                "river_model",
+                "climate_zone_model",
+                "climate_summary",
                 "map_generation_recipe",
                 "map_layers",
                 "hydrology_summary",
@@ -2288,6 +2420,10 @@ class WorldGenSimulation:
                 "material_heatmaps",
                 "material_heatmap_status",
                 "material_heatmap_layer_count",
+                "water_cycle_model",
+                "river_model",
+                "climate_zone_model",
+                "climate_summary",
                 "map_generation_recipe",
                 "map_layers",
                 "hydrology_summary",
@@ -2307,6 +2443,10 @@ class WorldGenSimulation:
                 "material_heatmaps",
                 "material_heatmap_status",
                 "material_heatmap_layer_count",
+                "water_cycle_model",
+                "river_model",
+                "climate_zone_model",
+                "climate_summary",
                 "map_generation_recipe",
                 "map_layers",
                 "hydrology_summary",
@@ -2323,9 +2463,15 @@ class WorldGenSimulation:
                 "material_heatmaps",
                 "material_heatmap_status",
                 "material_heatmap_layer_count",
+                "water_cycle_model",
+                "river_model",
+                "climate_zone_model",
+                "climate_summary",
             ):
                 planet.pop(key, None)
             planet["map_status"] = "terrain_seeded"
+        elif target == "heightmap":
+            self._clear_planet_water_cycle_fields(planet)
         self.pending_back_stage = None
         self.editor_stage = target
         self._set_world_gen_progress(planet, target, complete=False)
@@ -2351,7 +2497,7 @@ class WorldGenSimulation:
     def _handle_heightmap_primary_action(self):
         if self._heightmap_can_advance_tectonics():
             return self._advance_tectonics_model()
-        return self._refresh_heightmap_model()
+        return self._save_water_cycle_model()
 
 
     def _open_planet_name_prompt(self):
@@ -2483,7 +2629,23 @@ class WorldGenSimulation:
                 if isinstance(selected_planet, dict) and isinstance(selected_planet.get("natural_material_model"), dict)
                 else self._derive_natural_material_model(terrain=terrain_model)
             ),
+            "material_heatmap_model": (
+                selected_planet.get("material_heatmap_model")
+                if isinstance(selected_planet, dict) and isinstance(selected_planet.get("material_heatmap_model"), dict)
+                else None
+            ),
             "heightmap_model": heightmap_model,
+            "water_cycle_model": (
+                selected_planet.get("water_cycle_model")
+                if isinstance(selected_planet, dict) and isinstance(selected_planet.get("water_cycle_model"), dict)
+                else derive_water_cycle_model(
+                    terrain_model,
+                    heightmap_model,
+                    selected_planet.get("atmosphere_model") if isinstance(selected_planet, dict) else None,
+                    self._coerce_seed_payload() or {},
+                    selected_planet.get("id", "") if isinstance(selected_planet, dict) else "",
+                )
+            ),
             "tectonic_model": (
                 selected_planet.get("tectonic_model")
                 if isinstance(selected_planet, dict) and isinstance(selected_planet.get("tectonic_model"), dict)
@@ -2582,6 +2744,8 @@ class WorldGenSimulation:
                         self._save_terrain_seed_model()
                     elif self.editor_stage == "heightmap":
                         self._handle_heightmap_primary_action()
+                    elif self.editor_stage == "water_cycle":
+                        self._save_water_cycle_model()
                     elif self.editor_stage == "tectonics":
                         self._advance_tectonics_model()
                     else:
@@ -2676,6 +2840,12 @@ class WorldGenSimulation:
 
         selected_planet = self._selected_planet_entity()
         if self.control_panel_rect is not None and self.control_panel_rect.collidepoint(screen_pos):
+            if (
+                self.world_gen_space_button_rect is not None
+                and self.world_gen_space_button_rect.collidepoint(screen_pos)
+            ):
+                self._request_space_sim_navigation()
+                return
             if selected_planet is None:
                 if (
                     self.formation_theory_button_rect is not None
@@ -2713,6 +2883,10 @@ class WorldGenSimulation:
             if self.editor_stage == "heightmap":
                 if self.crust_save_button_rect is not None and self.crust_save_button_rect.collidepoint(screen_pos):
                     self._handle_heightmap_primary_action()
+                return
+            if self.editor_stage == "water_cycle":
+                if self.crust_save_button_rect is not None and self.crust_save_button_rect.collidepoint(screen_pos):
+                    self._save_water_cycle_model()
                 return
             if self.editor_stage == "tectonics":
                 if self.crust_save_button_rect is not None and self.crust_save_button_rect.collidepoint(screen_pos):

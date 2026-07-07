@@ -39,6 +39,32 @@ class CardTypePickerTests(unittest.TestCase):
 
         self.assertEqual("coll", ui._template_id_prefix("collections"))
 
+    def test_conversion_templates_include_biosphere_roster_collection_subclass(self):
+        ui = KnowledgeBrowserUI()
+        ui.schema_entry_templates = [
+            {
+                "dataset_name": "collections",
+                "entity_type": "collections",
+                "label": "Collection",
+                "id_prefix": "coll",
+            }
+        ]
+        ui.world_model = None
+
+        templates = ui._conversion_templates()
+        roster_template = next(
+            template
+            for template in templates
+            if template.get("subclass_field") == "collection_class"
+            and template.get("subclass_value") == "localized_biosphere_species_roster"
+        )
+
+        self.assertEqual("Localized Biosphere Species Roster", roster_template["label"])
+        self.assertEqual(
+            {"collection_class": "localized_biosphere_species_roster"},
+            roster_template["initial_fields"],
+        )
+
     def test_card_type_picker_scrolls_past_first_eight_templates(self):
         ui = KnowledgeBrowserUI()
         templates = [
@@ -113,6 +139,8 @@ class CardTypePickerTests(unittest.TestCase):
         self.assertIn("room", subclasses)
         self.assertIn("state", subclasses)
         self.assertIn("quarter", subclasses)
+        self.assertIn("biosphere_patch", subclasses)
+        self.assertIn("river", subclasses)
 
     def test_location_subclass_templates_prefer_canonical_location_class(self):
         ui = KnowledgeBrowserUI()
@@ -192,6 +220,43 @@ class CardTypePickerTests(unittest.TestCase):
                 {
                     "dataset_name": "locations",
                     "entity_type": "location",
+                    "label": "River",
+                    "subclass_field": "location_class",
+                    "subclass_value": "river",
+                },
+            ]
+        )
+
+        self.assertEqual("sector_header", rows[0]["kind"])
+        self.assertEqual("Biogeography", rows[0]["label"])
+        self.assertEqual("header", rows[1]["kind"])
+        self.assertEqual("Location", rows[1]["label"])
+        self.assertEqual(
+            ["Location", "River"],
+            [row["items"][0]["label"] for row in rows[2:]],
+        )
+
+    def test_template_picker_rows_group_location_classes_by_sector(self):
+        ui = KnowledgeBrowserUI()
+        rows = ui._template_picker_hierarchical_rows(
+            [
+                {
+                    "dataset_name": "locations",
+                    "entity_type": "location",
+                    "label": "River",
+                    "subclass_field": "location_class",
+                    "subclass_value": "river",
+                },
+                {
+                    "dataset_name": "locations",
+                    "entity_type": "location",
+                    "label": "City",
+                    "subclass_field": "location_class",
+                    "subclass_value": "city",
+                },
+                {
+                    "dataset_name": "locations",
+                    "entity_type": "location",
                     "label": "Planet",
                     "subclass_field": "location_class",
                     "subclass_value": "planet",
@@ -199,12 +264,22 @@ class CardTypePickerTests(unittest.TestCase):
             ]
         )
 
-        self.assertEqual("header", rows[0]["kind"])
-        self.assertEqual("Location", rows[0]["label"])
-        self.assertEqual(
-            ["Location", "Planet"],
-            [row["items"][0]["label"] for row in rows[1:]],
-        )
+        sector_labels = [row["label"] for row in rows if row["kind"] == "sector_header"]
+        item_labels_by_sector = {}
+        current_sector = None
+        for row in rows:
+            if row["kind"] == "sector_header":
+                current_sector = row["label"]
+                item_labels_by_sector[current_sector] = []
+            elif row["kind"] == "template_row":
+                item_labels_by_sector[current_sector].extend(
+                    item["label"] for item in row["items"]
+                )
+
+        self.assertEqual(["Biogeography", "Human History", "Science & Engineering"], sector_labels)
+        self.assertEqual(["River"], item_labels_by_sector["Biogeography"])
+        self.assertEqual(["City"], item_labels_by_sector["Human History"])
+        self.assertEqual(["Planet"], item_labels_by_sector["Science & Engineering"])
 
     def test_template_picker_rows_pack_short_items_and_wrap_long_items(self):
         ui = KnowledgeBrowserUI()

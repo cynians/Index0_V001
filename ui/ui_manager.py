@@ -256,6 +256,34 @@ class UIManager:
             )
         return y
 
+    def _rebuild_ecosystem_controls(self, active_sim, x, y, width=226):
+        button_height = 28
+        y += 8
+        can_create_biosphere_patch = bool(
+            getattr(active_sim, "can_create_biosphere_patch_draft", lambda: False)()
+        )
+        self.buttons.append(
+            UIButton(
+                "new_biosphere_patch",
+                "Biosphere Area",
+                pygame.Rect(x, y, width, button_height),
+                enabled=can_create_biosphere_patch,
+            )
+        )
+        y += 40
+
+        if bool(getattr(active_sim, "can_create_biosphere_from_selection", lambda: False)()):
+            self.buttons.append(
+                UIButton(
+                    "create_biosphere",
+                    "Create Biosphere",
+                    pygame.Rect(x, y, width, button_height),
+                )
+            )
+            y += 40
+
+        return y
+
     def _rebuild_simulation_panel_tab_hitboxes(self):
         self.simulation_panel_tab_hitboxes = []
 
@@ -737,6 +765,13 @@ class UIManager:
                     pygame.Rect(map_control_x, next_button_y, map_control_w, button_height))
                 )
                 next_button_y += 40
+            else:
+                next_button_y = self._rebuild_ecosystem_controls(
+                    active_sim,
+                    map_control_x,
+                    next_button_y,
+                    width=map_control_w,
+                )
 
             selected_entity_id = getattr(active_sim, "selected_entity_id", None)
             root_entity_id = getattr(active_sim.context, "root_entity_id", None)
@@ -888,22 +923,55 @@ class UIManager:
             return
 
         if render_mode == "bioregion":
-            self.scope_label = "Scope: Bioregion Test Map | 10 km x 10 km"
+            scope_label = (
+                active_sim.get_scope_label()
+                if hasattr(active_sim, "get_scope_label")
+                else "Bioregion Test Map | 10 km x 10 km"
+            )
+            self.scope_label = f"Scope: {scope_label}"
 
             avg_surface = active_sim.get_average_surface_water()
             avg_top = active_sim.get_average_top_moisture()
             avg_deep = active_sim.get_average_deep_moisture()
 
             rain_text = "Rain: active" if getattr(active_sim, "is_raining", False) else "Rain: dry"
+            species_count = (
+                active_sim.get_selected_species_count()
+                if hasattr(active_sim, "get_selected_species_count")
+                else 0
+            )
             self.breadcrumb_label = (
                 f"{rain_text} | Avg surf: {avg_surface:.3f} | "
-                f"Avg top: {avg_top:.3f} | Avg deep: {avg_deep:.3f}"
+                f"Avg top: {avg_top:.3f} | Avg deep: {avg_deep:.3f} | "
+                f"Species: {species_count}"
             )
+            if hasattr(active_sim, "get_scope_breadcrumb"):
+                breadcrumb = active_sim.get_scope_breadcrumb()
+                if breadcrumb:
+                    self.breadcrumb_label = f"{breadcrumb} | {self.breadcrumb_label}"
 
             self.buttons.append(
                 UIButton("open_repository", "Open Repository",
                          pygame.Rect(button_x, button_y, button_width, button_height))
             )
+            next_button_y = button_y + 40
+            for entry in getattr(active_sim, "get_species_catalog_entries", lambda: [])():
+                species_id = str(entry.get("id") or "")
+                if not species_id:
+                    continue
+                label = entry.get("label") or species_id
+                suitability = entry.get("suitability")
+                if isinstance(suitability, (int, float)):
+                    label = f"{label} {int(max(0.0, min(1.0, suitability)) * 100)}%"
+                prefix = "[x] " if entry.get("selected") else "[ ] "
+                self.buttons.append(
+                    UIButton(
+                        f"biosphere_toggle_species:{species_id}",
+                        self._short_button_label(prefix + label, max_chars=28),
+                        pygame.Rect(button_x, next_button_y, button_width, button_height),
+                    )
+                )
+                next_button_y += 40
 
     def rebuild_for_state(
             self,

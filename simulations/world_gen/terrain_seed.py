@@ -114,6 +114,11 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
     max_elevation_m *= gravity_relief_factor * silica_relief_factor * (1.0 - erosion * 0.22)
     min_elevation_m *= gravity_relief_factor * (1.0 - erosion * 0.16)
     roughness = _clamp(roughness + mafic_roughness_bonus - erosion * 0.08, 0.18, 0.9)
+    if pressure_bar < 0.02 and crater_retention == "low":
+        crater_retention = "moderate" if mobile_plates or partial_resurfacing else "high"
+    elif pressure_bar < 0.15 and crater_retention == "low":
+        crater_retention = "moderate"
+
     ocean_bias = seed_range(map_seed, "ocean_bias", -0.18, 0.18)
     temp_ocean_factor = _clamp(1.0 - abs(surface_temp_k - 288.0) / 155.0, 0.12, 1.0)
     pressure_ocean_factor = _clamp(0.55 + pressure_bar * 0.32, 0.35, 1.18)

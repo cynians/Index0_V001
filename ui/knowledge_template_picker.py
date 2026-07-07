@@ -116,6 +116,91 @@ class KnowledgeTemplatePickerMixin:
                 label = self._schema_display_label(dataset_name)
         return str(label or "Template")
 
+    def _template_picker_sector_key(self, template):
+        dataset_name = self._normalize_schema_name(template.get("dataset_name"))
+        subclass_field = self._normalize_schema_name(template.get("subclass_field"))
+        subclass_value = self._normalize_schema_name(template.get("subclass_value"))
+
+        if dataset_name in {"species", "cladistics", "biospheres"}:
+            return "biogeography"
+
+        if dataset_name == "collections":
+            if subclass_value == "localized_biosphere_species_roster":
+                return "biogeography"
+            return "human_history"
+
+        if dataset_name == "locations":
+            if subclass_field == "location_class":
+                if subclass_value in {
+                    "continent",
+                    "region",
+                    "biosphere_patch",
+                    "river",
+                    "island_chain",
+                    "atoll",
+                    "mountain_range",
+                    "ocean",
+                    "sea",
+                    "lake",
+                    "wetland",
+                }:
+                    return "biogeography"
+                if subclass_value in {
+                    "country",
+                    "state",
+                    "city",
+                    "quarter",
+                    "site",
+                    "building",
+                    "room",
+                }:
+                    return "human_history"
+                if subclass_value in {
+                    "cluster",
+                    "star_system",
+                    "stellar_system",
+                    "star",
+                    "planet",
+                    "moon",
+                    "dwarf_planet",
+                    "asteroid",
+                    "comet",
+                    "orbital_body",
+                    "space_station",
+                    "station",
+                }:
+                    return "science_engineering"
+            return "biogeography"
+
+        if dataset_name in {
+            "components",
+            "engineering",
+            "materials",
+            "spatial_features",
+            "systems",
+            "technologies",
+            "vehicles",
+        }:
+            return "science_engineering"
+
+        return "human_history"
+
+    def _template_picker_sector_label(self, sector_key):
+        labels = {
+            "biogeography": "Biogeography",
+            "human_history": "Human History",
+            "science_engineering": "Science & Engineering",
+        }
+        return labels.get(sector_key, "Human History")
+
+    def _template_picker_sector_order(self, sector_key):
+        order = {
+            "biogeography": 0,
+            "human_history": 1,
+            "science_engineering": 2,
+        }
+        return order.get(sector_key, 99)
+
     def _template_base_key(self, template):
         return (
             template.get("dataset_name"),
@@ -145,94 +230,114 @@ class KnowledgeTemplatePickerMixin:
         return max(84, min(available_width, label_w + 24))
 
     def _template_picker_hierarchical_rows(self, templates, available_width=None, font=None):
-        groups = []
-        by_key = {}
+        sectors = []
+        by_sector = {}
 
         for template in templates:
-            key = self._template_base_key(template)
-            group = by_key.get(key)
+            sector_key = self._template_picker_sector_key(template)
+            sector = by_sector.get(sector_key)
+            if sector is None:
+                sector = {
+                    "key": sector_key,
+                    "label": self._template_picker_sector_label(sector_key),
+                    "groups": [],
+                    "by_key": {},
+                }
+                by_sector[sector_key] = sector
+                sectors.append(sector)
+
+            key = (sector_key, *self._template_base_key(template))
+            group = sector["by_key"].get(key)
             if group is None:
                 group = {
                     "label": self._template_picker_group_label(template),
                     "templates": [],
                 }
-                by_key[key] = group
-                groups.append(group)
+                sector["by_key"][key] = group
+                sector["groups"].append(group)
             if not template.get("subclass_field"):
                 group["label"] = template.get("label") or group["label"]
             group["templates"].append(template)
 
         rows = []
-        for group in groups:
-            group_templates = sorted(
-                group["templates"],
-                key=lambda template: (
-                    1 if template.get("subclass_field") else 0,
-                    str(template.get("label", "")).lower(),
-                    str(template.get("subclass_value", "")).lower(),
-                ),
-            )
+        for sector in sorted(sectors, key=lambda item: (self._template_picker_sector_order(item["key"]), item["label"])):
             rows.append(
                 {
-                    "kind": "header",
-                    "label": group["label"],
+                    "kind": "sector_header",
+                    "label": sector["label"],
                     "template": None,
                 }
             )
-            if available_width is None:
-                for template in group_templates:
-                    rows.append(
-                        {
-                            "kind": "template_row",
-                            "items": [
-                                {
-                                    "label": template.get("label", "Template"),
-                                    "template": template,
-                                }
-                            ],
-                        }
-                    )
-                continue
-
-            current_items = []
-            current_width = 0
-            gap = 6
-            for template in group_templates:
-                label = template.get("label", "Template")
-                option_w = self._template_picker_option_width(
-                    label,
-                    available_width,
-                    font=font,
+            for group in sector["groups"]:
+                group_templates = sorted(
+                    group["templates"],
+                    key=lambda template: (
+                        1 if template.get("subclass_field") else 0,
+                        str(template.get("label", "")).lower(),
+                        str(template.get("subclass_value", "")).lower(),
+                    ),
                 )
-                item = {
-                    "label": label,
-                    "template": template,
-                    "width": option_w,
-                }
-                is_full_width = option_w >= available_width
-                next_width = (
-                    option_w
-                    if not current_items
-                    else current_width + gap + option_w
+                rows.append(
+                    {
+                        "kind": "header",
+                        "label": group["label"],
+                        "template": None,
+                    }
                 )
-                if is_full_width:
-                    if current_items:
-                        rows.append({"kind": "template_row", "items": current_items})
-                        current_items = []
-                        current_width = 0
-                    rows.append({"kind": "template_row", "items": [item]})
+                if available_width is None:
+                    for template in group_templates:
+                        rows.append(
+                            {
+                                "kind": "template_row",
+                                "items": [
+                                    {
+                                        "label": template.get("label", "Template"),
+                                        "template": template,
+                                    }
+                                ],
+                            }
+                        )
                     continue
 
-                if current_items and next_width > available_width:
-                    rows.append({"kind": "template_row", "items": current_items})
-                    current_items = [item]
-                    current_width = option_w
-                else:
-                    current_items.append(item)
-                    current_width = next_width
+                current_items = []
+                current_width = 0
+                gap = 6
+                for template in group_templates:
+                    label = template.get("label", "Template")
+                    option_w = self._template_picker_option_width(
+                        label,
+                        available_width,
+                        font=font,
+                    )
+                    item = {
+                        "label": label,
+                        "template": template,
+                        "width": option_w,
+                    }
+                    is_full_width = option_w >= available_width
+                    next_width = (
+                        option_w
+                        if not current_items
+                        else current_width + gap + option_w
+                    )
+                    if is_full_width:
+                        if current_items:
+                            rows.append({"kind": "template_row", "items": current_items})
+                            current_items = []
+                            current_width = 0
+                        rows.append({"kind": "template_row", "items": [item]})
+                        continue
 
-            if current_items:
-                rows.append({"kind": "template_row", "items": current_items})
+                    if current_items and next_width > available_width:
+                        rows.append({"kind": "template_row", "items": current_items})
+                        current_items = [item]
+                        current_width = option_w
+                    else:
+                        current_items.append(item)
+                        current_width = next_width
+
+                if current_items:
+                    rows.append({"kind": "template_row", "items": current_items})
 
         return rows
 

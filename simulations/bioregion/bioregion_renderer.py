@@ -81,6 +81,21 @@ class BioregionRenderer:
 
             pygame.draw.rect(screen, self._get_ecosystem_cell_color(cell), rect)
 
+    def _draw_bioregion_shape_outline(self, screen, sim, camera):
+        points = []
+        if hasattr(sim, "get_biosphere_shape_points"):
+            points = sim.get_biosphere_shape_points()
+        if len(points) < 3:
+            return
+        screen_points = []
+        for point in points:
+            screen_point = camera.world_to_screen(point)
+            if screen_point is not None:
+                screen_points.append(screen_point)
+        if len(screen_points) >= 3:
+            pygame.draw.polygon(screen, (28, 36, 28), screen_points)
+            pygame.draw.polygon(screen, (204, 228, 186), screen_points, 2)
+
     def _get_ecosystem_cell_color(self, cell):
         """
         Build a display color from altitude, moisture, and vegetation state.
@@ -172,11 +187,14 @@ class BioregionRenderer:
             background_rect = pygame.Rect(left, top, right - left, bottom - top)
             pygame.draw.rect(screen, (20, 26, 20), background_rect)
 
+        self._draw_bioregion_shape_outline(screen, sim, camera)
         self._draw_bioregion_ecosystem_cells(screen, sim, camera)
 
         subsection_size = sim.get_subsection_size()
         section_size = sim.get_section_size()
         map_size = sim.get_map_size()
+        map_width = getattr(sim, "get_biosphere_width", lambda: map_size)()
+        map_height = getattr(sim, "get_biosphere_height", lambda: map_size)()
 
         subsection_color = (46, 64, 48)
         section_color = (165, 185, 165)
@@ -186,33 +204,41 @@ class BioregionRenderer:
 
         for i in range(subsection_steps + 1):
             x = i * subsection_size
+            if x > map_width:
+                continue
 
             p1 = camera.world_to_screen((x, 0.0))
-            p2 = camera.world_to_screen((x, map_size))
+            p2 = camera.world_to_screen((x, map_height))
             if p1 is not None and p2 is not None:
                 pygame.draw.line(screen, subsection_color, p1, p2, 1)
 
         for i in range(subsection_steps + 1):
             y = i * subsection_size
+            if y > map_height:
+                continue
 
             p1 = camera.world_to_screen((0.0, y))
-            p2 = camera.world_to_screen((map_size, y))
+            p2 = camera.world_to_screen((map_width, y))
             if p1 is not None and p2 is not None:
                 pygame.draw.line(screen, subsection_color, p1, p2, 1)
 
         for i in range(section_steps + 1):
             x = i * section_size
+            if x > map_width:
+                continue
 
             p1 = camera.world_to_screen((x, 0.0))
-            p2 = camera.world_to_screen((x, map_size))
+            p2 = camera.world_to_screen((x, map_height))
             if p1 is not None and p2 is not None:
                 pygame.draw.line(screen, section_color, p1, p2, 2)
 
         for i in range(section_steps + 1):
             y = i * section_size
+            if y > map_height:
+                continue
 
             p1 = camera.world_to_screen((0.0, y))
-            p2 = camera.world_to_screen((map_size, y))
+            p2 = camera.world_to_screen((map_width, y))
             if p1 is not None and p2 is not None:
                 pygame.draw.line(screen, section_color, p1, p2, 2)
 

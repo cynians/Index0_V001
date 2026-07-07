@@ -59,6 +59,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         "country",
         "state",
         "region",
+        "biosphere_patch",
+        "river",
         "city",
         "quarter",
         "site",
@@ -127,9 +129,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         "wiki_field_colors",
         "tags",
         "start_year",
-        "start_commentary",
+        "snapshot_year",
         "end_year",
-        "end_commentary",
         "temporal_periods",
         "parents",
         "related",
@@ -168,6 +169,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.world_model = None
         self.selected_entity_id = None
         self.repository_scope_entity_id = None
+        self.dismissed_repository_scope_entity_ids = set()
         self.repository_scope_label = None
         self.header_button = None
         self.random_entry_button = None
@@ -239,6 +241,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.active_card_drag_id = None
         self.active_card_resize_id = None
         self.active_card_color_slider = None
+        self.active_wiki_text_selection = None
         self.card_drag_mouse_offset = (0, 0)
         self.card_drag_last_mouse_pos = None
         self.card_resize_start_mouse = None
@@ -1402,6 +1405,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             return ["location_class"]
         if dataset_name == "systems":
             return ["system_class", "body_class"]
+        if dataset_name == "collections":
+            return ["collection_class"]
 
         fields = [
             f"{self._singularize_name(dataset_name)}_class",
@@ -1502,6 +1507,11 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 self._normalize_schema_name(value)
                 for value in self.CANONICAL_LOCATION_CLASSES
             }
+        if dataset_name == "collections" and field_key == "collection_class":
+            return {
+                self._normalize_schema_name(value)
+                for value in ("family", "localized_biosphere_species_roster")
+            }
         return None
 
     def _canonical_subclass_value_names(self, dataset_name, field_key):
@@ -1560,6 +1570,11 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             return [
                 ("location_class", location_class)
                 for location_class in self.CANONICAL_LOCATION_CLASSES
+            ]
+        if template.get("dataset_name") == "collections":
+            return [
+                ("collection_class", collection_class)
+                for collection_class in ("family", "localized_biosphere_species_roster")
             ]
 
         return []
@@ -1939,7 +1954,27 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         else:
             card_view = card_or_view
         timeline_field = getattr(card_view, "TIMELINE_SNAPSHOT_FIELD", EntityCard.TIMELINE_SNAPSHOT_FIELD)
-        return field_key in {"wiki_entry", "temporal_periods", timeline_field}
+        quote_text_field = getattr(card_view, "PERSON_QUOTE_TEXT_FIELD", EntityCard.PERSON_QUOTE_TEXT_FIELD)
+        quote_context_field = getattr(card_view, "PERSON_QUOTE_CONTEXT_FIELD", EntityCard.PERSON_QUOTE_CONTEXT_FIELD)
+        conversation_message_field = getattr(
+            card_view,
+            "PERSON_CONVERSATION_MESSAGE_FIELD",
+            EntityCard.PERSON_CONVERSATION_MESSAGE_FIELD,
+        )
+        return field_key in {
+            "wiki_entry",
+            "temporal_periods",
+            timeline_field,
+            quote_text_field,
+            quote_context_field,
+            conversation_message_field,
+        }
+
+    def _is_person_quote_edit_field(self, card):
+        card_view = card.get("card_view") if isinstance(card, dict) else None
+        field_key = card.get("active_edit_field") if isinstance(card, dict) else None
+        checker = getattr(card_view, "_is_person_quote_virtual_field", None)
+        return bool(callable(checker) and checker(field_key))
 
     def _sync_card_working_year_context(self, card):
         if card is None or getattr(self, "timeline_ui", None) is None:
@@ -1995,6 +2030,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 self._sync_card_working_year_context(card)
                 self._relayout_cards()
             return True
+        if action_kind == "location_focus_browse":
+            return self._begin_location_focus_browser_pick()
         if action_kind in {
             "working_year_changed",
             "working_year_focus",
@@ -4557,7 +4594,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         if world_model is not None and repository_scope_entity_id:
             scope_entity = world_model.get_entity(repository_scope_entity_id)
 
-        if scope_entity is not None:
+        scope_entity_id = scope_entity.get("id") if isinstance(scope_entity, dict) else None
+        if scope_entity is not None and scope_entity_id not in self.dismissed_repository_scope_entity_ids:
             scope_name = scope_entity.get("name", repository_scope_entity_id)
             scope_kind = scope_entity.get(
                 "location_class",
@@ -4814,7 +4852,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             card_view = card.get("card_view")
             if card_view is None or not card.get("is_edit_mode", False):
                 continue
-            if not card.get("active_edit_field"):
+            if not card.get("active_edit_field") and not card.get("person_quote_active_field"):
                 continue
 
             if card.get("delete_confirm_active", False) and event.key == pygame.K_ESCAPE:
@@ -4852,6 +4890,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 if not card_view.is_relation_edit_field(card.get("active_edit_field")):
                     self._close_relation_picker(card)
                 action = card.get("last_edit_action")
+                quote_draft_action = action == "draft" and self._is_person_quote_edit_field(card)
                 if action == "commit":
                     self._persist_card_entity(card)
                     self._sync_card_years_from_entity(card)
@@ -4859,9 +4898,11 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 elif action == "cancel":
                     card["last_edit_action"] = None
                 elif action == "draft":
-                    self._save_card_draft(card)
+                    if not quote_draft_action:
+                        self._save_card_draft(card)
                 card["last_edit_action"] = None
-                self._relayout_cards()
+                if not quote_draft_action:
+                    self._relayout_cards()
                 if pending_production_action_opened:
                     return "__ui_consumed__"
                 return "__ui_consumed__"
@@ -4934,20 +4975,23 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                     pending_production_action_opened = self._open_pending_production_site_prompt(card)
                     if not card_view.is_relation_edit_field(card.get("active_edit_field")):
                         self._close_relation_picker(card)
-                    action = card.get("last_edit_action")
-                    if action == "commit":
-                        self._persist_card_entity(card)
-                        self._sync_card_years_from_entity(card)
-                        self._refresh_timeline_items()
-                    elif action == "cancel":
-                        card["last_edit_action"] = None
-                    elif action == "draft":
-                        self._save_card_draft(card)
+                action = card.get("last_edit_action")
+                quote_draft_action = action == "draft" and self._is_person_quote_edit_field(card)
+                if action == "commit":
+                    self._persist_card_entity(card)
+                    self._sync_card_years_from_entity(card)
+                    self._refresh_timeline_items()
+                elif action == "cancel":
                     card["last_edit_action"] = None
+                elif action == "draft":
+                    if not quote_draft_action:
+                        self._save_card_draft(card)
+                card["last_edit_action"] = None
+                if not quote_draft_action:
                     self._relayout_cards()
-                    if pending_production_action_opened:
-                        return "__ui_consumed__"
+                if pending_production_action_opened:
                     return "__ui_consumed__"
+                return "__ui_consumed__"
 
         return None
 
@@ -5012,6 +5056,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         active_color_slider = self.active_card_color_slider
         had_card_drag = self.active_card_drag_id is not None
         had_card_resize = self.active_card_resize_id is not None
+        self.active_wiki_text_selection = None
         if active_color_slider is not None:
             self._finalize_card_color_slider_edit(active_color_slider)
         self.active_card_drag_id = None
@@ -5031,6 +5076,24 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         return "__ui_consumed__"
 
     def _handle_mousemotion_event(self, event):
+        active_wiki_text_selection = getattr(self, "active_wiki_text_selection", None)
+        if active_wiki_text_selection is not None:
+            selection = active_wiki_text_selection
+            card = self._find_card_by_entity_id(selection.get("entity_id"))
+            card_view = card.get("card_view") if isinstance(card, dict) else None
+            if card is None or card_view is None:
+                self.active_wiki_text_selection = None
+                return "__ui_consumed__"
+            field_key = selection.get("field_key")
+            cursor = card_view.edit_cursor_from_pos(card, field_key, event.pos, self.font_for_layout)
+            if cursor is not None:
+                card_view._set_edit_selection(card, selection.get("anchor", cursor), cursor)
+                card["last_edit_action"] = "draft"
+                if not self._is_person_quote_edit_field(card):
+                    self._save_card_draft(card)
+                    self._relayout_cards()
+            return "__ui_consumed__"
+
         if self.timeline_splitter_click_pending:
             start_pos = self.timeline_splitter_pending_mouse_pos
             if start_pos is None:
@@ -5248,6 +5311,9 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
     def _begin_relation_browser_link(self, *args, **kwargs):
         return getattr(self._canvas_controller(), "_begin_relation_browser_link")(*args, **kwargs)
+
+    def _begin_location_focus_browser_pick(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_begin_location_focus_browser_pick")(*args, **kwargs)
 
     def _handle_relation_card_link_target_click(self, *args, **kwargs):
         return getattr(self._canvas_controller(), "_handle_relation_card_link_target_click")(*args, **kwargs)
@@ -5837,7 +5903,19 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 self._persist_card_entity(card_obj)
                 card_obj["last_edit_action"] = None
             if self._is_wiki_text_edit_field(card_obj, field_key):
-                card_obj["card_view"].set_edit_cursor_from_pos(card_obj, field_key, mouse_pos, self.font_for_layout)
+                cursor = card_obj["card_view"].edit_cursor_from_pos(
+                    card_obj,
+                    field_key,
+                    mouse_pos,
+                    self.font_for_layout,
+                )
+                if cursor is not None:
+                    card_obj["card_view"]._set_edit_selection(card_obj, cursor, cursor)
+                    self.active_wiki_text_selection = {
+                        "entity_id": card_obj.get("entity_id"),
+                        "field_key": field_key,
+                        "anchor": cursor,
+                    }
             if self._is_temporal_field(field_key):
                 self._set_timeline_edit_target(card_obj, field_key)
             else:
@@ -5902,6 +5980,14 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 continue
 
             label = row.get("label", "")
+            if row.get("kind") == "sector_header":
+                sector_rect = pygame.Rect(row_rect.x, row_rect.y + 2, row_rect.width, max(20, row_rect.height - 8))
+                pygame.draw.rect(screen, (42, 48, 66), sector_rect)
+                pygame.draw.rect(screen, (104, 120, 152), sector_rect, 1)
+                header_label = font.render(str(label), True, (236, 240, 248))
+                screen.blit(header_label, (sector_rect.x + 8, sector_rect.y + 3))
+                continue
+
             if row.get("kind") == "header":
                 header_rect = pygame.Rect(row_rect.x, row_rect.y + 3, row_rect.width, max(20, row_rect.height - 10))
                 pygame.draw.rect(screen, (31, 36, 48), header_rect)

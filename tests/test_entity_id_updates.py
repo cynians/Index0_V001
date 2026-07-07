@@ -631,6 +631,77 @@ class EntityIdUpdateTests(unittest.TestCase):
         self.assertEqual("a", card["edit_buffer"])
         self.assertEqual("", ui.browser_search_query)
 
+    def test_person_quote_edit_consumes_typing_before_browser_search(self):
+        entity = {
+            "id": "person_quote_edit",
+            "type": "person",
+            "_dataset": "people",
+            "pretty_name": "Quote Person",
+            "name": "Quote Person",
+        }
+        ui = KnowledgeBrowserHarness({"person_quote_edit": entity})
+        card_view = EntityCard(entity, dataset_name="people", world_model=ui.world_model)
+        card_view.set_active_tab("simulation")
+        card = {
+            "entity_id": "person_quote_edit",
+            "card_view": card_view,
+            "is_edit_mode": True,
+            "person_quote_buffers": {"quote": "", "date": "", "context": ""},
+        }
+        card_view._set_person_quote_active_field(card, card_view.PERSON_QUOTE_TEXT_FIELD)
+        ui.cards = [card]
+        ui.browser_search_active = True
+        ui.browser_search_query = ""
+
+        result = ui._handle_keydown_event(SimpleNamespace(
+            key=pygame.K_a,
+            unicode="a",
+            mod=0,
+        ))
+
+        self.assertEqual("__ui_consumed__", result)
+        self.assertEqual("a", card["edit_buffer"])
+        self.assertEqual(0, ui.relayout_count)
+        self.assertEqual("", ui.browser_search_query)
+
+    def test_person_conversation_edit_consumes_typing_before_browser_search(self):
+        entity = {
+            "id": "person_conversation_edit",
+            "type": "person",
+            "_dataset": "people",
+            "pretty_name": "Quote Person",
+            "name": "Quote Person",
+        }
+        ui = KnowledgeBrowserHarness({"person_conversation_edit": entity})
+        card_view = EntityCard(entity, dataset_name="people", world_model=ui.world_model)
+        card_view.set_active_tab("simulation")
+        card = {
+            "entity_id": "person_conversation_edit",
+            "card_view": card_view,
+            "is_edit_mode": True,
+            "person_quote_capture_mode": "conversations",
+            "person_quote_buffers": {
+                "conversation_speaker": "Quote Person",
+                "conversation_date": "",
+                "conversation_message": "",
+            },
+        }
+        card_view._set_person_quote_active_field(card, card_view.PERSON_CONVERSATION_MESSAGE_FIELD)
+        ui.cards = [card]
+        ui.browser_search_active = True
+        ui.browser_search_query = ""
+
+        result = ui._handle_keydown_event(SimpleNamespace(
+            key=pygame.K_a,
+            unicode="a",
+            mod=0,
+        ))
+
+        self.assertEqual("__ui_consumed__", result)
+        self.assertEqual("a", card["edit_buffer"])
+        self.assertEqual(0, ui.relayout_count)
+        self.assertEqual("", ui.browser_search_query)
+
     def test_card_draft_keystroke_does_not_refresh_timeline(self):
         entity = {
             "id": "idea_edit_name",
