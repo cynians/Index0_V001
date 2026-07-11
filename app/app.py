@@ -27,17 +27,24 @@ class App(SimWindow):
             title="Index_0"
         )
 
+        self._draw_startup_loading_screen(0.08, "Opening workspace")
         self.camera_controller = CameraController(
             self.camera,
             self.width,
             self.height
         )
 
+        self._draw_startup_loading_screen(0.22, "Preparing tabs")
         self.tab_manager = TabManager()
+        self._draw_startup_loading_screen(0.34, "Loading world repository")
         self.world_model = WorldModel()
+        self._draw_startup_loading_screen(0.64, "Preparing renderer")
         self.renderer = Renderer(self)
+        self._draw_startup_loading_screen(0.74, "Preparing cards and browser")
         self.ui_manager = UIManager()
+        self._draw_startup_loading_screen(0.84, "Preparing navigation")
         self.navigation = NavigationController(self)
+        self._draw_startup_loading_screen(0.92, "Preparing input")
         self.input_router = InputRouter(self)
 
         self.knowledge_layer_active = True
@@ -46,6 +53,45 @@ class App(SimWindow):
         self.repository_return_confirm_active = False
         self.repository_scope_entity_id = None
         self.parent_assignment_request = None
+        self._draw_startup_loading_screen(1.0, "Ready")
+
+    def _draw_startup_loading_screen(self, progress, message):
+        """
+        Draw a synchronous startup screen between initialization steps.
+        """
+        progress = max(0.0, min(1.0, float(progress or 0.0)))
+        pygame.event.pump()
+
+        self.screen.fill((9, 11, 16))
+        center_x = self.width // 2
+        center_y = self.height // 2
+
+        title_font = pygame.font.SysFont("consolas", 56, bold=True)
+        subtitle_font = pygame.font.SysFont("consolas", 18)
+        small_font = pygame.font.SysFont("consolas", 14)
+
+        title_surface = title_font.render("Index 0", True, (238, 242, 248))
+        subtitle_surface = subtitle_font.render("Initializing program", True, (166, 183, 204))
+        message_surface = small_font.render(str(message or "Initializing"), True, (202, 214, 228))
+
+        self.screen.blit(title_surface, title_surface.get_rect(center=(center_x, center_y - 92)))
+        self.screen.blit(subtitle_surface, subtitle_surface.get_rect(center=(center_x, center_y - 44)))
+
+        bar_w = min(520, max(280, self.width // 3))
+        bar_h = 16
+        bar_rect = pygame.Rect(center_x - bar_w // 2, center_y + 8, bar_w, bar_h)
+        fill_rect = pygame.Rect(bar_rect.x + 2, bar_rect.y + 2, int((bar_w - 4) * progress), bar_h - 4)
+
+        pygame.draw.rect(self.screen, (24, 30, 42), bar_rect)
+        pygame.draw.rect(self.screen, (92, 112, 142), bar_rect, 1)
+        if fill_rect.width > 0:
+            pygame.draw.rect(self.screen, (128, 176, 220), fill_rect)
+
+        percent_surface = small_font.render(f"{int(round(progress * 100))}%", True, (176, 196, 218))
+        self.screen.blit(percent_surface, percent_surface.get_rect(midleft=(bar_rect.right + 14, bar_rect.centery)))
+        self.screen.blit(message_surface, message_surface.get_rect(center=(center_x, center_y + 52)))
+
+        pygame.display.flip()
 
     def get_active_simulation(self):
         if self.knowledge_layer_active:

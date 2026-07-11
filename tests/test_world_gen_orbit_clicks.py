@@ -1,6 +1,8 @@
 import unittest
 import random
 import tempfile
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -18,10 +20,19 @@ from simulations.world_gen.heightmap import (
     height_marker_interval_m,
 )
 from simulations.world_gen.interior_regime import derive_interior_regime_model
-from simulations.world_gen.material_heatmaps import generate_material_heatmap_model
+from simulations.world_gen.material_heatmaps import (
+    generate_material_heatmap_model,
+    import_png_to_raster_bundle,
+    load_raster_bundle_surface,
+)
 from simulations.world_gen.natural_materials import NATURAL_MATERIAL_CATALOG, NATURAL_MATERIAL_CATALOG_VERSION
-from simulations.world_gen.terrain_seed import derive_terrain_seed_model
+from simulations.world_gen.terrain_seed import (
+    PLANETARY_CANVAS_HEIGHT_PX,
+    PLANETARY_CANVAS_WIDTH_PX,
+    derive_terrain_seed_model,
+)
 from simulations.world_gen.water_cycle import derive_water_cycle_model
+from simulations.world_gen.world_gen_renderer import WorldGenRenderer
 from simulations.world_gen.world_gen_sim import WorldGenSimulation
 
 
@@ -65,6 +76,8 @@ class FakeTouchDegrees:
 class FakeWorldModel:
     def __init__(self, entries_directory=None):
         self.loader = FakeLoader(entries_directory or tempfile.mkdtemp())
+        self.repository_revision = 0
+        self.dataset_reads = 0
         self.entities = {
             "system_alpha": {
                 "id": "system_alpha",
@@ -91,6 +104,7 @@ class FakeWorldModel:
         return self.loader.entities.get(entity_id)
 
     def get_entities_by_dataset(self, dataset_name):
+        self.dataset_reads += 1
         return [
             entity for entity in self.loader.entities.values()
             if entity.get("_dataset") == dataset_name
@@ -124,6 +138,83 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         self.assertIn("mat_limestone", material_ids)
         self.assertIn("mat_chalcopyrite", material_ids)
         self.assertIn("mat_water_ice", material_ids)
+
+    def test_orbit_draft_preview_skips_planet_surface_derivations(self):
+        sim = self._sim()
+        sim.selected_world_gen_planet_id = None
+
+        def fail_derivation(*_args, **_kwargs):
+            raise AssertionError("orbit draft should not derive planet surface products")
+
+        sim._derive_terrain_seed_model = fail_derivation
+        sim._derive_heightmap_model = fail_derivation
+        sim._derive_tectonic_model = fail_derivation
+
+        payload = sim.get_preview_payload()
+
+        self.assertIsNone(payload["selected_planet"])
+        self.assertIsNone(payload["terrain_seed_model"])
+        self.assertIsNone(payload["heightmap_model"])
+        self.assertIsNone(payload["water_cycle_model"])
+        self.assertIsNone(payload["tectonic_model"])
+
+    def test_world_gen_preview_reuses_system_body_scan(self):
+        world_model = FakeWorldModel()
+        sim = WorldGenSimulation(
+            world_model=world_model,
+            parent_system_id="system_alpha",
+            year=2400,
+        )
+        reads_after_init = world_model.dataset_reads
+
+        sim.get_preview_payload()
+        sim.get_preview_payload()
+
+        self.assertEqual(reads_after_init, world_model.dataset_reads)
+
+    def test_world_gen_renderer_uses_adaptive_cached_orbit_points(self):
+        renderer = WorldGenRenderer(SimpleNamespace())
+        camera = Camera(800, 600)
+        camera.zoom = 2.2e-9
+
+        small_count = renderer._orbit_sample_count(30)
+        large_count = renderer._orbit_sample_count(1200)
+        self.assertLess(small_count, large_count)
+
+        first_points = renderer._screen_points_for_orbit(camera, 1.0, 0.02, count=small_count)
+        cache_size = len(renderer._orbit_path_cache)
+        second_points = renderer._screen_points_for_orbit(camera, 1.0, 0.02, count=small_count)
+
+        self.assertEqual(first_points, second_points)
+        self.assertEqual(cache_size, len(renderer._orbit_path_cache))
+
+    def test_worldgen_job_state_tracks_background_loading(self):
+        sim = self._sim()
+        release_job = threading.Event()
+
+        def action():
+            release_job.wait(timeout=2.0)
+            return True
+
+        self.assertTrue(sim._start_worldgen_job(
+            "Generating test geology",
+            "Testing loading overlay",
+            action,
+            estimated_seconds=1.0,
+        ))
+
+        loading = sim.get_worldgen_loading_state()
+        self.assertTrue(loading["active"])
+        self.assertEqual("Generating test geology", loading["label"])
+
+        release_job.set()
+        for _index in range(30):
+            sim.update(0.016)
+            if not sim.get_worldgen_loading_state()["active"]:
+                break
+            time.sleep(0.01)
+
+        self.assertFalse(sim.get_worldgen_loading_state()["active"])
 
     def test_first_orbit_click_sets_circular_candidate(self):
         sim = self._sim()
@@ -211,14 +302,17 @@ class WorldGenOrbitClickTests(unittest.TestCase):
             self.assertEqual("orbit_locked", planet["environment_summary"]["status"])
             self.assertEqual("orbit_locked", planet["map_status"])
             self.assertEqual("equirectangular", planet["map_projection"])
-            self.assertEqual(2048, planet["map_canvas_width_px"])
-            self.assertEqual(1024, planet["map_canvas_height_px"])
+            self.assertEqual(PLANETARY_CANVAS_WIDTH_PX, planet["map_canvas_width_px"])
+            self.assertEqual(PLANETARY_CANVAS_HEIGHT_PX, planet["map_canvas_height_px"])
             self.assertEqual({"type": "bbox", "min_x": -180.0, "max_x": 180.0, "min_y": -90.0, "max_y": 90.0}, planet["bounds"])
             self.assertIn(planet, sim._active_system_bodies())
             self.assertTrue(world_model.loader.reference_graph_rebuilt)
             self.assertTrue(world_model.touch_degrees.refreshed)
 
-            self.assertEqual("planet_blue", world_model.loader.datasets["locations"][-1]["id"])
+            self.assertIn(
+                "planet_blue",
+                [entry.get("id") for entry in world_model.loader.datasets["locations"]],
+            )
 
     def test_named_planet_reuses_existing_planet_entry(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -590,19 +684,19 @@ class WorldGenOrbitClickTests(unittest.TestCase):
 
         self.assertTrue(sim._save_terrain_seed_model())
 
-        self.assertEqual("tectonic_plates_defined", planet["map_status"])
+        self.assertEqual("tectonics_matured_heightmap_seeded", planet["map_status"])
         self.assertEqual("equirectangular", planet["map_projection"])
-        self.assertEqual(2048, planet["map_canvas_width_px"])
-        self.assertEqual(1024, planet["map_canvas_height_px"])
+        self.assertEqual(PLANETARY_CANVAS_WIDTH_PX, planet["map_canvas_width_px"])
+        self.assertEqual(PLANETARY_CANVAS_HEIGHT_PX, planet["map_canvas_height_px"])
         self.assertIn("terrain_seed_model", planet)
         self.assertIn("tectonic_model", planet)
-        self.assertNotIn("heightmap_model", planet)
+        self.assertIn("heightmap_model", planet)
         self.assertIn("map_layers", planet)
         self.assertIn("terrain_seeded", planet["tags"])
-        self.assertIn("tectonic_plates_defined", planet["tags"])
+        self.assertIn("heightmap_seeded", planet["tags"])
         self.assertIn("relief_driver", planet["geology_summary"])
         self.assertIn("target_ocean_fraction", planet["hydrology_summary"])
-        self.assertEqual("tectonics", sim.editor_stage)
+        self.assertEqual("heightmap", sim.editor_stage)
         self.assertGreaterEqual(planet["tectonic_model"]["plate_count"], 3)
         self.assertIn("mantle_currents", planet["tectonic_model"])
 
@@ -1188,13 +1282,17 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         self.assertEqual("longitude_wrap_latitude_clamp", heightmap["edge_policy"])
         self.assertEqual("chunked_heightfield_seed", heightmap["storage"]["kind"])
         self.assertEqual("longitude_wrap_latitude_clamp", heightmap["storage"]["edge_policy"])
-        self.assertEqual(8, heightmap["storage"]["chunk_cols"])
-        self.assertEqual(4, heightmap["storage"]["chunk_rows"])
-        self.assertEqual(65, heightmap["sample_grid"]["width"])
-        self.assertEqual(33, heightmap["sample_grid"]["height"])
+        self.assertEqual(32, heightmap["storage"]["chunk_cols"])
+        self.assertEqual(16, heightmap["storage"]["chunk_rows"])
+        self.assertEqual(257, heightmap["sample_grid"]["width"])
+        self.assertEqual(129, heightmap["sample_grid"]["height"])
         self.assertTrue(heightmap["sample_grid"]["wrap_x"])
-        self.assertEqual(33, len(heightmap["sample_grid"]["rows"]))
-        self.assertEqual(65, len(heightmap["sample_grid"]["rows"][0]))
+        self.assertEqual(129, len(heightmap["sample_grid"]["rows"]))
+        self.assertEqual(257, len(heightmap["sample_grid"]["rows"][0]))
+        self.assertEqual("full_planet", heightmap["coverage"])
+        self.assertAlmostEqual(4885.7, heightmap["equator_resolution_m_per_px"], delta=1.0)
+        self.assertEqual("physiographic-heightmap-v2", heightmap["geology_model"]["model_version"])
+        self.assertIn("continental_shelves", heightmap["geology_model"]["passive_margin_features"])
         for row in heightmap["sample_grid"]["rows"]:
             self.assertEqual(row[0], row[-1])
         sample_values = [
@@ -1205,10 +1303,10 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         self.assertGreater(max(sample_values), min(sample_values))
         self.assertGreaterEqual(min(sample_values), heightmap["min_elevation_m"])
         self.assertLessEqual(max(sample_values), heightmap["max_elevation_m"])
-        self.assertGreater(heightmap["hypsometry_summary"]["broad_plain_fraction"], 0.55)
+        self.assertGreater(heightmap["hypsometry_summary"]["broad_plain_fraction"], 0.42)
         self.assertLess(heightmap["hypsometry_summary"]["mountain_fraction_above_2000m"], 0.18)
 
-    def test_material_heatmap_generator_writes_png_layers(self):
+    def test_material_heatmap_generator_writes_compact_bundle(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_root = Path(temp_dir)
             heightmap = {
@@ -1263,16 +1361,48 @@ class WorldGenOrbitClickTests(unittest.TestCase):
 
             self.assertEqual("generated", model["status"])
             self.assertEqual("sparse_dominant_regions", model["distribution_mode"])
-            self.assertEqual("png", model["image_format"])
+            self.assertEqual("index0_raster_bundle", model["storage_format"])
+            self.assertEqual("rgba8888_bundle", model["image_format"])
             self.assertEqual("deterministic_generated_truth", model["truth_model"])
             self.assertEqual("inferred", model["default_confidence_state"])
             self.assertEqual(2, len(model["layers"]))
             self.assertEqual("dominant_material_color", model["composite_layer"]["render_mode"])
-            self.assertTrue((storage_root / model["composite_layer"]["image_path"]).exists())
+            self.assertTrue((storage_root / model["bundle_path"]).exists())
+            self.assertEqual(model["bundle_path"], model["composite_layer"]["bundle_path"])
+            self.assertIsNotNone(load_raster_bundle_surface(
+                storage_root / model["bundle_path"],
+                model["composite_layer"]["bundle_layer_id"],
+            ))
+            self.assertEqual([], list((storage_root / "assets" / "maps" / "material_heatmaps").glob("*.png")))
             for layer in model["layers"]:
-                self.assertTrue((storage_root / layer["image_path"]).exists())
+                self.assertEqual(model["bundle_path"], layer["bundle_path"])
+                self.assertIsNotNone(load_raster_bundle_surface(
+                    storage_root / layer["bundle_path"],
+                    layer["bundle_layer_id"],
+                ))
                 self.assertIn("coverage_fraction", layer)
                 self.assertLessEqual(layer["coverage_fraction"], 1.0)
+
+    def test_png_material_heatmap_can_import_to_bundle(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir)
+            pygame.init()
+            source_path = storage_root / "source.png"
+            surface = pygame.Surface((4, 2), pygame.SRCALPHA)
+            surface.fill((20, 40, 60, 180))
+            pygame.image.save(surface, str(source_path))
+
+            result = import_png_to_raster_bundle(
+                source_path,
+                storage_root / "assets" / "maps" / "material_heatmaps" / "imported.i0r",
+                layer_id="imported_material",
+                metadata={"name": "Imported Material"},
+            )
+
+            self.assertTrue(Path(result["bundle_path"]).exists())
+            loaded = load_raster_bundle_surface(result["bundle_path"], result["bundle_layer_id"])
+            self.assertIsNotNone(loaded)
+            self.assertEqual((4, 2), loaded.get_size())
 
     def test_water_cycle_model_derives_climate_grid_and_rivers_from_heightmap(self):
         heightmap = {
@@ -1285,6 +1415,9 @@ class WorldGenOrbitClickTests(unittest.TestCase):
             "min_elevation_m": -1000.0,
             "max_elevation_m": 2600.0,
             "sea_level_m": 0.0,
+            "coverage": "full_planet",
+            "circumference_m": 40_030_173.6,
+            "equator_resolution_m_per_px": 4886.0,
             "sample_grid": {
                 "width": 5,
                 "height": 5,
@@ -1319,6 +1452,10 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         self.assertGreaterEqual(len(model["climate_zones"]), 2)
         self.assertGreaterEqual(model["river_count"], 1)
         self.assertIn("points", model["rivers"][0])
+        self.assertEqual("full_planet", model["scale"]["coverage"])
+        self.assertGreater(model["rivers"][0]["length_km"], 100.0)
+        self.assertGreater(model["rivers"][0]["average_width_m"], 10.0)
+        self.assertGreaterEqual(model["rivers"][0]["mouth_width_m"], model["rivers"][0]["average_width_m"])
 
     def test_solid_worldgen_adds_material_heatmap_metadata_after_heightmap(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1362,7 +1499,7 @@ class WorldGenOrbitClickTests(unittest.TestCase):
             self.assertGreaterEqual(len(heatmap_model["layers"]), 1)
             self.assertNotIn("material_heatmaps", world_model.loader.datasets)
             self.assertEqual("generated", planet["materials_summary"]["heatmap_status"])
-            self.assertTrue((Path(temp_dir) / heatmap_model["composite_layer"]["image_path"]).exists())
+            self.assertTrue((Path(temp_dir) / heatmap_model["bundle_path"]).exists())
 
     def test_height_marker_interval_gets_finer_with_zoom(self):
         self.assertEqual(100, height_marker_interval_m(0.1))

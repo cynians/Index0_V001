@@ -5048,6 +5048,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 self._relayout_cards()
                 return "__ui_consumed__"
 
+            pending_production_action_opened = False
             if card_view.handle_keydown(card, event):
                 self._bring_card_to_front(index)
                 pending_production_action_opened = self._open_pending_production_site_prompt(card)

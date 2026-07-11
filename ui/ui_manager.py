@@ -305,6 +305,22 @@ class UIManager:
                 "active": active_layer in {"locations", "visual_map"},
                 "color": (82, 108, 92),
             })
+        if "heightmap" in available_layers:
+            entries.append({
+                "label": "Height",
+                "detail": "",
+                "layer_kind": "heightmap",
+                "active": active_layer == "heightmap",
+                "color": (118, 132, 144),
+            })
+        if "hydrology" in available_layers:
+            entries.append({
+                "label": "Climate",
+                "detail": "",
+                "layer_kind": "hydrology",
+                "active": active_layer == "hydrology",
+                "color": (82, 132, 148),
+            })
         if has_materials:
             entries.append({
                 "label": "Materials",
@@ -1084,6 +1100,29 @@ class UIManager:
             map_control_y = 78
             next_button_y = map_control_y + 30
             next_button_y = self._rebuild_map_layer_menu(active_sim, map_control_x, map_control_y, width=map_control_w) + 12
+
+            can_author_locations = bool(
+                getattr(active_sim, "can_create_location_draft", lambda: False)()
+            ) and not is_editing_map_selection
+            self.buttons.append(
+                UIButton("link_existing_map_location", "Link Existing Location",
+                         pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
+                         enabled=not is_editing_map_selection)
+            )
+            next_button_y += 40
+            self.buttons.append(
+                UIButton("new_location:region", "New Polygon Location",
+                         pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
+                         enabled=can_author_locations)
+            )
+            next_button_y += 40
+            self.buttons.append(
+                UIButton("new_point_location:site", "New Point Location",
+                         pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
+                         enabled=can_author_locations)
+            )
+            next_button_y += 40
+
             self.buttons.append(
                 UIButton("open_repository", "Open Repository",
                          pygame.Rect(map_control_x, next_button_y, map_control_w, button_height))

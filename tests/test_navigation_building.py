@@ -317,6 +317,57 @@ class NavigationBuildingTests(unittest.TestCase):
         self.assertEqual(("map_place_parent", "loc_island"), tab.tab_key)
         self.assertEqual("Place: Island on Country", tab.name)
 
+    def test_link_existing_map_location_opens_selected_child_placement(self):
+        controller = self._controller([
+            {
+                "id": "loc_country",
+                "name": "Country",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "country",
+                "bounds": {"type": "polygon", "points": [(0, 0), (20, 0), (20, 20), (0, 20)]},
+            },
+            {
+                "id": "loc_island",
+                "name": "Island",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "island",
+                "parent_location": "loc_country",
+            },
+        ])
+        active_sim = SimpleNamespace(
+            selected_entity_id="loc_island",
+            context=SimpleNamespace(root_entity_id="loc_country"),
+        )
+
+        handled = controller.handle_ui_action("link_existing_map_location", active_sim)
+
+        self.assertTrue(handled)
+        tab = controller.app.tab_manager.tabs[0]
+        self.assertEqual(("map_place_parent", "loc_island"), tab.tab_key)
+
+    def test_link_existing_map_location_opens_scoped_repository_without_selection(self):
+        controller = self._controller([
+            {
+                "id": "loc_country",
+                "name": "Country",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "country",
+            },
+        ])
+        active_sim = SimpleNamespace(
+            selected_entity_id=None,
+            context=SimpleNamespace(root_entity_id="loc_country"),
+        )
+
+        handled = controller.handle_ui_action("link_existing_map_location", active_sim)
+
+        self.assertTrue(handled)
+        self.assertTrue(controller.app.knowledge_layer_active)
+        self.assertEqual("loc_country", controller.app.repository_scope_entity_id)
+
     def test_choose_parent_repository_action_starts_parent_assignment(self):
         controller = self._controller([
             {

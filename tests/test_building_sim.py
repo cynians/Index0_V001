@@ -278,6 +278,45 @@ class BuildingSimulationTests(unittest.TestCase):
         )
         self.assertTrue(planet_rect["has_heightmap_base"])
 
+    def test_map_sim_creates_point_location_draft(self):
+        planet = {
+            "id": "loc_planet_blue",
+            "name": "Blue Planet",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "bounds": {
+                "type": "bbox",
+                "min_x": -180,
+                "max_x": 180,
+                "min_y": -90,
+                "max_y": 90,
+            },
+            "start_year": 2400,
+        }
+        world_model = FakeWorldModel([planet])
+        sim = MapSimulation(SimulationContext(
+            year=2400,
+            root_entity_id=planet["id"],
+            world_model=world_model,
+        ))
+
+        self.assertTrue(sim.begin_point_location_draft("site"))
+        sim.draft_point_location_pos = (12.5, -4.25)
+
+        self.assertTrue(sim.can_finish_map_editor())
+        self.assertTrue(sim.finish_map_editor())
+
+        created = world_model.get_entity(sim.last_saved_location_id)
+        self.assertEqual("site", created["location_class"])
+        self.assertEqual("point_location", created["location_role"])
+        self.assertEqual("loc_planet_blue", created["parent_location"])
+        self.assertEqual({"type": "point", "coordinate_space": "map_world", "x": 12.5, "y": -4.25}, created["coords"])
+
+        layers = sim.get_layers()
+        point_layers = [layer for layer in layers if layer.get("entity_id") == created["id"]]
+        self.assertEqual("marker", point_layers[0]["shape"])
+
     def test_planet_radius_overrides_tiny_placeholder_bbox(self):
         planet = {
             "id": "loc_planet_blue",
@@ -320,6 +359,76 @@ class BuildingSimulationTests(unittest.TestCase):
         self.assertGreater(base_layer["height_world"], 175.0)
         self.assertGreater(sim.bounds["max_x"] - sim.bounds["min_x"], 350.0)
         self.assertGreater(sim.bounds["max_y"] - sim.bounds["min_y"], 175.0)
+
+    def test_map_sim_exposes_worldgen_hydrology_layer_for_planet_root(self):
+        planet = {
+            "id": "loc_planet_blue",
+            "name": "Blue Planet",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "bounds": {
+                "type": "bbox",
+                "min_x": -180,
+                "max_x": 180,
+                "min_y": -90,
+                "max_y": 90,
+            },
+            "heightmap_model": {
+                "status": "heightmap_seeded",
+                "sample_grid": {
+                    "width": 3,
+                    "height": 3,
+                    "rows": [
+                        [0.0, 100.0, 0.0],
+                        [-500.0, 1200.0, -500.0],
+                        [0.0, 50.0, 0.0],
+                    ],
+                },
+            },
+            "water_cycle_model": {
+                "status": "water_cycle_seeded",
+                "climate_grid": {
+                    "width": 3,
+                    "height": 3,
+                    "rows": [
+                        ["arid", "arid", "arid"],
+                        ["temperate_dry", "highland", "temperate_dry"],
+                        ["arid", "arid", "arid"],
+                    ],
+                    "elevation_rows": [
+                        [0.0, 100.0, 0.0],
+                        [-500.0, 1200.0, -500.0],
+                        [0.0, 50.0, 0.0],
+                    ],
+                },
+                "climate_zones": [
+                    {"id": "arid", "label": "Arid", "color": [196, 176, 118], "fraction": 0.66},
+                    {"id": "highland", "label": "Highland", "color": [138, 128, 118], "fraction": 0.11},
+                ],
+                "rivers": [
+                    {"id": "river_01", "points": [{"x": 0.5, "y": 0.4}, {"x": 0.6, "y": 0.7}], "flow": 0.4},
+                ],
+            },
+            "start_year": 2400,
+        }
+        world_model = FakeWorldModel([planet])
+        sim = MapSimulation(SimulationContext(
+            year=2400,
+            root_entity_id=planet["id"],
+            world_model=world_model,
+        ))
+
+        self.assertIn(sim.HEIGHTMAP_LAYER_KIND, sim.get_available_layer_kinds())
+        self.assertIn(sim.HYDROLOGY_LAYER_KIND, sim.get_available_layer_kinds())
+        self.assertTrue(sim.set_active_layer_kind(sim.HYDROLOGY_LAYER_KIND))
+
+        layers = sim.get_layers()
+
+        self.assertEqual(1, len(layers))
+        self.assertEqual("hydrology_climate", layers[0]["shape"])
+        self.assertEqual("loc_planet_blue", layers[0]["entity_id"])
+        self.assertEqual("water_cycle_seeded", layers[0]["water_cycle_model"]["status"])
 
     def test_map_sim_exposes_material_heatmap_layer_for_planet_root(self):
         planet = {
@@ -385,6 +494,61 @@ class BuildingSimulationTests(unittest.TestCase):
         self.assertEqual(["composite", "mat_basalt"], [item["id"] for item in items])
         self.assertTrue(sim.set_active_material_distribution_item("mat_basalt"))
         self.assertEqual("assets/maps/material_heatmaps/loc_planet_blue/mat_basalt.png", sim.get_layers()[0]["image_path"])
+
+    def test_map_sim_exposes_bundled_material_heatmap_layer_for_planet_root(self):
+        planet = {
+            "id": "loc_planet_blue",
+            "name": "Blue Planet",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "bounds": {
+                "type": "bbox",
+                "min_x": -180,
+                "max_x": 180,
+                "min_y": -90,
+                "max_y": 90,
+            },
+            "material_heatmap_model": {
+                "status": "generated",
+                "storage_format": "index0_raster_bundle",
+                "bundle_path": "assets/maps/material_heatmaps/loc_planet_blue.i0r",
+                "composite_layer": {
+                    "name": "Composite Material Heatmap",
+                    "bundle_path": "assets/maps/material_heatmaps/loc_planet_blue.i0r",
+                    "bundle_layer_id": "composite",
+                },
+                "layers": [
+                    {
+                        "id": "heatmap_mat_basalt",
+                        "material_id": "mat_basalt",
+                        "name": "Basalt",
+                        "bundle_path": "assets/maps/material_heatmaps/loc_planet_blue.i0r",
+                        "bundle_layer_id": "heatmap_mat_basalt",
+                        "confidence": 0.82,
+                    }
+                ],
+            },
+            "start_year": 2400,
+        }
+        world_model = FakeWorldModel([planet])
+        sim = MapSimulation(SimulationContext(
+            year=2400,
+            root_entity_id=planet["id"],
+            world_model=world_model,
+        ))
+
+        self.assertIn(sim.MATERIAL_HEATMAP_LAYER_KIND, sim.get_available_layer_kinds())
+        self.assertTrue(sim.set_active_layer_kind(sim.MATERIAL_HEATMAP_LAYER_KIND))
+        layers = sim.get_layers()
+        self.assertEqual(1, len(layers))
+        self.assertEqual("assets/maps/material_heatmaps/loc_planet_blue.i0r", layers[0]["bundle_path"])
+        self.assertEqual("composite", layers[0]["bundle_layer_id"])
+
+        items = sim.get_material_distribution_items()
+        self.assertEqual(["composite", "mat_basalt"], [item["id"] for item in items])
+        self.assertTrue(sim.set_active_material_distribution_item("mat_basalt"))
+        self.assertEqual("heatmap_mat_basalt", sim.get_layers()[0]["bundle_layer_id"])
 
     def test_map_sim_defaults_to_combined_map_layer(self):
         planet = {

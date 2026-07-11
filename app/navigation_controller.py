@@ -1054,6 +1054,25 @@ class NavigationController:
                 )
             )
 
+        if str(action_id).startswith("new_point_location:") and active_sim is not None:
+            location_class = str(action_id).split(":", 1)[1] or "site"
+            return bool(
+                getattr(active_sim, "begin_point_location_draft", lambda _location_class="site": False)(
+                    location_class
+                )
+            )
+
+        if action_id == "link_existing_map_location" and active_sim is not None:
+            selected_entity_id = getattr(active_sim, "selected_entity_id", None)
+            root_entity_id = getattr(getattr(active_sim, "context", None), "root_entity_id", None)
+            if selected_entity_id and selected_entity_id != root_entity_id:
+                if self.open_location_parent_placement_tab(selected_entity_id):
+                    return True
+
+            self.app.repository_scope_entity_id = root_entity_id
+            self.app.knowledge_layer_active = True
+            return True
+
         if action_id in {"new_map_rectangle", "new_map_square"} and active_sim is not None:
             return bool(getattr(active_sim, "begin_map_square_draft", lambda: False)())
 

@@ -1,6 +1,12 @@
 import math
 
 from simulations.world_gen.map_seed import resolved_map_seed, seed_range
+from simulations.world_gen.terrain_seed import (
+    PLANETARY_CANVAS_HEIGHT_PX,
+    PLANETARY_CANVAS_WIDTH_PX,
+)
+
+_NOISE_CORNER_CACHE = {}
 
 
 def _clamp(value, low, high):
@@ -56,6 +62,110 @@ def _wrapped_delta(a, b):
     elif delta < -0.5:
         delta += 1.0
     return delta
+
+
+def _smoothstep(value):
+    value = _clamp(value, 0.0, 1.0)
+    return value * value * (3.0 - 2.0 * value)
+
+
+def _lerp(a, b, t):
+    return float(a) * (1.0 - t) + float(b) * t
+
+
+def _value_noise(map_seed, key, nx, ny, cells_x, cells_y):
+    cells_x = max(1, int(cells_x or 1))
+    cells_y = max(1, int(cells_y or 1))
+    gx = float(nx) * cells_x
+    gy = _clamp(float(ny), 0.0, 1.0) * cells_y
+    x0 = math.floor(gx)
+    y0 = math.floor(gy)
+    tx = _smoothstep(gx - x0)
+    ty = _smoothstep(gy - y0)
+    y0 = max(0, min(cells_y, y0))
+    y1 = max(0, min(cells_y, y0 + 1))
+    x1 = x0 + 1
+
+    def corner(ix, iy):
+        wrapped_x = int(ix) % cells_x
+        clamped_y = max(0, min(cells_y, int(iy)))
+        cache_key = (map_seed, key, cells_x, cells_y, wrapped_x, clamped_y)
+        cached = _NOISE_CORNER_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+        value = seed_range(map_seed, f"{key}:{cells_x}:{cells_y}:{wrapped_x}:{clamped_y}", -1.0, 1.0)
+        if len(_NOISE_CORNER_CACHE) > 80_000:
+            _NOISE_CORNER_CACHE.clear()
+        _NOISE_CORNER_CACHE[cache_key] = value
+        return value
+
+    top = _lerp(corner(x0, y0), corner(x1, y0), tx)
+    bottom = _lerp(corner(x0, y1), corner(x1, y1), tx)
+    return _lerp(top, bottom, ty)
+
+
+def _fbm_noise(map_seed, key, nx, ny, base_cells=4, octaves=4, lacunarity=2.0, gain=0.52):
+    total = 0.0
+    amplitude = 1.0
+    amplitude_sum = 0.0
+    cells = max(1, int(base_cells or 1))
+    for octave in range(max(1, int(octaves or 1))):
+        total += _value_noise(map_seed, f"{key}:octave_{octave}", nx, ny, cells, max(1, cells // 2)) * amplitude
+        amplitude_sum += amplitude
+        amplitude *= gain
+        cells = max(cells + 1, int(cells * lacunarity))
+    if amplitude_sum <= 0.0:
+        return 0.0
+    return _clamp(total / amplitude_sum, -1.0, 1.0)
+
+
+def _continent_signal(nx, ny, map_seed=""):
+    """
+    Produce broad, deterministic continental lithosphere. The signal mixes
+    old cratons, sutured terranes, and rifted margins instead of simple blobs.
+    """
+    warp_x = _fbm_noise(map_seed, "continental_warp_x", nx, ny, base_cells=3, octaves=3) * 0.055
+    warp_y = _fbm_noise(map_seed, "continental_warp_y", nx, ny, base_cells=3, octaves=3) * 0.035
+    wx = (nx + warp_x) % 1.0
+    wy = _clamp(ny + warp_y, 0.0, 1.0)
+
+    signal = -0.44
+    for index in range(8):
+        cx = seed_range(map_seed, f"continent_{index}:x", 0.0, 1.0)
+        cy = seed_range(map_seed, f"continent_{index}:y", 0.12, 0.88)
+        width = seed_range(map_seed, f"continent_{index}:width", 0.075, 0.19)
+        height = seed_range(map_seed, f"continent_{index}:height", 0.055, 0.16)
+        strength = seed_range(map_seed, f"continent_{index}:strength", 0.18, 0.48)
+        angle = seed_range(map_seed, f"continent_{index}:angle", 0.0, math.tau)
+        dx = _wrapped_delta(wx, cx)
+        dy = wy - cy
+        rx = dx * math.cos(angle) - dy * math.sin(angle)
+        ry = dx * math.sin(angle) + dy * math.cos(angle)
+        distance = (rx / max(0.01, width)) ** 2 + (ry / max(0.01, height)) ** 2
+        core = math.exp(-distance)
+        shoulder = math.exp(-(distance * 0.28)) * 0.38
+        signal += strength * max(core, shoulder)
+
+    terrane_texture = _fbm_noise(map_seed, "continental_terrane_texture", wx, wy, base_cells=7, octaves=4)
+    margin_texture = _fbm_noise(map_seed, "continental_margin_texture", wx, wy, base_cells=13, octaves=3)
+
+    ocean_basin_a = 0.14 * math.sin(
+        wx * math.tau * seed_range(map_seed, "continent_ocean_freq_a", 0.7, 1.2)
+        + seed_range(map_seed, "continent_ocean_phase_a", 0.0, math.tau)
+    )
+    ocean_basin_b = 0.10 * math.cos(
+        (wx * 0.8 + wy * 0.55)
+        * math.tau
+        * seed_range(map_seed, "continent_ocean_freq_b", 0.9, 1.6)
+        + seed_range(map_seed, "continent_ocean_phase_b", 0.0, math.tau)
+    )
+    latitude_taper = 1.0 - max(0.0, abs(wy - 0.5) * 2.0 - 0.78) * 1.35
+    signal += terrane_texture * 0.16 + margin_texture * 0.07
+    return _clamp((signal + ocean_basin_a + ocean_basin_b) * max(0.28, latitude_taper), -0.85, 1.0)
+
+
+def _continental_mask(signal):
+    return _smoothstep((float(signal) + 0.08) / 0.42)
 
 
 def _ridge_belt(nx, ny, phase, latitude_center, amplitude, width):
@@ -171,28 +281,98 @@ def _boundary_kind_lookup(tectonic_model):
     return lookup
 
 
+def _representative_boundary_segments(tectonic_model, max_segments=96):
+    segments = [
+        segment
+        for segment in (tectonic_model.get("boundary_segments") or [])
+        if isinstance(segment, dict)
+    ]
+    if len(segments) <= max_segments:
+        return segments
+
+    by_kind = {}
+    for segment in segments:
+        by_kind.setdefault(segment.get("kind", "passive"), []).append(segment)
+
+    kind_priority = ["collision", "subduction", "divergent", "transform", "passive"]
+    selected = []
+    active_kind_count = max(1, sum(1 for items in by_kind.values() if items))
+    base_limit = max(8, int(max_segments / active_kind_count))
+    for kind in kind_priority:
+        items = by_kind.get(kind) or []
+        if not items:
+            continue
+        kind_limit = base_limit
+        if kind in {"collision", "subduction", "divergent"}:
+            kind_limit = int(base_limit * 1.35)
+        kind_limit = max(6, min(len(items), kind_limit))
+        stride = max(1, len(items) / kind_limit)
+        for index in range(kind_limit):
+            selected.append(items[min(len(items) - 1, int(index * stride))])
+            if len(selected) >= max_segments:
+                return selected
+
+    if len(selected) < max_segments:
+        remaining = [segment for segment in segments if segment not in selected]
+        stride = max(1, len(remaining) / max(1, max_segments - len(selected)))
+        for index in range(max_segments - len(selected)):
+            if not remaining:
+                break
+            selected.append(remaining[min(len(remaining) - 1, int(index * stride))])
+    return selected[:max_segments]
+
+
+def _heightmap_tectonic_model(tectonic_model):
+    if not isinstance(tectonic_model, dict):
+        return tectonic_model
+    segments = _representative_boundary_segments(tectonic_model)
+    if segments is tectonic_model.get("boundary_segments"):
+        return tectonic_model
+    sampled = dict(tectonic_model)
+    sampled["boundary_segments"] = segments
+    sampled["heightmap_boundary_segment_count"] = len(segments)
+    sampled["original_boundary_segment_count"] = len(tectonic_model.get("boundary_segments") or [])
+    return sampled
+
+
 def _tectonic_height_m(nx, ny, terrain, tectonic_model):
     plates = tectonic_model.get("plates") or []
     if not plates:
         return None
     base, plate = _blended_plate_base_height_m(nx, ny, plates)
     plate_type = plate.get("plate_type") if isinstance(plate, dict) else "mixed"
+    plate_continentality = float(plate.get("continentality", 0.5) or 0.5) if isinstance(plate, dict) else 0.5
 
     longitude = nx * math.tau
     latitude = (ny - 0.5) * math.pi
     map_seed = str(tectonic_model.get("map_seed") or terrain.get("map_seed") or "")
+    continent_signal = _continent_signal(nx, ny, map_seed=map_seed)
+    continent_mask = _continental_mask(continent_signal + (plate_continentality - 0.5) * 0.48)
+    rugged_noise = _fbm_noise(map_seed, "rugged_relief", nx, ny, base_cells=18, octaves=4)
+    shield_noise = _fbm_noise(map_seed, "cratonic_shields", nx, ny, base_cells=8, octaves=3)
+    basin_noise = _fbm_noise(map_seed, "sedimentary_basins", nx, ny, base_cells=11, octaves=3)
     broad_relief = (
         360.0 * math.sin(longitude * seed_range(map_seed, "tectonic_broad_freq_a", 0.85, 1.45) + latitude * 0.75)
         + 220.0 * math.cos(longitude * seed_range(map_seed, "tectonic_broad_freq_b", 1.65, 2.55) - latitude)
         + 95.0 * math.sin(longitude * 4.1 + latitude * 1.7)
     )
     height = base + broad_relief
+    height += continent_mask * (780.0 + shield_noise * 360.0)
+    height += (1.0 - continent_mask) * (-660.0 + basin_noise * 220.0)
+    if plate_type == "oceanic":
+        height -= 520.0
+    elif plate_type == "continental":
+        height += 280.0
 
     effects = tectonic_model.get("surface_effects") if isinstance(tectonic_model.get("surface_effects"), dict) else {}
     uplift_gain = 0.7 + float(effects.get("orogenic_uplift", 0.0) or 0.0) * 0.9
     basin_gain = 0.65 + float(effects.get("ocean_basin_opening", 0.0) or 0.0) * 0.75
     erosion = float(effects.get("erosion_progress", 0.0) or 0.0)
     boundary_lookup = _boundary_kind_lookup(tectonic_model)
+    convergent_influence = 0.0
+    divergent_influence = 0.0
+    trench_influence = 0.0
+    transform_influence = 0.0
 
     for segment in (tectonic_model.get("boundary_segments") or []):
         distance = _wrapped_point_segment_distance(
@@ -210,13 +390,27 @@ def _tectonic_height_m(nx, ny, terrain, tectonic_model):
         kind = boundary_lookup.get(tuple(sorted((segment.get("plate_a"), segment.get("plate_b")))), "passive")
         if kind == "collision":
             height += 4300.0 * uplift_gain * influence
+            convergent_influence = max(convergent_influence, influence)
         elif kind == "subduction":
             height += 3300.0 * uplift_gain * influence
             height -= 1800.0 * influence * (1.0 if plate_type == "oceanic" else 0.3)
+            convergent_influence = max(convergent_influence, influence)
+            trench_influence = max(trench_influence, influence)
         elif kind == "divergent":
             height -= 2100.0 * basin_gain * influence
+            divergent_influence = max(divergent_influence, influence)
         elif kind == "transform":
             height += 650.0 * influence
+            transform_influence = max(transform_influence, influence)
+
+    continental_shelf = math.exp(-(((continent_signal + 0.10) / 0.18) ** 2))
+    passive_margin = continental_shelf * max(0.0, 1.0 - convergent_influence - divergent_influence * 0.7)
+    height += passive_margin * 520.0
+    height -= (1.0 - continent_mask) * max(0.0, 1.0 - divergent_influence) * 380.0
+    height += divergent_influence * (950.0 if plate_type == "oceanic" else -380.0)
+    height -= trench_influence * (1150.0 + (1.0 - continent_mask) * 900.0)
+    height += transform_influence * rugged_noise * 520.0
+    height += rugged_noise * (180.0 + continent_mask * 380.0 + convergent_influence * 950.0)
 
     if height > 1000.0:
         height *= 1.0 - min(0.34, erosion * 0.24)
@@ -260,8 +454,10 @@ def _wave_height(nx, ny, terrain, tectonic_model=None, crater_model=None, map_se
         + 0.11 * math.cos(longitude * basin_b - latitude * 1.2 + phase_b)
         + 0.07 * math.sin(longitude * basin_c + latitude * 0.7 + phase_c)
     )
+    continents = _continent_signal(nx, ny, map_seed=map_seed)
     lowland_bias = -0.12 - water_smoothing * 0.22
     value = lowland_bias + broad_basins * (0.7 + roughness * 0.35)
+    value += continents * (0.26 + roughness * 0.14)
 
     tectonic_height = None
     if isinstance(tectonic_model, dict) and tectonic_model.get("status") == "tectonics_advanced":
@@ -340,8 +536,8 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
     map_seed = terrain.get("map_seed") or resolved_map_seed(seed, planet_id=planet_id)
     simulated_age_myr = float(terrain.get("simulated_age_myr", 0.0) or 0.0)
 
-    width_px = int(canvas.get("width_px", 2048) or 2048)
-    height_px = int(canvas.get("height_px", 1024) or 1024)
+    width_px = int(canvas.get("width_px", PLANETARY_CANVAS_WIDTH_PX) or PLANETARY_CANVAS_WIDTH_PX)
+    height_px = int(canvas.get("height_px", PLANETARY_CANVAS_HEIGHT_PX) or PLANETARY_CANVAS_HEIGHT_PX)
     min_elevation = float(heightfield.get("min_elevation_m", -4000.0) or -4000.0)
     max_elevation = float(heightfield.get("max_elevation_m", 4000.0) or 4000.0)
     sea_level = heightfield.get("sea_level_m")
@@ -358,9 +554,12 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         target_ocean_fraction = 0.0
     midpoint = (max_elevation + min_elevation) * 0.5
     half_range = max(1.0, (max_elevation - min_elevation) * 0.5)
+    sampled_tectonic_model = _heightmap_tectonic_model(tectonic_model)
 
-    sample_width = 65
-    sample_height = 33
+    sample_width = max(129, min(257, int(width_px // 32) + 1))
+    if sample_width % 2 == 0:
+        sample_width += 1
+    sample_height = max(65, min(129, int((sample_width - 1) / 2) + 1))
     rows = []
     sample_values = []
     sample_positions = []
@@ -369,7 +568,7 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         row_values = []
         for col in range(sample_width):
             nx = 0.0 if col == sample_width - 1 else col / max(1, sample_width - 1)
-            normalized = _wave_height(nx, ny, terrain, tectonic_model=tectonic_model, crater_model=crater_model, map_seed=map_seed)
+            normalized = _wave_height(nx, ny, terrain, tectonic_model=sampled_tectonic_model, crater_model=crater_model, map_seed=map_seed)
             elevation = midpoint + normalized * half_range
             elevation = round(_clamp(elevation, min_elevation, max_elevation), 1)
             row_values.append(elevation)
@@ -379,7 +578,7 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         sample_values.extend(row_values)
         rows.append(row_values)
 
-    if isinstance(tectonic_model, dict) and tectonic_model.get("status") == "tectonics_advanced":
+    if isinstance(sampled_tectonic_model, dict) and sampled_tectonic_model.get("status") == "tectonics_advanced":
         rows = _smooth_height_rows(rows, passes=2, blend=0.28)
         sample_values = [value for row in rows for value in row]
         sample_positions = [
@@ -453,6 +652,10 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         "edge_policy": "longitude_wrap_latitude_clamp",
         "width_px": width_px,
         "height_px": height_px,
+        "coverage": canvas.get("coverage", "full_planet"),
+        "radius_m": canvas.get("radius_m") or (physics or {}).get("radius_m"),
+        "circumference_m": canvas.get("circumference_m"),
+        "equator_resolution_m_per_px": canvas.get("equator_resolution_m_per_px"),
         "vertical_datum": canvas.get("vertical_datum", "mean_radius"),
         "elevation_unit": "m",
         "min_elevation_m": round(min_elevation, 1),
@@ -481,6 +684,15 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
             "ocean_fraction": round(ocean_fraction, 3),
             "ice_fraction": round(ice_fraction, 3),
         },
+        "geology_model": {
+            "model_version": "physiographic-heightmap-v2",
+            "continental_lithosphere": "warped_cratons_sutured_terranes",
+            "oceanic_lithosphere": "abyssal_plains_ridges_trenches",
+            "active_margin_features": ["orogenic_belts", "volcanic_arcs", "foreland_basins"],
+            "passive_margin_features": ["continental_shelves", "slope_breaks", "rifted_edges"],
+            "erosion_model": "age_and_hydrology_smoothed_relief",
+            "sample_resolution": f"{sample_width}x{sample_height}",
+        },
         "storage": {
             "kind": "chunked_heightfield_seed",
             "chunk_width_px": 256,
@@ -494,6 +706,11 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         "source_models": {
             "tectonics": (tectonic_model or {}).get("status") if isinstance(tectonic_model, dict) else None,
             "craters": (crater_model or {}).get("status") if isinstance(crater_model, dict) else None,
+            "heightmap_boundary_segments": (
+                sampled_tectonic_model.get("heightmap_boundary_segment_count")
+                if isinstance(sampled_tectonic_model, dict)
+                else None
+            ),
         },
     }
 

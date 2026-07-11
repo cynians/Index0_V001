@@ -1,6 +1,10 @@
 from simulations.world_gen.map_seed import resolved_map_seed, seed_range
 
 
+PLANETARY_CANVAS_WIDTH_PX = 8192
+PLANETARY_CANVAS_HEIGHT_PX = 4096
+
+
 def _clamp(value, low, high):
     return max(low, min(high, float(value)))
 
@@ -66,6 +70,7 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
 
     radius_earth = max(0.01, float(physics.get("radius_earth", seed.get("radius_earth", 1.0)) or 1.0))
     radius_m = max(1.0, float(physics.get("radius_m", radius_earth * 6_371_000.0) or 1.0))
+    circumference_m = 2.0 * 3.141592653589793 * radius_m
     gravity_g = max(0.05, float(physics.get("surface_gravity_g", 1.0) or 1.0))
     water_fraction = _clamp(seed.get("water_fraction", 0.0), 0.0, 1.0)
     pressure_bar = _surface_pressure_bar(atmosphere)
@@ -186,9 +191,13 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
         "map_seed_input": str(seed.get("map_seed") or "auto"),
         "map_canvas": {
             "projection": "equirectangular",
-            "width_px": 2048,
-            "height_px": 1024,
+            "width_px": PLANETARY_CANVAS_WIDTH_PX,
+            "height_px": PLANETARY_CANVAS_HEIGHT_PX,
             "vertical_datum": "mean_radius",
+            "coverage": "full_planet",
+            "radius_m": round(radius_m, 3),
+            "circumference_m": round(circumference_m, 3),
+            "equator_resolution_m_per_px": round(circumference_m / PLANETARY_CANVAS_WIDTH_PX, 3),
         },
         "heightfield": {
             "resolution": "global_seed",

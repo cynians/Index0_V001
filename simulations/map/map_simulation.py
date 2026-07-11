@@ -46,6 +46,8 @@ class MapSimulation:
     VISUAL_MAP_LAYER_KIND = "visual_map"
     LOCATION_LAYER_KIND = "locations"
     REGION_LAYER_KIND = "regions"
+    HEIGHTMAP_LAYER_KIND = "heightmap"
+    HYDROLOGY_LAYER_KIND = "hydrology"
     GROUND_MATERIALS_LAYER_KIND = "ground_materials"
     MATERIAL_HEATMAP_LAYER_KIND = "material_heatmaps"
     BIOSPHERE_PATCH_LOCATION_CLASS = "biosphere_patch"
@@ -73,6 +75,8 @@ class MapSimulation:
         "visual_map": "Visual Map",
         "locations": "Map + Locations",
         "regions": "Regions",
+        "heightmap": "Heightmap",
+        "hydrology": "Hydrology + Climate",
         "ground_materials": "Ground Material Regions",
         "material_heatmaps": "Material Distribution",
     }
@@ -103,11 +107,13 @@ class MapSimulation:
         "map_layers",
         "map_image_path",
         "heightmap_model",
+        "water_cycle_model",
         "material_heatmap_model",
     )
     VISUAL_SURFACE_FIELDS = (
         "map_image_path",
         "heightmap_model",
+        "water_cycle_model",
         "material_heatmap_model",
         "map_layers",
     )
@@ -153,6 +159,10 @@ class MapSimulation:
         self.draft_location_class = "region"
         self.draft_spatial_feature_points = []
         self.draft_hover_map_pos = None
+        self.is_creating_point_location = False
+        self.draft_point_location_class = "site"
+        self.draft_point_location_pos = None
+        self.draft_point_hover_pos = None
         self.is_editing_spatial_feature_polygon = False
         self.editing_spatial_feature_id = None
         self.editing_polygon_target_kind = None
@@ -983,6 +993,13 @@ class MapSimulation:
             return [self.LOCATION_LAYER_KIND]
         layers = [self.LOCATION_LAYER_KIND, self.GROUND_MATERIALS_LAYER_KIND]
         root = self.get_root_entity()
+        heightmap_model = root.get("heightmap_model") if isinstance(root, dict) else None
+        if isinstance(heightmap_model, dict):
+            layers.append(self.HEIGHTMAP_LAYER_KIND)
+        water_cycle_model = root.get("water_cycle_model") if isinstance(root, dict) else None
+        climate_grid = water_cycle_model.get("climate_grid") if isinstance(water_cycle_model, dict) else None
+        if isinstance(climate_grid, dict) and climate_grid.get("rows"):
+            layers.append(self.HYDROLOGY_LAYER_KIND)
         heatmap_model = root.get("material_heatmap_model") if isinstance(root, dict) else None
         if isinstance(heatmap_model, dict) and (
             isinstance(heatmap_model.get("composite_layer"), dict)
@@ -1041,7 +1058,7 @@ class MapSimulation:
 
         items = []
         composite_layer = heatmap_model.get("composite_layer")
-        if isinstance(composite_layer, dict) and composite_layer.get("image_path"):
+        if self._material_heatmap_layer_has_raster(composite_layer):
             items.append({
                 "id": "composite",
                 "label": composite_layer.get("name") or "Composite",
@@ -1049,11 +1066,12 @@ class MapSimulation:
             })
 
         for layer in heatmap_model.get("layers") or []:
-            if not isinstance(layer, dict) or not layer.get("image_path"):
+            if not self._material_heatmap_layer_has_raster(layer):
                 continue
             item_id = str(
                 layer.get("material_id")
                 or layer.get("id")
+                or layer.get("bundle_layer_id")
                 or layer.get("image_path")
             )
             items.append({
@@ -1064,6 +1082,15 @@ class MapSimulation:
             })
 
         return items
+
+    def _material_heatmap_layer_has_raster(self, layer):
+        return bool(
+            isinstance(layer, dict)
+            and (
+                layer.get("image_path")
+                or (layer.get("bundle_path") and layer.get("bundle_layer_id"))
+            )
+        )
 
     def set_active_material_distribution_item(self, item_id):
         item_id = str(item_id or "composite")
@@ -1566,6 +1593,28 @@ class MapSimulation:
     def can_create_location_draft(self):
         return self.LOCATION_LAYER_KIND in self.get_available_layer_kinds()
 
+    def begin_point_location_draft(self, location_class="site"):
+        if not self.can_create_location_draft():
+            return False
+
+        self._set_all_editor_modes_inactive()
+        self.active_layer_kind = self.LOCATION_LAYER_KIND
+        self.is_creating_point_location = True
+        self.draft_point_location_class = str(location_class or "site")
+        self._draft_last_click_time = None
+        self._draft_last_click_screen_pos = None
+        self.selected_entity_id = None
+        self.hover_entity_id = None
+        self.selected_spatial_feature_id = None
+        self.hover_spatial_feature_id = None
+        self.hover_screen_pos = None
+        self._invalidate_layer_cache()
+
+        logger.info(
+            f"[MapSimulation] Started point location draft root={self.context.root_entity_id}"
+        )
+        return True
+
     def _root_planet_has_map_dimensions(self):
         root_entity = self.get_root_entity()
         if not isinstance(root_entity, dict):
@@ -1606,7 +1655,11 @@ class MapSimulation:
         return self.is_creating_map_square or self.is_editing_map_square
 
     def is_map_editor_active(self):
-        return self.is_polygon_editor_active() or self.is_square_editor_active()
+        return (
+            self.is_creating_point_location
+            or self.is_polygon_editor_active()
+            or self.is_square_editor_active()
+        )
 
     def _reset_square_drag_state(self):
         self.square_drag_handle = None
@@ -1620,6 +1673,10 @@ class MapSimulation:
         self.draft_location_class = "region"
         self.draft_spatial_feature_points = []
         self.draft_hover_map_pos = None
+        self.is_creating_point_location = False
+        self.draft_point_location_class = "site"
+        self.draft_point_location_pos = None
+        self.draft_point_hover_pos = None
         self.is_editing_spatial_feature_polygon = False
         self.editing_spatial_feature_id = None
         self.editing_polygon_target_kind = None
@@ -1642,6 +1699,9 @@ class MapSimulation:
         self._reset_square_drag_state()
 
     def can_finish_map_editor(self):
+        if self.is_creating_point_location:
+            return self.draft_point_location_pos is not None
+
         if self.is_creating_map_square:
             return self.can_finish_map_square_draft()
 
@@ -1651,6 +1711,9 @@ class MapSimulation:
         return self.can_finish_polygon_editor()
 
     def finish_map_editor(self):
+        if self.is_creating_point_location:
+            return self.finish_point_location_draft()
+
         if self.is_creating_map_square:
             return self.finish_map_square_draft()
 
@@ -1660,6 +1723,9 @@ class MapSimulation:
         return self.finish_polygon_editor()
 
     def cancel_map_editor(self):
+        if self.is_creating_point_location:
+            return self.cancel_point_location_draft()
+
         if self.is_creating_map_square:
             return self.cancel_map_square_draft()
 
@@ -1669,6 +1735,12 @@ class MapSimulation:
         return self.cancel_polygon_editor()
 
     def get_map_editor_status_label(self):
+        if self.is_creating_point_location:
+            label = str(self.draft_point_location_class or "site").replace("_", " ").title()
+            if self.draft_point_location_pos is None:
+                return f"{label} point: choose location"
+            return f"{label} point: ready"
+
         if self.is_creating_map_square:
             noun = "Planet dimensions" if self.map_square_target_entity_id else "Draft rectangle"
             if self.map_square_anchor is None:
@@ -2488,6 +2560,98 @@ class MapSimulation:
         logger.info(
             f"[MapSimulation] Saved location draft {region['id']}"
         )
+        return True
+
+    def _build_draft_point_location_record(self):
+        location_id, index = self._allocate_location_draft_id()
+        root_name = self.get_root_name()
+        location_class = self.draft_point_location_class or "site"
+        label = str(location_class).replace("_", " ").title()
+        name = f"Draft {label} {index:03d}"
+        point_x, point_y = self.draft_point_location_pos or (0.0, 0.0)
+        notes = (
+            f"Draft {label.lower()} point created under {root_name}. "
+            "Use this for work-in-progress or out-of-scale locations."
+        )
+
+        return {
+            "id": location_id,
+            "pretty_name": name,
+            "name": name,
+            "type": "location",
+            "location_class": location_class,
+            "location_role": "point_location",
+            "region_class": location_class,
+            "wiki_entry": notes,
+            "layer_kind": self.LOCATION_LAYER_KIND,
+            "parent_location": self.context.root_entity_id,
+            "parent_entity": self.context.root_entity_id,
+            "parents": [self.context.root_entity_id],
+            "coords": {
+                "type": "point",
+                "coordinate_space": "map_world",
+                "x": float(point_x),
+                "y": float(point_y),
+            },
+            "start_year": self.year,
+            "entry_status": "draft",
+        }
+
+    def finish_point_location_draft(self):
+        if not self.is_creating_point_location or self.draft_point_location_pos is None:
+            return False
+
+        location = self._build_draft_point_location_record()
+
+        try:
+            self._append_location_record(location)
+            linked_parent = self._append_offspring_reference_to_location(
+                self.context.root_entity_id,
+                location["id"],
+            )
+        except OSError as exc:
+            logger.error(
+                f"[MapSimulation] Failed to save point location draft: {exc}"
+            )
+            return False
+        if not linked_parent:
+            logger.info(
+                f"[MapSimulation] Saved {location['id']} without parent offspring link "
+                f"parent={self.context.root_entity_id}"
+            )
+
+        self.is_creating_point_location = False
+        self.draft_point_location_pos = None
+        self.draft_point_hover_pos = None
+        self._draft_last_click_time = None
+        self._draft_last_click_screen_pos = None
+        self.last_saved_location_id = location["id"]
+        self.selected_entity_id = location["id"]
+        self.hover_entity_id = None
+        self.selected_spatial_feature_id = None
+        self.hover_spatial_feature_id = None
+        self.hover_screen_pos = None
+
+        if hasattr(self.world_model, "refresh"):
+            self.world_model.refresh()
+
+        self._invalidate_layer_cache()
+
+        logger.info(
+            f"[MapSimulation] Saved point location draft {location['id']}"
+        )
+        return True
+
+    def cancel_point_location_draft(self):
+        if not self.is_creating_point_location:
+            return False
+
+        self.is_creating_point_location = False
+        self.draft_point_location_pos = None
+        self.draft_point_hover_pos = None
+        self._draft_last_click_time = None
+        self._draft_last_click_screen_pos = None
+        self._invalidate_layer_cache()
         return True
 
     def can_create_biosphere_from_selection(self):
@@ -3663,6 +3827,17 @@ class MapSimulation:
 
         return []
 
+    def _point_coords_from_entity(self, entity):
+        coords = entity.get("coords") if isinstance(entity, dict) else None
+        if isinstance(coords, dict) and coords.get("type") == "point":
+            return coords
+
+        bounds = entity.get("bounds") if isinstance(entity, dict) else None
+        if isinstance(bounds, dict) and bounds.get("type") == "point":
+            return bounds
+
+        return None
+
     def _get_geometry_rings(self, geometry):
         geometry_type = geometry.get("type")
         if geometry_type in {"bbox", "polygon"}:
@@ -4181,7 +4356,7 @@ class MapSimulation:
         selected_id = str(self.active_material_heatmap_layer_id or "composite")
         if selected_id == "composite":
             composite = heatmap_model.get("composite_layer")
-            if isinstance(composite, dict) and composite.get("image_path"):
+            if self._material_heatmap_layer_has_raster(composite):
                 return composite
 
         for layer in heatmap_model.get("layers") or []:
@@ -4190,13 +4365,14 @@ class MapSimulation:
             layer_ids = {
                 str(layer.get("material_id") or ""),
                 str(layer.get("id") or ""),
+                str(layer.get("bundle_layer_id") or ""),
                 str(layer.get("image_path") or ""),
             }
-            if selected_id in layer_ids and layer.get("image_path"):
+            if selected_id in layer_ids and self._material_heatmap_layer_has_raster(layer):
                 return layer
 
         composite = heatmap_model.get("composite_layer")
-        if isinstance(composite, dict) and composite.get("image_path"):
+        if self._material_heatmap_layer_has_raster(composite):
             self.active_material_heatmap_layer_id = "composite"
             return composite
 
@@ -4204,7 +4380,7 @@ class MapSimulation:
             (
                 layer
                 for layer in heatmap_model.get("layers") or []
-                if isinstance(layer, dict) and layer.get("image_path")
+                if self._material_heatmap_layer_has_raster(layer)
             ),
             {},
         )
@@ -4222,7 +4398,9 @@ class MapSimulation:
 
         selected_layer = self._selected_material_heatmap_layer(heatmap_model)
         image_path = selected_layer.get("image_path")
-        if not image_path:
+        bundle_path = selected_layer.get("bundle_path")
+        bundle_layer_id = selected_layer.get("bundle_layer_id")
+        if not image_path and not (bundle_path and bundle_layer_id):
             return []
 
         rect = self._planet_rect_from_entity(root_entity)
@@ -4233,6 +4411,8 @@ class MapSimulation:
             "width_world": rect["width_world"],
             "height_world": rect["height_world"],
             "image_path": image_path,
+            "bundle_path": bundle_path,
+            "bundle_layer_id": bundle_layer_id,
             "fit": "stretch_to_bounds",
             "name": selected_layer.get("name") or "Material Distribution",
             "entity_id": root_entity.get("id"),
@@ -4240,6 +4420,39 @@ class MapSimulation:
             "alpha": 232,
             "pickable": False,
             "material_heatmap_model": heatmap_model,
+        }]
+
+    def _build_hydrology_layers(self):
+        root_entity = self.get_root_entity()
+        if not isinstance(root_entity, dict):
+            return []
+        if root_entity.get("location_class") not in {"planet", "moon"}:
+            return []
+        if self._entity_is_gas_giant(root_entity):
+            return []
+
+        water_cycle = root_entity.get("water_cycle_model")
+        if not isinstance(water_cycle, dict):
+            return []
+        climate_grid = water_cycle.get("climate_grid")
+        if not isinstance(climate_grid, dict) or not climate_grid.get("rows"):
+            return []
+
+        rect = self._planet_rect_from_entity(root_entity)
+        return [{
+            "shape": "hydrology_climate",
+            "x": rect["x"],
+            "y": rect["y"],
+            "width_world": rect["width_world"],
+            "height_world": rect["height_world"],
+            "canvas_width_px": rect["canvas_width_px"],
+            "canvas_height_px": rect["canvas_height_px"],
+            "water_cycle_model": water_cycle,
+            "heightmap_model": root_entity.get("heightmap_model"),
+            "name": root_entity.get("name") or "Hydrology",
+            "entity_id": root_entity.get("id"),
+            "draw_order": -960,
+            "pickable": False,
         }]
 
     def _build_reference_land_layers(self, root_entity, draw_order=-2600):
@@ -4338,7 +4551,7 @@ class MapSimulation:
                 continue
 
             bounds = entity.get("bounds") or {}
-            coords = entity.get("coords") or {}
+            coords = self._point_coords_from_entity(entity) or {}
             color = self._color_for_entity(entity)
             geometry_layers = self._build_location_geometry_layers(entity, bounds, color)
             if geometry_layers:
@@ -4392,6 +4605,11 @@ class MapSimulation:
             return self._build_visual_map_layers()
         if self.active_layer_kind == self.MATERIAL_HEATMAP_LAYER_KIND:
             return self._build_material_heatmap_layers()
+        if self.active_layer_kind == self.HEIGHTMAP_LAYER_KIND:
+            base_layer = self.get_heightmap_base_layer()
+            return [base_layer] if base_layer is not None else []
+        if self.active_layer_kind == self.HYDROLOGY_LAYER_KIND:
+            return self._build_hydrology_layers()
         if self.active_layer_kind != self.LOCATION_LAYER_KIND:
             return self._build_spatial_feature_layers(year, self.active_layer_kind)
 
@@ -4419,7 +4637,7 @@ class MapSimulation:
             ):
                 continue
 
-            coords = entity.get("coords") or {}
+            coords = self._point_coords_from_entity(entity) or {}
             bounds = entity.get("bounds") or {}
 
             x = None
@@ -5037,6 +5255,46 @@ class MapSimulation:
             interval=0.1
         )
 
+    def _handle_point_location_pointer_event(self, event, screen_pos, world_x, world_y):
+        if event.type != self.MOUSEBUTTONDOWN_EVENT_TYPE:
+            return
+
+        button = getattr(event, "button", None)
+        if button == 3:
+            self.cancel_point_location_draft()
+            return
+
+        if button != 1:
+            return
+
+        map_point = self._world_point_to_map(world_x, world_y)
+        self.draft_point_location_pos = map_point
+        self.draft_point_hover_pos = map_point
+        self.hover_entity_id = None
+        self.hover_spatial_feature_id = None
+        self.hover_screen_pos = screen_pos
+        self._record_draft_click(screen_pos)
+        self._invalidate_layer_cache()
+
+    def get_point_location_draft_preview(self):
+        if not self.is_creating_point_location:
+            return None
+
+        map_point = self.draft_point_location_pos or self.draft_point_hover_pos
+        if map_point is None:
+            return None
+
+        world_x, world_y = self._map_point_to_world(map_point[0], map_point[1])
+        label = str(self.draft_point_location_class or "site").replace("_", " ").title()
+        return {
+            "shape": "marker",
+            "x": world_x,
+            "y": world_y,
+            "min_screen_size": 10,
+            "name": f"Draft {label}",
+            "color": (255, 230, 120),
+        }
+
     def _square_editor_hit_handle(self, screen_pos, camera):
         bounds = self._current_map_square_bounds()
         if bounds is None:
@@ -5195,6 +5453,13 @@ class MapSimulation:
             self.hover_screen_pos = screen_pos
             return
 
+        if self.is_creating_point_location:
+            self.draft_point_hover_pos = self._world_point_to_map(world_x, world_y)
+            self.hover_entity_id = None
+            self.hover_spatial_feature_id = None
+            self.hover_screen_pos = screen_pos
+            return
+
         if self.is_polygon_editor_active():
             self._set_polygon_editor_hover_point(self._world_point_to_map(world_x, world_y))
             self.hover_entity_id = None
@@ -5232,6 +5497,10 @@ class MapSimulation:
                 world_x,
                 world_y,
             )
+            return
+
+        if self.is_creating_point_location:
+            self._handle_point_location_pointer_event(event, screen_pos, world_x, world_y)
             return
 
         if self.is_polygon_editor_active():

@@ -3126,10 +3126,12 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             return "\n".join(lines) if lines else self._format_value(value)
         if key == "material_heatmap_model" and isinstance(value, dict):
             layers = value.get("layers") or []
+            composite = value.get("composite_layer") or {}
+            storage = value.get("bundle_path") or composite.get("bundle_path") or composite.get("image_path", "")
             return "\n".join([
                 f"status: {value.get('status', '')}",
                 f"layers: {len(layers)}",
-                f"composite: {(value.get('composite_layer') or {}).get('image_path', '')}",
+                f"storage: {storage}",
             ]).strip()
         return self._format_value(value)
 

@@ -1,6 +1,9 @@
 import random
 import re
 import hashlib
+import threading
+import time
+import traceback
 from pathlib import Path
 
 
@@ -39,7 +42,11 @@ from simulations.world_gen.natural_materials import (
     derive_planet_material_tags,
 )
 from simulations.world_gen.planetary_physics import derive_planet_physics
-from simulations.world_gen.terrain_seed import derive_terrain_seed_model
+from simulations.world_gen.terrain_seed import (
+    PLANETARY_CANVAS_HEIGHT_PX,
+    PLANETARY_CANVAS_WIDTH_PX,
+    derive_terrain_seed_model,
+)
 from simulations.world_gen.tectonics import (
     advance_tectonics_model,
     derive_crater_model,
@@ -226,6 +233,16 @@ class WorldGenSimulation:
         self.pending_back_stage = None
         self.planet_hitboxes = []
         self.selected_world_gen_planet_id = planet_location_id
+        self._active_system_bodies_cache_key = None
+        self._active_system_bodies_cache = []
+        self._worldgen_job_thread = None
+        self._worldgen_job_result = None
+        self._worldgen_job_error = None
+        self._worldgen_job_started_at = 0.0
+        self._worldgen_job_finished_at = None
+        self._worldgen_job_label = ""
+        self._worldgen_job_detail = ""
+        self._worldgen_job_estimated_seconds = 90.0
         self.active_seed_field = "radius_earth"
         self.seed_input_buffers = {
             field_id: self._format_seed_input(value)
@@ -276,6 +293,97 @@ class WorldGenSimulation:
 
     def update(self, dt):
         self.sim_clock.update(dt)
+        self._poll_worldgen_job()
+
+    def _poll_worldgen_job(self):
+        thread = self._worldgen_job_thread
+        if thread is None or thread.is_alive():
+            return
+        thread.join(timeout=0.0)
+        self._worldgen_job_thread = None
+        self._worldgen_job_finished_at = time.monotonic()
+        if self._worldgen_job_error:
+            self.commit_status = f"{self._worldgen_job_label or 'Worldgen'} failed"
+        self._worldgen_job_label = ""
+        self._worldgen_job_detail = ""
+
+    def is_worldgen_job_running(self):
+        thread = self._worldgen_job_thread
+        return bool(thread is not None and thread.is_alive())
+
+    def get_worldgen_loading_state(self):
+        active = self.is_worldgen_job_running()
+        elapsed = max(0.0, time.monotonic() - self._worldgen_job_started_at) if active else 0.0
+        estimate = max(1.0, float(self._worldgen_job_estimated_seconds or 1.0))
+        progress = min(0.96, elapsed / estimate) if active else 1.0
+        return {
+            "active": active,
+            "label": self._worldgen_job_label or "World generation",
+            "detail": self._worldgen_job_detail or "Building planetary geology",
+            "elapsed_seconds": elapsed,
+            "estimated_seconds": estimate,
+            "progress": progress,
+        }
+
+    def _start_worldgen_job(self, label, detail, action, estimated_seconds=120.0):
+        if self.is_worldgen_job_running():
+            self.commit_status = "World generation is already running"
+            return False
+
+        self._worldgen_job_label = str(label or "World generation")
+        self._worldgen_job_detail = str(detail or "Building planetary geology")
+        self._worldgen_job_estimated_seconds = max(1.0, float(estimated_seconds or 1.0))
+        self._worldgen_job_started_at = time.monotonic()
+        self._worldgen_job_finished_at = None
+        self._worldgen_job_result = None
+        self._worldgen_job_error = None
+        self.commit_status = f"{self._worldgen_job_label}..."
+
+        def run_job():
+            try:
+                self._worldgen_job_result = bool(action())
+            except Exception:
+                self._worldgen_job_error = traceback.format_exc()
+
+        self._worldgen_job_thread = threading.Thread(
+            target=run_job,
+            name="index0-worldgen-job",
+            daemon=True,
+        )
+        self._worldgen_job_thread.start()
+        return True
+
+    def _start_save_terrain_job(self):
+        return self._start_worldgen_job(
+            "Generating terrain and heightmap",
+            "Resolving continental crust, plate margins, shelves, basins, and first global relief",
+            self._save_terrain_seed_model,
+            estimated_seconds=140.0,
+        )
+
+    def _start_heightmap_primary_job(self):
+        return self._start_worldgen_job(
+            "Advancing planetary geology",
+            "Maturing tectonics, uplifting mountain belts, opening basins, and refreshing the heightmap",
+            self._handle_heightmap_primary_action,
+            estimated_seconds=140.0,
+        )
+
+    def _start_water_cycle_job(self):
+        return self._start_worldgen_job(
+            "Generating water cycle",
+            "Classifying climate, tracing drainage, and measuring river systems",
+            self._save_water_cycle_model,
+            estimated_seconds=45.0,
+        )
+
+    def _start_tectonics_job(self):
+        return self._start_worldgen_job(
+            "Advancing tectonics",
+            "Moving plates through geologic time and rebuilding planetary relief",
+            self._advance_tectonics_model,
+            estimated_seconds=140.0,
+        )
 
     def set_input_field_rects(self, rects):
         self.input_field_rects = dict(rects or {})
@@ -337,6 +445,10 @@ class WorldGenSimulation:
 
     def set_planet_hitboxes(self, hitboxes):
         self.planet_hitboxes = list(hitboxes or [])
+
+    def _invalidate_active_system_bodies_cache(self):
+        self._active_system_bodies_cache_key = None
+        self._active_system_bodies_cache = []
 
     def _clear_editor_hitboxes(self):
         self.seed_field_rects = {}
@@ -443,6 +555,32 @@ class WorldGenSimulation:
         return None
 
     def _active_system_bodies(self):
+        if not self.parent_system_id:
+            return []
+
+        cache_key = self._active_system_bodies_cache_token()
+        if cache_key == self._active_system_bodies_cache_key:
+            return list(self._active_system_bodies_cache)
+
+        bodies = self._collect_active_system_bodies()
+        self._active_system_bodies_cache_key = cache_key
+        self._active_system_bodies_cache = list(bodies)
+        return bodies
+
+    def _active_system_bodies_cache_token(self):
+        loader = getattr(self.world_model, "loader", None)
+        datasets = getattr(loader, "datasets", {}) if loader is not None else {}
+        locations = datasets.get("locations", []) if isinstance(datasets, dict) else []
+        entities = getattr(loader, "entities", {}) if loader is not None else {}
+        return (
+            self.parent_system_id,
+            self.year,
+            getattr(self.world_model, "repository_revision", 0),
+            len(entities) if hasattr(entities, "__len__") else 0,
+            len(locations) if hasattr(locations, "__len__") else 0,
+        )
+
+    def _collect_active_system_bodies(self):
         if not self.parent_system_id:
             return []
 
@@ -725,6 +863,7 @@ class WorldGenSimulation:
         graph = getattr(self.world_model, "touch_degrees", None)
         if graph is not None and hasattr(graph, "refresh"):
             graph.refresh()
+        self._invalidate_active_system_bodies_cache()
 
     def _committed_planet_fields(self, planet_name, model):
         semi_major_au = model.get("semi_major_axis_au")
@@ -750,8 +889,8 @@ class WorldGenSimulation:
             "apoapsis_au": apoapsis_au,
             "mean_anomaly_deg_at_epoch": round(seed_range(anomaly_seed, "mean_anomaly", 0.0, 360.0), 3),
             "map_projection": "equirectangular",
-            "map_canvas_width_px": 2048,
-            "map_canvas_height_px": 1024,
+            "map_canvas_width_px": PLANETARY_CANVAS_WIDTH_PX,
+            "map_canvas_height_px": PLANETARY_CANVAS_HEIGHT_PX,
             "map_status": "orbit_locked",
             "bounds": {
                 "type": "bbox",
@@ -2010,8 +2149,8 @@ class WorldGenSimulation:
         planet["map_generation_recipe"] = terrain.get("map_recipe", [])
         planet["map_layers"] = terrain.get("map_layers", [])
         planet["map_projection"] = canvas.get("projection", "equirectangular")
-        planet["map_canvas_width_px"] = canvas.get("width_px", 2048)
-        planet["map_canvas_height_px"] = canvas.get("height_px", 1024)
+        planet["map_canvas_width_px"] = canvas.get("width_px", PLANETARY_CANVAS_WIDTH_PX)
+        planet["map_canvas_height_px"] = canvas.get("height_px", PLANETARY_CANVAS_HEIGHT_PX)
         if terrain.get("tectonics", {}).get("enabled"):
             tectonic_model = self._derive_tectonic_model(terrain, seed, physics, planet)
             tectonic_model = mature_tectonics_model(tectonic_model, terrain, cycles=4, million_years_per_cycle=45.0)
@@ -2243,6 +2382,7 @@ class WorldGenSimulation:
             "status": model.get("status"),
             "model_version": model.get("model_version"),
             "projection": model.get("projection"),
+            "scale": model.get("scale"),
             "wrap_x": model.get("wrap_x"),
             "wrap_y": model.get("wrap_y"),
             "rivers": list(model.get("rivers") or []),
@@ -2576,16 +2716,132 @@ class WorldGenSimulation:
     def get_preview_payload(self):
         model = self._recalculate_model()
         selected_planet = self._selected_planet_entity()
+        has_selected_planet = isinstance(selected_planet, dict)
+        editor_stage = self.editor_stage
+        derived_seed = self._current_seed_values()
+        derived_physics = self._derive_planet_physics(derived_seed)
+
+        atmosphere_model = (
+            selected_planet.get("atmosphere_model")
+            if has_selected_planet and isinstance(selected_planet.get("atmosphere_model"), dict)
+            else None
+        )
+        if has_selected_planet and atmosphere_model is None and editor_stage in {
+            "atmosphere",
+            "regime",
+            "terrain",
+            "tectonics",
+            "heightmap",
+            "water_cycle",
+        }:
+            atmosphere_model = self._derive_atmosphere_model(derived_seed, derived_physics)
+
+        interior_regime_model = (
+            selected_planet.get("interior_regime_model")
+            if has_selected_planet and isinstance(selected_planet.get("interior_regime_model"), dict)
+            else None
+        )
+        if has_selected_planet and interior_regime_model is None and editor_stage in {
+            "regime",
+            "terrain",
+            "tectonics",
+            "heightmap",
+            "water_cycle",
+        }:
+            if atmosphere_model is None:
+                atmosphere_model = self._derive_atmosphere_model(derived_seed, derived_physics)
+            interior_regime_model = self._derive_interior_regime_model(derived_seed, derived_physics, atmosphere_model)
+
         terrain_model = (
             selected_planet.get("terrain_seed_model")
-            if isinstance(selected_planet, dict) and isinstance(selected_planet.get("terrain_seed_model"), dict)
-            else self._derive_terrain_seed_model()
+            if has_selected_planet and isinstance(selected_planet.get("terrain_seed_model"), dict)
+            else None
         )
+        if has_selected_planet and terrain_model is None and editor_stage in {
+            "terrain",
+            "tectonics",
+            "heightmap",
+            "water_cycle",
+        }:
+            if atmosphere_model is None:
+                atmosphere_model = self._derive_atmosphere_model(derived_seed, derived_physics)
+            if interior_regime_model is None:
+                interior_regime_model = self._derive_interior_regime_model(derived_seed, derived_physics, atmosphere_model)
+            terrain_model = self._derive_terrain_seed_model(
+                derived_seed,
+                derived_physics,
+                atmosphere_model,
+                interior_regime_model,
+                selected_planet,
+            )
+
+        natural_material_model = (
+            selected_planet.get("natural_material_model")
+            if has_selected_planet and isinstance(selected_planet.get("natural_material_model"), dict)
+            else None
+        )
+        if has_selected_planet and natural_material_model is None and editor_stage in {"crust", "terrain", "heightmap"}:
+            natural_material_model = self._derive_natural_material_model(
+                derived_seed,
+                atmosphere_model,
+                interior_regime_model,
+                terrain_model,
+            )
+
         heightmap_model = (
             selected_planet.get("heightmap_model")
-            if isinstance(selected_planet, dict) and isinstance(selected_planet.get("heightmap_model"), dict)
-            else self._derive_heightmap_model(terrain=terrain_model, planet=selected_planet)
+            if has_selected_planet and isinstance(selected_planet.get("heightmap_model"), dict)
+            else None
         )
+        if has_selected_planet and heightmap_model is None and editor_stage in {"heightmap", "water_cycle"}:
+            if terrain_model is None:
+                if atmosphere_model is None:
+                    atmosphere_model = self._derive_atmosphere_model(derived_seed, derived_physics)
+                if interior_regime_model is None:
+                    interior_regime_model = self._derive_interior_regime_model(derived_seed, derived_physics, atmosphere_model)
+                terrain_model = self._derive_terrain_seed_model(
+                    derived_seed,
+                    derived_physics,
+                    atmosphere_model,
+                    interior_regime_model,
+                    selected_planet,
+                )
+            heightmap_model = self._derive_heightmap_model(terrain=terrain_model, seed=derived_seed, physics=derived_physics, planet=selected_planet)
+
+        tectonic_model = (
+            selected_planet.get("tectonic_model")
+            if has_selected_planet and isinstance(selected_planet.get("tectonic_model"), dict)
+            else None
+        )
+        if has_selected_planet and tectonic_model is None and editor_stage in {"tectonics", "heightmap"}:
+            if terrain_model is None:
+                if atmosphere_model is None:
+                    atmosphere_model = self._derive_atmosphere_model(derived_seed, derived_physics)
+                if interior_regime_model is None:
+                    interior_regime_model = self._derive_interior_regime_model(derived_seed, derived_physics, atmosphere_model)
+                terrain_model = self._derive_terrain_seed_model(
+                    derived_seed,
+                    derived_physics,
+                    atmosphere_model,
+                    interior_regime_model,
+                    selected_planet,
+                )
+            tectonic_model = self._derive_tectonic_model(terrain=terrain_model, seed=derived_seed, physics=derived_physics, planet=selected_planet)
+
+        water_cycle_model = (
+            selected_planet.get("water_cycle_model")
+            if has_selected_planet and isinstance(selected_planet.get("water_cycle_model"), dict)
+            else None
+        )
+        if has_selected_planet and water_cycle_model is None and editor_stage == "water_cycle" and isinstance(heightmap_model, dict):
+            water_cycle_model = derive_water_cycle_model(
+                terrain_model or {},
+                heightmap_model,
+                atmosphere_model,
+                derived_seed,
+                selected_planet.get("id", ""),
+            )
+
         return {
             "model": model,
             "fields": [
@@ -2617,40 +2873,22 @@ class WorldGenSimulation:
             "planet_template": self.active_planet_template,
             "planet_template_label": self.PLANET_TEMPLATES.get(self.active_planet_template, {}).get("label", self.active_planet_template),
             "planet_class": self.PLANET_TEMPLATES.get(self.active_planet_template, {}).get("planet_class", "terrestrial"),
-            "derived_planet_physics": self._derive_planet_physics(),
+            "derived_planet_physics": derived_physics,
             "periodic_table_open": self.periodic_table_open,
             "periodic_table_rows": PERIODIC_TABLE_ROWS,
             "editor_stage": self.editor_stage,
-            "atmosphere_model": self._derive_atmosphere_model(),
-            "interior_regime_model": self._derive_interior_regime_model(),
+            "atmosphere_model": atmosphere_model,
+            "interior_regime_model": interior_regime_model,
             "terrain_seed_model": terrain_model,
-            "natural_material_model": (
-                selected_planet.get("natural_material_model")
-                if isinstance(selected_planet, dict) and isinstance(selected_planet.get("natural_material_model"), dict)
-                else self._derive_natural_material_model(terrain=terrain_model)
-            ),
+            "natural_material_model": natural_material_model,
             "material_heatmap_model": (
                 selected_planet.get("material_heatmap_model")
                 if isinstance(selected_planet, dict) and isinstance(selected_planet.get("material_heatmap_model"), dict)
                 else None
             ),
             "heightmap_model": heightmap_model,
-            "water_cycle_model": (
-                selected_planet.get("water_cycle_model")
-                if isinstance(selected_planet, dict) and isinstance(selected_planet.get("water_cycle_model"), dict)
-                else derive_water_cycle_model(
-                    terrain_model,
-                    heightmap_model,
-                    selected_planet.get("atmosphere_model") if isinstance(selected_planet, dict) else None,
-                    self._coerce_seed_payload() or {},
-                    selected_planet.get("id", "") if isinstance(selected_planet, dict) else "",
-                )
-            ),
-            "tectonic_model": (
-                selected_planet.get("tectonic_model")
-                if isinstance(selected_planet, dict) and isinstance(selected_planet.get("tectonic_model"), dict)
-                else self._derive_tectonic_model(terrain=terrain_model, planet=selected_planet)
-            ),
+            "water_cycle_model": water_cycle_model,
+            "tectonic_model": tectonic_model,
             "crater_model": (
                 selected_planet.get("crater_model")
                 if isinstance(selected_planet, dict) and isinstance(selected_planet.get("crater_model"), dict)
@@ -2698,6 +2936,9 @@ class WorldGenSimulation:
     def handle_event(self, event):
         import pygame
 
+        if self.is_worldgen_job_running():
+            return
+
         if event.type == pygame.KEYDOWN:
             if self.planet_name_prompt_active:
                 if event.key == pygame.K_ESCAPE:
@@ -2741,13 +2982,13 @@ class WorldGenSimulation:
                     elif self.editor_stage == "regime":
                         self._save_interior_regime_model()
                     elif self.editor_stage == "terrain":
-                        self._save_terrain_seed_model()
+                        self._start_save_terrain_job()
                     elif self.editor_stage == "heightmap":
-                        self._handle_heightmap_primary_action()
+                        self._start_heightmap_primary_job()
                     elif self.editor_stage == "water_cycle":
-                        self._save_water_cycle_model()
+                        self._start_water_cycle_job()
                     elif self.editor_stage == "tectonics":
-                        self._advance_tectonics_model()
+                        self._start_tectonics_job()
                     else:
                         self._save_selected_planet_seed()
                     return
@@ -2822,6 +3063,9 @@ class WorldGenSimulation:
     def handle_pointer_event(self, event, camera, screen_pos):
         import pygame
 
+        if self.is_worldgen_job_running():
+            return
+
         if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             self.active_crust_slider_symbol = None
             return
@@ -2878,19 +3122,19 @@ class WorldGenSimulation:
                 return
             if self.editor_stage == "terrain":
                 if self.crust_save_button_rect is not None and self.crust_save_button_rect.collidepoint(screen_pos):
-                    self._save_terrain_seed_model()
+                    self._start_save_terrain_job()
                 return
             if self.editor_stage == "heightmap":
                 if self.crust_save_button_rect is not None and self.crust_save_button_rect.collidepoint(screen_pos):
-                    self._handle_heightmap_primary_action()
+                    self._start_heightmap_primary_job()
                 return
             if self.editor_stage == "water_cycle":
                 if self.crust_save_button_rect is not None and self.crust_save_button_rect.collidepoint(screen_pos):
-                    self._save_water_cycle_model()
+                    self._start_water_cycle_job()
                 return
             if self.editor_stage == "tectonics":
                 if self.crust_save_button_rect is not None and self.crust_save_button_rect.collidepoint(screen_pos):
-                    self._advance_tectonics_model()
+                    self._start_tectonics_job()
                 return
             if (
                 self.crust_random_generic_button_rect is not None

@@ -631,6 +631,35 @@ class EntityIdUpdateTests(unittest.TestCase):
         self.assertEqual("a", card["edit_buffer"])
         self.assertEqual("", ui.browser_search_query)
 
+    def test_unhandled_edit_key_does_not_crash_pending_production_prompt(self):
+        entity = {
+            "id": "idea_edit_name",
+            "type": "idea",
+            "_dataset": "ideas",
+            "pretty_name": "Old",
+            "name": "Old",
+        }
+        ui = KnowledgeBrowserHarness({"idea_edit_name": entity})
+        card = {
+            "entity_id": "idea_edit_name",
+            "card_view": EntityCard(entity, dataset_name="ideas", world_model=ui.world_model),
+            "is_edit_mode": True,
+            "active_edit_field": "name",
+            "edit_buffer": "Old",
+            "edit_cursor": 3,
+            "edit_original_value": "Old",
+            "draft_edit_buffers": {},
+        }
+        ui.cards = [card]
+
+        result = ui._handle_keydown_event(SimpleNamespace(
+            key=pygame.K_F1,
+            unicode="",
+            mod=0,
+        ))
+
+        self.assertEqual("__ui_consumed__", result)
+
     def test_person_quote_edit_consumes_typing_before_browser_search(self):
         entity = {
             "id": "person_quote_edit",

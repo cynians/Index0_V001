@@ -2,6 +2,8 @@ from pathlib import Path
 
 import pygame
 
+from simulations.world_gen.material_heatmaps import load_raster_bundle_surface
+
 
 class MapRenderer:
     """
@@ -14,6 +16,8 @@ class MapRenderer:
         self._scaled_image_cache = {}
         self._heightmap_surface_cache = {}
         self._scaled_heightmap_cache = {}
+        self._hydrology_surface_cache = {}
+        self._scaled_hydrology_cache = {}
         self._text_surface_cache = {}
         self._scaled_cache_limit = 32
         self._text_cache_limit = 256
@@ -103,6 +107,19 @@ class MapRenderer:
         self._image_cache[cache_key] = surface
         return surface
 
+    def _load_raster_bundle_surface(self, bundle_path, layer_id):
+        resolved_path = self._resolve_image_path(bundle_path)
+        if resolved_path is None:
+            return None
+
+        cache_key = f"bundle:{resolved_path}:{layer_id or 'composite'}"
+        if cache_key in self._image_cache:
+            return self._image_cache[cache_key]
+
+        surface = load_raster_bundle_surface(resolved_path, layer_id or "composite")
+        self._image_cache[cache_key] = surface
+        return surface
+
     def _draw_transparent_polygon(self, screen, points, fill_color, border_color=None, border_width=0):
         if len(points) < 3:
             return
@@ -134,7 +151,13 @@ class MapRenderer:
         screen.blit(overlay, clipped.topleft)
 
     def _draw_image_rect_layer(self, screen, layer, camera):
-        image_surface = self._load_image_surface(layer.get("image_path"))
+        if layer.get("bundle_path"):
+            image_surface = self._load_raster_bundle_surface(
+                layer.get("bundle_path"),
+                layer.get("bundle_layer_id"),
+            )
+        else:
+            image_surface = self._load_image_surface(layer.get("image_path"))
         if image_surface is None:
             return
 
@@ -159,7 +182,12 @@ class MapRenderer:
         ):
             return
 
-        cache_key = (str(layer.get("image_path")), rect.width, rect.height)
+        cache_key = (
+            str(layer.get("image_path") or layer.get("bundle_path")),
+            str(layer.get("bundle_layer_id") or ""),
+            rect.width,
+            rect.height,
+        )
         scaled = self._scaled_image_cache.get(cache_key)
         if scaled is None:
             scaled = pygame.transform.smoothscale(image_surface, (rect.width, rect.height))
@@ -379,6 +407,153 @@ class MapRenderer:
             surface,
             limit=16,
         )
+
+    def _climate_zone_colors(self, water_cycle):
+        colors = {
+            "polar_ice": (202, 224, 232),
+            "cold_steppe": (146, 158, 132),
+            "temperate_wet": (82, 142, 104),
+            "temperate_dry": (172, 156, 104),
+            "tropical_wet": (48, 130, 88),
+            "tropical_dry": (184, 146, 78),
+            "arid": (196, 176, 118),
+            "highland": (138, 128, 118),
+            "ocean": (50, 92, 132),
+        }
+        for zone in water_cycle.get("climate_zones") or []:
+            if isinstance(zone, dict) and zone.get("id"):
+                colors[str(zone["id"])] = self._coerce_rgb(
+                    zone.get("color"),
+                    fallback=colors.get(str(zone["id"]), (150, 150, 150)),
+                )
+        return colors
+
+    def _hydrology_surface_for_layer(self, layer, water_cycle):
+        climate_grid = water_cycle.get("climate_grid") if isinstance(water_cycle, dict) else {}
+        rows = climate_grid.get("rows") if isinstance(climate_grid.get("rows"), list) else []
+        if not rows:
+            return None
+        row_count = len(rows)
+        col_count = min(len(row) for row in rows if row)
+        if row_count <= 0 or col_count <= 0:
+            return None
+
+        elevation_rows = climate_grid.get("elevation_rows") if isinstance(climate_grid.get("elevation_rows"), list) else []
+        elevations = [
+            float(value or 0.0)
+            for row in elevation_rows[:row_count]
+            for value in (row[:col_count] if isinstance(row, list) else [])
+        ]
+        min_elevation = min(elevations) if elevations else 0.0
+        max_elevation = max(elevations) if elevations else 1.0
+        elevation_span = max(1.0, max_elevation - min_elevation)
+        cache_key = (
+            id(water_cycle),
+            id(rows),
+            id(elevation_rows),
+            col_count,
+            row_count,
+        )
+        cached = self._hydrology_surface_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        colors = self._climate_zone_colors(water_cycle)
+        surface = pygame.Surface((col_count, row_count))
+        for row_index, row in enumerate(rows):
+            for col_index, zone_id in enumerate(row[:col_count]):
+                color = colors.get(str(zone_id), (126, 128, 126))
+                if elevation_rows and row_index < len(elevation_rows) and col_index < len(elevation_rows[row_index]):
+                    try:
+                        elevation = float(elevation_rows[row_index][col_index] or 0.0)
+                    except (TypeError, ValueError):
+                        elevation = 0.0
+                    elevation_norm = max(0.0, min(1.0, (elevation - min_elevation) / elevation_span))
+                    shade = 0.76 + (1.0 - elevation_norm) * 0.14 if str(zone_id) == "ocean" else 0.78 + elevation_norm * 0.24
+                    color = tuple(max(0, min(255, int(channel * shade))) for channel in color)
+                surface.set_at((col_index, row_index), color)
+
+        return self._cache_put(
+            self._hydrology_surface_cache,
+            cache_key,
+            surface,
+            limit=16,
+        )
+
+    def _draw_hydrology_layer(self, screen, layer, camera):
+        water_cycle = layer.get("water_cycle_model") if isinstance(layer, dict) else None
+        surface = self._hydrology_surface_for_layer(layer, water_cycle)
+        if surface is None:
+            return
+
+        center = camera.world_to_screen((layer["x"], layer["y"]))
+        if center is None:
+            return
+
+        pixel_w = max(1, int(layer.get("width_world", 1) * camera.zoom))
+        pixel_h = max(1, int(layer.get("height_world", 1) * camera.zoom))
+        rect = pygame.Rect(
+            int(center[0] - pixel_w / 2),
+            int(center[1] - pixel_h / 2),
+            pixel_w,
+            pixel_h,
+        )
+        if (
+            rect.right < 0
+            or rect.left > self.app_view.width
+            or rect.bottom < 0
+            or rect.top > self.app_view.height
+        ):
+            return
+
+        scaled_key = (id(surface), rect.width, rect.height)
+        scaled = self._scaled_hydrology_cache.get(scaled_key)
+        if scaled is None:
+            scaled = pygame.transform.scale(surface, (rect.width, rect.height))
+            self._cache_put(self._scaled_hydrology_cache, scaled_key, scaled, self._scaled_cache_limit)
+
+        clip = screen.get_clip()
+        screen.set_clip(rect.clip(screen.get_rect()))
+        screen.blit(scaled, rect)
+        for river in water_cycle.get("rivers") or []:
+            if not isinstance(river, dict):
+                continue
+            points = []
+            for point in river.get("points") or []:
+                if not isinstance(point, dict):
+                    continue
+                px = rect.x + float(point.get("x", 0.0) or 0.0) * rect.width
+                py = rect.y + float(point.get("y", 0.0) or 0.0) * rect.height
+                points.append((int(px), int(py)))
+            if len(points) >= 2:
+                line_width = 1 + int(float(river.get("flow", 0.1) or 0.1) * 4)
+                pygame.draw.lines(screen, (82, 172, 238), False, points, line_width)
+        screen.set_clip(clip)
+        pygame.draw.rect(screen, (118, 132, 158), rect, 1)
+
+    def _draw_point_location_draft_preview(self, screen, preview, camera):
+        center = camera.world_to_screen((preview.get("x", 0), preview.get("y", 0)))
+        if center is None:
+            return
+
+        point = (int(center[0]), int(center[1]))
+        if (
+            point[0] < -16
+            or point[0] > self.app_view.width + 16
+            or point[1] < -16
+            or point[1] > self.app_view.height + 16
+        ):
+            return
+
+        color = preview.get("color", (255, 230, 120))
+        radius = max(5, int(preview.get("min_screen_size", 10)) // 2)
+        pygame.draw.circle(screen, color, point, radius)
+        pygame.draw.circle(screen, (30, 34, 38), point, radius, 1)
+        pygame.draw.line(screen, (120, 220, 255), (point[0] - 12, point[1]), (point[0] + 12, point[1]), 1)
+        pygame.draw.line(screen, (120, 220, 255), (point[0], point[1] - 12), (point[0], point[1] + 12), 1)
+
+        text = self._render_text(preview.get("name", "Draft point"), (245, 245, 245))
+        screen.blit(text, (point[0] + 10, point[1] - 8))
 
     def _draw_gas_giant_bands(self, screen, rect, layer):
         bands = layer.get("bands") if isinstance(layer.get("bands"), list) else []
@@ -691,7 +866,8 @@ class MapRenderer:
         selected_spatial_feature_id = getattr(sim, "selected_spatial_feature_id", None)
         hover_spatial_feature_id = getattr(sim, "hover_spatial_feature_id", None)
 
-        if hasattr(sim, "get_heightmap_base_layer"):
+        active_layer_kind = getattr(sim, "get_active_layer_kind", lambda: None)()
+        if active_layer_kind in {"material_heatmaps"} and hasattr(sim, "get_heightmap_base_layer"):
             heightmap_base_layer = sim.get_heightmap_base_layer()
             if heightmap_base_layer is not None:
                 self._draw_heightmap_base_layer(screen, heightmap_base_layer, camera)
@@ -720,6 +896,14 @@ class MapRenderer:
 
             if shape == "image_rect":
                 self._draw_image_rect_layer(screen, layer, camera)
+                continue
+
+            if shape == "heightmap_base":
+                self._draw_heightmap_base_layer(screen, layer, camera)
+                continue
+
+            if shape == "hydrology_climate":
+                self._draw_hydrology_layer(screen, layer, camera)
                 continue
 
             if shape == "polygon":
@@ -845,6 +1029,11 @@ class MapRenderer:
             preview = sim.get_spatial_feature_draft_preview()
             if preview is not None:
                 self._draw_spatial_feature_draft_preview(screen, preview, camera)
+
+        if hasattr(sim, "get_point_location_draft_preview"):
+            preview = sim.get_point_location_draft_preview()
+            if preview is not None:
+                self._draw_point_location_draft_preview(screen, preview, camera)
 
         if hasattr(sim, "get_map_square_preview"):
             preview = sim.get_map_square_preview()

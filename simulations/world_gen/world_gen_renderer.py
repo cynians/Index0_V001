@@ -7,6 +7,10 @@ from simulations.world_gen.heightmap import (
     display_contour_interval_m,
     height_marker_interval_m,
 )
+from simulations.world_gen.terrain_seed import (
+    PLANETARY_CANVAS_HEIGHT_PX,
+    PLANETARY_CANVAS_WIDTH_PX,
+)
 
 
 class WorldGenRenderer:
@@ -18,6 +22,8 @@ class WorldGenRenderer:
 
     def __init__(self, app_view):
         self.app_view = app_view
+        self._orbit_path_cache = {}
+        self._water_cycle_preview_cache = {}
 
     def _coerce_rgb(self, value, fallback=(122, 176, 232)):
         if isinstance(value, (list, tuple)) and len(value) >= 3:
@@ -64,9 +70,75 @@ class WorldGenRenderer:
     def _world_point_for_au(self, au_x, au_y):
         return au_x * self.AU_M, au_y * self.AU_M
 
+    def _orbit_cache_key(self, camera, semi_major_au, eccentricity, count):
+        return (
+            int(getattr(camera, "width", 0)),
+            int(getattr(camera, "height", 0)),
+            round(float(getattr(camera, "x", 0.0) or 0.0), 1),
+            round(float(getattr(camera, "y", 0.0) or 0.0), 1),
+            round(float(getattr(camera, "zoom", 0.0) or 0.0), 20),
+            round(float(semi_major_au), 8),
+            round(float(eccentricity), 6),
+            int(count),
+        )
+
+    def _orbit_pixel_radius(self, camera, semi_major_au):
+        try:
+            return abs(float(semi_major_au) * self.AU_M * float(camera.zoom))
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _orbit_sample_count(self, pixel_radius, max_count=96):
+        if pixel_radius <= 2:
+            return 0
+        if pixel_radius < 48:
+            return 24
+        if pixel_radius < 140:
+            return 36
+        if pixel_radius < 360:
+            return 56
+        if pixel_radius < 900:
+            return 72
+        return max_count
+
+    def _orbit_intersects_screen(self, screen, camera, semi_major_au, eccentricity, margin=48):
+        try:
+            semi_major_au = float(semi_major_au)
+            eccentricity = max(0.0, min(0.99, float(eccentricity or 0.0)))
+            zoom = float(camera.zoom)
+            camera_x = float(getattr(camera, "x", 0.0) or 0.0)
+            camera_y = float(getattr(camera, "y", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            return False
+        if semi_major_au <= 0 or zoom <= 0:
+            return False
+
+        b_au = semi_major_au * math.sqrt(max(0.0, 1.0 - eccentricity * eccentricity))
+        x_min_m = -semi_major_au * (1.0 + eccentricity) * self.AU_M
+        x_max_m = semi_major_au * (1.0 - eccentricity) * self.AU_M
+        y_extent_m = b_au * self.AU_M
+        x_min = (x_min_m - camera_x) * zoom + camera.width / 2
+        x_max = (x_max_m - camera_x) * zoom + camera.width / 2
+        y_min = (-y_extent_m - camera_y) * zoom + camera.height / 2
+        y_max = (y_extent_m - camera_y) * zoom + camera.height / 2
+        if not all(math.isfinite(value) for value in (x_min, x_max, y_min, y_max)):
+            return False
+        orbit_rect = pygame.Rect(
+            int(min(x_min, x_max)),
+            int(min(y_min, y_max)),
+            max(1, int(abs(x_max - x_min))),
+            max(1, int(abs(y_max - y_min))),
+        )
+        return orbit_rect.colliderect(screen.get_rect().inflate(margin, margin))
+
     def _screen_points_for_orbit(self, camera, semi_major_au, eccentricity, count=180):
         if semi_major_au is None or eccentricity is None:
             return []
+
+        cache_key = self._orbit_cache_key(camera, semi_major_au, eccentricity, count)
+        cached_points = self._orbit_path_cache.get(cache_key)
+        if cached_points is not None:
+            return list(cached_points)
 
         points = []
         b_au = semi_major_au * math.sqrt(max(0.0, 1.0 - eccentricity * eccentricity))
@@ -77,6 +149,9 @@ class WorldGenRenderer:
             screen_point = camera.world_to_screen(self._world_point_for_au(x_au, y_au))
             if screen_point is not None:
                 points.append((int(screen_point[0]), int(screen_point[1])))
+        if len(self._orbit_path_cache) > 256:
+            self._orbit_path_cache.clear()
+        self._orbit_path_cache[cache_key] = tuple(points)
         return points
 
     def _draw_circle_au(self, screen, camera, radius_au, color, width=1):
@@ -159,7 +234,11 @@ class WorldGenRenderer:
             except (TypeError, ValueError):
                 continue
 
-            orbit_points = self._screen_points_for_orbit(camera, semi_major_au, eccentricity_value, count=120)
+            if not self._orbit_intersects_screen(screen, camera, semi_major_au, eccentricity_value):
+                continue
+
+            sample_count = self._orbit_sample_count(self._orbit_pixel_radius(camera, semi_major_au))
+            orbit_points = self._screen_points_for_orbit(camera, semi_major_au, eccentricity_value, count=sample_count)
             if len(orbit_points) > 2:
                 pygame.draw.lines(screen, (76, 84, 98), True, orbit_points, 1)
 
@@ -197,15 +276,82 @@ class WorldGenRenderer:
         text = self.app_view.default_font.render(label, True, (244, 226, 172))
         screen.blit(text, (int(center[0]) + 14, int(center[1]) - 8))
 
+    def _draw_worldgen_loading_screen(self, screen, loading):
+        width = screen.get_width()
+        height = screen.get_height()
+        screen.fill((8, 10, 15))
+
+        center_x = width // 2
+        center_y = height // 2
+        title_font = pygame.font.SysFont("consolas", 52, bold=True)
+        label_font = pygame.font.SysFont("consolas", 22)
+        text_font = pygame.font.SysFont("consolas", 16)
+        small_font = pygame.font.SysFont("consolas", 14)
+
+        progress = max(0.0, min(0.96, float(loading.get("progress", 0.0) or 0.0)))
+        elapsed = max(0.0, float(loading.get("elapsed_seconds", 0.0) or 0.0))
+        label = str(loading.get("label") or "World generation")
+        detail = str(loading.get("detail") or "Building planetary geology")
+
+        title = title_font.render("Index 0", True, (238, 242, 248))
+        screen.blit(title, title.get_rect(center=(center_x, center_y - 128)))
+
+        label_surface = label_font.render(label, True, (218, 228, 242))
+        screen.blit(label_surface, label_surface.get_rect(center=(center_x, center_y - 70)))
+
+        detail_surface = text_font.render(detail, True, (154, 170, 194))
+        screen.blit(detail_surface, detail_surface.get_rect(center=(center_x, center_y - 38)))
+
+        bar_w = min(680, max(360, width // 2))
+        bar_h = 18
+        bar_rect = pygame.Rect(center_x - bar_w // 2, center_y + 10, bar_w, bar_h)
+        fill_w = int((bar_w - 4) * progress)
+        pygame.draw.rect(screen, (22, 27, 38), bar_rect)
+        pygame.draw.rect(screen, (108, 122, 148), bar_rect, 1)
+        if fill_w > 0:
+            pygame.draw.rect(
+                screen,
+                (118, 168, 220),
+                pygame.Rect(bar_rect.x + 2, bar_rect.y + 2, fill_w, bar_h - 4),
+            )
+
+        sweep_w = max(32, bar_w // 7)
+        sweep_range = max(1, bar_w - sweep_w - 4)
+        sweep_x = bar_rect.x + 2 + int((elapsed * 90.0) % sweep_range)
+        sweep = pygame.Surface((sweep_w, bar_h - 4), pygame.SRCALPHA)
+        sweep.fill((198, 224, 252, 62))
+        screen.blit(sweep, (sweep_x, bar_rect.y + 2))
+
+        percent_surface = small_font.render(f"{int(progress * 100)}%", True, (178, 198, 222))
+        screen.blit(percent_surface, percent_surface.get_rect(midleft=(bar_rect.right + 14, bar_rect.centery)))
+
+        elapsed_surface = small_font.render(f"Elapsed {int(elapsed)}s", True, (138, 154, 178))
+        screen.blit(elapsed_surface, elapsed_surface.get_rect(center=(center_x, center_y + 56)))
+
+        note = small_font.render("The app is generating planetary geology. This can take a couple of minutes.", True, (118, 132, 154))
+        screen.blit(note, note.get_rect(center=(center_x, center_y + 88)))
+
     def _draw_candidate_orbit(self, screen, camera, model):
         if not model.get("orbit_valid"):
+            return
+
+        sample_count = self._orbit_sample_count(
+            self._orbit_pixel_radius(camera, model.get("semi_major_axis_au")),
+            max_count=120,
+        )
+        if sample_count <= 2 or not self._orbit_intersects_screen(
+            screen,
+            camera,
+            model.get("semi_major_axis_au"),
+            model.get("eccentricity"),
+        ):
             return
 
         points = self._screen_points_for_orbit(
             camera,
             model.get("semi_major_axis_au"),
             model.get("eccentricity"),
-            count=180,
+            count=sample_count,
         )
         if len(points) <= 2:
             return
@@ -356,6 +502,17 @@ class WorldGenRenderer:
         except (TypeError, ValueError):
             kelvin = 0.0
         return f"{kelvin:.1f} K / {kelvin - 273.15:.1f} C"
+
+    def _format_heightmap_scale(self, heightmap):
+        try:
+            meters_per_px = float(heightmap.get("equator_resolution_m_per_px") or 0.0)
+        except (TypeError, ValueError):
+            meters_per_px = 0.0
+        if meters_per_px >= 1000.0:
+            return f"{meters_per_px / 1000.0:.1f} km/px equator"
+        if meters_per_px > 0.0:
+            return f"{meters_per_px:.0f} m/px equator"
+        return "unknown"
 
     def _draw_crust_composition_panel(self, screen, sim, payload):
         font = self.app_view.default_font
@@ -1318,22 +1475,49 @@ class WorldGenRenderer:
         colors = self._climate_zone_colors(water_cycle)
         row_count = len(rows)
         col_count = min(len(row) for row in rows if row)
-        x_edges = [rect.x + round(index * rect.width / max(1, col_count)) for index in range(col_count + 1)]
-        y_edges = [rect.y + round(index * rect.height / max(1, row_count)) for index in range(row_count + 1)]
+        elevation_rows = climate_grid.get("elevation_rows") if isinstance(climate_grid.get("elevation_rows"), list) else []
+        elevations = [
+            float(value or 0.0)
+            for row in elevation_rows[:row_count]
+            for value in (row[:col_count] if isinstance(row, list) else [])
+        ]
+        min_elevation = min(elevations) if elevations else 0.0
+        max_elevation = max(elevations) if elevations else 1.0
+        elevation_span = max(1.0, max_elevation - min_elevation)
+        cache_key = (
+            id(water_cycle),
+            col_count,
+            row_count,
+            rect.width,
+            rect.height,
+            int(water_cycle.get("river_count", 0) or 0),
+        )
+        preview_surface = self._water_cycle_preview_cache.get(cache_key)
+        if preview_surface is None:
+            source = pygame.Surface((col_count, row_count))
+            for row_index, row in enumerate(rows):
+                for col_index, zone_id in enumerate(row[:col_count]):
+                    color = colors.get(str(zone_id), (126, 128, 126))
+                    if elevation_rows and row_index < len(elevation_rows) and col_index < len(elevation_rows[row_index]):
+                        try:
+                            elevation = float(elevation_rows[row_index][col_index] or 0.0)
+                        except (TypeError, ValueError):
+                            elevation = 0.0
+                        elevation_norm = max(0.0, min(1.0, (elevation - min_elevation) / elevation_span))
+                        if str(zone_id) == "ocean":
+                            shade = 0.78 + (1.0 - elevation_norm) * 0.18
+                        else:
+                            shade = 0.78 + elevation_norm * 0.28
+                        color = tuple(max(0, min(255, int(channel * shade))) for channel in color)
+                    source.set_at((col_index, row_index), color)
+            preview_surface = pygame.transform.smoothscale(source, rect.size)
+            if len(self._water_cycle_preview_cache) > 12:
+                self._water_cycle_preview_cache.clear()
+            self._water_cycle_preview_cache[cache_key] = preview_surface
         previous_clip = screen.get_clip()
         screen.set_clip(rect)
         try:
-            for row_index, row in enumerate(rows):
-                y0 = y_edges[row_index]
-                y1 = y_edges[row_index + 1]
-                for col_index, zone_id in enumerate(row[:col_count]):
-                    x0 = x_edges[col_index]
-                    x1 = x_edges[col_index + 1]
-                    pygame.draw.rect(
-                        screen,
-                        colors.get(str(zone_id), (126, 128, 126)),
-                        pygame.Rect(x0, y0, max(1, x1 - x0), max(1, y1 - y0)),
-                    )
+            screen.blit(preview_surface, rect.topleft)
             for river in water_cycle.get("rivers") or []:
                 if not isinstance(river, dict):
                     continue
@@ -1410,12 +1594,14 @@ class WorldGenRenderer:
 
         y += 8
         if water_cycle.get("river_count"):
-            screen.blit(font.render("River Sources", True, (232, 238, 246)), (sidebar.x + 12, y))
+            screen.blit(font.render("River Scale", True, (232, 238, 246)), (sidebar.x + 12, y))
             y += 26
             for river in (water_cycle.get("rivers") or [])[:4]:
                 if not isinstance(river, dict):
                     continue
-                text = f"{river.get('id', 'river')} | {float(river.get('source_elevation_m', 0.0)):.0f} m | {river.get('mouth', 'basin')}"
+                length_km = float(river.get("length_km", 0.0) or 0.0)
+                average_width_m = float(river.get("average_width_m", 0.0) or 0.0)
+                text = f"{river.get('id', 'river')} | {length_km:.0f} km | avg {average_width_m:.0f} m | {river.get('mouth', 'basin')}"
                 screen.blit(font.render(text, True, (154, 202, 238)), (sidebar.x + 18, y))
                 y += 20
                 if y > sidebar.bottom - 42:
@@ -1463,8 +1649,8 @@ class WorldGenRenderer:
         pygame.draw.rect(screen, (25, 29, 40), sidebar)
         pygame.draw.rect(screen, (96, 108, 132), sidebar, 1)
 
-        canvas_w = max(1, int(heightmap.get("width_px", 2048) or 2048))
-        canvas_h = max(1, int(heightmap.get("height_px", 1024) or 1024))
+        canvas_w = max(1, int(heightmap.get("width_px", PLANETARY_CANVAS_WIDTH_PX) or PLANETARY_CANVAS_WIDTH_PX))
+        canvas_h = max(1, int(heightmap.get("height_px", PLANETARY_CANVAS_HEIGHT_PX) or PLANETARY_CANVAS_HEIGHT_PX))
         preview_scale = min(preview.width / canvas_w, preview.height / canvas_h)
         preview_zoom = max(1.0, float(getattr(sim, "heightmap_preview_zoom", 1.0) or 1.0))
         requested_interval = height_marker_interval_m(preview_scale * preview_zoom)
@@ -1512,6 +1698,7 @@ class WorldGenRenderer:
             ("Samples", f"{sample.get('width', 0)} x {sample.get('height', 0)}"),
             ("Chunks", f"{storage.get('chunk_cols', 0)} x {storage.get('chunk_rows', 0)}"),
             ("Chunk size", f"{storage.get('chunk_width_px', 0)} x {storage.get('chunk_height_px', 0)} px"),
+            ("Scale", self._format_heightmap_scale(heightmap)),
             ("Simulated age", f"{float(simulated_age or 0.0):.1f} Myr"),
             ("Elevation", f"{float(heightmap.get('min_elevation_m', 0.0)):.0f} to {float(heightmap.get('max_elevation_m', 0.0)):.0f} m"),
             ("Land", f"{float(hypsometry.get('land_fraction', 0.0)) * 100.0:.0f}%"),
@@ -1640,6 +1827,11 @@ class WorldGenRenderer:
         screen.blit(hint, (panel.x + 12, panel.bottom - 28))
 
     def draw(self, screen, sim):
+        loading = getattr(sim, "get_worldgen_loading_state", lambda: {"active": False})()
+        if loading.get("active"):
+            self._draw_worldgen_loading_screen(screen, loading)
+            return
+
         payload = sim.get_preview_payload()
         model = payload.get("model", {})
         camera = self.app_view.camera

@@ -1,5 +1,7 @@
+import json
 import math
 import re
+import zipfile
 from pathlib import Path
 
 import pygame
@@ -8,7 +10,10 @@ from simulations.world_gen.map_seed import resolved_map_seed, seed_range
 from simulations.world_gen.natural_materials import material_display_color
 
 
-MATERIAL_HEATMAP_MODEL_VERSION = "material-heatmaps-v2"
+MATERIAL_HEATMAP_MODEL_VERSION = "material-heatmaps-v3"
+RASTER_BUNDLE_FORMAT = "index0_raster_bundle"
+RASTER_BUNDLE_VERSION = 1
+RASTER_BUNDLE_EXTENSION = ".i0r"
 DEFAULT_HEATMAP_SIZE = (256, 128)
 
 
@@ -36,6 +41,118 @@ def _relative_or_absolute(path, storage_root=None):
         except ValueError:
             pass
     return str(path.resolve())
+
+
+def _surface_to_rgba_bytes(surface):
+    tobytes = getattr(pygame.image, "tobytes", None)
+    if tobytes is not None:
+        return tobytes(surface, "RGBA")
+    return pygame.image.tostring(surface, "RGBA")
+
+
+def _surface_from_rgba_bytes(data, width, height):
+    surface = pygame.image.frombuffer(data, (int(width), int(height)), "RGBA")
+    return surface.copy()
+
+
+def _write_raster_bundle(bundle_path, width, height, layers, metadata=None):
+    bundle_path = Path(bundle_path)
+    bundle_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_layers = []
+    with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        for layer in layers:
+            layer_id = _safe_slug(layer.get("id") or layer.get("material_id") or layer.get("name") or "layer")
+            entry_name = f"layers/{layer_id}.rgba"
+            surface = layer.get("surface")
+            if surface is None:
+                continue
+            bundle.writestr(entry_name, _surface_to_rgba_bytes(surface))
+            layer_meta = {
+                key: value
+                for key, value in layer.items()
+                if key not in {"surface", "pixels"}
+            }
+            layer_meta["id"] = layer_id
+            layer_meta["rgba_path"] = entry_name
+            layer_meta["width_px"] = width
+            layer_meta["height_px"] = height
+            manifest_layers.append(layer_meta)
+
+        manifest = {
+            "format": RASTER_BUNDLE_FORMAT,
+            "format_version": RASTER_BUNDLE_VERSION,
+            "width_px": width,
+            "height_px": height,
+            "encoding": "rgba8888",
+            "layers": manifest_layers,
+            "metadata": metadata or {},
+        }
+        bundle.writestr("manifest.json", json.dumps(manifest, indent=2, sort_keys=True))
+    return manifest
+
+
+def load_raster_bundle_surface(bundle_path, layer_id):
+    bundle_path = Path(bundle_path)
+    if not bundle_path.exists():
+        return None
+    requested = str(layer_id or "composite")
+    try:
+        with zipfile.ZipFile(bundle_path, "r") as bundle:
+            manifest = json.loads(bundle.read("manifest.json").decode("utf-8"))
+            if manifest.get("format") != RASTER_BUNDLE_FORMAT:
+                return None
+            layers = manifest.get("layers") or []
+            layer = next(
+                (
+                    item
+                    for item in layers
+                    if str(item.get("id")) == requested
+                    or str(item.get("material_id") or "") == requested
+                    or str(item.get("role") or "") == requested
+                ),
+                None,
+            )
+            if layer is None and requested == "composite":
+                layer = next((item for item in layers if item.get("role") == "composite"), None)
+            if layer is None:
+                return None
+            width = int(layer.get("width_px") or manifest.get("width_px") or 0)
+            height = int(layer.get("height_px") or manifest.get("height_px") or 0)
+            if width <= 0 or height <= 0:
+                return None
+            data = bundle.read(layer.get("rgba_path"))
+            return _surface_from_rgba_bytes(data, width, height)
+    except (OSError, KeyError, json.JSONDecodeError, zipfile.BadZipFile, pygame.error):
+        return None
+
+
+def import_png_to_raster_bundle(png_path, bundle_path, layer_id="imported_png", metadata=None):
+    surface = pygame.image.load(str(png_path))
+    try:
+        surface = surface.convert_alpha()
+    except pygame.error:
+        surface = surface.copy()
+    width, height = surface.get_size()
+    layer_id = _safe_slug(layer_id or "imported_png")
+    manifest = _write_raster_bundle(
+        bundle_path,
+        width,
+        height,
+        [{
+            "id": layer_id,
+            "role": "imported_png",
+            "name": metadata.get("name", layer_id) if isinstance(metadata, dict) else layer_id,
+            "surface": surface,
+        }],
+        metadata=metadata or {"source_path": str(png_path)},
+    )
+    return {
+        "bundle_path": str(bundle_path),
+        "bundle_layer_id": layer_id,
+        "width_px": width,
+        "height_px": height,
+        "manifest": manifest,
+    }
 
 
 def _rows_from_heightmap(heightmap):
@@ -180,8 +297,7 @@ def generate_material_heatmap_model(
     output_root = Path(output_root or Path(__file__).resolve().parents[2] / "assets" / "maps" / "material_heatmaps")
     storage_root = Path(storage_root).resolve() if storage_root is not None else output_root.parents[2]
     planet_id = str(planet.get("id") or heightmap.get("planet_id") or "planet")
-    planet_dir = output_root / _safe_slug(planet_id)
-    planet_dir.mkdir(parents=True, exist_ok=True)
+    bundle_path = output_root / f"{_safe_slug(planet_id)}{RASTER_BUNDLE_EXTENSION}"
 
     width, height = image_size
     width = max(8, int(width or DEFAULT_HEATMAP_SIZE[0]))
@@ -198,6 +314,7 @@ def generate_material_heatmap_model(
 
     layer_pixels = []
     layer_metadata = []
+    bundle_layers = []
     for material in materials:
         material_id = str(material.get("material_id"))
         color = material_display_color(material_id, material.get("display_color"))
@@ -250,15 +367,23 @@ def generate_material_heatmap_model(
                 surface.set_at((x, y), (color[0], color[1], color[2], alpha))
             pixels.append(row)
 
-        file_name = f"{_safe_slug(material_id)}.png"
-        image_path = planet_dir / file_name
-        pygame.image.save(surface, str(image_path))
-        layer_pixels.append({"material_id": material_id, "pixels": pixels, "color": color, "confidence": confidence})
-        layer_metadata.append({
-            "id": f"heatmap_{_safe_slug(material_id)}",
+        layer_id = f"heatmap_{_safe_slug(material_id)}"
+        bundle_layers.append({
+            "id": layer_id,
+            "role": "material_layer",
             "material_id": material_id,
             "name": material.get("name") or material_id,
-            "image_path": _relative_or_absolute(image_path, storage_root=storage_root),
+            "surface": surface,
+            "display_color": color,
+            "confidence": round(confidence, 3),
+        })
+        layer_pixels.append({"material_id": material_id, "pixels": pixels, "color": color, "confidence": confidence})
+        layer_metadata.append({
+            "id": layer_id,
+            "material_id": material_id,
+            "name": material.get("name") or material_id,
+            "bundle_path": _relative_or_absolute(bundle_path, storage_root=storage_root),
+            "bundle_layer_id": layer_id,
             "display_color": color,
             "confidence": round(confidence, 3),
             "peak_intensity": round(peak, 3),
@@ -303,12 +428,31 @@ def generate_material_heatmap_model(
                     alpha,
                 ))
 
-    composite_path = planet_dir / "composite_materials.png"
-    pygame.image.save(composite, str(composite_path))
+    composite_layer_id = "composite"
+    bundle_layers.insert(0, {
+        "id": composite_layer_id,
+        "role": "composite",
+        "name": "Composite Material Heatmap",
+        "surface": composite,
+        "render_mode": "dominant_material_color",
+    })
+    manifest = _write_raster_bundle(
+        bundle_path,
+        width,
+        height,
+        bundle_layers,
+        metadata={
+            "kind": "material_heatmap",
+            "planet_id": planet_id,
+            "map_seed": map_seed,
+            "projection": heightmap.get("projection", "equirectangular"),
+        },
+    )
     composite_layer = {
         "id": "heatmap_composite_materials",
         "name": "Composite Material Heatmap",
-        "image_path": _relative_or_absolute(composite_path, storage_root=storage_root),
+        "bundle_path": _relative_or_absolute(bundle_path, storage_root=storage_root),
+        "bundle_layer_id": composite_layer_id,
         "render_mode": "dominant_material_color",
         "confidence_state": "inferred",
         "truth_state": "generated",
@@ -320,7 +464,10 @@ def generate_material_heatmap_model(
         "projection": heightmap.get("projection", "equirectangular"),
         "map_seed": map_seed,
         "planet_id": planet_id,
-        "image_format": "png",
+        "storage_format": RASTER_BUNDLE_FORMAT,
+        "bundle_format_version": RASTER_BUNDLE_VERSION,
+        "bundle_path": _relative_or_absolute(bundle_path, storage_root=storage_root),
+        "image_format": "rgba8888_bundle",
         "width_px": width,
         "height_px": height,
         "wrap_x": bool(heightmap.get("wrap_x", True)),
@@ -330,4 +477,8 @@ def generate_material_heatmap_model(
         "default_confidence_state": "inferred",
         "composite_layer": composite_layer,
         "layers": layer_metadata,
+        "bundle_manifest": {
+            "layer_count": len(manifest.get("layers") or []),
+            "encoding": manifest.get("encoding"),
+        },
     }
