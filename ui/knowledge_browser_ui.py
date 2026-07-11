@@ -210,6 +210,9 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.browser_period_filter_clear_rect = None
         self.relation_link_target = None
         self.relation_link_status = ""
+        self.parent_assignment_request = None
+        self.parent_assignment_confirm_button = None
+        self.parent_assignment_cancel_button = None
         self.canvas_relation_link_source_id = None
         self.canvas_relation_status = ""
         self.relation_tree_touch_degree = 2
@@ -277,6 +280,12 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.schema_loader = SchemaLoader()
         self.schema_field_usage = self._build_schema_field_usage()
         self.card_drafts = self._load_card_drafts()
+        self._text_surface_cache = {}
+        self._text_surface_cache_limit = 1024
+        self._text_width_cache = {}
+        self._ellipsize_cache = {}
+        self._text_metric_cache_limit = 2048
+        self._last_rebuild_signature = None
 
     def reset(self):
         """
@@ -293,6 +302,9 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.world_model = None
         self.repository_scope_entity_id = None
         self.repository_scope_label = None
+        self.parent_assignment_request = None
+        self.parent_assignment_confirm_button = None
+        self.parent_assignment_cancel_button = None
         self.header_button = None
         self.random_entry_button = None
         self.random_task_button = None
@@ -972,18 +984,86 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             return self.LINE_HEIGHT
         return max(self.LINE_HEIGHT, int(font.get_linesize()) + 4)
 
+    def _render_text(self, font, text, color):
+        if not hasattr(self, "_text_surface_cache"):
+            self._text_surface_cache = {}
+            self._text_surface_cache_limit = 1024
+        color = tuple(color)
+        cache_key = (id(font), str(text), color)
+        cached = self._text_surface_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        surface = font.render(str(text), True, color)
+        self._text_surface_cache[cache_key] = surface
+        while len(self._text_surface_cache) > self._text_surface_cache_limit:
+            self._text_surface_cache.pop(next(iter(self._text_surface_cache)))
+        return surface
+
+    def _text_width(self, font, text):
+        if not hasattr(self, "_text_width_cache"):
+            self._text_width_cache = {}
+            self._text_metric_cache_limit = 2048
+        if font is None:
+            return len(str(text or "")) * 8
+        cache_key = (id(font), str(text or ""))
+        cached = self._text_width_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        width = font.size(str(text or ""))[0]
+        self._text_width_cache[cache_key] = width
+        while len(self._text_width_cache) > self._text_metric_cache_limit:
+            self._text_width_cache.pop(next(iter(self._text_width_cache)))
+        return width
+
+    def _clamp_browser_scroll(self, left_rect):
+        if self.browser_collapsed:
+            self.browser_scroll = 0
+            return
+        content_top, content_bottom = self._browser_content_bounds(left_rect)
+        visible_h = max(0, content_bottom - content_top)
+        total_h = len(self.browser_items) * self._font_line_height()
+        max_scroll = max(0, total_h - visible_h)
+        self.browser_scroll = max(0, min(int(self.browser_scroll), max_scroll))
+
+    def _first_visible_browser_index(self, content_top, line_height):
+        if line_height <= 0:
+            return 0, content_top
+        first_index = max(0, int(self.browser_scroll // line_height) - 1)
+        line_y = content_top + first_index * line_height - self.browser_scroll
+        return first_index, line_y
+
     def _ellipsize_text(self, text, font, max_width):
+        if not hasattr(self, "_ellipsize_cache"):
+            self._ellipsize_cache = {}
+            self._text_metric_cache_limit = 2048
         text = str(text or "")
-        if font is None or font.size(text)[0] <= max_width:
+        max_width = int(max_width)
+        cache_key = (id(font), text, max_width)
+        cached = self._ellipsize_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        if font is None or self._text_width(font, text) <= max_width:
+            self._ellipsize_cache[cache_key] = text
             return text
 
         suffix = "..."
-        suffix_w = font.size(suffix)[0]
+        suffix_w = self._text_width(font, suffix)
         available_w = max(0, max_width - suffix_w)
-        trimmed = text
-        while trimmed and font.size(trimmed)[0] > available_w:
-            trimmed = trimmed[:-1]
-        return f"{trimmed}{suffix}" if trimmed else suffix
+        low = 0
+        high = len(text)
+        while low < high:
+            mid = (low + high + 1) // 2
+            if self._text_width(font, text[:mid]) <= available_w:
+                low = mid
+            else:
+                high = mid - 1
+        trimmed = text[:low]
+        result = f"{trimmed}{suffix}" if trimmed else suffix
+        self._ellipsize_cache[cache_key] = result
+        while len(self._ellipsize_cache) > self._text_metric_cache_limit:
+            self._ellipsize_cache.pop(next(iter(self._ellipsize_cache)))
+        return result
 
     def _schema_display_label(self, name):
         text = str(name or "entry")
@@ -1229,6 +1309,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
     def _browser_header_extra_height(self):
         extra_h = 24 if self.relation_link_target is not None else 0
+        if self.parent_assignment_request is not None:
+            extra_h += 30
         if self.browser_period_filter:
             extra_h += 24
         return extra_h
@@ -4496,16 +4578,14 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
         content_top = chip_y + self.BROWSER_FILTER_H + 8
         content_bottom = left_rect.bottom - 10
-        visible_h = content_bottom - content_top
+
+        self._clamp_browser_scroll(left_rect)
 
         line_height = self._font_line_height()
-        total_h = len(self.browser_items) * line_height
-        max_scroll = max(0, total_h - visible_h)
-        self.browser_scroll = max(0, min(self.browser_scroll, max_scroll))
+        start_index, line_y = self._first_visible_browser_index(content_top, line_height)
 
-        line_y = content_top - self.browser_scroll
-
-        for item in self.browser_items:
+        for item_index in range(start_index, len(self.browser_items)):
+            item = self.browser_items[item_index]
             row_top = line_y
             row_bottom = line_y + line_height
 
@@ -4554,37 +4634,103 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         if line_height <= 0:
             return None
 
-        line_y = content_top - self.browser_scroll
-        for item in self.browser_items:
-            row_top = line_y
-            row_bottom = line_y + line_height
+        row_index = int((mouse_pos[1] - content_top + self.browser_scroll) // line_height)
+        if row_index < 0 or row_index >= len(self.browser_items):
+            return None
+        item = self.browser_items[row_index]
+        if item.get("kind") == "spacer":
+            return None
+        row_y = content_top + row_index * line_height - self.browser_scroll
+        row_rect = pygame.Rect(left_rect.x + 10, row_y - 1, left_rect.width - 20, line_height)
+        return item if row_rect.collidepoint(mouse_pos) else None
 
-            if item.get("kind") == "spacer":
-                line_y += line_height
-                continue
-
-            if row_bottom < content_top:
-                line_y += line_height
-                continue
-
-            if row_top > content_bottom:
-                break
-
-            row_rect = pygame.Rect(left_rect.x + 10, line_y - 1, left_rect.width - 20, line_height)
-            if row_rect.collidepoint(mouse_pos):
-                return item
-
-            line_y += line_height
-
+    def _browser_toggle_entity_at_pos(self, mouse_pos, left_rect):
+        item = self._browser_item_at_pos(mouse_pos, left_rect)
+        if not item or item.get("kind") != "tree_entity" or not item.get("expandable", False):
+            return None
+        line_height = self._font_line_height()
+        content_top, _content_bottom = self._browser_content_bounds(left_rect)
+        row_index = int((mouse_pos[1] - content_top + self.browser_scroll) // line_height)
+        line_y = content_top + row_index * line_height - self.browser_scroll
+        depth = item.get("depth", 0)
+        base_x = left_rect.x + 12 + depth * 18
+        caret_rect = pygame.Rect(base_x, line_y + max(2, (line_height - 14) // 2), 14, 14)
+        if caret_rect.collidepoint(mouse_pos):
+            return item.get("entity_id")
         return None
 
-    def rebuild(self, app_width, app_height, world_model, repository_scope_entity_id, font):
+    def _world_model_signature(self, world_model):
+        if world_model is None:
+            return (None, 0, 0, 0)
+        loader = getattr(world_model, "loader", None)
+        entities = getattr(loader, "entities", None)
+        entity_count = len(entities) if isinstance(entities, dict) else 0
+        return (
+            id(world_model),
+            id(entities),
+            entity_count,
+            getattr(world_model, "repository_revision", 0),
+        )
+
+    def _knowledge_rebuild_signature(
+        self,
+        app_width,
+        app_height,
+        world_model,
+        repository_scope_entity_id,
+        font,
+        parent_assignment_request=None,
+    ):
+        parent_signature = None
+        if isinstance(parent_assignment_request, dict):
+            parent_signature = (
+                parent_assignment_request.get("target_entity_id"),
+                parent_assignment_request.get("target_label"),
+            )
+        return (
+            int(app_width),
+            int(app_height),
+            id(font),
+            repository_scope_entity_id,
+            parent_signature,
+            self._world_model_signature(world_model),
+            self.timeline_panel_height,
+            self.timeline_collapsed,
+        )
+
+    def rebuild(
+        self,
+        app_width,
+        app_height,
+        world_model,
+        repository_scope_entity_id,
+        font,
+        parent_assignment_request=None,
+    ):
+        signature = self._knowledge_rebuild_signature(
+            app_width,
+            app_height,
+            world_model,
+            repository_scope_entity_id,
+            font,
+            parent_assignment_request=parent_assignment_request,
+        )
+        if self.layout is not None and signature == self._last_rebuild_signature:
+            return
+
         self.reset()
 
         self.app_width = app_width
         self.app_height = app_height
         self.font_for_layout = font
         self.world_model = world_model
+        self.parent_assignment_request = (
+            dict(parent_assignment_request)
+            if isinstance(parent_assignment_request, dict)
+            else None
+        )
+        if self.parent_assignment_request is not None:
+            self.browser_filter_dataset = "locations"
         self._hydrate_draft_entities(world_model)
         self.repository_scope_entity_id = repository_scope_entity_id
         self.browser_items = self._build_browser_items(world_model)
@@ -4611,6 +4757,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             self._rebuild_browser_hitboxes()
 
         self._relayout_cards()
+        self._last_rebuild_signature = signature
 
     def _draw_card(self, screen, font, card):
         card_view = card.get("card_view")
@@ -4649,11 +4796,23 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         description = ""
         if isinstance(entity, dict):
             description = str(entity.get("three_word_description") or "").strip()
-        title_surface = font.render(self._ellipsize_text(title, font, rect.width - 34), True, (244, 246, 250))
+        title_surface = self._render_text(
+            font,
+            self._ellipsize_text(title, font, rect.width - 34),
+            (244, 246, 250),
+        )
         description_surface = None
         if description:
-            description_surface = font.render(self._ellipsize_text(description, font, rect.width - 18), True, (202, 210, 226))
-        subtitle_surface = font.render(self._ellipsize_text(subtitle, font, rect.width - 18), True, (178, 188, 206))
+            description_surface = self._render_text(
+                font,
+                self._ellipsize_text(description, font, rect.width - 18),
+                (202, 210, 226),
+            )
+        subtitle_surface = self._render_text(
+            font,
+            self._ellipsize_text(subtitle, font, rect.width - 18),
+            (178, 188, 206),
+        )
         screen.blit(title_surface, (rect.x + 8, rect.y + 8))
         if description_surface is not None:
             screen.blit(description_surface, (rect.x + 8, rect.y + 28))
@@ -4665,7 +4824,11 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             year_text = str(years[0]) if len(years) == 1 else f"{years[0]}-{years[-1]}"
         else:
             year_text = "year missing"
-        year_surface = font.render(self._ellipsize_text(year_text, font, rect.width - 18), True, (206, 214, 230))
+        year_surface = self._render_text(
+            font,
+            self._ellipsize_text(year_text, font, rect.width - 18),
+            (206, 214, 230),
+        )
         year_y = rect.y + (68 if description else 48)
         if year_y + year_surface.get_height() <= rect.bottom - 6:
             screen.blit(year_surface, (rect.x + 8, year_y))
@@ -4674,7 +4837,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         if close_rect is not None:
             pygame.draw.rect(screen, (70, 44, 50), close_rect)
             pygame.draw.rect(screen, (190, 130, 140), close_rect, 1)
-            close_surface = font.render("x", True, (250, 230, 234))
+            close_surface = self._render_text(font, "x", (250, 230, 234))
             screen.blit(close_surface, close_surface.get_rect(center=close_rect.center))
 
     def _card_visual_rect(self, *args, **kwargs):
@@ -4734,24 +4897,25 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
         pygame.draw.rect(screen, (22, 26, 36), picker_rect)
         pygame.draw.rect(screen, (174, 184, 204), picker_rect, 1)
-        title_surface = font.render("Change Class To", True, (238, 238, 238))
+        title_surface = self._render_text(font, "Change Class To", (238, 238, 238))
         screen.blit(title_surface, (picker_rect.x + 8, picker_rect.y + 7))
         if max_scroll > 0:
             range_text = f"{scroll + 1}-{scroll + len(visible_templates)} / {len(templates)}"
-            range_surface = font.render(range_text, True, (172, 184, 204))
+            range_surface = self._render_text(font, range_text, (172, 184, 204))
             screen.blit(range_surface, (picker_rect.right - range_surface.get_width() - 8, picker_rect.y + 7))
 
         card["type_picker_hitboxes"] = []
+        mouse_pos = pygame.mouse.get_pos()
         row_y = picker_rect.y + 30
         for template in visible_templates:
             row_rect = pygame.Rect(picker_rect.x + 8, row_y, picker_rect.width - 16, self.CARD_TYPE_PICKER_ROW_H - 4)
-            hovered = row_rect.collidepoint(pygame.mouse.get_pos())
+            hovered = row_rect.collidepoint(mouse_pos)
             fill = (52, 62, 82) if hovered else (34, 38, 50)
             pygame.draw.rect(screen, fill, row_rect)
             pygame.draw.rect(screen, (104, 116, 138), row_rect, 1)
             label = template.get("label") or template.get("entity_type") or "Entry"
             dataset = template.get("dataset_name", "")
-            text_surface = font.render(f"{label} [{dataset}]", True, (238, 238, 238))
+            text_surface = self._render_text(font, f"{label} [{dataset}]", (238, 238, 238))
             screen.blit(text_surface, (row_rect.x + 6, row_rect.y + 3))
             card["type_picker_hitboxes"].append((template, row_rect))
             row_y += self.CARD_TYPE_PICKER_ROW_H
@@ -5005,7 +5169,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         if left_rect.collidepoint(mouse_pos):
             line_step = self._font_line_height()
             self.browser_scroll = max(0, self.browser_scroll - event.y * line_step)
-            self._rebuild_browser_hitboxes()
+            self._clamp_browser_scroll(left_rect)
             return "__ui_consumed__"
 
         if (
@@ -5252,30 +5416,31 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 self._rebuild_browser_hitboxes()
                 return "__ui_consumed__"
 
-        for entity_id, hitbox in self.browser_toggle_hitboxes:
-            if hitbox.collidepoint(mouse_pos):
-                self._set_expanded(entity_id, not self._is_expanded(entity_id))
-                self.browser_items = self._build_browser_items(self.world_model)
-                self._rebuild_browser_hitboxes()
-                return "__ui_consumed__"
+        toggle_entity_id = self._browser_toggle_entity_at_pos(mouse_pos, left_rect)
+        if toggle_entity_id is not None:
+            self._set_expanded(toggle_entity_id, not self._is_expanded(toggle_entity_id))
+            self.browser_items = self._build_browser_items(self.world_model)
+            self._rebuild_browser_hitboxes()
+            return "__ui_consumed__"
 
         if self.relation_link_target is not None:
             return self._handle_relation_link_mode_click(mouse_pos, left_rect)
 
-        for entity_id, hitbox in self.browser_hitboxes:
-            if hitbox.collidepoint(mouse_pos):
-                self.selected_entity_id = entity_id
+        item = self._browser_item_at_pos(mouse_pos, left_rect)
+        if item is not None and item.get("kind") in {"entity", "tree_entity", "schema"}:
+            entity_id = item.get("entity_id")
+            self.selected_entity_id = entity_id
 
-                schema_name = self._schema_name_from_card_id(entity_id)
-                if schema_name is not None:
-                    self._ensure_schema_card(schema_name)
-                    return "__ui_consumed__"
-
-                if self.world_model is not None:
-                    entity = self.world_model.get_entity(entity_id)
-                    self._ensure_card(entity)
-
+            schema_name = self._schema_name_from_card_id(entity_id)
+            if schema_name is not None:
+                self._ensure_schema_card(schema_name)
                 return "__ui_consumed__"
+
+            if self.world_model is not None:
+                entity = self.world_model.get_entity(entity_id)
+                self._ensure_card(entity)
+
+            return "__ui_consumed__"
 
         return None
 
@@ -5946,10 +6111,10 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             title_text = f"Choose Entry Type: {pending_name}"
         else:
             title_text = "Create New Entry From Schema"
-        picker_title = font.render(title_text, True, (236, 236, 236))
+        picker_title = self._render_text(font, title_text, (236, 236, 236))
         max_title_w = self.template_picker_rect.width - 24
         if picker_title.get_width() > max_title_w:
-            picker_title = font.render("Choose Entry Type", True, (236, 236, 236))
+            picker_title = self._render_text(font, "Choose Entry Type", (236, 236, 236))
         title_y = self.template_picker_rect.y + max(
             6,
             (self._template_picker_header_height() - font.get_linesize()) // 2,
@@ -5963,15 +6128,16 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             pygame.draw.rect(screen, search_border, self.template_picker_search_rect, 1)
             search_text = self.template_picker_search_query if self.template_picker_search_query else "Search templates or classes"
             search_color = (238, 238, 238) if self.template_picker_search_query else (150, 158, 174)
-            search_surface = font.render(search_text, True, search_color)
+            search_surface = self._render_text(font, search_text, search_color)
             screen.blit(search_surface, (self.template_picker_search_rect.x + 8, self.template_picker_search_rect.y + 4))
 
+        mouse_pos = pygame.mouse.get_pos()
         for template, label, button_rect in self.template_quick_button_hitboxes:
-            hovered = button_rect.collidepoint(pygame.mouse.get_pos())
+            hovered = button_rect.collidepoint(mouse_pos)
             fill = (66, 82, 112) if hovered else (48, 58, 78)
             pygame.draw.rect(screen, fill, button_rect)
             pygame.draw.rect(screen, (176, 190, 216), button_rect, 1)
-            quick_label = font.render(label, True, (244, 246, 250))
+            quick_label = self._render_text(font, label, (244, 246, 250))
             screen.blit(quick_label, quick_label.get_rect(center=button_rect.center))
 
         for row in self.template_picker_visible_rows:
@@ -5984,14 +6150,14 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 sector_rect = pygame.Rect(row_rect.x, row_rect.y + 2, row_rect.width, max(20, row_rect.height - 8))
                 pygame.draw.rect(screen, (42, 48, 66), sector_rect)
                 pygame.draw.rect(screen, (104, 120, 152), sector_rect, 1)
-                header_label = font.render(str(label), True, (236, 240, 248))
+                header_label = self._render_text(font, str(label), (236, 240, 248))
                 screen.blit(header_label, (sector_rect.x + 8, sector_rect.y + 3))
                 continue
 
             if row.get("kind") == "header":
                 header_rect = pygame.Rect(row_rect.x, row_rect.y + 3, row_rect.width, max(20, row_rect.height - 10))
                 pygame.draw.rect(screen, (31, 36, 48), header_rect)
-                header_label = font.render(str(label), True, (188, 202, 226))
+                header_label = self._render_text(font, str(label), (188, 202, 226))
                 screen.blit(header_label, (header_rect.x + 8, header_rect.y + 3))
                 continue
 
@@ -5999,13 +6165,13 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 item_rect = item.get("rect")
                 if item_rect is None:
                     continue
-                hovered = item_rect.collidepoint(pygame.mouse.get_pos())
+                hovered = item_rect.collidepoint(mouse_pos)
                 fill = (52, 60, 78) if hovered else (44, 50, 64)
                 pygame.draw.rect(screen, fill, item_rect)
                 pygame.draw.rect(screen, (132, 142, 160), item_rect, 1)
 
                 item_label = self._ellipsize_text(str(item.get("label", "Template")), font, item_rect.width - 14)
-                label_surface = font.render(item_label, True, (242, 242, 242))
+                label_surface = self._render_text(font, item_label, (242, 242, 242))
                 screen.blit(label_surface, (item_rect.x + 7, item_rect.y + max(3, (item_rect.height - label_surface.get_height()) // 2)))
 
         quick_count = len(self.template_quick_button_hitboxes)
@@ -6017,7 +6183,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 f"{self.template_picker_scroll + visible_count} / "
                 f"{list_count}"
             )
-            scroll_surface = font.render(scroll_label, True, (166, 174, 190))
+            scroll_surface = self._render_text(font, scroll_label, (166, 174, 190))
             screen.blit(
                 scroll_surface,
                 (
@@ -6028,7 +6194,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
         status = str(self.template_picker_status or "").strip()
         if status and not pending_name and self.template_picker_mode != "convert":
-            status_surface = font.render(status, True, (230, 154, 132))
+            status_surface = self._render_text(font, status, (230, 154, 132))
             screen.blit(
                 status_surface,
                 (
@@ -6051,6 +6217,66 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         return self._stellar_neighbour_prompt_controller()._handle_stellar_neighbourhood_prompt_click(
             mouse_pos
         )
+
+    def _is_location_parent_candidate(self, entity_id):
+        if self.world_model is None or not entity_id:
+            return False
+        request = self.parent_assignment_request or {}
+        target_id = request.get("target_entity_id")
+        if entity_id == target_id:
+            return False
+        entity = self.world_model.get_entity(entity_id)
+        return isinstance(entity, dict) and (
+            entity.get("_dataset") == "locations" or entity.get("type") == "location"
+        )
+
+    def _draw_parent_assignment_banner(self, screen, font, draw_button_fn, left_rect):
+        self.parent_assignment_confirm_button = None
+        self.parent_assignment_cancel_button = None
+        request = self.parent_assignment_request
+        if not isinstance(request, dict) or self.browser_collapsed:
+            return
+
+        banner_rect = pygame.Rect(left_rect.x + 10, left_rect.y + 32, left_rect.width - 20, 26)
+        pygame.draw.rect(screen, (34, 42, 34), banner_rect)
+        pygame.draw.rect(screen, (138, 184, 132), banner_rect, 1)
+
+        target_label = request.get("target_label") or request.get("target_entity_id") or "entry"
+        selected_ok = self._is_location_parent_candidate(self.selected_entity_id)
+        label = f"Choose parent for {target_label}"
+        if selected_ok:
+            parent = self.world_model.get_entity(self.selected_entity_id)
+            parent_label = parent.get("name") or parent.get("pretty_name") or self.selected_entity_id
+            label = f"Parent: {parent_label}"
+        label_surface = self._render_text(
+            font,
+            self._ellipsize_text(label, font, max(80, banner_rect.width - 174)),
+            (210, 236, 204),
+        )
+        screen.blit(label_surface, (banner_rect.x + 8, banner_rect.y + 5))
+
+        button_h = 20
+        cancel_w = 58
+        confirm_w = 76
+        self.parent_assignment_cancel_button = UIButton(
+            "parent_assignment_cancel",
+            "Cancel",
+            pygame.Rect(banner_rect.right - cancel_w - 6, banner_rect.y + 3, cancel_w, button_h),
+        )
+        self.parent_assignment_confirm_button = UIButton(
+            "parent_assignment_confirm",
+            "Confirm",
+            pygame.Rect(
+                self.parent_assignment_cancel_button.rect.x - confirm_w - 6,
+                banner_rect.y + 3,
+                confirm_w,
+                button_h,
+            ),
+            enabled=selected_ok,
+        )
+        draw_button_fn(screen, font, self.parent_assignment_confirm_button)
+        draw_button_fn(screen, font, self.parent_assignment_cancel_button)
+
     def draw(self, screen, font, draw_button_fn):
         if self.layout is None:
             return
@@ -6061,16 +6287,33 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         left_rect = self.layout["left_rect"]
         right_rect = self.layout["right_rect"]
 
-        pygame.draw.rect(screen, (18, 20, 26), header_rect)
-        pygame.draw.rect(screen, (200, 200, 200), header_rect, 1)
-
-        title_surface = font.render("Knowledge Layer", True, (245, 245, 245))
-        subtitle_text = "Pre-simulation repository workspace"
-        if self.repository_scope_label:
-            subtitle_text = self.repository_scope_label
-        subtitle_surface = font.render(subtitle_text, True, (180, 180, 180))
-        screen.blit(title_surface, (header_rect.x + 14, header_rect.y + 10))
-        screen.blit(subtitle_surface, (header_rect.x + 14, header_rect.y + 30))
+        title_text = "Knowledge Layer"
+        subtitle_text = self.repository_scope_label or "Pre-simulation repository workspace"
+        max_header_box_w = max(280, min(620, header_rect.width - 28))
+        inner_w = max_header_box_w - 28
+        subtitle_text = self._ellipsize_text(subtitle_text, font, inner_w)
+        title_surface = self._render_text(font, title_text, (245, 245, 245))
+        subtitle_surface = self._render_text(font, subtitle_text, (180, 180, 180))
+        header_box_w = max(
+            280,
+            min(
+                max_header_box_w,
+                max(title_surface.get_width(), subtitle_surface.get_width()) + 28,
+            ),
+        )
+        header_box_rect = pygame.Rect(
+            header_rect.x,
+            header_rect.y,
+            header_box_w,
+            header_rect.height,
+        )
+        pygame.draw.rect(screen, (18, 20, 26), header_box_rect)
+        pygame.draw.rect(screen, (200, 200, 200), header_box_rect, 1)
+        clip = screen.get_clip()
+        screen.set_clip(header_box_rect.clip(screen.get_rect()))
+        screen.blit(title_surface, (header_box_rect.x + 14, header_box_rect.y + 10))
+        screen.blit(subtitle_surface, (header_box_rect.x + 14, header_box_rect.y + 30))
+        screen.set_clip(clip)
 
         self.timeline_ui.set_rect(timeline_rect)
         self.timeline_ui.set_font(font)
@@ -6109,8 +6352,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         pygame.draw.rect(screen, (12, 16, 28), right_rect)
         pygame.draw.rect(screen, (200, 200, 200), right_rect, 1)
 
-        left_title = font.render("Repository Browser", True, (240, 240, 240))
-        right_title = font.render("Card Canvas", True, (240, 240, 240))
+        left_title = self._render_text(font, "Repository Browser", (240, 240, 240))
+        right_title = self._render_text(font, "Card Canvas", (240, 240, 240))
         if not self.browser_collapsed:
             screen.blit(left_title, (left_rect.x + 12, left_rect.y + 10))
         screen.blit(right_title, (right_rect.x + 12, right_rect.y + 10))
@@ -6120,7 +6363,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             handle_fill = (42, 48, 62) if self.browser_collapsed else (34, 40, 52)
             pygame.draw.rect(screen, handle_fill, handle_rect)
             pygame.draw.rect(screen, (150, 160, 182), handle_rect, 1)
-            handle_text = font.render("||", True, (226, 232, 244))
+            handle_text = self._render_text(font, "||", (226, 232, 244))
             screen.blit(handle_text, handle_text.get_rect(center=handle_rect.center))
 
         if self.relation_link_target is not None and not self.browser_collapsed:
@@ -6130,20 +6373,22 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             pygame.draw.rect(screen, (26, 44, 62), banner_rect)
             pygame.draw.rect(screen, (112, 166, 224), banner_rect, 1)
             status_text = self.relation_link_status or f"Choose an existing {target_label}"
-            link_surface = font.render(
+            link_surface = self._render_text(
+                font,
                 f"Link {field_label}: {status_text}",
-                True,
                 (166, 204, 236),
             )
             max_text_w = banner_rect.width - 12
             if link_surface.get_width() > max_text_w:
                 label = f"Link {field_label}: {target_label}"
-                link_surface = font.render(label, True, (166, 204, 236))
+                link_surface = self._render_text(font, label, (166, 204, 236))
             screen.blit(link_surface, (banner_rect.x + 6, banner_rect.y + 3))
+
+        self._draw_parent_assignment_banner(screen, font, draw_button_fn, left_rect)
 
         self.browser_period_filter_clear_rect = None
         if self.browser_period_filter is not None and not self.browser_collapsed:
-            period_y = left_rect.y + 32 + (24 if self.relation_link_target is not None else 0)
+            period_y = left_rect.y + 32 + self._browser_header_extra_height() - 24
             period_rect = pygame.Rect(left_rect.x + 10, period_y, left_rect.width - 20, 22)
             clear_rect = pygame.Rect(period_rect.right - 24, period_rect.y + 3, 18, 16)
             self.browser_period_filter_clear_rect = clear_rect
@@ -6151,19 +6396,19 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             pygame.draw.rect(screen, (42, 36, 26), period_rect)
             pygame.draw.rect(screen, (196, 164, 108), period_rect, 1)
             label = self._ellipsize_text(f"Period: {start_year} to {end_year}", font, period_rect.width - 40)
-            screen.blit(font.render(label, True, (238, 214, 166)), (period_rect.x + 6, period_rect.y + 3))
+            screen.blit(self._render_text(font, label, (238, 214, 166)), (period_rect.x + 6, period_rect.y + 3))
             pygame.draw.rect(screen, (72, 48, 42), clear_rect)
             pygame.draw.rect(screen, (210, 150, 130), clear_rect, 1)
-            clear_surface = font.render("x", True, (248, 228, 220))
+            clear_surface = self._render_text(font, "x", (248, 228, 220))
             screen.blit(clear_surface, clear_surface.get_rect(center=clear_rect.center))
-        zoom_label = font.render(f"{int(self.canvas_zoom * 100)}%", True, (170, 180, 200))
+        zoom_label = self._render_text(font, f"{int(self.canvas_zoom * 100)}%", (170, 180, 200))
         screen.blit(zoom_label, (right_rect.x + 118, right_rect.y + 10))
         if self.canvas_relation_link_source_id is not None:
             status_text = self.canvas_relation_status or "Click a second card to relate entries"
-            status_surface = font.render(status_text, True, (230, 210, 150))
+            status_surface = self._render_text(font, status_text, (230, 210, 150))
             max_status_w = max(40, right_rect.width - 260)
             if status_surface.get_width() > max_status_w:
-                status_surface = font.render("Click a second card to relate entries", True, (230, 210, 150))
+                status_surface = self._render_text(font, "Click a second card to relate entries", (230, 210, 150))
             screen.blit(status_surface, (right_rect.x + 170, right_rect.y + 10))
 
         if self.browser_search_rect is not None:
@@ -6173,7 +6418,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             pygame.draw.rect(screen, search_border, self.browser_search_rect, 1)
             search_text = self.browser_search_query if self.browser_search_query else "Search by name, id, or type"
             search_color = (238, 238, 238) if self.browser_search_query else (150, 158, 174)
-            search_surface = font.render(search_text, True, search_color)
+            search_surface = self._render_text(font, search_text, search_color)
             screen.blit(search_surface, (self.browser_search_rect.x + 8, self.browser_search_rect.y + 4))
 
         for filter_kind, filter_value, chip_rect in self.browser_filter_hitboxes:
@@ -6188,7 +6433,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             text_color = (245, 245, 245) if selected else (194, 202, 216)
             pygame.draw.rect(screen, fill, chip_rect)
             pygame.draw.rect(screen, border, chip_rect, 1)
-            chip_text = font.render(label, True, text_color)
+            chip_text = self._render_text(font, label, text_color)
             chip_text_rect = chip_text.get_rect(center=chip_rect.center)
             screen.blit(chip_text, chip_text_rect)
 
@@ -6221,14 +6466,21 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         ) if self.browser_search_rect is not None else left_rect.y + 48
         content_bottom = left_rect.bottom - 10
 
-        row_hitboxes = {entity_id: rect for entity_id, rect in self.browser_hitboxes}
-        toggle_hitboxes = {entity_id: rect for entity_id, rect in self.browser_toggle_hitboxes}
-
         line_height = self._font_line_height(font)
         text_offset_y = max(0, (line_height - font.get_linesize()) // 2)
-        line_y = content_top - self.browser_scroll
+        if not self.browser_collapsed:
+            self._clamp_browser_scroll(left_rect)
+        start_index, line_y = self._first_visible_browser_index(content_top, line_height)
+        self.browser_hitboxes = []
+        self.browser_toggle_hitboxes = []
 
-        for item in ([] if self.browser_collapsed else self.browser_items):
+        if self.browser_collapsed:
+            visible_browser_indices = range(0)
+        else:
+            visible_browser_indices = range(start_index, len(self.browser_items))
+
+        for item_index in visible_browser_indices:
+            item = self.browser_items[item_index]
             row_top = line_y
             row_bottom = line_y + line_height
 
@@ -6245,7 +6497,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
             if item["kind"] == "section":
                 color = (235, 235, 235)
-                text_surface = font.render(item["text"], True, color)
+                text_surface = self._render_text(font, item["text"], color)
                 screen.blit(text_surface, (left_rect.x + 12, line_y + text_offset_y))
 
             elif item["kind"] == "label":
@@ -6255,12 +6507,13 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                     color = (176, 188, 208)
                 else:
                     color = (220, 220, 220)
-                text_surface = font.render(item["text"], True, color)
+                text_surface = self._render_text(font, item["text"], color)
                 screen.blit(text_surface, (left_rect.x + 12 + indent_px, line_y + text_offset_y))
 
             else:
                 entity_id = item["entity_id"]
-                row_rect = row_hitboxes.get(entity_id)
+                row_rect = pygame.Rect(left_rect.x + 10, line_y - 1, left_rect.width - 20, line_height)
+                self.browser_hitboxes.append((entity_id, row_rect))
                 is_selected = entity_id == self.selected_entity_id
                 relation_linking = self.relation_link_target is not None
                 relation_pickable = item.get("kind") in {"entity", "tree_entity"}
@@ -6291,49 +6544,49 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
                 if item["kind"] == "tree_entity":
                     if item.get("expandable", False):
-                        caret_rect = toggle_hitboxes.get(entity_id)
-                        if caret_rect is not None:
-                            if item.get("expanded", False):
-                                pygame.draw.polygon(
-                                    screen,
-                                    color,
-                                    [
-                                        (caret_rect.x + 2, caret_rect.y + 4),
-                                        (caret_rect.x + 12, caret_rect.y + 4),
-                                        (caret_rect.x + 7, caret_rect.y + 11),
-                                    ],
-                                )
-                            else:
-                                pygame.draw.polygon(
-                                    screen,
-                                    color,
-                                    [
-                                        (caret_rect.x + 4, caret_rect.y + 2),
-                                        (caret_rect.x + 11, caret_rect.y + 7),
-                                        (caret_rect.x + 4, caret_rect.y + 12),
-                                    ],
-                                )
+                        caret_rect = pygame.Rect(base_x, line_y + max(2, (line_height - 14) // 2), 14, 14)
+                        self.browser_toggle_hitboxes.append((entity_id, caret_rect))
+                        if item.get("expanded", False):
+                            pygame.draw.polygon(
+                                screen,
+                                color,
+                                [
+                                    (caret_rect.x + 2, caret_rect.y + 4),
+                                    (caret_rect.x + 12, caret_rect.y + 4),
+                                    (caret_rect.x + 7, caret_rect.y + 11),
+                                ],
+                            )
+                        else:
+                            pygame.draw.polygon(
+                                screen,
+                                color,
+                                [
+                                    (caret_rect.x + 4, caret_rect.y + 2),
+                                    (caret_rect.x + 11, caret_rect.y + 7),
+                                    (caret_rect.x + 4, caret_rect.y + 12),
+                                ],
+                            )
                         text_x = base_x + 20
                     else:
                         text_x = base_x + 20
 
-                    text_surface = font.render(item["text"], True, color)
+                    text_surface = self._render_text(font, item["text"], color)
                     screen.blit(text_surface, (text_x, line_y + text_offset_y))
 
                     meta_text = item.get("meta_text")
                     if meta_text:
-                        meta_surface = font.render(meta_text, True, (170, 170, 170))
+                        meta_surface = self._render_text(font, meta_text, (170, 170, 170))
                         screen.blit(meta_surface, (text_x + text_surface.get_width() + 8, line_y + text_offset_y))
                     missing_count = item.get("missing_count", 0)
                     if missing_count:
-                        missing_surface = font.render(f"missing:{missing_count}", True, (220, 182, 132))
+                        missing_surface = self._render_text(font, f"missing:{missing_count}", (220, 182, 132))
                         screen.blit(missing_surface, (left_rect.right - missing_surface.get_width() - 14, line_y + text_offset_y))
                 else:
-                    text_surface = font.render(item["text"], True, color)
+                    text_surface = self._render_text(font, item["text"], color)
                     screen.blit(text_surface, (left_rect.x + 12, line_y + text_offset_y))
                     missing_count = item.get("missing_count", 0)
                     if missing_count:
-                        missing_surface = font.render(f"missing:{missing_count}", True, (220, 182, 132))
+                        missing_surface = self._render_text(font, f"missing:{missing_count}", (220, 182, 132))
                         screen.blit(missing_surface, (left_rect.right - missing_surface.get_width() - 14, line_y + text_offset_y))
 
             line_y += line_height
@@ -6432,6 +6685,25 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             )
             self._begin_timeline_splitter_click(mouse_pos, toggle=toggle_hit)
             return "__ui_consumed__"
+
+        if (
+            self.parent_assignment_confirm_button is not None
+            and self.parent_assignment_confirm_button.rect.collidepoint(mouse_pos)
+        ):
+            request = self.parent_assignment_request or {}
+            if self.parent_assignment_confirm_button.enabled:
+                return {
+                    "id": "parent_assignment_confirm",
+                    "target_entity_id": request.get("target_entity_id"),
+                    "parent_entity_id": self.selected_entity_id,
+                }
+            return "__ui_consumed__"
+
+        if (
+            self.parent_assignment_cancel_button is not None
+            and self.parent_assignment_cancel_button.rect.collidepoint(mouse_pos)
+        ):
+            return {"id": "parent_assignment_cancel"}
 
         if self.random_entry_button is not None and self.random_entry_button.rect.collidepoint(mouse_pos):
             self._create_random_entry_card()

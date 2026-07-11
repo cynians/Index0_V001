@@ -12,6 +12,35 @@ class MapRenderer:
         self.app_view = app_view
         self._image_cache = {}
         self._scaled_image_cache = {}
+        self._heightmap_surface_cache = {}
+        self._scaled_heightmap_cache = {}
+        self._text_surface_cache = {}
+        self._scaled_cache_limit = 32
+        self._text_cache_limit = 256
+
+    def _cache_put(self, cache, key, value, limit=None):
+        cache[key] = value
+        if limit is None:
+            return value
+        while len(cache) > limit:
+            cache.pop(next(iter(cache)))
+        return value
+
+    def _render_text(self, text, color):
+        font = self.app_view.default_font
+        color = tuple(color)
+        cache_key = (id(font), str(text), color)
+        cached = self._text_surface_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        surface = font.render(str(text), True, color)
+        return self._cache_put(
+            self._text_surface_cache,
+            cache_key,
+            surface,
+            self._text_cache_limit,
+        )
 
     def _coerce_rgb(self, value, fallback=(82, 78, 70)):
         if isinstance(value, (list, tuple)) and len(value) >= 3:
@@ -74,6 +103,36 @@ class MapRenderer:
         self._image_cache[cache_key] = surface
         return surface
 
+    def _draw_transparent_polygon(self, screen, points, fill_color, border_color=None, border_width=0):
+        if len(points) < 3:
+            return
+
+        min_x = min(point[0] for point in points)
+        max_x = max(point[0] for point in points)
+        min_y = min(point[1] for point in points)
+        max_y = max(point[1] for point in points)
+
+        padding = max(1, int(border_width or 0) + 2)
+        bounds = pygame.Rect(
+            min_x - padding,
+            min_y - padding,
+            max(1, max_x - min_x + padding * 2),
+            max(1, max_y - min_y + padding * 2),
+        )
+        clipped = bounds.clip(screen.get_rect())
+        if clipped.width <= 0 or clipped.height <= 0:
+            return
+
+        local_points = [
+            (int(point[0] - clipped.x), int(point[1] - clipped.y))
+            for point in points
+        ]
+        overlay = pygame.Surface(clipped.size, pygame.SRCALPHA)
+        pygame.draw.polygon(overlay, fill_color, local_points)
+        if border_color is not None and border_width > 0:
+            pygame.draw.polygon(overlay, border_color, local_points, border_width)
+        screen.blit(overlay, clipped.topleft)
+
     def _draw_image_rect_layer(self, screen, layer, camera):
         image_surface = self._load_image_surface(layer.get("image_path"))
         if image_surface is None:
@@ -104,7 +163,12 @@ class MapRenderer:
         scaled = self._scaled_image_cache.get(cache_key)
         if scaled is None:
             scaled = pygame.transform.smoothscale(image_surface, (rect.width, rect.height))
-            self._scaled_image_cache[cache_key] = scaled
+            self._cache_put(
+                self._scaled_image_cache,
+                cache_key,
+                scaled,
+                self._scaled_cache_limit,
+            )
 
         alpha = layer.get("alpha")
         if alpha is not None:
@@ -114,9 +178,8 @@ class MapRenderer:
         screen.blit(scaled, rect)
 
         if layer.get("is_ghost_context") and layer.get("name"):
-            text = self.app_view.default_font.render(
+            text = self._render_text(
                 layer.get("name", "location"),
-                True,
                 (210, 218, 230),
             )
             screen.blit(text, (rect.x + 6, rect.y + 6))
@@ -195,23 +258,53 @@ class MapRenderer:
         ):
             return
 
+        clip = screen.get_clip()
+        screen.set_clip(rect.clip(screen.get_rect()))
         cell_cols = max(1, min(len(row) for row in rows) - 1)
         cell_rows = max(1, len(rows) - 1)
+        if cell_cols * cell_rows <= 4096:
+            self._draw_heightmap_grid_cells(screen, rect, layer, heightmap, rows, cell_cols, cell_rows)
+        else:
+            heightmap_surface = self._heightmap_surface_for_layer(layer, heightmap, rows)
+            if heightmap_surface is not None:
+                scaled_key = (id(heightmap_surface), rect.width, rect.height)
+                scaled = self._scaled_heightmap_cache.get(scaled_key)
+                if scaled is None:
+                    scaled = pygame.transform.scale(heightmap_surface, (rect.width, rect.height))
+                    self._cache_put(
+                        self._scaled_heightmap_cache,
+                        scaled_key,
+                        scaled,
+                        self._scaled_cache_limit,
+                    )
+                screen.blit(scaled, rect)
+        screen.set_clip(clip)
+
+        pygame.draw.rect(screen, (75, 92, 112), rect, 1)
+        if heightmap.get("wrap_x"):
+            pygame.draw.line(screen, (120, 190, 230), (rect.x, rect.y), (rect.x, rect.bottom), 1)
+            pygame.draw.line(screen, (120, 190, 230), (rect.right - 1, rect.y), (rect.right - 1, rect.bottom), 1)
+
+    def _draw_heightmap_grid_cells(self, screen, rect, layer, heightmap, rows, cell_cols, cell_rows):
         masks = heightmap.get("surface_masks") if isinstance(heightmap.get("surface_masks"), dict) else {}
         ice_rows = masks.get("ice_rows") if isinstance(masks.get("ice_rows"), list) else []
         color_context = self._heightmap_color_context(heightmap, layer)
-        x_edges = [rect.x + int(col_index * rect.width / cell_cols) for col_index in range(cell_cols + 1)]
-        y_edges = [rect.y + int(row_index * rect.height / cell_rows) for row_index in range(cell_rows + 1)]
-        clip = screen.get_clip()
-        screen.set_clip(rect.clip(screen.get_rect()))
+
+        x_edges = [
+            rect.x + int(round(index * rect.width / cell_cols))
+            for index in range(cell_cols + 1)
+        ]
+        y_edges = [
+            rect.y + int(round(index * rect.height / cell_rows))
+            for index in range(cell_rows + 1)
+        ]
+
         for row_index in range(cell_rows):
             row_a = rows[row_index]
             row_b = rows[min(row_index + 1, len(rows) - 1)]
-            y0 = y_edges[row_index]
-            y1 = y_edges[row_index + 1]
+            top = y_edges[row_index]
+            bottom = y_edges[row_index + 1]
             for col_index in range(cell_cols):
-                x0 = x_edges[col_index]
-                x1 = x_edges[col_index + 1]
                 values = (
                     row_a[col_index],
                     row_a[min(col_index + 1, len(row_a) - 1)],
@@ -225,17 +318,67 @@ class MapRenderer:
                     and col_index < len(ice_rows[row_index])
                     and bool(ice_rows[row_index][col_index])
                 )
+                left = x_edges[col_index]
+                right = x_edges[col_index + 1]
                 pygame.draw.rect(
                     screen,
                     self._heightmap_color_from_context(elevation, color_context, has_ice=has_ice),
-                    pygame.Rect(x0, y0, max(1, x1 - x0), max(1, y1 - y0)),
+                    pygame.Rect(left, top, max(1, right - left), max(1, bottom - top)),
                 )
-        screen.set_clip(clip)
 
-        pygame.draw.rect(screen, (75, 92, 112), rect, 1)
-        if heightmap.get("wrap_x"):
-            pygame.draw.line(screen, (120, 190, 230), (rect.x, rect.y), (rect.x, rect.bottom), 1)
-            pygame.draw.line(screen, (120, 190, 230), (rect.right - 1, rect.y), (rect.right - 1, rect.bottom), 1)
+    def _heightmap_surface_for_layer(self, layer, heightmap, rows):
+        cell_cols = max(1, min(len(row) for row in rows) - 1)
+        cell_rows = max(1, len(rows) - 1)
+        masks = heightmap.get("surface_masks") if isinstance(heightmap.get("surface_masks"), dict) else {}
+        ice_rows = masks.get("ice_rows") if isinstance(masks.get("ice_rows"), list) else []
+        cache_key = (
+            id(heightmap),
+            id(rows),
+            id(ice_rows),
+            repr(layer.get("surface_palette")),
+            repr(layer.get("color")),
+            repr(layer.get("display_color")),
+            cell_cols,
+            cell_rows,
+        )
+        cached = self._heightmap_surface_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        color_context = self._heightmap_color_context(heightmap, layer)
+        surface = pygame.Surface((cell_cols, cell_rows))
+        for row_index in range(cell_rows):
+            row_a = rows[row_index]
+            row_b = rows[min(row_index + 1, len(rows) - 1)]
+            for col_index in range(cell_cols):
+                values = (
+                    row_a[col_index],
+                    row_a[min(col_index + 1, len(row_a) - 1)],
+                    row_b[col_index],
+                    row_b[min(col_index + 1, len(row_b) - 1)],
+                )
+                elevation = sum(float(value or 0.0) for value in values) / 4.0
+                has_ice = (
+                    row_index < len(ice_rows)
+                    and isinstance(ice_rows[row_index], list)
+                    and col_index < len(ice_rows[row_index])
+                    and bool(ice_rows[row_index][col_index])
+                )
+                surface.set_at(
+                    (col_index, row_index),
+                    self._heightmap_color_from_context(
+                        elevation,
+                        color_context,
+                        has_ice=has_ice,
+                    ),
+                )
+
+        return self._cache_put(
+            self._heightmap_surface_cache,
+            cache_key,
+            surface,
+            limit=16,
+        )
 
     def _draw_gas_giant_bands(self, screen, rect, layer):
         bands = layer.get("bands") if isinstance(layer.get("bands"), list) else []
@@ -257,6 +400,14 @@ class MapRenderer:
         screen.set_clip(clip)
 
     def _draw_polygon_layer(self, screen, layer, camera, is_selected, is_hovered):
+        min_zoom = layer.get("min_zoom")
+        if min_zoom is not None and not (is_selected or is_hovered):
+            try:
+                if float(getattr(camera, "zoom", 1.0) or 1.0) < float(min_zoom):
+                    return
+            except (TypeError, ValueError):
+                pass
+
         screen_points = []
 
         for point in layer.get("points", []):
@@ -295,20 +446,29 @@ class MapRenderer:
             )
         else:
             fill_color = base_color
-            border_color = (225, 235, 220)
+            border_color = layer.get("border_color", (225, 235, 220))
+        border_width = max(0, int(layer.get("border_width", 2) or 0))
 
+        outline_only = bool(layer.get("outline_only"))
         alpha = layer.get("alpha")
         border_alpha = layer.get("border_alpha", alpha)
-        if alpha is not None or border_alpha is not None:
-            alpha_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        if outline_only:
+            if border_width > 0:
+                pygame.draw.polygon(screen, border_color, screen_points, border_width)
+        elif alpha is not None or border_alpha is not None:
             fill_alpha = 80 if alpha is None else max(0, min(255, int(alpha)))
             line_alpha = 120 if border_alpha is None else max(0, min(255, int(border_alpha)))
-            pygame.draw.polygon(alpha_surface, (*fill_color, fill_alpha), screen_points)
-            pygame.draw.polygon(alpha_surface, (*border_color, line_alpha), screen_points, 2)
-            screen.blit(alpha_surface, (0, 0))
+            self._draw_transparent_polygon(
+                screen,
+                screen_points,
+                (*fill_color, fill_alpha),
+                (*border_color, line_alpha) if border_width > 0 else None,
+                border_width=border_width,
+            )
         else:
             pygame.draw.polygon(screen, fill_color, screen_points)
-            pygame.draw.polygon(screen, border_color, screen_points, 2)
+            if border_width > 0:
+                pygame.draw.polygon(screen, border_color, screen_points, border_width)
 
         if is_hovered and not is_selected:
             pygame.draw.polygon(screen, (120, 220, 255), screen_points, 3)
@@ -317,10 +477,14 @@ class MapRenderer:
             pygame.draw.polygon(screen, (255, 230, 120), screen_points, 4)
 
         should_draw_label = (max_x - min_x) >= 90 and (max_y - min_y) >= 32
+        if layer.get("suppress_label"):
+            should_draw_label = False
         if layer.get("is_placement_ancestor"):
             should_draw_label = (max_x - min_x) >= 220 and (max_y - min_y) >= 90
         if layer.get("is_ghost_sister"):
             should_draw_label = False
+        if (is_hovered or is_selected) and layer.get("name"):
+            should_draw_label = True
 
         if should_draw_label:
             label_pos = camera.world_to_screen((layer.get("x", 0), layer.get("y", 0)))
@@ -334,9 +498,8 @@ class MapRenderer:
             else:
                 text_color = (245, 245, 245)
 
-            text = self.app_view.default_font.render(
+            text = self._render_text(
                 layer.get("name", "feature"),
-                True,
                 text_color,
             )
             screen.blit(text, (int(label_pos[0]) + 6, int(label_pos[1]) + 6))
@@ -372,20 +535,13 @@ class MapRenderer:
             previous_screen_points.append((int(screen_point[0]), int(screen_point[1])))
 
         if len(previous_screen_points) >= 3:
-            ghost_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
-            pygame.draw.polygon(
-                ghost_surface,
+            self._draw_transparent_polygon(
+                screen,
+                previous_screen_points,
                 (245, 245, 255, 18),
-                previous_screen_points,
-            )
-            pygame.draw.lines(
-                ghost_surface,
                 (245, 245, 255, 96),
-                True,
-                previous_screen_points,
-                2,
+                border_width=2,
             )
-            screen.blit(ghost_surface, (0, 0))
 
         if len(screen_points) >= 2:
             pygame.draw.lines(screen, (255, 230, 120), False, screen_points, 2)
@@ -410,7 +566,7 @@ class MapRenderer:
         if area_label and len(screen_points) >= 3:
             label_anchor = hover_screen_point or screen_points[-1]
             label = f"Area: {area_label}"
-            text = self.app_view.default_font.render(label, True, (245, 245, 245))
+            text = self._render_text(label, (245, 245, 245))
             padding = 6
             label_rect = pygame.Rect(
                 label_anchor[0] + 12,
@@ -473,9 +629,11 @@ class MapRenderer:
         if rect.width < 1 or rect.height < 1:
             return
 
-        fill_surface = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-        fill_surface.fill((255, 230, 120, 44))
-        screen.blit(fill_surface, rect)
+        fill_rect = rect.clip(screen.get_rect())
+        if fill_rect.width > 0 and fill_rect.height > 0:
+            fill_surface = pygame.Surface(fill_rect.size, pygame.SRCALPHA)
+            fill_surface.fill((255, 230, 120, 44))
+            screen.blit(fill_surface, fill_rect)
 
         border_color = (255, 230, 120)
         if preview.get("mode") == "edit":
@@ -506,7 +664,7 @@ class MapRenderer:
 
         if area_label:
             label = f"Area: {area_label}"
-            text = self.app_view.default_font.render(label, True, (245, 245, 245))
+            text = self._render_text(label, (245, 245, 245))
             padding = 6
             label_rect = pygame.Rect(
                 rect.right + 12,
@@ -543,10 +701,6 @@ class MapRenderer:
             entity_id = layer.get("entity_id")
             spatial_feature_id = layer.get("spatial_feature_id")
 
-            if shape == "image_rect":
-                self._draw_image_rect_layer(screen, layer, camera)
-                continue
-
             is_selected = (
                 (spatial_feature_id is not None and spatial_feature_id == selected_spatial_feature_id)
                 or (entity_id is not None and entity_id == selected_entity_id)
@@ -555,6 +709,18 @@ class MapRenderer:
                 (spatial_feature_id is not None and spatial_feature_id == hover_spatial_feature_id)
                 or (entity_id is not None and entity_id == hover_entity_id)
             )
+
+            min_zoom = layer.get("min_zoom")
+            if min_zoom is not None and not (is_selected or is_hovered):
+                try:
+                    if float(getattr(camera, "zoom", 1.0) or 1.0) < float(min_zoom):
+                        continue
+                except (TypeError, ValueError):
+                    pass
+
+            if shape == "image_rect":
+                self._draw_image_rect_layer(screen, layer, camera)
+                continue
 
             if shape == "polygon":
                 self._draw_polygon_layer(
@@ -592,7 +758,10 @@ class MapRenderer:
 
                 if shape == "map_rect" and layer.get("render_style") == "gas_giant_bands":
                     self._draw_gas_giant_bands(screen, rect, layer)
-                elif not (shape == "map_rect" and layer.get("has_heightmap_base")):
+                elif not (
+                    shape == "map_rect"
+                    and (layer.get("has_heightmap_base") or layer.get("outline_only"))
+                ):
                     pygame.draw.rect(screen, layer["color"], rect)
 
                 if shape == "map_rect":
@@ -625,9 +794,8 @@ class MapRenderer:
                     pygame.draw.rect(screen, (255, 230, 120), highlight_rect, 3)
 
                 if rect.width >= 80 and rect.height >= 28:
-                    text = view.default_font.render(
+                    text = self._render_text(
                         layer.get("name", "layer"),
-                        True,
                         (240, 240, 240)
                     )
                     if layer.get("label_position") == "below_right":
@@ -667,9 +835,8 @@ class MapRenderer:
                 highlight_rect = rect.inflate(10, 10)
                 pygame.draw.rect(screen, (255, 230, 120), highlight_rect, 3)
 
-            text = view.default_font.render(
+            text = self._render_text(
                 layer.get("name", "layer"),
-                True,
                 (240, 240, 240)
             )
             screen.blit(text, (rect.x + 8, rect.y - 2))

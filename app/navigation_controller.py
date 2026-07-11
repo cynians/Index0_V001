@@ -11,6 +11,11 @@ from simulations.world_gen.world_gen_sim import WorldGenSimulation
 from simulations.building.building_sim import BuildingSimulation
 from simulations.phylogeny.phylogeny_simulation import PhylogenySimulation
 
+try:
+    from .launch_affordance_resolver import LaunchAffordanceResolver
+except ImportError:
+    from launch_affordance_resolver import LaunchAffordanceResolver
+
 
 class NavigationController:
     """
@@ -26,6 +31,7 @@ class NavigationController:
 
     def __init__(self, app):
         self.app = app
+        self.launch_resolver = LaunchAffordanceResolver()
 
     def focus_existing_tab_by_key(self, tab_key):
         """
@@ -434,6 +440,73 @@ class NavigationController:
         self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
         self.app.knowledge_layer_active = False
         self.app.camera_controller.setup_for_sim(new_map_sim)
+        return True
+
+    def launch_entity_mode(self, entity_id, launch_mode=None):
+        entity = self.app.world_model.get_entity(entity_id)
+        if entity is None:
+            return False
+
+        mode = launch_mode or self.launch_resolver.default_mode_for_entity(entity)
+        if not mode:
+            return False
+
+        if mode == "space":
+            location_class = entity.get("location_class")
+            system_role = entity.get("system_role")
+            body_class = entity.get("body_class") or location_class
+
+            if system_role == "star_system" or location_class in {"star_system", "stellar_system"}:
+                self.launch_space_root_tab(entity_id)
+                return True
+
+            if body_class == "planet" and entity.get("star_system"):
+                return self.launch_planet_space_tab(entity_id)
+
+            star_system_id = entity.get("star_system")
+            if star_system_id:
+                self.launch_space_root_tab(star_system_id)
+                return True
+
+            if entity.get("_dataset") == "systems" and system_role == "orbital_body":
+                if body_class == "planet":
+                    return self.launch_planet_space_tab(entity_id)
+                self.launch_space_root_tab()
+                return True
+
+            return False
+
+        if mode == "map":
+            location_entity_id = entity.get("location_entity") or entity_id
+            return bool(self.open_region_map_tab(location_entity_id))
+
+        if mode == "world_gen":
+            return self.launch_world_gen_tab(entity_id)
+
+        if mode == "place_parent":
+            return self.open_location_parent_placement_tab(entity_id)
+
+        if mode == "building":
+            if entity.get("location_class") == "room":
+                parent_location_id = entity.get("parent_location")
+                parent_location = self.app.world_model.get_entity(parent_location_id)
+                if parent_location and parent_location.get("location_class") == "building":
+                    return self.launch_building_tab(parent_location_id)
+                return False
+            return self.launch_building_tab(entity_id)
+
+        if mode == "vehicle":
+            self.launch_vehicle_tab(entity_id)
+            return True
+
+        if mode == "person":
+            self.launch_person_tab(entity_id)
+            return True
+
+        if mode == "phylogeny":
+            return self.launch_phylogeny_tab(entity_id)
+
+        return False
 
     def open_parent_region_map_tab(self, map_sim):
         """
@@ -584,8 +657,11 @@ class NavigationController:
 
         render_mode = getattr(active_sim, "render_mode", None)
 
+        context = getattr(active_sim, "context", None)
+        if context is not None and getattr(context, "root_entity_id", None):
+            return getattr(context, "root_entity_id", None)
+
         if render_mode == "map":
-            context = getattr(active_sim, "context", None)
             if context is not None:
                 return getattr(context, "root_entity_id", None)
 
@@ -614,6 +690,65 @@ class NavigationController:
         self.app.repository_return_confirm_active = False
         self.app.system_menu_active = False
         self.app.system_settings_active = False
+        return True
+
+    def begin_parent_assignment_workspace(self, active_sim):
+        target_entity_id = self._infer_repository_scope_entity_id(active_sim)
+        target = self.app.world_model.get_entity(target_entity_id) if target_entity_id else None
+        if not isinstance(target, dict):
+            return False
+
+        self.app.parent_assignment_request = {
+            "target_entity_id": target_entity_id,
+            "target_label": target.get("name") or target.get("pretty_name") or target_entity_id,
+        }
+        self.app.repository_scope_entity_id = target_entity_id
+        self.app.knowledge_layer_active = True
+        self.app.repository_return_confirm_active = False
+        self.app.system_menu_active = False
+        self.app.system_settings_active = False
+        return True
+
+    def confirm_parent_assignment(self, target_entity_id, parent_entity_id):
+        if not target_entity_id or not parent_entity_id or target_entity_id == parent_entity_id:
+            return False
+
+        target = self.app.world_model.get_entity(target_entity_id)
+        parent = self.app.world_model.get_entity(parent_entity_id)
+        if not isinstance(target, dict) or not isinstance(parent, dict):
+            return False
+        if parent.get("_dataset") != "locations" and parent.get("type") != "location":
+            return False
+
+        loader = getattr(self.app.world_model, "loader", None)
+        if loader is not None and hasattr(loader, "set_literal"):
+            loader.set_literal(target_entity_id, "parent_location", parent_entity_id, persist=True)
+            if hasattr(loader, "set_relation"):
+                loader.set_relation(parent_entity_id, "constituents", target_entity_id, persist=True)
+        else:
+            target["parent_location"] = parent_entity_id
+            constituents = parent.get("constituents")
+            if not isinstance(constituents, list):
+                constituents = []
+            if target_entity_id not in constituents:
+                constituents.append(target_entity_id)
+            parent["constituents"] = constituents
+
+        target["parent_location"] = parent_entity_id
+        constituents = parent.get("constituents")
+        if not isinstance(constituents, list):
+            constituents = []
+        if target_entity_id not in constituents:
+            constituents.append(target_entity_id)
+        parent["constituents"] = constituents
+
+        if hasattr(self.app.world_model, "mark_repository_changed"):
+            self.app.world_model.mark_repository_changed()
+        elif hasattr(self.app.world_model, "refresh"):
+            self.app.world_model.refresh()
+
+        self.app.parent_assignment_request = None
+        self.app.repository_scope_entity_id = target_entity_id
         return True
 
     def open_selection_wiki_entry(self, active_sim):
@@ -763,125 +898,26 @@ class NavigationController:
             return bool(getattr(active_sim, "open_person_inspector", lambda: False)())
 
         if action_id == "knowledge_launch_entry":
-            entity_id = action.get("entity_id")
-            entity = self.app.world_model.get_entity(entity_id)
+            return self.launch_entity_mode(action.get("entity_id"))
 
-            if entity is None:
-                return False
-
-            dataset_name = entity.get("_dataset")
-
-            if (
-                dataset_name == "locations"
-                or entity.get("type") == "location"
-                or entity.get("location_class")
-            ):
-                system_role = entity.get("system_role")
-                location_class = entity.get("location_class")
-
-                if system_role == "star_system" or location_class in {"star_system", "stellar_system"}:
-                    self.launch_space_root_tab(entity_id)
-                    return True
-
-                if location_class == "building":
-                    return self.launch_building_tab(entity_id)
-
-                if location_class == "room":
-                    parent_location_id = entity.get("parent_location")
-                    parent_location = self.app.world_model.get_entity(parent_location_id)
-                    if parent_location and parent_location.get("location_class") == "building":
-                        return self.launch_building_tab(parent_location_id)
-
-                is_orbital_location = location_class in {
-                    "star",
-                    "planet",
-                    "moon",
-                    "dwarf_planet",
-                    "asteroid",
-                    "comet",
-                    "space_station",
-                    "station",
-                    "spacecraft",
-                    "orbital_spacecraft",
-                    "planetary_spacecraft",
-                    "system_spacecraft",
-                    "interstellar_spacecraft",
-                }
-                if system_role == "orbital_body" or is_orbital_location:
-                    body_class = entity.get("body_class") or entity.get("location_class")
-                    if body_class == "planet":
-                        if not entity.get("star_system") and any(
-                            entity.get(key)
-                            for key in (
-                                "bounds",
-                                "map_canvas_width_px",
-                                "map_canvas_height_px",
-                                "map_status",
-                            )
-                        ):
-                            self.open_region_map_tab(entity_id)
-                            return True
-                        return self.launch_planet_space_tab(entity_id)
-
-                    star_system_id = entity.get("star_system")
-                    if body_class == "star" and star_system_id:
-                        self.launch_space_root_tab(star_system_id)
-                        return True
-
-                    if star_system_id:
-                        self.launch_space_root_tab(star_system_id)
-                        return True
-
-                    location_entity_id = entity.get("location_entity") or entity_id
-                    if location_entity_id:
-                        self.open_region_map_tab(location_entity_id)
-                        return True
-
-                self.open_region_map_tab(entity_id)
-                return True
-
-            if dataset_name == "vehicles":
-                self.launch_vehicle_tab(entity_id)
-                return True
-
-            if dataset_name == "people" or entity.get("type") == "person":
-                self.launch_person_tab(entity_id)
-                return True
-
-            if (
-                dataset_name in {"cladistics", "species"}
-                or entity.get("type") in {"cladistics", "species"}
-            ):
-                return self.launch_phylogeny_tab(entity_id)
-
-            if dataset_name == "systems":
-                system_role = entity.get("system_role")
-
-                if system_role == "star_system":
-                    self.launch_space_root_tab()
-                    return True
-
-                if system_role == "orbital_body":
-                    body_class = entity.get("body_class")
-                    if body_class == "planet":
-                        return self.launch_planet_space_tab(entity_id)
-
-                    location_entity_id = entity.get("location_entity")
-
-                    if location_entity_id:
-                        self.open_region_map_tab(location_entity_id)
-                        return True
-
-                    self.launch_space_root_tab()
-                    return True
-
-            return False
+        if action_id == "knowledge_launch_mode":
+            return self.launch_entity_mode(action.get("entity_id"), action.get("launch_mode"))
 
         if action_id == "knowledge_place_location_on_parent":
             return self.open_location_parent_placement_tab(action.get("entity_id"))
 
         if action_id == "knowledge_launch_world_gen":
             return self.launch_world_gen_tab(action.get("entity_id"))
+
+        if action_id == "parent_assignment_confirm":
+            return self.confirm_parent_assignment(
+                action.get("target_entity_id"),
+                action.get("parent_entity_id"),
+            )
+
+        if action_id == "parent_assignment_cancel":
+            self.app.parent_assignment_request = None
+            return True
 
         return False
 
@@ -922,6 +958,9 @@ class NavigationController:
 
         if action_id == "open_repository":
             return self.open_repository_workspace(active_sim)
+
+        if action_id == "choose_parent_in_repository":
+            return self.begin_parent_assignment_workspace(active_sim)
 
         if action_id == "open_selection_wiki" and active_sim is not None:
             return self.open_selection_wiki_entry(active_sim)
@@ -1007,6 +1046,14 @@ class NavigationController:
                 return bool(getattr(active_sim, "begin_location_draft", lambda: False)())
             return bool(getattr(active_sim, "begin_spatial_feature_draft", lambda: False)())
 
+        if str(action_id).startswith("new_location:") and active_sim is not None:
+            location_class = str(action_id).split(":", 1)[1] or "region"
+            return bool(
+                getattr(active_sim, "begin_location_draft", lambda _location_class="region": False)(
+                    location_class
+                )
+            )
+
         if action_id in {"new_map_rectangle", "new_map_square"} and active_sim is not None:
             return bool(getattr(active_sim, "begin_map_square_draft", lambda: False)())
 
@@ -1035,6 +1082,12 @@ class NavigationController:
         if action_id == "open_parent_region_map" and active_sim is not None:
             self.open_parent_region_map_tab(active_sim)
             return True
+
+        if action_id == "place_current_root_on_parent" and active_sim is not None:
+            root_entity_id = getattr(getattr(active_sim, "context", None), "root_entity_id", None)
+            if root_entity_id:
+                return self.open_location_parent_placement_tab(root_entity_id)
+            return False
 
         if action_id == "open_space_body_map" and active_sim is not None:
             self.open_map_for_selected_space_body(active_sim)

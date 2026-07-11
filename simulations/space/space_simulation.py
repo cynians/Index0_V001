@@ -37,6 +37,7 @@ class SpaceSimulation:
         self.hover_space_object = None
         self.hover_system_entity_id = None
         self.hover_screen_pos = None
+        self.body_label_hitboxes = []
 
         self.system.populate_from_world_model(
             world_model=self.world_model,
@@ -132,10 +133,40 @@ class SpaceSimulation:
             ] if entity_id else [],
         }
 
+    def clear_body_label_hitboxes(self):
+        self.body_label_hitboxes = []
+
+    def register_body_label_hitbox(self, source_entity_id, rect):
+        if not source_entity_id or rect is None:
+            return
+        for entry in self.system.get_entries():
+            obj = entry["object"]
+            source = self.system.get_source_entity_for_space_object(obj)
+            if isinstance(source, dict) and source.get("id") == source_entity_id:
+                self.body_label_hitboxes.append(
+                    {
+                        "entity_id": source_entity_id,
+                        "object": obj,
+                        "rect": rect.copy(),
+                    }
+                )
+                return
+
+    def _pick_labelled_space_object(self, screen_pos):
+        for hitbox in reversed(self.body_label_hitboxes):
+            rect = hitbox.get("rect")
+            if rect is not None and rect.collidepoint(screen_pos):
+                return hitbox.get("object")
+        return None
+
     def _pick_space_object(self, camera, screen_pos):
         """
         Pick the nearest visible body under the cursor using a screen-space radius.
         """
+        labelled_obj = self._pick_labelled_space_object(screen_pos)
+        if labelled_obj is not None:
+            return labelled_obj
+
         sx, sy = screen_pos
         best_obj = None
         best_dist_sq = None

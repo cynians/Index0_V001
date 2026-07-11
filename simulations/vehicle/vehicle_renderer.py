@@ -8,6 +8,22 @@ class VehicleRenderer:
 
     def __init__(self, app_view):
         self.app_view = app_view
+        self._text_surface_cache = {}
+        self._text_surface_cache_limit = 256
+
+    def _render_text(self, text, color):
+        font = self.app_view.default_font
+        color = tuple(color)
+        cache_key = (id(font), str(text), color)
+        cached = self._text_surface_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        surface = font.render(str(text), True, color)
+        self._text_surface_cache[cache_key] = surface
+        while len(self._text_surface_cache) > self._text_surface_cache_limit:
+            self._text_surface_cache.pop(next(iter(self._text_surface_cache)))
+        return surface
 
     def _world_rect_to_screen(self, camera, rect_data):
         top_left = camera.world_to_screen((rect_data["x"], rect_data["y"]))
@@ -54,9 +70,8 @@ class VehicleRenderer:
             pygame.draw.rect(screen, border_color, block_rect, 2)
 
             if block_rect.width >= 72 and block_rect.height >= 24:
-                text_surface = self.app_view.default_font.render(
+                text_surface = self._render_text(
                     block.get("label", part_id or "part"),
-                    True,
                     (240, 240, 240),
                 )
                 text_rect = text_surface.get_rect(center=block_rect.center)
@@ -72,9 +87,8 @@ class VehicleRenderer:
                 pygame.draw.rect(screen, (120, 220, 255), preview_rect, 2)
 
                 if preview_rect.width >= 72 and preview_rect.height >= 24:
-                    text_surface = self.app_view.default_font.render(
+                    text_surface = self._render_text(
                         drag_preview.get("label", "preview"),
-                        True,
                         (240, 240, 240),
                     )
                     text_rect = text_surface.get_rect(center=preview_rect.center)
@@ -118,14 +132,12 @@ class VehicleRenderer:
             text_x = module_rect.x + 8
             text_y = module_rect.y + 4
 
-            group_surface = self.app_view.default_font.render(
+            group_surface = self._render_text(
                 module.get("group", module.get("label", "module")),
-                True,
                 (240, 240, 240),
             )
-            status_surface = self.app_view.default_font.render(
+            status_surface = self._render_text(
                 module.get("status_text", status),
-                True,
                 (220, 220, 220),
             )
 
@@ -149,7 +161,7 @@ class VehicleRenderer:
                 else:
                     child_color = (240, 200, 200)
 
-                child_surface = self.app_view.default_font.render(child_text, True, child_color)
+                child_surface = self._render_text(child_text, child_color)
                 screen.blit(child_surface, (text_x + 10, child_y))
                 child_y += 16
 

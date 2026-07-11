@@ -10,8 +10,9 @@ from world.simulation_context import SimulationContext
 
 
 class FakeWorldModel:
-    def __init__(self, entities):
+    def __init__(self, entities, timeline_items=None):
         self.entities = {entity["id"]: dict(entity) for entity in entities}
+        self.timeline_items = list(timeline_items or [])
         self.loader = SimpleNamespace(
             entities=self.entities,
             datasets={"locations": list(self.entities.values())},
@@ -131,6 +132,9 @@ class FakeWorldModel:
 
     def get_active_locations(self, year):
         return self.get_active_entities(year, dataset_name="locations", entity_type="location")
+
+    def get_timeline_items(self):
+        return list(self.timeline_items)
 
     def refresh(self):
         self.refresh_count += 1
@@ -382,7 +386,7 @@ class BuildingSimulationTests(unittest.TestCase):
         self.assertTrue(sim.set_active_material_distribution_item("mat_basalt"))
         self.assertEqual("assets/maps/material_heatmaps/loc_planet_blue/mat_basalt.png", sim.get_layers()[0]["image_path"])
 
-    def test_map_sim_defaults_to_visual_map_layer(self):
+    def test_map_sim_defaults_to_combined_map_layer(self):
         planet = {
             "id": "loc_planet_blue",
             "name": "Blue Planet",
@@ -405,8 +409,8 @@ class BuildingSimulationTests(unittest.TestCase):
             world_model=world_model,
         ))
 
-        self.assertEqual(sim.VISUAL_MAP_LAYER_KIND, sim.get_active_layer_kind())
-        self.assertEqual("Visual Map", sim.get_active_layer_label())
+        self.assertEqual(sim.LOCATION_LAYER_KIND, sim.get_active_layer_kind())
+        self.assertEqual("Map + Locations", sim.get_active_layer_label())
         self.assertEqual("map_rect", sim.get_layers()[0]["shape"])
 
     def test_location_layer_tree_preserves_hierarchy(self):
@@ -614,6 +618,115 @@ class BuildingSimulationTests(unittest.TestCase):
             self.assertEqual("loc_room_alpha", sim.selected_entity_id)
             self.assertIsNone(sim.selected_spatial_feature_id)
 
+    def test_map_sim_uses_authoring_bounds_for_undefined_non_planet_root(self):
+        world_model = FakeWorldModel([
+            {
+                "id": "loc_empty_parent",
+                "name": "Empty Parent",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "island",
+            }
+        ])
+        sim = MapSimulation(SimulationContext(year=2400, root_entity_id="loc_empty_parent", world_model=world_model))
+
+        self.assertEqual(-100.0, sim.bounds["min_x"])
+        self.assertEqual(100.0, sim.bounds["max_x"])
+        self.assertEqual(-75.0, sim.bounds["min_y"])
+        self.assertEqual(75.0, sim.bounds["max_y"])
+        self.assertEqual(sim.LOCATION_LAYER_KIND, sim.get_active_layer_kind())
+
+    def test_map_sim_reopens_defined_local_polygon_on_location_layer(self):
+        world_model = FakeWorldModel([
+            {
+                "id": "loc_child",
+                "name": "Child Region",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "region",
+                "bounds": {
+                    "type": "polygon",
+                    "coordinate_space": "map_world",
+                    "points": [(10, 20), (40, 20), (40, 50), (10, 50)],
+                },
+            }
+        ])
+        sim = MapSimulation(SimulationContext(year=2400, root_entity_id="loc_child", world_model=world_model))
+
+        self.assertEqual(10.0, sim.bounds["min_x"])
+        self.assertEqual(40.0, sim.bounds["max_x"])
+        self.assertEqual(20.0, sim.bounds["min_y"])
+        self.assertEqual(50.0, sim.bounds["max_y"])
+        self.assertEqual(sim.LOCATION_LAYER_KIND, sim.get_active_layer_kind())
+        self.assertGreater(sim.get_initial_camera_zoom(1600, 900), 10.0)
+
+    def test_map_history_ignores_unscoped_major_periods(self):
+        world_model = FakeWorldModel(
+            [
+                {
+                    "id": "loc_empty_parent",
+                    "name": "Empty Parent",
+                    "type": "location",
+                    "_dataset": "locations",
+                    "location_class": "island",
+                }
+            ],
+            timeline_items=[
+                {
+                    "timeline_kind": "major_period",
+                    "label": "General",
+                    "start_year": -2575001053,
+                    "end_year": 75036154,
+                }
+            ],
+        )
+        sim = MapSimulation(SimulationContext(year=2400, root_entity_id="loc_empty_parent", world_model=world_model))
+
+        self.assertEqual([], sim.get_history_timeline_items())
+
+    def test_map_location_browser_lists_parent_root_and_children_only(self):
+        world_model = FakeWorldModel([
+            {
+                "id": "loc_country",
+                "name": "Country",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "country",
+            },
+            {
+                "id": "loc_island",
+                "name": "Island",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "island",
+                "parent_location": "loc_country",
+            },
+            {
+                "id": "loc_child",
+                "name": "Child",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "region",
+                "parent_location": "loc_island",
+            },
+            {
+                "id": "loc_elsewhere",
+                "name": "Elsewhere",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "region",
+            },
+        ])
+        sim = MapSimulation(SimulationContext(year=2400, root_entity_id="loc_island", world_model=world_model))
+
+        items = sim.get_map_location_browser_items()
+        ids = [item["id"] for item in items]
+
+        self.assertEqual(["loc_country", "loc_island", "loc_child"], ids)
+        self.assertEqual("parent", items[0]["role"])
+        self.assertEqual("root", items[1]["role"])
+        self.assertEqual("child", items[2]["role"])
+
     def test_map_ghost_layers_include_location_topology(self):
         world_model = FakeWorldModel([
             {
@@ -663,7 +776,10 @@ class BuildingSimulationTests(unittest.TestCase):
 
         self.assertIn("loc_neighbour", ghost_entity_ids)
         self.assertIn("loc_bioregion", ghost_entity_ids)
-        self.assertIn("loc_state", ghost_entity_ids)
+        self.assertNotIn("loc_state", ghost_entity_ids)
+
+        active_layer_ids = {layer.get("entity_id") for layer in sim.get_layers()}
+        self.assertIn("loc_state", active_layer_ids)
 
     def test_map_context_includes_timeless_locations_linked_by_parents(self):
         world_model = FakeWorldModel([
@@ -699,6 +815,224 @@ class BuildingSimulationTests(unittest.TestCase):
 
         self.assertIn("loc_eurasia", active_ids)
         self.assertIn("loc_asia", active_ids)
+
+    def test_planetary_children_are_hidden_from_surface_map_location_view(self):
+        world_model = FakeWorldModel([
+            {
+                "id": "planet_earth",
+                "name": "Earth",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "planet",
+            },
+            {
+                "id": "moon_luna",
+                "name": "Luna",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "moon",
+                "parents": ["planet_earth"],
+            },
+            {
+                "id": "loc_greenland",
+                "name": "Greenland",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "region",
+                "parents": ["planet_earth"],
+                "bounds": {"type": "polygon", "points": [(-55, -60), (-20, -60), (-20, -80), (-55, -80)]},
+            },
+        ])
+        context = SimulationContext(year=2400, root_entity_id="planet_earth", world_model=world_model)
+        sim = MapSimulation(context)
+
+        browser_ids = {item["id"] for item in sim.get_map_location_browser_items()}
+        self.assertIn("loc_greenland", browser_ids)
+        self.assertNotIn("moon_luna", browser_ids)
+
+        sim.set_active_layer_kind(sim.LOCATION_LAYER_KIND)
+        layer_ids = {layer.get("entity_id") for layer in sim.get_layers()}
+        self.assertIn("loc_greenland", layer_ids)
+        self.assertNotIn("moon_luna", layer_ids)
+
+    def test_combined_map_includes_location_geometry(self):
+        world_model = FakeWorldModel([
+            {
+                "id": "planet_earth",
+                "name": "Earth",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "planet",
+            },
+            {
+                "id": "loc_greenland",
+                "name": "Greenland",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "region",
+                "parents": ["planet_earth"],
+                "bounds": {"type": "polygon", "points": [(-55, -60), (-20, -60), (-20, -80), (-55, -80)]},
+            },
+        ])
+        context = SimulationContext(year=2400, root_entity_id="planet_earth", world_model=world_model)
+        sim = MapSimulation(context)
+
+        self.assertEqual(sim.LOCATION_LAYER_KIND, sim.get_active_layer_kind())
+        self.assertEqual("Map + Locations", sim.get_active_layer_label())
+        location_layers = [
+            layer for layer in sim.get_layers()
+            if layer.get("entity_id") == "loc_greenland" and layer.get("shape") == "polygon"
+        ]
+        self.assertEqual(1, len(location_layers))
+        self.assertEqual("loc_greenland", location_layers[0].get("entity_id"))
+
+    def test_earth_reference_land_layer_is_non_interactive_base_map(self):
+        world_model = FakeWorldModel([
+            {
+                "id": "planet_earth",
+                "name": "Earth",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "planet",
+                "reference_land_polygons": {
+                    "polygons": [
+                        [[-10, -10], [10, -10], [10, 10], [-10, 10], [-10, -10]],
+                    ],
+                },
+            },
+        ])
+        context = SimulationContext(year=2400, root_entity_id="planet_earth", world_model=world_model)
+        sim = MapSimulation(context)
+
+        land_layers = [layer for layer in sim.get_layers() if layer.get("is_reference_land")]
+
+        self.assertEqual(1, len(land_layers))
+        self.assertFalse(land_layers[0].get("pickable"))
+        self.assertTrue(land_layers[0].get("suppress_label"))
+        self.assertEqual(1, land_layers[0].get("border_width"))
+
+    def test_broad_regions_become_outlines_over_reference_land_base(self):
+        world_model = FakeWorldModel([
+            {
+                "id": "planet_earth",
+                "name": "Earth",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "planet",
+                "reference_land_polygons": {
+                    "polygons": [
+                        [[-10, -10], [10, -10], [10, 10], [-10, 10], [-10, -10]],
+                    ],
+                },
+            },
+            {
+                "id": "loc_africa",
+                "name": "Africa",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "continent",
+                "parent_location": "planet_earth",
+                "card_color": "#8f7744",
+                "bounds": {"type": "bbox", "min_x": -18, "max_x": 52, "min_y": -37, "max_y": 35},
+            },
+        ])
+        context = SimulationContext(year=2400, root_entity_id="planet_earth", world_model=world_model)
+        sim = MapSimulation(context)
+        sim.set_active_layer_kind(sim.LOCATION_LAYER_KIND)
+
+        africa = next(layer for layer in sim.get_layers() if layer.get("entity_id") == "loc_africa")
+
+        self.assertTrue(africa.get("outline_only"))
+        self.assertEqual((143, 119, 68), africa.get("border_color"))
+        self.assertIsNone(africa.get("alpha"))
+
+    def test_multipolygon_regions_render_as_multiple_selectable_parts(self):
+        world_model = FakeWorldModel([
+            {
+                "id": "planet_earth",
+                "name": "Earth",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "planet",
+            },
+            {
+                "id": "loc_island_country",
+                "name": "Island Country",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "country",
+                "parent_location": "planet_earth",
+                "bounds": {
+                    "type": "multipolygon",
+                    "coordinate_space": "map_world",
+                    "polygons": [
+                        [[0, 0], [4, 0], [4, 4], [0, 4], [0, 0]],
+                        [[10, 0], [14, 0], [14, 4], [10, 4], [10, 0]],
+                    ],
+                },
+            },
+        ])
+        context = SimulationContext(year=2400, root_entity_id="planet_earth", world_model=world_model)
+        sim = MapSimulation(context)
+
+        parts = [layer for layer in sim.get_layers() if layer.get("entity_id") == "loc_island_country"]
+
+        self.assertEqual(2, len(parts))
+        self.assertEqual({0, 1}, {part.get("geometry_part") for part in parts})
+
+    def test_nested_surface_regions_have_zoom_lod_and_outline_only(self):
+        world_model = FakeWorldModel([
+            {
+                "id": "planet_earth",
+                "name": "Earth",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "planet",
+            },
+            {
+                "id": "loc_atlantic_ocean",
+                "name": "Atlantic Ocean",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "ocean",
+                "parent_location": "planet_earth",
+                "bounds": {"type": "bbox", "min_x": -80, "max_x": 20, "min_y": -65, "max_y": 65},
+            },
+            {
+                "id": "loc_greenland",
+                "name": "Greenland",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "region",
+                "parent_location": "loc_atlantic_ocean",
+                "bounds": {"type": "polygon", "points": [(-55, -60), (-20, -60), (-20, -80), (-55, -80)]},
+            },
+            {
+                "id": "loc_northeast_greenland_national_park",
+                "name": "Northeast Greenland National Park",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "region",
+                "parent_location": "loc_greenland",
+                "bounds": {"type": "polygon", "points": [(-49, -83), (-12, -83), (-12, -70), (-49, -74)]},
+            },
+        ])
+        context = SimulationContext(year=2400, root_entity_id="planet_earth", world_model=world_model)
+        sim = MapSimulation(context)
+        sim.set_active_layer_kind(sim.LOCATION_LAYER_KIND)
+
+        layers = {
+            layer.get("entity_id"): layer
+            for layer in sim.get_layers()
+            if layer.get("entity_id")
+        }
+
+        self.assertEqual(1, layers["loc_atlantic_ocean"]["map_hierarchy_depth"])
+        self.assertEqual(2, layers["loc_greenland"]["map_hierarchy_depth"])
+        self.assertEqual(3, layers["loc_northeast_greenland_national_park"]["map_hierarchy_depth"])
+        self.assertEqual(5.5, layers["loc_northeast_greenland_national_park"]["min_zoom"])
+        self.assertTrue(layers["loc_northeast_greenland_national_park"]["outline_only"])
+        self.assertTrue(layers["loc_northeast_greenland_national_park"]["suppress_label"])
 
     def test_map_sim_creates_biosphere_patch_as_location_polygon(self):
         root = {

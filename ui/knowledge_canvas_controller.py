@@ -1766,6 +1766,7 @@ class KnowledgeCanvasController:
                         return {
                             "id": action_id,
                             "entity_id": card_obj.get("entity_id"),
+                            "launch_mode": tool_info.get("launch_mode"),
                         }
                     self._open_toolbelt_name_prompt(card_obj, tool_info)
                     return "__ui_consumed__"
@@ -1848,6 +1849,14 @@ class KnowledgeCanvasController:
             if launch_rect is not None and launch_rect.collidepoint(mouse_pos):
                 card_obj = self._bring_card_to_front(index)
                 self._layout_all_cards()
+                for option, mode_rect in card_obj.get("launch_mode_hitboxes", []):
+                    if mode_rect.collidepoint(mouse_pos):
+                        return {
+                            "id": "knowledge_launch_mode",
+                            "entity_id": card_obj.get("entity_id"),
+                            "launch_mode": option.get("mode"),
+                            "year": card_obj.get("selected_year"),
+                        }
                 return {
                     "id": "knowledge_launch_entry",
                     "entity_id": card_obj.get("entity_id"),

@@ -45,6 +45,7 @@ class App(SimWindow):
         self.system_settings_active = False
         self.repository_return_confirm_active = False
         self.repository_scope_entity_id = None
+        self.parent_assignment_request = None
 
     def get_active_simulation(self):
         if self.knowledge_layer_active:
@@ -131,6 +132,7 @@ class App(SimWindow):
             repository_return_confirm_active=self.repository_return_confirm_active,
             world_model=self.world_model,
             repository_scope_entity_id=self.repository_scope_entity_id,
+            parent_assignment_request=self.parent_assignment_request,
         )
 
         if active_sim:

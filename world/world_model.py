@@ -1,6 +1,7 @@
 import re
 
 from world.entity_loader import EntityLoader
+from world.earth_reference_models import apply_earth_reference_models
 from world.relationship_graph import TouchDegrees
 from world.schema_loader import SchemaLoader
 from world.yearer import Yearer
@@ -211,6 +212,7 @@ class WorldModel:
             ontology_path=ontology_path,
             use_ontology=use_ontology,
         )
+        apply_earth_reference_models(self.loader)
         self.schemas = SchemaLoader()
         self.touch_degrees = TouchDegrees(self.loader, self.schemas)
         self.graph = self.touch_degrees
@@ -436,6 +438,13 @@ class WorldModel:
                 continue
             if end_year is None:
                 end_year = start_year
+            start_commentary = str(entity.get("start_commentary") or "").strip()
+            end_commentary = str(entity.get("end_commentary") or "").strip()
+            commentary_parts = []
+            if start_commentary:
+                commentary_parts.append(f"Start: {start_commentary}")
+            if end_commentary:
+                commentary_parts.append(f"End: {end_commentary}")
 
             items.append(
                 {
@@ -447,7 +456,9 @@ class WorldModel:
                     "end_year": end_year,
                     "is_point": start_year == end_year,
                     "card_color": card_color,
-                    "commentary": "",
+                    "commentary": " / ".join(commentary_parts),
+                    "start_commentary": start_commentary,
+                    "end_commentary": end_commentary,
                 }
             )
 
@@ -506,5 +517,7 @@ class WorldModel:
 
     def refresh(self):
         self.loader.refresh()
+        apply_earth_reference_models(self.loader)
         self.touch_degrees.refresh()
         self.yearer = Yearer(self.loader)
+        self.repository_revision += 1

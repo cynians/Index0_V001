@@ -20,6 +20,7 @@ class FakeWorldModel:
     def __init__(self, entities):
         self.entities = {entity["id"]: entity for entity in entities}
         self.loader = SimpleNamespace(entities=self.entities)
+        self.repository_revision = 0
 
     def get_entity(self, entity_id):
         return self.entities.get(entity_id)
@@ -32,6 +33,9 @@ class FakeWorldModel:
             entities = [entity for entity in entities if entity.get("type") == entity_type]
         return entities
 
+    def mark_repository_changed(self):
+        self.repository_revision += 1
+
 
 class NavigationBuildingTests(unittest.TestCase):
     def _controller(self, entities):
@@ -41,6 +45,11 @@ class NavigationBuildingTests(unittest.TestCase):
             knowledge_layer_active=True,
             camera_controller=SimpleNamespace(setup_for_sim=lambda sim: None),
             get_active_simulation=lambda: SimpleNamespace(year=2400),
+            parent_assignment_request=None,
+            repository_scope_entity_id=None,
+            repository_return_confirm_active=False,
+            system_menu_active=False,
+            system_settings_active=False,
         )
         return NavigationController(app)
 
@@ -81,6 +90,102 @@ class NavigationBuildingTests(unittest.TestCase):
 
         self.assertTrue(handled)
         self.assertEqual(("building", "loc_test_building"), controller.app.tab_manager.tabs[0].tab_key)
+
+    def test_planet_default_launch_uses_local_space_context(self):
+        controller = self._controller([
+            {
+                "id": "system_alpha",
+                "name": "Alpha",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "star_system",
+                "system_role": "star_system",
+            },
+            {
+                "id": "planet_alpha",
+                "name": "Alpha I",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "planet",
+                "system_role": "orbital_body",
+                "body_class": "planet",
+                "star_system": "system_alpha",
+                "map_canvas_width_px": 2048,
+                "map_canvas_height_px": 1024,
+            },
+        ])
+
+        handled = controller.handle_ui_action(
+            {
+                "id": "knowledge_launch_entry",
+                "entity_id": "planet_alpha",
+            },
+            active_sim=None,
+        )
+
+        self.assertTrue(handled)
+        self.assertEqual(("space_body", "planet_alpha"), controller.app.tab_manager.tabs[0].tab_key)
+
+    def test_explicit_planet_map_mode_opens_map_context(self):
+        controller = self._controller([
+            {
+                "id": "planet_alpha",
+                "name": "Alpha I",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "planet",
+                "system_role": "orbital_body",
+                "body_class": "planet",
+                "star_system": "system_alpha",
+                "map_canvas_width_px": 2048,
+                "map_canvas_height_px": 1024,
+            },
+        ])
+
+        handled = controller.handle_ui_action(
+            {
+                "id": "knowledge_launch_mode",
+                "entity_id": "planet_alpha",
+                "launch_mode": "map",
+            },
+            active_sim=None,
+        )
+
+        self.assertTrue(handled)
+        self.assertEqual(("map", "planet_alpha"), controller.app.tab_manager.tabs[0].tab_key)
+
+    def test_undefined_child_location_launches_parent_placement(self):
+        controller = self._controller([
+            {
+                "id": "loc_parent",
+                "name": "Parent Map",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "region",
+                "bounds": {"type": "polygon", "points": [(0, 0), (10, 0), (10, 10), (0, 10)]},
+            },
+            {
+                "id": "loc_child",
+                "name": "Undefined Child",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "region",
+                "parent_location": "loc_parent",
+            },
+        ])
+
+        handled = controller.handle_ui_action(
+            {
+                "id": "knowledge_launch_entry",
+                "entity_id": "loc_child",
+            },
+            active_sim=None,
+        )
+
+        self.assertTrue(handled)
+        tab = controller.app.tab_manager.tabs[0]
+        self.assertEqual(("map_place_parent", "loc_child"), tab.tab_key)
+        self.assertEqual("Place: Undefined Child on Parent Map", tab.name)
 
     def test_finish_map_selection_consumes_click_when_finish_fails(self):
         controller = self._controller([])
@@ -183,6 +288,86 @@ class NavigationBuildingTests(unittest.TestCase):
         tab = controller.app.tab_manager.tabs[0]
         self.assertEqual(("map_place_parent", "loc_state"), tab.tab_key)
         self.assertEqual("Place: State on Country", tab.name)
+
+    def test_place_current_root_on_parent_action_opens_parent_placement(self):
+        controller = self._controller([
+            {
+                "id": "loc_country",
+                "name": "Country",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "country",
+                "bounds": {"type": "polygon", "points": [(0, 0), (20, 0), (20, 20), (0, 20)]},
+            },
+            {
+                "id": "loc_island",
+                "name": "Island",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "island",
+                "parent_location": "loc_country",
+            },
+        ])
+        active_sim = SimpleNamespace(context=SimpleNamespace(root_entity_id="loc_island"))
+
+        handled = controller.handle_ui_action("place_current_root_on_parent", active_sim)
+
+        self.assertTrue(handled)
+        tab = controller.app.tab_manager.tabs[0]
+        self.assertEqual(("map_place_parent", "loc_island"), tab.tab_key)
+        self.assertEqual("Place: Island on Country", tab.name)
+
+    def test_choose_parent_repository_action_starts_parent_assignment(self):
+        controller = self._controller([
+            {
+                "id": "loc_island",
+                "name": "Island",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "island",
+            },
+        ])
+        active_sim = SimpleNamespace(context=SimpleNamespace(root_entity_id="loc_island"))
+
+        handled = controller.handle_ui_action("choose_parent_in_repository", active_sim)
+
+        self.assertTrue(handled)
+        self.assertTrue(controller.app.knowledge_layer_active)
+        self.assertEqual("loc_island", controller.app.repository_scope_entity_id)
+        self.assertEqual("loc_island", controller.app.parent_assignment_request["target_entity_id"])
+
+    def test_confirm_parent_assignment_writes_parent_location(self):
+        controller = self._controller([
+            {
+                "id": "loc_country",
+                "name": "Country",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "country",
+            },
+            {
+                "id": "loc_island",
+                "name": "Island",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "island",
+            },
+        ])
+        controller.app.parent_assignment_request = {"target_entity_id": "loc_island"}
+
+        handled = controller.handle_ui_action(
+            {
+                "id": "parent_assignment_confirm",
+                "target_entity_id": "loc_island",
+                "parent_entity_id": "loc_country",
+            },
+            active_sim=None,
+        )
+
+        self.assertTrue(handled)
+        self.assertEqual("loc_country", controller.app.world_model.get_entity("loc_island")["parent_location"])
+        self.assertIn("loc_island", controller.app.world_model.get_entity("loc_country")["constituents"])
+        self.assertIsNone(controller.app.parent_assignment_request)
 
 
 if __name__ == "__main__":

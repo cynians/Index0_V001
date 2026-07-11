@@ -23,6 +23,8 @@ class InputController:
         self.show_fps = True
 
     def process(self, events):
+        if getattr(self.simulation, "knowledge_layer_active", False):
+            events = self._coalesce_mousewheel_events(events)
 
         for event in events:
 
@@ -60,3 +62,26 @@ class InputController:
 
             if not consumed_before_camera and hasattr(self.simulation, "handle_event"):
                 self.simulation.handle_event(event)
+
+    def _coalesce_mousewheel_events(self, events):
+        coalesced = []
+        pending_wheel = None
+
+        for event in events:
+            if event.type == pygame.MOUSEWHEEL:
+                if pending_wheel is None:
+                    pending_wheel = event
+                else:
+                    pending_wheel.y = getattr(pending_wheel, "y", 0) + getattr(event, "y", 0)
+                    pending_wheel.x = getattr(pending_wheel, "x", 0) + getattr(event, "x", 0)
+                continue
+
+            if pending_wheel is not None:
+                coalesced.append(pending_wheel)
+                pending_wheel = None
+            coalesced.append(event)
+
+        if pending_wheel is not None:
+            coalesced.append(pending_wheel)
+
+        return coalesced

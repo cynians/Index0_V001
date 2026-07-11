@@ -891,6 +891,68 @@ class CardMetadataCleanupTests(unittest.TestCase):
         self.assertGreaterEqual(neighbourhood_rect.height, 48)
         self.assertTrue(neighbourhood_rect.collidepoint(neighbourhood_rect.centerx, neighbourhood_rect.bottom - 4))
 
+    def test_planet_launch_strip_exposes_existing_workspace_modes(self):
+        pygame.font.init()
+        font = pygame.font.SysFont("consolas", 14)
+        card_view = EntityCard(
+            {
+                "id": "planet_alpha",
+                "pretty_name": "Alpha I",
+                "name": "Alpha I",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "planet",
+                "system_role": "orbital_body",
+                "body_class": "planet",
+                "star_system": "system_alpha",
+                "map_canvas_width_px": 2048,
+                "map_canvas_height_px": 1024,
+            },
+            dataset_name="locations",
+        )
+        card = {
+            "entity_id": "planet_alpha",
+            "is_edit_mode": False,
+            "layout_font": font,
+            "active_tab": "general",
+            "years": [],
+        }
+
+        card_view.layout_card(card, pygame.Rect(0, 0, 420, 380))
+
+        mode_tools = {
+            option.get("mode"): option.get("label")
+            for option, _rect in card["launch_mode_hitboxes"]
+        }
+        self.assertEqual(
+            {
+                "space": "Space",
+                "world_gen": "World Gen",
+                "map": "Map",
+            },
+            mode_tools,
+        )
+
+    def test_undefined_child_location_launches_as_parent_placement(self):
+        card_view = EntityCard(
+            {
+                "id": "loc_child",
+                "pretty_name": "Undefined Child",
+                "name": "Undefined Child",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "region",
+                "parent_location": "loc_parent",
+            },
+            dataset_name="locations",
+        )
+
+        options = card_view._launch_mode_options()
+
+        self.assertEqual(1, len(options))
+        self.assertEqual("place_parent", options[0]["mode"])
+        self.assertEqual("Place on Parent", options[0]["label"])
+
     def test_star_display_color_falls_back_to_stellar_class_profile(self):
         system = CelestialSystem()
         color = system._entity_display_color(

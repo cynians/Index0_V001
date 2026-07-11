@@ -17,6 +17,11 @@ from world.schema_loader import SchemaLoader
 from world.year_utils import parse_year
 from simulations.space.stellar import STELLAR_CLASS_HELP, is_valid_stellar_class
 
+try:
+    from app.launch_affordance_resolver import LaunchAffordanceResolver
+except ImportError:
+    from launch_affordance_resolver import LaunchAffordanceResolver
+
 
 class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, CardSiteMixin, CardSimulationMixin, CardTaskMixin):
     PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -381,12 +386,6 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             "match": {"star_system", "stellar_system"},
             "tools": [
                 {
-                    "id": "stellar_world_gen",
-                    "label": "World Gen",
-                    "description": "Start planetary orbit generation in this star system.",
-                    "action_id": "knowledge_launch_world_gen",
-                },
-                {
                     "id": "stellar_define_neighbourhood",
                     "label": "Define Neighbourhood",
                     "description": "Link another star system with a light-year distance.",
@@ -404,17 +403,11 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                     "action_id": "knowledge_place_location_on_parent",
                     "requires": "surface_location",
                 },
-                {
-                    "id": "planet_world_gen",
-                    "label": "World Gen",
-                    "description": "Start empty planetary generation for an unmapped planet.",
-                    "action_id": "knowledge_launch_world_gen",
-                    "requires": "planet_without_map",
-                },
             ],
         },
     ]
     SCHEMA_LOADER = SchemaLoader()
+    LAUNCH_AFFORDANCE_RESOLVER = LaunchAffordanceResolver()
 
     def __init__(self, entity, dataset_name=None, world_model=None):
         self.entity = entity or {}
@@ -917,6 +910,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 seen_ids.add(tool_id)
 
         return tools
+
+    def _launch_mode_options(self):
+        return self.LAUNCH_AFFORDANCE_RESOLVER.options_for_entity(self.entity)
 
     def _toolbelt_tool_is_available(self, tool):
         requirement = tool.get("requires")
@@ -4024,6 +4020,22 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             rect.width - 24,
             self.LAUNCH_H,
         )
+        launch_mode_options = self._launch_mode_options()
+        launch_mode_hitboxes = []
+        if len(launch_mode_options) > 1:
+            segment_gap = 2
+            segment_count = len(launch_mode_options)
+            segment_w = max(1, (launch_rect.width - segment_gap * (segment_count - 1)) // segment_count)
+            segment_x = launch_rect.x
+            for option_index, option in enumerate(launch_mode_options):
+                segment_right = (
+                    launch_rect.right
+                    if option_index == segment_count - 1
+                    else segment_x + segment_w
+                )
+                segment_rect = pygame.Rect(segment_x, launch_rect.y, max(1, segment_right - segment_x), launch_rect.height)
+                launch_mode_hitboxes.append((option, segment_rect))
+                segment_x = segment_rect.right + segment_gap
         center_y = launch_rect.y - self.TIMELINE_TO_LAUNCH_GAP
         left_x = rect.x + 20
         right_x = rect.right - 20
@@ -4961,6 +4973,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         card["timeline_label_y"] = timeline_label_y
         card["timeline_y"] = timeline_y
         card["launch_rect"] = launch_rect
+        card["launch_mode_hitboxes"] = launch_mode_hitboxes
         card["header_drag_rect"] = header_drag_rect
         card["resize_handle_rect"] = resize_handle_rect
         card["corner_handle_rects"] = corner_handle_rects
@@ -5603,12 +5616,28 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 more_surface = font.render(f"+{hidden_count}", True, (214, 198, 150))
                 screen.blit(more_surface, (right_x - more_surface.get_width(), related_y + 5))
 
-        pygame.draw.rect(screen, (55, 55, 55), launch_rect)
-        pygame.draw.rect(screen, (210, 210, 210), launch_rect, 1)
-        launch_label = f"Launch [{selected_year}]" if selected_year is not None else "Launch"
-        launch_text = font.render(launch_label, True, (245, 245, 245))
-        launch_text_rect = launch_text.get_rect(center=launch_rect.center)
-        screen.blit(launch_text, launch_text_rect)
+        launch_mode_hitboxes = card.get("launch_mode_hitboxes", [])
+        if launch_mode_hitboxes:
+            mouse_pos = pygame.mouse.get_pos()
+            for option, mode_rect in launch_mode_hitboxes:
+                hovered = mode_rect.collidepoint(mouse_pos)
+                fill = (70, 82, 104) if hovered else (52, 58, 72)
+                pygame.draw.rect(screen, fill, mode_rect)
+                pygame.draw.rect(screen, (176, 190, 216), mode_rect, 1)
+                launch_label = self._ellipsize_text(option.get("label", "Open"), font, mode_rect.width - 8)
+                launch_text = font.render(launch_label, True, (245, 245, 245))
+                launch_text_rect = launch_text.get_rect(center=mode_rect.center)
+                screen.blit(launch_text, launch_text_rect)
+        else:
+            pygame.draw.rect(screen, (55, 55, 55), launch_rect)
+            pygame.draw.rect(screen, (210, 210, 210), launch_rect, 1)
+            launch_options = self._launch_mode_options()
+            launch_label = str(launch_options[0].get("label") or "Launch") if len(launch_options) == 1 else "Launch"
+            if launch_label == "Launch" and selected_year is not None:
+                launch_label = f"Launch [{selected_year}]"
+            launch_text = font.render(launch_label, True, (245, 245, 245))
+            launch_text_rect = launch_text.get_rect(center=launch_rect.center)
+            screen.blit(launch_text, launch_text_rect)
         self._draw_toolbelt(screen, font, card)
 
     def _draw_toolbelt(self, screen, font, card):

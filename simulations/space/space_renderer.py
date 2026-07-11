@@ -13,6 +13,8 @@ class SpaceRenderer:
 
     def __init__(self, app_view):
         self.app_view = app_view
+        self._stellar_graph_cache = {}
+        self._stellar_layout_cache = {}
 
     def _iter_neighbour_rows(self, entity):
         rows = entity.get("stellar_neighbours") if isinstance(entity, dict) else None
@@ -38,6 +40,16 @@ class SpaceRenderer:
     def _stellar_neighbour_graph(self, sim, max_nodes=80):
         model = getattr(sim, "world_model", None)
         root_id = getattr(sim, "root_system_id", None)
+        cache_key = (
+            id(model),
+            getattr(model, "repository_revision", 0),
+            root_id,
+            max_nodes,
+        )
+        cached = self._stellar_graph_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         root = model.get_entity(root_id) if model is not None and root_id else None
         if not isinstance(root, dict):
             return {"root_id": root_id, "entities": {}, "depths": {}, "edges": []}
@@ -87,7 +99,11 @@ class SpaceRenderer:
                 edge["b"],
             ),
         )
-        return {"root_id": root_id, "entities": entities, "depths": depths, "edges": edges}
+        graph = {"root_id": root_id, "entities": entities, "depths": depths, "edges": edges}
+        self._stellar_graph_cache[cache_key] = graph
+        if len(self._stellar_graph_cache) > 8:
+            self._stellar_graph_cache.pop(next(iter(self._stellar_graph_cache)))
+        return graph
 
     def _solve_position_from_constraints(self, constraints, placed):
         candidates = []
@@ -146,6 +162,11 @@ class SpaceRenderer:
 
     def _stellar_neighbour_layout(self, sim, graph=None):
         graph = graph or self._stellar_neighbour_graph(sim)
+        layout_key = id(graph)
+        cached = self._stellar_layout_cache.get(layout_key)
+        if cached is not None:
+            return cached
+
         root_id = graph["root_id"]
         entities = graph["entities"]
         depths = graph["depths"]
@@ -233,6 +254,9 @@ class SpaceRenderer:
                 break
             unresolved = set(entities.keys()) - set(placed.keys())
 
+        self._stellar_layout_cache[layout_key] = layout
+        if len(self._stellar_layout_cache) > 8:
+            self._stellar_layout_cache.pop(next(iter(self._stellar_layout_cache)))
         return layout
 
     def _should_draw_stellar_neighbourhood(self, graph, camera, view):
@@ -346,14 +370,27 @@ class SpaceRenderer:
         inner_px = max(0, min(inner_px, max_radius_px))
         outer_px = max(0, min(outer_px, max_radius_px))
 
-        zone_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
-        pygame.draw.circle(zone_surface, (94, 132, 86, 36), (int(center[0]), int(center[1])), outer_px)
+        zone_bounds = pygame.Rect(
+            int(center[0] - outer_px - 3),
+            int(center[1] - outer_px - 3),
+            outer_px * 2 + 6,
+            outer_px * 2 + 6,
+        ).clip(screen.get_rect())
+        if zone_bounds.width <= 0 or zone_bounds.height <= 0:
+            return
+
+        local_center = (
+            int(center[0] - zone_bounds.x),
+            int(center[1] - zone_bounds.y),
+        )
+        zone_surface = pygame.Surface(zone_bounds.size, pygame.SRCALPHA)
+        pygame.draw.circle(zone_surface, (94, 132, 86, 36), local_center, outer_px)
         if inner_px > 0:
-            pygame.draw.circle(zone_surface, (0, 0, 0, 0), (int(center[0]), int(center[1])), inner_px)
-        pygame.draw.circle(zone_surface, (150, 196, 138, 120), (int(center[0]), int(center[1])), outer_px, 2)
+            pygame.draw.circle(zone_surface, (0, 0, 0, 0), local_center, inner_px)
+        pygame.draw.circle(zone_surface, (150, 196, 138, 120), local_center, outer_px, 2)
         if inner_px > 0:
-            pygame.draw.circle(zone_surface, (150, 196, 138, 110), (int(center[0]), int(center[1])), inner_px, 2)
-        screen.blit(zone_surface, (0, 0))
+            pygame.draw.circle(zone_surface, (150, 196, 138, 110), local_center, inner_px, 2)
+        screen.blit(zone_surface, zone_bounds.topleft)
 
     def _draw_gas_giant_bands(self, screen, rect, layer):
         bands = layer.get("bands") if isinstance(layer.get("bands"), list) else []
@@ -375,9 +412,30 @@ class SpaceRenderer:
         pygame.draw.ellipse(screen, (226, 226, 220), rect, 2)
         screen.set_clip(clip)
 
+    def _draw_readable_label(self, screen, text, pos, color):
+        font = self.app_view.default_font
+        label = font.render(str(text or ""), True, color)
+        label_rect = label.get_rect(topleft=(int(pos[0]), int(pos[1])))
+        bg_rect = label_rect.inflate(8, 4)
+        pygame.draw.rect(screen, (10, 12, 16), bg_rect)
+        pygame.draw.rect(screen, (48, 54, 66), bg_rect, 1)
+        screen.blit(label, label_rect)
+        return bg_rect
+
+    def _draw_body_focus_ring(self, screen, rect, is_selected, is_hovered):
+        if not is_selected and not is_hovered:
+            return
+
+        ring_rect = rect.inflate(10 if is_selected else 7, 10 if is_selected else 7)
+        color = (255, 226, 112) if is_selected else (126, 218, 252)
+        width = 3 if is_selected else 2
+        pygame.draw.rect(screen, color, ring_rect, width)
+
     def draw(self, screen, sim):
         view = self.app_view
         camera = view.camera
+        if hasattr(sim, "clear_body_label_hitboxes"):
+            sim.clear_body_label_hitboxes()
 
         root_only_label_zoom = 2.5e-10
         all_children_label_zoom = 2.0e-9
@@ -508,6 +566,14 @@ class SpaceRenderer:
             if body_rect is None:
                 continue
 
+            source_entity_id = source_entity.get("id") if isinstance(source_entity, dict) else None
+            self._draw_body_focus_ring(
+                screen,
+                body_rect,
+                source_entity_id is not None and source_entity_id == getattr(sim, "selected_system_entity_id", None),
+                source_entity_id is not None and source_entity_id == getattr(sim, "hover_system_entity_id", None),
+            )
+
             is_root_body = orbit is None
 
             show_label = False
@@ -530,9 +596,11 @@ class SpaceRenderer:
             if is_subsystem_body and camera.zoom < all_children_label_zoom:
                 label_color = (170, 170, 170)
 
-            label = view.default_font.render(
+            label_rect = self._draw_readable_label(
+                screen,
                 body["name"],
-                True,
-                label_color
+                label_anchor,
+                label_color,
             )
-            screen.blit(label, label_anchor)
+            if hasattr(sim, "register_body_label_hitbox"):
+                sim.register_body_label_hitbox(source_entity_id, label_rect)

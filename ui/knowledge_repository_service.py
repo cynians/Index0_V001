@@ -239,7 +239,14 @@ class KnowledgeRepositoryService:
         loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
         if loader is None or not hasattr(loader, "persist_entity"):
             return False
-        return loader.persist_entity(entity, previous_entity_id=previous_entity_id)
+        persisted = loader.persist_entity(entity, previous_entity_id=previous_entity_id)
+        if persisted:
+            mark_changed = getattr(self.world_model, "mark_repository_changed", None)
+            if callable(mark_changed):
+                mark_changed()
+            else:
+                self.world_model.repository_revision = getattr(self.world_model, "repository_revision", 0) + 1
+        return persisted
 
     def _sync_bidirectional_relations(self, persist=True):
         if self.world_model is None or getattr(self.world_model, "loader", None) is None:
@@ -367,6 +374,11 @@ class KnowledgeRepositoryService:
             self.canvas_relation_edges = []
             if hasattr(loader, "build_reference_graph"):
                 loader.build_reference_graph()
+            mark_changed = getattr(self.world_model, "mark_repository_changed", None)
+            if callable(mark_changed):
+                mark_changed()
+            else:
+                self.world_model.repository_revision = getattr(self.world_model, "repository_revision", 0) + 1
             self._refresh_timeline_items()
 
         return changed_entity_ids

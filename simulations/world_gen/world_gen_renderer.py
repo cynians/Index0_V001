@@ -114,14 +114,27 @@ class WorldGenRenderer:
         if outer_px <= 1:
             return
 
-        zone_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
-        pygame.draw.circle(zone_surface, (92, 128, 92, 42), (int(center[0]), int(center[1])), outer_px)
+        zone_bounds = pygame.Rect(
+            int(center[0] - outer_px - 3),
+            int(center[1] - outer_px - 3),
+            outer_px * 2 + 6,
+            outer_px * 2 + 6,
+        ).clip(screen.get_rect())
+        if zone_bounds.width <= 0 or zone_bounds.height <= 0:
+            return
+
+        local_center = (
+            int(center[0] - zone_bounds.x),
+            int(center[1] - zone_bounds.y),
+        )
+        zone_surface = pygame.Surface(zone_bounds.size, pygame.SRCALPHA)
+        pygame.draw.circle(zone_surface, (92, 128, 92, 42), local_center, outer_px)
         if inner_px > 0:
-            pygame.draw.circle(zone_surface, (0, 0, 0, 0), (int(center[0]), int(center[1])), inner_px)
-        pygame.draw.circle(zone_surface, (150, 196, 138, 130), (int(center[0]), int(center[1])), outer_px, 2)
+            pygame.draw.circle(zone_surface, (0, 0, 0, 0), local_center, inner_px)
+        pygame.draw.circle(zone_surface, (150, 196, 138, 130), local_center, outer_px, 2)
         if inner_px > 0:
-            pygame.draw.circle(zone_surface, (150, 196, 138, 120), (int(center[0]), int(center[1])), inner_px, 2)
-        screen.blit(zone_surface, (0, 0))
+            pygame.draw.circle(zone_surface, (150, 196, 138, 120), local_center, inner_px, 2)
+        screen.blit(zone_surface, zone_bounds.topleft)
 
     def _body_position_screen(self, camera, semi_major_au, eccentricity):
         if semi_major_au is None or eccentricity is None:

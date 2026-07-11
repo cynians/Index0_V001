@@ -8,6 +8,8 @@ class BioregionRenderer:
 
     def __init__(self, app_view):
         self.app_view = app_view
+        self._cell_color_cache = {}
+        self._cell_color_cache_limit = 2048
 
     def _draw_bioregion_cell_highlight(self, screen, camera, cell, color, border_width):
         """
@@ -100,6 +102,18 @@ class BioregionRenderer:
         """
         Build a display color from altitude, moisture, and vegetation state.
         """
+        cache_key = (
+            cell.get("soil_type"),
+            cell.get("habitat_type"),
+            round(float(cell.get("altitude", 0.0) or 0.0), 3),
+            round(float(cell.get("plant_biomass", 0.0) or 0.0), 3),
+            round(float(cell.get("plant_health", 0.0) or 0.0), 3),
+            round(float(cell.get("surface_water", 0.0) or 0.0), 3),
+        )
+        cached = self._cell_color_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         altitude = cell["altitude"]
         biomass = cell["plant_biomass"]
         health = cell["plant_health"]
@@ -120,6 +134,9 @@ class BioregionRenderer:
             water_tint = (42, 92, 130)
             color = self._mix_color(color, water_tint, min(0.62, surface_water * 1.7))
 
+        self._cell_color_cache[cache_key] = color
+        while len(self._cell_color_cache) > self._cell_color_cache_limit:
+            self._cell_color_cache.pop(next(iter(self._cell_color_cache)))
         return color
 
     def _get_bare_ground_color(self, cell):

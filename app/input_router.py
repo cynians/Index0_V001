@@ -15,8 +15,15 @@ class InputRouter:
     * forward pointer motion / left-click input to the active simulation
     """
 
+    UI_CONSUMED_ACTIONS = {"__ui_consumed__", "ui_consumed"}
+
     def __init__(self, app):
         self.app = app
+
+    def _is_ui_consumed_action(self, action):
+        if not isinstance(action, str):
+            return False
+        return action in self.UI_CONSUMED_ACTIONS
 
     def _rebuild_ui_for_event(self, active_sim):
         """
@@ -34,6 +41,34 @@ class InputRouter:
             repository_return_confirm_active=self.app.repository_return_confirm_active,
             world_model=self.app.world_model,
             repository_scope_entity_id=self.app.repository_scope_entity_id,
+            parent_assignment_request=getattr(self.app, "parent_assignment_request", None),
+        )
+
+    def _event_needs_fresh_ui_layout(self, event):
+        if event.type in (pygame.MOUSEMOTION, pygame.MOUSEWHEEL):
+            ui_manager = self.app.ui_manager
+            knowledge_ui = getattr(ui_manager, "knowledge_ui", None)
+            if (
+                getattr(self.app, "knowledge_layer_active", False)
+                and getattr(knowledge_ui, "layout", None) is not None
+            ):
+                return False
+
+        if event.type != pygame.MOUSEMOTION:
+            return True
+
+        ui_manager = self.app.ui_manager
+        return not any(
+            (
+                getattr(ui_manager, "buttons", None),
+                getattr(ui_manager, "tab_hitboxes", None),
+                getattr(ui_manager, "simulation_panel_tab_hitboxes", None),
+                getattr(ui_manager, "simulation_bar_resize_hitbox", None),
+                getattr(ui_manager, "simulation_selection_buttons", None),
+                getattr(ui_manager, "system_menu_buttons", None),
+                getattr(ui_manager, "repository_return_confirm_buttons", None),
+                getattr(getattr(ui_manager, "selection_inspector", None), "is_open", False),
+            )
         )
 
     def _handle_keydown_navigation(self, event):
@@ -101,7 +136,7 @@ class InputRouter:
         """
         action = self.app.ui_manager.handle_event(event)
 
-        if action == "__ui_consumed__":
+        if self._is_ui_consumed_action(action):
             return True
 
         if action is None:
@@ -173,7 +208,8 @@ class InputRouter:
             return True
 
         active_sim = self.app.get_active_simulation()
-        self._rebuild_ui_for_event(active_sim)
+        if self._event_needs_fresh_ui_layout(event):
+            self._rebuild_ui_for_event(active_sim)
 
         if self._handle_ui_action(event, active_sim):
             return True
