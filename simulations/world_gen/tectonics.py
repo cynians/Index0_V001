@@ -289,8 +289,9 @@ def derive_crater_model(terrain, seed=None, physics=None, planet_id=""):
     cratering = terrain.get("cratering") if isinstance(terrain.get("cratering"), dict) else {}
     map_seed = terrain.get("map_seed") or resolved_map_seed(seed, planet_id=planet_id)
     density = _clamp(cratering.get("density", 0.65), 0.0, 1.0)
+    retention = str(cratering.get("retention") or "moderate")
     max_km = max(10.0, float(cratering.get("max_crater_diameter_km", 400.0) or 400.0))
-    count = int(12 + density * 34)
+    count = int(16 + density * (86 if retention == "high" else 46))
     craters = []
     golden = 0.61803398875
     for index in range(count):
@@ -298,15 +299,21 @@ def derive_crater_model(terrain, seed=None, physics=None, planet_id=""):
         nx = (nx + seed_range(map_seed, f"crater_{index}_jitter_x", -0.025, 0.025)) % 1.0
         ny = 0.08 + ((index * seed_range(map_seed, "crater_y_step", 0.29, 0.43)) % 0.84)
         ny = _clamp(ny + seed_range(map_seed, f"crater_{index}_jitter_y", -0.035, 0.035), 0.04, 0.96)
-        scale = 1.0 / ((index % 9) + 1)
-        diameter = max(3.0, max_km * (0.12 + 0.88 * scale))
+        family = index % 13
+        if family == 0:
+            scale = seed_range(map_seed, f"crater_{index}_basin_scale", 0.42, 1.0)
+        elif family in {1, 2, 3}:
+            scale = seed_range(map_seed, f"crater_{index}_large_scale", 0.12, 0.38)
+        else:
+            scale = seed_range(map_seed, f"crater_{index}_small_scale", 0.012, 0.14)
+        diameter = max(1.2 if retention == "high" else 3.0, max_km * scale)
         craters.append({
             "id": f"crater_{index + 1:02d}",
             "x": round(nx, 4),
             "y": round(ny, 4),
             "diameter_km": round(diameter, 2),
-            "depth_m": round(min(4200.0, diameter * 18.0), 1),
-            "rim_height_m": round(min(950.0, diameter * 4.2), 1),
+            "depth_m": round(min(5200.0, diameter * (22.0 if retention == "high" else 18.0)), 1),
+            "rim_height_m": round(min(1250.0, diameter * (5.6 if retention == "high" else 4.2)), 1),
         })
     return {
         "status": "craters_seeded",

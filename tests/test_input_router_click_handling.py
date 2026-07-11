@@ -98,6 +98,50 @@ class InputRouterClickHandlingTests(unittest.TestCase):
 
         self.assertTrue(needs_rebuild)
 
+    def test_mouse_wheel_reuses_existing_ui_layout(self):
+        app = SimpleNamespace(
+            knowledge_layer_active=False,
+            ui_manager=SimpleNamespace(
+                buttons=[object()],
+                tab_hitboxes=[],
+                simulation_panel_tab_hitboxes=[],
+                simulation_bar_resize_hitbox=None,
+                simulation_selection_buttons=[],
+                system_menu_buttons=[],
+                repository_return_confirm_buttons=[],
+                selection_inspector=SimpleNamespace(is_open=False),
+            )
+        )
+        router = InputRouter(app)
+
+        needs_rebuild = router._event_needs_fresh_ui_layout(
+            SimpleNamespace(type=pygame.MOUSEWHEEL)
+        )
+
+        self.assertFalse(needs_rebuild)
+
+    def test_mouse_wheel_rebuilds_when_layout_is_empty(self):
+        app = SimpleNamespace(
+            knowledge_layer_active=False,
+            ui_manager=SimpleNamespace(
+                buttons=[],
+                tab_hitboxes=[],
+                simulation_panel_tab_hitboxes=[],
+                simulation_bar_resize_hitbox=None,
+                simulation_selection_buttons=[],
+                system_menu_buttons=[],
+                repository_return_confirm_buttons=[],
+                selection_inspector=SimpleNamespace(is_open=False),
+            )
+        )
+        router = InputRouter(app)
+
+        needs_rebuild = router._event_needs_fresh_ui_layout(
+            SimpleNamespace(type=pygame.MOUSEWHEEL)
+        )
+
+        self.assertTrue(needs_rebuild)
+
     def test_knowledge_wheel_reuses_existing_layout(self):
         app = SimpleNamespace(
             knowledge_layer_active=True,

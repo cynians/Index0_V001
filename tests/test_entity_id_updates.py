@@ -660,6 +660,38 @@ class EntityIdUpdateTests(unittest.TestCase):
 
         self.assertEqual("__ui_consumed__", result)
 
+    def test_inactive_edit_card_key_does_not_crash_pending_production_prompt(self):
+        class PassiveCardView:
+            def handle_keydown(self, card, event):
+                return False
+
+            def is_relation_edit_field(self, field_key):
+                return False
+
+        entity = {
+            "id": "idea_inactive_edit",
+            "type": "idea",
+            "_dataset": "ideas",
+            "pretty_name": "Old",
+            "name": "Old",
+        }
+        ui = KnowledgeBrowserHarness({"idea_inactive_edit": entity})
+        card = {
+            "entity_id": "idea_inactive_edit",
+            "card_view": PassiveCardView(),
+            "is_edit_mode": True,
+            "last_edit_action": None,
+        }
+        ui.cards = [card]
+
+        result = ui._handle_keydown_event(SimpleNamespace(
+            key=pygame.K_F1,
+            unicode="",
+            mod=0,
+        ))
+
+        self.assertEqual("__ui_consumed__", result)
+
     def test_person_quote_edit_consumes_typing_before_browser_search(self):
         entity = {
             "id": "person_quote_edit",
@@ -1005,6 +1037,7 @@ class EntityIdUpdateTests(unittest.TestCase):
 
         self.assertIsNone(ui.entry_name_prompt)
         self.assertEqual(["entry_123"], source["related"])
+        self.assertEqual(["idea_source"], target["related"])
 
     def test_new_entry_from_template_links_to_relations_tab_source(self):
         source = {
@@ -1042,6 +1075,10 @@ class EntityIdUpdateTests(unittest.TestCase):
         self.assertEqual(["idea_fresh_entry"], source["related"])
         self.assertIn("idea_fresh_entry", ui.world_model.loader.entities)
         self.assertEqual(
+            ["idea_source"],
+            ui.world_model.loader.entities["idea_fresh_entry"]["related"],
+        )
+        self.assertEqual(
             "Notebook Seed",
             ui.world_model.loader.entities["idea_fresh_entry"]["three_word_description"],
         )
@@ -1078,6 +1115,10 @@ class EntityIdUpdateTests(unittest.TestCase):
         self.assertIsNone(ui.entry_name_prompt)
         self.assertEqual(["idea_fresh_entry"], source["related"])
         self.assertIn("idea_fresh_entry", ui.world_model.loader.entities)
+        self.assertEqual(
+            ["idea_source"],
+            ui.world_model.loader.entities["idea_fresh_entry"]["related"],
+        )
         self.assertEqual(
             "",
             ui.world_model.loader.entities["idea_fresh_entry"].get("three_word_description", ""),
@@ -1126,6 +1167,10 @@ class EntityIdUpdateTests(unittest.TestCase):
 
         self.assertEqual(["veh_fresh_vehicle"], source["related"])
         self.assertIn("veh_fresh_vehicle", ui.world_model.loader.entities)
+        self.assertEqual(
+            ["idea_source"],
+            ui.world_model.loader.entities["veh_fresh_vehicle"]["related"],
+        )
         self.assertNotIn("idea_fresh_vehicle", ui.world_model.loader.entities)
 
     def test_entry_description_suggestions_are_scoped_to_selected_class(self):

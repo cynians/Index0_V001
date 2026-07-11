@@ -331,7 +331,7 @@ class WorldGenRenderer:
         note = small_font.render("The app is generating planetary geology. This can take a couple of minutes.", True, (118, 132, 154))
         screen.blit(note, note.get_rect(center=(center_x, center_y + 88)))
 
-    def _draw_candidate_orbit(self, screen, camera, model):
+    def _draw_candidate_orbit(self, screen, camera, model, payload=None):
         if not model.get("orbit_valid"):
             return
 
@@ -359,8 +359,37 @@ class WorldGenRenderer:
         pygame.draw.lines(screen, (116, 184, 244), True, points, 2)
         periapsis = points[0]
         pygame.draw.circle(screen, (176, 220, 255), periapsis, 5)
-        label = self.app_view.default_font.render("candidate planet", True, (176, 220, 255))
+        pending_class = str((payload or {}).get("pending_body_class") or "planet")
+        label = self.app_view.default_font.render(f"candidate {pending_class}", True, (176, 220, 255))
         screen.blit(label, (periapsis[0] + 8, periapsis[1] + 8))
+        self._draw_orbit_preview_tooltip(screen, periapsis, (payload or {}).get("orbit_preview"))
+
+    def _draw_orbit_preview_tooltip(self, screen, anchor, preview):
+        if not isinstance(preview, dict):
+            return
+        lines = [str(line) for line in preview.get("lines") or [] if str(line)]
+        if not lines:
+            return
+
+        font = self.app_view.default_font
+        padding = 8
+        line_h = font.get_height() + 3
+        width = min(330, max(font.size(line)[0] for line in lines[:6]) + padding * 2)
+        height = min(len(lines), 6) * line_h + padding * 2
+        rect = pygame.Rect(int(anchor[0]) + 18, int(anchor[1]) + 28, width, height)
+        if rect.right > screen.get_width() - 12:
+            rect.x = int(anchor[0]) - rect.width - 18
+        if rect.bottom > screen.get_height() - 12:
+            rect.y = int(anchor[1]) - rect.height - 18
+
+        pygame.draw.rect(screen, (18, 22, 31), rect)
+        pygame.draw.rect(screen, (132, 156, 190), rect, 1)
+        y = rect.y + padding
+        for index, line in enumerate(lines[:6]):
+            color = (238, 242, 248) if index == 0 else (178, 194, 216)
+            surface = font.render(line, True, color)
+            screen.blit(surface, (rect.x + padding, y))
+            y += line_h
 
     def _draw_input_panel(self, screen, sim, payload, camera):
         font = self.app_view.default_font
@@ -459,12 +488,14 @@ class WorldGenRenderer:
             input_rect = pygame.Rect(prompt.x + 18, prompt.y + 56, prompt.width - 36, 28)
             pygame.draw.rect(screen, (24, 28, 38), prompt)
             pygame.draw.rect(screen, (188, 196, 212), prompt, 1)
-            title = font.render("Name Planet", True, (244, 244, 244))
+            prompt_title = "Name Moon" if payload.get("pending_body_class") == "moon" else "Name Planet"
+            title = font.render(prompt_title, True, (244, 244, 244))
             screen.blit(title, (prompt.x + 14, prompt.y + 12))
             pygame.draw.rect(screen, (38, 48, 68), input_rect)
             pygame.draw.rect(screen, (188, 212, 244), input_rect, 1)
             text = payload.get("planet_name_buffer") or ""
-            surface = font.render(text or "Planet name", True, (238, 238, 238) if text else (128, 138, 154))
+            placeholder = "Moon name" if payload.get("pending_body_class") == "moon" else "Planet name"
+            surface = font.render(text or placeholder, True, (238, 238, 238) if text else (128, 138, 154))
             screen.blit(surface, (input_rect.x + 8, input_rect.y + 5))
 
     def _draw_panel_button(self, screen, font, rect, label, primary=False):
@@ -653,6 +684,11 @@ class WorldGenRenderer:
 
         back_rect = pygame.Rect(panel.x + 16, panel.bottom - 84, 92, 26)
         self._draw_panel_button(screen, font, back_rect, "Back")
+        new_moon_rect = None
+        selected_class = str(selected_planet.get("location_class") or selected_planet.get("body_class") or "").lower()
+        if selected_class == "planet":
+            new_moon_rect = pygame.Rect(back_rect.right + 10, panel.bottom - 84, 112, 26)
+            self._draw_panel_button(screen, font, new_moon_rect, "New Moon")
         generic_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 132, 30)
         eccentric_rect = pygame.Rect(generic_rect.right + 8, panel.bottom - 48, 148, 30)
         gas_rect = pygame.Rect(eccentric_rect.right + 8, panel.bottom - 48, 132, 30)
@@ -685,6 +721,7 @@ class WorldGenRenderer:
             random_gas_giant_rect=gas_rect,
             back_rect=back_rect,
             space_rect=space_rect,
+            new_moon_rect=new_moon_rect,
         )
         sim.set_seed_field_rects(seed_field_rects)
         sim.set_control_panel_rect(panel)
@@ -1838,6 +1875,6 @@ class WorldGenRenderer:
 
         self._draw_habitable_zone(screen, camera, model)
         self._draw_reference_bodies(screen, camera, sim, payload)
-        self._draw_candidate_orbit(screen, camera, model)
+        self._draw_candidate_orbit(screen, camera, model, payload)
         self._draw_star(screen, camera, payload)
         self._draw_input_panel(screen, sim, payload, camera)

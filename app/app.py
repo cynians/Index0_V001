@@ -111,8 +111,15 @@ class App(SimWindow):
             and getattr(active_sim, "consumes_global_keydown", lambda: False)()
         )
 
+    def consumes_camera_update(self):
+        active_sim = self.get_active_simulation()
+        return bool(
+            active_sim is not None
+            and getattr(active_sim, "consumes_camera_update", lambda: False)()
+        )
+
     def _update_frame(self, dt):
-        if not self.consumes_global_keydown():
+        if not self.consumes_camera_update():
             self.camera.update(dt)
         self.update(dt)
 

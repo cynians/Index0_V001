@@ -3,6 +3,8 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+import pygame
+
 from simulations.building.building_sim import BuildingSimulation
 from simulations.bioregion.bioregion_simulation import BioregionSimulation
 from simulations.map.map_simulation import MapSimulation
@@ -316,6 +318,45 @@ class BuildingSimulationTests(unittest.TestCase):
         layers = sim.get_layers()
         point_layers = [layer for layer in layers if layer.get("entity_id") == created["id"]]
         self.assertEqual("marker", point_layers[0]["shape"])
+
+    def test_map_editor_enter_finishes_and_escape_cancels(self):
+        planet = {
+            "id": "loc_planet_blue",
+            "name": "Blue Planet",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "bounds": {
+                "type": "bbox",
+                "min_x": -180,
+                "max_x": 180,
+                "min_y": -90,
+                "max_y": 90,
+            },
+            "start_year": 2400,
+        }
+        world_model = FakeWorldModel([planet])
+        sim = MapSimulation(SimulationContext(
+            year=2400,
+            root_entity_id=planet["id"],
+            world_model=world_model,
+        ))
+
+        self.assertTrue(sim.begin_point_location_draft("site"))
+        self.assertIn("Esc cancel", sim.get_map_editor_status_label())
+        sim.draft_point_location_pos = (12.5, -4.25)
+        self.assertIn("Enter finish", sim.get_map_editor_status_label())
+        self.assertTrue(sim.consumes_global_keydown())
+        self.assertTrue(sim.handle_event(SimpleNamespace(type=pygame.KEYDOWN, key=pygame.K_RETURN)))
+        self.assertFalse(sim.is_map_editor_active())
+        self.assertIsNotNone(world_model.get_entity(sim.last_saved_location_id))
+
+        self.assertTrue(sim.begin_point_location_draft("site"))
+        sim.draft_point_location_pos = (18.0, -2.0)
+        previous_saved_id = sim.last_saved_location_id
+        self.assertTrue(sim.handle_event(SimpleNamespace(type=pygame.KEYDOWN, key=pygame.K_ESCAPE)))
+        self.assertFalse(sim.is_map_editor_active())
+        self.assertEqual(previous_saved_id, sim.last_saved_location_id)
 
     def test_planet_radius_overrides_tiny_placeholder_bbox(self):
         planet = {
@@ -692,6 +733,76 @@ class BuildingSimulationTests(unittest.TestCase):
             region = world_model.get_entity("loc_draft_loc_region_root_001")
             self.assertEqual("location", region["type"])
             self.assertEqual("region", region["location_class"])
+
+    def test_planet_map_can_draft_country_and_point_site_locations(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = {
+                "id": "planet_test",
+                "name": "Test Planet",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "planet",
+                "radius_m": 6_371_000,
+                "start_year": 2400,
+            }
+            world_model = FakeWorldModel([root])
+            sim = MapSimulation(SimulationContext(
+                year=2400,
+                root_entity_id=root["id"],
+                world_model=world_model,
+            ))
+
+            option_ids = {option["id"] for option in sim.get_location_draft_options()}
+            self.assertIn("continent", option_ids)
+            self.assertIn("country", option_ids)
+            self.assertIn("site", option_ids)
+
+            self.assertTrue(sim.begin_location_draft("country"))
+            sim.draft_spatial_feature_points = [(1, 1), (8, 1), (8, 6), (1, 6)]
+            self.assertTrue(sim.finish_map_editor())
+
+            country = world_model.get_entity("loc_draft_country_planet_test_001")
+            self.assertEqual("country", country["location_class"])
+            self.assertEqual("planet_test", country["parent_location"])
+
+            self.assertTrue(sim.begin_point_location_draft("site"))
+            sim.draft_point_location_pos = (12.5, -4.25)
+            self.assertTrue(sim.finish_map_editor())
+
+            site = world_model.get_entity("loc_draft_site_planet_test_001")
+            self.assertEqual("site", site["location_class"])
+            self.assertEqual("point_location", site["location_role"])
+            self.assertEqual("planet_test", site["parent_location"])
+
+    def test_airless_seeded_map_root_does_not_render_as_gas_giant(self):
+        root = {
+            "id": "planet_airless",
+            "name": "Airless",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "world_gen_template": "cratered_airless",
+            "surface_render_mode": "gas_giant_bands",
+            "map_render_mode": "gas_giant_bands",
+            "map_status": "gas_giant_envelope_modeled",
+            "atmosphere_model": {"has_solid_surface": False, "surface_pressure_bar": 100.0},
+            "world_gen_seed": {
+                "planet_template": "cratered_airless",
+                "planet_class": "airless_rocky",
+                "radius_earth": 0.35,
+                "water_fraction": 0.0,
+                "volatile_inventory": "none",
+            },
+            "tags": ["gas_giant", "gas_giant_bands"],
+        }
+        world_model = FakeWorldModel([root])
+        sim = MapSimulation(SimulationContext(
+            year=2400,
+            root_entity_id=root["id"],
+            world_model=world_model,
+        ))
+
+        self.assertFalse(sim._entity_is_gas_giant(root))
 
     def test_ground_material_layer_finish_uses_location_record(self):
         root = {

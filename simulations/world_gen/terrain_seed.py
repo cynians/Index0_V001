@@ -119,10 +119,14 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
     max_elevation_m *= gravity_relief_factor * silica_relief_factor * (1.0 - erosion * 0.22)
     min_elevation_m *= gravity_relief_factor * (1.0 - erosion * 0.16)
     roughness = _clamp(roughness + mafic_roughness_bonus - erosion * 0.08, 0.18, 0.9)
+    airless_or_near_airless = pressure_bar < 0.01
     if pressure_bar < 0.02 and crater_retention == "low":
         crater_retention = "moderate" if mobile_plates or partial_resurfacing else "high"
     elif pressure_bar < 0.15 and crater_retention == "low":
         crater_retention = "moderate"
+    if airless_or_near_airless and not liquid_water and not mobile_plates:
+        crater_retention = "high"
+        roughness = _clamp(max(roughness, 0.82), 0.18, 0.96)
 
     ocean_bias = seed_range(map_seed, "ocean_bias", -0.18, 0.18)
     temp_ocean_factor = _clamp(1.0 - abs(surface_temp_k - 288.0) / 155.0, 0.12, 1.0)
@@ -159,6 +163,8 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
     crater_density *= 1.0 - erosion * 0.35
     crater_density *= 1.0 - _clamp(pressure_bar / 8.0, 0.0, 0.22)
     crater_density *= 1.0 - _clamp(internal_heat / 0.35, 0.0, 0.18)
+    if airless_or_near_airless and not liquid_water:
+        crater_density = max(crater_density, 0.92 if crater_retention == "high" else 0.68)
     crater_density = _clamp(crater_density, 0.0, 1.0)
 
     layers = [
@@ -184,6 +190,8 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
     for step in ("seed_heightfield_layers", "derive_water_and_erosion_masks"):
         if step not in map_recipe:
             map_recipe.append(step)
+    if crater_density >= 0.75 and "simulate_impact_gardening" not in map_recipe:
+        map_recipe.append("simulate_impact_gardening")
 
     return {
         "status": "terrain_seeded",

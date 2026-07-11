@@ -54,7 +54,7 @@ class InputRouter:
             ):
                 return False
 
-        if event.type != pygame.MOUSEMOTION:
+        if event.type not in (pygame.MOUSEMOTION, pygame.MOUSEWHEEL):
             return True
 
         ui_manager = self.app.ui_manager

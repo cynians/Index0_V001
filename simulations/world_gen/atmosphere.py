@@ -36,6 +36,11 @@ VOLATILE_PRESSURE_BAR = {
     "dense": 4.0,
 }
 
+EXPLICIT_AIRLESS_SURFACE_CLASSES = {
+    "airless_rocky",
+    "cratered_airless",
+}
+
 
 def equilibrium_temperature_k(luminosity_solar, semi_major_axis_au, bond_albedo=0.30):
     luminosity = max(0.0001, float(luminosity_solar or 1.0))
@@ -90,11 +95,14 @@ def _is_gas_giant(seed, physics):
     mass_earth = max(0.0, float(physics.get("mass_earth", 0.0) or 0.0))
     explicit_kind = str(
         seed.get("planet_class")
+        or seed.get("planet_template")
         or seed.get("body_class")
         or seed.get("world_kind")
         or seed.get("planet_type")
         or ""
     ).strip().lower()
+    if explicit_kind in EXPLICIT_AIRLESS_SURFACE_CLASSES:
+        return False
     if explicit_kind in {"gas_giant", "ice_giant", "jovian", "neptune", "sub_neptune"}:
         return True
     return radius_earth >= 3.0 or mass_earth >= 12.0
@@ -105,6 +113,7 @@ def _gas_giant_class(seed, physics, equilibrium_temp):
     mass_earth = max(0.0, float(physics.get("mass_earth", 0.0) or 0.0))
     explicit_kind = str(
         seed.get("planet_class")
+        or seed.get("planet_template")
         or seed.get("body_class")
         or seed.get("world_kind")
         or seed.get("planet_type")

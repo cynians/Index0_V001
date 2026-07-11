@@ -29,6 +29,9 @@ class OntologyRepository:
         "parents": "hasParent",
         "related": "relatedTo",
     }
+    SYMMETRIC_RELATION_FIELDS = {
+        "related",
+    }
 
     DERIVED_FIELDS = {
         "offspring",
@@ -48,7 +51,7 @@ class OntologyRepository:
         repository = cls({})
         ontology = repository._load_ontology(path)
         datasets = repository._datasets_from_ontology(ontology)
-        return cls(datasets)
+        return cls(datasets).materialized_repository()
 
     def _build_index(self):
         self.entities = {}
@@ -95,6 +98,9 @@ class OntologyRepository:
         changed = set()
         if self._add_relation_id(source, field_name, target_id):
             changed.add(source_id)
+        reciprocal_field = reciprocal_field or (
+            field_name if field_name in self.SYMMETRIC_RELATION_FIELDS else ""
+        )
         if reciprocal_field and self._add_relation_id(target, reciprocal_field, source_id):
             changed.add(target_id)
         return changed
@@ -112,6 +118,9 @@ class OntologyRepository:
         if isinstance(source, dict) and self._remove_relation_id(source, field_name, target_id):
             changed.add(source_id)
         target = self.entities.get(target_id)
+        reciprocal_field = reciprocal_field or (
+            field_name if field_name in self.SYMMETRIC_RELATION_FIELDS else ""
+        )
         if reciprocal_field and isinstance(target, dict) and self._remove_relation_id(target, reciprocal_field, source_id):
             changed.add(target_id)
         return changed
@@ -155,6 +164,9 @@ class OntologyRepository:
         datasets = self.materialized_datasets()
         projected = OntologyRepository(datasets)
         return projected.entities
+
+    def materialized_repository(self):
+        return OntologyRepository(self.materialized_datasets())
 
     def _relation_ids(self, value):
         if isinstance(value, str):
@@ -202,6 +214,8 @@ class OntologyRepository:
         return offspring
 
     def materialize_inverse_relations(self):
+        self._materialize_symmetric_relations()
+
         children_by_parent = {}
         for entity_id, entity in self.entities.items():
             for parent_id in self._parent_ids_for_entity(entity):
@@ -213,6 +227,17 @@ class OntologyRepository:
 
         for entity_id, entity in self.entities.items():
             entity["offspring"] = self._build_offspring_tree(entity_id, children_by_parent)
+
+    def _materialize_symmetric_relations(self):
+        for field_name in self.SYMMETRIC_RELATION_FIELDS:
+            pairs = []
+            for entity_id, entity in self.entities.items():
+                for target_id in self._relation_ids(entity.get(field_name)):
+                    if target_id in self.entities and target_id != entity_id:
+                        pairs.append((entity_id, target_id))
+
+            for source_id, target_id in pairs:
+                self._add_relation_id(self.entities[target_id], field_name, source_id)
 
     def build_ontology(self, iri=BASE_IRI):
         owlready2 = self._import_owlready2()
@@ -234,7 +259,7 @@ class OntologyRepository:
 
             hasParent.inverse_property = hasOffspring
 
-            class relatedTo(owlready2.ObjectProperty):
+            class relatedTo(owlready2.ObjectProperty, owlready2.SymmetricProperty):
                 pass
 
             class hasAncestor(owlready2.ObjectProperty, owlready2.TransitiveProperty):

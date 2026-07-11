@@ -31,6 +31,39 @@ class OntologyRepositoryTests(unittest.TestCase):
         self.assertEqual([{"id": "idea_child"}], entities["idea_parent"]["offspring"])
         self.assertEqual([], entities["idea_child"]["offspring"])
 
+    def test_related_relation_is_reciprocal_on_set_and_remove(self):
+        ontology = OntologyRepository({
+            "ideas": [
+                {"id": "idea_a", "type": "idea", "pretty_name": "A"},
+                {"id": "idea_b", "type": "idea", "pretty_name": "B"},
+            ],
+        })
+
+        changed = ontology.set_relation("idea_a", "related", "idea_b")
+
+        self.assertEqual({"idea_a", "idea_b"}, changed)
+        self.assertEqual(["idea_b"], ontology.entities["idea_a"]["related"])
+        self.assertEqual(["idea_a"], ontology.entities["idea_b"]["related"])
+
+        changed = ontology.remove_relation("idea_a", "related", "idea_b")
+
+        self.assertEqual({"idea_a", "idea_b"}, changed)
+        self.assertEqual([], ontology.entities["idea_a"]["related"])
+        self.assertEqual([], ontology.entities["idea_b"]["related"])
+
+    def test_materialized_entities_include_reciprocal_related_projection(self):
+        ontology = OntologyRepository({
+            "ideas": [
+                {"id": "idea_a", "type": "idea", "pretty_name": "A", "related": ["idea_b"]},
+                {"id": "idea_b", "type": "idea", "pretty_name": "B"},
+            ],
+        })
+
+        entities = ontology.materialized_entities()
+
+        self.assertEqual(["idea_b"], entities["idea_a"]["related"])
+        self.assertEqual(["idea_a"], entities["idea_b"]["related"])
+
     def test_legacy_idea_parent_entity_materializes_offspring_projection(self):
         ontology = OntologyRepository({
             "ideas": [
@@ -71,6 +104,30 @@ class OntologyRepositoryTests(unittest.TestCase):
         parent = onto.search_one(iri="https://index0.local/entity/idea_parent")
         self.assertEqual([parent], list(child.hasParent))
         self.assertEqual([child], list(parent.hasOffspring))
+
+    def test_owlready2_declares_related_symmetric(self):
+        ontology = OntologyRepository({
+            "ideas": [
+                {
+                    "id": "idea_a",
+                    "type": "idea",
+                    "pretty_name": "A",
+                    "related": ["idea_b"],
+                },
+                {"id": "idea_b", "type": "idea", "pretty_name": "B"},
+            ],
+        })
+
+        try:
+            onto = ontology.build_ontology()
+            owlready2 = ontology._import_owlready2()
+        except OntologyDependencyError as exc:
+            self.skipTest(str(exc))
+
+        self.assertIn(owlready2.SymmetricProperty, onto.relatedTo.is_a)
+        idea_a = onto.search_one(iri="https://index0.local/entity/idea_a")
+        idea_b = onto.search_one(iri="https://index0.local/entity/idea_b")
+        self.assertEqual([idea_b], list(idea_a.relatedTo))
 
     def test_save_owl_creates_parent_directories(self):
         ontology = OntologyRepository({"ideas": [{"id": "idea_one", "type": "idea"}]})
@@ -144,6 +201,7 @@ class OntologyRepositoryTests(unittest.TestCase):
             )
             self.assertEqual(["idea_parent"], loaded.entities["idea_child"]["parents"])
             self.assertEqual(["idea_parent"], loaded.entities["idea_child"]["related"])
+            self.assertEqual(["idea_child"], loaded.entities["idea_parent"]["related"])
 
     def test_non_core_entity_reference_field_round_trips_as_object_property(self):
         ontology = OntologyRepository({

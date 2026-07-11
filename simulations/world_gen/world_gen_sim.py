@@ -214,6 +214,7 @@ class WorldGenSimulation:
         self.crust_random_generic_button_rect = None
         self.crust_random_eccentric_button_rect = None
         self.crust_random_gas_giant_button_rect = None
+        self.world_gen_new_moon_button_rect = None
         self.formation_theory_button_rect = None
         self.crust_save_button_rect = None
         self.world_gen_back_button_rect = None
@@ -227,6 +228,10 @@ class WorldGenSimulation:
         self.heightmap_preview_zoom = 1.0
         self.pending_orbit_radius_au = None
         self.orbit_pick_stage = "first"
+        self.pending_body_class = "planet"
+        self.orbit_parent_body_id = None
+        self.pending_formation_model = None
+        self.pending_formation_seed = None
         self.planet_name_prompt_active = False
         self.planet_name_buffer = ""
         self.commit_status = ""
@@ -261,7 +266,8 @@ class WorldGenSimulation:
         self.star_luminosity_solar = self._estimate_star_luminosity_solar(self.star_entity)
         self.planetary_model = {}
         if isinstance(self.planet_entity, dict):
-            self._repair_gas_giant_route_if_needed(self.planet_entity)
+            if not self._repair_solid_surface_route_if_needed(self.planet_entity):
+                self._repair_gas_giant_route_if_needed(self.planet_entity)
             self.editor_stage = self._resume_stage_for_planet(self.planet_entity)
         self._recalculate_model()
 
@@ -271,6 +277,10 @@ class WorldGenSimulation:
     def get_scope_label(self):
         if self.planet_entity:
             return self.planet_entity.get("name") or self.planet_location_id
+        if self.pending_body_class == "moon" and self.orbit_parent_body_id:
+            parent = self.world_model.get_entity(self.orbit_parent_body_id) if self.world_model else None
+            parent_name = parent.get("name", self.orbit_parent_body_id) if isinstance(parent, dict) else self.orbit_parent_body_id
+            return f"{parent_name} Moon"
         system = self.world_model.get_entity(self.parent_system_id) if self.parent_system_id else None
         if system:
             return f"{system.get('name', self.parent_system_id)} Planet"
@@ -404,6 +414,7 @@ class WorldGenSimulation:
         complete_rect=None,
         back_rect=None,
         space_rect=None,
+        new_moon_rect=None,
     ):
         self.crust_slider_rects = dict(slider_rects or {})
         self.crust_add_trace_button_rect = add_trace_rect
@@ -414,6 +425,7 @@ class WorldGenSimulation:
         self.world_gen_complete_button_rect = complete_rect
         self.world_gen_back_button_rect = back_rect
         self.world_gen_space_button_rect = space_rect
+        self.world_gen_new_moon_button_rect = new_moon_rect
         self.periodic_table_rect = periodic_rect
         self.periodic_element_rects = dict(element_rects or {})
 
@@ -432,6 +444,38 @@ class WorldGenSimulation:
             "system_id": system_id,
         }
         self.commit_status = "Opening space simulation"
+        return True
+
+    def _begin_moon_orbit_draft(self, parent_planet):
+        if not isinstance(parent_planet, dict) or not parent_planet.get("id"):
+            self.commit_status = "Select a planet before creating a moon"
+            return False
+        self.pending_body_class = "moon"
+        self.orbit_parent_body_id = parent_planet.get("id")
+        self.pending_formation_model = None
+        self.pending_formation_seed = None
+        self.selected_world_gen_planet_id = None
+        self.planet_entity = None
+        self.editor_stage = "crust"
+        self.pending_orbit_radius_au = None
+        self.orbit_pick_stage = "first"
+        self.input_buffers = {"periapsis_au": "", "apoapsis_au": ""}
+        self._reset_worldgen_seed_inputs()
+        self.active_planet_template = "cratered_airless"
+        self._apply_seed_buffers_from_seed({
+            "radius_earth": 0.27,
+            "core_radius_fraction": 0.32,
+            "crust_thickness_km": 45.0,
+            "angular_velocity_deg_per_hour": 0.55,
+            "water_fraction": 0.0,
+            "volatile_inventory": "none",
+            "tectonics_mode": "inactive",
+            "map_seed": "moon-auto",
+            "planet_template": "cratered_airless",
+        })
+        self._recalculate_model()
+        parent_name = parent_planet.get("name") or parent_planet.get("pretty_name") or parent_planet.get("id")
+        self.commit_status = f"Creating moon around {parent_name}: click an orbital distance, then press Enter to name it"
         return True
 
     def set_control_panel_rect(self, rect):
@@ -462,6 +506,7 @@ class WorldGenSimulation:
         self.world_gen_back_button_rect = None
         self.world_gen_complete_button_rect = None
         self.world_gen_space_button_rect = None
+        self.world_gen_new_moon_button_rect = None
         self.periodic_table_rect = None
         self.periodic_element_rects = {}
         self.control_panel_rect = None
@@ -750,21 +795,27 @@ class WorldGenSimulation:
             seen.add(entity_id)
             yield entity
 
-    def _find_existing_planet_entity(self, planet_name):
-        slug = self._slug_from_text(planet_name)
-        name_key = str(planet_name or "").strip().lower()
-        candidate_ids = {f"planet_{slug}", f"loc_{slug}", slug}
+    def _find_existing_body_entity(self, body_name, body_class="planet"):
+        slug = self._slug_from_text(body_name)
+        name_key = str(body_name or "").strip().lower()
+        body_class = str(body_class or "planet").strip().lower()
+        prefixes = ["moon", "loc"] if body_class == "moon" else ["planet", "loc"]
+        candidate_ids = {*(f"{prefix}_{slug}" for prefix in prefixes), slug}
         soft_match = None
 
         for entity in self._iter_location_entities():
             if not isinstance(entity, dict):
                 continue
             class_key = str(entity.get("location_class") or entity.get("body_class") or "").strip().lower()
-            if class_key != "planet":
+            if class_key != body_class:
                 continue
             entity_system = self._resolve_entity_id(entity.get("star_system"))
             if entity_system and entity_system != self.parent_system_id:
                 continue
+            if body_class == "moon":
+                parent_id = self._resolve_entity_id(entity.get("parent_body") or entity.get("parent_location"))
+                if self.orbit_parent_body_id and parent_id != self.orbit_parent_body_id:
+                    continue
             entity_id = str(entity.get("id") or "")
             label = str(entity.get("name") or entity.get("pretty_name") or "").strip().lower()
             if entity_id in candidate_ids:
@@ -773,6 +824,9 @@ class WorldGenSimulation:
                 soft_match = entity
 
         return soft_match
+
+    def _find_existing_planet_entity(self, planet_name):
+        return self._find_existing_body_entity(planet_name, "planet")
 
     def _primary_star_id(self):
         if isinstance(self.star_entity, dict) and self.star_entity.get("id"):
@@ -866,27 +920,36 @@ class WorldGenSimulation:
         self._invalidate_active_system_bodies_cache()
 
     def _committed_planet_fields(self, planet_name, model):
+        return self._committed_body_fields(planet_name, model, body_class="planet")
+
+    def _committed_body_fields(self, body_name, model, body_class=None):
+        body_class = str(body_class or self.pending_body_class or "planet").strip().lower()
+        if body_class not in {"planet", "moon"}:
+            body_class = "planet"
         semi_major_au = model.get("semi_major_axis_au")
         eccentricity = model.get("eccentricity")
         periapsis_au = model.get("periapsis_au")
         apoapsis_au = model.get("apoapsis_au")
         parent_star_id = self._primary_star_id()
-        anomaly_seed = f"{self.parent_system_id}:{self._slug_from_text(planet_name)}:{semi_major_au:.6f}:{eccentricity:.6f}"
+        parent_body_id = self._resolve_entity_id(self.orbit_parent_body_id) if body_class == "moon" else parent_star_id
+        anomaly_seed = f"{self.parent_system_id}:{self._slug_from_text(body_name)}:{semi_major_au:.6f}:{eccentricity:.6f}:{body_class}:{parent_body_id}"
+        body_label = "moon" if body_class == "moon" else "planet"
         return {
-            "pretty_name": planet_name,
-            "name": planet_name,
+            "pretty_name": body_name,
+            "name": body_name,
             "type": "location",
             "_dataset": "locations",
-            "location_class": "planet",
+            "location_class": body_class,
             "location_role": "orbital_body",
             "system_role": "orbital_body",
             "star_system": self.parent_system_id,
-            "parent_location": parent_star_id,
-            "parent_body": parent_star_id,
+            "parent_location": parent_body_id,
+            "parent_body": parent_body_id,
             "semi_major_axis_m": semi_major_au * self.AU_M,
             "eccentricity": eccentricity,
             "periapsis_au": periapsis_au,
             "apoapsis_au": apoapsis_au,
+            "orbit_reference_frame": "parent_body" if body_class == "moon" else "stellar",
             "mean_anomaly_deg_at_epoch": round(seed_range(anomaly_seed, "mean_anomaly", 0.0, 360.0), 3),
             "map_projection": "equirectangular",
             "map_canvas_width_px": PLANETARY_CANVAS_WIDTH_PX,
@@ -902,7 +965,7 @@ class WorldGenSimulation:
             "display_color": [92, 148, 206],
             "environment_summary": {
                 "status": "orbit_locked",
-                "summary": "Initial world-generation seed: orbital placement locked; physical planet model pending.",
+                "summary": f"Initial world-generation seed: orbital placement locked; physical {body_label} model pending.",
             },
             "geology_summary": {
                 "status": "pending",
@@ -965,12 +1028,16 @@ class WorldGenSimulation:
         if not model.get("orbit_valid"):
             return None
 
-        planet_name = str(name or "").strip()
-        if not planet_name:
+        body_name = str(name or "").strip()
+        if not body_name:
             return None
 
-        fields = self._committed_planet_fields(planet_name, model)
-        existing_planet = self._find_existing_planet_entity(planet_name)
+        body_class = str(self.pending_body_class or "planet").strip().lower()
+        if body_class == "moon" and not self.orbit_parent_body_id:
+            return None
+
+        fields = self._committed_body_fields(body_name, model, body_class=body_class)
+        existing_planet = self._find_existing_body_entity(body_name, body_class)
         if existing_planet is not None:
             existing_planet.update(fields)
             tags = list(existing_planet.get("tags") or [])
@@ -983,7 +1050,7 @@ class WorldGenSimulation:
             mirror_location_sim_relations(existing_planet)
             return existing_planet
 
-        base_id = f"planet_{self._slug_from_text(planet_name)}"
+        base_id = f"{'moon' if body_class == 'moon' else 'planet'}_{self._slug_from_text(body_name)}"
         entity_id = self._unique_entity_id(base_id)
 
         entity = {
@@ -1033,75 +1100,44 @@ class WorldGenSimulation:
         if not self.parent_system_id:
             self.commit_status = "Formation theory needs a parent star system"
             return False
-        original_input_buffers = dict(self.input_buffers)
-        original_selected_id = self.selected_world_gen_planet_id
-        original_planet_entity = self.planet_entity
-        original_stage = self.editor_stage
         existing_count = self._existing_orbital_planet_count()
         maximum = max_feasible_planets(self.star_luminosity_solar, existing_count=existing_count)
         remaining = maximum - existing_count
         if remaining <= 0:
             self.commit_status = f"Formation theory: feasible planet count reached ({existing_count}/{maximum})"
             return False
-        add_count = min(2, remaining)
         orbits = candidate_orbits_au(
             self.star_luminosity_solar,
             self._existing_orbits_au(),
-            count=add_count,
+            count=min(2, remaining),
             system_id=self.parent_system_id or "system",
         )
         if not orbits:
             self.commit_status = "Formation theory found no stable open orbit gaps"
             return False
 
-        created = []
-        for index, orbit_au in enumerate(orbits):
-            formation = formation_model_for_orbit(
-                self.star_luminosity_solar,
-                orbit_au,
-                system_id=self.parent_system_id or "system",
-                candidate_index=existing_count + index,
-                mode="generic",
-            )
-            eccentricity = seed_range(f"{self.parent_system_id}:{orbit_au}", "formation_eccentricity", 0.0, 0.08)
-            self.input_buffers["periapsis_au"] = self._format_input_au(orbit_au * (1.0 - eccentricity))
-            self.input_buffers["apoapsis_au"] = self._format_input_au(orbit_au * (1.0 + eccentricity))
-            self._recalculate_model()
-            planet_name = self._unique_formation_planet_name(
-                f"{self.get_scope_label()} Formation {existing_count + index + 1}"
-            )
-            planet = self._build_committed_planet_entity(planet_name)
-            if planet is None:
-                continue
-            seed = self._formation_seed_for_planet(formation, planet_id=planet.get("id", ""))
-            planet["formation_model"] = formation
-            planet["suggested_planet_template"] = formation.get("suggested_planet_template")
-            planet["world_gen_template"] = formation.get("suggested_planet_template")
-            planet["formation_theory_seed"] = seed
-            tags = list(planet.get("tags") or [])
-            for tag in ("formation_theory_candidate", formation.get("formation_zone"), formation.get("suggested_planet_template")):
-                if tag and tag not in tags:
-                    tags.append(tag)
-            planet["tags"] = tags
-            self._register_location_entity(planet)
-            if self._persist_location_entity(planet):
-                created.append(planet)
-
-        if not created:
-            self.input_buffers = original_input_buffers
-            self.selected_world_gen_planet_id = original_selected_id
-            self.planet_entity = original_planet_entity
-            self.editor_stage = original_stage
-            self._recalculate_model()
-            self.commit_status = "Formation theory could not create candidate planets"
-            return False
-        self.input_buffers = original_input_buffers
-        self.selected_world_gen_planet_id = original_selected_id
-        self.planet_entity = original_planet_entity
-        self.editor_stage = original_stage
+        orbit_au = orbits[0]
+        formation = formation_model_for_orbit(
+            self.star_luminosity_solar,
+            orbit_au,
+            system_id=self.parent_system_id or "system",
+            candidate_index=existing_count,
+            mode="generic",
+        )
+        eccentricity = seed_range(f"{self.parent_system_id}:{orbit_au}", "formation_eccentricity", 0.0, 0.08)
+        self.pending_body_class = "planet"
+        self.orbit_parent_body_id = None
+        self.input_buffers["periapsis_au"] = self._format_input_au(orbit_au * (1.0 - eccentricity))
+        self.input_buffers["apoapsis_au"] = self._format_input_au(orbit_au * (1.0 + eccentricity))
+        self.pending_formation_model = formation
+        self.pending_formation_seed = self._formation_seed_for_planet(formation, planet_id="formation_preview")
+        self._apply_seed_buffers_from_seed(self.pending_formation_seed)
         self._recalculate_model()
-        names = ", ".join(planet.get("name", planet.get("id")) for planet in created)
-        self.commit_status = f"Formation theory added: {names}"
+        self.planet_name_prompt_active = True
+        self.planet_name_buffer = self._unique_formation_planet_name(
+            f"{self.get_scope_label()} Formation {existing_count + 1}"
+        )
+        self.commit_status = "Formation theory staged a candidate. Rename it, then press Enter."
         return True
 
     def _selected_planet_entity(self):
@@ -1111,7 +1147,7 @@ class WorldGenSimulation:
         if not isinstance(entity, dict):
             return None
         class_key = str(entity.get("location_class") or entity.get("body_class") or "").strip().lower()
-        return entity if class_key == "planet" else None
+        return entity if class_key in {"planet", "moon"} else None
 
     def _load_seed_buffers_from_planet(self, planet):
         seed = planet.get("world_gen_seed") if isinstance(planet.get("world_gen_seed"), dict) else {}
@@ -1140,6 +1176,8 @@ class WorldGenSimulation:
     def _seed_payload_is_gas_giant(self, seed):
         seed = seed if isinstance(seed, dict) else {}
         class_key = str(seed.get("planet_class") or seed.get("planet_template") or "").strip().lower()
+        if class_key in {"airless_rocky", "cratered_airless"}:
+            return False
         if class_key in {"gas_giant", "ice_giant", "hot_gas_giant"}:
             return True
         physics = seed.get("derived_planet_physics") if isinstance(seed.get("derived_planet_physics"), dict) else {}
@@ -1157,8 +1195,38 @@ class WorldGenSimulation:
                 pass
         return False
 
+    def _seed_payload_is_airless_surface(self, seed):
+        seed = seed if isinstance(seed, dict) else {}
+        class_key = str(seed.get("planet_class") or seed.get("planet_template") or "").strip().lower()
+        if class_key in {"airless_rocky", "cratered_airless"}:
+            return True
+        volatile_key = str(seed.get("volatile_inventory") or "").strip().lower()
+        try:
+            water_fraction = float(seed.get("water_fraction", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            water_fraction = 0.0
+        return volatile_key == "none" and water_fraction <= 0.03 and not self._seed_payload_is_gas_giant(seed)
+
+    def _planet_has_gas_giant_markers(self, planet):
+        if not isinstance(planet, dict):
+            return False
+        tags = set(planet.get("tags") or [])
+        atmosphere = planet.get("atmosphere_model") if isinstance(planet.get("atmosphere_model"), dict) else {}
+        return bool(
+            "gas_giant" in tags
+            or "gas_giant_bands" in tags
+            or "no_solid_surface" in tags
+            or planet.get("surface_render_mode") == "gas_giant_bands"
+            or planet.get("map_render_mode") == "gas_giant_bands"
+            or str(planet.get("body_subclass") or planet.get("planetary_class") or "").strip().lower() in {"gas_giant", "ice_giant", "hot_gas_giant"}
+            or atmosphere.get("has_solid_surface") is False
+        )
+
     def _planet_is_gas_giant_candidate(self, planet):
         if not isinstance(planet, dict):
+            return False
+        seed = planet.get("world_gen_seed") if isinstance(planet.get("world_gen_seed"), dict) else {}
+        if seed and self._seed_payload_is_airless_surface(seed):
             return False
         tags = set(planet.get("tags") or [])
         atmosphere = planet.get("atmosphere_model") if isinstance(planet.get("atmosphere_model"), dict) else {}
@@ -1170,7 +1238,6 @@ class WorldGenSimulation:
             or str(planet.get("body_subclass") or planet.get("planetary_class") or "").strip().lower() in {"gas_giant", "ice_giant", "hot_gas_giant"}
         ):
             return True
-        seed = planet.get("world_gen_seed") if isinstance(planet.get("world_gen_seed"), dict) else {}
         if self._seed_payload_is_gas_giant(seed):
             return True
         try:
@@ -1224,11 +1291,92 @@ class WorldGenSimulation:
         planet["tags"] = tags
         return planet
 
+    def _clear_gas_giant_envelope_fields(self, planet, seed, atmosphere):
+        seed = seed if isinstance(seed, dict) else {}
+        atmosphere = atmosphere if isinstance(atmosphere, dict) else {}
+
+        if planet.get("surface_render_mode") == "gas_giant_bands":
+            planet.pop("surface_render_mode", None)
+        if planet.get("map_render_mode") == "gas_giant_bands":
+            planet.pop("map_render_mode", None)
+        planet.pop("atmosphere_bands", None)
+
+        class_key = str(seed.get("planet_class") or seed.get("planet_template") or "terrestrial").strip()
+        if str(planet.get("body_subclass") or "").strip().lower() in {"gas_giant", "ice_giant", "hot_gas_giant"}:
+            planet["body_subclass"] = class_key
+        if str(planet.get("planetary_class") or "").strip().lower() in {"gas_giant", "ice_giant", "hot_gas_giant"}:
+            planet["planetary_class"] = class_key
+
+        tags = [
+            tag
+            for tag in list(planet.get("tags") or [])
+            if tag not in {"gas_giant", "atmospheric_body", "no_solid_surface", "gas_giant_bands"}
+        ]
+        for tag in ("solid_surface", "cratered_regolith"):
+            if tag not in tags:
+                tags.append(tag)
+        if self._seed_payload_is_airless_surface(seed) or float(atmosphere.get("surface_pressure_bar", 1.0) or 1.0) < 0.01:
+            for tag in ("airless_regolith", "exosphere"):
+                if tag not in tags:
+                    tags.append(tag)
+        planet["tags"] = tags
+
+        atmosphere["has_solid_surface"] = True
+        planet["atmosphere_model"] = atmosphere
+        planet["atmosphere_summary"] = {
+            "status": "modeled",
+            "atmosphere_class": atmosphere.get("atmosphere_class", "exosphere"),
+            "has_solid_surface": True,
+            "surface_pressure_bar": atmosphere.get("surface_pressure_bar", 0.0),
+            "estimated_surface_temperature_k": atmosphere.get("estimated_surface_temperature_k", 0.0),
+            "dominant_gases": [
+                item.get("molecule")
+                for item in atmosphere.get("composition", [])[:3]
+                if isinstance(item, dict)
+            ],
+        }
+        planet["environment_summary"] = {
+            "status": "airless_surface_route_ready",
+            "summary": "Solid surface with exosphere/no meaningful atmosphere; terrain should use cratered regolith synthesis.",
+            "surface_pressure_bar": atmosphere.get("surface_pressure_bar", 0.0),
+            "surface_temperature_k": atmosphere.get("estimated_surface_temperature_k", 0.0),
+        }
+        planet["geology_summary"] = {
+            "status": "airless_surface_route_ready",
+            "primary_topography": "impact_basins_cratered_highlands",
+            "crater_retention": "high",
+        }
+        if not isinstance(planet.get("terrain_seed_model"), dict):
+            planet["map_status"] = "airless_surface_route_ready"
+        return planet
+
+    def _repair_solid_surface_route_if_needed(self, planet):
+        if not self._planet_has_gas_giant_markers(planet):
+            return False
+        seed = self._coerce_seed_payload()
+        if seed is None or self._seed_payload_is_gas_giant(seed):
+            return False
+        atmosphere = self._derive_atmosphere_model(seed, seed["derived_planet_physics"])
+        if atmosphere.get("has_solid_surface") is False:
+            return False
+
+        self._clear_gas_giant_envelope_fields(planet, seed, atmosphere)
+        next_stage = "regime"
+        if isinstance(planet.get("interior_regime_model"), dict):
+            next_stage = "terrain"
+        if isinstance(planet.get("terrain_seed_model"), dict):
+            next_stage = "heightmap"
+        self._set_world_gen_progress(planet, next_stage, complete=False)
+        self._mirror_and_persist_planet(planet)
+        return True
+
     def _repair_gas_giant_route_if_needed(self, planet):
         if not self._planet_is_gas_giant_candidate(planet):
             return False
         seed = self._coerce_seed_payload()
         if seed is None:
+            return False
+        if not self._seed_payload_is_gas_giant(seed):
             return False
         atmosphere = planet.get("atmosphere_model") if isinstance(planet.get("atmosphere_model"), dict) else None
         needs_repair = (
@@ -1267,14 +1415,18 @@ class WorldGenSimulation:
         if planet is None:
             return False
         self._load_seed_buffers_from_planet(planet)
-        repaired = self._repair_gas_giant_route_if_needed(planet)
+        repaired_surface = self._repair_solid_surface_route_if_needed(planet)
+        repaired_gas = False if repaired_surface else self._repair_gas_giant_route_if_needed(planet)
         self.editor_stage = self._resume_stage_for_planet(planet)
         name = planet.get("name", entity_id)
         self.pending_orbit_radius_au = None
         self.orbit_pick_stage = "first"
         self.commit_status = (
-            f"Repaired gas giant envelope for {name}; stage {self.editor_stage}"
-            if repaired else f"Selected {name}; stage {self.editor_stage}"
+            f"Repaired airless surface route for {name}; stage {self.editor_stage}"
+            if repaired_surface else (
+                f"Repaired gas giant envelope for {name}; stage {self.editor_stage}"
+                if repaired_gas else f"Selected {name}; stage {self.editor_stage}"
+            )
         )
         return True
 
@@ -1405,6 +1557,10 @@ class WorldGenSimulation:
     def _reset_orbit_draft(self, clear_inputs=True):
         self.pending_orbit_radius_au = None
         self.orbit_pick_stage = "first"
+        self.pending_body_class = "planet"
+        self.orbit_parent_body_id = None
+        self.pending_formation_model = None
+        self.pending_formation_seed = None
         self.selected_world_gen_planet_id = None
         self.planet_entity = None
         self.editor_stage = "crust"
@@ -2451,7 +2607,12 @@ class WorldGenSimulation:
         if planet.get("map_status") == "crater_heightmap_seeded":
             return False
         tectonic_model = planet.get("tectonic_model")
-        if isinstance(tectonic_model, dict) and tectonic_model.get("status") == "tectonics_advanced" and isinstance(planet.get("heightmap_model"), dict):
+        if (
+            planet.get("map_status") == "tectonics_advanced"
+            and isinstance(tectonic_model, dict)
+            and tectonic_model.get("status") == "tectonics_advanced"
+            and isinstance(planet.get("heightmap_model"), dict)
+        ):
             return False
         terrain = planet.get("terrain_seed_model")
         if isinstance(terrain, dict) and bool((terrain.get("tectonics") or {}).get("enabled")):
@@ -2648,15 +2809,35 @@ class WorldGenSimulation:
     def _cancel_planet_name_prompt(self):
         self.planet_name_prompt_active = False
         self.planet_name_buffer = ""
+        self.pending_formation_model = None
+        self.pending_formation_seed = None
         self._reset_orbit_draft(clear_inputs=True)
         self.commit_status = ""
 
     def _commit_named_planet(self):
-        existing_planet = self._find_existing_planet_entity(self.planet_name_buffer)
+        existing_planet = self._find_existing_body_entity(self.planet_name_buffer, self.pending_body_class)
         planet = self._build_committed_planet_entity(self.planet_name_buffer)
         if planet is None:
-            self.commit_status = "Enter a planet name"
+            self.commit_status = "Enter a planet name" if self.pending_body_class != "moon" else "Enter a moon name"
             return False
+
+        if isinstance(self.pending_formation_model, dict):
+            seed = dict(self.pending_formation_seed or self._formation_seed_for_planet(self.pending_formation_model, planet_id=planet.get("id", "")))
+            seed["planet_id"] = planet.get("id", "")
+            seed["formation_model"] = self.pending_formation_model
+            planet["formation_model"] = self.pending_formation_model
+            planet["suggested_planet_template"] = self.pending_formation_model.get("suggested_planet_template")
+            planet["world_gen_template"] = self.pending_formation_model.get("suggested_planet_template")
+            planet["formation_theory_seed"] = seed
+            tags = list(planet.get("tags") or [])
+            for tag in (
+                "formation_theory_candidate",
+                self.pending_formation_model.get("formation_zone"),
+                self.pending_formation_model.get("suggested_planet_template"),
+            ):
+                if tag and tag not in tags:
+                    tags.append(tag)
+            planet["tags"] = tags
 
         self._register_location_entity(planet)
         persisted = self._persist_location_entity(planet)
@@ -2669,7 +2850,12 @@ class WorldGenSimulation:
         self.planet_name_buffer = ""
         self.pending_orbit_radius_au = None
         self.orbit_pick_stage = "first"
-        action = "Linked planet" if existing_planet is planet else "Created planet"
+        self.pending_body_class = "planet"
+        self.orbit_parent_body_id = None
+        self.pending_formation_model = None
+        self.pending_formation_seed = None
+        noun = str(planet.get("location_class") or "planet").replace("_", " ")
+        action = f"Linked {noun}" if existing_planet is planet else f"Created {noun}"
         self.commit_status = f"{action}: {planet['name']}" if persisted else f"{action} in memory; save failed"
         return True
 
@@ -2712,6 +2898,78 @@ class WorldGenSimulation:
             "precipitation": None,
         }
         return self.planetary_model
+
+    def _stellar_flux_earth(self, semi_major_au):
+        try:
+            orbit = max(0.01, float(semi_major_au or 1.0))
+            luminosity = max(0.001, float(self.star_luminosity_solar or 1.0))
+        except (TypeError, ValueError):
+            return None
+        return luminosity / (orbit * orbit)
+
+    def _orbit_preview_for_model(self, model):
+        if not isinstance(model, dict) or not model.get("orbit_valid"):
+            return None
+
+        orbit = model.get("semi_major_axis_au")
+        formation = self.pending_formation_model
+        if not isinstance(formation, dict):
+            formation = formation_model_for_orbit(
+                self.star_luminosity_solar,
+                orbit,
+                system_id=self.parent_system_id or "system",
+                candidate_index=self._existing_orbital_planet_count(),
+                mode="generic",
+            )
+        template_id = formation.get("suggested_planet_template") or self.active_planet_template
+        template = self.PLANET_TEMPLATES.get(template_id, self.PLANET_TEMPLATES["silicate_terrestrial"])
+        flux = self._stellar_flux_earth(orbit)
+        equilibrium_k = 278.0 * (max(0.001, float(self.star_luminosity_solar or 1.0)) ** 0.25) / (max(0.03, float(orbit or 1.0)) ** 0.5)
+        greenhouse_by_inventory = {
+            "none": 0.0,
+            "thin": 3.0,
+            "dry": 9.0,
+            "earthlike": 31.0,
+            "wet": 38.0,
+            "dense": 82.0,
+        }
+        volatile_inventory = str(formation.get("volatile_inventory") or "earthlike")
+        estimated_k = equilibrium_k + greenhouse_by_inventory.get(volatile_inventory, 20.0)
+        water_low, water_high = formation.get("water_fraction_range") or template.get("water_range", (0.0, 0.0))
+        no_surface_templates = {"gas_giant", "ice_giant"}
+        airless_template = template_id == "cratered_airless"
+        liquid_water = (
+            "likely"
+            if template_id not in no_surface_templates
+            and not airless_template
+            and float(water_high or 0.0) >= 0.08
+            and 263.0 <= estimated_k <= 335.0
+            else "unlikely"
+        )
+        if liquid_water == "unlikely" and float(water_high or 0.0) >= 0.05 and 240.0 <= estimated_k <= 360.0:
+            liquid_water = "marginal"
+        atmosphere_hint = "no/thin atmosphere" if airless_template or volatile_inventory in {"none", "thin"} else f"{volatile_inventory} volatiles"
+        body_label = "Moon" if self.pending_body_class == "moon" else "Planet"
+        lines = [
+            f"{body_label} type: {template.get('label', template_id)}",
+            f"Avg temp: {estimated_k:.0f} K / {estimated_k - 273.15:+.0f} C",
+            f"Liquid water: {liquid_water}",
+            f"Solar radiation: {flux:.2f} x Earth" if flux is not None else "Solar radiation: n/a",
+            f"Atmosphere: {atmosphere_hint}",
+            f"Formation: {str(formation.get('formation_zone') or 'unknown').replace('_', ' ')}",
+        ]
+        if self.pending_body_class == "moon" and self.orbit_parent_body_id:
+            parent = self.world_model.get_entity(self.orbit_parent_body_id) if self.world_model else None
+            parent_name = parent.get("name", self.orbit_parent_body_id) if isinstance(parent, dict) else self.orbit_parent_body_id
+            lines.append(f"Parent body: {parent_name}")
+        return {
+            "template": template_id,
+            "formation_model": formation,
+            "estimated_temperature_k": round(estimated_k, 1),
+            "liquid_water": liquid_water,
+            "solar_flux_earth": None if flux is None else round(flux, 3),
+            "lines": lines,
+        }
 
     def get_preview_payload(self):
         model = self._recalculate_model()
@@ -2898,8 +3156,10 @@ class WorldGenSimulation:
             "scope_label": self.get_scope_label(),
             "breadcrumb": self.get_scope_breadcrumb(),
             "summary_lines": self._summary_lines(model),
+            "orbit_preview": self._orbit_preview_for_model(model),
             "orbit_pick_stage": self.orbit_pick_stage,
             "pending_orbit_radius_au": self.pending_orbit_radius_au,
+            "pending_body_class": self.pending_body_class,
             "planet_name_prompt_active": self.planet_name_prompt_active,
             "planet_name_buffer": self.planet_name_buffer,
             "commit_status": self.commit_status,
@@ -3111,6 +3371,12 @@ class WorldGenSimulation:
                 and self.world_gen_back_button_rect.collidepoint(screen_pos)
             ):
                 self._request_previous_worldgen_stage()
+                return
+            if (
+                self.world_gen_new_moon_button_rect is not None
+                and self.world_gen_new_moon_button_rect.collidepoint(screen_pos)
+            ):
+                self._begin_moon_orbit_draft(selected_planet)
                 return
             if self.editor_stage == "atmosphere":
                 if self.crust_save_button_rect is not None and self.crust_save_button_rect.collidepoint(screen_pos):

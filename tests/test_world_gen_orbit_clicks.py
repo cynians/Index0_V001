@@ -31,6 +31,7 @@ from simulations.world_gen.terrain_seed import (
     PLANETARY_CANVAS_WIDTH_PX,
     derive_terrain_seed_model,
 )
+from simulations.world_gen.tectonics import derive_crater_model
 from simulations.world_gen.water_cycle import derive_water_cycle_model
 from simulations.world_gen.world_gen_renderer import WorldGenRenderer
 from simulations.world_gen.world_gen_sim import WorldGenSimulation
@@ -313,6 +314,97 @@ class WorldGenOrbitClickTests(unittest.TestCase):
                 "planet_blue",
                 [entry.get("id") for entry in world_model.loader.datasets["locations"]],
             )
+
+    def test_formation_theory_stages_named_candidate_before_creation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            world_model = FakeWorldModel(entries_directory=temp_dir)
+            sim = WorldGenSimulation(
+                world_model=world_model,
+                parent_system_id="system_alpha",
+                year=2400,
+            )
+
+            self.assertTrue(sim._add_formation_theory_planets())
+
+            self.assertTrue(sim.planet_name_prompt_active)
+            self.assertTrue(sim.planet_name_buffer)
+            self.assertIsInstance(sim.pending_formation_model, dict)
+            self.assertIsNone(world_model.get_entity(f"planet_{sim._slug_from_text(sim.planet_name_buffer)}"))
+            self.assertIn("Avg temp:", sim.get_preview_payload()["orbit_preview"]["lines"][1])
+
+            sim.planet_name_buffer = "Theory One"
+            self.assertTrue(sim._commit_named_planet())
+
+            planet = world_model.get_entity("planet_theory_one")
+            self.assertIsNotNone(planet)
+            self.assertEqual("Theory One", planet["name"])
+            self.assertIn("formation_theory_candidate", planet["tags"])
+            self.assertIsInstance(planet.get("formation_theory_seed"), dict)
+
+    def test_selected_planet_can_start_and_commit_moon_draft(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            world_model = FakeWorldModel(entries_directory=temp_dir)
+            parent = {
+                "id": "planet_blue",
+                "name": "Blue",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "planet",
+                "star_system": "system_alpha",
+                "parent_body": "star_alpha",
+            }
+            world_model.loader.entities[parent["id"]] = parent
+            world_model.loader.datasets["locations"].append(parent)
+            sim = WorldGenSimulation(
+                world_model=world_model,
+                parent_system_id="system_alpha",
+                year=2400,
+            )
+            sim.selected_world_gen_planet_id = "planet_blue"
+
+            self.assertTrue(sim._begin_moon_orbit_draft(parent))
+            self.assertEqual("moon", sim.pending_body_class)
+            self.assertEqual("planet_blue", sim.orbit_parent_body_id)
+            sim._set_orbit_distances(0.0025, 0.003)
+            sim.planet_name_buffer = "Blue Moon"
+
+            self.assertTrue(sim._commit_named_planet())
+
+            moon = world_model.get_entity("moon_blue_moon")
+            self.assertIsNotNone(moon)
+            self.assertEqual("moon", moon["location_class"])
+            self.assertEqual("planet_blue", moon["parent_body"])
+            self.assertEqual("planet_blue", moon["parent_location"])
+            self.assertEqual("parent_body", moon["orbit_reference_frame"])
+
+    def test_airless_terrain_keeps_dense_crater_population(self):
+        seed = {
+            "radius_earth": 0.27,
+            "water_fraction": 0.0,
+            "volatile_inventory": "none",
+            "tectonics_mode": "inactive",
+            "map_seed": "airless-test",
+        }
+        physics = {"radius_earth": 0.27, "radius_m": 1_720_000.0, "surface_gravity_g": 0.16}
+        atmosphere = {"surface_pressure_bar": 0.000001, "estimated_surface_temperature_k": 245.0}
+        regime = {
+            "interior": {"tectonic_regime": "inactive", "internal_heat_w_m2": 0.004},
+            "surface_processes": {
+                "hydrologic_cycle": "none",
+                "liquid_water_possible": False,
+                "crater_retention": "low",
+                "erosion_processes": [],
+            },
+            "map_recipe": [],
+        }
+
+        terrain = derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="moon_test")
+        craters = derive_crater_model(terrain, seed=seed, physics=physics, planet_id="moon_test")
+
+        self.assertEqual("high", terrain["cratering"]["retention"])
+        self.assertGreaterEqual(terrain["cratering"]["density"], 0.9)
+        self.assertIn("simulate_impact_gardening", terrain["map_recipe"])
+        self.assertGreaterEqual(len(craters["craters"]), 80)
 
     def test_named_planet_reuses_existing_planet_entry(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -877,6 +969,89 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         self.assertNotIn("tectonic_model", planet)
         self.assertEqual("craters_seeded", planet["heightmap_model"]["source_models"]["craters"])
         self.assertGreater(len(planet["crater_model"]["craters"]), 10)
+
+    def test_airless_template_large_body_stays_on_solid_surface_route(self):
+        sim = self._sim()
+        sim.active_planet_template = "cratered_airless"
+        sim.seed_input_buffers.update({
+            "radius_earth": "3.2",
+            "core_radius_fraction": "0.2",
+            "crust_thickness_km": "85",
+            "angular_velocity_deg_per_hour": "2",
+            "water_fraction": "0",
+            "volatile_inventory": "none",
+            "tectonics_mode": "inactive",
+        })
+        planet = {
+            "id": "planet_airless_big",
+            "name": "Airless Big",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "semi_major_axis_m": 2.0 * sim.AU_M,
+            "tags": ["world_gen_candidate"],
+        }
+        sim.world_model.loader.entities[planet["id"]] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+        sim.selected_world_gen_planet_id = planet["id"]
+
+        self.assertTrue(sim._save_selected_planet_seed())
+        self.assertTrue(sim._save_atmosphere_model())
+
+        self.assertTrue(planet["atmosphere_model"]["has_solid_surface"])
+        self.assertEqual("exosphere", planet["atmosphere_model"]["atmosphere_class"])
+        self.assertNotEqual("gas_giant_envelope_modeled", planet.get("map_status"))
+        self.assertNotEqual("gas_giant_bands", planet.get("surface_render_mode"))
+        self.assertNotIn("gas_giant", set(planet.get("tags") or []))
+
+    def test_misrouted_airless_world_repairs_from_gas_bands_to_crater_route(self):
+        sim = self._sim()
+        seed = {
+            **sim.DEFAULT_SEED,
+            "radius_earth": 0.35,
+            "core_radius_fraction": 0.1,
+            "crust_thickness_km": 90.0,
+            "angular_velocity_deg_per_hour": 4.0,
+            "water_fraction": 0.0,
+            "volatile_inventory": "none",
+            "tectonics_mode": "inactive",
+            "planet_template": "cratered_airless",
+            "planet_class": "airless_rocky",
+            "crust_composition": sim._serializable_crust_composition(),
+        }
+        seed["derived_planet_physics"] = sim._derive_planet_physics(seed)
+        planet = {
+            "id": "planet_airless_broken",
+            "name": "Broken Airless",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "semi_major_axis_m": 2.0 * sim.AU_M,
+            "world_gen_seed": seed,
+            "world_gen_template": "cratered_airless",
+            "planetary_class": "gas_giant",
+            "surface_render_mode": "gas_giant_bands",
+            "map_render_mode": "gas_giant_bands",
+            "map_status": "gas_giant_envelope_modeled",
+            "atmosphere_model": {"has_solid_surface": False, "surface_pressure_bar": 100.0},
+            "tags": ["world_gen_candidate", "gas_giant", "no_solid_surface", "gas_giant_bands"],
+        }
+        sim.world_model.loader.entities[planet["id"]] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+        sim.selected_world_gen_planet_id = planet["id"]
+        sim._load_seed_buffers_from_planet(planet)
+
+        self.assertTrue(sim._repair_solid_surface_route_if_needed(planet))
+
+        self.assertTrue(planet["atmosphere_model"]["has_solid_surface"])
+        self.assertEqual("airless_surface_route_ready", planet["map_status"])
+        self.assertNotEqual("gas_giant_bands", planet.get("surface_render_mode"))
+        self.assertNotEqual("gas_giant_bands", planet.get("map_render_mode"))
+        self.assertNotIn("gas_giant", set(planet.get("tags") or []))
+        self.assertIn("airless_regolith", set(planet.get("tags") or []))
+        self.assertEqual("regime", sim._resume_stage_for_planet(planet))
 
     def test_escape_closes_worldgen_fullscreen_editor_before_repository_prompt(self):
         sim = self._sim()

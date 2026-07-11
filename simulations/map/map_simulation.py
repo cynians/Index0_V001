@@ -1,4 +1,5 @@
 import math
+import re
 import shutil
 import time
 from pathlib import Path
@@ -30,6 +31,7 @@ class MapSimulation:
 
     MAP_KM_PER_WORLD_UNIT = 111.195
     MAP_METERS_PER_WORLD_UNIT = MAP_KM_PER_WORLD_UNIT * 1000.0
+    KEYDOWN_EVENT_TYPE = 768
     MOUSEBUTTONDOWN_EVENT_TYPE = 1025
     MOUSEBUTTONUP_EVENT_TYPE = 1026
     DRAFT_DOUBLE_CLICK_SECONDS = 0.35
@@ -144,6 +146,9 @@ class MapSimulation:
         self._layer_cache = None
         self._cache_year = None
         self._cache_layer_kind = None
+        self._last_hover_pick_time = 0.0
+        self._last_hover_pick_screen_pos = None
+        self._last_hover_pick_camera_state = None
 
         self.active_layer_kind = self.LOCATION_LAYER_KIND
         self.active_material_heatmap_layer_id = "composite"
@@ -719,11 +724,37 @@ class MapSimulation:
     def _entity_is_gas_giant(self, entity):
         atmosphere = entity.get("atmosphere_model") if isinstance(entity, dict) else None
         tags = set(entity.get("tags") or []) if isinstance(entity, dict) else set()
+        seed = entity.get("world_gen_seed") if isinstance(entity.get("world_gen_seed"), dict) else {}
+        class_key = str(
+            seed.get("planet_template")
+            or seed.get("planet_class")
+            or entity.get("world_gen_template")
+            or entity.get("planetary_class")
+            or entity.get("body_subclass")
+            or entity.get("location_class")
+            or ""
+        ).strip().lower()
+        if class_key in {"cratered_airless", "airless_rocky"} or "airless_regolith" in tags:
+            return False
+        volatile_key = str(seed.get("volatile_inventory") or "").strip().lower()
+        try:
+            water_fraction = float(seed.get("water_fraction", 1.0) or 0.0)
+            radius_earth = float(seed.get("radius_earth", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            water_fraction = 1.0
+            radius_earth = 0.0
+        if volatile_key == "none" and water_fraction <= 0.03 and radius_earth < 3.0:
+            return False
         return bool(
             entity.get("surface_render_mode") == "gas_giant_bands"
             or entity.get("map_render_mode") == "gas_giant_bands"
             or "gas_giant" in tags
-            or (isinstance(atmosphere, dict) and atmosphere.get("has_solid_surface") is False)
+            or class_key in {"gas_giant", "ice_giant", "hot_gas_giant"}
+            or (
+                isinstance(atmosphere, dict)
+                and atmosphere.get("has_solid_surface") is False
+                and "solid_surface" not in tags
+            )
         )
 
     def _gas_giant_bands_for_entity(self, entity):
@@ -777,6 +808,8 @@ class MapSimulation:
         self._layer_cache = None
         self._cache_year = None
         self._cache_layer_kind = None
+        self._last_hover_pick_screen_pos = None
+        self._last_hover_pick_camera_state = None
 
     def _prepare_layer_cache(self, layers):
         layers = sorted(layers, key=self._render_layer_sort_key)
@@ -1661,6 +1694,22 @@ class MapSimulation:
             or self.is_square_editor_active()
         )
 
+    def consumes_global_keydown(self):
+        return self.is_map_editor_active()
+
+    def handle_event(self, event):
+        if event.type != self.KEYDOWN_EVENT_TYPE or not self.is_map_editor_active():
+            return False
+
+        key = getattr(event, "key", None)
+        if key in (13, 1073741912):
+            self.finish_map_editor()
+            return True
+        if key == 27:
+            self.cancel_map_editor()
+            return True
+        return False
+
     def _reset_square_drag_state(self):
         self.square_drag_handle = None
         self.square_drag_start_pos = None
@@ -1734,33 +1783,43 @@ class MapSimulation:
 
         return self.cancel_polygon_editor()
 
+    def _map_editor_status_with_keys(self, label, finish_ready=False):
+        keys = "Enter finish / Esc cancel" if finish_ready else "Esc cancel"
+        return f"{label} | {keys}" if label else keys
+
     def get_map_editor_status_label(self):
         if self.is_creating_point_location:
             label = str(self.draft_point_location_class or "site").replace("_", " ").title()
             if self.draft_point_location_pos is None:
-                return f"{label} point: choose location"
-            return f"{label} point: ready"
+                return self._map_editor_status_with_keys(f"{label} point: choose location")
+            return self._map_editor_status_with_keys(f"{label} point: ready", finish_ready=True)
 
         if self.is_creating_map_square:
             noun = "Planet dimensions" if self.map_square_target_entity_id else "Draft rectangle"
             if self.map_square_anchor is None:
-                return f"{noun}: choose first corner"
+                return self._map_editor_status_with_keys(f"{noun}: choose first corner")
             if self.can_finish_map_square_draft():
-                return f"{noun}: ready"
-            return f"{noun}: choose opposite corner"
+                return self._map_editor_status_with_keys(f"{noun}: ready", finish_ready=True)
+            return self._map_editor_status_with_keys(f"{noun}: choose opposite corner")
 
         if self.is_editing_map_square:
             if self.square_drag_handle:
-                return f"Edit rectangle: dragging {self.square_drag_handle}"
-            return "Edit rectangle: drag a handle"
+                return self._map_editor_status_with_keys(
+                    f"Edit rectangle: dragging {self.square_drag_handle}",
+                    finish_ready=True,
+                )
+            return self._map_editor_status_with_keys("Edit rectangle: drag a handle", finish_ready=True)
 
         if self.is_polygon_editor_active():
             if self.is_creating_biosphere_patch:
                 area_label = self.get_draft_area_label()
                 if area_label:
-                    return f"Biosphere patch: {self.get_polygon_editor_point_count()} points | {area_label}"
-                return f"Biosphere patch: {self.get_polygon_editor_point_count()} points"
-            return f"{self.get_polygon_editor_mode_label()}: {self.get_polygon_editor_point_count()} points"
+                    label = f"Biosphere patch: {self.get_polygon_editor_point_count()} points | {area_label}"
+                else:
+                    label = f"Biosphere patch: {self.get_polygon_editor_point_count()} points"
+                return self._map_editor_status_with_keys(label, finish_ready=self.can_finish_polygon_editor())
+            label = f"{self.get_polygon_editor_mode_label()}: {self.get_polygon_editor_point_count()} points"
+            return self._map_editor_status_with_keys(label, finish_ready=self.can_finish_polygon_editor())
 
         return ""
 
@@ -1912,18 +1971,52 @@ class MapSimulation:
 
         if root_class in {"planet", "moon"}:
             return [
+                {"id": "continent", "label": "New Continent"},
                 {"id": "country", "label": "New Country"},
                 {"id": "region", "label": "New Region"},
+                {"id": "city", "label": "New City"},
+                {"id": "site", "label": "New Site"},
+            ]
+
+        if root_class in {"continent", "island_chain", "island", "atoll"}:
+            return [
+                {"id": "country", "label": "New Country"},
+                {"id": "region", "label": "New Region"},
+                {"id": "city", "label": "New City"},
+                {"id": "site", "label": "New Site"},
             ]
 
         if root_class == "country":
             return [
                 {"id": "state", "label": "New State"},
                 {"id": "region", "label": "New Region"},
+                {"id": "city", "label": "New City"},
+                {"id": "site", "label": "New Site"},
+            ]
+
+        if root_class in {"state", "province", "region"}:
+            return [
+                {"id": "city", "label": "New City"},
+                {"id": "site", "label": "New Site"},
+                {"id": "region", "label": "New Subregion"},
+            ]
+
+        if root_class in {"city", "settlement"}:
+            return [
+                {"id": "quarter", "label": "New Quarter"},
+                {"id": "site", "label": "New Site"},
             ]
 
         return [
             {"id": "region", "label": "New Region"},
+            {"id": "site", "label": "New Site"},
+        ]
+
+    def get_point_location_draft_options(self):
+        return [
+            {"id": "site", "label": "Point Site"},
+            {"id": "city", "label": "Point City"},
+            {"id": "building", "label": "Point Building"},
         ]
 
     def begin_location_draft(self, location_class="region"):
@@ -2818,11 +2911,22 @@ class MapSimulation:
         if len(editor_points) < 3:
             return None
 
-        if self.is_creating_biosphere_patch:
-            return self._format_area(self._biosphere_polygon_metrics(editor_points)["area_m2"])
+        cache_key = (
+            bool(self.is_creating_biosphere_patch),
+            tuple((round(float(x), 6), round(float(y), 6)) for x, y in editor_points),
+        )
+        if getattr(self, "_draft_area_label_cache_key", None) == cache_key:
+            return getattr(self, "_draft_area_label_cache_value", None)
 
-        area_square_meters = self._polygon_area_square_meters(editor_points)
-        return self._format_area(area_square_meters)
+        if self.is_creating_biosphere_patch:
+            area_label = self._format_area(self._biosphere_polygon_metrics(editor_points)["area_m2"])
+        else:
+            area_square_meters = self._polygon_area_square_meters(editor_points)
+            area_label = self._format_area(area_square_meters)
+
+        self._draft_area_label_cache_key = cache_key
+        self._draft_area_label_cache_value = area_label
+        return area_label
 
     def _square_bounds_side(self, bounds):
         if bounds is None:
@@ -3064,10 +3168,18 @@ class MapSimulation:
     def _allocate_location_draft_id(self):
         existing_ids = self._get_existing_entity_ids()
         root_id = self._sanitize_identifier_part(self.context.root_entity_id)
+        class_id = self._sanitize_identifier_part(
+            self.draft_point_location_class
+            if self.is_creating_point_location
+            else self.draft_location_class
+        )
 
         index = 1
         while True:
-            location_id = f"loc_draft_{root_id}_{index:03d}"
+            if class_id == "region":
+                location_id = f"loc_draft_{root_id}_{index:03d}"
+            else:
+                location_id = f"loc_draft_{class_id}_{root_id}_{index:03d}"
             if location_id not in existing_ids:
                 return location_id, index
             index += 1
@@ -5033,10 +5145,12 @@ class MapSimulation:
                     tolerance = 3.0 / max(float(getattr(camera, "zoom", 1.0) or 1.0), 1e-9)
                 if not self._point_in_layer_world_bounds(world_x, world_y, layer, tolerance=tolerance):
                     continue
-                if screen_pos is not None:
-                    if self._point_in_polygon_layer_screen(screen_pos, layer, camera):
-                        return layer
-                elif self._point_in_polygon_layer(world_x, world_y, layer):
+                if self._point_in_polygon_points(
+                    x=world_x,
+                    y=world_y,
+                    points=layer.get("points", []),
+                    edge_tolerance=tolerance,
+                ):
                     return layer
 
             elif shape == "marker":
@@ -5467,7 +5581,27 @@ class MapSimulation:
             self.hover_screen_pos = screen_pos
             return
 
+        now = time.monotonic()
+        camera_state = (
+            round(float(getattr(camera, "x", 0.0) or 0.0), 4),
+            round(float(getattr(camera, "y", 0.0) or 0.0), 4),
+            round(float(getattr(camera, "zoom", 1.0) or 1.0), 6),
+        )
+        if (
+            self._last_hover_pick_screen_pos is not None
+            and self._last_hover_pick_camera_state == camera_state
+            and now - self._last_hover_pick_time < 0.025
+        ):
+            last_x, last_y = self._last_hover_pick_screen_pos
+            dx = float(screen_pos[0]) - float(last_x)
+            dy = float(screen_pos[1]) - float(last_y)
+            if dx * dx + dy * dy < 36.0:
+                return
+
         picked_layer = self._pick_layer_at_world(world_x, world_y, camera, screen_pos)
+        self._last_hover_pick_time = now
+        self._last_hover_pick_screen_pos = screen_pos
+        self._last_hover_pick_camera_state = camera_state
 
         if picked_layer is None:
             self.hover_entity_id = None

@@ -289,6 +289,21 @@ class UIManager:
                         button_h,
                         active=False,
                     )
+                point_options = getattr(active_sim, "get_point_location_draft_options", lambda: [])()
+                if point_options:
+                    y += 4
+                    for option in point_options[:3]:
+                        option_id = str(option.get("id") or "site")
+                        option_label = option.get("label") or "Point Location"
+                        y = self._append_map_layer_button(
+                            f"new_point_location:{option_id}",
+                            option_label,
+                            x,
+                            y,
+                            width,
+                            button_h,
+                            active=False,
+                        )
             return y
 
         self.map_layer_selector_items = []
@@ -406,6 +421,42 @@ class UIManager:
             y += 40
 
         return y
+
+    def _rebuild_map_authoring_controls(self, active_sim, x, y, width=226, button_height=32, enabled=True):
+        polygon_options = list(getattr(active_sim, "get_location_draft_options", lambda: [])() or [])
+        point_options = list(getattr(active_sim, "get_point_location_draft_options", lambda: [])() or [])
+        if not polygon_options:
+            polygon_options = [{"id": "region", "label": "New Region"}]
+
+        max_polygon_buttons = 5
+        for option in polygon_options[:max_polygon_buttons]:
+            option_id = str(option.get("id") or "region")
+            label = option.get("label") or str(option_id).replace("_", " ").title()
+            self.buttons.append(
+                UIButton(
+                    f"new_location:{option_id}",
+                    label,
+                    pygame.Rect(x, y, width, button_height),
+                    enabled=enabled,
+                )
+            )
+            y += button_height + 8
+
+        if point_options:
+            primary = point_options[0]
+            option_id = str(primary.get("id") or "site")
+            label = primary.get("label") or "Point Site"
+            self.buttons.append(
+                UIButton(
+                    f"new_point_location:{option_id}",
+                    label,
+                    pygame.Rect(x, y, width, button_height),
+                    enabled=enabled,
+                )
+            )
+            y += button_height + 8
+
+        return y + 4
 
     def _map_root_has_surface(self, root_entity):
         if not isinstance(root_entity, dict):
@@ -1110,18 +1161,14 @@ class UIManager:
                          enabled=not is_editing_map_selection)
             )
             next_button_y += 40
-            self.buttons.append(
-                UIButton("new_location:region", "New Polygon Location",
-                         pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
-                         enabled=can_author_locations)
+            next_button_y = self._rebuild_map_authoring_controls(
+                active_sim,
+                map_control_x,
+                next_button_y,
+                width=map_control_w,
+                button_height=button_height,
+                enabled=can_author_locations,
             )
-            next_button_y += 40
-            self.buttons.append(
-                UIButton("new_point_location:site", "New Point Location",
-                         pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
-                         enabled=can_author_locations)
-            )
-            next_button_y += 40
 
             self.buttons.append(
                 UIButton("open_repository", "Open Repository",

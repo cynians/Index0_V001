@@ -1,4 +1,5 @@
 from pathlib import Path
+import math
 
 import pygame
 
@@ -44,6 +45,68 @@ class MapRenderer:
             cache_key,
             surface,
             self._text_cache_limit,
+        )
+
+    def _visible_world_bounds(self, camera):
+        screen_to_world = getattr(camera, "screen_to_world", None)
+        if not callable(screen_to_world):
+            return None
+        try:
+            left_top = screen_to_world((0, 0))
+            right_bottom = screen_to_world((self.app_view.width, self.app_view.height))
+        except (TypeError, ValueError, ZeroDivisionError, OverflowError):
+            return None
+        try:
+            x0, y0 = float(left_top[0]), float(left_top[1])
+            x1, y1 = float(right_bottom[0]), float(right_bottom[1])
+        except (TypeError, ValueError, IndexError):
+            return None
+        return (
+            min(x0, x1),
+            max(x0, x1),
+            min(y0, y1),
+            max(y0, y1),
+        )
+
+    def _world_bounds_tuple(self, bounds):
+        if isinstance(bounds, dict):
+            try:
+                return (
+                    float(bounds["min_x"]),
+                    float(bounds["max_x"]),
+                    float(bounds["min_y"]),
+                    float(bounds["max_y"]),
+                )
+            except (KeyError, TypeError, ValueError):
+                return None
+        if isinstance(bounds, (list, tuple)) and len(bounds) >= 4:
+            try:
+                return tuple(float(bounds[index]) for index in range(4))
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    def _polygon_layer_visible_in_world(self, layer, camera, margin_px=24, visible_world_bounds=None):
+        layer_bounds = self._world_bounds_tuple(layer.get("_world_bounds"))
+        if layer_bounds is None:
+            return True
+        visible_bounds = visible_world_bounds
+        if visible_bounds is None:
+            visible_bounds = self._visible_world_bounds(camera)
+        if visible_bounds is None:
+            return True
+        try:
+            margin = float(margin_px) / max(abs(float(getattr(camera, "zoom", 1.0) or 1.0)), 1e-9)
+        except (TypeError, ValueError):
+            margin = 0.0
+
+        layer_min_x, layer_max_x, layer_min_y, layer_max_y = layer_bounds
+        visible_min_x, visible_max_x, visible_min_y, visible_max_y = visible_bounds
+        return not (
+            layer_max_x < visible_min_x - margin
+            or layer_min_x > visible_max_x + margin
+            or layer_max_y < visible_min_y - margin
+            or layer_min_y > visible_max_y + margin
         )
 
     def _coerce_rgb(self, value, fallback=(82, 78, 70)):
@@ -150,6 +213,69 @@ class MapRenderer:
             pygame.draw.polygon(overlay, border_color, local_points, border_width)
         screen.blit(overlay, clipped.topleft)
 
+    def _source_rect_for_visible_dest(self, source_surface, dest_rect, visible_rect):
+        if source_surface is None or dest_rect.width <= 0 or dest_rect.height <= 0:
+            return None
+
+        source_w, source_h = source_surface.get_size()
+        rel_x = (visible_rect.x - dest_rect.x) / dest_rect.width
+        rel_y = (visible_rect.y - dest_rect.y) / dest_rect.height
+        rel_w = visible_rect.width / dest_rect.width
+        rel_h = visible_rect.height / dest_rect.height
+        sx = max(0, min(source_w - 1, int(rel_x * source_w)))
+        sy = max(0, min(source_h - 1, int(rel_y * source_h)))
+        sw = max(1, min(source_w - sx, int(math.ceil(rel_w * source_w)) + 1))
+        sh = max(1, min(source_h - sy, int(math.ceil(rel_h * source_h)) + 1))
+        return pygame.Rect(sx, sy, sw, sh)
+
+    def _blit_scaled_layer(self, screen, source_surface, dest_rect, cache, cache_prefix, *, smooth=False, alpha=None):
+        if source_surface is None:
+            return False
+
+        visible = dest_rect.clip(screen.get_rect())
+        if visible.width <= 0 or visible.height <= 0:
+            return False
+
+        screen_w = max(1, self.app_view.width)
+        screen_h = max(1, self.app_view.height)
+        is_large_dest = dest_rect.width > screen_w * 1.5 or dest_rect.height > screen_h * 1.5
+
+        if is_large_dest:
+            source_rect = self._source_rect_for_visible_dest(source_surface, dest_rect, visible)
+            if source_rect is None:
+                return False
+            source_key = (source_rect.x, source_rect.y, source_rect.width, source_rect.height)
+            scale_size = (visible.width, visible.height)
+            blit_pos = visible.topleft
+        else:
+            source_rect = source_surface.get_rect()
+            source_key = None
+            scale_size = (dest_rect.width, dest_rect.height)
+            blit_pos = dest_rect.topleft
+
+        effective_smooth = bool(smooth and not is_large_dest)
+        cache_key = (
+            cache_prefix,
+            id(source_surface),
+            source_key,
+            scale_size[0],
+            scale_size[1],
+            effective_smooth,
+            alpha,
+        )
+        scaled = cache.get(cache_key)
+        if scaled is None:
+            source_view = source_surface.subsurface(source_rect)
+            transform = pygame.transform.smoothscale if effective_smooth else pygame.transform.scale
+            scaled = transform(source_view, scale_size)
+            if alpha is not None:
+                scaled = scaled.copy()
+                scaled.set_alpha(max(0, min(255, int(alpha))))
+            self._cache_put(cache, cache_key, scaled, self._scaled_cache_limit)
+
+        screen.blit(scaled, blit_pos)
+        return True
+
     def _draw_image_rect_layer(self, screen, layer, camera):
         if layer.get("bundle_path"):
             image_surface = self._load_raster_bundle_surface(
@@ -182,28 +308,16 @@ class MapRenderer:
         ):
             return
 
-        cache_key = (
-            str(layer.get("image_path") or layer.get("bundle_path")),
-            str(layer.get("bundle_layer_id") or ""),
-            rect.width,
-            rect.height,
-        )
-        scaled = self._scaled_image_cache.get(cache_key)
-        if scaled is None:
-            scaled = pygame.transform.smoothscale(image_surface, (rect.width, rect.height))
-            self._cache_put(
-                self._scaled_image_cache,
-                cache_key,
-                scaled,
-                self._scaled_cache_limit,
-            )
-
         alpha = layer.get("alpha")
-        if alpha is not None:
-            scaled = scaled.copy()
-            scaled.set_alpha(max(0, min(255, int(alpha))))
-
-        screen.blit(scaled, rect)
+        self._blit_scaled_layer(
+            screen,
+            image_surface,
+            rect,
+            self._scaled_image_cache,
+            str(layer.get("image_path") or layer.get("bundle_path")),
+            smooth=True,
+            alpha=alpha,
+        )
 
         if layer.get("is_ghost_context") and layer.get("name"):
             text = self._render_text(
@@ -295,17 +409,13 @@ class MapRenderer:
         else:
             heightmap_surface = self._heightmap_surface_for_layer(layer, heightmap, rows)
             if heightmap_surface is not None:
-                scaled_key = (id(heightmap_surface), rect.width, rect.height)
-                scaled = self._scaled_heightmap_cache.get(scaled_key)
-                if scaled is None:
-                    scaled = pygame.transform.scale(heightmap_surface, (rect.width, rect.height))
-                    self._cache_put(
-                        self._scaled_heightmap_cache,
-                        scaled_key,
-                        scaled,
-                        self._scaled_cache_limit,
-                    )
-                screen.blit(scaled, rect)
+                self._blit_scaled_layer(
+                    screen,
+                    heightmap_surface,
+                    rect,
+                    self._scaled_heightmap_cache,
+                    "heightmap",
+                )
         screen.set_clip(clip)
 
         pygame.draw.rect(screen, (75, 92, 112), rect, 1)
@@ -506,15 +616,15 @@ class MapRenderer:
         ):
             return
 
-        scaled_key = (id(surface), rect.width, rect.height)
-        scaled = self._scaled_hydrology_cache.get(scaled_key)
-        if scaled is None:
-            scaled = pygame.transform.scale(surface, (rect.width, rect.height))
-            self._cache_put(self._scaled_hydrology_cache, scaled_key, scaled, self._scaled_cache_limit)
-
         clip = screen.get_clip()
         screen.set_clip(rect.clip(screen.get_rect()))
-        screen.blit(scaled, rect)
+        self._blit_scaled_layer(
+            screen,
+            surface,
+            rect,
+            self._scaled_hydrology_cache,
+            "hydrology",
+        )
         for river in water_cycle.get("rivers") or []:
             if not isinstance(river, dict):
                 continue
@@ -574,7 +684,7 @@ class MapRenderer:
         pygame.draw.line(screen, (238, 238, 232), (rect.x, rect.centery), (rect.right, rect.centery), 1)
         screen.set_clip(clip)
 
-    def _draw_polygon_layer(self, screen, layer, camera, is_selected, is_hovered):
+    def _draw_polygon_layer(self, screen, layer, camera, is_selected, is_hovered, visible_world_bounds=None):
         min_zoom = layer.get("min_zoom")
         if min_zoom is not None and not (is_selected or is_hovered):
             try:
@@ -582,6 +692,13 @@ class MapRenderer:
                     return
             except (TypeError, ValueError):
                 pass
+
+        if not (is_selected or is_hovered) and not self._polygon_layer_visible_in_world(
+            layer,
+            camera,
+            visible_world_bounds=visible_world_bounds,
+        ):
+            return
 
         screen_points = []
 
@@ -861,6 +978,7 @@ class MapRenderer:
     def draw(self, screen, sim):
         view = self.app_view
         camera = view.camera
+        visible_world_bounds = self._visible_world_bounds(camera)
         selected_entity_id = getattr(sim, "selected_entity_id", None)
         hover_entity_id = getattr(sim, "hover_entity_id", None)
         selected_spatial_feature_id = getattr(sim, "selected_spatial_feature_id", None)
@@ -913,6 +1031,7 @@ class MapRenderer:
                     camera=camera,
                     is_selected=is_selected,
                     is_hovered=is_hovered,
+                    visible_world_bounds=visible_world_bounds,
                 )
                 continue
 

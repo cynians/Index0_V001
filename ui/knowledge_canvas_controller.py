@@ -820,6 +820,48 @@ class KnowledgeCanvasController:
                 self._sync_bidirectional_relations(persist=True)
             return True
 
+        if field_key == "related":
+            source_id = str(entity.get("id") or card.get("entity_id") or "").strip()
+            entity_id = str(entity_id or "").strip()
+            if not source_id or not entity_id or source_id == entity_id:
+                return False
+
+            if self.world_model is not None and hasattr(self.world_model, "set_relation"):
+                changed = self.world_model.set_relation(source_id, "related", entity_id, persist=True)
+                if changed:
+                    source_entity = self.world_model.get_entity(source_id)
+                    if isinstance(source_entity, dict):
+                        entity.update(source_entity)
+                    target_card = self._find_card_by_entity_id(entity_id)
+                    if target_card is not None:
+                        target_entity = self.world_model.get_entity(entity_id)
+                        target_card_view = target_card.get("card_view")
+                        target_card_entity = getattr(target_card_view, "entity", None) if target_card_view is not None else None
+                        if isinstance(target_entity, dict) and isinstance(target_card_entity, dict):
+                            target_card_entity.update(target_entity)
+                    return True
+                if self._has_related_reference(entity, entity_id):
+                    target_entity = self.world_model.get_entity(entity_id)
+                    if not isinstance(target_entity, dict) or self._has_related_reference(target_entity, source_id):
+                        return True
+
+            linked = self._append_related_reference(entity, entity_id)
+            target_entity = self.world_model.get_entity(entity_id) if self.world_model is not None else None
+            if isinstance(target_entity, dict):
+                linked = self._append_related_reference(target_entity, source_id) or linked
+            if not linked and self._has_related_reference(entity, entity_id):
+                if not isinstance(target_entity, dict) or self._has_related_reference(target_entity, source_id):
+                    return True
+            if not linked:
+                return False
+            if card.get("is_draft_entity", False):
+                self._save_card_draft(card)
+            else:
+                self._persist_card_entity(card)
+                if isinstance(target_entity, dict):
+                    self._persist_entity_to_repository(target_entity)
+            return True
+
         allows_many = field_key in EntityCard.CORE_RELATION_FIELDS or (
             card_view._relation_field_allows_many(field_key)
             if hasattr(card_view, "_relation_field_allows_many")
@@ -847,12 +889,103 @@ class KnowledgeCanvasController:
             self._persist_card_entity(card)
         return True
 
+    def _append_related_reference(self, entity, target_id):
+        if not isinstance(entity, dict):
+            return False
+        source_id = str(entity.get("id") or "").strip()
+        target_id = str(target_id or "").strip()
+        if not source_id or not target_id or source_id == target_id:
+            return False
+
+        current_value = entity.get("related")
+        if isinstance(current_value, list):
+            values = list(current_value)
+        elif current_value in (None, ""):
+            values = []
+        else:
+            values = [current_value]
+
+        if target_id in [str(value) for value in values]:
+            return False
+
+        values.append(target_id)
+        entity["related"] = values
+        return True
+
+    def _has_related_reference(self, entity, target_id):
+        if not isinstance(entity, dict):
+            return False
+        target_id = str(target_id or "").strip()
+        if not target_id:
+            return False
+
+        current_value = entity.get("related")
+        if isinstance(current_value, list):
+            return target_id in [str(value).strip() for value in current_value]
+        return str(current_value or "").strip() == target_id
+
+    def _remove_related_reference(self, entity, target_id):
+        if not isinstance(entity, dict):
+            return False
+        target_id = str(target_id or "").strip()
+        if not target_id:
+            return False
+
+        current_value = entity.get("related")
+        if isinstance(current_value, list):
+            values = [value for value in current_value if str(value).strip() != target_id]
+            if len(values) == len(current_value):
+                return False
+        elif current_value in (None, ""):
+            return False
+        elif str(current_value).strip() == target_id:
+            values = []
+        else:
+            return False
+
+        entity["related"] = values
+        return True
+
     def _remove_relation_reference_from_card(self, card, field_key, entity_id):
         entity = self._entity_for_card(card)
         card_view = card.get("card_view") if card is not None else None
         entity_id = str(entity_id or "").strip()
         if not isinstance(entity, dict) or not field_key or not entity_id or card_view is None:
             return False
+
+        if field_key == "related":
+            source_id = str(entity.get("id") or card.get("entity_id") or "").strip()
+            if not source_id:
+                return False
+
+            if self.world_model is not None and hasattr(self.world_model, "remove_relation"):
+                changed = self.world_model.remove_relation(source_id, "related", entity_id, persist=True)
+                if changed:
+                    source_entity = self.world_model.get_entity(source_id)
+                    if isinstance(source_entity, dict):
+                        entity.update(source_entity)
+                    target_card = self._find_card_by_entity_id(entity_id)
+                    if target_card is not None:
+                        target_entity = self.world_model.get_entity(entity_id)
+                        target_card_view = target_card.get("card_view")
+                        target_card_entity = getattr(target_card_view, "entity", None) if target_card_view is not None else None
+                        if isinstance(target_entity, dict) and isinstance(target_card_entity, dict):
+                            target_card_entity.update(target_entity)
+                    return True
+
+            removed = self._remove_related_reference(entity, entity_id)
+            target_entity = self.world_model.get_entity(entity_id) if self.world_model is not None else None
+            if isinstance(target_entity, dict):
+                removed = self._remove_related_reference(target_entity, source_id) or removed
+            if not removed:
+                return False
+            if card.get("is_draft_entity", False):
+                self._save_card_draft(card)
+            else:
+                self._persist_card_entity(card)
+                if isinstance(target_entity, dict):
+                    self._persist_entity_to_repository(target_entity)
+            return True
 
         allows_many = field_key in EntityCard.CORE_RELATION_FIELDS or (
             card_view._relation_field_allows_many(field_key)
