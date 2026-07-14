@@ -1,4 +1,5 @@
 import unittest
+import copy
 import random
 import tempfile
 import threading
@@ -377,6 +378,45 @@ class WorldGenOrbitClickTests(unittest.TestCase):
             self.assertEqual("planet_blue", moon["parent_location"])
             self.assertEqual("parent_body", moon["orbit_reference_frame"])
 
+    def test_icy_moon_remains_a_moon_through_complete_worldgen(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            world_model = FakeWorldModel(entries_directory=temp_dir)
+            parent = {
+                "id": "planet_ringed",
+                "name": "Ringed",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "planet",
+                "star_system": "system_alpha",
+                "parent_body": "star_alpha",
+                "semi_major_axis_m": 9.58 * WorldGenSimulation.AU_M,
+                "mass_kg": 5.6834e26,
+            }
+            world_model.loader.entities[parent["id"]] = parent
+            world_model.loader.datasets["locations"].append(parent)
+            sim = WorldGenSimulation(world_model=world_model, parent_system_id="system_alpha", year=2400)
+
+            self.assertTrue(sim._begin_moon_orbit_draft(parent))
+            sim._set_orbit_distances(0.0025, 0.0025)
+            sim.planet_name_buffer = "Icy Test Moon"
+            self.assertTrue(sim._commit_named_planet())
+            moon = world_model.get_entity("moon_icy_test_moon")
+            self.assertEqual("icy_satellite", moon["body_subclass"])
+
+            self.assertTrue(sim._save_selected_planet_seed())
+            self.assertTrue(sim._save_atmosphere_model())
+            self.assertLess(moon["atmosphere_model"]["equilibrium_temperature_k"], 150.0)
+            self.assertTrue(sim._save_interior_regime_model())
+            self.assertTrue(sim._save_terrain_seed_model())
+            self.assertTrue(sim._save_water_cycle_model())
+
+            self.assertEqual("moon", moon["location_class"])
+            self.assertEqual("planet_ringed", moon["parent_body"])
+            self.assertEqual("icy_satellite", moon["world_gen_seed"]["planet_class"])
+            self.assertEqual("cratered_ice_shell", moon["terrain_seed_model"]["surface_regime"])
+            self.assertGreater(len(moon["crater_model"]["craters"]), 100)
+            self.assertAlmostEqual(1.0, moon["heightmap_model"]["surface_masks"]["target_ice_fraction"], delta=0.08)
+
     def test_airless_terrain_keeps_dense_crater_population(self):
         seed = {
             "radius_earth": 0.27,
@@ -405,6 +445,53 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         self.assertGreaterEqual(terrain["cratering"]["density"], 0.9)
         self.assertIn("simulate_impact_gardening", terrain["map_recipe"])
         self.assertGreaterEqual(len(craters["craters"]), 80)
+
+    def test_crater_population_grows_with_exposure_age_and_impact_flux(self):
+        physics = {"radius_m": 561_400.0, "surface_gravity_g": 0.023}
+        base = {
+            "map_seed": "crater-driver-test",
+            "map_canvas": {"radius_m": 561_400.0},
+            "cratering": {
+                "density": 0.92,
+                "retention": "high",
+                "max_crater_diameter_km": 350.0,
+                "resurfacing_fraction": 0.2,
+            },
+        }
+        young = copy.deepcopy(base)
+        young["cratering"].update({"surface_age_myr": 350.0, "impact_flux_factor": 0.7})
+        ancient = copy.deepcopy(base)
+        ancient["cratering"].update({"surface_age_myr": 4200.0, "impact_flux_factor": 1.2})
+
+        young_model = derive_crater_model(young, physics=physics, planet_id="moon_young")
+        ancient_model = derive_crater_model(ancient, physics=physics, planet_id="moon_ancient")
+
+        self.assertGreater(len(ancient_model["craters"]), len(young_model["craters"]) * 1.5)
+
+    def test_resurfacing_preferentially_removes_small_craters(self):
+        physics = {"radius_m": 561_400.0, "surface_gravity_g": 0.023}
+        base = {
+            "map_seed": "crater-resurfacing-test",
+            "map_canvas": {"radius_m": 561_400.0},
+            "cratering": {
+                "density": 0.92,
+                "retention": "high",
+                "max_crater_diameter_km": 350.0,
+                "surface_age_myr": 3800.0,
+                "impact_flux_factor": 1.0,
+            },
+        }
+        quiet = copy.deepcopy(base)
+        quiet["cratering"]["resurfacing_fraction"] = 0.05
+        resurfaced = copy.deepcopy(base)
+        resurfaced["cratering"]["resurfacing_fraction"] = 0.7
+
+        quiet_model = derive_crater_model(quiet, physics=physics, planet_id="moon_quiet")
+        resurfaced_model = derive_crater_model(resurfaced, physics=physics, planet_id="moon_resurfaced")
+        quiet_small = sum(crater["diameter_km"] < 20.0 for crater in quiet_model["craters"])
+        resurfaced_small = sum(crater["diameter_km"] < 20.0 for crater in resurfaced_model["craters"])
+
+        self.assertGreater(quiet_small, resurfaced_small)
 
     def test_named_planet_reuses_existing_planet_entry(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1631,6 +1718,9 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         self.assertGreater(model["rivers"][0]["length_km"], 100.0)
         self.assertGreater(model["rivers"][0]["average_width_m"], 10.0)
         self.assertGreaterEqual(model["rivers"][0]["mouth_width_m"], model["rivers"][0]["average_width_m"])
+        self.assertEqual("ocean_circulation_seeded", model["ocean_circulation_model"]["status"])
+        self.assertEqual(5, len(model["climate_grid"]["annual_precipitation_rows_mm"]))
+        self.assertEqual(5, len(model["climate_grid"]["annual_runoff_rows_mm"]))
 
     def test_solid_worldgen_adds_material_heatmap_metadata_after_heightmap(self):
         with tempfile.TemporaryDirectory() as temp_dir:

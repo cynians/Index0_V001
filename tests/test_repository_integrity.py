@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from world.ontology_repository import OntologyRepository
+from world.persistent_ontology_store import PersistentOntologyStore
 from world.world_model import WorldModel
 
 
@@ -143,9 +143,9 @@ class RepositoryIntegrityTests(unittest.TestCase):
         self.assertEqual([], missing)
 
     def test_ontology_repository_loads_entities_and_schemas(self):
-        repository = OntologyRepository.from_owl(PROJECT_ROOT / "ontology" / "index0.owl")
-        self.assertGreaterEqual(len(repository.entities), 1300)
-        self.assertGreaterEqual(len(repository.get_dataset("schemas")), 30)
+        datasets = PersistentOntologyStore(PROJECT_ROOT / "ontology" / "index0.owl").load_datasets()
+        self.assertGreaterEqual(sum(len(entries) for entries in datasets.values()), 1300)
+        self.assertGreaterEqual(len(datasets.get("schemas", [])), 30)
 
     def test_system_bodies_with_location_records_are_canonical_locations(self):
         model = WorldModel()

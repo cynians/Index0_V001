@@ -1,10 +1,12 @@
 import os
 import colorsys
 import re
+import time
 
 import pygame
 
 from engine.scaler import ScaleHelper
+from engine.performance_debug import performance_debug
 from ui.card_location import CardLocationMixin
 from ui.card_phylogeny import CardPhylogenyMixin
 from ui.card_production import CardProductionMixin
@@ -27,7 +29,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
     PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     IMAGE_SURFACE_CACHE = {}
     SCALED_PREVIEW_CACHE = {}
+    COLOR_SLIDER_SURFACE_CACHE = {}
     MAX_IMAGE_CACHE_ITEMS = 128
+    MAX_COLOR_SLIDER_CACHE_ITEMS = 256
     """
     Reusable renderer + interaction helper for one repository entity card.
     """
@@ -81,7 +85,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         "constituents": "Locations contained by this location.",
         "overlaps": "Locations sharing territory without full containment.",
     }
-    LOCATION_TOPOLOGY_EDITABLE_FIELDS = {"neighbours", "constituents", "overlaps"}
+    LOCATION_TOPOLOGY_EDITABLE_FIELDS = {"parents", "neighbours", "constituents", "overlaps"}
     LOCATION_TOPOLOGY_SYMMETRIC_FIELDS = {"neighbours", "overlaps"}
     LOCATION_TOPOLOGY_FIELD_PREFIX = "location_topology:"
     TIMELINE_SNAPSHOT_FIELD = "timeline_snapshot_entry"
@@ -398,15 +402,17 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             "tools": [
                 {
                     "id": "location_place_on_parent",
-                    "label": "Place on Parent",
-                    "description": "Open parent map placement for this location.",
+                    "label": "Choose / Place Parent",
+                    "description": "Choose a parent if needed, then open its map for placement.",
                     "action_id": "knowledge_place_location_on_parent",
                     "requires": "surface_location",
                 },
             ],
         },
     ]
-    SCHEMA_LOADER = SchemaLoader()
+    # Bound to WorldModel.schemas for normal cards. Keep the standalone
+    # fallback lazy so importing this module does not decode the repository.
+    SCHEMA_LOADER = None
     LAUNCH_AFFORDANCE_RESOLVER = LaunchAffordanceResolver()
 
     def __init__(self, entity, dataset_name=None, world_model=None):
@@ -1635,9 +1641,18 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
         return candidates
 
+    def _active_schema_loader(self):
+        shared_loader = getattr(self.world_model, "schemas", None) if self.world_model is not None else None
+        if shared_loader is not None:
+            return shared_loader
+        if EntityCard.SCHEMA_LOADER is None:
+            EntityCard.SCHEMA_LOADER = SchemaLoader()
+        return EntityCard.SCHEMA_LOADER
+
     def _resolve_schema(self):
+        schema_loader = self._active_schema_loader()
         for schema_name in self._schema_name_candidates():
-            schema = self.SCHEMA_LOADER.get_schema(schema_name)
+            schema = schema_loader.get_schema(schema_name)
             if schema:
                 return schema
         return None
@@ -1658,7 +1673,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         combined = {}
         extends_name = schema.get("extends")
         if extends_name:
-            parent_schema = self.SCHEMA_LOADER.get_schema(extends_name)
+            parent_schema = self._active_schema_loader().get_schema(extends_name)
             combined.update(self._collect_schema_fields(parent_schema, seen=seen))
 
         combined.update(schema.get("fields", {}))
@@ -5735,7 +5750,28 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 line_y += line_h
 
     def _draw_color_slider_track(self, screen, rect, channel, hue, saturation, brightness):
+        timing_started = time.perf_counter() if performance_debug.enabled else None
         width = max(1, rect.width)
+        height = max(1, rect.height)
+        if channel == "h":
+            dependencies = ()
+        elif channel == "s":
+            dependencies = (round(float(hue), 6), round(max(0.25, float(brightness)), 6))
+        else:
+            dependencies = (round(float(hue), 6), round(float(saturation), 6))
+        cache_key = (width, height, channel, dependencies)
+        track = self.COLOR_SLIDER_SURFACE_CACHE.get(cache_key)
+        if track is not None:
+            screen.blit(track, rect.topleft)
+            if timing_started is not None:
+                performance_debug.record(
+                    "color.gradient",
+                    (time.perf_counter() - timing_started) * 1000.0,
+                    f"channel={channel} cache=hit",
+                )
+            return
+
+        track = pygame.Surface((width, height))
         for offset in range(width):
             value = offset / max(1, width - 1)
             if channel == "h":
@@ -5744,7 +5780,18 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 color = self._hsv_to_rgb(hue, value, max(0.25, brightness))
             else:
                 color = self._hsv_to_rgb(hue, saturation, value)
-            pygame.draw.line(screen, color, (rect.x + offset, rect.y), (rect.x + offset, rect.bottom - 1))
+            pygame.draw.line(track, color, (offset, 0), (offset, height - 1))
+
+        self.COLOR_SLIDER_SURFACE_CACHE[cache_key] = track
+        while len(self.COLOR_SLIDER_SURFACE_CACHE) > self.MAX_COLOR_SLIDER_CACHE_ITEMS:
+            self.COLOR_SLIDER_SURFACE_CACHE.pop(next(iter(self.COLOR_SLIDER_SURFACE_CACHE)))
+        screen.blit(track, rect.topleft)
+        if timing_started is not None:
+            performance_debug.record(
+                "color.gradient",
+                (time.perf_counter() - timing_started) * 1000.0,
+                f"channel={channel} cache=miss width={width}",
+            )
 
     def _draw_tabs(self, screen, font, card):
         for tab_index, (tab_name, tab_rect) in enumerate(card.get("tab_hitboxes", [])):
@@ -6370,6 +6417,10 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         picker_w = min(380, max(220, anchor_rect.width))
         picker_h = 100 + min(6, len(matches)) * 42
         picker_rect = pygame.Rect(anchor_rect.x, anchor_rect.bottom + 6, picker_w, picker_h)
+        screen_rect = screen.get_rect()
+        picker_rect.x = max(8, min(picker_rect.x, screen_rect.right - picker_rect.width - 8))
+        if picker_rect.bottom > screen_rect.bottom - 8:
+            picker_rect.y = max(8, anchor_rect.y - picker_rect.height - 6)
         card["relation_picker_hitboxes"] = []
 
         pygame.draw.rect(screen, (22, 26, 36), picker_rect)
@@ -6409,9 +6460,12 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             pygame.draw.rect(screen, border, row_rect, 1)
             card["relation_picker_hitboxes"].append((index, row_rect))
 
-            primary = f"{match['pretty_name']} | {match['id']}"
+            primary = str(match["pretty_name"])
             dataset = match.get("dataset", "")
-            secondary = f"{dataset} | {match.get('entity_type', 'entity')}"
+            scope_label = match.get("scope_label", "")
+            secondary = " | ".join(
+                part for part in (scope_label, dataset, match.get("entity_type", "entity")) if part
+            )
 
             primary_surface = font.render(primary, True, (242, 242, 242))
             secondary_surface = font.render(secondary, True, (186, 194, 208))

@@ -201,8 +201,12 @@ ELEMENT_MATERIAL_CATALOG = [
 ]
 
 ATMOSPHERIC_MOLECULE_DATA = {
+    "H": ("Atomic Hydrogen", "hydrogen atom", 0.001008, [218, 210, 190], "atomic exosphere species"),
     "H2": ("Molecular Hydrogen Gas", "dihydrogen", 0.002016, [218, 207, 178], "elemental molecular gas; homonuclear diatomic molecule"),
     "He": ("Helium Gas", "helium", 0.004003, [224, 216, 195], "noble gas; monoatomic gas"),
+    "O": ("Atomic Oxygen", "oxygen atom", 0.015999, [172, 194, 214], "atomic exosphere species"),
+    "Na": ("Atomic Sodium", "sodium atom", 0.022990, [218, 176, 92], "atomic exosphere species; sputtered surface atom"),
+    "K": ("Atomic Potassium", "potassium atom", 0.039098, [190, 132, 198], "atomic exosphere species; sputtered surface atom"),
     "Ne": ("Neon Gas", "neon", 0.020180, [190, 160, 178], "noble gas; monoatomic gas"),
     "H2O": ("Water Vapor", "oxidane", 0.018015, [214, 226, 228], "volatile molecular gas; oxide hydride"),
     "NH3": ("Ammonia Gas", "azane", 0.017031, [222, 210, 154], "pnictogen hydride; volatile molecular gas"),

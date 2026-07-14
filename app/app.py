@@ -1,4 +1,19 @@
+import sys
+from pathlib import Path
+
 import pygame
+
+
+# Support both documented direct execution (``py app/app.py``) and
+# package execution (``py -m app.app``) without requiring PYTHONPATH edits.
+if __package__ in (None, ""):
+    project_root = str(Path(__file__).resolve().parents[1])
+    # Direct execution puts ``app/`` first on sys.path, where app.py can
+    # shadow the actual app package.  Always move the project root to the
+    # front so package imports resolve consistently with ``python -m``.
+    if project_root in sys.path:
+        sys.path.remove(project_root)
+    sys.path.insert(0, project_root)
 
 from engine.window import SimWindow
 from engine.tab_manager import TabManager
@@ -6,8 +21,8 @@ from engine.renderer import Renderer
 from engine.camera_controller import CameraController
 from world.world_model import WorldModel
 from ui.ui_manager import UIManager
-from navigation_controller import NavigationController
-from input_router import InputRouter
+from app.navigation_controller import NavigationController
+from app.input_router import InputRouter
 
 
 class App(SimWindow):

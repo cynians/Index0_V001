@@ -19,14 +19,22 @@ class EarthReferenceModelTests(unittest.TestCase):
         self.assertTrue(apply_earth_reference_models(entities))
         earth = entities["planet_earth"]
 
-        self.assertEqual("earth_reference_heightmap", earth["heightmap_model"]["status"])
+        self.assertEqual("heightmap_authored_reference", earth["heightmap_model"]["status"])
         self.assertEqual("earth_reference_atmosphere", earth["atmosphere_model"]["status"])
         self.assertEqual("earth_reference_tectonics", earth["tectonic_model"]["status"])
-        self.assertEqual("earth_reference_water_cycle", earth["water_cycle_model"]["status"])
-        self.assertEqual(2048, earth["map_canvas_width_px"])
+        self.assertEqual("water_cycle_authored_reference", earth["water_cycle_model"]["status"])
+        self.assertEqual(4096, earth["map_canvas_width_px"])
         self.assertIn("earth_reference_worldgen", earth["tags"])
         self.assertGreater(len(earth["reference_land_polygons"]["polygons"]), 100)
         self.assertEqual("negative_latitude", earth["reference_land_polygons"]["y_axis"])
+        grid = earth["heightmap_model"]["sample_grid"]
+        self.assertEqual((257, 129), (grid["width"], grid["height"]))
+        self.assertEqual(129, len(grid["rows"]))
+        self.assertGreater(len(earth["water_cycle_model"]["rivers"]), 500)
+        self.assertGreater(len(earth["water_cycle_model"]["reference_lakes"]), 300)
+        self.assertIn("NOAA", earth["heightmap_model"]["source"])
+        self.assertEqual("materials_authored_earth_reference", earth["natural_material_model"]["status"])
+        self.assertIn("mat_basalt", earth["natural_material_model"]["dominant_materials"])
 
     def test_apply_earth_reference_models_preserves_existing_fields(self):
         entities = {

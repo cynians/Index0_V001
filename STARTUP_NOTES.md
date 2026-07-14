@@ -22,6 +22,14 @@ For rendering or running the Pygame UI from automation, prefer:
 py -3.14 app/app.py
 ```
 
+Package execution is also supported:
+
+```powershell
+py -3.14 -m app.app
+```
+
+Neither command requires a custom `PYTHONPATH`.
+
 For headless screenshot rendering, set:
 
 ```powershell

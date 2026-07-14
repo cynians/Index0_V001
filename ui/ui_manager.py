@@ -102,7 +102,10 @@ class UIManager:
         self.map_location_browser_items = []
         self.map_location_browser_hitboxes = []
         self.map_location_browser_rect = None
+        self.map_legend_items = []
+        self.map_legend_rect = None
         self.map_sidebar_rect = None
+        self.map_sidebar_sections = []
         self.map_context_rect = None
         self.map_layer_selector_rect = None
         self.map_layer_selector_items = []
@@ -113,6 +116,15 @@ class UIManager:
 
     def is_text_input_active(self):
         return self.selection_inspector.is_text_input_active()
+
+    def get_map_content_viewport_rect(self, app_width, app_height):
+        """Full map canvas footprint, including content behind overlay panels.
+
+        Map menus float over the simulation rather than reducing its canvas.
+        Refinement therefore has to capture the surface beneath those menus as
+        well as the unobscured center of the screen.
+        """
+        return pygame.Rect(0, 0, max(1, int(app_width)), max(1, int(app_height)))
 
     def _format_sim_time(self, sim):
         base_year = getattr(sim, "year", 0)
@@ -172,7 +184,10 @@ class UIManager:
         self.map_location_browser_items = []
         self.map_location_browser_hitboxes = []
         self.map_location_browser_rect = None
+        self.map_legend_items = []
+        self.map_legend_rect = None
         self.map_sidebar_rect = None
+        self.map_sidebar_sections = []
         self.map_context_rect = None
         self.map_layer_selector_rect = None
         self.map_layer_selector_items = []
@@ -312,6 +327,7 @@ class UIManager:
         chip_gap = 6
         selector_y = y
         entries = []
+        atmosphere_entry = None
         if "locations" in available_layers:
             entries.append({
                 "label": "Map",
@@ -346,12 +362,21 @@ class UIManager:
             })
         if "ground_materials" in available_layers:
             entries.append({
-                "label": "Ground",
-                "detail": "",
+                "label": "Regions",
+                "detail": "Contours + boundaries",
                 "layer_kind": "ground_materials",
                 "active": active_layer == "ground_materials",
                 "color": (138, 118, 88),
             })
+        if bool(getattr(active_sim, "has_atmosphere_visual", lambda: False)()):
+            atmosphere_on = bool(getattr(active_sim, "is_atmosphere_visible", lambda: False)())
+            atmosphere_entry = {
+                "label": "Atmosphere On" if atmosphere_on else "Atmosphere Off",
+                "detail": "Atmosphere",
+                "action_id": "toggle_map_atmosphere",
+                "active": atmosphere_on,
+                "color": (202, 166, 82),
+            }
 
         columns = 2 if len(entries) <= 2 else 3
         chip_w = max(66, (width - chip_gap * (columns - 1)) // columns)
@@ -368,6 +393,13 @@ class UIManager:
 
         rows = (len(entries) + columns - 1) // columns if entries else 0
         total_h = title_h + rows * chip_h + max(0, rows - 1) * chip_gap
+        if atmosphere_entry is not None:
+            atmosphere_y = selector_y + total_h + chip_gap
+            self.map_layer_selector_items.append({
+                **atmosphere_entry,
+                "rect": pygame.Rect(x, atmosphere_y, width, chip_h),
+            })
+            total_h += chip_gap + chip_h
         self.map_layer_selector_rect = pygame.Rect(x, selector_y, width, max(title_h, total_h))
         y = selector_y + total_h + 10
 
@@ -428,35 +460,33 @@ class UIManager:
         if not polygon_options:
             polygon_options = [{"id": "region", "label": "New Region"}]
 
-        max_polygon_buttons = 5
-        for option in polygon_options[:max_polygon_buttons]:
+        options = [(option, False) for option in polygon_options[:6]]
+        options.extend((option, True) for option in point_options[:1])
+        columns = 2 if width >= 220 and len(options) > 2 else 1
+        gap = 6
+        item_width = (width - gap) // 2 if columns == 2 else width
+        for index, (option, is_point) in enumerate(options):
             option_id = str(option.get("id") or "region")
             label = option.get("label") or str(option_id).replace("_", " ").title()
+            col = index % columns
+            row = index // columns
             self.buttons.append(
                 UIButton(
-                    f"new_location:{option_id}",
+                    f"new_point_location:{option_id}" if is_point else f"new_location:{option_id}",
                     label,
-                    pygame.Rect(x, y, width, button_height),
+                    pygame.Rect(x + col * (item_width + gap), y + row * (button_height + gap), item_width, button_height),
                     enabled=enabled,
                 )
             )
-            y += button_height + 8
+        rows = (len(options) + columns - 1) // columns if options else 0
+        return y + rows * button_height + max(0, rows - 1) * gap + 8
 
-        if point_options:
-            primary = point_options[0]
-            option_id = str(primary.get("id") or "site")
-            label = primary.get("label") or "Point Site"
-            self.buttons.append(
-                UIButton(
-                    f"new_point_location:{option_id}",
-                    label,
-                    pygame.Rect(x, y, width, button_height),
-                    enabled=enabled,
-                )
-            )
-            y += button_height + 8
-
-        return y + 4
+    def _append_map_sidebar_section(self, label, x, y, width):
+        self.map_sidebar_sections.append({
+            "label": str(label),
+            "rect": pygame.Rect(x, y, width, 18),
+        })
+        return y + 22
 
     def _map_root_has_surface(self, root_entity):
         if not isinstance(root_entity, dict):
@@ -930,7 +960,11 @@ class UIManager:
             world_x = (mouse_x - app_width / 2) / camera.zoom + camera.x
             world_y = (mouse_y - app_height / 2) / camera.zoom + camera.y
             if render_mode == "map":
-                self.mouse_world_label = f"Mouse Lon/Lat: {world_x:.3f} , {-world_y:.3f}"
+                lon_lat = active_sim.world_to_surface_lon_lat(world_x, world_y) if hasattr(active_sim, "world_to_surface_lon_lat") else None
+                if lon_lat is not None:
+                    self.mouse_world_label = f"Mouse Lon/Lat: {lon_lat[0]:.3f} , {lon_lat[1]:.3f}"
+                else:
+                    self.mouse_world_label = f"Mouse map position: {world_x:.3f} , {world_y:.3f}"
             else:
                 self.mouse_world_label = f"Mouse World: {int(world_x)} , {int(world_y)}"
 
@@ -1106,6 +1140,10 @@ class UIManager:
                 self.map_context_lines.append(existing_status_line)
             if self.breadcrumb_label:
                 self.map_context_lines.append(self.breadcrumb_label)
+            if hasattr(active_sim, "get_projection_focus_label") and root_has_surface:
+                self.map_context_lines.append(active_sim.get_projection_focus_label())
+            if hasattr(active_sim, "get_map_generation_detail_label") and root_has_surface:
+                self.map_context_lines.append(active_sim.get_map_generation_detail_label())
 
             self.map_status_lines = []
             if is_editing_map_selection:
@@ -1131,6 +1169,7 @@ class UIManager:
             self.map_location_browser_items = []
             if hasattr(active_sim, "get_map_location_browser_items"):
                 self.map_location_browser_items = active_sim.get_map_location_browser_items()
+            self.map_legend_items = list(getattr(active_sim, "get_map_legend_items", lambda: [])() or [])
             map_panel_y = 44
             context_lines_for_layout = list(self.map_context_lines)
             if self.map_status_lines:
@@ -1149,12 +1188,14 @@ class UIManager:
             map_control_w = min(270, max(226, app_width // 5))
             map_control_x = max(20, app_width - map_control_w - 24)
             map_control_y = 78
+            self.map_sidebar_sections = []
             next_button_y = map_control_y + 30
             next_button_y = self._rebuild_map_layer_menu(active_sim, map_control_x, map_control_y, width=map_control_w) + 12
 
             can_author_locations = bool(
                 getattr(active_sim, "can_create_location_draft", lambda: False)()
             ) and not is_editing_map_selection
+            next_button_y = self._append_map_sidebar_section("LOCATION TOOLS", map_control_x, next_button_y, map_control_w)
             self.buttons.append(
                 UIButton("link_existing_map_location", "Link Existing Location",
                          pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
@@ -1170,6 +1211,25 @@ class UIManager:
                 enabled=can_author_locations,
             )
 
+            if bool(getattr(active_sim, "can_regenerate_region", lambda: False)()):
+                next_button_y = self._append_map_sidebar_section("DETAIL GENERATION", map_control_x, next_button_y, map_control_w)
+                detail_label = getattr(active_sim, "get_next_detail_level_label", lambda: "Regenerate Region")()
+                self.buttons.append(UIButton(
+                    "regenerate_visible_region",
+                    detail_label,
+                    pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
+                ))
+                next_button_y += 40
+
+            if bool(getattr(active_sim, "can_reset_planet_view", lambda: False)()):
+                self.buttons.append(UIButton(
+                    "reset_planet_map_view",
+                    "Reset Equatorial View",
+                    pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
+                ))
+                next_button_y += 40
+
+            next_button_y = self._append_map_sidebar_section("WORKSPACE", map_control_x, next_button_y, map_control_w)
             self.buttons.append(
                 UIButton("open_repository", "Open Repository",
                          pygame.Rect(map_control_x, next_button_y, map_control_w, button_height))
@@ -1181,17 +1241,18 @@ class UIManager:
                     getattr(active_sim, "can_finish_map_editor", lambda: False)()
                 )
                 self.buttons.append(
-                    UIButton("finish_map_selection", "Finish Selection",
+                    UIButton("finish_map_selection", "Finish Selection (Enter)",
                              pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
                              enabled=can_finish)
                 )
                 next_button_y += 40
                 self.buttons.append(
-                    UIButton("cancel_map_selection", "Cancel Selection",
+                    UIButton("cancel_map_selection", "Cancel Selection (Esc)",
                     pygame.Rect(map_control_x, next_button_y, map_control_w, button_height))
                 )
                 next_button_y += 40
             else:
+                next_button_y = self._append_map_sidebar_section("ENVIRONMENT", map_control_x, next_button_y, map_control_w)
                 next_button_y = self._rebuild_ecosystem_controls(
                     active_sim,
                     map_control_x,
@@ -1201,6 +1262,13 @@ class UIManager:
 
             selected_entity_id = getattr(active_sim, "selected_entity_id", None)
             root_entity_id = getattr(active_sim.context, "root_entity_id", None)
+
+            has_navigation_controls = (
+                (selected_entity_id is not None and selected_entity_id != root_entity_id)
+                or parent_root_entity_id is not None
+            )
+            if has_navigation_controls:
+                next_button_y = self._append_map_sidebar_section("NAVIGATION", map_control_x, next_button_y, map_control_w)
 
             if selected_entity_id is not None and selected_entity_id != root_entity_id:
                 self.buttons.append(
@@ -1482,7 +1550,7 @@ class UIManager:
             return
 
         panel_w = 320
-        panel_h = 380 if self.system_settings_active else 236
+        panel_h = 428 if self.system_settings_active else 236
         panel_x = (app_width - panel_w) // 2
         panel_y = (app_height - panel_h) // 2
         self.system_menu_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
@@ -1496,6 +1564,7 @@ class UIManager:
         if self.system_settings_active:
             clade_count = getattr(self.knowledge_ui, "phylogeny_clade_member_count", 3)
             species_count = getattr(self.knowledge_ui, "phylogeny_species_relative_count", 4)
+            debug_enabled = bool(getattr(self.knowledge_ui, "performance_debug_enabled", False))
             half_w = (button_w - gap) // 2
             self.system_menu_buttons.extend([
                 UIButton("system_toggle_grid", "Toggle Grid", pygame.Rect(button_x, button_y, button_w, button_h)),
@@ -1504,7 +1573,8 @@ class UIManager:
                 UIButton("phylogeny_clade_members_inc", "Clade +", pygame.Rect(button_x + half_w + gap, button_y + (button_h + gap) * 2, half_w, button_h)),
                 UIButton("phylogeny_species_relatives_dec", f"Species - ({species_count})", pygame.Rect(button_x, button_y + (button_h + gap) * 3, half_w, button_h)),
                 UIButton("phylogeny_species_relatives_inc", "Species +", pygame.Rect(button_x + half_w + gap, button_y + (button_h + gap) * 3, half_w, button_h)),
-                UIButton("system_menu_back", "Back", pygame.Rect(button_x, button_y + (button_h + gap) * 4, button_w, button_h)),
+                UIButton("system_toggle_debug", f"Performance Debug: {'On' if debug_enabled else 'Off'}", pygame.Rect(button_x, button_y + (button_h + gap) * 4, button_w, button_h)),
+                UIButton("system_menu_back", "Back", pygame.Rect(button_x, button_y + (button_h + gap) * 5, button_w, button_h)),
             ])
             return
 
@@ -1718,12 +1788,55 @@ class UIManager:
         pygame.draw.rect(screen, fill_color, button.rect)
         pygame.draw.rect(screen, border_color, button.rect, 2)
 
-        label = self._ellipsize_text(button.label, font, max(0, button.rect.width - 14))
-        text_surface = self._render_text(font, label, text_color)
-        text_rect = text_surface.get_rect(center=button.rect.center)
         clip = screen.get_clip()
         screen.set_clip(button.rect.clip(screen.get_rect()))
-        screen.blit(text_surface, text_rect)
+        checkbox_width = 0
+        if getattr(button, "check_button", False):
+            checkbox_size = max(12, min(16, button.rect.height - 10))
+            checkbox_rect = pygame.Rect(
+                button.rect.x + 7,
+                button.rect.centery - checkbox_size // 2,
+                checkbox_size,
+                checkbox_size,
+            )
+            pygame.draw.rect(screen, (22, 24, 30), checkbox_rect)
+            pygame.draw.rect(screen, border_color, checkbox_rect, 1)
+            if getattr(button, "checked", False):
+                pygame.draw.line(screen, text_color, (checkbox_rect.x + 3, checkbox_rect.centery), (checkbox_rect.centerx - 1, checkbox_rect.bottom - 4), 2)
+                pygame.draw.line(screen, text_color, (checkbox_rect.centerx - 1, checkbox_rect.bottom - 4), (checkbox_rect.right - 3, checkbox_rect.y + 3), 2)
+            checkbox_width = checkbox_size + 8
+
+        text_area = pygame.Rect(
+            button.rect.x + 7 + checkbox_width,
+            button.rect.y + 3,
+            max(0, button.rect.width - 14 - checkbox_width),
+            max(0, button.rect.height - 6),
+        )
+        words = str(button.label or "").split()
+        lines = [str(button.label or "")]
+        line_height = max(1, font.get_linesize())
+        if font.size(lines[0])[0] > text_area.width and text_area.height >= line_height * 2 and len(words) > 1:
+            lines = []
+            current = ""
+            for word in words:
+                candidate = f"{current} {word}".strip()
+                if current and font.size(candidate)[0] > text_area.width:
+                    lines.append(current)
+                    current = word
+                else:
+                    current = candidate
+            if current:
+                lines.append(current)
+            max_lines = max(1, text_area.height // line_height)
+            lines = lines[:max_lines]
+        lines = [self._ellipsize_text(line, font, text_area.width) for line in lines]
+        total_text_h = len(lines) * line_height
+        text_y = text_area.centery - total_text_h // 2
+        for line in lines:
+            text_surface = self._render_text(font, line, text_color)
+            text_rect = text_surface.get_rect(centerx=text_area.centerx, y=text_y)
+            screen.blit(text_surface, text_rect)
+            text_y += line_height
         screen.set_clip(clip)
 
     def _draw_info_panel(self, screen, font, x, y, lines, max_width=None):
@@ -2082,6 +2195,28 @@ class UIManager:
 
         return rect.height
 
+    def _draw_map_legend(self, screen, font, x, y):
+        if not self.map_legend_items:
+            self.map_legend_rect = None
+            return 0
+        row_h = max(19, font.get_height() + 3)
+        width = min(330, max(270, screen.get_width() // 5))
+        height = 34 + row_h * len(self.map_legend_items) + 8
+        rect = pygame.Rect(x, y, width, height)
+        self.map_legend_rect = rect
+        pygame.draw.rect(screen, (14, 18, 28), rect)
+        pygame.draw.rect(screen, (92, 108, 136), rect, 1)
+        screen.blit(self._render_text(font, "Map Legend", (238, 242, 250)), (rect.x + 10, rect.y + 9))
+        row_y = rect.y + 33
+        for item in self.map_legend_items:
+            swatch = pygame.Rect(rect.x + 10, row_y + 3, 13, 13)
+            pygame.draw.rect(screen, item.get("color", (140, 145, 150)), swatch)
+            pygame.draw.rect(screen, (214, 220, 230), swatch, 1)
+            label = self._ellipsize_text(str(item.get("label") or "Legend item"), font, rect.width - 42)
+            screen.blit(self._render_text(font, label, (202, 212, 226)), (rect.x + 31, row_y + 1))
+            row_y += row_h
+        return rect.height
+
     def _draw_map_workspace(self, screen, font):
         context_lines = list(self.map_context_lines)
         if self.map_status_lines:
@@ -2121,6 +2256,9 @@ class UIManager:
         if self.map_location_browser_items:
             current_y += self._draw_map_location_browser(screen, font, 20, current_y) + 12
 
+        if self.map_legend_items:
+            current_y += self._draw_map_legend(screen, font, 20, current_y) + 12
+
         self._draw_map_empty_state(screen, font)
 
         if self.map_sidebar_rect is not None:
@@ -2129,6 +2267,15 @@ class UIManager:
             title = self._render_text(font, "Map Tools", (242, 244, 250))
             screen.blit(title, (self.map_sidebar_rect.x + 12, self.map_sidebar_rect.y + 10))
             self._draw_map_layer_selector(screen, font)
+            for section in self.map_sidebar_sections:
+                rect = section.get("rect")
+                if rect is None:
+                    continue
+                pygame.draw.line(screen, (70, 82, 104), (rect.x, rect.centery), (rect.right, rect.centery), 1)
+                label = self._render_text(font, section.get("label", ""), (150, 166, 194))
+                label_bg = pygame.Rect(rect.x + 8, rect.y, label.get_width() + 12, rect.height)
+                pygame.draw.rect(screen, (18, 22, 30), label_bg)
+                screen.blit(label, (label_bg.x + 6, rect.y + 1))
 
         for button in self.buttons:
             if not button.visible:
@@ -2567,6 +2714,8 @@ class UIManager:
             for item in self.map_layer_selector_items:
                 rect = item.get("rect")
                 if rect is not None and rect.collidepoint(mouse_pos):
+                    if item.get("action_id"):
+                        return {"id": item.get("action_id")}
                     layer_kind = item.get("layer_kind")
                     if layer_kind == "material_heatmaps":
                         self.map_layer_menu_mode = "materials"

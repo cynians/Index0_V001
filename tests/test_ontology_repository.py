@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from simulations.map.map_simulation import MapSimulation
 from simulations.person.person_simulation import PersonSimulation
@@ -9,10 +10,67 @@ from simulations.space.system import CelestialSystem
 from world.entity_loader import EntityLoader
 from world.simulation_context import SimulationContext
 from world.ontology_repository import OntologyDependencyError, OntologyRepository
+from world.persistent_ontology_store import PersistentOntologyStore
 from world.world_model import WorldModel
 
 
 class OntologyRepositoryTests(unittest.TestCase):
+    def test_persistent_store_point_edit_survives_restart_without_touching_other_fields(self):
+        ontology = OntologyRepository({
+            "ideas": [{
+                "id": "idea_one",
+                "type": "idea",
+                "pretty_name": "Original name",
+                "card_color": "#111111",
+                "wiki_field_colors": {"default": "#222222"},
+            }],
+        })
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            ontology_path = temp_path / "ontology" / "index0.owl"
+            database_path = temp_path / "store.sqlite3"
+            ontology.save_owl(ontology_path)
+            original_owl = ontology_path.read_bytes()
+
+            store = PersistentOntologyStore(ontology_path, database_path=database_path)
+            entity = store.load_datasets()["ideas"][0]
+            entity["card_color"] = "#abcdef"
+            entity["wiki_field_colors"] = {"default": "#fedcba"}
+            self.assertTrue(store.persist_entity_fields(entity, {"card_color", "wiki_field_colors"}))
+
+            restarted = PersistentOntologyStore(ontology_path, database_path=database_path)
+            reloaded = restarted.load_datasets()["ideas"][0]
+            self.assertEqual("#abcdef", reloaded["card_color"])
+            self.assertEqual({"default": "#fedcba"}, reloaded["wiki_field_colors"])
+            self.assertEqual("Original name", reloaded["pretty_name"])
+            self.assertEqual(original_owl, ontology_path.read_bytes())
+
+            self.assertTrue(restarted.export_rdfxml())
+            exported = OntologyRepository.from_owl(ontology_path).entities["idea_one"]
+            self.assertEqual("#abcdef", exported["card_color"])
+
+    def test_palette_persistence_uses_small_restart_safe_override_journal(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ontology_path = Path(temp_dir) / "ontology" / "index0.owl"
+            ontology_path.parent.mkdir(parents=True)
+            ontology_path.write_text("unchanged ontology", encoding="utf-8")
+            entity = {"id": "planet_test", "card_color": "#123456", "wiki_link_color": "#legacy"}
+            loader = EntityLoader.__new__(EntityLoader)
+            loader.use_ontology = True
+            loader.ontology_path = ontology_path
+            loader.datasets = {"locations": [entity]}
+
+            self.assertTrue(loader.persist_entity_palette(entity))
+            self.assertEqual("unchanged ontology", ontology_path.read_text(encoding="utf-8"))
+            self.assertTrue(loader._palette_overrides_path().exists())
+
+            entity["card_color"] = "#000000"
+            entity.pop("wiki_link_color")
+            loader._apply_palette_overrides()
+
+            self.assertEqual("#123456", entity["card_color"])
+            self.assertEqual("#legacy", entity["wiki_link_color"])
+
     def test_parent_relation_materializes_offspring_projection(self):
         ontology = OntologyRepository({
             "ideas": [
@@ -162,6 +220,28 @@ class OntologyRepositoryTests(unittest.TestCase):
 
             self.assertEqual(2, attempts["count"])
             self.assertEqual(b"<Ontology/>", output_path.read_bytes())
+
+    def test_save_owl_falls_back_when_windows_blocks_atomic_replace(self):
+        ontology = OntologyRepository({"ideas": [{"id": "idea_one", "type": "idea"}]})
+
+        class FakeOntology:
+            def save(self, file, format="rdfxml"):
+                Path(file).write_bytes(b"<Ontology>updated</Ontology>")
+
+        ontology.build_ontology = lambda iri=None: FakeOntology()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "ontology" / "index0.owl"
+            output_path.parent.mkdir(parents=True)
+            output_path.write_bytes(b"<Ontology>old</Ontology>")
+
+            with patch.object(Path, "replace", side_effect=PermissionError(5, "Access denied")), patch(
+                "world.ontology_repository.time.sleep"
+            ):
+                ontology.save_owl(output_path)
+
+            self.assertEqual(b"<Ontology>updated</Ontology>", output_path.read_bytes())
+            self.assertFalse(list(output_path.parent.glob("*.rollback")))
 
     def test_owl_round_trip_preserves_repository_projection(self):
         ontology = OntologyRepository({

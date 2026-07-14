@@ -79,6 +79,7 @@ def derive_interior_regime_model(seed, physics, atmosphere, crust_type="unknown"
     crust_thickness_km = max(0.0, float(physics.get("crust_thickness_km", seed.get("crust_thickness_km", 0.0)) or 0.0))
     gravity_g = max(0.0, float(physics.get("surface_gravity_g", 0.0) or 0.0))
     water_fraction = _clamp(seed.get("water_fraction", 0.0), 0.0, 1.0)
+    icy_satellite = str(seed.get("planet_class") or seed.get("planet_template") or "").strip().lower() == "icy_satellite"
 
     mantle_present = mantle_fraction >= 0.03
     differentiated = core_fraction >= 0.08 or mantle_fraction >= 0.12
@@ -99,19 +100,32 @@ def derive_interior_regime_model(seed, physics, atmosphere, crust_type="unknown"
     radiogenic_multiplier = _radiogenic_heat_multiplier(seed)
     internal_heat_w_m2 = 0.087 * size_factor * core_heat_factor * mantle_heat_factor * radiogenic_multiplier
     internal_heat_w_m2 = max(0.0, internal_heat_w_m2)
+    tidal_heating_w_m2 = max(0.0, float(seed.get("tidal_heating_w_m2", 0.0) or 0.0))
+    internal_heat_w_m2 += tidal_heating_w_m2
 
-    liquid_water_possible = (
+    liquid_water_possible = (not icy_satellite) and (
         water_fraction > 0.03
         and pressure_bar >= 0.006
         and 250.0 <= surface_temp_k <= 395.0
     )
+    surface_fluid = str(seed.get("surface_fluid") or "water").strip().lower()
+    alternate_fluid_possible = (
+        ("methane" in surface_fluid and pressure_bar >= 0.08 and 70.0 <= surface_temp_k <= 135.0)
+        or (surface_fluid == "brine" and pressure_bar >= 0.01 and 235.0 <= surface_temp_k <= 390.0)
+        or ("magma" in surface_fluid and surface_temp_k >= 1050.0)
+    )
     hydrologic_cycle = (
         "active"
         if liquid_water_possible and pressure_bar >= 0.08 and 260.0 <= surface_temp_k <= 360.0
-        else ("limited" if liquid_water_possible else "none")
+        else ("limited" if liquid_water_possible else ("active" if alternate_fluid_possible else "none"))
     )
 
-    tectonics = _tectonic_regime(seed, physics, internal_heat_w_m2, mantle_present, liquid_water_possible)
+    if icy_satellite:
+        resurfacing_fraction = _clamp(seed.get("resurfacing_fraction", 0.0), 0.0, 1.0)
+        tectonics = "cryotectonic" if internal_heat_w_m2 >= 0.008 or resurfacing_fraction >= 0.16 else "inactive"
+    else:
+        resurfacing_fraction = _clamp(seed.get("resurfacing_fraction", 0.0), 0.0, 1.0)
+        tectonics = _tectonic_regime(seed, physics, internal_heat_w_m2, mantle_present, liquid_water_possible)
     volcanic_activity = "none"
     if mantle_present and internal_heat_w_m2 >= 0.015:
         volcanic_activity = "low"
@@ -119,6 +133,8 @@ def derive_interior_regime_model(seed, physics, atmosphere, crust_type="unknown"
         volcanic_activity = "moderate"
     if mantle_present and internal_heat_w_m2 >= 0.14:
         volcanic_activity = "high"
+    if icy_satellite:
+        volcanic_activity = "cryovolcanic" if internal_heat_w_m2 >= 0.025 else ("possible_ancient_cryovolcanism" if tectonics == "cryotectonic" else "none")
 
     aeolian_activity = "none"
     if pressure_bar >= 0.01:
@@ -135,13 +151,21 @@ def derive_interior_regime_model(seed, physics, atmosphere, crust_type="unknown"
         erosion_processes.append("episodic_fluvial")
     if aeolian_activity != "none":
         erosion_processes.append("aeolian")
+    if pressure_bar >= 20.0 and surface_temp_k >= 550.0:
+        erosion_processes.append("supercritical_co2_chemical_weathering")
+        if _element_abundance_percent(seed, "S") >= 0.2:
+            erosion_processes.append("sulfur_atmosphere_surface_reactions")
     if water_fraction > 0.02 and surface_temp_k < 273.0 and pressure_bar >= 0.02:
         erosion_processes.append("glacial")
     if not erosion_processes:
         erosion_processes.append("impact_gardening")
+    if icy_satellite and resurfacing_fraction >= 0.12:
+        erosion_processes.append("viscous_relaxation")
 
     resurfacing_score = 0
-    if tectonics in {"plate_tectonics", "mobile_lid"}:
+    if icy_satellite:
+        primary_topography = "impact_basins_fractured_ice_plains"
+    elif tectonics in {"plate_tectonics", "mobile_lid"}:
         resurfacing_score += 3
     elif tectonics in {"episodic_lid", "heat_pipe"}:
         resurfacing_score += 2
@@ -165,6 +189,8 @@ def derive_interior_regime_model(seed, physics, atmosphere, crust_type="unknown"
 
     if tectonics in {"plate_tectonics", "mobile_lid"}:
         primary_topography = "plate_boundaries_mountain_belts_and_trenches"
+    elif str(seed.get("geologic_style") or "") == "plume_lid_volcanic":
+        primary_topography = "plume_rises_coronae_tesserae_and_volcanic_plains"
     elif tectonics == "heat_pipe":
         primary_topography = "volcanic_plains_and_shield_provinces"
     elif tectonics == "episodic_lid":
@@ -195,10 +221,14 @@ def derive_interior_regime_model(seed, physics, atmosphere, crust_type="unknown"
             "mantle_present": mantle_present,
             "crust_thickness_km": crust_thickness_km,
             "internal_heat_w_m2": internal_heat_w_m2,
+            "tidal_heating_w_m2": tidal_heating_w_m2,
             "radiogenic_heat_multiplier": radiogenic_multiplier,
             "tectonic_regime": tectonics,
             "volcanic_activity": volcanic_activity,
             "crust_type": crust_type,
+            "ice_shell_thickness_km": physics.get("ice_shell_thickness_km") if icy_satellite else None,
+            "bulk_ice_fraction": physics.get("bulk_ice_fraction") if icy_satellite else None,
+            "subsurface_ocean_possible": bool(icy_satellite and internal_heat_w_m2 >= 0.018),
         },
         "thermal_evolution": {
             "model_version": "thermal_evolution_v001",
@@ -220,11 +250,14 @@ def derive_interior_regime_model(seed, physics, atmosphere, crust_type="unknown"
             "surface_temperature_c": surface_temp_k - 273.15,
             "surface_gravity_g": gravity_g,
             "liquid_water_possible": liquid_water_possible,
+            "alternate_surface_fluid_possible": alternate_fluid_possible,
+            "surface_fluid": surface_fluid,
             "hydrologic_cycle": hydrologic_cycle,
             "aeolian_activity": aeolian_activity,
             "erosion_processes": erosion_processes,
             "crater_retention": crater_retention,
             "primary_topography": primary_topography,
+            "resurfacing_fraction": resurfacing_fraction,
         },
         "map_recipe": map_recipe,
         "notes": [

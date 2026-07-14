@@ -1,6 +1,7 @@
 import re
 
 from world.entity_loader import EntityLoader
+from world.dione_reference_models import apply_dione_reference_models
 from world.earth_reference_models import apply_earth_reference_models
 from world.relationship_graph import TouchDegrees
 from world.schema_loader import SchemaLoader
@@ -213,7 +214,11 @@ class WorldModel:
             use_ontology=use_ontology,
         )
         apply_earth_reference_models(self.loader)
-        self.schemas = SchemaLoader()
+        apply_dione_reference_models(self.loader)
+        # Reuse schemas already decoded by EntityLoader. Parsing the complete
+        # ontology a second time is especially costly once generated maps are
+        # persisted in the repository.
+        self.schemas = SchemaLoader(schema_entities=self.loader.get_dataset("schemas"))
         self.touch_degrees = TouchDegrees(self.loader, self.schemas)
         self.graph = self.touch_degrees
         self.yearer = Yearer(self.loader)
@@ -518,6 +523,9 @@ class WorldModel:
     def refresh(self):
         self.loader.refresh()
         apply_earth_reference_models(self.loader)
+        apply_dione_reference_models(self.loader)
+        self.schemas = SchemaLoader(schema_entities=self.loader.get_dataset("schemas"))
+        self.touch_degrees.schemas = self.schemas
         self.touch_degrees.refresh()
         self.yearer = Yearer(self.loader)
         self.repository_revision += 1

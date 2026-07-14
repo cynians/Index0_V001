@@ -2,6 +2,7 @@ import unittest
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pygame
 
@@ -12,6 +13,9 @@ from ui.knowledge_browser_ui import KnowledgeBrowserUI
 from ui.pixel_art_editor_ui import PixelArtEditorUI
 from ui.knowledge_repository_service import KnowledgeRepositoryService
 from ui.stellar_neighbour_prompt_ui import StellarNeighbourPromptUI
+from ui.ui_manager import UIManager
+from simulations.phylogeny.clade_graph import find_clade_matches, phylogeny_graph_context
+from engine.performance_debug import performance_debug
 
 
 class DummyLoader:
@@ -146,6 +150,190 @@ class KnowledgeBrowserHarness(KnowledgeBrowserUI):
 
 
 class EntityIdUpdateTests(unittest.TestCase):
+    def test_keep_card_open_setting_opens_random_repository_card(self):
+        entity = {"id": "idea_random", "type": "idea", "_dataset": "ideas"}
+        ui = KnowledgeBrowserHarness({"idea_random": entity})
+        ui.keep_card_open = False
+        ui.knowledge_settings = {}
+        writes = []
+        ui._write_knowledge_settings = lambda: writes.append(dict(ui.knowledge_settings))
+        ui._build_header_button = lambda: None
+        ui._ensure_card = lambda selected, relayout=False: ui.cards.append({"entity_id": selected["id"]}) or ui.cards[-1]
+
+        self.assertTrue(ui._set_keep_card_open(True))
+
+        self.assertEqual([{"entity_id": "idea_random"}], ui.cards)
+        self.assertEqual(True, ui.knowledge_settings["keep_card_open"])
+        self.assertEqual(1, len(writes))
+        self.assertEqual(1, ui.relayout_count)
+
+    def test_keep_card_open_can_exclude_the_card_just_closed(self):
+        entities = {
+            "idea_closed": {"id": "idea_closed", "type": "idea"},
+            "idea_other": {"id": "idea_other", "type": "idea"},
+        }
+        ui = KnowledgeBrowserHarness(entities)
+        ui.keep_card_open = True
+        ui.cards = []
+        ui._ensure_card = lambda selected, relayout=False: ui.cards.append({"entity_id": selected["id"]}) or ui.cards[-1]
+
+        self.assertTrue(ui._ensure_keep_card_open(excluded_entity_ids={"idea_closed"}))
+        self.assertEqual("idea_other", ui.cards[0]["entity_id"])
+
+    def test_header_buttons_are_sized_for_complete_labels(self):
+        pygame.font.init()
+        ui = KnowledgeBrowserHarness()
+        ui.layout = {
+            "header_rect": pygame.Rect(0, 0, 900, 52),
+            "right_rect": pygame.Rect(280, 80, 620, 400),
+        }
+        ui.font_for_layout = pygame.font.Font(None, 16)
+        ui.keep_card_open = True
+        ui.contemporary_spawn_count = 1
+        ui.contemporary_spawn_min = 0
+        ui.contemporary_spawn_max = 12
+        ui.relation_tree_touch_degree = 2
+        ui.relation_tree_min_touch_degree = 1
+        ui.relation_tree_max_touch_degree = 6
+
+        ui._build_header_button()
+
+        for button in (
+            ui.keep_card_open_button,
+            ui.clear_canvas_button,
+            ui.random_entry_button,
+            ui.random_task_button,
+            ui.new_entry_button,
+        ):
+            checkbox_width = 22 if getattr(button, "check_button", False) else 0
+            self.assertLessEqual(
+                ui.font_for_layout.size(button.label)[0],
+                button.rect.width - 16 - checkbox_width,
+            )
+            self.assertGreaterEqual(button.rect.x, ui.layout["right_rect"].x + 10)
+
+    def test_performance_debug_setting_is_persisted_and_applied(self):
+        ui = KnowledgeBrowserUI.__new__(KnowledgeBrowserUI)
+        ui.performance_debug_enabled = False
+        ui.knowledge_settings = {}
+        writes = []
+        ui._write_knowledge_settings = lambda: writes.append(dict(ui.knowledge_settings))
+        try:
+            with patch("builtins.print"):
+                self.assertTrue(ui._set_performance_debug_enabled(True))
+            self.assertTrue(performance_debug.enabled)
+            self.assertEqual(True, ui.knowledge_settings["performance_debug_enabled"])
+            self.assertEqual(1, len(writes))
+        finally:
+            performance_debug.set_enabled(False, announce=False)
+
+    def test_escape_settings_menu_exposes_performance_debug_toggle(self):
+        manager = UIManager.__new__(UIManager)
+        manager.knowledge_ui = SimpleNamespace(
+            phylogeny_clade_member_count=3,
+            phylogeny_species_relative_count=4,
+            performance_debug_enabled=True,
+        )
+        manager.system_menu_active = True
+        manager.system_settings_active = True
+
+        manager._rebuild_system_menu(1200, 800)
+
+        debug_button = next(button for button in manager.system_menu_buttons if button.id == "system_toggle_debug")
+        self.assertIn("On", debug_button.label)
+
+    def test_color_drag_does_not_snapshot_the_changing_card(self):
+        class DrawHarness(KnowledgeCanvasController):
+            def _draw_canvas_relation_lines(self, screen, right_rect):
+                return None
+
+            def _draw_canvas_relation_target_highlights(self, screen, right_rect):
+                return None
+
+            def _draw_canvas_relation_control_for_card(self, screen, font, card):
+                return None
+
+            def _draw_card(self, screen, font, card):
+                self.draw_count += 1
+                pygame.draw.rect(screen, (40, 50, 60), card["rect"])
+
+            def _entity_for_card(self, card):
+                return card["entity"]
+
+        card = {
+            "entity_id": "idea_color",
+            "entity": {"card_color": "#4466aa"},
+            "rect": pygame.Rect(10, 10, 120, 80),
+        }
+        host = SimpleNamespace(
+            cards=[card],
+            active_card_color_slider={"entity_id": "idea_color"},
+            _card_color_drag_surface_cache={},
+            draw_count=0,
+        )
+        controller = DrawHarness(host)
+        screen = pygame.Surface((200, 140))
+        viewport = pygame.Rect(0, 0, 200, 140)
+
+        controller._draw_card_canvas(screen, None, viewport)
+        controller._draw_card_canvas(screen, None, viewport)
+
+        self.assertEqual(2, host.draw_count)
+        self.assertEqual({}, host._card_color_drag_surface_cache)
+
+    def test_phylogeny_typing_relayouts_only_the_active_card(self):
+        entity = {
+            "id": "cladis_alpha",
+            "type": "cladistics",
+            "_dataset": "cladistics",
+            "name": "Alpha",
+        }
+        ui = KnowledgeBrowserHarness({"cladis_alpha": entity})
+        card = {
+            "entity_id": "cladis_alpha",
+            "card_view": SimpleNamespace(_is_phylogeny_mode=lambda: True),
+            "phylogeny_parent_input_active": True,
+            "phylogeny_parent_query": "",
+            "phylogeny_parent_matches": [],
+        }
+        ui.cards = [card]
+        single_layouts = []
+        relayout_single_card = ui._relayout_single_card
+        ui._relayout_single_card = lambda candidate: single_layouts.append(candidate) or relayout_single_card(candidate)
+
+        self.assertTrue(ui._handle_phylogeny_parent_keydown(SimpleNamespace(key=pygame.K_a, unicode="a")))
+
+        self.assertEqual("a", card["phylogeny_parent_query"])
+        self.assertEqual([card], single_layouts)
+        self.assertEqual(0, ui.relayout_count)
+
+    def test_phylogeny_match_search_reuses_normalized_search_rows(self):
+        entities = {
+            "cladis_alpha": {
+                "id": "cladis_alpha",
+                "type": "cladistics",
+                "_dataset": "cladistics",
+                "name": "Alpha",
+            },
+            "cladis_beta": {
+                "id": "cladis_beta",
+                "type": "cladistics",
+                "_dataset": "cladistics",
+                "name": "Beta",
+            },
+        }
+        ui = KnowledgeBrowserHarness(entities)
+
+        first = find_clade_matches(ui.world_model, "alpha")
+        graph = phylogeny_graph_context(ui.world_model)
+        search_rows = graph._clade_search_rows
+        second = find_clade_matches(ui.world_model, "alpha")
+
+        self.assertEqual(["cladis_alpha"], [entity["id"] for entity in first])
+        self.assertEqual(first, second)
+        self.assertIs(search_rows, graph._clade_search_rows)
+        self.assertIn(("alpha", 6), graph._clade_search_cache)
+
     def test_rich_card_header_drag_starts_before_body_hit_testing(self):
         pygame.font.init()
         ui = KnowledgeBrowserHarness({"rich_card": {"id": "rich_card", "type": "idea"}})
@@ -435,24 +623,24 @@ class EntityIdUpdateTests(unittest.TestCase):
             ui.pixel_art_editor["metric_size_buffer"] = "4"
             self.assertTrue(ui._begin_pixel_art_canvas())
 
-            self.assertEqual(80, ui.pixel_art_editor["canvas_width"])
-            self.assertEqual(50, ui.pixel_art_editor["canvas_height"])
+            self.assertEqual(120, ui.pixel_art_editor["canvas_width"])
+            self.assertEqual(75, ui.pixel_art_editor["canvas_height"])
             ui.pixel_art_editor["pixels"][0][0] = (255, 0, 0)
 
             self.assertTrue(ui._save_pixel_art_editor())
 
             self.assertEqual("assets/illustrations/idea_rover_pixel_pixel.png", illustration["media_path"])
             self.assertEqual(4.0, illustration["depicted_size_m"])
-            self.assertEqual(80, illustration["pixel_canvas_width"])
-            self.assertEqual(50, illustration["pixel_canvas_height"])
+            self.assertEqual(120, illustration["pixel_canvas_width"])
+            self.assertEqual(75, illustration["pixel_canvas_height"])
             self.assertTrue((Path(temp_dir) / illustration["media_path"]).exists())
 
-    def test_pixel_art_canvas_scale_uses_fifty_pixels_for_small_metric_objects(self):
+    def test_pixel_art_canvas_scale_uses_higher_detail_density(self):
         ui = KnowledgeBrowserHarness()
 
-        self.assertEqual((50, 50), ui._pixel_canvas_size_for_entity({"type": "idea"}, 0.1))
-        self.assertEqual((50, 50), ui._pixel_canvas_size_for_entity({"type": "idea"}, 1.0))
-        self.assertEqual((75, 75), ui._pixel_canvas_size_for_entity({"type": "idea"}, 5.0))
+        self.assertEqual((75, 75), ui._pixel_canvas_size_for_entity({"type": "idea"}, 0.1))
+        self.assertEqual((75, 75), ui._pixel_canvas_size_for_entity({"type": "idea"}, 1.0))
+        self.assertEqual((112, 112), ui._pixel_canvas_size_for_entity({"type": "idea"}, 5.0))
 
     def test_pixel_art_reference_click_samples_color(self):
         illustration = {
@@ -491,20 +679,47 @@ class EntityIdUpdateTests(unittest.TestCase):
         self.assertTrue(ui._open_pixel_art_editor("idea_brush_pixel"))
         ui.pixel_art_editor["metric_size_buffer"] = "1"
         self.assertTrue(ui._begin_pixel_art_canvas())
-        ui.pixel_art_editor["canvas_rect"] = pygame.Rect(0, 0, 50, 50)
+        ui.pixel_art_editor["canvas_rect"] = pygame.Rect(0, 0, ui.pixel_art_editor["canvas_width"], ui.pixel_art_editor["canvas_height"])
         ui.pixel_art_editor["color"] = (255, 0, 0)
 
         self.assertTrue(ui._set_pixel_editor_brush_size(3))
-        self.assertTrue(ui._paint_pixel_editor_at((25, 25)))
+        center = (ui.pixel_art_editor["canvas_width"] // 2, ui.pixel_art_editor["canvas_height"] // 2)
+        self.assertTrue(ui._paint_pixel_editor_at(center))
 
         painted = sum(1 for row in ui.pixel_art_editor["pixels"] for pixel in row if pixel == (255, 0, 0))
         self.assertEqual(9, painted)
 
         self.assertTrue(ui._set_pixel_editor_tool("eraser"))
-        self.assertTrue(ui._paint_pixel_editor_at((25, 25)))
+        self.assertTrue(ui._paint_pixel_editor_at(center))
 
         painted_after_erase = sum(1 for row in ui.pixel_art_editor["pixels"] for pixel in row if pixel == (255, 0, 0))
         self.assertEqual(0, painted_after_erase)
+
+    def test_pixel_art_pen_motion_fills_fast_stroke_without_gaps(self):
+        illustration = {
+            "id": "idea_pen_stroke",
+            "type": "idea",
+            "_dataset": "ideas",
+            "name": "Pen Stroke",
+            "idea_class": "illustration",
+            "media_path": "",
+        }
+        ui = KnowledgeBrowserHarness({"idea_pen_stroke": illustration})
+        self.assertTrue(ui._open_pixel_art_editor("idea_pen_stroke"))
+        ui.pixel_art_editor["metric_size_buffer"] = "1"
+        self.assertTrue(ui._begin_pixel_art_canvas())
+        canvas_width = ui.pixel_art_editor["canvas_width"]
+        canvas_height = ui.pixel_art_editor["canvas_height"]
+        ui.pixel_art_editor["canvas_rect"] = pygame.Rect(0, 0, canvas_width, canvas_height)
+        ui.pixel_art_editor["color"] = (255, 0, 0)
+
+        row_index = canvas_height // 2
+        self.assertTrue(ui._paint_pixel_editor_at((1, row_index)))
+        ui.pixel_art_painting = True
+        self.assertTrue(ui._handle_pixel_art_editor_motion((canvas_width - 2, row_index)))
+
+        painted_row = ui.pixel_art_editor["pixels"][row_index]
+        self.assertTrue(all(pixel == (255, 0, 0) for pixel in painted_row[1:canvas_width - 2]))
 
     def test_pixel_art_save_reports_missing_illustration(self):
         illustration = {
@@ -889,6 +1104,41 @@ class EntityIdUpdateTests(unittest.TestCase):
         self.assertTrue(card.get("pending_color_persist"))
         self.assertEqual(0, ui.relayout_count)
 
+    def test_card_color_slider_coalesces_preview_updates_but_commits_final_position(self):
+        entity = {
+            "id": "idea_color",
+            "type": "idea",
+            "_dataset": "ideas",
+            "name": "Color",
+            "card_color": "#4466aa",
+        }
+        ui = KnowledgeBrowserHarness({"idea_color": entity})
+        slider_rect = pygame.Rect(40, 30, 120, 10)
+        card = {
+            "entity_id": "idea_color",
+            "card_view": SimpleNamespace(entity=entity),
+        }
+        ui.cards = [card]
+        ui.active_card_color_slider = {
+            "entity_id": "idea_color",
+            "channel": "h",
+            "slider_rect": slider_rect,
+            "role": "body",
+            "section_id": None,
+            "last_update_ms": 100,
+        }
+
+        with patch("pygame.time.get_ticks", return_value=110):
+            ui._handle_mousemotion_event(SimpleNamespace(pos=(slider_rect.right, slider_rect.centery)))
+
+        self.assertEqual("#4466aa", entity["card_color"])
+        self.assertEqual(slider_rect.right, ui.active_card_color_slider["pending_mouse_x"])
+
+        ui._handle_mousebuttonup_event(SimpleNamespace(button=1))
+
+        self.assertNotEqual("#4466aa", entity["card_color"])
+        self.assertEqual([("idea_color", None)], ui.persisted_ids)
+
     def test_card_color_slider_release_persists_once_without_draft_snapshot(self):
         entity = {
             "id": "idea_color",
@@ -913,6 +1163,30 @@ class EntityIdUpdateTests(unittest.TestCase):
         self.assertNotIn("idea_color", ui.card_drafts)
         self.assertFalse(card.get("pending_color_persist", False))
         self.assertIsNone(ui.active_card_color_slider)
+
+    def test_card_color_slider_release_uses_fast_palette_persistence_when_available(self):
+        entity = {
+            "id": "idea_color",
+            "type": "idea",
+            "_dataset": "ideas",
+            "card_color": "#4466aa",
+        }
+        ui = KnowledgeBrowserHarness({"idea_color": entity})
+        palette_writes = []
+        ui.world_model.loader.persist_entity_palette = lambda candidate: palette_writes.append(candidate["id"]) or True
+        card = {
+            "entity_id": "idea_color",
+            "card_view": SimpleNamespace(entity=entity),
+            "pending_color_persist": True,
+        }
+        ui.cards = [card]
+        ui.active_card_color_slider = {"entity_id": "idea_color"}
+
+        ui._handle_mousebuttonup_event(SimpleNamespace(button=1))
+
+        self.assertEqual(["idea_color"], palette_writes)
+        self.assertEqual([], ui.persisted_ids)
+        self.assertFalse(card.get("pending_color_persist", False))
 
     def test_draft_card_color_slider_release_saves_only_draft(self):
         entity = {

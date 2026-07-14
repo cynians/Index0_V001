@@ -1,5 +1,8 @@
+import time
+
 import pygame
 
+from engine.performance_debug import performance_debug
 from ui.card import EntityCard
 from simulations.phylogeny.clade_graph import find_clade_matches
 
@@ -584,6 +587,7 @@ class KnowledgeCanvasController:
         self.active_card_drag_id = None
         self.active_card_resize_id = None
         self.active_card_color_slider = None
+        self._ensure_keep_card_open(excluded_entity_ids={closing_entity_id})
         self._relayout_cards()
         return True
 
@@ -783,6 +787,19 @@ class KnowledgeCanvasController:
         """
         previous_clip = screen.get_clip()
         canvas_clip = right_rect.inflate(-8, -8)
+        active_slider = self.active_card_color_slider
+        drag_draw_started = time.perf_counter() if active_slider is not None and performance_debug.enabled else None
+        active_slider_entity_id = (
+            active_slider.get("entity_id")
+            if isinstance(active_slider, dict)
+            else None
+        )
+        if active_slider is None:
+            self._card_color_drag_surface_cache = {}
+        drag_cache = getattr(self, "_card_color_drag_surface_cache", None)
+        if drag_cache is None:
+            drag_cache = {}
+            self._card_color_drag_surface_cache = drag_cache
         screen.set_clip(previous_clip.clip(canvas_clip))
         try:
             self._draw_canvas_relation_lines(screen, right_rect)
@@ -791,10 +808,63 @@ class KnowledgeCanvasController:
                 visual_rect = self._card_visual_rect(card)
                 if visual_rect is not None and not visual_rect.colliderect(canvas_clip):
                     continue
-                self._draw_card(screen, font, card)
+                cache_key = id(card)
+                cache_during_drag = (
+                    active_slider is not None
+                    and card.get("entity_id") != active_slider_entity_id
+                )
+                cached = drag_cache.get(cache_key) if cache_during_drag else None
+                color_signature = None
+                capture_rect = None
+                if cache_during_drag and visual_rect is not None:
+                    entity = self._entity_for_card(card)
+                    if isinstance(entity, dict):
+                        color_signature = (
+                            entity.get("card_color"),
+                            entity.get("card_header_color"),
+                            repr(entity.get("wiki_field_colors")),
+                            tuple(visual_rect),
+                        )
+                    capture_rect = visual_rect.clip(canvas_clip).clip(screen.get_rect())
+
+                if (
+                    cached is not None
+                    and cached.get("signature") == color_signature
+                    and cached.get("rect") == capture_rect
+                ):
+                    screen.blit(cached["surface"], capture_rect.topleft)
+                else:
+                    card_draw_started = time.perf_counter() if drag_draw_started is not None else None
+                    self._draw_card(screen, font, card)
+                    if card_draw_started is not None:
+                        role = "active" if card.get("entity_id") == active_slider_entity_id else "cached_source"
+                        performance_debug.record(
+                            "color.card_draw",
+                            (time.perf_counter() - card_draw_started) * 1000.0,
+                            f"role={role} size={visual_rect.width if visual_rect else 0}x{visual_rect.height if visual_rect else 0}",
+                        )
+                    if capture_rect is not None and capture_rect.width > 0 and capture_rect.height > 0:
+                        copy_started = time.perf_counter() if drag_draw_started is not None else None
+                        drag_cache[cache_key] = {
+                            "signature": color_signature,
+                            "rect": capture_rect.copy(),
+                            "surface": screen.subsurface(capture_rect).copy(),
+                        }
+                        if copy_started is not None:
+                            performance_debug.record(
+                                "color.card_cache_copy",
+                                (time.perf_counter() - copy_started) * 1000.0,
+                                f"size={capture_rect.width}x{capture_rect.height}",
+                            )
                 self._draw_canvas_relation_control_for_card(screen, font, card)
         finally:
             screen.set_clip(previous_clip)
+        if drag_draw_started is not None:
+            performance_debug.record(
+                "color.canvas_draw",
+                (time.perf_counter() - drag_draw_started) * 1000.0,
+                f"cards={len(self.cards)}",
+            )
 
 
     def _insert_relation_reference_into_card(self, card, field_key, entity_id):
@@ -1704,7 +1774,7 @@ class KnowledgeCanvasController:
                 )
                 card_obj["phylogeny_parent_selected_index"] = 0
                 self.browser_search_active = False
-                self._relayout_cards()
+                self._relayout_single_card(card_obj)
                 return "__ui_consumed__"
 
             if phylogeny_click_active:
@@ -1732,7 +1802,7 @@ class KnowledgeCanvasController:
                 )
                 card_obj["phylogeny_child_selected_index"] = 0
                 self.browser_search_active = False
-                self._relayout_cards()
+                self._relayout_single_card(card_obj)
                 return "__ui_consumed__"
 
             if phylogeny_click_active:
@@ -1882,13 +1952,25 @@ class KnowledgeCanvasController:
                             role=role,
                             section_id=section_id,
                         )
+                        visual_rect = self._card_visual_rect(card_obj)
+                        visual_area = visual_rect.width * visual_rect.height if visual_rect is not None else 0
+                        if visual_area >= 1_500_000:
+                            preview_interval_ms = 80
+                        elif visual_area >= 600_000:
+                            preview_interval_ms = 50
+                        else:
+                            preview_interval_ms = 33
                         self.active_card_color_slider = {
                             "entity_id": card_obj.get("entity_id"),
                             "channel": channel,
                             "slider_rect": slider_rect,
                             "role": role,
                             "section_id": section_id,
+                            "last_update_ms": pygame.time.get_ticks(),
+                            "pending_mouse_x": mouse_pos[0],
+                            "preview_interval_ms": preview_interval_ms,
                         }
+                        self._card_color_drag_surface_cache = {}
                         return "__ui_consumed__"
                     action_id = tool_info.get("action_id")
                     if action_id:

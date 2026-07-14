@@ -286,43 +286,86 @@ def mature_tectonics_model(tectonic_model, terrain, cycles=4, million_years_per_
 
 def derive_crater_model(terrain, seed=None, physics=None, planet_id=""):
     terrain = terrain if isinstance(terrain, dict) else {}
+    seed = seed if isinstance(seed, dict) else {}
+    physics = physics if isinstance(physics, dict) else {}
     cratering = terrain.get("cratering") if isinstance(terrain.get("cratering"), dict) else {}
     map_seed = terrain.get("map_seed") or resolved_map_seed(seed, planet_id=planet_id)
     density = _clamp(cratering.get("density", 0.65), 0.0, 1.0)
     retention = str(cratering.get("retention") or "moderate")
     max_km = max(10.0, float(cratering.get("max_crater_diameter_km", 400.0) or 400.0))
-    count = int(16 + density * (86 if retention == "high" else 46))
+    radius_m = max(1.0, float(physics.get("radius_m") or (terrain.get("map_canvas") or {}).get("radius_m") or 6_371_000.0))
+    radius_km = radius_m / 1000.0
+    circumference_km = math.tau * radius_km
+    surface_area_million_km2 = 4.0 * math.pi * radius_km * radius_km / 1_000_000.0
+    min_km = max(1.2, circumference_km / 512.0)
+    atmospheric_cutoff_km = max(0.0, float(cratering.get("atmospheric_entry_cutoff_km", 0.0) or 0.0))
+    min_km = max(min_km, atmospheric_cutoff_km)
+    surface_age_myr = max(0.0, float(cratering.get("surface_age_myr", seed.get("surface_age_myr", 4500.0)) or 0.0))
+    impact_flux = max(0.05, float(cratering.get("impact_flux_factor", seed.get("impact_flux_factor", 1.0)) or 1.0))
+    resurfacing = _clamp(cratering.get("resurfacing_fraction", seed.get("resurfacing_fraction", 0.0)), 0.0, 1.0)
+    exposure = 1.0 - math.exp(-surface_age_myr / 1150.0)
+    retention_factor = {"high": 1.0, "moderate": 0.58, "low": 0.2}.get(retention, 0.5)
+    population_slope = _clamp(seed.get("crater_population_slope", 1.9), 1.45, 2.35)
+    stochastic_flux = seed_range(map_seed, "crater_flux_history", 0.72, 1.28)
+    density_ge10_per_million_km2 = 780.0 * density * exposure * impact_flux * stochastic_flux * retention_factor
+    expected_count = (
+        density_ge10_per_million_km2
+        * surface_area_million_km2
+        * ((min_km / 10.0) ** -population_slope)
+    )
+    count = max(12, min(2200, int(round(expected_count))))
     craters = []
     golden = 0.61803398875
     for index in range(count):
         nx = (seed_range(map_seed, "crater_x_offset", 0.0, 1.0) + index * golden) % 1.0
         nx = (nx + seed_range(map_seed, f"crater_{index}_jitter_x", -0.025, 0.025)) % 1.0
-        ny = 0.08 + ((index * seed_range(map_seed, "crater_y_step", 0.29, 0.43)) % 0.84)
-        ny = _clamp(ny + seed_range(map_seed, f"crater_{index}_jitter_y", -0.035, 0.035), 0.04, 0.96)
-        family = index % 13
-        if family == 0:
-            scale = seed_range(map_seed, f"crater_{index}_basin_scale", 0.42, 1.0)
-        elif family in {1, 2, 3}:
-            scale = seed_range(map_seed, f"crater_{index}_large_scale", 0.12, 0.38)
-        else:
-            scale = seed_range(map_seed, f"crater_{index}_small_scale", 0.012, 0.14)
-        diameter = max(1.2 if retention == "high" else 3.0, max_km * scale)
+        sphere_z = 1.0 - 2.0 * ((index + 0.5) / count)
+        sphere_z = _clamp(sphere_z + seed_range(map_seed, f"crater_{index}_jitter_z", -0.025, 0.025), -0.995, 0.995)
+        latitude = math.asin(sphere_z)
+        ny = _clamp(0.5 - latitude / math.pi, 0.01, 0.99)
+        quantile = _clamp(seed_range(map_seed, f"crater_{index}_size", 0.0001, 0.9999), 0.0001, 0.9999)
+        diameter = min(max_km, min_km * ((1.0 - quantile) ** (-1.0 / population_slope)))
+        small_crater_survival = 1.0 - resurfacing * math.exp(-diameter / 38.0)
+        if seed_range(map_seed, f"crater_{index}_survival", 0.0, 1.0) > small_crater_survival:
+            continue
+        simple_to_complex_km = max(8.0, 18.0 * (max(0.02, float(physics.get("surface_gravity_g", 1.0) or 1.0)) / 0.16) ** -0.22)
+        depth_ratio = 0.105 if diameter <= simple_to_complex_km else 0.075 * (diameter / simple_to_complex_km) ** -0.22
+        thermal_relaxation = resurfacing * _clamp((diameter - 25.0) / 180.0, 0.0, 0.78)
+        depth_m = min(7200.0, diameter * 1000.0 * depth_ratio) * (1.0 - thermal_relaxation)
+        rim_height_m = min(1800.0, diameter * 1000.0 * 0.025) * (1.0 - thermal_relaxation * 0.65)
         craters.append({
             "id": f"crater_{index + 1:02d}",
             "x": round(nx, 4),
             "y": round(ny, 4),
             "diameter_km": round(diameter, 2),
-            "depth_m": round(min(5200.0, diameter * (22.0 if retention == "high" else 18.0)), 1),
-            "rim_height_m": round(min(1250.0, diameter * (5.6 if retention == "high" else 4.2)), 1),
+            "depth_m": round(depth_m, 1),
+            "rim_height_m": round(rim_height_m, 1),
+            "morphology": "complex_or_basin" if diameter > simple_to_complex_km else "simple",
+            "relaxation_fraction": round(thermal_relaxation, 3),
         })
+    actual_density = len(craters) / max(1e-9, surface_area_million_km2)
     return {
         "status": "craters_seeded",
         "planet_id": planet_id,
         "map_seed": map_seed,
         "density": round(density, 3),
+        "radius_m": round(radius_m, 3),
+        "surface_area_million_km2": round(surface_area_million_km2, 4),
+        "minimum_catalog_diameter_km": round(min_km, 3),
+        "atmospheric_entry_cutoff_km": round(atmospheric_cutoff_km, 3),
+        "maximum_crater_diameter_km": round(max_km, 3),
+        "size_frequency_cumulative_slope": round(population_slope, 3),
+        "craters_per_million_km2_above_catalog_min": round(actual_density, 2),
+        "surface_age_myr": round(surface_age_myr, 1),
+        "impact_flux_factor": round(impact_flux * stochastic_flux, 3),
+        "resurfacing_fraction": round(resurfacing, 3),
         "craters": craters,
+        "drivers": {
+            "size": ["impactor_size_distribution", "surface_gravity", "body_radius", "target_material", "impact_velocity"],
+            "density": ["surface_exposure_age", "impact_flux", "atmospheric_screening", "erosion", "resurfacing", "saturation"],
+        },
         "notes": [
-            "Crater fields are used for bodies without active tectonics or atmospheric erosion.",
-            "Large basins are sparse; smaller impacts fill the remaining surface.",
+            "Crater diameters follow a deterministic power-law size-frequency population capped by the body's basin scale.",
+            "Surface age and impact flux add craters; atmosphere, erosion, resurfacing, and saturation reduce the retained population.",
         ],
     }

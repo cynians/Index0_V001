@@ -229,6 +229,15 @@ class CardLocationMixin:
                 self._mark_related_location_update(card, target_id)
             return
 
+        if field_key == "parents":
+            constituent_ids = self._relation_entity_ids(target.get("constituents"))
+            if current_id not in constituent_ids:
+                constituent_ids.append(current_id)
+                target["constituents"] = constituent_ids
+                self._mark_related_location_update(card, target_id)
+            self.entity["parent_location"] = target_id
+            return
+
         if field_key == "constituents":
             parent_ids = self._relation_entity_ids(target.get("parents"))
             if current_id not in parent_ids:
@@ -255,6 +264,16 @@ class CardLocationMixin:
             if current_id in target_ids:
                 self._set_location_topology_ids(target, field_key, [item for item in target_ids if item != current_id])
                 self._mark_related_location_update(card, target_id)
+            return
+
+        if field_key == "parents":
+            constituent_ids = self._relation_entity_ids(target.get("constituents"))
+            if current_id in constituent_ids:
+                target["constituents"] = [item for item in constituent_ids if item != current_id]
+                self._mark_related_location_update(card, target_id)
+            if self.entity.get("parent_location") == target_id:
+                remaining = [item for item in self._location_topology_ids(self.entity, "parents") if item != target_id]
+                self.entity["parent_location"] = remaining[0] if remaining else ""
             return
 
         if field_key == "constituents":
@@ -972,7 +991,9 @@ class CardLocationMixin:
         if place_rect is not None:
             pygame.draw.rect(screen, (46, 60, 84), place_rect)
             pygame.draw.rect(screen, (148, 170, 210), place_rect, 1)
-            place_text = font.render("Place On Parent", True, (242, 246, 252))
+            has_parent = bool(self._location_topology_ids(self.entity, "parents"))
+            place_label = "Place On Parent Map" if has_parent else "Choose Parent"
+            place_text = font.render(place_label, True, (242, 246, 252))
             screen.blit(place_text, place_text.get_rect(center=place_rect.center))
 
         for field_key in self.LOCATION_TOPOLOGY_FIELDS:

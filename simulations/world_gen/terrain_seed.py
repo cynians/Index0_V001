@@ -73,6 +73,9 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
     circumference_m = 2.0 * 3.141592653589793 * radius_m
     gravity_g = max(0.05, float(physics.get("surface_gravity_g", 1.0) or 1.0))
     water_fraction = _clamp(seed.get("water_fraction", 0.0), 0.0, 1.0)
+    planet_class = str(seed.get("planet_class") or seed.get("planet_template") or "").strip().lower()
+    icy_satellite = planet_class == "icy_satellite"
+    snowball_world = planet_class == "snowball_terrestrial" or str(seed.get("climate_mode") or "").lower() == "snowball"
     pressure_bar = _surface_pressure_bar(atmosphere)
     surface_temp_k = max(0.0, float(atmosphere.get("estimated_surface_temperature_k", 0.0) or 0.0))
     internal_heat = max(0.0, float(interior.get("internal_heat_w_m2", 0.0) or 0.0))
@@ -83,9 +86,13 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
     erosion_processes = list(surface.get("erosion_processes") or [])
 
     mobile_plates = tectonics in {"plate_tectonics", "mobile_lid"}
-    partial_resurfacing = tectonics in {"episodic_lid", "heat_pipe"}
-    liquid_water = bool(surface.get("liquid_water_possible"))
-    frozen_water = water_fraction > 0.015 and surface_temp_k < 273.15
+    partial_resurfacing = tectonics in {"episodic_lid", "heat_pipe", "cryotectonic"}
+    liquid_water = bool(surface.get("liquid_water_possible") or surface.get("alternate_surface_fluid_possible"))
+    frozen_water = (water_fraction > 0.015 or icy_satellite) and surface_temp_k < 273.15
+    # A frozen surface does not remove the planet's ocean basins.  Snowball
+    # worlds retain their water inventory beneath sea ice even when open
+    # liquid water and the ordinary surface hydrologic cycle are unavailable.
+    frozen_ocean = bool(snowball_world and frozen_water and water_fraction > 0.12)
     erosion = _erosion_strength(surface, pressure_bar)
     elements = _element_profile(seed)
     silica = elements.get("Si", 0.0)
@@ -118,6 +125,32 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
 
     max_elevation_m *= gravity_relief_factor * silica_relief_factor * (1.0 - erosion * 0.22)
     min_elevation_m *= gravity_relief_factor * (1.0 - erosion * 0.16)
+    relief_scale = _clamp(seed.get("relief_scale", 1.0), 0.2, 2.5)
+    max_elevation_m *= relief_scale
+    min_elevation_m *= relief_scale
+    geologic_style = str(seed.get("geologic_style") or "").strip().lower()
+    if geologic_style == "plume_lid_volcanic":
+        max_elevation_m = 11000.0
+        min_elevation_m = -3000.0
+        roughness = 0.42
+        relief_driver = "plume_lid_coronae_tesserae_and_volcanic_plains"
+    style_relief = {
+        "cold_desert": (0.72, 0.66, "periglacial_cratered_plains_and_outflow_channels"),
+        "glaciated": (0.62, 0.52, "ice_scoured_highlands_and_subglacial_basins"),
+        "heat_pipe_volcanic": (1.25, 0.58, "shield_provinces_lava_plains_and_heat_pipes"),
+        "sulfur_heat_pipe": (1.18, 0.64, "sulfur_calderas_lava_lakes_and_flow_fields"),
+        "active_ice_shell": (0.55, 0.48, "chaos_terrain_ridges_chasmata_and_plume_fissures"),
+        "volatile_frost_transport": (0.46, 0.36, "volatile_glaciers_sublimation_pits_and_frost_plains"),
+        "aeolian_dune_seas": (0.48, 0.44, "sand_seas_yardangs_and_wind_corridors"),
+        "evaporite_basins": (0.58, 0.38, "terminal_basins_salt_flats_and_paleoshorelines"),
+        "magma_seas": (0.82, 0.34, "magma_seas_lava_plains_and_solidification_fronts"),
+        "hydrocarbon_dunes_and_lakes": (0.52, 0.42, "organic_dunes_dendritic_channels_and_hydrocarbon_basins"),
+        "episodic_rifting": (1.05, 0.56, "rift_provinces_flood_lavas_and_old_cratons"),
+    }
+    if geologic_style in style_relief:
+        relief_factor, roughness, relief_driver = style_relief[geologic_style]
+        max_elevation_m *= relief_factor
+        min_elevation_m *= relief_factor
     roughness = _clamp(roughness + mafic_roughness_bonus - erosion * 0.08, 0.18, 0.9)
     airless_or_near_airless = pressure_bar < 0.01
     if pressure_bar < 0.02 and crater_retention == "low":
@@ -132,15 +165,29 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
     temp_ocean_factor = _clamp(1.0 - abs(surface_temp_k - 288.0) / 155.0, 0.12, 1.0)
     pressure_ocean_factor = _clamp(0.55 + pressure_bar * 0.32, 0.35, 1.18)
     volatile_ocean_bonus = _clamp(volatile_elements / 80.0, 0.0, 0.12)
-    target_ocean_fraction = (
-        water_fraction
-        * seed_range(map_seed, "ocean_scale", 0.75, 1.18)
-        * temp_ocean_factor
-        * pressure_ocean_factor
-        + ocean_bias
-        + volatile_ocean_bonus
-    ) if liquid_water else 0.0
+    if liquid_water:
+        target_ocean_fraction = (
+            water_fraction
+            * seed_range(map_seed, "ocean_scale", 0.75, 1.18)
+            * temp_ocean_factor
+            * pressure_ocean_factor
+            + ocean_bias
+            + volatile_ocean_bonus
+        )
+    elif frozen_ocean:
+        # The exposed fraction is controlled mostly by stored water and basin
+        # hypsometry; low temperature affects its phase, not whether the basin
+        # exists.  Keep the stochastic term smaller than on an open-ocean world.
+        target_ocean_fraction = (
+            water_fraction * seed_range(map_seed, "frozen_ocean_scale", 0.82, 1.05)
+            + ocean_bias * 0.22
+            + volatile_ocean_bonus * 0.45
+        )
+    else:
+        target_ocean_fraction = 0.0
     target_ocean_fraction = _clamp(target_ocean_fraction, 0.0, 0.92)
+    if seed.get("ocean_fraction_target") is not None and (liquid_water or frozen_ocean):
+        target_ocean_fraction = _clamp(seed.get("ocean_fraction_target"), 0.0, 0.92)
     cold_ice_factor = _clamp((273.15 - surface_temp_k) / 95.0, 0.0, 1.0)
     pressure_ice_factor = _clamp(0.78 + pressure_bar * 0.08, 0.55, 1.08)
     target_ice_fraction = (
@@ -150,9 +197,13 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
         * pressure_ice_factor
         + seed_range(map_seed, "ice_bias", -0.04, 0.08)
     ) if frozen_water else 0.0
+    if icy_satellite:
+        target_ice_fraction = _clamp(seed.get("surface_ice_fraction", 0.98), 0.75, 1.0)
     if liquid_water and surface_temp_k < 286.0:
         target_ice_fraction += target_ocean_fraction * _clamp((286.0 - surface_temp_k) / 42.0, 0.0, 0.55)
-    target_ice_fraction = _clamp(target_ice_fraction, 0.0, 0.86)
+    target_ice_fraction = _clamp(target_ice_fraction, 0.0, 1.0)
+    if seed.get("target_ice_fraction") is not None:
+        target_ice_fraction = _clamp(seed.get("target_ice_fraction"), 0.0, 1.0)
 
     if crater_retention == "high":
         crater_density = 0.85
@@ -163,9 +214,25 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
     crater_density *= 1.0 - erosion * 0.35
     crater_density *= 1.0 - _clamp(pressure_bar / 8.0, 0.0, 0.22)
     crater_density *= 1.0 - _clamp(internal_heat / 0.35, 0.0, 0.18)
+    if "glacial" in erosion_processes:
+        # Moving ice and repeated freeze/thaw burial strongly degrade the
+        # visible impact population, especially the small-crater saturation
+        # that otherwise makes a snowball resemble an airless moon.
+        crater_density *= 1.0 - target_ice_fraction * 0.62
     if airless_or_near_airless and not liquid_water:
         crater_density = max(crater_density, 0.92 if crater_retention == "high" else 0.68)
     crater_density = _clamp(crater_density, 0.0, 1.0)
+    retention_basin_fraction = {"high": 0.50, "moderate": 0.28, "low": 0.12}.get(crater_retention, 0.22)
+    gravity_basin_factor = _clamp((0.16 / max(0.015, gravity_g)) ** 0.12, 0.75, 1.25)
+    max_crater_diameter_km = min(
+        radius_m / 1000.0 * 1.35,
+        radius_m / 1000.0 * retention_basin_fraction * gravity_basin_factor,
+    )
+    if seed.get("max_crater_diameter_km") is not None:
+        max_crater_diameter_km = min(
+            max_crater_diameter_km,
+            max(10.0, float(seed.get("max_crater_diameter_km") or 10.0)),
+        )
 
     layers = [
         {"id": "elevation", "kind": "heightfield", "source": relief_driver},
@@ -182,6 +249,17 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
         layers.append({"id": "ice_mask", "kind": "raster_mask", "source": "frozen_volatile_inventory"})
     if erosion_processes:
         layers.append({"id": "erosion_potential", "kind": "raster", "source": "surface_process_model"})
+    specialized_features = {
+        "aeolian_dune_seas": ["dune_fields", "prevailing_wind_corridors", "yardangs"],
+        "evaporite_basins": ["salt_flats", "terminal_lakes", "paleoshorelines"],
+        "magma_seas": ["molten_silicate_mask", "lava_flows", "solidification_fronts"],
+        "hydrocarbon_dunes_and_lakes": ["methane_lakes", "hydrocarbon_channels", "organic_dunes"],
+        "sulfur_heat_pipe": ["active_calderas", "sulfur_flow_fields", "volcanic_plumes"],
+        "active_ice_shell": ["chaos_terrain", "double_ridges", "plume_fissures"],
+        "volatile_frost_transport": ["seasonal_frost", "sublimation_pits", "volatile_glaciers"],
+    }.get(geologic_style, [])
+    for feature in specialized_features:
+        layers.append({"id": feature, "kind": "procedural_feature_set", "source": geologic_style})
     layers.append({"id": "climate_stub", "kind": "placeholder", "source": "atmosphere_model"})
 
     map_recipe = list(regime.get("map_recipe") or [])
@@ -192,6 +270,14 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
             map_recipe.append(step)
     if crater_density >= 0.75 and "simulate_impact_gardening" not in map_recipe:
         map_recipe.append("simulate_impact_gardening")
+    for feature in specialized_features:
+        step = f"generate_{feature}"
+        if step not in map_recipe:
+            map_recipe.append(step)
+
+    surface_regime = "cratered_ice_shell" if icy_satellite else (
+        "plume_lid_volcanic" if geologic_style == "plume_lid_volcanic" else (geologic_style or "rocky_surface")
+    )
 
     return {
         "status": "terrain_seeded",
@@ -202,7 +288,7 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
             "width_px": PLANETARY_CANVAS_WIDTH_PX,
             "height_px": PLANETARY_CANVAS_HEIGHT_PX,
             "vertical_datum": "mean_radius",
-            "coverage": "full_planet",
+            "coverage": "full_moon" if icy_satellite else "full_planet",
             "radius_m": round(radius_m, 3),
             "circumference_m": round(circumference_m, 3),
             "equator_resolution_m_per_px": round(circumference_m / PLANETARY_CANVAS_WIDTH_PX, 3),
@@ -216,6 +302,8 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
             "roughness": round(roughness, 3),
             "relief_driver": relief_driver,
             "primary_topography": topography,
+            "datum_center_m": 0.0 if geologic_style == "plume_lid_volcanic" else None,
+            "hypsometry_compression": round(_clamp(seed.get("hypsometry_compression", 1.0), 0.2, 1.0), 3),
         },
         "tectonics": {
             "enabled": mobile_plates,
@@ -229,12 +317,12 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
             "enabled": crater_density > 0.02,
             "retention": crater_retention,
             "density": round(crater_density, 3),
-            "max_crater_diameter_km": round(
-                (radius_m / 1000.0)
-                * (0.055 if crater_retention == "high" else 0.025)
-                * _clamp(1.25 / gravity_g, 0.55, 1.75),
-                1,
-            ),
+            "max_crater_diameter_km": round(max_crater_diameter_km, 1),
+            "surface_age_myr": round(max(0.0, float(seed.get("surface_age_myr", 4500.0) or 0.0)), 1),
+            "impact_flux_factor": round(max(0.05, float(seed.get("impact_flux_factor", 1.0) or 1.0)), 3),
+            "resurfacing_fraction": round(_clamp(seed.get("resurfacing_fraction", 0.0), 0.0, 1.0), 3),
+            "target_material": "water_ice_regolith" if icy_satellite else "rock_regolith",
+            "atmospheric_entry_cutoff_km": round(max(0.0, float(seed.get("atmospheric_crater_cutoff_km", 0.4 * pressure_bar ** 0.5) or 0.0)), 3),
         },
         "erosion": {
             "processes": erosion_processes,
@@ -245,9 +333,19 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
             "cycle": hydrology,
             "liquid_water_possible": liquid_water,
             "frozen_water_possible": frozen_water,
+            "frozen_ocean_possible": frozen_ocean,
             "target_ocean_fraction": round(target_ocean_fraction, 3),
             "target_ice_fraction": round(target_ice_fraction, 3),
             "drainage_enabled": hydrology in {"active", "limited"},
+            "surface_fluid": seed.get("surface_fluid", "water"),
+        },
+        "specialized_surface_processes": {
+            "geologic_style": geologic_style or "generic_rocky",
+            "features": specialized_features,
+            "climate_mode": seed.get("climate_mode", "latitudinal_seasonal"),
+            "seasonal_cycle": bool(seed.get("seasonal_cycle")),
+            "synchronous_rotation": bool(seed.get("synchronous_rotation")),
+            "high_pressure_ice": bool(seed.get("high_pressure_ice")),
         },
         "map_layers": layers,
         "map_recipe": map_recipe,
@@ -255,4 +353,5 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
             "This is a deterministic terrain scaffold, not a finished elevation raster.",
             "The next pass can replace layer seeds with plate polygons, crater fields, drainage, and erosion iterations.",
         ],
+        "surface_regime": surface_regime,
     }

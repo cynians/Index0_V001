@@ -430,9 +430,10 @@ class NavigationController:
         )
 
         new_map_sim = MapSimulation(context)
+        is_refinement = entity.get("location_class") == "generated_region" or entity.get("location_role") == "map_refinement_region"
         new_tab = Tab(
             SimulationInstance(new_map_sim),
-            name=f"Map: {entity.get('name', entity_id)}",
+            name=f"Region Gen: {entity.get('name', entity_id)}" if is_refinement else f"Map: {entity.get('name', entity_id)}",
             tab_key=tab_key
         )
 
@@ -534,7 +535,19 @@ class NavigationController:
 
         parent_entity_id = self._structural_location_parent_id(location)
         if not parent_entity_id:
-            return False
+            # An unparented location cannot be placed on a map yet. Move into
+            # the existing parent-assignment workflow instead of making the
+            # button appear unresponsive.
+            self.app.parent_assignment_request = {
+                "target_entity_id": location_entity_id,
+                "target_label": location.get("name") or location.get("pretty_name") or location_entity_id,
+            }
+            self.app.repository_scope_entity_id = location_entity_id
+            self.app.knowledge_layer_active = True
+            self.app.repository_return_confirm_active = False
+            self.app.system_menu_active = False
+            self.app.system_settings_active = False
+            return True
 
         parent_entity = self.app.world_model.get_entity(parent_entity_id)
         if not parent_entity:
@@ -657,13 +670,20 @@ class NavigationController:
 
         render_mode = getattr(active_sim, "render_mode", None)
 
+        if render_mode == "map":
+            selected_entity_id = getattr(active_sim, "selected_entity_id", None)
+            if selected_entity_id and self.app.world_model.get_entity(selected_entity_id):
+                return selected_entity_id
+            selected_spatial_feature_id = getattr(active_sim, "selected_spatial_feature_id", None)
+            if selected_spatial_feature_id and self.app.world_model.get_entity(selected_spatial_feature_id):
+                return selected_spatial_feature_id
+            context = getattr(active_sim, "context", None)
+            if context is not None:
+                return getattr(context, "root_entity_id", None)
+
         context = getattr(active_sim, "context", None)
         if context is not None and getattr(context, "root_entity_id", None):
             return getattr(context, "root_entity_id", None)
-
-        if render_mode == "map":
-            if context is not None:
-                return getattr(context, "root_entity_id", None)
 
         if render_mode == "space":
             if hasattr(active_sim, "get_selected_body_entity"):
@@ -816,6 +836,11 @@ class NavigationController:
                 getattr(active_sim, "set_active_layer_kind", lambda _layer_kind: False)(
                     action.get("layer_kind")
                 )
+            )
+
+        if action_id == "toggle_map_atmosphere" and active_sim is not None:
+            return bool(
+                getattr(active_sim, "toggle_atmosphere_visibility", lambda: False)()
             )
 
         if action_id == "set_map_material_distribution_item" and active_sim is not None:
@@ -995,6 +1020,15 @@ class NavigationController:
             self.app.input_controller.show_fps = self.app.show_fps
             return True
 
+        if action_id == "system_toggle_debug":
+            knowledge_ui = getattr(self.app.ui_manager, "knowledge_ui", None)
+            if knowledge_ui is None:
+                return False
+            knowledge_ui._set_performance_debug_enabled(
+                not bool(getattr(knowledge_ui, "performance_debug_enabled", False))
+            )
+            return True
+
         if action_id in {
             "phylogeny_clade_members_dec",
             "phylogeny_clade_members_inc",
@@ -1020,6 +1054,32 @@ class NavigationController:
         if action_id == "open_region_map" and active_sim is not None:
             selected_entity_id = getattr(active_sim, "selected_entity_id", None)
             self.open_region_map_tab(selected_entity_id)
+            return True
+
+        if action_id == "regenerate_visible_region" and active_sim is not None:
+            loading = getattr(self.app, "_draw_startup_loading_screen", None)
+            if callable(loading):
+                loading(0.28, "Refining regional terrain and drainage")
+            region = getattr(active_sim, "regenerate_visible_region", lambda *_args, **_kwargs: None)(
+                self.app.camera,
+                self.app.width,
+                self.app.height,
+                viewport_rect=getattr(self.app.ui_manager, "get_map_content_viewport_rect", lambda *_args: None)(
+                    self.app.width, self.app.height,
+                ),
+            )
+            if not isinstance(region, dict) or not region.get("id"):
+                return False
+            if callable(loading):
+                loading(0.86, "Persisting hierarchical map detail")
+            if hasattr(self.app.world_model, "refresh"):
+                self.app.world_model.refresh()
+            return bool(self.open_region_map_tab(region.get("id")))
+
+        if action_id == "reset_planet_map_view" and active_sim is not None:
+            if not bool(getattr(active_sim, "reset_planet_view", lambda: False)()):
+                return False
+            self.app.camera_controller.setup_for_sim(active_sim)
             return True
 
         if action_id == "cycle_map_layer" and active_sim is not None:

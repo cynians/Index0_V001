@@ -80,10 +80,12 @@ class TimelineUI:
         self.active_filter_groups = {"general"}
         self.active_filter_mode = "category"
         self.timeline_sort_mode = "flat"
+        self.selected_year_filter_mode = "contemporary"
         self.open_canvas_entity_ids = set()
         self.filter_hitboxes = []
         self.filter_group_hitboxes = []
         self.sort_mode_hitboxes = []
+        self.selected_year_filter_hitboxes = []
         self.period_filter_range = None
         self.period_filter_pending_start = None
         self.period_filter_rect = pygame.Rect(0, 0, 0, 0)
@@ -530,9 +532,12 @@ class TimelineUI:
 
     def set_selected_year(self, year, context_label=None, focus=False):
         if year is None:
+            changed = self.selected_year is not None
             self.selected_year = None
             self.selected_year_context_label = None
-            return False
+            if changed:
+                self.rebuild_layout()
+            return changed
 
         try:
             year = int(year)
@@ -546,6 +551,8 @@ class TimelineUI:
 
         if focus:
             self.focus_year(year)
+        elif changed:
+            self.rebuild_layout()
 
         return changed
 
@@ -618,6 +625,16 @@ class TimelineUI:
             mode = "flat"
         changed = mode != self.timeline_sort_mode
         self.timeline_sort_mode = mode
+        if changed:
+            self.rebuild_layout()
+        return changed
+
+    def set_selected_year_filter_mode(self, mode):
+        mode = str(mode or "contemporary").strip().lower()
+        if mode not in {"contemporary", "near", "all"}:
+            mode = "contemporary"
+        changed = mode != self.selected_year_filter_mode
+        self.selected_year_filter_mode = mode
         if changed:
             self.rebuild_layout()
         return changed
@@ -938,9 +955,19 @@ class TimelineUI:
         return start_year <= filter_end_year and end_year >= filter_start_year
 
     def _working_year_visible_items(self, visible_items):
-        if self.working_year_range is None:
+        if self.selected_year is not None:
+            if self.selected_year_filter_mode == "all":
+                return visible_items
+            if self.selected_year_filter_mode == "near":
+                filter_start_year = self.selected_year - 10
+                filter_end_year = self.selected_year + 10
+            else:
+                filter_start_year = self.selected_year
+                filter_end_year = self.selected_year
+        elif self.working_year_range is not None:
+            filter_start_year, filter_end_year = self.working_year_range
+        else:
             return visible_items
-        filter_start_year, filter_end_year = self.working_year_range
         return [
             item
             for item in visible_items
@@ -1867,6 +1894,7 @@ class TimelineUI:
             self.active_category_filter,
             tuple(sorted(self.active_filter_groups)),
             self.timeline_sort_mode,
+            self.selected_year_filter_mode,
             self.period_filter_range,
             self.period_filter_pending_start,
             self.selected_year,
@@ -1906,6 +1934,7 @@ class TimelineUI:
             self.filter_hitboxes = []
             self.filter_group_hitboxes = []
             self.sort_mode_hitboxes = []
+            self.selected_year_filter_hitboxes = []
             self._filter_hitbox_cache_key = None
             return
 
@@ -1924,6 +1953,8 @@ class TimelineUI:
             self._format_location_focus_display_value(),
             tuple(filter_groups),
             filter_categories,
+            self.selected_year,
+            self.selected_year_filter_mode,
         )
         if cache_key == self._filter_hitbox_cache_key:
             return
@@ -1931,11 +1962,13 @@ class TimelineUI:
         self.filter_hitboxes = []
         self.filter_group_hitboxes = []
         self.sort_mode_hitboxes = []
+        self.selected_year_filter_hitboxes = []
         self._layout_working_year_rect(self.layout_font)
         self._layout_location_focus_rect(self.layout_font)
         self._layout_random_working_year_rect(self.layout_font)
         self._layout_random_location_focus_rect(self.layout_font)
         self._layout_sort_mode_hitboxes(self.layout_font)
+        self._layout_selected_year_filter_hitboxes(self.layout_font)
         x = self.rect.x + 180
         y = self.rect.y + 6
         chip_h = 20
@@ -1980,6 +2013,22 @@ class TimelineUI:
         for (mode, label), width in zip(labels, widths):
             rect = pygame.Rect(x, y, width, button_h)
             self.sort_mode_hitboxes.append((mode, label, rect))
+            x = rect.right + gap
+
+    def _layout_selected_year_filter_hitboxes(self, font):
+        self.selected_year_filter_hitboxes = []
+        if self.selected_year is None or font is None or self.rect.width < 280:
+            return
+        labels = [("contemporary", "Contemporary"), ("near", "Near +/-10"), ("all", "All")]
+        button_h = 20
+        gap = 4
+        widths = [max(34, font.size(label)[0] + 14) for _, label in labels]
+        total_w = sum(widths) + gap * (len(labels) - 1)
+        x = self.rect.right - total_w - 10
+        y = self.rect.y + 31
+        for (mode, label), width in zip(labels, widths):
+            rect = pygame.Rect(x, y, width, button_h)
+            self.selected_year_filter_hitboxes.append((mode, label, rect))
             x = rect.right + gap
 
     def _layout_location_focus_rect(self, font):
@@ -2574,6 +2623,11 @@ class TimelineUI:
                 changed = self.set_timeline_sort_mode(mode)
                 return {"kind": "timeline_sort_changed", "mode": mode, "changed": changed}
 
+        for mode, _, hitbox in self.selected_year_filter_hitboxes:
+            if hitbox.collidepoint(mouse_pos):
+                changed = self.set_selected_year_filter_mode(mode)
+                return {"kind": "selected_year_filter_changed", "mode": mode, "changed": changed}
+
         for group_id, _, hitbox in self.filter_group_hitboxes:
             if hitbox.collidepoint(mouse_pos):
                 changed = self.toggle_active_filter_group(group_id)
@@ -2722,6 +2776,16 @@ class TimelineUI:
                 chip_text = font.render(label, True, text_color)
                 screen.blit(chip_text, chip_text.get_rect(center=chip_rect.center))
 
+            for mode, label, chip_rect in self.selected_year_filter_hitboxes:
+                selected = mode == self.selected_year_filter_mode
+                fill = (76, 94, 128) if selected else (25, 31, 44)
+                border = (220, 226, 240) if selected else (82, 94, 116)
+                text_color = (248, 248, 248) if selected else (172, 184, 202)
+                pygame.draw.rect(screen, fill, chip_rect)
+                pygame.draw.rect(screen, border, chip_rect, 1)
+                chip_text = font.render(label, True, text_color)
+                screen.blit(chip_text, chip_text.get_rect(center=chip_rect.center))
+
             for group_id, label, chip_rect in self.filter_group_hitboxes:
                 selected = self.active_filter_mode == "group" and group_id in self.active_filter_groups
                 fill = (56, 66, 90) if selected else (26, 31, 44)
@@ -2760,6 +2824,8 @@ class TimelineUI:
                 selected_label = self._format_selected_year_label()
                 selected_surface = font.render(selected_label, True, (232, 210, 148))
                 selected_x = self.rect.right - selected_surface.get_width() - 12
+                if self.sort_mode_hitboxes:
+                    selected_x = min(selected_x, self.sort_mode_hitboxes[0][2].x - selected_surface.get_width() - 10)
                 if selected_x > self.rect.x + 12 + title.get_width() + 12:
                     screen.blit(selected_surface, (selected_x, self.rect.y + 8))
 

@@ -1,8 +1,10 @@
 import math
+import time
 import pygame
 
 from engine.camera import Camera
 from engine.input_controller import InputController
+from engine.performance_debug import performance_debug
 
 
 class SimWindow:
@@ -39,12 +41,18 @@ class SimWindow:
     def run(self):
 
         while self.running:
-
+            frame_started = time.perf_counter()
             dt = self._tick()
-
+            events_started = time.perf_counter()
             self._process_events()
+            performance_debug.record("frame.events", (time.perf_counter() - events_started) * 1000.0)
+            update_started = time.perf_counter()
             self._update_frame(dt)
+            performance_debug.record("frame.update", (time.perf_counter() - update_started) * 1000.0)
+            render_started = time.perf_counter()
             self._render_frame()
+            performance_debug.record("frame.render", (time.perf_counter() - render_started) * 1000.0)
+            performance_debug.record("frame.total", (time.perf_counter() - frame_started) * 1000.0)
 
         pygame.quit()
 

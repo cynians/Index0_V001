@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from world.ontology_repository import OntologyRepository
+from world.persistent_ontology_store import PersistentOntologyStore
 
 
 class SchemaLoader:
@@ -12,10 +12,11 @@ class SchemaLoader:
     code can keep asking for resolved schemas by name.
     """
 
-    def __init__(self, ontology_path=None, schema_directory=None):
+    def __init__(self, ontology_path=None, schema_directory=None, schema_entities=None):
         project_root = Path(__file__).resolve().parents[1]
         self.ontology_path = Path(ontology_path or project_root / "ontology" / "index0.owl")
         self.schema_directory = Path(schema_directory) if schema_directory is not None else None
+        self._provided_schema_entities = schema_entities
         self.schemas = {}
         self.schema_files = {}
         self._resolved_schemas = {}
@@ -26,11 +27,15 @@ class SchemaLoader:
         self.schema_files = {}
         self._resolved_schemas = {}
 
-        if not self.ontology_path.exists():
-            return
+        if self._provided_schema_entities is not None:
+            schema_entities = self._provided_schema_entities
+        else:
+            if not self.ontology_path.exists():
+                return
+            datasets = PersistentOntologyStore(self.ontology_path).load_datasets()
+            schema_entities = datasets.get("schemas", [])
 
-        repository = OntologyRepository.from_owl(self.ontology_path)
-        for entity in repository.get_dataset("schemas"):
+        for entity in schema_entities:
             if not isinstance(entity, dict):
                 continue
             schema = self._schema_from_entity(entity)

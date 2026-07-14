@@ -128,6 +128,43 @@ class PhylogenyGraphContext:
         self.parents_by_child = self._build_parent_map()
         self._descendant_species_cache = {}
         self._distance_cache = {}
+        self._clade_search_rows = None
+        self._clade_search_cache = {}
+
+    def find_clade_matches(self, query, limit=6):
+        query = str(query or "").strip().lower()
+        if not query:
+            return []
+        cache_key = (query, int(limit))
+        cached = self._clade_search_cache.get(cache_key)
+        if cached is not None:
+            return list(cached)
+
+        if self._clade_search_rows is None:
+            rows = []
+            for entity_id, entity in self.clades.items():
+                haystack = " ".join(
+                    str(value or "")
+                    for value in (
+                        entity_id,
+                        entity.get("pretty_name"),
+                        entity.get("name"),
+                        entity.get("common_name"),
+                        entity.get("binomial_name"),
+                    )
+                ).lower()
+                rows.append((clade_label(entity, entity_id).lower(), haystack, entity))
+            rows.sort(key=lambda row: row[0])
+            self._clade_search_rows = rows
+
+        query_terms = tuple(term for term in query.split() if term)
+        matches = [
+            entity
+            for _label, haystack, entity in self._clade_search_rows
+            if all(term in haystack for term in query_terms)
+        ][:limit]
+        self._clade_search_cache[cache_key] = tuple(matches)
+        return list(matches)
 
     def _build_children_map(self):
         children_by_parent = {entity_id: [] for entity_id in self.clades}
@@ -449,26 +486,9 @@ def all_clade_tree_roots(world_model):
 
 
 def find_clade_matches(world_model, query, limit=6):
-    query = str(query or "").strip().lower()
-    if not query:
+    if world_model is None:
         return []
-    query_terms = [term for term in query.split() if term]
-    matches = []
-    for entity_id, entity in get_clade_entities(world_model).items():
-        haystack = " ".join(
-            str(value or "")
-            for value in (
-                entity_id,
-                entity.get("pretty_name"),
-                entity.get("name"),
-                entity.get("common_name"),
-                entity.get("binomial_name"),
-            )
-        ).lower()
-        if all(term in haystack for term in query_terms):
-            matches.append(entity)
-    matches.sort(key=lambda entity: clade_label(entity, entity.get("id")).lower())
-    return matches[:limit]
+    return phylogeny_graph_context(world_model).find_clade_matches(query, limit=limit)
 
 
 def find_phylogeny_child_matches(world_model, query, limit=8):

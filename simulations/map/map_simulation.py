@@ -6,6 +6,12 @@ from pathlib import Path
 
 from engine.logger import logger
 from world.year_utils import parse_year
+from simulations.map.projection import (
+    project_map_world_point,
+    project_map_world_ring,
+    unproject_map_world_point,
+    unproject_normalized_point,
+)
 
 
 class MapSimulation:
@@ -79,7 +85,7 @@ class MapSimulation:
         "regions": "Regions",
         "heightmap": "Heightmap",
         "hydrology": "Hydrology + Climate",
-        "ground_materials": "Ground Material Regions",
+        "ground_materials": "Regions",
         "material_heatmaps": "Material Distribution",
     }
 
@@ -152,6 +158,7 @@ class MapSimulation:
 
         self.active_layer_kind = self.LOCATION_LAYER_KIND
         self.active_material_heatmap_layer_id = "composite"
+        self.atmosphere_visible = True
 
         self.selected_entity_id = None
         self.hover_entity_id = None
@@ -203,6 +210,13 @@ class MapSimulation:
         self.camera_drag_start_screen_pos = None
         self.camera_drag_start_camera_pos = None
         self.camera_drag_has_moved = False
+        self.map_projection_focus_x = 0.0
+        self.map_projection_focus_y = 0.0
+        self.map_projection_dragging = False
+        self.map_projection_drag_start = None
+        self._layer_projection_focus_key = None
+        self._map_focus_last_click_time = None
+        self._map_focus_last_click_screen_pos = None
         self.last_saved_spatial_feature_id = None
 
         self.bounds = self._resolve_root_bounds()
@@ -357,6 +371,292 @@ class MapSimulation:
             return self.context.root_entity_id
         return root_entity.get("name", self.context.root_entity_id)
 
+    def world_to_surface_lon_lat(self, world_x, world_y):
+        root = self.get_root_entity()
+        if not isinstance(root, dict) or root.get("location_class") not in {"planet", "moon"}:
+            return None
+        rect = self._planet_rect_from_entity(root)
+        width = max(1e-9, float(rect.get("width_world", 1.0) or 1.0))
+        height = max(1e-9, float(rect.get("height_world", 1.0) or 1.0))
+        nx = (float(world_x) - (rect["x"] - width * 0.5)) / width
+        ny = (float(world_y) - (rect["y"] - height * 0.5)) / height
+        if not (0.0 <= nx <= 1.0 and 0.0 <= ny <= 1.0):
+            return None
+        source_nx, source_ny = unproject_normalized_point(
+            nx, ny, self.map_projection_focus_x, self.map_projection_focus_y,
+        )
+        return source_nx * 360.0 - 180.0, 90.0 - source_ny * 180.0
+
+    def get_projection_focus_label(self):
+        if (self.get_root_entity() or {}).get("location_class") not in {"planet", "moon"}:
+            return "Regional projection | Drag to pan; double-click to center; zoom selects refinement footprint"
+        longitude = (self.map_projection_focus_x * 360.0 + 180.0) % 360.0 - 180.0
+        latitude = -self.map_projection_focus_y * 180.0
+        return f"Globe center: {longitude:+.1f} deg, {latitude:+.1f} deg | Drag to pan; double-click to refocus"
+        return f"Globe center: {longitude:+.1f}°, {latitude:+.1f}° | Drag to rotate"
+
+    def can_regenerate_region(self):
+        root = self.get_root_entity()
+        if not isinstance(root, dict) or not isinstance(root.get("heightmap_model"), dict) or self.is_map_editor_active():
+            return False
+        from simulations.world_gen.regional_refinement import (
+            MAX_DETAIL_LEVEL, map_physical_dimensions_m, refinement_floor_reached,
+        )
+        width_m, height_m = map_physical_dimensions_m(root)
+        if width_m > 0.0 and height_m > 0.0:
+            return not refinement_floor_reached(root)
+        return int(root.get("map_detail_level", 0) or 0) < MAX_DETAIL_LEVEL
+
+    def can_reset_planet_view(self):
+        root = self.get_root_entity()
+        return bool(isinstance(root, dict) and root.get("location_class") in {"planet", "moon"} and self._root_has_visual_surface())
+
+    def reset_planet_view(self):
+        if not self.can_reset_planet_view():
+            return False
+        self.map_projection_focus_x = 0.0
+        self.map_projection_focus_y = 0.0
+        self._reset_camera_drag()
+        self._invalidate_layer_cache()
+        return True
+
+    def _is_map_refocus_double_click(self, screen_pos):
+        if self._map_focus_last_click_time is None or self._map_focus_last_click_screen_pos is None:
+            return False
+        if time.monotonic() - self._map_focus_last_click_time > self.DRAFT_DOUBLE_CLICK_SECONDS:
+            return False
+        dx = float(screen_pos[0]) - float(self._map_focus_last_click_screen_pos[0])
+        dy = float(screen_pos[1]) - float(self._map_focus_last_click_screen_pos[1])
+        return dx * dx + dy * dy <= self.DRAFT_DOUBLE_CLICK_DISTANCE_PX ** 2
+
+    def _record_map_focus_click(self, screen_pos):
+        self._map_focus_last_click_time = time.monotonic()
+        self._map_focus_last_click_screen_pos = tuple(screen_pos)
+
+    def _refocus_map_at_screen_point(self, camera, screen_pos):
+        root = self.get_root_entity()
+        if not isinstance(root, dict):
+            return False
+        world_x, world_y = self._screen_to_world(camera, screen_pos)
+        if root.get("location_class") in {"planet", "moon"} and self._root_has_visual_surface():
+            lon_lat = self.world_to_surface_lon_lat(world_x, world_y)
+            if lon_lat is None:
+                return False
+            longitude, latitude = lon_lat
+            self.map_projection_focus_x = (float(longitude) / 360.0) % 1.0
+            self.map_projection_focus_y = max(-0.5, min(0.5, -float(latitude) / 180.0))
+            self._invalidate_layer_cache()
+        else:
+            camera.x = float(world_x)
+            camera.y = float(world_y)
+        self.hover_entity_id = None
+        self.hover_spatial_feature_id = None
+        self.hover_screen_pos = None
+        return True
+
+    def get_next_detail_level_label(self):
+        from simulations.world_gen.regional_refinement import MAX_DETAIL_LEVEL, detail_level_spec
+        current = int((self.get_root_entity() or {}).get("map_detail_level", 0) or 0)
+        level = min(MAX_DETAIL_LEVEL, current + 1)
+        suffix = " (toward 10 m)" if current >= MAX_DETAIL_LEVEL else ""
+        return f"Regenerate Region - {detail_level_spec(level)['label']}{suffix}"
+
+    @staticmethod
+    def _format_refinement_distance(distance_m):
+        distance_m = max(0.0, float(distance_m or 0.0))
+        if distance_m >= 1_000_000.0:
+            return f"{distance_m / 1_000_000.0:.2g} Mm"
+        if distance_m >= 1_000.0:
+            return f"{distance_m / 1_000.0:.3g} km"
+        if distance_m >= 1.0:
+            return f"{distance_m:.3g} m"
+        return f"{distance_m * 100.0:.2g} cm"
+
+    def get_map_generation_detail_label(self):
+        from simulations.world_gen.regional_refinement import map_physical_dimensions_m
+        root = self.get_root_entity() or {}
+        level = int(root.get("map_detail_level", 0) or 0)
+        profile = root.get("map_detail_profile") or {}
+        heightmap = root.get("heightmap_model") or {}
+        water = root.get("water_cycle_model") or {}
+        drainage = water.get("drainage_network_model") or {}
+        level_label = profile.get("label") or ("Planetary" if level == 0 else f"LOD {level}")
+        width_m, height_m = map_physical_dimensions_m(root)
+        grid = heightmap.get("sample_grid") or {}
+        sample_spacing = max(
+            width_m / max(1, int(grid.get("width", 1) or 1) - 1),
+            height_m / max(1, int(grid.get("height", 1) or 1) - 1),
+        )
+        extent_label = ""
+        if width_m > 0.0 and height_m > 0.0:
+            extent_label = (
+                f" | {self._format_refinement_distance(width_m)} x {self._format_refinement_distance(height_m)}"
+                f" | {self._format_refinement_distance(sample_spacing)}/sample"
+            )
+        return (
+            f"Detail: {level_label}{extent_label} | "
+            f"{len(drainage.get('drainage_basins') or [])} basins, "
+            f"{int(drainage.get('river_segment_count', 0) or 0)} river segments, "
+            f"{int(drainage.get('lake_count', 0) or 0)} lakes"
+        )
+
+    def regenerate_visible_region(self, camera, viewport_width, viewport_height, viewport_rect=None):
+        if not self.can_regenerate_region() or camera is None:
+            return None
+        from simulations.world_gen.regional_refinement import generate_refined_region
+        root = self.get_root_entity()
+        rect = self._planet_rect_from_entity(root)
+        parent_bounds = {"type": "bbox", "min_x": rect["x"] - rect["width_world"] * 0.5,
+                         "max_x": rect["x"] + rect["width_world"] * 0.5,
+                         "min_y": rect["y"] - rect["height_world"] * 0.5,
+                         "max_y": rect["y"] + rect["height_world"] * 0.5}
+        parent_width = parent_bounds["max_x"] - parent_bounds["min_x"]
+        parent_height = parent_bounds["max_y"] - parent_bounds["min_y"]
+        visible_bounds = self._visible_refinement_bounds(
+            camera, viewport_width, viewport_height, parent_bounds, root, viewport_rect=viewport_rect,
+        )
+        if visible_bounds is None:
+            return None
+        region_width = min(parent_width, visible_bounds["max_x"] - visible_bounds["min_x"])
+        region_height = min(parent_height, visible_bounds["max_y"] - visible_bounds["min_y"])
+        if region_width >= parent_width * 0.98 and region_height >= parent_height * 0.98:
+            logger.info(
+                "[MapSimulation] Zoom into a region before generating a refinement patch",
+                key="map_refinement_requires_zoom",
+                interval=0.5,
+            )
+            return None
+        center_x = (visible_bounds["min_x"] + visible_bounds["max_x"]) * 0.5
+        center_y = (visible_bounds["min_y"] + visible_bounds["max_y"]) * 0.5
+        min_x = max(parent_bounds["min_x"], min(parent_bounds["max_x"] - region_width, center_x - region_width * 0.5))
+        min_y = max(parent_bounds["min_y"], min(parent_bounds["max_y"] - region_height, center_y - region_height * 0.5))
+        generation_parent = dict(root)
+        generation_parent["bounds"] = parent_bounds
+        region = generate_refined_region(self.world_model, generation_parent, {
+            "min_x": min_x, "max_x": min_x + region_width, "min_y": min_y, "max_y": min_y + region_height,
+        })
+        self._invalidate_layer_cache()
+        return region
+
+    def _visible_refinement_bounds(self, camera, viewport_width, viewport_height, parent_bounds, root, viewport_rect=None):
+        """Map the actually visible map rectangle back into the parent's source space."""
+        rect = self._planet_rect_from_entity(root)
+        center = camera.world_to_screen((rect["x"], rect["y"]))
+        if center is None:
+            return None
+        pixel_w = max(1.0, float(rect["width_world"]) * float(camera.zoom))
+        pixel_h = max(1.0, float(rect["height_world"]) * float(camera.zoom))
+        viewport_left = float(getattr(viewport_rect, "left", 0.0) if viewport_rect is not None else 0.0)
+        viewport_right = float(getattr(viewport_rect, "right", viewport_width) if viewport_rect is not None else viewport_width)
+        viewport_top = float(getattr(viewport_rect, "top", 0.0) if viewport_rect is not None else 0.0)
+        viewport_bottom = float(getattr(viewport_rect, "bottom", viewport_height) if viewport_rect is not None else viewport_height)
+        screen_left = max(viewport_left, float(center[0]) - pixel_w * 0.5)
+        screen_right = min(viewport_right, float(center[0]) + pixel_w * 0.5)
+        screen_top = max(viewport_top, float(center[1]) - pixel_h * 0.5)
+        screen_bottom = min(viewport_bottom, float(center[1]) + pixel_h * 0.5)
+        if screen_right <= screen_left or screen_bottom <= screen_top:
+            return None
+
+        if root.get("location_class") not in {"planet", "moon"}:
+            top_left = self._screen_to_world(camera, (screen_left, screen_top))
+            bottom_right = self._screen_to_world(camera, (screen_right, screen_bottom))
+            return {
+                "min_x": max(parent_bounds["min_x"], min(float(top_left[0]), float(bottom_right[0]))),
+                "max_x": min(parent_bounds["max_x"], max(float(top_left[0]), float(bottom_right[0]))),
+                "min_y": max(parent_bounds["min_y"], min(float(top_left[1]), float(bottom_right[1]))),
+                "max_y": min(parent_bounds["max_y"], max(float(top_left[1]), float(bottom_right[1]))),
+            }
+
+        sampled_uv = []
+        for iy in range(7):
+            sy = screen_top + (screen_bottom - screen_top) * iy / 6.0
+            for ix in range(9):
+                sx = screen_left + (screen_right - screen_left) * ix / 8.0
+                world_x, world_y = self._screen_to_world(camera, (sx, sy))
+                lon_lat = self.world_to_surface_lon_lat(world_x, world_y)
+                if lon_lat is None:
+                    continue
+                longitude, latitude = lon_lat
+                sampled_uv.append(((float(longitude) + 180.0) / 360.0, (90.0 - float(latitude)) / 180.0))
+        if not sampled_uv:
+            return None
+        center_u = (self.map_projection_focus_x + 0.5) % 1.0
+        unwrapped_u = []
+        for u, _v in sampled_uv:
+            while u - center_u > 0.5:
+                u -= 1.0
+            while center_u - u > 0.5:
+                u += 1.0
+            unwrapped_u.append(u)
+        min_u, max_u = min(unwrapped_u), max(unwrapped_u)
+        min_v, max_v = min(v for _u, v in sampled_uv), max(v for _u, v in sampled_uv)
+        # A single persistent rectangular child cannot straddle the storage seam;
+        # choose the contiguous side containing the current focus in that rare case.
+        if min_u < 0.0 or max_u > 1.0:
+            span = min(1.0, max_u - min_u)
+            min_u = max(0.0, min(1.0 - span, center_u - span * 0.5))
+            max_u = min_u + span
+        min_u, max_u = max(0.0, min_u), min(1.0, max_u)
+        min_v, max_v = max(0.0, min_v), min(1.0, max_v)
+        parent_width = parent_bounds["max_x"] - parent_bounds["min_x"]
+        parent_height = parent_bounds["max_y"] - parent_bounds["min_y"]
+        return {
+            "min_x": parent_bounds["min_x"] + min_u * parent_width,
+            "max_x": parent_bounds["min_x"] + max_u * parent_width,
+            "min_y": parent_bounds["min_y"] + min_v * parent_height,
+            "max_y": parent_bounds["min_y"] + max_v * parent_height,
+        }
+
+    def _refined_region_models(self):
+        root = self.get_root_entity()
+        if not isinstance(root, dict):
+            return []
+        entities = getattr(getattr(self.world_model, "loader", None), "entities", {})
+        root_id = str(root.get("id") or "")
+        root_planet_id = root.get("refinement_root_planet_id") or (root_id if root.get("location_class") in {"planet", "moon"} else None)
+        rect = self._planet_rect_from_entity(root)
+        left, top = rect["x"] - rect["width_world"] * 0.5, rect["y"] - rect["height_world"] * 0.5
+        width, height = max(1e-9, rect["width_world"]), max(1e-9, rect["height_world"])
+
+        def descends_from(candidate):
+            current, visited = candidate, set()
+            while isinstance(current, dict):
+                parent_id = current.get("refinement_parent_map_id")
+                if parent_id == root_id:
+                    return True
+                if not parent_id or parent_id in visited:
+                    return False
+                visited.add(parent_id)
+                current = self.world_model.get_entity(parent_id)
+            return False
+
+        models = []
+        for candidate in entities.values():
+            if not isinstance(candidate, dict) or not candidate.get("map_detail_level") or not descends_from(candidate):
+                continue
+            if root_planet_id and candidate.get("refinement_root_planet_id") != root_planet_id:
+                continue
+            bounds = candidate.get("bounds") or {}
+            if bounds.get("type") != "bbox":
+                continue
+            uv_bounds = {"min_u": (float(bounds["min_x"]) - left) / width,
+                         "max_u": (float(bounds["max_x"]) - left) / width,
+                         "min_v": (float(bounds["min_y"]) - top) / height,
+                         "max_v": (float(bounds["max_y"]) - top) / height}
+            # A refinement covering the entire planet is not a regional LOD.
+            # Older builds could create one while fully zoomed out; applying it
+            # replaced the authored planet and made the map appear duplicated.
+            if (
+                uv_bounds["max_u"] - uv_bounds["min_u"] >= 0.98
+                and uv_bounds["max_v"] - uv_bounds["min_v"] >= 0.98
+            ):
+                continue
+            models.append({"entity_id": candidate.get("id"), "detail_level": int(candidate.get("map_detail_level", 0) or 0),
+                           "refinement_revision": int(candidate.get("refinement_revision", 0) or 0),
+                           "heightmap_model": candidate.get("heightmap_model"), "water_cycle_model": candidate.get("water_cycle_model"),
+                           "uv_bounds": uv_bounds})
+        return sorted(models, key=lambda item: (item["detail_level"], item.get("refinement_revision", 0)))
+
     def _relation_entity_ids(self, value):
         if value is None:
             return []
@@ -481,7 +781,7 @@ class MapSimulation:
     def _planet_rect_from_radius(self, center_x, center_y, radius_m):
         width_world, height_world = self._planet_world_size_from_radius(radius_m)
         canvas_w, canvas_h = self._planet_canvas_size_from_radius(radius_m)
-        center_x, center_y = self._map_point_to_world(center_x, center_y)
+        center_x, center_y = float(center_x), float(center_y)
         return {
             "x": center_x,
             "y": center_y,
@@ -526,7 +826,7 @@ class MapSimulation:
                 center_x = (min_x + max_x) / 2.0
                 center_y = (min_y + max_y) / 2.0
 
-            center_x, center_y = self._map_point_to_world(center_x, center_y)
+            center_x, center_y = float(center_x), float(center_y)
             canvas_w = entity.get("map_canvas_width_px", max(1, int(round(width_world))))
             canvas_h = entity.get("map_canvas_height_px", max(1, int(round(height_world))))
 
@@ -543,7 +843,7 @@ class MapSimulation:
             radius_m = bounds.get("value", 0.0)
             width_world, height_world = self._planet_world_size_from_radius(radius_m)
             canvas_w, canvas_h = self._planet_canvas_size_from_radius(radius_m)
-            center_x, center_y = self._map_point_to_world(center_x, center_y)
+            center_x, center_y = float(center_x), float(center_y)
 
             return {
                 "x": center_x,
@@ -560,7 +860,7 @@ class MapSimulation:
             except (TypeError, ValueError):
                 pass
 
-        center_x, center_y = self._map_point_to_world(center_x, center_y)
+        center_x, center_y = float(center_x), float(center_y)
         return {
             "x": center_x,
             "y": center_y,
@@ -788,12 +1088,35 @@ class MapSimulation:
         """
         Convert stored map coordinates to display/world coordinates.
 
-        This is intentionally identity now. Earth-facing map data stores latitude
-        as negative Y so the renderer does not need a hidden flip.
+        Authored global data rotates with the same focused spherical projection
+        as raster layers. Regional maps retain an identity transform.
         """
+        root = self.get_root_entity()
+        if isinstance(root, dict) and root.get("location_class") in {"planet", "moon"}:
+            focus_x, focus_y = self._vector_projection_focus()
+            return project_map_world_point(
+                x, y, focus_x, focus_y,
+            )
         return float(x), float(y)
 
+    def _vector_projection_focus(self):
+        if not self.map_projection_dragging:
+            return self.map_projection_focus_x, self.map_projection_focus_y
+        return (
+            round(float(self.map_projection_focus_x) * 256.0) / 256.0,
+            round(float(self.map_projection_focus_y) * 256.0) / 256.0,
+        )
+
+    def _vector_projection_focus_key(self):
+        focus_x, focus_y = self._vector_projection_focus()
+        return round(focus_x, 8), round(focus_y, 8)
+
     def _world_point_to_map(self, x, y):
+        root = self.get_root_entity()
+        if isinstance(root, dict) and root.get("location_class") in {"planet", "moon"}:
+            return unproject_map_world_point(
+                x, y, self.map_projection_focus_x, self.map_projection_focus_y,
+            )
         return float(x), float(y)
 
     def _map_bbox_to_world_bounds(self, min_x, max_x, min_y, max_y):
@@ -836,6 +1159,7 @@ class MapSimulation:
             "heightmap_base": -5000,
             "image_rect": -3600,
             "map_rect": -3200,
+            "reference_land": -2600,
             "rect": -200,
             "polygon": 0,
             "marker": 1000,
@@ -1021,6 +1345,71 @@ class MapSimulation:
         self.get_active_layer_kind()
         return self._format_layer_label(self.active_layer_kind)
 
+    def get_map_legend_items(self, max_items=12):
+        root = self.get_root_entity() or {}
+        layer_kind = self.get_active_layer_kind()
+        items = []
+        if layer_kind == self.HYDROLOGY_LAYER_KIND:
+            water = root.get("water_cycle_model") or {}
+            zones = sorted(
+                [zone for zone in (water.get("climate_zones") or []) if isinstance(zone, dict)],
+                key=lambda zone: float(zone.get("fraction", 0.0) or 0.0),
+                reverse=True,
+            )
+            for zone in zones[:max(1, int(max_items) - 3)]:
+                fraction = float(zone.get("fraction", 0.0) or 0.0)
+                items.append({
+                    "label": f"{zone.get('label') or zone.get('id')}  {fraction * 100:.0f}%",
+                    "color": list(zone.get("color") or [140, 145, 140]),
+                })
+            items.extend([
+                {"label": "Rivers / streams", "color": [48, 136, 220]},
+                {"label": "Warm ocean current", "color": [242, 170, 94]},
+                {"label": "Cool ocean current", "color": [104, 210, 232]},
+            ])
+        elif layer_kind == self.HEIGHTMAP_LAYER_KIND:
+            heightmap = root.get("heightmap_model") or {}
+            sea = heightmap.get("sea_level_m")
+            minimum = float(heightmap.get("min_elevation_m", 0.0) or 0.0)
+            maximum = float(heightmap.get("max_elevation_m", 0.0) or 0.0)
+            midpoint = (minimum + maximum) * 0.5
+            hydrology = (root.get("terrain_seed_model") or {}).get("hydrology") or {}
+            datum_label = "Sea level" if hydrology.get("liquid_water_possible") and float(hydrology.get("target_ocean_fraction", 0.0) or 0.0) > 0.0 else "Elevation datum"
+            items = [
+                {"label": f"Local maximum  {maximum:,.0f} m", "color": [214, 212, 196]},
+                {"label": f"Local midpoint  {midpoint:,.0f} m", "color": [116, 134, 112]},
+                {"label": f"{datum_label}  {float(sea or 0.0):,.0f} m", "color": [48, 92, 132]},
+                {"label": f"Local minimum  {minimum:,.0f} m", "color": [8, 26, 48]},
+            ]
+            ice_rows = ((heightmap.get("surface_masks") or {}).get("ice_rows") or [])
+            if any(any(bool(value) for value in row) for row in ice_rows):
+                items.append({"label": "Surface ice", "color": [220, 236, 242]})
+        elif layer_kind == self.LOCATION_LAYER_KIND:
+            items = [
+                {"label": "Ocean / low basin", "color": [42, 84, 124]},
+                {"label": "Lowland", "color": [76, 126, 92]},
+                {"label": "Dry or upland terrain", "color": [174, 151, 94]},
+                {"label": "Highland / ice", "color": [205, 218, 218]},
+                {"label": "Equator", "color": [232, 190, 92]},
+            ]
+        elif layer_kind == self.GROUND_MATERIALS_LAYER_KIND:
+            items = [
+                {"label": "Region boundaries", "color": [196, 176, 136]},
+                {"label": "Elevation contours", "color": [206, 214, 220]},
+                {"label": "Sea level / datum", "color": [116, 202, 246]},
+            ]
+        if (
+            isinstance(root.get("heightmap_model"), dict)
+            and items
+            and layer_kind != self.GROUND_MATERIALS_LAYER_KIND
+        ):
+            items.append({"label": "Elevation contours", "color": [206, 214, 220]})
+        atmosphere = root.get("atmosphere_model") or {}
+        visual = atmosphere.get("visual_model") or {}
+        if visual.get("visible") and items:
+            items.append({"label": "Atmospheric tint", "color": list(visual.get("tint_color") or [170, 180, 192])})
+        return items[:max(1, int(max_items))]
+
     def get_available_layer_kinds(self):
         if self._root_is_building():
             return [self.LOCATION_LAYER_KIND]
@@ -1040,6 +1429,23 @@ class MapSimulation:
         ):
             layers.append(self.MATERIAL_HEATMAP_LAYER_KIND)
         return layers
+
+    def has_atmosphere_visual(self):
+        root = self.get_root_entity()
+        if not isinstance(root, dict):
+            return False
+        visual = root.get("atmosphere_visual_model") or (root.get("atmosphere_model") or {}).get("visual_model") or {}
+        return bool(visual.get("visible") or float(visual.get("opacity", 0.0) or 0.0) > 0.0)
+
+    def is_atmosphere_visible(self):
+        return bool(self.atmosphere_visible and self.has_atmosphere_visual())
+
+    def toggle_atmosphere_visibility(self):
+        if not self.has_atmosphere_visual():
+            return False
+        self.atmosphere_visible = not self.atmosphere_visible
+        self._invalidate_layer_cache()
+        return True
 
     def set_active_layer_kind(self, layer_kind):
         if layer_kind == self.VISUAL_MAP_LAYER_KIND:
@@ -1973,6 +2379,7 @@ class MapSimulation:
             return [
                 {"id": "continent", "label": "New Continent"},
                 {"id": "country", "label": "New Country"},
+                {"id": "state", "label": "New State"},
                 {"id": "region", "label": "New Region"},
                 {"id": "city", "label": "New City"},
                 {"id": "site", "label": "New Site"},
@@ -2546,6 +2953,47 @@ class MapSimulation:
         containing_candidates.sort(key=lambda item: item[0])
         return containing_candidates[0][1]
 
+    def _smallest_draft_parent_for_points(self, points, location_class):
+        """Choose the smallest valid active location containing a new draft."""
+        location_class = str(location_class or "region").strip().lower()
+        allowed_parent_classes = {
+            "continent": {"planet", "moon"},
+            "country": {"continent", "island_chain", "island", "atoll"},
+            "state": {"country"},
+            "province": {"country", "state"},
+            "city": {"state", "province", "region", "country"},
+            "settlement": {"state", "province", "region", "country"},
+            "quarter": {"city", "settlement"},
+        }.get(location_class)
+
+        candidates = []
+        root_id = self.context.root_entity_id
+        for entity in self.context.get_active_locations():
+            if not isinstance(entity, dict):
+                continue
+            entity_id = entity.get("id")
+            if not entity_id:
+                continue
+            parent_class = str(entity.get("location_class") or "").strip().lower()
+            if allowed_parent_classes is not None and parent_class not in allowed_parent_classes:
+                continue
+            container_points = self._location_container_points(entity)
+            if len(container_points) < 3:
+                continue
+            if not all(
+                self._point_in_polygon_points(
+                    point[0], point[1], container_points, edge_tolerance=1e-9
+                )
+                for point in points
+            ):
+                continue
+            candidates.append((self._polygon_area(container_points), entity_id))
+
+        if candidates:
+            candidates.sort(key=lambda item: item[0])
+            return candidates[0][1]
+        return root_id
+
     def _location_container_points(self, entity):
         bounds = entity.get("bounds") or {}
         if bounds.get("type") in {"bbox", "polygon"}:
@@ -2618,10 +3066,8 @@ class MapSimulation:
             self._append_location_record(region)
             if biosphere_roster is not None:
                 self._append_collection_record(biosphere_roster)
-            linked_parent = self._append_offspring_reference_to_location(
-                self.context.root_entity_id,
-                region["id"],
-            )
+            parent_id = region.get("parent_location") or self.context.root_entity_id
+            linked_parent = self._append_offspring_reference_to_location(parent_id, region["id"])
         except OSError as exc:
             logger.error(
                 f"[MapSimulation] Failed to save region draft: {exc}"
@@ -2630,7 +3076,7 @@ class MapSimulation:
         if not linked_parent:
             logger.info(
                 f"[MapSimulation] Saved {region['id']} without parent offspring link "
-                f"parent={self.context.root_entity_id}"
+                f"parent={region.get('parent_location') or self.context.root_entity_id}"
             )
 
         self.is_creating_spatial_feature = False
@@ -2644,6 +3090,10 @@ class MapSimulation:
         self.selected_spatial_feature_id = None if is_location_layer else region["id"]
         self.hover_spatial_feature_id = None
         self.hover_screen_pos = None
+        self._pending_inspector_target = {
+            "kind": "location" if is_location_layer else "spatial_feature",
+            "id": region["id"],
+        }
 
         if hasattr(self.world_model, "refresh"):
             self.world_model.refresh()
@@ -2662,6 +3112,9 @@ class MapSimulation:
         label = str(location_class).replace("_", " ").title()
         name = f"Draft {label} {index:03d}"
         point_x, point_y = self.draft_point_location_pos or (0.0, 0.0)
+        parent_id = self._smallest_draft_parent_for_points(
+            [(point_x, point_y)], location_class
+        )
         notes = (
             f"Draft {label.lower()} point created under {root_name}. "
             "Use this for work-in-progress or out-of-scale locations."
@@ -2677,9 +3130,9 @@ class MapSimulation:
             "region_class": location_class,
             "wiki_entry": notes,
             "layer_kind": self.LOCATION_LAYER_KIND,
-            "parent_location": self.context.root_entity_id,
-            "parent_entity": self.context.root_entity_id,
-            "parents": [self.context.root_entity_id],
+            "parent_location": parent_id,
+            "parent_entity": parent_id,
+            "parents": [parent_id],
             "coords": {
                 "type": "point",
                 "coordinate_space": "map_world",
@@ -2698,10 +3151,8 @@ class MapSimulation:
 
         try:
             self._append_location_record(location)
-            linked_parent = self._append_offspring_reference_to_location(
-                self.context.root_entity_id,
-                location["id"],
-            )
+            parent_id = location.get("parent_location") or self.context.root_entity_id
+            linked_parent = self._append_offspring_reference_to_location(parent_id, location["id"])
         except OSError as exc:
             logger.error(
                 f"[MapSimulation] Failed to save point location draft: {exc}"
@@ -2710,7 +3161,7 @@ class MapSimulation:
         if not linked_parent:
             logger.info(
                 f"[MapSimulation] Saved {location['id']} without parent offspring link "
-                f"parent={self.context.root_entity_id}"
+                f"parent={location.get('parent_location') or self.context.root_entity_id}"
             )
 
         self.is_creating_point_location = False
@@ -2724,6 +3175,10 @@ class MapSimulation:
         self.selected_spatial_feature_id = None
         self.hover_spatial_feature_id = None
         self.hover_screen_pos = None
+        self._pending_inspector_target = {
+            "kind": "location",
+            "id": location["id"],
+        }
 
         if hasattr(self.world_model, "refresh"):
             self.world_model.refresh()
@@ -3294,9 +3749,13 @@ class MapSimulation:
         if self.active_layer_kind == self.LOCATION_LAYER_KIND:
             feature_id, index = self._allocate_location_draft_id()
             location_class = self.draft_location_class or "region"
+            draft_points = list(self.draft_spatial_feature_points)
+            parent_id = self._smallest_draft_parent_for_points(draft_points, location_class)
+            parent = self.get_location(parent_id) or {}
+            parent_name = parent.get("name") or parent.get("pretty_name") or root_name
             label = str(location_class).replace("_", " ").title()
             name = f"Draft {label} {index:03d}"
-            notes = f"Draft {label.lower()} polygon created under {root_name}."
+            notes = f"Draft {label.lower()} polygon created under {parent_name}."
             region_class = location_class
             location_role = "map_location"
         else:
@@ -3306,6 +3765,7 @@ class MapSimulation:
             region_class = self.active_layer_kind
             location_role = "map_region"
             location_class = "region"
+            parent_id = self.context.root_entity_id
 
         return {
             "id": feature_id,
@@ -3317,9 +3777,9 @@ class MapSimulation:
             "region_class": region_class,
             "wiki_entry": notes,
             "layer_kind": self.active_layer_kind,
-            "parent_location": self.context.root_entity_id,
-            "parent_entity": self.context.root_entity_id,
-            "parents": [self.context.root_entity_id],
+            "parent_location": parent_id,
+            "parent_entity": parent_id,
+            "parents": [parent_id],
             "geometry": {
                 "type": "polygon",
                 "coordinate_space": "map_world",
@@ -3485,7 +3945,7 @@ class MapSimulation:
         if isinstance(child, dict) and not child.get("parent_location"):
             changed.update(loader.set_literal(child_location_id, "parent_location", parent_location_id, persist=False))
         if changed:
-            loader.save_ontology_file() if getattr(loader, "use_ontology", False) else loader.save_changed_dataset_files(changed)
+            loader.save_changed_dataset_files(changed)
         return bool(changed) or parent_location_id in self._relation_entity_ids(
             getattr(loader, "entities", {}).get(child_location_id, {}).get("parents")
         )
@@ -3689,7 +4149,7 @@ class MapSimulation:
         if isinstance(child, dict) and child.get("parent_location") == parent_location_id:
             changed.update(loader.set_literal(child_location_id, "parent_location", "", persist=False))
         if changed:
-            loader.save_ontology_file() if getattr(loader, "use_ontology", False) else loader.save_changed_dataset_files(changed)
+            loader.save_changed_dataset_files(changed)
         return bool(changed)
 
     def _update_entity_temporal_fields(self, entity_id, field_values):
@@ -3822,12 +4282,25 @@ class MapSimulation:
         self.camera_drag_start_screen_pos = screen_pos
         self.camera_drag_start_camera_pos = (camera.x, camera.y)
         self.camera_drag_has_moved = False
+        self.map_projection_dragging = False
+        self.map_projection_drag_start = None
+        root = self.get_root_entity()
+        if isinstance(root, dict) and root.get("location_class") in {"planet", "moon"} and self._root_has_visual_surface():
+            world_x, world_y = self._screen_to_world(camera, screen_pos)
+            rect = self._planet_rect_from_entity(root)
+            half_w = float(rect.get("width_world", 0.0) or 0.0) * 0.5
+            half_h = float(rect.get("height_world", 0.0) or 0.0) * 0.5
+            if abs(world_x - rect["x"]) <= half_w and abs(world_y - rect["y"]) <= half_h:
+                self.map_projection_dragging = True
+                self.map_projection_drag_start = (self.map_projection_focus_x, self.map_projection_focus_y)
 
     def _reset_camera_drag(self):
         self.is_camera_dragging = False
         self.camera_drag_start_screen_pos = None
         self.camera_drag_start_camera_pos = None
         self.camera_drag_has_moved = False
+        self.map_projection_dragging = False
+        self.map_projection_drag_start = None
 
     def _update_camera_drag(self, screen_pos, camera):
         if not self.is_camera_dragging:
@@ -3849,10 +4322,31 @@ class MapSimulation:
 
             self.camera_drag_has_moved = True
 
-        start_camera_x, start_camera_y = self.camera_drag_start_camera_pos
-        zoom = max(float(camera.zoom), 1e-9)
-        camera.x = start_camera_x - (dx / zoom)
-        camera.y = start_camera_y - (dy / zoom)
+        if self.map_projection_dragging and self.map_projection_drag_start is not None:
+            root = self.get_root_entity()
+            rect = self._planet_rect_from_entity(root) if isinstance(root, dict) else None
+            pixel_w = max(1.0, float((rect or {}).get("width_world", 1.0)) * float(camera.zoom))
+            pixel_h = max(1.0, float((rect or {}).get("height_world", 1.0)) * float(camera.zoom))
+            start_focus_x, start_focus_y = self.map_projection_drag_start
+            self.map_projection_focus_x = (start_focus_x - dx / pixel_w) % 1.0
+            self.map_projection_focus_y = max(-0.5, min(0.5, start_focus_y - dy / pixel_h))
+            vector_key = self._vector_projection_focus_key()
+            raster_only = self.active_layer_kind in {
+                self.HEIGHTMAP_LAYER_KIND,
+                self.HYDROLOGY_LAYER_KIND,
+                self.MATERIAL_HEATMAP_LAYER_KIND,
+            }
+            if not raster_only and vector_key != self._layer_projection_focus_key:
+                self._invalidate_layer_cache()
+            else:
+                for layer in self._layer_cache or []:
+                    layer["projection_focus_x"] = self.map_projection_focus_x
+                    layer["projection_focus_y"] = self.map_projection_focus_y
+        else:
+            start_camera_x, start_camera_y = self.camera_drag_start_camera_pos
+            zoom = max(float(camera.zoom), 1e-9)
+            camera.x = start_camera_x - (dx / zoom)
+            camera.y = start_camera_y - (dy / zoom)
 
         self.hover_entity_id = None
         self.hover_spatial_feature_id = None
@@ -3972,31 +4466,40 @@ class MapSimulation:
 
     def _build_location_geometry_layers(self, entity, geometry, color):
         layers = []
+        root = self.get_root_entity()
+        if (
+            isinstance(root, dict)
+            and isinstance(root.get("reference_land_polygons"), dict)
+            and entity.get("location_class") == "ocean"
+        ):
+            # The authored Earth raster already supplies the true coastline and
+            # bathymetry. Legacy broad ocean rectangles self-intersect under an
+            # oblique projection, so oceans use their projected point labels.
+            return layers
         rings = self._get_geometry_rings(geometry)
         entity_id = entity.get("id")
         for ring_index, map_points in enumerate(rings):
-            points = [
-                self._map_point_to_world(point[0], point[1])
-                for point in map_points
-            ]
-            centroid_x, centroid_y = self._polygon_centroid(points)
             area_world = self._polygon_area(map_points)
-            layer = {
-                "shape": "polygon",
-                "x": centroid_x,
-                "y": centroid_y,
-                "points": points,
-                "name": entity.get("name"),
-                "entity_id": entity_id,
-                "color": color,
-                "area_world": area_world,
-                "geometry_part": ring_index,
-            }
-            self._decorate_surface_location_layer(layer, entity, area_world=area_world)
-            if len(rings) > 1:
-                layer["suppress_label"] = True
-                layer["draw_order"] = float(layer.get("draw_order", 0.0) or 0.0) + ring_index * 0.001
-            layers.append(layer)
+            if isinstance(root, dict) and root.get("location_class") in {"planet", "moon"}:
+                focus_x, focus_y = self._vector_projection_focus()
+                display_rings = project_map_world_ring(
+                    map_points, focus_x, focus_y,
+                )
+            else:
+                display_rings = [[self._map_point_to_world(*point) for point in map_points]]
+            for copy_index, points in enumerate(display_rings):
+                centroid_x, centroid_y = self._polygon_centroid(points)
+                layer = {
+                    "shape": "polygon", "x": centroid_x, "y": centroid_y,
+                    "points": points, "name": entity.get("name"), "entity_id": entity_id,
+                    "color": color, "area_world": area_world, "geometry_part": ring_index,
+                    "projection_geometry_copy": copy_index,
+                }
+                self._decorate_surface_location_layer(layer, entity, area_world=area_world)
+                if len(rings) > 1 or copy_index > 0:
+                    layer["suppress_label"] = True
+                    layer["draw_order"] = float(layer.get("draw_order", 0.0) or 0.0) + ring_index * 0.001
+                layers.append(layer)
         return layers
 
     def _polygon_area(self, points):
@@ -4363,6 +4866,13 @@ class MapSimulation:
                 continue
             layer = self._build_spatial_feature_layer(feature)
             if layer is not None:
+                if layer_kind == self.GROUND_MATERIALS_LAYER_KIND:
+                    # Region authoring uses a contour-only geographic base;
+                    # categorical fills would obscure the elevation reference.
+                    layer = dict(layer)
+                    layer["outline_only"] = True
+                    layer["border_color"] = layer.get("color", (190, 178, 150))
+                    layer["border_width"] = max(2, int(layer.get("border_width", 0) or 0))
                 layers.append(layer)
 
         layers.sort(key=self._spatial_layer_sort_key)
@@ -4501,7 +5011,7 @@ class MapSimulation:
         root_entity = self.get_root_entity()
         if not isinstance(root_entity, dict):
             return []
-        if root_entity.get("location_class") not in {"planet", "moon"}:
+        if root_entity.get("location_class") not in {"planet", "moon", "generated_region"}:
             return []
 
         heatmap_model = root_entity.get("material_heatmap_model")
@@ -4538,7 +5048,7 @@ class MapSimulation:
         root_entity = self.get_root_entity()
         if not isinstance(root_entity, dict):
             return []
-        if root_entity.get("location_class") not in {"planet", "moon"}:
+        if root_entity.get("location_class") not in {"planet", "moon", "generated_region"}:
             return []
         if self._entity_is_gas_giant(root_entity):
             return []
@@ -4565,6 +5075,7 @@ class MapSimulation:
             "entity_id": root_entity.get("id"),
             "draw_order": -960,
             "pickable": False,
+            "refined_region_models": self._refined_region_models(),
         }]
 
     def _build_reference_land_layers(self, root_entity, draw_order=-2600):
@@ -4573,8 +5084,8 @@ class MapSimulation:
         if not isinstance(polygons, list):
             return []
 
-        layers = []
-        for index, polygon in enumerate(polygons):
+        world_polygons = []
+        for polygon in polygons:
             if not isinstance(polygon, list) or len(polygon) < 3:
                 continue
             points = []
@@ -4584,22 +5095,29 @@ class MapSimulation:
                 points.append(self._map_point_to_world(point[0], point[1]))
             if len(points) < 3:
                 continue
-            layers.append({
-                "shape": "polygon",
-                "x": 0.0,
-                "y": 0.0,
-                "points": points,
-                "name": "Earth land",
-                "entity_id": root_entity.get("id"),
-                "color": (82, 108, 92),
-                "border_color": (218, 236, 220),
-                "border_width": 1,
-                "pickable": False,
-                "suppress_label": True,
-                "draw_order": draw_order + index * 0.001,
-                "is_reference_land": True,
-            })
-        return layers
+            world_polygons.append(points)
+        if not world_polygons:
+            return []
+        rect = self._planet_rect_from_entity(root_entity)
+        return [{
+            "shape": "reference_land",
+            "x": rect["x"],
+            "y": rect["y"],
+            "width_world": rect["width_world"],
+            "height_world": rect["height_world"],
+            "canvas_width_px": rect["canvas_width_px"],
+            "canvas_height_px": rect["canvas_height_px"],
+            "polygons": world_polygons,
+            "name": "Reference land",
+            "entity_id": root_entity.get("id"),
+            "color": (82, 108, 92),
+            "border_color": (218, 236, 220),
+            "border_width": 1,
+            "pickable": False,
+            "suppress_label": True,
+            "draw_order": draw_order,
+            "is_reference_land": True,
+        }]
 
     def _build_visual_map_layers(self):
         root_entity = self.get_root_entity()
@@ -4626,6 +5144,9 @@ class MapSimulation:
         if root_entity.get("location_class") in {"planet", "moon"}:
             rect = self._planet_rect_from_entity(root_entity)
             gas_giant = self._entity_is_gas_giant(root_entity)
+            atmosphere_visual = root_entity.get("atmosphere_visual_model") or (root_entity.get("atmosphere_model") or {}).get("visual_model") or {}
+            atmosphere_enabled = self.is_atmosphere_visible()
+            atmosphere_baked = atmosphere_enabled and not image_path and (not gas_giant) and isinstance(root_entity.get("heightmap_model"), dict)
             layers.append({
                 "shape": "map_rect",
                 "x": rect["x"],
@@ -4642,6 +5163,9 @@ class MapSimulation:
                 "has_heightmap_base": (not gas_giant) and isinstance(root_entity.get("heightmap_model"), dict),
                 "render_style": "gas_giant_bands" if gas_giant else "surface",
                 "bands": self._gas_giant_bands_for_entity(root_entity) if gas_giant else [],
+                "atmosphere_tint": list(atmosphere_visual.get("tint_color") or []),
+                "atmosphere_opacity": float(atmosphere_visual.get("opacity", 0.0) or 0.0) if atmosphere_enabled else 0.0,
+                "atmosphere_baked_into_surface": atmosphere_baked,
             })
             if not gas_giant:
                 layers.extend(self._build_reference_land_layers(root_entity))
@@ -4658,6 +5182,8 @@ class MapSimulation:
                 continue
             entity_id = entity.get("id")
             if not entity_id or entity_id == root_id:
+                continue
+            if entity.get("location_role") == "map_refinement_region":
                 continue
             if not self._is_surface_map_location(entity):
                 continue
@@ -4725,7 +5251,19 @@ class MapSimulation:
         if self.active_layer_kind != self.LOCATION_LAYER_KIND:
             return self._build_spatial_feature_layers(year, self.active_layer_kind)
 
-        layers = self._build_ghost_context_layers()
+        layers = []
+        # Location authoring is an overlay workflow. Keep the generated
+        # terrain visible beneath boundaries and draft points so users do not
+        # have to draw on a black canvas or switch layers mid-edit.
+        heightmap_base = self.get_heightmap_base_layer()
+        if heightmap_base is not None:
+            heightmap_base = dict(heightmap_base)
+            heightmap_base["pickable"] = False
+            heightmap_base["draw_order"] = -5000
+            heightmap_base["is_location_base"] = True
+            layers.append(heightmap_base)
+
+        layers.extend(self._build_ghost_context_layers())
         layers.extend(self._build_placement_ancestor_layers())
 
         for entity in self.context.get_active_locations():
@@ -4733,6 +5271,11 @@ class MapSimulation:
                 continue
 
             entity_id = entity.get("id")
+            if (
+                entity_id != self.context.root_entity_id
+                and entity.get("location_role") == "map_refinement_region"
+            ):
+                continue
             if (
                 self.is_editing_map_square
                 and entity_id == self.editing_map_square_entity_id
@@ -4785,6 +5328,9 @@ class MapSimulation:
                 gas_giant = self._entity_is_gas_giant(entity)
                 is_root_entity = entity_id == self.context.root_entity_id
 
+                atmosphere_visual = entity.get("atmosphere_visual_model") or (entity.get("atmosphere_model") or {}).get("visual_model") or {}
+                atmosphere_enabled = self.is_atmosphere_visible() if is_root_entity else True
+                atmosphere_baked = atmosphere_enabled and is_root_entity and not entity.get("map_image_path") and (not gas_giant) and isinstance(entity.get("heightmap_model"), dict)
                 layers.append({
                     "shape": "map_rect",
                     "x": rect["x"],
@@ -4802,6 +5348,9 @@ class MapSimulation:
                     "render_style": "gas_giant_bands" if gas_giant else "surface",
                     "bands": self._gas_giant_bands_for_entity(entity) if gas_giant else [],
                     "outline_only": is_root_entity and self.active_layer_kind == self.LOCATION_LAYER_KIND,
+                    "atmosphere_tint": list(atmosphere_visual.get("tint_color") or []),
+                    "atmosphere_opacity": float(atmosphere_visual.get("opacity", 0.0) or 0.0) if atmosphere_enabled else 0.0,
+                    "atmosphere_baked_into_surface": atmosphere_baked,
                     "draw_order": -3000 if is_root_entity else 40,
                     "map_hierarchy_depth": 0 if is_root_entity else self._surface_location_depth(entity),
                 })
@@ -4811,6 +5360,14 @@ class MapSimulation:
 
             geometry_layers = self._build_location_geometry_layers(entity, bounds, color)
             if geometry_layers:
+                # The root region's generated terrain is already the map
+                # canvas.  Keep its bounds selectable but never paint an
+                # opaque location polygon over that terrain.
+                if entity_id == self.context.root_entity_id and heightmap_base is not None:
+                    for layer in geometry_layers:
+                        layer["outline_only"] = True
+                        layer["draw_order"] = -3000
+                        layer["suppress_label"] = True
                 layers.extend(geometry_layers)
                 continue
 
@@ -4844,7 +5401,7 @@ class MapSimulation:
         if not isinstance(root_entity, dict):
             return None
 
-        if root_entity.get("location_class") not in {"planet", "moon"}:
+        if root_entity.get("location_class") not in {"planet", "moon", "generated_region"}:
             return None
         if self._entity_is_gas_giant(root_entity):
             return None
@@ -4858,6 +5415,8 @@ class MapSimulation:
             return None
 
         rect = self._planet_rect_from_entity(root_entity)
+        atmosphere_visual = root_entity.get("atmosphere_visual_model") or (root_entity.get("atmosphere_model") or {}).get("visual_model") or {}
+        atmosphere_enabled = self.is_atmosphere_visible()
         return {
             "shape": "heightmap_base",
             "x": rect["x"],
@@ -4870,8 +5429,12 @@ class MapSimulation:
             "surface_palette": root_entity.get("surface_palette"),
             "color": root_entity.get("display_color") or root_entity.get("color"),
             "display_color": root_entity.get("display_color"),
+            "surface_weathering_model": root_entity.get("surface_weathering_model"),
+            "atmosphere_tint": list(atmosphere_visual.get("tint_color") or []),
+            "atmosphere_opacity": float(atmosphere_visual.get("opacity", 0.0) or 0.0) if atmosphere_enabled else 0.0,
             "name": root_entity.get("name"),
             "entity_id": root_entity.get("id"),
+            "refined_region_models": self._refined_region_models(),
         }
 
     def get_layers(self):
@@ -4892,7 +5455,14 @@ class MapSimulation:
             self._layer_cache = self._prepare_layer_cache(self._build_layers(year))
             self._cache_year = year
             self._cache_layer_kind = self.active_layer_kind
+            self._layer_projection_focus_key = self._vector_projection_focus_key()
 
+        for layer in self._layer_cache or []:
+            if layer.get("shape") in {"heightmap_base", "hydrology_climate", "image_rect", "reference_land"}:
+                layer["projection_focus_x"] = self.map_projection_focus_x
+                layer["projection_focus_y"] = self.map_projection_focus_y
+                layer["projection_interacting"] = bool(self.map_projection_dragging)
+                layer["show_planet_equator"] = bool((self.get_root_entity() or {}).get("location_class") in {"planet", "moon"})
         return self._layer_cache
 
     def get_entries(self):
@@ -5659,13 +6229,26 @@ class MapSimulation:
         if event.type == self.MOUSEBUTTONUP_EVENT_TYPE and button == 1:
             was_camera_dragging = self.is_camera_dragging
             was_camera_pan = self.camera_drag_has_moved
+            was_projection_drag = self.map_projection_dragging
             self._reset_camera_drag()
+            if was_projection_drag:
+                self._invalidate_layer_cache()
 
             if not was_camera_dragging:
                 return
 
             if was_camera_dragging and was_camera_pan:
+                self._map_focus_last_click_time = None
+                self._map_focus_last_click_screen_pos = None
                 return
+
+            if self._is_map_refocus_double_click(screen_pos):
+                self._map_focus_last_click_time = None
+                self._map_focus_last_click_screen_pos = None
+                self._refocus_map_at_screen_point(camera, screen_pos)
+                return
+
+            self._record_map_focus_click(screen_pos)
 
             self._select_picked_layer(picked_layer, screen_pos, record_click=True)
             return

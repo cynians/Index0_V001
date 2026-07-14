@@ -1,6 +1,10 @@
 import copy
 import json
+import logging
+import os
+import pickle
 import re
+import shutil
 import time
 import types
 import uuid
@@ -10,6 +14,7 @@ from urllib.parse import quote, unquote
 
 BASE_IRI = "https://index0.local/ontology.owl#"
 ENTITY_IRI = "https://index0.local/entity/"
+logger = logging.getLogger(__name__)
 
 
 class OntologyDependencyError(RuntimeError):
@@ -37,8 +42,11 @@ class OntologyRepository:
         "offspring",
     }
 
-    def __init__(self, datasets=None):
-        self.datasets = copy.deepcopy(datasets or {})
+    DATASET_CACHE_VERSION = 1
+    _memory_dataset_cache = {}
+
+    def __init__(self, datasets=None, *, copy_datasets=True):
+        self.datasets = copy.deepcopy(datasets or {}) if copy_datasets else (datasets or {})
         self.entities = {}
         self._build_index()
 
@@ -48,10 +56,68 @@ class OntologyRepository:
 
     @classmethod
     def from_owl(cls, path):
+        path = Path(path).resolve()
+        signature = cls._source_signature(path)
+        cached_datasets = cls._memory_dataset_cache.get(signature)
+        if cached_datasets is not None:
+            return cls(cached_datasets)
+        cached_datasets = cls._read_dataset_cache(path, signature)
+        if cached_datasets is not None:
+            # The cache payload has just been deserialized and is private to
+            # this repository. Adopting it avoids a full copy of every stored
+            # generated heightmap during startup.
+            return cls(cached_datasets, copy_datasets=False)
+
         repository = cls({})
         ontology = repository._load_ontology(path)
         datasets = repository._datasets_from_ontology(ontology)
-        return cls(datasets).materialized_repository()
+        materialized = cls(datasets).materialized_repository()
+        cls._memory_dataset_cache[signature] = materialized.datasets
+        cls._write_dataset_cache(path, signature, materialized.datasets)
+        return materialized
+
+    @classmethod
+    def _source_signature(cls, path):
+        stat = Path(path).stat()
+        return (cls.DATASET_CACHE_VERSION, str(Path(path).resolve()), int(stat.st_size), int(stat.st_mtime_ns))
+
+    @classmethod
+    def _dataset_cache_path(cls, path):
+        path = Path(path).resolve()
+        return path.parent.parent / ".cache" / "ontology" / f"{path.name}.datasets-v{cls.DATASET_CACHE_VERSION}.pickle"
+
+    @classmethod
+    def _read_dataset_cache(cls, path, signature):
+        cache_path = cls._dataset_cache_path(path)
+        try:
+            with cache_path.open("rb") as handle:
+                payload = pickle.load(handle)
+            if payload.get("signature") != list(signature):
+                return None
+            datasets = payload.get("datasets")
+            return datasets if isinstance(datasets, dict) else None
+        except (OSError, ValueError, TypeError, pickle.PickleError, EOFError):
+            return None
+
+    @classmethod
+    def _write_dataset_cache(cls, path, signature, datasets):
+        cache_path = cls._dataset_cache_path(path)
+        temp_path = cache_path.with_name(f".{cache_path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            with temp_path.open("wb") as handle:
+                pickle.dump(
+                    {"signature": list(signature), "datasets": datasets},
+                    handle,
+                    protocol=pickle.HIGHEST_PROTOCOL,
+                )
+            temp_path.replace(cache_path)
+        except (OSError, TypeError, ValueError) as exc:
+            logger.debug("Could not write ontology dataset cache %s: %s", cache_path, exc)
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def _build_index(self):
         self.entities = {}
@@ -300,8 +366,7 @@ class OntologyRepository:
         for attempt in range(5):
             try:
                 ontology.save(file=str(temp_path), format=file_format)
-                temp_path.replace(path)
-                return
+                break
             except OSError as exc:
                 last_error = exc
                 if temp_path.exists():
@@ -310,10 +375,67 @@ class OntologyRepository:
                     except OSError:
                         pass
                 if attempt == 4:
-                    break
+                    raise
                 time.sleep(0.12 * (attempt + 1))
-        if last_error is not None:
-            raise last_error
+        else:
+            if last_error is not None:
+                raise last_error
+
+        replace_error = None
+        for attempt in range(24):
+            try:
+                temp_path.replace(path)
+                replace_error = None
+                break
+            except OSError as exc:
+                replace_error = exc
+                time.sleep(min(0.75, 0.08 * (attempt + 1)))
+
+        if replace_error is not None:
+            logger.warning(
+                "Atomic ontology replacement remained locked; using protected in-place update for %s",
+                path,
+            )
+            self._replace_locked_ontology_in_place(temp_path, path)
+
+        signature = self._source_signature(path)
+        self._write_dataset_cache(path, signature, self.datasets)
+
+    def _replace_locked_ontology_in_place(self, temp_path, path):
+        """Safely overwrite a Windows-locked target while retaining a rollback copy."""
+        temp_path = Path(temp_path).resolve()
+        path = Path(path).resolve()
+        if temp_path.parent != path.parent:
+            raise OSError("Ontology replacement files must share a directory")
+        backup_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.rollback")
+        backup_created = False
+        try:
+            if path.exists():
+                shutil.copyfile(path, backup_path)
+                backup_created = True
+            expected_size = temp_path.stat().st_size
+            with temp_path.open("rb") as source, path.open("wb") as target:
+                shutil.copyfileobj(source, target, length=4 * 1024 * 1024)
+                target.flush()
+                os.fsync(target.fileno())
+            if path.stat().st_size != expected_size:
+                raise OSError("Ontology replacement size verification failed")
+            temp_path.unlink(missing_ok=True)
+            if backup_created:
+                backup_path.unlink(missing_ok=True)
+        except OSError:
+            if backup_created and backup_path.exists():
+                try:
+                    with backup_path.open("rb") as source, path.open("wb") as target:
+                        shutil.copyfileobj(source, target, length=4 * 1024 * 1024)
+                        target.flush()
+                        os.fsync(target.fileno())
+                    backup_path.unlink(missing_ok=True)
+                except OSError:
+                    logger.exception("Ontology rollback retained at %s", backup_path)
+            raise
+        finally:
+            temp_path.unlink(missing_ok=True)
 
     def _create_type_classes(self, onto, Entry):
         type_classes = {}

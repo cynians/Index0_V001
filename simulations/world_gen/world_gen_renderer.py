@@ -123,13 +123,17 @@ class WorldGenRenderer:
         y_max = (y_extent_m - camera_y) * zoom + camera.height / 2
         if not all(math.isfinite(value) for value in (x_min, x_max, y_min, y_max)):
             return False
-        orbit_rect = pygame.Rect(
-            int(min(x_min, x_max)),
-            int(min(y_min, y_max)),
-            max(1, int(abs(x_max - x_min))),
-            max(1, int(abs(y_max - y_min))),
+        # Do the intersection arithmetically.  Pygame Rect stores signed
+        # 32-bit coordinates, while a highly zoomed astronomical orbit can
+        # legitimately be many billions of pixels across.
+        left, right = min(x_min, x_max), max(x_min, x_max)
+        top, bottom = min(y_min, y_max), max(y_min, y_max)
+        return not (
+            right < -margin
+            or left > screen.get_width() + margin
+            or bottom < -margin
+            or top > screen.get_height() + margin
         )
-        return orbit_rect.colliderect(screen.get_rect().inflate(margin, margin))
 
     def _screen_points_for_orbit(self, camera, semi_major_au, eccentricity, count=180):
         if semi_major_au is None or eccentricity is None:
@@ -189,18 +193,42 @@ class WorldGenRenderer:
         if outer_px <= 1:
             return
 
-        zone_bounds = pygame.Rect(
-            int(center[0] - outer_px - 3),
-            int(center[1] - outer_px - 3),
-            outer_px * 2 + 6,
-            outer_px * 2 + 6,
-        ).clip(screen.get_rect())
+        center_x, center_y = float(center[0]), float(center[1])
+        screen_w, screen_h = screen.get_size()
+        nearest_x = max(0.0, min(center_x, float(screen_w)))
+        nearest_y = max(0.0, min(center_y, float(screen_h)))
+        nearest_distance = math.hypot(center_x - nearest_x, center_y - nearest_y)
+        farthest_distance = max(
+            math.hypot(center_x - x, center_y - y)
+            for x, y in ((0.0, 0.0), (screen_w, 0.0), (0.0, screen_h), (screen_w, screen_h))
+        )
+        if nearest_distance > outer_px + 3 or farthest_distance < inner_px - 3:
+            return
+
+        # If the viewport lies wholly inside the annulus, a translucent fill
+        # is exact and avoids constructing or drawing an enormous circle.
+        if nearest_distance > inner_px + 3 and farthest_distance < outer_px - 3:
+            overlay = pygame.Surface((screen_w, screen_h), pygame.SRCALPHA)
+            overlay.fill((92, 128, 92, 42))
+            screen.blit(overlay, (0, 0))
+            return
+
+        left = max(0, int(math.floor(center_x - outer_px - 3)))
+        top = max(0, int(math.floor(center_y - outer_px - 3)))
+        right = min(screen_w, int(math.ceil(center_x + outer_px + 3)))
+        bottom = min(screen_h, int(math.ceil(center_y + outer_px + 3)))
+        zone_bounds = pygame.Rect(left, top, max(0, right - left), max(0, bottom - top))
         if zone_bounds.width <= 0 or zone_bounds.height <= 0:
             return
 
+        # A partial intersection with a circle too large for SDL's integer
+        # rasterizer is safely omitted; the orbital content remains usable.
+        if outer_px > 1_000_000_000 or abs(center_x) > 1_000_000_000 or abs(center_y) > 1_000_000_000:
+            return
+
         local_center = (
-            int(center[0] - zone_bounds.x),
-            int(center[1] - zone_bounds.y),
+            int(center_x - zone_bounds.x),
+            int(center_y - zone_bounds.y),
         )
         zone_surface = pygame.Surface(zone_bounds.size, pygame.SRCALPHA)
         pygame.draw.circle(zone_surface, (92, 128, 92, 42), local_center, outer_px)
@@ -221,6 +249,19 @@ class WorldGenRenderer:
         bodies = payload.get("system_bodies", [])
         selected_id = payload.get("selected_world_gen_planet_id")
         planet_hitboxes = []
+        parent_positions = {}
+        for body in bodies:
+            class_key = str(body.get("location_class") or body.get("body_class") or "").lower()
+            if class_key != "planet":
+                continue
+            try:
+                semi_major_au = float(body.get("semi_major_axis_m", 0.0) or 0.0) / self.AU_M
+                eccentricity_value = float(body.get("eccentricity", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                continue
+            point = self._body_position_screen(camera, semi_major_au, eccentricity_value)
+            if point is not None:
+                parent_positions[body.get("id")] = point
 
         for body in bodies:
             semi_major_m = body.get("semi_major_axis_m")
@@ -234,17 +275,34 @@ class WorldGenRenderer:
             except (TypeError, ValueError):
                 continue
 
-            if not self._orbit_intersects_screen(screen, camera, semi_major_au, eccentricity_value):
+            class_key = str(body.get("location_class") or body.get("body_class") or "").lower()
+            if class_key == "moon":
+                parent_id = body.get("parent_body") or body.get("parent_location")
+                parent_point = parent_positions.get(parent_id)
+                if parent_point is None:
+                    continue
+                local_radius_px = max(18, min(72, int(self._orbit_pixel_radius(camera, semi_major_au))))
+                orbit_rect = pygame.Rect(0, 0, local_radius_px * 2, local_radius_px * 2)
+                orbit_rect.center = (int(parent_point[0]), int(parent_point[1]))
+                pygame.draw.ellipse(screen, (76, 84, 98), orbit_rect, 1)
+                point = (orbit_rect.right, orbit_rect.centery)
+                entity_id = body.get("id")
+                selected = entity_id == selected_id
+                color = self._coerce_rgb(body.get("display_color"), fallback=(186, 204, 216))
+                radius = 4 if not selected else 6
+                pygame.draw.circle(screen, color, point, radius)
+                pygame.draw.circle(screen, (224, 238, 246), point, radius + 2, 1)
+                label = self.app_view.default_font.render(body.get("name", entity_id), True, color)
+                screen.blit(label, (point[0] + 8, point[1] + 5))
+                planet_hitboxes.append((entity_id, pygame.Rect(point[0] - 10, point[1] - 10, 20, 20)))
+                continue
+            if class_key != "planet" or not self._orbit_intersects_screen(screen, camera, semi_major_au, eccentricity_value):
                 continue
 
             sample_count = self._orbit_sample_count(self._orbit_pixel_radius(camera, semi_major_au))
             orbit_points = self._screen_points_for_orbit(camera, semi_major_au, eccentricity_value, count=sample_count)
             if len(orbit_points) > 2:
                 pygame.draw.lines(screen, (76, 84, 98), True, orbit_points, 1)
-
-            class_key = str(body.get("location_class") or body.get("body_class") or "").lower()
-            if class_key != "planet":
-                continue
 
             point = self._body_position_screen(camera, semi_major_au, eccentricity_value)
             if point is None:
@@ -451,7 +509,7 @@ class WorldGenRenderer:
             y += 22
 
         formation_rect = pygame.Rect(panel.x + 12, panel.bottom - 66, 172, 30)
-        self._draw_panel_button(screen, font, formation_rect, "Formation Theory", primary=True)
+        self._draw_panel_button(screen, font, formation_rect, "Generate Candidate", primary=True)
         space_rect = self._draw_space_jump_button(screen, font, panel)
         if hasattr(sim, "set_formation_theory_button_rect"):
             sim.set_formation_theory_button_rect(formation_rect)
@@ -491,12 +549,30 @@ class WorldGenRenderer:
             prompt_title = "Name Moon" if payload.get("pending_body_class") == "moon" else "Name Planet"
             title = font.render(prompt_title, True, (244, 244, 244))
             screen.blit(title, (prompt.x + 14, prompt.y + 12))
-            pygame.draw.rect(screen, (38, 48, 68), input_rect)
+            selected_all = bool(payload.get("planet_name_select_all"))
+            pygame.draw.rect(screen, (54, 72, 104) if selected_all else (38, 48, 68), input_rect)
             pygame.draw.rect(screen, (188, 212, 244), input_rect, 1)
             text = payload.get("planet_name_buffer") or ""
             placeholder = "Moon name" if payload.get("pending_body_class") == "moon" else "Planet name"
             surface = font.render(text or placeholder, True, (238, 238, 238) if text else (128, 138, 154))
             screen.blit(surface, (input_rect.x + 8, input_rect.y + 5))
+            if selected_all and text:
+                selection_hint = font.render("selected", True, (188, 212, 244))
+                screen.blit(selection_hint, (input_rect.right - selection_hint.get_width() - 8, prompt.y + 34))
+
+    @staticmethod
+    def _worldgen_stage_badge(payload):
+        stage = str((payload or {}).get("editor_stage") or "crust")
+        stages = {
+            "crust": "Stage 1/7",
+            "atmosphere": "Stage 2/7",
+            "regime": "Stage 3/7",
+            "terrain": "Stage 4/7",
+            "tectonics": "Stage 5/7 (optional)",
+            "heightmap": "Stage 6/7",
+            "water_cycle": "Stage 7/7",
+        }
+        return stages.get(stage, "World generation")
 
     def _draw_panel_button(self, screen, font, rect, label, primary=False):
         fill = (74, 92, 132) if primary else (40, 46, 60)
@@ -555,7 +631,10 @@ class WorldGenRenderer:
         planet_class = str(payload.get("planet_class") or "").lower()
         is_envelope_body = planet_class in {"gas_giant", "ice_giant", "hot_gas_giant"}
         panel_label = "Envelope / Bulk Composition" if is_envelope_body else "Crust Composition"
-        title = f"World Generation: {selected_planet.get('name', selected_planet.get('id', 'Planet'))} {panel_label}"
+        title = (
+            f"{self._worldgen_stage_badge(payload)} | World Generation: "
+            f"{selected_planet.get('name', selected_planet.get('id', 'Planet'))} {panel_label}"
+        )
         title_surface = font.render(title, True, (244, 244, 244))
         screen.blit(title_surface, (panel.x + 16, panel.y + 12))
 
@@ -691,11 +770,13 @@ class WorldGenRenderer:
             self._draw_panel_button(screen, font, new_moon_rect, "New Moon")
         generic_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 132, 30)
         eccentric_rect = pygame.Rect(generic_rect.right + 8, panel.bottom - 48, 148, 30)
-        gas_rect = pygame.Rect(eccentric_rect.right + 8, panel.bottom - 48, 132, 30)
+        template_rect = pygame.Rect(eccentric_rect.right + 8, panel.bottom - 48, 142, 30)
+        gas_rect = pygame.Rect(template_rect.right + 8, panel.bottom - 48, 132, 30)
         add_rect = pygame.Rect(gas_rect.right + 8, panel.bottom - 48, 184, 30)
         save_rect = pygame.Rect(add_rect.right + 10, panel.bottom - 48, 154, 30)
         self._draw_panel_button(screen, font, generic_rect, "Generate Generic")
         self._draw_panel_button(screen, font, eccentric_rect, "Generate Eccentric")
+        self._draw_panel_button(screen, font, template_rect, "Choose Template")
         self._draw_panel_button(screen, font, gas_rect, "Gas / Ice Giant")
         self._draw_panel_button(screen, font, add_rect, "Add Abundant Trace Element")
         self._draw_panel_button(screen, font, save_rect, "Save Composition", primary=True)
@@ -710,6 +791,7 @@ class WorldGenRenderer:
         screen.blit(hint, (panel.x + 16, panel.bottom - 76))
 
         periodic_rect, element_rects = self._draw_periodic_table_popup(screen, font, payload, elements)
+        template_popup_rect, template_option_rects = self._draw_template_chooser(screen, font, payload, template_rect, panel)
         sim.set_crust_ui_rects(
             slider_rects=slider_rects,
             add_trace_rect=add_rect,
@@ -718,6 +800,9 @@ class WorldGenRenderer:
             element_rects=element_rects,
             random_generic_rect=generic_rect,
             random_eccentric_rect=eccentric_rect,
+            template_chooser_rect=template_rect,
+            template_option_rects=template_option_rects,
+            template_popup_rect=template_popup_rect,
             random_gas_giant_rect=gas_rect,
             back_rect=back_rect,
             space_rect=space_rect,
@@ -725,6 +810,45 @@ class WorldGenRenderer:
         )
         sim.set_seed_field_rects(seed_field_rects)
         sim.set_control_panel_rect(panel)
+
+    def _draw_template_chooser(self, screen, font, payload, anchor_rect, panel):
+        if not payload.get("template_chooser_open"):
+            return None, {}
+        templates = list(payload.get("planet_templates") or [])
+        if not templates:
+            return None, {}
+        columns = 3
+        row_h = 35
+        header_h = 38
+        rows = (len(templates) + columns - 1) // columns
+        popup_w = min(panel.width - 32, 1020)
+        popup_h = header_h + rows * row_h + 12
+        popup = pygame.Rect(anchor_rect.centerx - popup_w // 2, anchor_rect.y - popup_h - 8, popup_w, popup_h)
+        popup.x = max(panel.x + 16, min(popup.x, panel.right - popup.width - 16))
+        pygame.draw.rect(screen, (14, 18, 28), popup)
+        pygame.draw.rect(screen, (126, 150, 186), popup, 2)
+        title = font.render("WORLD TEMPLATE  -  defining traits fixed, remaining characteristics randomized", True, (232, 238, 248))
+        screen.blit(title, (popup.x + 12, popup.y + 10))
+        option_rects = {}
+        gap = 8
+        col_w = (popup.width - 24 - gap * (columns - 1)) // columns
+        active_id = payload.get("planet_template")
+        for index, item in enumerate(templates):
+            col = index % columns
+            row = index // columns
+            rect = pygame.Rect(popup.x + 12 + col * (col_w + gap), popup.y + header_h + row * row_h, col_w, 28)
+            option_rects[item.get("id")] = rect
+            active = item.get("id") == active_id
+            pygame.draw.rect(screen, (48, 61, 82) if active else (29, 35, 48), rect)
+            pygame.draw.rect(screen, (224, 191, 72) if active else (78, 91, 112), rect, 1)
+            category = str(item.get("category") or "World")
+            label = str(item.get("label") or item.get("id") or "Template")
+            text = f"{category}: {label}"
+            max_chars = max(12, int(col_w / 8.2))
+            if len(text) > max_chars:
+                text = text[:max_chars - 1] + "..."
+            screen.blit(font.render(text, True, (245, 230, 174) if active else (210, 219, 234)), (rect.x + 7, rect.y + 6))
+        return popup, option_rects
 
     def _draw_crust_material_candidates(self, screen, font, rect, payload):
         pygame.draw.rect(screen, (18, 21, 30), rect)
@@ -851,7 +975,10 @@ class WorldGenRenderer:
 
         selected_planet = payload.get("selected_planet") or {}
         atmosphere = payload.get("atmosphere_model") or {}
-        title = f"World Generation: {selected_planet.get('name', selected_planet.get('id', 'Planet'))} Atmosphere"
+        title = (
+            f"{self._worldgen_stage_badge(payload)} | World Generation: "
+            f"{selected_planet.get('name', selected_planet.get('id', 'Planet'))} Atmosphere"
+        )
         screen.blit(font.render(title, True, (244, 244, 244)), (panel.x + 16, panel.y + 12))
         subtitle = "Atmosphere is constrained by stellar flux, gravity, molecule mass, volatile inventory, and condensation."
         screen.blit(font.render(subtitle, True, (158, 170, 190)), (panel.x + 16, panel.y + 34))
@@ -965,7 +1092,10 @@ class WorldGenRenderer:
         regime = payload.get("interior_regime_model") or {}
         interior = regime.get("interior") or {}
         surface = regime.get("surface_processes") or {}
-        title = f"World Generation: {selected_planet.get('name', selected_planet.get('id', 'Planet'))} Interior / Surface Regime"
+        title = (
+            f"{self._worldgen_stage_badge(payload)} | World Generation: "
+            f"{selected_planet.get('name', selected_planet.get('id', 'Planet'))} Interior / Surface Regime"
+        )
         screen.blit(font.render(title, True, (244, 244, 244)), (panel.x + 16, panel.y + 12))
         subtitle = "This determines which terrain, erosion, hydrology, and crater processes the map generator may use."
         screen.blit(font.render(subtitle, True, (158, 170, 190)), (panel.x + 16, panel.y + 34))
@@ -1055,7 +1185,10 @@ class WorldGenRenderer:
         erosion = terrain.get("erosion") or {}
         hydrology = terrain.get("hydrology") or {}
         canvas = terrain.get("map_canvas") or {}
-        title = f"World Generation: {selected_planet.get('name', selected_planet.get('id', 'Planet'))} Terrain Seed"
+        title = (
+            f"{self._worldgen_stage_badge(payload)} | World Generation: "
+            f"{selected_planet.get('name', selected_planet.get('id', 'Planet'))} Terrain Seed"
+        )
         screen.blit(font.render(title, True, (244, 244, 244)), (panel.x + 16, panel.y + 12))
         subtitle = "This creates the first global map scaffold: elevation bounds, water mask, tectonic/crater layers, and erosion masks."
         screen.blit(font.render(subtitle, True, (158, 170, 190)), (panel.x + 16, panel.y + 34))
@@ -1255,7 +1388,10 @@ class WorldGenRenderer:
 
         selected_planet = payload.get("selected_planet") or {}
         tectonic_model = payload.get("tectonic_model") or {}
-        title = f"World Generation: {selected_planet.get('name', selected_planet.get('id', 'Planet'))} Tectonics"
+        title = (
+            f"{self._worldgen_stage_badge(payload)} | World Generation: "
+            f"{selected_planet.get('name', selected_planet.get('id', 'Planet'))} Tectonics"
+        )
         screen.blit(font.render(title, True, (244, 244, 244)), (panel.x + 16, panel.y + 12))
         subtitle = "Mantle currents drive plate motion. Advancing turns boundaries into mountains, trenches, basins, and erosion state."
         screen.blit(font.render(subtitle, True, (158, 170, 190)), (panel.x + 16, panel.y + 34))
@@ -1555,20 +1691,49 @@ class WorldGenRenderer:
         screen.set_clip(rect)
         try:
             screen.blit(preview_surface, rect.topleft)
+            drainage = water_cycle.get("drainage_network_model") if isinstance(water_cycle.get("drainage_network_model"), dict) else {}
+            grid_w = max(2, int(climate_grid.get("width", col_count) or col_count))
+            grid_h = max(2, int(climate_grid.get("height", row_count) or row_count))
+            for lake in drainage.get("lakes") or []:
+                if not isinstance(lake, dict):
+                    continue
+                lake_points = []
+                for cell in lake.get("cells") or []:
+                    if not isinstance(cell, (list, tuple)) or len(cell) < 2:
+                        continue
+                    lake_points.append((
+                        int(rect.x + float(cell[0]) / max(1, grid_w - 1) * rect.width),
+                        int(rect.y + float(cell[1]) / max(1, grid_h - 1) * rect.height),
+                    ))
+                for point in lake_points:
+                    pygame.draw.circle(screen, (42, 112, 170), point, max(1, int(min(rect.width / grid_w, rect.height / grid_h) * 0.65)))
             for river in water_cycle.get("rivers") or []:
                 if not isinstance(river, dict):
                     continue
-                points = []
-                for point in river.get("points") or []:
+                normalized_points = river.get("display_points") or river.get("points") or []
+                segments, segment = [], []
+                previous_x = None
+                for point in normalized_points:
                     if not isinstance(point, dict):
                         continue
-                    px = rect.x + float(point.get("x", 0.0) or 0.0) * rect.width
-                    py = rect.y + float(point.get("y", 0.0) or 0.0) * rect.height
-                    points.append((int(px), int(py)))
-                if len(points) >= 2:
-                    line_width = 2 + int(float(river.get("flow", 0.1) or 0.1) * 3)
-                    pygame.draw.lines(screen, (82, 172, 238), False, points, line_width)
-                    pygame.draw.circle(screen, (178, 226, 255), points[0], 3)
+                    nx = float(point.get("x", 0.0) or 0.0)
+                    if previous_x is not None and abs(nx - previous_x) > 0.5:
+                        if len(segment) >= 2:
+                            segments.append(segment)
+                        segment = []
+                    segment.append((int(rect.x + nx * rect.width), int(rect.y + float(point.get("y", 0.0) or 0.0) * rect.height)))
+                    previous_x = nx
+                if len(segment) >= 2:
+                    segments.append(segment)
+                flow = float(river.get("flow", 0.1) or 0.1)
+                order = max(1, int(river.get("stream_order", 1) or 1))
+                role = str(river.get("network_role") or "feeder")
+                line_width = max(1, min(4, int(round(0.55 + flow * 2.0 + max(0, order - 1) * 0.45))))
+                color = (92, 180, 232) if role == "feeder" else ((60, 158, 224) if role == "tributary" else (38, 126, 210))
+                for points in segments:
+                    if line_width > 1:
+                        pygame.draw.lines(screen, color, False, points, line_width)
+                    pygame.draw.aalines(screen, color, False, points)
         finally:
             screen.set_clip(previous_clip)
         pygame.draw.rect(screen, (118, 132, 158), rect, 1)
@@ -1581,7 +1746,10 @@ class WorldGenRenderer:
 
         selected_planet = payload.get("selected_planet") or {}
         water_cycle = payload.get("water_cycle_model") or {}
-        title = f"World Generation: {selected_planet.get('name', selected_planet.get('id', 'Planet'))} Water Cycle"
+        title = (
+            f"{self._worldgen_stage_badge(payload)} | World Generation: "
+            f"{selected_planet.get('name', selected_planet.get('id', 'Planet'))} Water Cycle"
+        )
         screen.blit(font.render(title, True, (244, 244, 244)), (panel.x + 16, panel.y + 12))
         subtitle = "Climate zones and rivers are derived from heightmap, sea level, pressure, temperature, and map seed."
         screen.blit(font.render(subtitle, True, (158, 170, 190)), (panel.x + 16, panel.y + 34))
@@ -1673,7 +1841,10 @@ class WorldGenRenderer:
         selected_planet = payload.get("selected_planet") or {}
         heightmap = payload.get("heightmap_model") or {}
         terrain = payload.get("terrain_seed_model") or {}
-        title = f"World Generation: {selected_planet.get('name', selected_planet.get('id', 'Planet'))} Heightmap"
+        title = (
+            f"{self._worldgen_stage_badge(payload)} | World Generation: "
+            f"{selected_planet.get('name', selected_planet.get('id', 'Planet'))} Heightmap"
+        )
         screen.blit(font.render(title, True, (244, 244, 244)), (panel.x + 16, panel.y + 12))
         subtitle = "Height markers are contour lines from the saved heightfield seed; marker interval tightens as zoom increases."
         screen.blit(font.render(subtitle, True, (158, 170, 190)), (panel.x + 16, panel.y + 34))
@@ -1729,6 +1900,13 @@ class WorldGenRenderer:
             or tectonic_model.get("age_myr")
             or 0.0
         )
+        surface_record_age = float(
+            ((terrain.get("cratering") or {}).get("surface_age_myr"))
+            or ((selected_planet.get("world_gen_seed") or {}).get("surface_age_myr"))
+            or 0.0
+        )
+        age_label = "Simulated evolution" if float(simulated_age or 0.0) > 0.0 else "Surface record age"
+        displayed_age = float(simulated_age or 0.0) if float(simulated_age or 0.0) > 0.0 else surface_record_age
         rows = [
             ("Projection", heightmap.get("projection", "unknown")),
             ("Canvas", f"{canvas_w} x {canvas_h} px"),
@@ -1736,7 +1914,7 @@ class WorldGenRenderer:
             ("Chunks", f"{storage.get('chunk_cols', 0)} x {storage.get('chunk_rows', 0)}"),
             ("Chunk size", f"{storage.get('chunk_width_px', 0)} x {storage.get('chunk_height_px', 0)} px"),
             ("Scale", self._format_heightmap_scale(heightmap)),
-            ("Simulated age", f"{float(simulated_age or 0.0):.1f} Myr"),
+            (age_label, f"{displayed_age:.1f} Myr"),
             ("Elevation", f"{float(heightmap.get('min_elevation_m', 0.0)):.0f} to {float(heightmap.get('max_elevation_m', 0.0)):.0f} m"),
             ("Land", f"{float(hypsometry.get('land_fraction', 0.0)) * 100.0:.0f}%"),
             ("Ocean", f"{float(hypsometry.get('ocean_fraction', 0.0)) * 100.0:.0f}%"),

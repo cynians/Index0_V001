@@ -1,7 +1,9 @@
 import json
+import uuid
 from pathlib import Path
 import logging
 from world.ontology_repository import OntologyRepository
+from world.persistent_ontology_store import PersistentOntologyStore
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,13 @@ class EntityLoader:
         "related": [],
         "offspring": [],
         "entry_status": "",
+    }
+    FAST_PALETTE_FIELDS = {
+        "card_color",
+        "card_header_color",
+        "wiki_field_colors",
+        "card_color_source",
+        "wiki_link_color",
     }
     LEGACY_IDEA_FIELDS = {
         "related_entities",
@@ -76,6 +85,7 @@ class EntityLoader:
         self.entity_aliases = {}
         self.edges = {}
         self._dataset_file_records = []
+        self._persistent_store = None
 
         self.refresh()
 
@@ -487,8 +497,27 @@ class EntityLoader:
         self._fold_spatial_features_into_locations()
 
     def load_ontology_datasets(self):
-        ontology = OntologyRepository.from_owl(self.ontology_path)
-        self.datasets = ontology.datasets
+        self._persistent_store = PersistentOntologyStore(self.ontology_path)
+        self.datasets = self._persistent_store.load_datasets()
+        self._apply_palette_overrides()
+        palette_overrides = self._load_palette_overrides()
+        if palette_overrides:
+            changed_entities = [
+                entity
+                for entity_id in palette_overrides
+                for entity in [next(
+                    (
+                        candidate
+                        for dataset in self.datasets.values()
+                        for candidate in (dataset or [])
+                        if isinstance(candidate, dict) and str(candidate.get("id")) == str(entity_id)
+                    ),
+                    None,
+                )]
+                if entity is not None
+            ]
+            if changed_entities and self._persistent_store.persist_entities(changed_entities):
+                self._clear_palette_overrides()
 
     # --------------------------------------------------
 
@@ -562,7 +591,14 @@ class EntityLoader:
 
     def save_changed_dataset_files(self, changed_entity_ids=None):
         if self.use_ontology:
-            self.save_ontology_file()
+            changed_entity_ids = set(changed_entity_ids or [])
+            entities = [
+                self.entities[entity_id]
+                for entity_id in changed_entity_ids
+                if entity_id in self.entities
+            ]
+            if entities:
+                self._persistent_store.persist_entities(entities)
             return
 
         changed_entity_ids = set(changed_entity_ids or [])
@@ -580,8 +616,21 @@ class EntityLoader:
                 self._save_dataset_file(record["file"], record["data"])
 
     def save_ontology_file(self):
-        ontology = OntologyRepository(self.datasets)
-        ontology.save_owl(self.ontology_path)
+        if self._persistent_store is None:
+            self._persistent_store = PersistentOntologyStore(self.ontology_path)
+        self._persistent_store.export_rdfxml(self.ontology_path)
+        self._clear_palette_overrides()
+
+    def export_ontology_checkpoint(self):
+        self.save_ontology_file()
+        return True
+
+    def reimport_ontology_checkpoint(self):
+        if self._persistent_store is None:
+            self._persistent_store = PersistentOntologyStore(self.ontology_path)
+        self._persistent_store.reimport_rdfxml()
+        self.refresh()
+        return True
 
     def persist_entity(self, entity, previous_entity_id=None):
         if not isinstance(entity, dict):
@@ -615,16 +664,96 @@ class EntityLoader:
 
         self.entities[entity_id] = entity
         if self.use_ontology:
-            self.save_ontology_file()
+            try:
+                if self._persistent_store is None:
+                    self._persistent_store = PersistentOntologyStore(self.ontology_path)
+                self._persistent_store.persist_entity(entity, previous_entity_id=previous_entity_id)
+            except OSError as exc:
+                logger.error("Could not persist entity %s to ontology: %s", entity_id, exc)
+                return False
         return True
 
+    def persist_entity_palette(self, entity):
+        """Journal palette literals atomically without rebuilding the full OWL graph."""
+        if not self.use_ontology or not isinstance(entity, dict):
+            return False
+        entity_id = str(entity.get("id") or "").strip()
+        if not entity_id or not self.ontology_path:
+            return False
+        if getattr(self, "_persistent_store", None) is not None:
+            return self._persistent_store.persist_entity_fields(entity, self.FAST_PALETTE_FIELDS)
+        overrides = self._load_palette_overrides()
+        overrides[entity_id] = {
+            field_name: (
+                None if entity.get(field_name) in (None, "", [], {}) else entity.get(field_name)
+            )
+            for field_name in sorted(self.FAST_PALETTE_FIELDS)
+        }
+        path = self._palette_overrides_path()
+        temp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path.write_text(
+                json.dumps(overrides, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            temp_path.replace(path)
+        except OSError:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return False
+        return True
+
+    def _palette_overrides_path(self):
+        ontology_path = Path(self.ontology_path).resolve()
+        return ontology_path.parent.parent / ".cache" / "ontology" / f"{ontology_path.name}.palette-overrides.json"
+
+    def _load_palette_overrides(self):
+        try:
+            data = json.loads(self._palette_overrides_path().read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _apply_palette_overrides(self):
+        overrides = self._load_palette_overrides()
+        if not overrides:
+            return
+        entities = {
+            str(entity.get("id")): entity
+            for dataset in self.datasets.values()
+            for entity in (dataset or [])
+            if isinstance(entity, dict) and entity.get("id")
+        }
+        for entity_id, fields in overrides.items():
+            entity = entities.get(str(entity_id))
+            if not isinstance(entity, dict) or not isinstance(fields, dict):
+                continue
+            for field_name, value in fields.items():
+                if field_name not in self.FAST_PALETTE_FIELDS:
+                    continue
+                if value is None:
+                    entity.pop(field_name, None)
+                else:
+                    entity[field_name] = value
+
+    def _clear_palette_overrides(self):
+        try:
+            self._palette_overrides_path().unlink(missing_ok=True)
+        except OSError:
+            pass
+
     def set_literal(self, entity_id, field_name, value, persist=True):
-        repository = OntologyRepository(self.datasets)
+        # Point edits must share the live projection. Deep-copying the full
+        # repository here also copies generated maps and can take many seconds.
+        repository = OntologyRepository(self.datasets, copy_datasets=False)
         changed_entity_ids = repository.set_literal(entity_id, field_name, value)
         return self._apply_repository_mutation(repository, changed_entity_ids, persist=persist)
 
     def set_relation(self, source_id, field_name, target_id, reciprocal_field=None, persist=True):
-        repository = OntologyRepository(self.datasets)
+        repository = OntologyRepository(self.datasets, copy_datasets=False)
         changed_entity_ids = repository.set_relation(
             source_id,
             field_name,
@@ -634,7 +763,7 @@ class EntityLoader:
         return self._apply_repository_mutation(repository, changed_entity_ids, persist=persist)
 
     def remove_relation(self, source_id, field_name, target_id, reciprocal_field=None, persist=True):
-        repository = OntologyRepository(self.datasets)
+        repository = OntologyRepository(self.datasets, copy_datasets=False)
         changed_entity_ids = repository.remove_relation(
             source_id,
             field_name,
@@ -653,10 +782,7 @@ class EntityLoader:
         changed_entity_ids.update(self.populate_offspring())
         self.build_reference_graph()
         if persist:
-            if self.use_ontology:
-                self.save_ontology_file()
-            else:
-                self.save_changed_dataset_files(changed_entity_ids)
+            self.save_changed_dataset_files(changed_entity_ids)
         return changed_entity_ids
 
     def remove_entity(self, entity_id, dataset_name=None):
@@ -683,7 +809,9 @@ class EntityLoader:
             removed = removed or len(dataset) != before_count
 
         if removed and self.use_ontology:
-            self.save_ontology_file()
+            if self._persistent_store is None:
+                self._persistent_store = PersistentOntologyStore(self.ontology_path)
+            self._persistent_store.remove_entity(entity_id)
         return removed
 
     # --------------------------------------------------

@@ -18,6 +18,8 @@ class SimulationContext:
         self.year = year
         self.root_entity_id = root_entity_id
         self.world_model = world_model or WorldModel()
+        self._constituent_parent_index_cache = None
+        self._constituent_parent_index_key = None
 
     # --------------------------------------------------
     # Core access
@@ -93,14 +95,30 @@ class SimulationContext:
                 if parent_id and parent_id != entity_id and self._is_location_entity(parent):
                     return parent_id
 
-        entities = getattr(getattr(self.world_model, "loader", None), "entities", {}) or {}
-        for candidate_id, candidate in entities.items():
-            if candidate_id == entity_id or not self._is_location_entity(candidate):
-                continue
-            if entity_id in self._relation_ids(candidate.get("constituents")):
-                return candidate_id
+        parent_id = self._constituent_parent_index().get(entity_id)
+        if parent_id and parent_id != entity_id:
+            return parent_id
 
         return None
+
+    def _constituent_parent_index(self):
+        loader = getattr(self.world_model, "loader", None)
+        entities = getattr(loader, "entities", {}) or {}
+        revision = getattr(self.world_model, "repository_revision", 0)
+        cache_key = (id(entities), len(entities), revision)
+        if self._constituent_parent_index_cache is not None and self._constituent_parent_index_key == cache_key:
+            return self._constituent_parent_index_cache
+
+        parent_index = {}
+        for candidate_id, candidate in entities.items():
+            if not self._is_location_entity(candidate):
+                continue
+            for child_id in self._relation_ids(candidate.get("constituents")):
+                if child_id and child_id != candidate_id:
+                    parent_index.setdefault(child_id, candidate_id)
+        self._constituent_parent_index_cache = parent_index
+        self._constituent_parent_index_key = cache_key
+        return parent_index
 
     def _all_location_entities(self):
         if hasattr(self.world_model, "get_dataset"):

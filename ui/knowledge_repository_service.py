@@ -454,6 +454,19 @@ class KnowledgeRepositoryService:
                 self._remove_card_draft(entity.get("id"))
         return persisted
 
+    def _persist_card_palette(self, card):
+        entity = self._entity_for_card(card)
+        loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
+        fast_persist = getattr(loader, "persist_entity_palette", None)
+        if isinstance(entity, dict) and callable(fast_persist) and fast_persist(entity):
+            mark_changed = getattr(self.world_model, "mark_repository_changed", None)
+            if callable(mark_changed):
+                mark_changed()
+            else:
+                self.world_model.repository_revision = getattr(self.world_model, "repository_revision", 0) + 1
+            return True
+        return self._persist_card_entity(card)
+
     def _remove_entity_from_dataset_index(self, dataset_name, entity_id, entity_obj):
         if self.world_model is None or not dataset_name:
             return
@@ -535,6 +548,7 @@ class KnowledgeRepositoryService:
 
         self._remove_card_draft(entity_id)
         self.cards = [open_card for open_card in self.cards if open_card is not card]
+        self._ensure_keep_card_open(excluded_entity_ids={entity_id})
         if self.selected_entity_id == entity_id:
             self.selected_entity_id = self.cards[-1].get("entity_id") if self.cards else None
         if self.active_card_drag_id == entity_id:

@@ -1,6 +1,7 @@
 import random
 import re
 import hashlib
+import math
 import threading
 import time
 import traceback
@@ -42,6 +43,8 @@ from simulations.world_gen.natural_materials import (
     derive_planet_material_tags,
 )
 from simulations.world_gen.planetary_physics import derive_planet_physics
+from simulations.world_gen.planetary_evolution import derive_planetary_evolution_model
+from simulations.world_gen.plume_lid_features import derive_hot_surface_weathering_model, derive_plume_lid_feature_model
 from simulations.world_gen.terrain_seed import (
     PLANETARY_CANVAS_HEIGHT_PX,
     PLANETARY_CANVAS_WIDTH_PX,
@@ -54,6 +57,7 @@ from simulations.world_gen.tectonics import (
     mature_tectonics_model,
 )
 from simulations.world_gen.water_cycle import derive_water_cycle_model
+from simulations.world_gen.template_catalog import ADDITIONAL_PLANET_TEMPLATES
 from world.year_utils import parse_year
 from world.relation_mirror import mirror_location_sim_relations
 
@@ -106,6 +110,28 @@ class WorldGenSimulation:
             "volatile_options": ["dry", "wet", "earthlike"],
             "tectonics_options": ["stagnant_lid", "mobile_lid", "unknown"],
         },
+        "oxygenated_ocean_plate_world": {
+            "label": "Oxygenated ocean plate world",
+            "planet_class": "temperate_ocean_terrestrial",
+            "major_elements": [
+                ("O", 46.1), ("Si", 27.0), ("Al", 8.1), ("Fe", 6.3),
+                ("Ca", 5.0), ("Na", 2.8), ("K", 2.5), ("Mg", 2.1),
+            ],
+            "water_range": (0.62, 0.78),
+            "volatile_options": ["earthlike"],
+            "tectonics_options": ["mobile_lid"],
+            "atmosphere_regime": "oxygenated_nitrogen",
+            "volatile_pressure_scale": 0.84,
+            "greenhouse_efficiency": 2.65,
+            "bond_albedo": 0.30,
+            "axial_tilt_deg": 23.44,
+            "surface_age_myr": 180.0,
+            "resurfacing_fraction": 0.62,
+            "impact_flux_factor": 0.65,
+            "formation_delay_myr": 7.0,
+            "biosphere_state": "oxygenic_mature",
+            "ocean_fraction_target": 0.708,
+        },
         "ocean_world": {
             "label": "Ocean world",
             "planet_class": "ocean_world",
@@ -128,6 +154,28 @@ class WorldGenSimulation:
             "volatile_options": ["dry", "thin", "dense"],
             "tectonics_options": ["inactive", "stagnant_lid", "episodic_lid"],
         },
+        "runaway_greenhouse_terrestrial": {
+            "label": "Runaway-greenhouse terrestrial",
+            "planet_class": "hot_dense_atmosphere_rocky",
+            "major_elements": [
+                ("O", 44.0), ("Si", 23.0), ("Fe", 9.0), ("Mg", 8.0),
+                ("Al", 7.0), ("Ca", 4.0), ("Na", 2.4), ("S", 1.5), ("C", 0.6),
+            ],
+            "water_range": (0.0, 0.02),
+            "volatile_options": ["dense"],
+            "tectonics_options": ["stagnant_lid", "episodic_lid", "heat_pipe"],
+            "atmosphere_regime": "runaway_co2",
+            "volatile_pressure_scale": 18.6,
+            "bond_albedo": 0.75,
+            "water_loss_fraction": 0.995,
+            "geologic_style": "plume_lid_volcanic",
+            "hypsometry_compression": 0.52,
+            "surface_age_myr": 350.0,
+            "resurfacing_fraction": 0.82,
+            "impact_flux_factor": 1.0,
+            "max_crater_diameter_km": 280.0,
+            "formation_delay_myr": 8.0,
+        },
         "cratered_airless": {
             "label": "Cratered airless body",
             "planet_class": "airless_rocky",
@@ -138,6 +186,39 @@ class WorldGenSimulation:
             "water_range": (0.0, 0.025),
             "volatile_options": ["none", "thin"],
             "tectonics_options": ["inactive"],
+        },
+        "metal_core_airless": {
+            "label": "Metal-core airless terrestrial",
+            "planet_class": "airless_rocky",
+            "major_elements": [
+                ("O", 40.0), ("Si", 21.0), ("Fe", 16.0), ("Mg", 12.0),
+                ("S", 4.0), ("Ca", 3.0), ("Al", 2.0), ("Na", 1.2), ("K", 0.3),
+            ],
+            "water_range": (0.0, 0.01),
+            "volatile_options": ["none", "dry"],
+            "tectonics_options": ["inactive"],
+            "core_density_kg_m3": 6800.0,
+            "mantle_density_kg_m3": 3300.0,
+            "bond_albedo": 0.088,
+            "exosphere_source_strength": 0.75,
+            "relief_scale": 0.676,
+        },
+        "icy_satellite": {
+            "label": "Differentiated icy satellite",
+            "planet_class": "icy_satellite",
+            "major_elements": [
+                ("O", 58.0), ("H", 6.5), ("Si", 12.0), ("Fe", 7.5),
+                ("Mg", 5.5), ("Al", 3.0), ("Ca", 2.0), ("S", 1.8), ("C", 1.2),
+            ],
+            "water_range": (0.0, 0.02),
+            "volatile_options": ["none", "thin"],
+            "tectonics_options": ["unknown", "inactive"],
+            "bulk_ice_fraction_range": (0.42, 0.68),
+            "surface_ice_fraction_range": (0.92, 1.0),
+            "surface_age_myr_range": (900.0, 4500.0),
+            "tidal_heating_w_m2_range": (0.001, 0.045),
+            "resurfacing_fraction_range": (0.05, 0.48),
+            "impact_flux_factor_range": (0.65, 1.35),
         },
         "carbon_rich": {
             "label": "Carbon-rich rocky",
@@ -172,6 +253,7 @@ class WorldGenSimulation:
             "volatile_options": ["dense"],
             "tectonics_options": ["inactive"],
         },
+        **ADDITIONAL_PLANET_TEMPLATES,
     }
     VISIBLE_PHYSICAL_FIELD_IDS = {
         "radius_earth",
@@ -213,6 +295,10 @@ class WorldGenSimulation:
         self.crust_add_trace_button_rect = None
         self.crust_random_generic_button_rect = None
         self.crust_random_eccentric_button_rect = None
+        self.template_chooser_button_rect = None
+        self.template_chooser_open = False
+        self.template_option_rects = {}
+        self.template_chooser_popup_rect = None
         self.crust_random_gas_giant_button_rect = None
         self.world_gen_new_moon_button_rect = None
         self.formation_theory_button_rect = None
@@ -234,6 +320,7 @@ class WorldGenSimulation:
         self.pending_formation_seed = None
         self.planet_name_prompt_active = False
         self.planet_name_buffer = ""
+        self.planet_name_select_all = False
         self.commit_status = ""
         self.pending_back_stage = None
         self.planet_hitboxes = []
@@ -410,6 +497,9 @@ class WorldGenSimulation:
         element_rects=None,
         random_generic_rect=None,
         random_eccentric_rect=None,
+        template_chooser_rect=None,
+        template_option_rects=None,
+        template_popup_rect=None,
         random_gas_giant_rect=None,
         complete_rect=None,
         back_rect=None,
@@ -420,6 +510,9 @@ class WorldGenSimulation:
         self.crust_add_trace_button_rect = add_trace_rect
         self.crust_random_generic_button_rect = random_generic_rect
         self.crust_random_eccentric_button_rect = random_eccentric_rect
+        self.template_chooser_button_rect = template_chooser_rect
+        self.template_option_rects = dict(template_option_rects or {})
+        self.template_chooser_popup_rect = template_popup_rect
         self.crust_random_gas_giant_button_rect = random_gas_giant_rect
         self.crust_save_button_rect = save_rect
         self.world_gen_complete_button_rect = complete_rect
@@ -461,17 +554,17 @@ class WorldGenSimulation:
         self.orbit_pick_stage = "first"
         self.input_buffers = {"periapsis_au": "", "apoapsis_au": ""}
         self._reset_worldgen_seed_inputs()
-        self.active_planet_template = "cratered_airless"
+        self.active_planet_template = "icy_satellite"
         self._apply_seed_buffers_from_seed({
-            "radius_earth": 0.27,
-            "core_radius_fraction": 0.32,
-            "crust_thickness_km": 45.0,
-            "angular_velocity_deg_per_hour": 0.55,
+            "radius_earth": 0.09,
+            "core_radius_fraction": 0.61,
+            "crust_thickness_km": 180.0,
+            "angular_velocity_deg_per_hour": 5.5,
             "water_fraction": 0.0,
             "volatile_inventory": "none",
-            "tectonics_mode": "inactive",
+            "tectonics_mode": "unknown",
             "map_seed": "moon-auto",
-            "planet_template": "cratered_airless",
+            "planet_template": "icy_satellite",
         })
         self._recalculate_model()
         parent_name = parent_planet.get("name") or parent_planet.get("pretty_name") or parent_planet.get("id")
@@ -500,6 +593,10 @@ class WorldGenSimulation:
         self.crust_add_trace_button_rect = None
         self.crust_random_generic_button_rect = None
         self.crust_random_eccentric_button_rect = None
+        self.template_chooser_button_rect = None
+        self.template_option_rects = {}
+        self.template_chooser_popup_rect = None
+        self.template_chooser_open = False
         self.crust_random_gas_giant_button_rect = None
         self.formation_theory_button_rect = None
         self.crust_save_button_rect = None
@@ -934,7 +1031,8 @@ class WorldGenSimulation:
         parent_body_id = self._resolve_entity_id(self.orbit_parent_body_id) if body_class == "moon" else parent_star_id
         anomaly_seed = f"{self.parent_system_id}:{self._slug_from_text(body_name)}:{semi_major_au:.6f}:{eccentricity:.6f}:{body_class}:{parent_body_id}"
         body_label = "moon" if body_class == "moon" else "planet"
-        return {
+        template = self.PLANET_TEMPLATES.get(self.active_planet_template, {})
+        fields = {
             "pretty_name": body_name,
             "name": body_name,
             "type": "location",
@@ -950,6 +1048,8 @@ class WorldGenSimulation:
             "periapsis_au": periapsis_au,
             "apoapsis_au": apoapsis_au,
             "orbit_reference_frame": "parent_body" if body_class == "moon" else "stellar",
+            "world_gen_template": self.active_planet_template,
+            "body_subclass": template.get("planet_class", "terrestrial"),
             "mean_anomaly_deg_at_epoch": round(seed_range(anomaly_seed, "mean_anomaly", 0.0, 360.0), 3),
             "map_projection": "equirectangular",
             "map_canvas_width_px": PLANETARY_CANVAS_WIDTH_PX,
@@ -972,6 +1072,27 @@ class WorldGenSimulation:
                 "start_condition": "Define radius, mass, rotation, volatile inventory, and plate tectonics mode.",
             },
         }
+        period_hours = self._moon_orbital_period_hours(semi_major_au * self.AU_M, parent_body_id)
+        if period_hours is not None:
+            fields["orbital_period_hours"] = round(period_hours, 4)
+        if body_class == "moon":
+            fields["formation_origin"] = "circumplanetary_accretion"
+            fields["tidally_locked"] = period_hours is not None
+            if period_hours is not None:
+                fields["orbital_period_hours"] = round(period_hours, 4)
+                fields["rotation_period_hours"] = round(period_hours, 4)
+        return fields
+
+    def _moon_orbital_period_hours(self, semi_major_axis_m, parent_body_id):
+        parent = self.world_model.get_entity(parent_body_id) if self.world_model is not None and parent_body_id else None
+        try:
+            parent_mass_kg = float((parent or {}).get("mass_kg", 0.0) or 0.0)
+            orbit_m = float(semi_major_axis_m or 0.0)
+        except (TypeError, ValueError):
+            return None
+        if parent_mass_kg <= 0.0 or orbit_m <= 0.0:
+            return None
+        return math.tau * math.sqrt(orbit_m ** 3 / (6.67430e-11 * parent_mass_kg)) / 3600.0
 
     def _formation_seed_for_planet(self, formation_model, planet_id=""):
         formation_model = formation_model if isinstance(formation_model, dict) else {}
@@ -1137,7 +1258,11 @@ class WorldGenSimulation:
         self.planet_name_buffer = self._unique_formation_planet_name(
             f"{self.get_scope_label()} Formation {existing_count + 1}"
         )
-        self.commit_status = "Formation theory staged a candidate. Rename it, then press Enter."
+        self.planet_name_select_all = True
+        template_label = self.pending_formation_seed.get("planet_template_label", "planet")
+        self.commit_status = (
+            f"Generated a {template_label} candidate. Type to replace the suggested name; Enter creates it."
+        )
         return True
 
     def _selected_planet_entity(self):
@@ -1334,6 +1459,9 @@ class WorldGenSimulation:
                 for item in atmosphere.get("composition", [])[:3]
                 if isinstance(item, dict)
             ],
+            "cloud_type": (atmosphere.get("cloud_model") or {}).get("cloud_class", "none"),
+            "cloud_coverage_fraction": (atmosphere.get("cloud_model") or {}).get("coverage_fraction", 0.0),
+            "circulation_regime": (atmosphere.get("circulation_model") or {}).get("circulation_class", "unknown"),
         }
         planet["environment_summary"] = {
             "status": "airless_surface_route_ready",
@@ -1446,7 +1574,9 @@ class WorldGenSimulation:
                     value = float(text)
                 except ValueError:
                     return None
-                if field_id in {"radius_earth", "crust_thickness_km", "angular_velocity_deg_per_hour"} and value <= 0:
+                if field_id in {"radius_earth", "crust_thickness_km"} and value <= 0:
+                    return None
+                if field_id == "angular_velocity_deg_per_hour" and abs(value) < 0.0001:
                     return None
                 if field_id == "core_radius_fraction" and not 0.0 <= value <= 0.95:
                     return None
@@ -1462,6 +1592,7 @@ class WorldGenSimulation:
         seed["planet_template"] = self.active_planet_template
         seed["planet_template_label"] = template.get("label", self.active_planet_template)
         seed["planet_class"] = template.get("planet_class", "terrestrial")
+        self._apply_orbital_body_seed_context(seed, planet, template)
         formation_model = planet.get("formation_model") if isinstance(planet.get("formation_model"), dict) else None
         if formation_model is None and isinstance(planet.get("formation_theory_seed"), dict):
             formation_model = planet["formation_theory_seed"].get("formation_model")
@@ -1525,6 +1656,7 @@ class WorldGenSimulation:
         seed["planet_template"] = self.active_planet_template
         seed["planet_template_label"] = template.get("label", self.active_planet_template)
         seed["planet_class"] = template.get("planet_class", "terrestrial")
+        self._apply_orbital_body_seed_context(seed, planet, template)
         formation_model = planet.get("formation_model") if isinstance(planet.get("formation_model"), dict) else None
         if formation_model is None and isinstance(planet.get("formation_theory_seed"), dict):
             formation_model = planet["formation_theory_seed"].get("formation_model")
@@ -1539,6 +1671,80 @@ class WorldGenSimulation:
 
     def _derive_planet_physics(self, seed=None):
         return derive_planet_physics(seed or self._current_seed_values(), self._estimate_crust_density())
+
+    def _apply_orbital_body_seed_context(self, seed, body, template):
+        body = body if isinstance(body, dict) else {}
+        template = template if isinstance(template, dict) else {}
+        class_key = str(body.get("location_class") or body.get("body_class") or self.pending_body_class or "planet").strip().lower()
+        seed["orbital_body_class"] = "moon" if class_key == "moon" else "planet"
+        existing_seed = body.get("world_gen_seed") if isinstance(body.get("world_gen_seed"), dict) else {}
+        for field in (
+            "core_density_kg_m3", "mantle_density_kg_m3", "bond_albedo",
+            "exosphere_source_strength", "surface_age_myr", "impact_flux_factor",
+            "resurfacing_fraction", "relief_scale",
+            "atmosphere_regime", "volatile_pressure_scale", "water_loss_fraction",
+            "geologic_style", "hypsometry_compression", "formation_delay_myr",
+            "max_crater_diameter_km",
+            "axial_tilt_deg", "greenhouse_efficiency", "biosphere_state",
+            "ocean_fraction_target",
+            "climate_mode", "seasonal_cycle", "synchronous_rotation",
+            "substellar_longitude_deg", "surface_fluid", "high_pressure_ice",
+            "aeolian_landforms", "target_ice_fraction",
+        ):
+            if existing_seed.get(field) is not None:
+                seed[field] = existing_seed[field]
+            elif template.get(field) is not None:
+                seed[field] = template[field]
+        system = self.world_model.get_entity(self.parent_system_id) if self.world_model is not None and self.parent_system_id else None
+        star = self.world_model.get_entity(self._primary_star_id()) if self.world_model is not None and self._primary_star_id() else None
+        for source in (system, star):
+            if isinstance(source, dict) and source.get("system_age_gyr", source.get("age_gyr")) is not None:
+                seed["system_age_gyr"] = float(source.get("system_age_gyr", source.get("age_gyr")))
+                break
+        seed_key = f"{seed.get('map_seed')}:{body.get('id') or seed.get('planet_id') or self.active_planet_template}"
+        for field, range_key in (
+            ("surface_age_myr", "surface_age_myr_range"),
+            ("impact_flux_factor", "impact_flux_factor_range"),
+            ("resurfacing_fraction", "resurfacing_fraction_range"),
+            ("tidal_heating_w_m2", "tidal_heating_w_m2_range"),
+            ("bulk_ice_fraction", "bulk_ice_fraction_range"),
+            ("surface_ice_fraction", "surface_ice_fraction_range"),
+            ("axial_tilt_deg", "axial_tilt_deg_range"),
+            ("ocean_fraction_target", "ocean_fraction_target_range"),
+            ("target_ice_fraction", "target_ice_fraction_range"),
+        ):
+            limits = template.get(range_key)
+            if isinstance(limits, (list, tuple)) and len(limits) >= 2 and seed.get(field) is None:
+                seed[field] = seed_range(seed_key, field, float(limits[0]), float(limits[1]))
+
+        if class_key != "moon":
+            return seed
+
+        seed["parent_body_id"] = self._resolve_entity_id(body.get("parent_body") or body.get("parent_location") or self.orbit_parent_body_id)
+        seed["parent_orbit_m"] = float(body.get("semi_major_axis_m", 0.0) or 0.0)
+        stellar_distance = self._stellar_distance_au_for_body(body)
+        if stellar_distance is not None:
+            seed["stellar_distance_au"] = stellar_distance
+
+        if seed.get("planet_class") != "icy_satellite":
+            return seed
+        seed_key = f"{seed.get('map_seed')}:{body.get('id') or seed.get('planet_id') or seed.get('parent_body_id')}"
+        for field, range_key in (
+            ("bulk_ice_fraction", "bulk_ice_fraction_range"),
+            ("surface_ice_fraction", "surface_ice_fraction_range"),
+            ("surface_age_myr", "surface_age_myr_range"),
+            ("tidal_heating_w_m2", "tidal_heating_w_m2_range"),
+            ("resurfacing_fraction", "resurfacing_fraction_range"),
+            ("impact_flux_factor", "impact_flux_factor_range"),
+        ):
+            limits = template.get(range_key)
+            if isinstance(limits, (list, tuple)) and len(limits) >= 2:
+                existing = (body.get("world_gen_seed") or {}).get(field) if isinstance(body.get("world_gen_seed"), dict) else None
+                seed[field] = float(existing) if existing is not None else seed_range(seed_key, field, float(limits[0]), float(limits[1]))
+        seed["surface_regime"] = "cratered_ice_shell"
+        seed["formation_origin"] = "circumplanetary_accretion"
+        seed["synchronous_rotation"] = True
+        return seed
 
     def _crust_classification(self):
         return classify_crust_type(self.crust_composition)
@@ -1627,7 +1833,8 @@ class WorldGenSimulation:
             return planet
         planet["_dataset"] = "locations"
         planet["type"] = "location"
-        planet["location_class"] = "planet"
+        class_key = str(planet.get("location_class") or planet.get("body_class") or "planet").strip().lower()
+        planet["location_class"] = class_key if class_key in {"planet", "moon"} else "planet"
         planet["location_role"] = "orbital_body"
         planet["system_role"] = "orbital_body"
         if not planet.get("star_system") and self.parent_system_id:
@@ -1636,7 +1843,7 @@ class WorldGenSimulation:
             planet["parent_body"] = planet.get("parent_location")
         if not planet.get("parent_location") and planet.get("parent_body"):
             planet["parent_location"] = planet.get("parent_body")
-        if not planet.get("parent_body") and self._primary_star_id():
+        if planet["location_class"] != "moon" and not planet.get("parent_body") and self._primary_star_id():
             parent_star_id = self._primary_star_id()
             planet["parent_body"] = parent_star_id
             planet["parent_location"] = parent_star_id
@@ -1665,14 +1872,16 @@ class WorldGenSimulation:
         planet["atmospheric_material_model"] = atmospheric_material_model
         planet["atmospheric_materials"] = list(atmospheric_material_model.get("dominant_materials") or [])
         planet["atmosphere_bands"] = list(palette.get("bands") or [])
-        planet["surface_palette"] = {
-            "surface_color": list(palette.get("base_color") or [150, 160, 172]),
-            "palette": list(palette.get("bands") or []),
-            "source": "atmospheric_materials",
-            "evidence": list(atmospheric_material_model.get("likely_materials") or [])[:5],
-        }
-        if palette.get("base_color"):
-            planet["display_color"] = list(palette["base_color"])
+        planet["atmosphere_visual_model"] = dict(atmosphere.get("visual_model") or {})
+        if atmosphere.get("has_solid_surface") is False:
+            planet["surface_palette"] = {
+                "surface_color": list(palette.get("base_color") or [150, 160, 172]),
+                "palette": list(palette.get("bands") or []),
+                "source": "atmospheric_materials",
+                "evidence": list(atmospheric_material_model.get("likely_materials") or [])[:5],
+            }
+            if palette.get("base_color"):
+                planet["display_color"] = list(palette["base_color"])
         return atmospheric_material_model
 
     def _apply_surface_material_palette(self, planet, natural_material_model, atmosphere=None, terrain=None):
@@ -1768,14 +1977,25 @@ class WorldGenSimulation:
         planet = self._selected_planet_entity()
         if not isinstance(planet, dict):
             return None
-        value = planet.get("semi_major_axis_m")
+        return self._stellar_distance_au_for_body(planet)
+
+    def _stellar_distance_au_for_body(self, body):
+        if not isinstance(body, dict):
+            return None
+        class_key = str(body.get("location_class") or body.get("body_class") or "").strip().lower()
+        if class_key == "moon":
+            parent_id = self._resolve_entity_id(body.get("parent_body") or body.get("parent_location") or self.orbit_parent_body_id)
+            parent = self.world_model.get_entity(parent_id) if self.world_model is not None and parent_id else None
+            if isinstance(parent, dict):
+                return self._stellar_distance_au_for_body(parent)
+        value = body.get("semi_major_axis_m")
         try:
             if value:
                 return float(value) / self.AU_M
         except (TypeError, ValueError):
             pass
-        periapsis = self._parse_float(planet.get("periapsis_au"))
-        apoapsis = self._parse_float(planet.get("apoapsis_au"))
+        periapsis = self._parse_float(body.get("periapsis_au"))
+        apoapsis = self._parse_float(body.get("apoapsis_au"))
         if periapsis is not None and apoapsis is not None:
             return (periapsis + apoapsis) / 2.0
         return None
@@ -2031,14 +2251,32 @@ class WorldGenSimulation:
                 element["abundance_percent"] = round(element["abundance_percent"] * scale, 4)
         return traces
 
-    def randomize_seed(self, mode="generic", rng=None):
-        mode = "gas_giant" if mode == "gas_giant" else ("eccentric" if mode == "eccentric" else "generic")
+    def randomize_seed(self, mode="generic", rng=None, template_id=None):
+        mode = "template" if mode == "template" else ("gas_giant" if mode == "gas_giant" else ("eccentric" if mode == "eccentric" else "generic"))
         rng = rng or random.Random()
-        template_id = self._choose_planet_template(rng, mode)
+        template_id = template_id if template_id in self.PLANET_TEMPLATES else self._choose_planet_template(rng, mode)
         template = self.PLANET_TEMPLATES.get(template_id, self.PLANET_TEMPLATES["silicate_terrestrial"])
         self.active_planet_template = template_id
 
-        if mode == "gas_giant":
+        if mode == "template":
+            numeric_ranges = dict(template.get("numeric_ranges") or {})
+            template_class = str(template.get("planet_class") or "terrestrial")
+            class_defaults = {
+                "gas_giant": ((7.5, 12.5), (0.02, 0.2), (0.2, 8.0), (20.0, 75.0)),
+                "ice_giant": ((2.8, 5.0), (0.05, 0.3), (1.0, 15.0), (16.0, 60.0)),
+                "icy_satellite": ((0.04, 0.3), (0.25, 0.68), (45.0, 260.0), (0.25, 6.0)),
+                "airless_rocky": ((0.18, 1.05), (0.42, 0.82), (12.0, 110.0), (0.5, 30.0)),
+                "ocean_world": ((0.8, 1.65), (0.35, 0.62), (10.0, 48.0), (7.0, 25.0)),
+            }.get(template_class, ((0.75, 1.35), (0.42, 0.68), (18.0, 55.0), (9.0, 24.0)))
+            numeric_ranges.setdefault("radius_earth", class_defaults[0])
+            numeric_ranges.setdefault("core_radius_fraction", class_defaults[1])
+            numeric_ranges.setdefault("crust_thickness_km", class_defaults[2])
+            numeric_ranges.setdefault("angular_velocity_deg_per_hour", class_defaults[3])
+            numeric_ranges.setdefault("water_fraction", template.get("water_range", (0.15, 0.78)))
+            volatile_options = template.get("volatile_options", ["earthlike"])
+            tectonics_options = template.get("tectonics_options", ["unknown"])
+            status = f"Generated {template.get('label', 'world').lower()} template seed"
+        elif mode == "gas_giant":
             numeric_ranges = {
                 "radius_earth": (3.2, 11.8) if template_id == "gas_giant" else (2.8, 4.4),
                 "core_radius_fraction": (0.02, 0.22),
@@ -2169,6 +2407,9 @@ class WorldGenSimulation:
         planet["atmosphere_summary"] = {
             "status": "modeled",
             "atmosphere_class": atmosphere.get("atmosphere_class", "unknown"),
+            "atmosphere_state": atmosphere.get("atmosphere_state", "unknown"),
+            "has_collisional_atmosphere": atmosphere.get("has_collisional_atmosphere", False),
+            "has_exosphere": atmosphere.get("has_exosphere", False),
             "has_solid_surface": atmosphere.get("has_solid_surface", True),
             "surface_pressure_bar": atmosphere["surface_pressure_bar"],
             "estimated_surface_temperature_k": atmosphere["estimated_surface_temperature_k"],
@@ -2217,7 +2458,9 @@ class WorldGenSimulation:
             planet["atmosphere_model"] = atmosphere
 
         regime = self._derive_interior_regime_model(seed, physics, atmosphere)
+        evolution = derive_planetary_evolution_model(seed, atmosphere=atmosphere, regime=regime)
         planet["interior_regime_model"] = regime
+        planet["planetary_evolution_model"] = evolution
         planet["surface_process_model"] = regime.get("surface_processes", {})
         planet["map_generation_recipe"] = regime.get("map_recipe", [])
         planet["geology_summary"] = {
@@ -2234,6 +2477,20 @@ class WorldGenSimulation:
             "surface_pressure_bar": regime["surface_processes"]["surface_pressure_bar"],
             "surface_temperature_k": regime["surface_processes"]["surface_temperature_k"],
         }
+        water_loss_fraction = float(seed.get("water_loss_fraction", 0.0) or 0.0)
+        if water_loss_fraction >= 0.5:
+            cloud_model = atmosphere.get("cloud_model") or {}
+            planet["hydrologic_history_model"] = {
+                "current_surface_water_cycle": "collapsed",
+                "surface_liquid_water": False,
+                "surface_rainfall": False,
+                "surface_runoff": False,
+                "former_surface_water": "possible_ancient_ocean_or_shallow_seas",
+                "water_loss_fraction": water_loss_fraction,
+                "present_condensate_cycle": cloud_model.get("condensate_cycle", "none"),
+                "precipitation_fate": cloud_model.get("precipitation_fate", "none"),
+                "temporal_state": "ancient_water_loss_complete_present_dry_state",
+            }
         tags = list(planet.get("tags") or [])
         for tag in ("interior_regime_modeled", "surface_processes_modeled"):
             if tag not in tags:
@@ -2296,6 +2553,11 @@ class WorldGenSimulation:
             planet["surface_process_model"] = regime.get("surface_processes", {})
 
         terrain = self._derive_terrain_seed_model(seed, physics, atmosphere, regime)
+        if str(seed.get("geologic_style") or "") == "plume_lid_volcanic":
+            feature_model = derive_plume_lid_feature_model(seed, physics=physics)
+            terrain["plume_lid_feature_model"] = feature_model
+            planet["plume_lid_feature_model"] = feature_model
+            planet["surface_weathering_model"] = derive_hot_surface_weathering_model(seed, atmosphere, feature_model=feature_model)
         natural_material_model = self._derive_natural_material_model(seed, atmosphere, regime, terrain)
         surface_palette = self._apply_surface_material_palette(planet, natural_material_model, atmosphere=atmosphere, terrain=terrain)
         canvas = terrain.get("map_canvas", {})
@@ -2534,6 +2796,7 @@ class WorldGenSimulation:
             planet_id=planet.get("id", ""),
         )
         planet["water_cycle_model"] = model
+        planet["ocean_circulation_model"] = model.get("ocean_circulation_model")
         planet["river_model"] = {
             "status": model.get("status"),
             "model_version": model.get("model_version"),
@@ -2564,6 +2827,9 @@ class WorldGenSimulation:
             "river_count": int(model.get("river_count", 0) or 0),
             "liquid_water_possible": bool(model.get("liquid_water_possible")),
             "hydrology_enabled": bool(model.get("hydrology_enabled")),
+            "mean_land_precipitation_mm": (model.get("runoff_summary") or {}).get("mean_land_precipitation_mm"),
+            "ocean_basin_count": (model.get("runoff_summary") or {}).get("ocean_basin_count", 0),
+            "major_gyre_count": (model.get("runoff_summary") or {}).get("major_gyre_count", 0),
         }
         if isinstance(planet.get("hydrology_summary"), dict):
             planet["hydrology_summary"].update({
@@ -2804,11 +3070,13 @@ class WorldGenSimulation:
     def _open_planet_name_prompt(self):
         self.planet_name_prompt_active = True
         self.planet_name_buffer = ""
+        self.planet_name_select_all = False
         self.commit_status = "Name the new planet"
 
     def _cancel_planet_name_prompt(self):
         self.planet_name_prompt_active = False
         self.planet_name_buffer = ""
+        self.planet_name_select_all = False
         self.pending_formation_model = None
         self.pending_formation_seed = None
         self._reset_orbit_draft(clear_inputs=True)
@@ -2845,9 +3113,14 @@ class WorldGenSimulation:
             self.planet_location_id = planet["id"]
         self.planet_entity = planet
         self.selected_world_gen_planet_id = planet["id"]
+        if planet.get("location_class") == "moon" and planet.get("rotation_period_hours"):
+            self.seed_input_buffers["angular_velocity_deg_per_hour"] = self._format_seed_input(
+                360.0 / float(planet["rotation_period_hours"])
+            )
         self.editor_stage = self._resume_stage_for_planet(planet)
         self.planet_name_prompt_active = False
         self.planet_name_buffer = ""
+        self.planet_name_select_all = False
         self.pending_orbit_radius_au = None
         self.orbit_pick_stage = "first"
         self.pending_body_class = "planet"
@@ -2912,8 +3185,19 @@ class WorldGenSimulation:
             return None
 
         orbit = model.get("semi_major_axis_au")
+        stellar_orbit = orbit
+        if self.pending_body_class == "moon" and self.orbit_parent_body_id:
+            parent = self.world_model.get_entity(self.orbit_parent_body_id) if self.world_model else None
+            stellar_orbit = self._stellar_distance_au_for_body(parent) or 1.0
         formation = self.pending_formation_model
-        if not isinstance(formation, dict):
+        if self.pending_body_class == "moon":
+            formation = {
+                "suggested_planet_template": "icy_satellite",
+                "volatile_inventory": "none",
+                "water_fraction_range": [0.0, 0.02],
+                "formation_zone": "circumplanetary_satellite_disk",
+            }
+        elif not isinstance(formation, dict):
             formation = formation_model_for_orbit(
                 self.star_luminosity_solar,
                 orbit,
@@ -2923,8 +3207,8 @@ class WorldGenSimulation:
             )
         template_id = formation.get("suggested_planet_template") or self.active_planet_template
         template = self.PLANET_TEMPLATES.get(template_id, self.PLANET_TEMPLATES["silicate_terrestrial"])
-        flux = self._stellar_flux_earth(orbit)
-        equilibrium_k = 278.0 * (max(0.001, float(self.star_luminosity_solar or 1.0)) ** 0.25) / (max(0.03, float(orbit or 1.0)) ** 0.5)
+        flux = self._stellar_flux_earth(stellar_orbit)
+        equilibrium_k = 278.0 * (max(0.001, float(self.star_luminosity_solar or 1.0)) ** 0.25) / (max(0.03, float(stellar_orbit or 1.0)) ** 0.5)
         greenhouse_by_inventory = {
             "none": 0.0,
             "thin": 3.0,
@@ -3109,7 +3393,7 @@ class WorldGenSimulation:
                     "text": self.input_buffers.get(field_id, ""),
                     "active": field_id == self.active_input_field,
                 }
-                for field_id, label in self.INPUT_FIELDS
+                for field_id, label in self._orbit_input_fields()
             ],
             "system_bodies": self._active_system_bodies(),
             "selected_planet": selected_planet,
@@ -3130,6 +3414,16 @@ class WorldGenSimulation:
             "crust_type": self._crust_classification(),
             "planet_template": self.active_planet_template,
             "planet_template_label": self.PLANET_TEMPLATES.get(self.active_planet_template, {}).get("label", self.active_planet_template),
+            "template_chooser_open": self.template_chooser_open,
+            "planet_templates": [
+                {
+                    "id": template_id,
+                    "label": template.get("label", template_id),
+                    "category": template.get("category", "Existing templates"),
+                    "description": template.get("description", ""),
+                }
+                for template_id, template in self.PLANET_TEMPLATES.items()
+            ],
             "planet_class": self.PLANET_TEMPLATES.get(self.active_planet_template, {}).get("planet_class", "terrestrial"),
             "derived_planet_physics": derived_physics,
             "periodic_table_open": self.periodic_table_open,
@@ -3162,11 +3456,20 @@ class WorldGenSimulation:
             "pending_body_class": self.pending_body_class,
             "planet_name_prompt_active": self.planet_name_prompt_active,
             "planet_name_buffer": self.planet_name_buffer,
+            "planet_name_select_all": self.planet_name_select_all,
             "commit_status": self.commit_status,
             "selected_world_gen_planet_id": self.selected_world_gen_planet_id,
         }
 
     def _summary_lines(self, model):
+        if self.pending_body_class == "moon":
+            semi_major_au = model.get("semi_major_axis_au")
+            semi_major_km = float(semi_major_au or 0.0) * self.AU_M / 1000.0
+            return [
+                f"Parent-centered semi-major axis: {semi_major_km:,.0f} km",
+                f"Eccentricity: {self._format_float(model.get('eccentricity'), digits=4)}",
+                f"Stellar distance inherited from parent: {self._format_float(self._stellar_distance_au_for_body(self.world_model.get_entity(self.orbit_parent_body_id)) if self.world_model and self.orbit_parent_body_id else None)} AU",
+            ]
         return [
             f"Semi-major axis: {self._format_float(model.get('semi_major_axis_au'))} AU",
             f"Eccentricity: {self._format_float(model.get('eccentricity'), digits=4)}",
@@ -3176,6 +3479,14 @@ class WorldGenSimulation:
                 f"{self._format_float(model.get('habitable_zone_outer_au'))} AU"
             ),
         ]
+
+    def _orbit_input_fields(self):
+        if self.pending_body_class == "moon":
+            return [
+                ("periapsis_au", "Periapsis from Parent (AU)"),
+                ("apoapsis_au", "Apoapsis from Parent (AU)"),
+            ]
+        return self.INPUT_FIELDS
 
     def _cycle_input_field(self, direction=1):
         field_ids = [field_id for field_id, _label in self.INPUT_FIELDS]
@@ -3207,12 +3518,20 @@ class WorldGenSimulation:
                 if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                     self._commit_named_planet()
                     return
+                if event.key == pygame.K_a and (event.mod & pygame.KMOD_CTRL):
+                    self.planet_name_select_all = True
+                    return
                 if event.key == pygame.K_BACKSPACE:
-                    self.planet_name_buffer = self.planet_name_buffer[:-1]
+                    if self.planet_name_select_all:
+                        self.planet_name_buffer = ""
+                    else:
+                        self.planet_name_buffer = self.planet_name_buffer[:-1]
+                    self.planet_name_select_all = False
                     return
                 text = getattr(event, "unicode", "")
                 if text and text.isprintable():
-                    self.planet_name_buffer += text
+                    self.planet_name_buffer = text if self.planet_name_select_all else self.planet_name_buffer + text
+                    self.planet_name_select_all = False
                     return
                 return
 
@@ -3342,6 +3661,16 @@ class WorldGenSimulation:
                 self.periodic_table_open = False
             return
 
+        if self.template_chooser_open:
+            for template_id, rect in self.template_option_rects.items():
+                if rect.collidepoint(screen_pos):
+                    self.template_chooser_open = False
+                    self.randomize_seed("template", template_id=template_id)
+                    return
+            if self.template_chooser_popup_rect is None or not self.template_chooser_popup_rect.collidepoint(screen_pos):
+                self.template_chooser_open = False
+            return
+
         selected_planet = self._selected_planet_entity()
         if self.control_panel_rect is not None and self.control_panel_rect.collidepoint(screen_pos):
             if (
@@ -3413,6 +3742,11 @@ class WorldGenSimulation:
                 and self.crust_random_eccentric_button_rect.collidepoint(screen_pos)
             ):
                 self.randomize_seed("eccentric")
+                return
+            if self.template_chooser_button_rect is not None and self.template_chooser_button_rect.collidepoint(screen_pos):
+                self.template_chooser_open = not self.template_chooser_open
+                self.periodic_table_open = False
+                self.commit_status = "Choose a world template; defining traits are fixed and the rest will vary"
                 return
             if (
                 self.crust_random_gas_giant_button_rect is not None

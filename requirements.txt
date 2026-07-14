@@ -1,3 +1,5 @@
 pygame>=2.5; python_version < "3.14"
 pygame-ce>=2.5; python_version >= "3.14"
 owlready2>=0.45
+numpy>=1.26
+pyshp>=3.1

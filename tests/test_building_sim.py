@@ -1130,6 +1130,35 @@ class BuildingSimulationTests(unittest.TestCase):
         self.assertIn("loc_greenland", layer_ids)
         self.assertNotIn("moon_luna", layer_ids)
 
+    def test_planet_map_can_toggle_atmosphere_without_changing_layer(self):
+        planet = {
+            "id": "planet_clouded",
+            "name": "Clouded",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "heightmap_model": {
+                "sample_grid": {"rows": [[0, 1], [1, 0]]},
+            },
+            "atmosphere_visual_model": {
+                "visible": True,
+                "tint_color": [202, 166, 82],
+                "opacity": 0.56,
+            },
+        }
+        sim = MapSimulation(SimulationContext(
+            year=2400,
+            root_entity_id=planet["id"],
+            world_model=FakeWorldModel([planet]),
+        ))
+
+        self.assertTrue(sim.is_atmosphere_visible())
+        self.assertEqual(0.56, sim.get_heightmap_base_layer()["atmosphere_opacity"])
+        self.assertTrue(sim.toggle_atmosphere_visibility())
+        self.assertFalse(sim.is_atmosphere_visible())
+        self.assertEqual(0.0, sim.get_heightmap_base_layer()["atmosphere_opacity"])
+        self.assertEqual(sim.LOCATION_LAYER_KIND, sim.get_active_layer_kind())
+
     def test_combined_map_includes_location_geometry(self):
         world_model = FakeWorldModel([
             {

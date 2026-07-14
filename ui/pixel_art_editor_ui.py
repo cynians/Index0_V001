@@ -1,5 +1,7 @@
 import colorsys
+import gzip
 import io
+import json
 import os
 
 import pygame
@@ -58,6 +60,14 @@ class PixelArtEditorUI:
         parent = self.host._parent_entity_for_illustration(illustration)
         existing_size = illustration.get("depicted_size_m") or illustration.get("metric_size_m")
         size_text = "" if existing_size in (None, "") else str(existing_size)
+        setup_mode = str(illustration.get("pixel_editor_mode") or "single")
+        if setup_mode not in {"single", "orthographic"}:
+            setup_mode = "single"
+        dimension_buffers = {
+            "length": str(illustration.get("depicted_length_m") or size_text),
+            "width": str(illustration.get("depicted_width_m") or ""),
+            "height": str(illustration.get("depicted_height_m") or ""),
+        }
         self.state = {
             "stage": "size",
             "illustration_id": illustration_id,
@@ -65,20 +75,48 @@ class PixelArtEditorUI:
             "parent_entity": parent,
             "metric_size_buffer": size_text,
             "metric_size_cursor": len(size_text),
+            "setup_mode": setup_mode,
+            "dimension_buffers": dimension_buffers,
+            "dimension_cursors": {key: len(value) for key, value in dimension_buffers.items()},
+            "active_dimension": "length",
+            "views": {},
+            "active_view": "single",
             "status": "Enter depicted size in meters",
             "color": (236, 240, 246),
             "hsv": colorsys.rgb_to_hsv(236 / 255.0, 240 / 255.0, 246 / 255.0),
             "pixels": [],
+            "layers": [],
+            "active_layer": 0,
             "canvas_width": 0,
             "canvas_height": 0,
             "tool": "brush",
             "brush_size": 1,
+            "pressure_size": True,
+            "pressure": 1.0,
+            "zoom": 1.0,
+            "pan": [0.0, 0.0],
+            "panning": False,
+            "pan_anchor": None,
+            "show_grid": True,
+            "mirror_x": False,
+            "onion_skin": False,
+            "undo_stack": [],
+            "redo_stack": [],
+            "stroke_before": None,
+            "stroke_changed": False,
+            "dirty": False,
+            "revision": 0,
+            "composite_cache": None,
+            "last_paint_cell": None,
             "active_slider": None,
             "tool_hitboxes": {},
             "brush_size_hitboxes": {},
             "clear_rect": None,
             "reference_surface": None,
             "reference_rect": None,
+            "setup_mode_hitboxes": {},
+            "dimension_hitboxes": {},
+            "view_hitboxes": {},
         }
         self.painting = False
         return True
@@ -88,6 +126,14 @@ class PixelArtEditorUI:
         self.painting = False
         return True
 
+    def request_close(self):
+        editor = self.state
+        if isinstance(editor, dict) and editor.get("dirty") and not editor.get("confirm_close"):
+            editor["confirm_close"] = True
+            editor["status"] = "Unsaved changes — press Close or Esc again to discard"
+            return True
+        return self.close()
+
     def metric_size(self):
         editor = self.state if isinstance(self.state, dict) else {}
         try:
@@ -95,24 +141,339 @@ class PixelArtEditorUI:
         except ValueError:
             return None
 
+    def dimension_value(self, name):
+        editor = self.state if isinstance(self.state, dict) else {}
+        try:
+            return max(0.0, float(str((editor.get("dimension_buffers") or {}).get(name) or "").replace(",", ".")))
+        except ValueError:
+            return None
+
+    def _new_view(self, width, height, name):
+        pixels = self._blank_pixels(width, height)
+        return {
+            "name": name,
+            "width": width,
+            "height": height,
+            "layers": [{"name": "Layer 1", "visible": True, "opacity": 1.0, "pixels": pixels}],
+            "active_layer": 0,
+            "undo_stack": [],
+            "redo_stack": [],
+            "revision": 0,
+            "composite_cache": None,
+            "zoom": 1.0,
+            "pan": [0.0, 0.0],
+        }
+
+    def _sync_active_view(self):
+        editor = self.state
+        if not isinstance(editor, dict) or not editor.get("views"):
+            return
+        view = editor["views"].get(editor.get("active_view"))
+        if not isinstance(view, dict):
+            return
+        view.update({
+            "width": int(editor.get("canvas_width") or 0),
+            "height": int(editor.get("canvas_height") or 0),
+            "layers": editor.get("layers") or [],
+            "active_layer": int(editor.get("active_layer") or 0),
+            "undo_stack": editor.get("undo_stack") or [],
+            "redo_stack": editor.get("redo_stack") or [],
+            "revision": int(editor.get("revision") or 0),
+            "composite_cache": editor.get("composite_cache"),
+            "zoom": float(editor.get("zoom", 1.0)),
+            "pan": list(editor.get("pan") or [0.0, 0.0]),
+        })
+
+    def switch_view(self, view_id):
+        editor = self.state
+        if not isinstance(editor, dict) or view_id not in (editor.get("views") or {}):
+            return False
+        self.finish_stroke()
+        self._sync_active_view()
+        view = editor["views"][view_id]
+        editor["active_view"] = view_id
+        editor["canvas_width"] = int(view.get("width") or 1)
+        editor["canvas_height"] = int(view.get("height") or 1)
+        editor["layers"] = view.get("layers") or []
+        editor["active_layer"] = int(view.get("active_layer") or 0)
+        editor["undo_stack"] = view.setdefault("undo_stack", [])
+        editor["redo_stack"] = view.setdefault("redo_stack", [])
+        editor["revision"] = int(view.get("revision") or 0)
+        editor["composite_cache"] = view.get("composite_cache")
+        editor["zoom"] = float(view.get("zoom", 1.0))
+        editor["pan"] = list(view.get("pan") or [0.0, 0.0])
+        self._active_layer()
+        editor["status"] = f"{view.get('name', view_id.title())} view — {editor['canvas_width']} x {editor['canvas_height']} px"
+        return True
+
+    def _orthographic_view_sizes(self, length, width, height):
+        longest = max(length, width, height)
+        base_size = self.host._pixel_canvas_size_for_entity(self.state.get("parent_entity"), longest)
+        pixels_per_meter = max(base_size) / max(0.001, longest)
+
+        def size(horizontal, vertical):
+            return max(8, round(horizontal * pixels_per_meter)), max(8, round(vertical * pixels_per_meter))
+
+        return {
+            "front": size(length, height),
+            "side": size(width, height),
+            "top": size(length, width),
+        }
+
     def begin_canvas(self):
         editor = self.state
         if not isinstance(editor, dict):
             return False
-        metric_size_m = self.metric_size()
-        if metric_size_m is None or metric_size_m <= 0:
-            editor["status"] = "Size must be a positive meter value"
-            return True
-
-        width, height = self.host._pixel_canvas_size_for_entity(
-            editor.get("parent_entity"),
-            metric_size_m,
-        )
+        mode = editor.get("setup_mode", "single")
+        dimensions = None
+        if mode == "orthographic":
+            dimensions = {name: self.dimension_value(name) for name in ("length", "width", "height")}
+            if any(value is None or value <= 0 for value in dimensions.values()):
+                editor["status"] = "Length, width, and height must all be positive meter values"
+                return True
+            view_sizes = self._orthographic_view_sizes(dimensions["length"], dimensions["width"], dimensions["height"])
+            views = {view_id: self._new_view(*view_sizes[view_id], f"{view_id.title()}") for view_id in ("front", "side", "top")}
+            width, height = view_sizes["front"]
+        else:
+            metric_size_m = self.metric_size()
+            if metric_size_m is None or metric_size_m <= 0:
+                editor["status"] = "Size must be a positive meter value"
+                return True
+            width, height = self.host._pixel_canvas_size_for_entity(editor.get("parent_entity"), metric_size_m)
+            views = {"single": self._new_view(width, height, "Single")}
+        existing_surface = None
+        loaded_layers = None
+        loaded_views = None
+        document_path = str((editor.get("illustration") or {}).get("pixel_document_path") or "").strip()
+        if document_path:
+            candidate = os.path.normpath(str(self.host.PROJECT_ROOT / document_path))
+            try:
+                with gzip.open(candidate, "rt", encoding="utf-8") as handle:
+                    document = json.load(handle)
+                doc_width, doc_height = int(document.get("width") or 0), int(document.get("height") or 0)
+                candidate_layers = document.get("layers")
+                candidate_views = document.get("views")
+                if mode == "orthographic" and isinstance(candidate_views, dict) and all(key in candidate_views for key in ("front", "side", "top")):
+                    loaded_views = candidate_views
+                if doc_width > 0 and doc_height > 0 and isinstance(candidate_layers, list) and candidate_layers:
+                    width, height, loaded_layers = doc_width, doc_height, candidate_layers
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                loaded_layers = None
+        media_path = str((editor.get("illustration") or {}).get("media_path") or "").strip()
+        if media_path and loaded_layers is None and loaded_views is None and mode == "single":
+            candidate = os.path.normpath(str(self.host.PROJECT_ROOT / media_path))
+            if os.path.isfile(candidate):
+                try:
+                    existing_surface = pygame.image.load(candidate).convert_alpha()
+                    width, height = existing_surface.get_size()
+                except (pygame.error, OSError):
+                    existing_surface = None
+        pixels = self._blank_pixels(width, height)
+        if existing_surface is not None:
+            for y in range(height):
+                for x in range(width):
+                    color = existing_surface.get_at((x, y))
+                    if color.a:
+                        pixels[y][x] = (color.r, color.g, color.b)
+        if mode == "single":
+            single = views["single"]
+            single["layers"] = loaded_layers or [{"name": "Layer 1", "visible": True, "opacity": 1.0, "pixels": pixels}]
+            single["active_layer"] = max(0, min(int((document if loaded_layers else {}).get("active_layer", 0)), len(single["layers"]) - 1))
+        elif loaded_views:
+            views = loaded_views
         editor["stage"] = "canvas"
-        editor["canvas_width"] = width
-        editor["canvas_height"] = height
-        editor["pixels"] = [[None for _ in range(width)] for _ in range(height)]
-        editor["status"] = f"{width} x {height} px canvas"
+        editor["views"] = views
+        initial_view = "front" if mode == "orthographic" else "single"
+        editor["active_view"] = None
+        editor["dirty"] = False
+        self.switch_view(initial_view)
+        if loaded_views:
+            editor["status"] = "Restored front, side, and top drawing views"
+        elif loaded_layers:
+            editor["status"] = f"Restored {len(loaded_layers)} layers"
+        elif existing_surface is not None:
+            editor["status"] = f"Editing existing {width} x {height} px image"
+        return True
+
+    @staticmethod
+    def _blank_pixels(width, height):
+        return [[None for _ in range(width)] for _ in range(height)]
+
+    @staticmethod
+    def _copy_pixels(pixels):
+        return [list(row) for row in pixels]
+
+    def _layers(self):
+        editor = self.state
+        if not isinstance(editor, dict):
+            return []
+        layers = editor.get("layers")
+        if not isinstance(layers, list) or not layers:
+            pixels = editor.get("pixels")
+            if isinstance(pixels, list):
+                layers = [{"name": "Layer 1", "visible": True, "opacity": 1.0, "pixels": pixels}]
+                editor["layers"] = layers
+            else:
+                return []
+        return layers
+
+    def _active_layer(self):
+        editor = self.state
+        layers = self._layers()
+        if not isinstance(editor, dict) or not layers:
+            return None
+        index = max(0, min(int(editor.get("active_layer") or 0), len(layers) - 1))
+        editor["active_layer"] = index
+        editor["pixels"] = layers[index]["pixels"]  # Compatibility with the original editor contract.
+        return layers[index]
+
+    def _snapshot(self):
+        return self._snapshot_layers(self._layers())
+
+    def _snapshot_layers(self, layers):
+        return [{
+            "name": str(layer.get("name") or "Layer"),
+            "visible": bool(layer.get("visible", True)),
+            "opacity": float(layer.get("opacity", 1.0)),
+            "reference_only": bool(layer.get("reference_only", False)),
+            "locked": bool(layer.get("locked", False)),
+            "pixels": self._copy_pixels(layer.get("pixels") or []),
+        } for layer in layers]
+
+    def _mark_dirty(self):
+        editor = self.state
+        if isinstance(editor, dict):
+            editor["dirty"] = True
+            editor["revision"] = int(editor.get("revision") or 0) + 1
+            editor["composite_cache"] = None
+
+    def _restore_snapshot(self, snapshot):
+        editor = self.state
+        if not isinstance(editor, dict) or not isinstance(snapshot, list) or not snapshot:
+            return False
+        editor["layers"] = snapshot
+        editor["active_layer"] = min(int(editor.get("active_layer") or 0), len(snapshot) - 1)
+        self._active_layer()
+        self._mark_dirty()
+        return True
+
+    def _push_undo(self, snapshot=None):
+        editor = self.state
+        if not isinstance(editor, dict):
+            return
+        stack = editor.setdefault("undo_stack", [])
+        stack.append(snapshot if snapshot is not None else self._snapshot())
+        if len(stack) > 30:
+            del stack[0]
+        editor["redo_stack"] = []
+
+    def undo(self):
+        editor = self.state
+        if not isinstance(editor, dict) or not editor.get("undo_stack"):
+            return False
+        editor.setdefault("redo_stack", []).append(self._snapshot())
+        self._restore_snapshot(editor["undo_stack"].pop())
+        editor["status"] = "Undo"
+        return True
+
+    def redo(self):
+        editor = self.state
+        if not isinstance(editor, dict) or not editor.get("redo_stack"):
+            return False
+        editor.setdefault("undo_stack", []).append(self._snapshot())
+        self._restore_snapshot(editor["redo_stack"].pop())
+        editor["status"] = "Redo"
+        return True
+
+    def add_layer(self):
+        editor = self.state
+        if not isinstance(editor, dict):
+            return False
+        self._push_undo()
+        layers = self._layers()
+        width, height = int(editor.get("canvas_width") or 0), int(editor.get("canvas_height") or 0)
+        index = min(len(layers), int(editor.get("active_layer") or 0) + 1)
+        layers.insert(index, {"name": f"Layer {len(layers) + 1}", "visible": True, "opacity": 1.0, "pixels": self._blank_pixels(width, height)})
+        editor["active_layer"] = index
+        self._active_layer()
+        self._mark_dirty()
+        editor["status"] = "Layer added"
+        return True
+
+    def duplicate_layer(self):
+        editor = self.state
+        layer = self._active_layer()
+        if not isinstance(editor, dict) or layer is None:
+            return False
+        if layer.get("reference_only"):
+            editor["status"] = "Use <- Trace to replace the reference layer"
+            return False
+        self._push_undo()
+        duplicate = {**layer, "name": f"{layer.get('name', 'Layer')} copy", "pixels": self._copy_pixels(layer["pixels"])}
+        index = int(editor.get("active_layer") or 0) + 1
+        self._layers().insert(index, duplicate)
+        editor["active_layer"] = index
+        self._active_layer()
+        self._mark_dirty()
+        return True
+
+    def delete_layer(self):
+        editor = self.state
+        layers = self._layers()
+        if not isinstance(editor, dict) or len(layers) <= 1:
+            if isinstance(editor, dict):
+                editor["status"] = "A document needs at least one layer"
+            return False
+        active_index = int(editor.get("active_layer") or 0)
+        drawing_layer_count = sum(1 for layer in layers if not layer.get("reference_only"))
+        if not layers[active_index].get("reference_only") and drawing_layer_count <= 1:
+            editor["status"] = "A document needs at least one drawing layer"
+            return False
+        self._push_undo()
+        layers.pop(active_index)
+        editor["active_layer"] = min(int(editor.get("active_layer") or 0), len(layers) - 1)
+        self._active_layer()
+        self._mark_dirty()
+        return True
+
+    def move_layer(self, delta):
+        editor = self.state
+        layers = self._layers()
+        if not isinstance(editor, dict) or not layers:
+            return False
+        old = int(editor.get("active_layer") or 0)
+        if layers[old].get("reference_only"):
+            editor["status"] = "The reference trace stays at the bottom"
+            return False
+        lowest_drawing_index = 1 if layers and layers[0].get("reference_only") else 0
+        new = max(lowest_drawing_index, min(len(layers) - 1, old + int(delta)))
+        if old == new:
+            return False
+        self._push_undo()
+        layers.insert(new, layers.pop(old))
+        editor["active_layer"] = new
+        self._active_layer()
+        self._mark_dirty()
+        return True
+
+    def toggle_layer_visibility(self, index):
+        layers = self._layers()
+        if not (0 <= int(index) < len(layers)):
+            return False
+        self._push_undo()
+        layer = layers[int(index)]
+        layer["visible"] = not bool(layer.get("visible", True))
+        self._mark_dirty()
+        return True
+
+    def select_layer(self, index):
+        editor = self.state
+        layers = self._layers()
+        if not isinstance(editor, dict) or not (0 <= int(index) < len(layers)):
+            return False
+        editor["active_layer"] = int(index)
+        self._active_layer()
+        editor["status"] = str(layers[int(index)].get("name") or "Layer")
         return True
 
     def set_color_from_hsv(self, channel, value):
@@ -150,10 +511,10 @@ class PixelArtEditorUI:
 
     def set_tool(self, tool):
         editor = self.state
-        if not isinstance(editor, dict) or tool not in {"brush", "eraser"}:
+        if not isinstance(editor, dict) or tool not in {"brush", "eraser", "eyedropper", "fill"}:
             return False
         editor["tool"] = tool
-        editor["status"] = "Brush selected" if tool == "brush" else "Eraser selected"
+        editor["status"] = {"brush": "Brush selected", "eraser": "Eraser selected", "eyedropper": "Color picker selected", "fill": "Fill selected"}[tool]
         return True
 
     def set_brush_size(self, brush_size):
@@ -177,8 +538,17 @@ class PixelArtEditorUI:
         height = int(editor.get("canvas_height") or 0)
         if width <= 0 or height <= 0:
             return False
-        editor["pixels"] = [[None for _ in range(width)] for _ in range(height)]
-        editor["status"] = "Canvas cleared"
+        layer = self._active_layer()
+        if layer is None:
+            return False
+        if layer.get("locked"):
+            editor["status"] = "Reference trace is locked"
+            return False
+        self._push_undo()
+        layer["pixels"] = self._blank_pixels(width, height)
+        editor["pixels"] = layer["pixels"]
+        self._mark_dirty()
+        editor["status"] = f"Cleared {layer.get('name', 'layer')}"
         return True
 
     def set_slider_from_mouse(self, slider_info, mouse_x):
@@ -277,6 +647,54 @@ class PixelArtEditorUI:
         editor["status"] = f"Picked #{color.r:02x}{color.g:02x}{color.b:02x} from reference"
         return True
 
+    def paste_reference_as_trace_layer(self):
+        editor = self.state
+        reference = editor.get("reference_surface") if isinstance(editor, dict) else None
+        if not isinstance(editor, dict) or reference is None or editor.get("stage") != "canvas":
+            if isinstance(editor, dict):
+                editor["status"] = "Paste a reference image first"
+            return False
+        width = int(editor.get("canvas_width") or 0)
+        height = int(editor.get("canvas_height") or 0)
+        if width <= 0 or height <= 0:
+            return False
+
+        self._push_undo()
+        layers = self._layers()
+        active_layer = self._active_layer()
+        layers[:] = [layer for layer in layers if not layer.get("reference_only")]
+        source_w, source_h = max(1, reference.get_width()), max(1, reference.get_height())
+        destination_x = max(0, (width - source_w) // 2)
+        destination_y = max(0, (height - source_h) // 2)
+        source_x = max(0, (source_w - width) // 2)
+        source_y = max(0, (source_h - height) // 2)
+        copy_width = min(width, source_w)
+        copy_height = min(height, source_h)
+        pixels = self._blank_pixels(width, height)
+        for y in range(copy_height):
+            for x in range(copy_width):
+                color = reference.get_at((source_x + x, source_y + y))
+                if color.a:
+                    pixels[destination_y + y][destination_x + x] = (color.r, color.g, color.b)
+        trace_layer = {
+            "name": "Reference trace",
+            "visible": True,
+            "opacity": 0.35,
+            "reference_only": True,
+            "locked": True,
+            "pixels": pixels,
+        }
+        layers.insert(0, trace_layer)
+        if active_layer in layers:
+            editor["active_layer"] = layers.index(active_layer)
+        else:
+            editor["active_layer"] = min(1, len(layers) - 1)
+        self._active_layer()
+        self._mark_dirty()
+        placement = "center-cropped" if source_w > width or source_h > height else "centered at 1:1 resolution"
+        editor["status"] = f"Reference {placement} as a 35% trace layer (excluded from export)"
+        return True
+
     def paint_at(self, mouse_pos):
         editor = self.state
         if not isinstance(editor, dict) or editor.get("stage") != "canvas":
@@ -292,27 +710,173 @@ class PixelArtEditorUI:
         pixel_y = int((mouse_pos[1] - canvas_rect.y) * height / max(1, canvas_rect.height))
         pixel_x = max(0, min(width - 1, pixel_x))
         pixel_y = max(0, min(height - 1, pixel_y))
-        pixels = editor.get("pixels")
+        layer = self._active_layer()
+        pixels = layer.get("pixels") if isinstance(layer, dict) else None
         if not isinstance(pixels, list) or pixel_y >= len(pixels):
             return False
-        brush_size = max(1, min(16, int(editor.get("brush_size") or 1)))
-        start_x = pixel_x - brush_size // 2
-        start_y = pixel_y - brush_size // 2
-        paint_color = None if editor.get("tool") == "eraser" else tuple(editor.get("color", (236, 240, 246)))
-        for y in range(start_y, start_y + brush_size):
-            if y < 0 or y >= height or y >= len(pixels):
-                continue
-            row = pixels[y]
-            if not isinstance(row, list):
-                continue
-            for x in range(start_x, start_x + brush_size):
-                if 0 <= x < width and x < len(row):
-                    row[x] = paint_color
+        if layer.get("locked"):
+            editor["status"] = "Reference trace is locked; select a drawing layer"
+            return True
+        tool = str(editor.get("tool") or "brush")
+        if tool == "eyedropper":
+            color = self.composite_color_at(pixel_x, pixel_y)
+            if color is not None:
+                self.set_color_rgb(color)
+                editor["status"] = f"Picked #{color[0]:02x}{color[1]:02x}{color[2]:02x}"
+            return True
+        paint_color = None if tool == "eraser" else tuple(editor.get("color", (236, 240, 246)))
+        if tool == "fill":
+            target = pixels[pixel_y][pixel_x]
+            if target == paint_color:
+                return True
+            if editor.get("stroke_before") is None:
+                editor["stroke_before"] = self._snapshot()
+            pending = [(pixel_x, pixel_y)]
+            seen = set()
+            while pending:
+                x, y = pending.pop()
+                if (x, y) in seen or not (0 <= x < width and 0 <= y < height) or pixels[y][x] != target:
+                    continue
+                seen.add((x, y))
+                pixels[y][x] = paint_color
+                pending.extend(((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)))
+            self._mark_dirty()
+            editor["stroke_changed"] = True
+            return True
+        pressure = max(0.05, min(1.0, float(editor.get("pressure", 1.0))))
+        requested_size = int(editor.get("brush_size") or 1)
+        brush_size = max(1, min(32, round(requested_size * pressure) if editor.get("pressure_size", True) else requested_size))
+
+        def paint_cell(center_x, center_y):
+            start_x = center_x - brush_size // 2
+            start_y = center_y - brush_size // 2
+            for y in range(start_y, start_y + brush_size):
+                if y < 0 or y >= height or y >= len(pixels):
+                    continue
+                row = pixels[y]
+                if not isinstance(row, list):
+                    continue
+                for x in range(start_x, start_x + brush_size):
+                    if 0 <= x < width and x < len(row):
+                        row[x] = paint_color
+                        if editor.get("mirror_x"):
+                            mirror_x = width - 1 - x
+                            if 0 <= mirror_x < len(row):
+                                row[mirror_x] = paint_color
+
+        cells = [(pixel_x, pixel_y)]
+        previous = editor.get("last_paint_cell") if self.painting else None
+        if isinstance(previous, (tuple, list)) and len(previous) == 2:
+            previous_x, previous_y = int(previous[0]), int(previous[1])
+            distance = max(abs(pixel_x - previous_x), abs(pixel_y - previous_y))
+            if distance > 0:
+                cells = [
+                    (
+                        round(previous_x + (pixel_x - previous_x) * step / distance),
+                        round(previous_y + (pixel_y - previous_y) * step / distance),
+                    )
+                    for step in range(1, distance + 1)
+                ]
+        for cell_x, cell_y in cells:
+            paint_cell(cell_x, cell_y)
+        editor["last_paint_cell"] = (pixel_x, pixel_y)
+        self._mark_dirty()
+        editor["stroke_changed"] = True
         return True
 
-    def asset_path(self, illustration_id):
+    def composite_color_at(self, x, y, include_reference=True):
+        result = None
+        for layer in self._layers():
+            if not layer.get("visible", True) or (layer.get("reference_only") and not include_reference):
+                continue
+            pixels = layer.get("pixels") or []
+            if not (0 <= y < len(pixels) and 0 <= x < len(pixels[y])):
+                continue
+            color = pixels[y][x]
+            if color is None:
+                continue
+            opacity = max(0.0, min(1.0, float(layer.get("opacity", 1.0))))
+            if result is None or opacity >= 1.0:
+                result = tuple(color[:3])
+            else:
+                result = tuple(round(result[channel] * (1.0 - opacity) + color[channel] * opacity) for channel in range(3))
+        return result
+
+    def composite_surface(self, include_reference=True):
+        editor = self.state
+        if not isinstance(editor, dict):
+            return None
+        revision = int(editor.get("revision") or 0)
+        cached = editor.get("composite_cache")
+        cache_key = (revision, bool(include_reference))
+        if isinstance(cached, tuple) and len(cached) == 2 and cached[0] == cache_key:
+            return cached[1]
+        width, height = int(editor.get("canvas_width") or 0), int(editor.get("canvas_height") or 0)
+        if width <= 0 or height <= 0:
+            return None
+        surface = self._render_layers_surface(width, height, self._layers(), include_reference)
+        editor["composite_cache"] = (cache_key, surface)
+        return surface
+
+    def _render_layers_surface(self, width, height, layers, include_reference=True):
+        surface = pygame.Surface((width, height), pygame.SRCALPHA)
+        surface.fill((0, 0, 0, 0))
+        for layer in layers:
+            if not layer.get("visible", True) or (layer.get("reference_only") and not include_reference):
+                continue
+            layer_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+            for y, row in enumerate((layer.get("pixels") or [])[:height]):
+                for x, color in enumerate(row[:width]):
+                    if color is not None:
+                        layer_surface.set_at((x, y), (*tuple(color[:3]), 255))
+            layer_surface.set_alpha(round(255 * max(0.0, min(1.0, float(layer.get("opacity", 1.0))))))
+            surface.blit(layer_surface, (0, 0))
+        return surface
+
+    def finish_stroke(self):
+        editor = self.state
+        if not isinstance(editor, dict):
+            return False
+        before = editor.get("stroke_before")
+        if before is not None and editor.get("stroke_changed"):
+            self._push_undo(before)
+        editor["stroke_before"] = None
+        editor["stroke_changed"] = False
+        editor["last_paint_cell"] = None
+        editor["active_slider"] = None
+        editor["panning"] = False
+        editor["pan_anchor"] = None
+        previous_tool = editor.pop("stroke_tool_before", None)
+        if previous_tool:
+            editor["tool"] = previous_tool
+        self.painting = False
+        return True
+
+    def begin_pan(self, mouse_pos):
+        editor = self.state
+        if not isinstance(editor, dict):
+            return False
+        editor["panning"] = True
+        editor["pan_anchor"] = (tuple(mouse_pos), tuple(editor.get("pan") or (0.0, 0.0)))
+        return True
+
+    def begin_temporary_eraser(self, mouse_pos):
+        editor = self.state
+        canvas_rect = editor.get("canvas_rect") if isinstance(editor, dict) else None
+        if not isinstance(editor, dict) or canvas_rect is None or not canvas_rect.collidepoint(mouse_pos):
+            return False
+        editor["stroke_tool_before"] = editor.get("tool", "brush")
+        editor["tool"] = "eraser"
+        return self.handle_click(mouse_pos)
+
+    def asset_path(self, illustration_id, view_id=None):
         safe_id = self.host._sanitize_entity_id(illustration_id) or "illustration"
-        return os.path.join("assets", "illustrations", f"{safe_id}_pixel.png").replace("\\", "/")
+        suffix = f"_{view_id}" if view_id in {"side", "top"} else ""
+        return os.path.join("assets", "illustrations", f"{safe_id}_pixel{suffix}.png").replace("\\", "/")
+
+    def document_path(self, illustration_id):
+        safe_id = self.host._sanitize_entity_id(illustration_id) or "illustration"
+        return os.path.join("assets", "illustrations", f"{safe_id}_pixel.layers.json.gz").replace("\\", "/")
 
     def save(self):
         editor = self.state
@@ -325,54 +889,127 @@ class PixelArtEditorUI:
         if not isinstance(illustration, dict):
             editor["status"] = "Could not find illustration entry"
             return False
-        width = int(editor.get("canvas_width") or 0)
-        height = int(editor.get("canvas_height") or 0)
-        pixels = editor.get("pixels")
-        if width <= 0 or height <= 0 or not isinstance(pixels, list):
+        self._sync_active_view()
+        views = editor.get("views") or {}
+        mode = editor.get("setup_mode", "single")
+        primary_view_id = "front" if mode == "orthographic" else "single"
+        primary_view = views.get(primary_view_id)
+        if not isinstance(primary_view, dict) or not primary_view.get("layers"):
             editor["status"] = "Pixel canvas is missing"
             return False
 
-        rel_path = self.asset_path(illustration_id)
-        abs_path = os.path.normpath(str(self.host.PROJECT_ROOT / rel_path))
+        document_rel_path = self.document_path(illustration_id)
+        document_abs_path = os.path.normpath(str(self.host.PROJECT_ROOT / document_rel_path))
+        view_paths = {}
         try:
-            os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-            surface = pygame.Surface((width, height), pygame.SRCALPHA)
-            surface.fill((0, 0, 0, 0))
-            for y, row in enumerate(pixels[:height]):
-                if not isinstance(row, list):
-                    continue
-                for x, color in enumerate(row[:width]):
-                    if color is not None:
-                        surface.set_at((x, y), (*tuple(color[:3]), 255))
-            pygame.image.save(surface, abs_path)
+            document_views = {}
+            for view_id, view in views.items():
+                width, height = int(view.get("width") or 0), int(view.get("height") or 0)
+                layers = view.get("layers") or []
+                if width <= 0 or height <= 0 or not layers:
+                    raise ValueError(f"{view_id} view is missing")
+                rel_path = self.asset_path(illustration_id, view_id)
+                abs_path = os.path.normpath(str(self.host.PROJECT_ROOT / rel_path))
+                os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+                pygame.image.save(self._render_layers_surface(width, height, layers, include_reference=False), abs_path)
+                view_paths[view_id] = rel_path
+                document_views[view_id] = {
+                    "name": str(view.get("name") or view_id.title()),
+                    "width": width,
+                    "height": height,
+                    "active_layer": int(view.get("active_layer") or 0),
+                    "layers": self._snapshot_layers(layers),
+                    "zoom": float(view.get("zoom", 1.0)),
+                    "pan": list(view.get("pan") or [0.0, 0.0]),
+                }
+            primary_document_view = document_views[primary_view_id]
+            document = {
+                "version": 2,
+                "mode": mode,
+                "dimensions_m": {name: self.dimension_value(name) for name in ("length", "width", "height")} if mode == "orthographic" else {"size": self.metric_size()},
+                "active_view": editor.get("active_view"),
+                "views": document_views,
+                "width": primary_document_view["width"],
+                "height": primary_document_view["height"],
+                "active_layer": primary_document_view["active_layer"],
+                "layers": primary_document_view["layers"],
+            }
+            temporary_path = document_abs_path + ".tmp"
+            with gzip.open(temporary_path, "wt", encoding="utf-8", compresslevel=6) as handle:
+                json.dump(document, handle, separators=(",", ":"))
+            os.replace(temporary_path, document_abs_path)
         except (pygame.error, OSError, ValueError) as exc:
             editor["status"] = f"Could not save PNG: {exc}"
             return False
 
-        illustration["depicted_size_m"] = self.metric_size()
-        illustration["pixel_canvas_width"] = width
-        illustration["pixel_canvas_height"] = height
+        primary_width, primary_height = int(primary_view["width"]), int(primary_view["height"])
+        if mode == "orthographic":
+            dimensions = {name: self.dimension_value(name) for name in ("length", "width", "height")}
+            illustration["depicted_length_m"] = dimensions["length"]
+            illustration["depicted_width_m"] = dimensions["width"]
+            illustration["depicted_height_m"] = dimensions["height"]
+            illustration["depicted_size_m"] = max(dimensions.values())
+        else:
+            illustration["depicted_size_m"] = self.metric_size()
+        illustration["pixel_editor_mode"] = mode
+        illustration["pixel_canvas_width"] = primary_width
+        illustration["pixel_canvas_height"] = primary_height
         illustration["pixel_art_source"] = "in_engine_pixel_editor"
-        illustration["media_path"] = rel_path
-        if not self.host.assign_illustration_image(illustration_id, rel_path):
+        illustration["pixel_layer_count"] = sum(1 for layer in primary_view["layers"] if not layer.get("reference_only"))
+        illustration["pixel_reference_layer_count"] = sum(1 for layer in primary_view["layers"] if layer.get("reference_only"))
+        illustration["pixel_view_paths"] = view_paths
+        illustration["pixel_view_sizes"] = {view_id: [int(view["width"]), int(view["height"])] for view_id, view in views.items()}
+        illustration["pixel_document_path"] = document_rel_path
+        primary_path = view_paths[primary_view_id]
+        illustration["media_path"] = primary_path
+        if not self.host.assign_illustration_image(illustration_id, primary_path):
             editor["status"] = "PNG saved, but illustration entry was not updated"
             return False
-        self.close()
+        editor["dirty"] = False
+        editor["confirm_close"] = False
+        editor["status"] = "Saved front, side, and top views" if mode == "orthographic" else f"Saved {primary_path}"
         return True
 
     def handle_keydown(self, event):
         editor = self.state
         if not isinstance(editor, dict):
             return False
+        modifiers = getattr(event, "mod", 0)
         if event.key == pygame.K_ESCAPE:
-            return self.close()
-        if editor.get("stage") == "canvas" and event.key == pygame.K_v and (getattr(event, "mod", 0) & pygame.KMOD_CTRL):
+            return self.request_close()
+        if editor.get("stage") == "canvas" and event.key == pygame.K_v and (modifiers & pygame.KMOD_CTRL):
             return self.load_reference_from_clipboard()
         if editor.get("stage") == "canvas":
+            if modifiers & pygame.KMOD_CTRL:
+                if event.key == pygame.K_z:
+                    return self.redo() if modifiers & pygame.KMOD_SHIFT else self.undo()
+                if event.key == pygame.K_y:
+                    return self.redo()
+                if event.key == pygame.K_s:
+                    return self.save()
+                if event.key == pygame.K_n:
+                    return self.add_layer()
             if event.key == pygame.K_b:
                 return self.set_tool("brush")
             if event.key == pygame.K_e:
                 return self.set_tool("eraser")
+            if event.key == pygame.K_i:
+                return self.set_tool("eyedropper")
+            if event.key == pygame.K_f:
+                return self.set_tool("fill")
+            if event.key == pygame.K_g:
+                editor["show_grid"] = not editor.get("show_grid", True)
+                return True
+            if event.key == pygame.K_m:
+                editor["mirror_x"] = not editor.get("mirror_x", False)
+                editor["status"] = "Mirror drawing on" if editor["mirror_x"] else "Mirror drawing off"
+                return True
+            if editor.get("setup_mode") == "orthographic" and event.key in (pygame.K_1, pygame.K_2, pygame.K_3):
+                return self.switch_view({pygame.K_1: "front", pygame.K_2: "side", pygame.K_3: "top"}[event.key])
+            if event.key == pygame.K_0:
+                editor["zoom"] = 1.0
+                editor["pan"] = [0.0, 0.0]
+                return True
             if event.key in (pygame.K_LEFTBRACKET, pygame.K_MINUS):
                 return self.set_brush_size(int(editor.get("brush_size") or 1) - 1)
             if event.key in (pygame.K_RIGHTBRACKET, pygame.K_EQUALS, getattr(pygame, "K_PLUS", pygame.K_EQUALS)):
@@ -382,24 +1019,52 @@ class PixelArtEditorUI:
         if editor.get("stage") != "size":
             return True
 
-        buffer_text = str(editor.get("metric_size_buffer") or "")
-        cursor = max(0, min(int(editor.get("metric_size_cursor", len(buffer_text)) or 0), len(buffer_text)))
+        if editor.get("setup_mode") == "orthographic":
+            fields = ("length", "width", "height")
+            field = editor.get("active_dimension") if editor.get("active_dimension") in fields else "length"
+            if event.key == pygame.K_TAB:
+                editor["active_dimension"] = fields[(fields.index(field) + (-1 if modifiers & pygame.KMOD_SHIFT else 1)) % len(fields)]
+                return True
+            buffers = editor.setdefault("dimension_buffers", {})
+            cursors = editor.setdefault("dimension_cursors", {})
+            buffer_text = str(buffers.get(field) or "")
+            cursor = max(0, min(int(cursors.get(field, len(buffer_text)) or 0), len(buffer_text)))
+        else:
+            field = None
+            buffer_text = str(editor.get("metric_size_buffer") or "")
+            cursor = max(0, min(int(editor.get("metric_size_cursor", len(buffer_text)) or 0), len(buffer_text)))
+
+        def update_buffer(value, new_cursor):
+            if field is None:
+                editor["metric_size_buffer"] = value
+                editor["metric_size_cursor"] = new_cursor
+            else:
+                editor["dimension_buffers"][field] = value
+                editor["dimension_cursors"][field] = new_cursor
+
         if event.key == pygame.K_BACKSPACE:
             if cursor > 0:
-                editor["metric_size_buffer"] = buffer_text[:cursor - 1] + buffer_text[cursor:]
-                editor["metric_size_cursor"] = cursor - 1
+                update_buffer(buffer_text[:cursor - 1] + buffer_text[cursor:], cursor - 1)
         elif event.key == pygame.K_DELETE:
             if cursor < len(buffer_text):
-                editor["metric_size_buffer"] = buffer_text[:cursor] + buffer_text[cursor + 1:]
+                update_buffer(buffer_text[:cursor] + buffer_text[cursor + 1:], cursor)
         elif event.key == pygame.K_LEFT:
-            editor["metric_size_cursor"] = max(0, cursor - 1)
+            update_buffer(buffer_text, max(0, cursor - 1))
         elif event.key == pygame.K_RIGHT:
-            editor["metric_size_cursor"] = min(len(buffer_text), cursor + 1)
+            update_buffer(buffer_text, min(len(buffer_text), cursor + 1))
         else:
             text = getattr(event, "unicode", "")
             if text and text in "0123456789.,":
-                editor["metric_size_buffer"] = buffer_text[:cursor] + text + buffer_text[cursor:]
-                editor["metric_size_cursor"] = cursor + len(text)
+                update_buffer(buffer_text[:cursor] + text + buffer_text[cursor:], cursor + len(text))
+        return True
+
+    def handle_wheel(self, delta, mouse_pos=None):
+        editor = self.state
+        if not isinstance(editor, dict) or editor.get("stage") != "canvas":
+            return False
+        old_zoom = float(editor.get("zoom", 1.0))
+        editor["zoom"] = max(0.25, min(16.0, old_zoom * (1.18 ** int(delta))))
+        editor["status"] = f"Zoom {editor['zoom'] * 100:.0f}%"
         return True
 
     def handle_click(self, mouse_pos):
@@ -409,11 +1074,42 @@ class PixelArtEditorUI:
         for key in ("close_rect", "cancel_rect"):
             rect = editor.get(key)
             if rect is not None and rect.collidepoint(mouse_pos):
-                return self.close()
+                return self.request_close()
         primary_rect = editor.get("primary_rect")
         if primary_rect is not None and primary_rect.collidepoint(mouse_pos):
             return self.begin_canvas() if editor.get("stage") == "size" else self.save()
+        if editor.get("stage") == "size":
+            for mode, rect in (editor.get("setup_mode_hitboxes") or {}).items():
+                if rect is not None and rect.collidepoint(mouse_pos):
+                    editor["setup_mode"] = mode
+                    if mode == "orthographic" and not (editor.get("dimension_buffers") or {}).get("length"):
+                        editor.setdefault("dimension_buffers", {})["length"] = str(editor.get("metric_size_buffer") or "")
+                    editor["status"] = "Enter one final size" if mode == "single" else "Enter length, width, and height"
+                    return True
+            for field, rect in (editor.get("dimension_hitboxes") or {}).items():
+                if rect is not None and rect.collidepoint(mouse_pos):
+                    editor["active_dimension"] = field
+                    return True
+            return True
         if editor.get("stage") == "canvas":
+            for action, rect in (editor.get("action_hitboxes") or {}).items():
+                if rect is None or not rect.collidepoint(mouse_pos):
+                    continue
+                if str(action).startswith("view:"):
+                    return self.switch_view(str(action).split(":", 1)[1])
+                actions = {
+                    "undo": self.undo, "redo": self.redo, "add_layer": self.add_layer,
+                    "duplicate_layer": self.duplicate_layer, "delete_layer": self.delete_layer,
+                    "layer_up": lambda: self.move_layer(1), "layer_down": lambda: self.move_layer(-1),
+                    "reference_to_trace": self.paste_reference_as_trace_layer,
+                    "toggle_grid": lambda: editor.__setitem__("show_grid", not editor.get("show_grid", True)) or True,
+                    "toggle_mirror": lambda: editor.__setitem__("mirror_x", not editor.get("mirror_x", False)) or True,
+                }
+                return actions.get(action, lambda: False)()
+            for index, rect in (editor.get("layer_hitboxes") or {}).items():
+                if rect is not None and rect.collidepoint(mouse_pos):
+                    eye_rect = pygame.Rect(rect.x + 6, rect.y + 6, 20, rect.height - 12)
+                    return self.toggle_layer_visibility(index) if eye_rect.collidepoint(mouse_pos) else self.select_layer(index)
             for tool, rect in (editor.get("tool_hitboxes") or {}).items():
                 if rect is not None and rect.collidepoint(mouse_pos):
                     return self.set_tool(tool)
@@ -431,14 +1127,26 @@ class PixelArtEditorUI:
                     self.set_slider_from_mouse(slider, mouse_pos[0])
                     editor["active_slider"] = slider
                     return True
+            if editor.get("canvas_rect") is not None and editor["canvas_rect"].collidepoint(mouse_pos):
+                editor["stroke_before"] = self._snapshot()
+                editor["stroke_changed"] = False
             if self.paint_at(mouse_pos):
                 self.painting = True
         return True
 
-    def handle_motion(self, mouse_pos):
+    def handle_motion(self, mouse_pos, pressure=None):
         editor = self.state
         if not isinstance(editor, dict):
             return False
+        if pressure is not None:
+            try:
+                editor["pressure"] = max(0.05, min(1.0, float(pressure)))
+            except (TypeError, ValueError):
+                pass
+        if editor.get("panning") and editor.get("pan_anchor"):
+            origin, initial = editor["pan_anchor"]
+            editor["pan"] = [initial[0] + mouse_pos[0] - origin[0], initial[1] + mouse_pos[1] - origin[1]]
+            return True
         active_slider = editor.get("active_slider")
         if active_slider is not None:
             return self.set_slider_from_mouse(active_slider, mouse_pos[0])
@@ -446,7 +1154,7 @@ class PixelArtEditorUI:
             return self.paint_at(mouse_pos)
         return True
 
-    def draw(self, screen, font):
+    def _draw_legacy(self, screen, font):
         editor = self.pixel_art_editor
         if not isinstance(editor, dict) or self.layout is None:
             return
@@ -563,7 +1271,7 @@ class PixelArtEditorUI:
             pygame.draw.rect(screen, (210, 218, 234), preview_rect, 1)
             screen.blit(font.render(f"{canvas_w} x {canvas_h}", True, (226, 232, 242)), (preview_rect.right + 12, preview_rect.y + 3))
             active_tool = str(editor.get("tool") or "brush")
-            tool_hint = "left click erases" if active_tool == "eraser" else "left click paints"
+            tool_hint = "pen tip / left click erases" if active_tool == "eraser" else "pen tip / left click paints"
             screen.blit(font.render(tool_hint, True, (156, 166, 186)), (preview_rect.right + 12, preview_rect.y + 24))
 
             tool_y = preview_rect.bottom + 18
@@ -658,3 +1366,328 @@ class PixelArtEditorUI:
         status = str(editor.get("status") or "").strip()
         if status:
             screen.blit(font.render(status, True, (204, 218, 242)), (modal_rect.x + 24, modal_rect.bottom - 34))
+
+    def _button(self, screen, font, rect, label, *, active=False, enabled=True):
+        hovered = enabled and rect.collidepoint(pygame.mouse.get_pos())
+        fill = (54, 63, 80)
+        border = (91, 104, 128)
+        if active:
+            fill, border = (54, 105, 139), (108, 190, 225)
+        elif hovered:
+            fill, border = (68, 79, 100), (133, 150, 180)
+        if not enabled:
+            fill, border = (32, 37, 48), (55, 63, 78)
+        pygame.draw.rect(screen, fill, rect, border_radius=4)
+        pygame.draw.rect(screen, border, rect, 1, border_radius=4)
+        color = (235, 241, 248) if enabled else (94, 104, 122)
+        surface = font.render(label, True, color)
+        screen.blit(surface, surface.get_rect(center=rect.center))
+
+    def _draw_editor_canvas(self, screen, canvas_area):
+        editor = self.state
+        width = max(1, int(editor.get("canvas_width") or 1))
+        height = max(1, int(editor.get("canvas_height") or 1))
+        fit = min((canvas_area.width - 48) / width, (canvas_area.height - 48) / height)
+        scale = max(0.25, fit * float(editor.get("zoom", 1.0)))
+        target_w, target_h = max(1, round(width * scale)), max(1, round(height * scale))
+        pan = editor.get("pan") or [0.0, 0.0]
+        canvas_rect = pygame.Rect(0, 0, target_w, target_h)
+        canvas_rect.center = (canvas_area.centerx + int(pan[0]), canvas_area.centery + int(pan[1]))
+        editor["canvas_rect"] = canvas_rect
+
+        previous_clip = screen.get_clip()
+        screen.set_clip(canvas_area)
+        pygame.draw.rect(screen, (11, 14, 20), canvas_area)
+        tile = max(4, min(18, round(scale * 4)))
+        visible = canvas_rect.clip(canvas_area)
+        tile_start_x = ((visible.x - canvas_rect.x) // tile) * tile
+        tile_start_y = ((visible.y - canvas_rect.y) // tile) * tile
+        for y in range(tile_start_y, visible.bottom - canvas_rect.y, tile):
+            for x in range(tile_start_x, visible.right - canvas_rect.x, tile):
+                cell = pygame.Rect(canvas_rect.x + x, canvas_rect.y + y, tile, tile).clip(visible)
+                pygame.draw.rect(screen, (43, 49, 60) if (x // tile + y // tile) % 2 else (33, 38, 48), cell)
+        composite = self.composite_surface()
+        if composite is not None:
+            if target_w * target_h <= canvas_area.width * canvas_area.height * 3:
+                scaled = pygame.transform.scale(composite, (target_w, target_h))
+                screen.blit(scaled, canvas_rect)
+            else:
+                first_x = max(0, int((visible.x - canvas_rect.x) / scale))
+                last_x = min(width, int((visible.right - canvas_rect.x) / scale) + 1)
+                first_y = max(0, int((visible.y - canvas_rect.y) / scale))
+                last_y = min(height, int((visible.bottom - canvas_rect.y) / scale) + 1)
+                for y in range(first_y, last_y):
+                    for x in range(first_x, last_x):
+                        color = composite.get_at((x, y))
+                        if color.a:
+                            pygame.draw.rect(screen, color, (canvas_rect.x + round(x * scale), canvas_rect.y + round(y * scale), max(1, round(scale)), max(1, round(scale))))
+        if editor.get("show_grid", True) and scale >= 7:
+            grid = (53, 63, 77)
+            for x in range(width + 1):
+                px = canvas_rect.x + round(x * scale)
+                pygame.draw.line(screen, grid, (px, canvas_rect.y), (px, canvas_rect.bottom))
+            for y in range(height + 1):
+                py = canvas_rect.y + round(y * scale)
+                pygame.draw.line(screen, grid, (canvas_rect.x, py), (canvas_rect.right, py))
+        if editor.get("mirror_x"):
+            pygame.draw.line(screen, (97, 184, 218), (canvas_rect.centerx, canvas_rect.y), (canvas_rect.centerx, canvas_rect.bottom), 1)
+        pygame.draw.rect(screen, (129, 151, 178), canvas_rect, 1)
+        screen.set_clip(previous_clip)
+
+    def draw(self, screen, font):
+        editor = self.state
+        if not isinstance(editor, dict):
+            return
+        screen_rect = screen.get_rect()
+        screen.fill((14, 17, 23))
+        editor["rect"] = screen_rect
+        editor["slider_hitboxes"] = []
+        editor["tool_hitboxes"] = {}
+        editor["brush_size_hitboxes"] = {}
+        editor["action_hitboxes"] = {}
+        editor["layer_hitboxes"] = {}
+
+        if editor.get("stage") == "size":
+            self._draw_size_workspace(screen, font)
+            return
+
+        top_h, bottom_h, tools_w = 54, 30, 72
+        properties_w = min(320, max(260, screen_rect.width // 4))
+        top = pygame.Rect(0, 0, screen_rect.width, top_h)
+        tools = pygame.Rect(0, top_h, tools_w, screen_rect.height - top_h - bottom_h)
+        properties = pygame.Rect(screen_rect.width - properties_w, top_h, properties_w, screen_rect.height - top_h - bottom_h)
+        canvas_area = pygame.Rect(tools.right, top.bottom, properties.x - tools.right, properties.height)
+        bottom = pygame.Rect(0, screen_rect.height - bottom_h, screen_rect.width, bottom_h)
+        for rect, color in ((top, (25, 30, 40)), (tools, (22, 27, 36)), (properties, (22, 27, 36)), (bottom, (25, 30, 40))):
+            pygame.draw.rect(screen, color, rect)
+        pygame.draw.line(screen, (62, 72, 90), (0, top.bottom), (screen_rect.width, top.bottom))
+        pygame.draw.line(screen, (62, 72, 90), (properties.x, properties.y), (properties.x, properties.bottom))
+
+        illustration = editor.get("illustration") or {}
+        name = illustration.get("name") or illustration.get("pretty_name") or editor.get("illustration_id")
+        title_width = 210 if editor.get("setup_mode") == "orthographic" else max(120, top.width - 620)
+        title = self._ellipsize_text(str(name), font, title_width)
+        screen.blit(font.render("PIXEL STUDIO", True, (112, 199, 229)), (18, 9))
+        screen.blit(font.render(title, True, (231, 237, 245)), (18, 29))
+
+        editor["view_hitboxes"] = {}
+        if editor.get("setup_mode") == "orthographic":
+            view_x = 250
+            for index, (view_id, label) in enumerate((("front", "1  Front"), ("side", "2  Side"), ("top", "3  Top"))):
+                view_rect = pygame.Rect(view_x + index * 92, 12, 86, 30)
+                self._button(screen, font, view_rect, label, active=editor.get("active_view") == view_id)
+                editor["action_hitboxes"][f"view:{view_id}"] = view_rect
+
+        button_y = 12
+        x = max(260, top.width - 554)
+        for action, label, w, enabled in (
+            ("undo", "Undo", 58, bool(editor.get("undo_stack"))),
+            ("redo", "Redo", 58, bool(editor.get("redo_stack"))),
+            ("toggle_grid", "Grid", 54, True),
+            ("toggle_mirror", "Mirror", 64, True),
+        ):
+            rect = pygame.Rect(x, button_y, w, 30)
+            self._button(screen, font, rect, label, active=(action == "toggle_grid" and editor.get("show_grid")) or (action == "toggle_mirror" and editor.get("mirror_x")), enabled=enabled)
+            if enabled:
+                editor["action_hitboxes"][action] = rect
+            x += w + 7
+        cancel = pygame.Rect(top.right - 166, button_y, 68, 30)
+        save = pygame.Rect(top.right - 90, button_y, 72, 30)
+        self._button(screen, font, cancel, "Close")
+        self._button(screen, font, save, "Save", active=True)
+        editor["cancel_rect"] = cancel
+        editor["close_rect"] = cancel
+        editor["primary_rect"] = save
+
+        tool_items = (("brush", "B", "Brush"), ("eraser", "E", "Erase"), ("eyedropper", "I", "Pick"), ("fill", "F", "Fill"))
+        y = tools.y + 18
+        for tool_name, label, hint in tool_items:
+            rect = pygame.Rect(tools.x + 10, y, 52, 44)
+            self._button(screen, font, rect, label, active=editor.get("tool") == tool_name)
+            editor["tool_hitboxes"][tool_name] = rect
+            hint_surface = pygame.font.Font(None, 14).render(hint, True, (132, 145, 165))
+            screen.blit(hint_surface, hint_surface.get_rect(center=(rect.centerx, rect.bottom + 9)))
+            y += 68
+        y += 4
+        dec = pygame.Rect(10, y, 24, 28)
+        inc = pygame.Rect(38, y, 24, 28)
+        self._button(screen, font, dec, "-")
+        self._button(screen, font, inc, "+")
+        editor["brush_size_hitboxes"] = {-1: dec, 1: inc}
+        size_text = pygame.font.Font(None, 16).render(f"{editor.get('brush_size', 1)} px", True, (183, 197, 216))
+        screen.blit(size_text, size_text.get_rect(center=(tools.centerx, y + 40)))
+
+        self._draw_editor_canvas(screen, canvas_area)
+        self._draw_properties_panel(screen, font, properties)
+
+        width, height = int(editor.get("canvas_width") or 0), int(editor.get("canvas_height") or 0)
+        status = str(editor.get("status") or "Ready")
+        screen.blit(font.render(status, True, (172, 187, 207)), (12, bottom.y + 7))
+        view_label = f"{str(editor.get('active_view')).title()}   |   " if editor.get("setup_mode") == "orthographic" else ""
+        info = f"{view_label}{width} x {height} px   |   {float(editor.get('zoom', 1.0)) * 100:.0f}%   |   [ / ] size   Ctrl+Z undo   Ctrl+S save"
+        info_surface = font.render(info, True, (134, 149, 169))
+        screen.blit(info_surface, (bottom.right - info_surface.get_width() - 14, bottom.y + 7))
+
+    def _draw_size_workspace(self, screen, font):
+        editor = self.state
+        screen_rect = screen.get_rect()
+        panel = pygame.Rect(0, 0, min(620, screen_rect.width - 48), 450)
+        panel.center = screen_rect.center
+        pygame.draw.rect(screen, (24, 29, 39), panel, border_radius=10)
+        pygame.draw.rect(screen, (82, 101, 128), panel, 1, border_radius=10)
+        screen.blit(pygame.font.Font(None, 34).render("Create pixel canvas", True, (235, 241, 249)), (panel.x + 30, panel.y + 28))
+        screen.blit(font.render("Choose a drawing method, then enter real-world dimensions in meters.", True, (150, 166, 187)), (panel.x + 30, panel.y + 72))
+        editor["setup_mode_hitboxes"] = {}
+        editor["dimension_hitboxes"] = {}
+        mode_y = panel.y + 104
+        mode_w = (panel.width - 68) // 2
+        for mode, label, x in (("single", "Single image", panel.x + 30), ("orthographic", "3D views: front / side / top", panel.x + 38 + mode_w)):
+            rect = pygame.Rect(x, mode_y, mode_w, 38)
+            self._button(screen, font, rect, label, active=editor.get("setup_mode") == mode)
+            editor["setup_mode_hitboxes"][mode] = rect
+
+        input_y = mode_y + 78
+        if editor.get("setup_mode") == "orthographic":
+            fields = ("length", "width", "height")
+            gap = 10
+            input_w = (panel.width - 60 - gap * 2) // 3
+            buffers = editor.get("dimension_buffers") or {}
+            cursors = editor.get("dimension_cursors") or {}
+            for index, field in enumerate(fields):
+                input_rect = pygame.Rect(panel.x + 30 + index * (input_w + gap), input_y, input_w, 42)
+                active = editor.get("active_dimension") == field
+                screen.blit(font.render(field.title(), True, (174, 191, 213)), (input_rect.x, input_rect.y - 21))
+                pygame.draw.rect(screen, (14, 18, 25), input_rect, border_radius=4)
+                pygame.draw.rect(screen, (109, 183, 220) if active else (82, 101, 128), input_rect, 2 if active else 1, border_radius=4)
+                text = str(buffers.get(field) or "")
+                screen.blit(font.render(text or "1.0", True, (235, 240, 247) if text else (99, 113, 133)), (input_rect.x + 10, input_rect.y + 12))
+                unit = font.render("m", True, (147, 163, 184))
+                screen.blit(unit, (input_rect.right - unit.get_width() - 10, input_rect.y + 12))
+                if active:
+                    cursor = max(0, min(int(cursors.get(field, len(text)) or 0), len(text)))
+                    cursor_x = input_rect.x + 10 + font.size(text[:cursor])[0]
+                    pygame.draw.line(screen, (231, 239, 248), (cursor_x, input_rect.y + 10), (cursor_x, input_rect.bottom - 10))
+                editor["dimension_hitboxes"][field] = input_rect
+            values = {field: self.dimension_value(field) or 1.0 for field in fields}
+            sizes = self._orthographic_view_sizes(values["length"], values["width"], values["height"])
+            summary = f"Front {sizes['front'][0]} x {sizes['front'][1]}   Side {sizes['side'][0]} x {sizes['side'][1]}   Top {sizes['top'][0]} x {sizes['top'][1]} px"
+            hint = "All three views use one consistent pixels-per-meter scale. Tab moves between dimensions."
+        else:
+            input_rect = pygame.Rect(panel.x + 30, input_y, panel.width - 60, 42)
+            screen.blit(font.render("Final size", True, (174, 191, 213)), (input_rect.x, input_rect.y - 21))
+            pygame.draw.rect(screen, (14, 18, 25), input_rect, border_radius=4)
+            pygame.draw.rect(screen, (109, 164, 199), input_rect, 1, border_radius=4)
+            text = str(editor.get("metric_size_buffer") or "")
+            screen.blit(font.render(text or "1.0", True, (235, 240, 247) if text else (99, 113, 133)), (input_rect.x + 12, input_rect.y + 12))
+            unit = font.render("meters", True, (147, 163, 184))
+            screen.blit(unit, (input_rect.right - unit.get_width() - 12, input_rect.y + 12))
+            editor["metric_size_rect"] = input_rect
+            cursor = max(0, min(int(editor.get("metric_size_cursor", len(text)) or 0), len(text)))
+            cursor_x = input_rect.x + 12 + font.size(text[:cursor])[0]
+            pygame.draw.line(screen, (231, 239, 248), (cursor_x, input_rect.y + 10), (cursor_x, input_rect.bottom - 10))
+            suggested = self._pixel_canvas_size_for_entity(editor.get("parent_entity"), self.metric_size() or 1.0)
+            summary = f"Suggested canvas  {suggested[0]} x {suggested[1]} px"
+            hint = "Resolution is now 150% of the previous editor scale for finer detail."
+        screen.blit(font.render(summary, True, (183, 200, 221)), (panel.x + 30, input_y + 70))
+        screen.blit(font.render(hint, True, (139, 156, 178)), (panel.x + 30, input_y + 96))
+        cancel = pygame.Rect(panel.right - 220, panel.bottom - 62, 86, 34)
+        create = pygame.Rect(panel.right - 122, panel.bottom - 62, 92, 34)
+        self._button(screen, font, cancel, "Cancel")
+        self._button(screen, font, create, "Create", active=True)
+        editor["cancel_rect"] = cancel
+        editor["close_rect"] = cancel
+        editor["primary_rect"] = create
+
+    def _draw_properties_panel(self, screen, font, rect):
+        editor = self.state
+        pad = 14
+        color = tuple(editor.get("color", (236, 240, 246)))
+        screen.blit(font.render("COLOR", True, (137, 155, 180)), (rect.x + pad, rect.y + 14))
+        swatch = pygame.Rect(rect.x + pad, rect.y + 36, 52, 52)
+        pygame.draw.rect(screen, color, swatch, border_radius=4)
+        pygame.draw.rect(screen, (205, 216, 231), swatch, 1, border_radius=4)
+        screen.blit(font.render(f"#{color[0]:02X}{color[1]:02X}{color[2]:02X}", True, (225, 232, 241)), (swatch.right + 12, swatch.y + 8))
+        pressure = float(editor.get("pressure", 1.0))
+        screen.blit(font.render(f"Pressure {pressure * 100:.0f}%", True, (135, 151, 173)), (swatch.right + 12, swatch.y + 29))
+        hue, saturation, value = editor.get("hsv", (0.0, 0.0, 1.0))
+        slider_y = swatch.bottom + 20
+        for channel, label, amount in (("h", "H", hue), ("s", "S", saturation), ("v", "V", value)):
+            screen.blit(font.render(label, True, (167, 183, 205)), (rect.x + pad, slider_y - 3))
+            slider = pygame.Rect(rect.x + pad + 24, slider_y, rect.width - pad * 2 - 24, 11)
+            for offset in range(slider.width):
+                ratio = offset / max(1, slider.width - 1)
+                if channel == "h":
+                    rgb = colorsys.hsv_to_rgb(ratio, 1, 1)
+                elif channel == "s":
+                    rgb = colorsys.hsv_to_rgb(hue, ratio, value)
+                else:
+                    rgb = colorsys.hsv_to_rgb(hue, saturation, ratio)
+                pygame.draw.line(screen, tuple(round(v * 255) for v in rgb), (slider.x + offset, slider.y), (slider.x + offset, slider.bottom - 1))
+            pygame.draw.circle(screen, (245, 248, 252), (slider.x + round(amount * (slider.width - 1)), slider.centery), 6)
+            editor["slider_hitboxes"].append({"channel": channel, "rect": slider})
+            slider_y += 28
+
+        layers_y = slider_y + 12
+        screen.blit(font.render("LAYERS", True, (137, 155, 180)), (rect.x + pad, layers_y))
+        button_y = layers_y - 5
+        actions = (("add_layer", "+"), ("duplicate_layer", "Dup"), ("layer_up", "Up"), ("layer_down", "Dn"), ("delete_layer", "Del"))
+        active_layer = self._layers()[int(editor.get("active_layer") or 0)] if self._layers() else {}
+        drawing_layer_count = sum(1 for layer in self._layers() if not layer.get("reference_only"))
+        delete_enabled = len(self._layers()) > 1 and (active_layer.get("reference_only") or drawing_layer_count > 1)
+        bx = rect.right - pad
+        for action, label in reversed(actions):
+            w = 38 if len(label) > 1 else 28
+            bx -= w
+            button = pygame.Rect(bx, button_y, w, 26)
+            enabled = action != "delete_layer" or delete_enabled
+            self._button(screen, font, button, label, enabled=enabled)
+            if enabled:
+                editor["action_hitboxes"][action] = button
+            bx -= 5
+        row_y = layers_y + 28
+        active = int(editor.get("active_layer") or 0)
+        reference_panel_height = min(230, max(170, rect.height // 3))
+        reference_panel_top = rect.bottom - reference_panel_height - pad
+        for index in reversed(range(len(self._layers()))):
+            if row_y + 38 > reference_panel_top - 8:
+                break
+            layer = self._layers()[index]
+            row = pygame.Rect(rect.x + pad, row_y, rect.width - pad * 2, 36)
+            pygame.draw.rect(screen, (52, 69, 88) if index == active else (31, 37, 48), row, border_radius=4)
+            pygame.draw.rect(screen, (100, 151, 186) if index == active else (60, 70, 86), row, 1, border_radius=4)
+            eye = "o" if layer.get("visible", True) else "-"
+            screen.blit(font.render(eye, True, (188, 204, 223)), (row.x + 11, row.y + 10))
+            badge_width = 52 if layer.get("reference_only") else 0
+            name = self._ellipsize_text(str(layer.get("name") or f"Layer {index + 1}"), font, row.width - 54 - badge_width)
+            screen.blit(font.render(name, True, (226, 233, 242)), (row.x + 38, row.y + 10))
+            if layer.get("reference_only"):
+                badge = pygame.Rect(row.right - 48, row.y + 8, 40, 20)
+                pygame.draw.rect(screen, (63, 76, 94), badge, border_radius=3)
+                badge_text = pygame.font.Font(None, 13).render("TRACE", True, (142, 198, 222))
+                screen.blit(badge_text, badge_text.get_rect(center=badge.center))
+            editor["layer_hitboxes"][index] = row
+            row_y += 41
+
+        ref_panel = pygame.Rect(rect.x + pad, reference_panel_top, rect.width - pad * 2, reference_panel_height)
+        pygame.draw.rect(screen, (15, 19, 26), ref_panel, border_radius=4)
+        pygame.draw.rect(screen, (58, 70, 88), ref_panel, 1, border_radius=4)
+        screen.blit(font.render("REFERENCE", True, (137, 155, 180)), (ref_panel.x + 10, ref_panel.y + 10))
+        reference = editor.get("reference_surface")
+        trace_button = pygame.Rect(ref_panel.right - 92, ref_panel.y + 6, 82, 26)
+        self._button(screen, font, trace_button, "<- Trace", enabled=reference is not None)
+        if reference is not None:
+            editor["action_hitboxes"]["reference_to_trace"] = trace_button
+        ref_area = pygame.Rect(ref_panel.x + 8, ref_panel.y + 38, ref_panel.width - 16, ref_panel.height - 46)
+        editor["reference_rect"] = None
+        if reference is None:
+            lines = ("Ctrl+V to paste an image", "The preview appears here.", "Click it to pick a color.")
+            for i, line in enumerate(lines):
+                screen.blit(font.render(line, True, (126, 142, 164)), (ref_area.x + 8, ref_area.y + 10 + i * 20))
+        else:
+            ratio = min(ref_area.width / reference.get_width(), ref_area.height / reference.get_height())
+            size = (max(1, round(reference.get_width() * ratio)), max(1, round(reference.get_height() * ratio)))
+            preview = pygame.transform.smoothscale(reference, size)
+            preview_rect = preview.get_rect(center=ref_area.center)
+            screen.blit(preview, preview_rect)
+            pygame.draw.rect(screen, (89, 109, 132), preview_rect, 1)
+            editor["reference_rect"] = preview_rect

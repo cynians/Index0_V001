@@ -486,7 +486,12 @@ class SpaceRenderer:
                 if center is None:
                     continue
 
-                pixel_size = max(1, int(size * camera.zoom))
+                projected_size = float(size) * float(camera.zoom)
+                if not math.isfinite(projected_size):
+                    continue
+                # A map-to-space tab switch can briefly retain the map camera's
+                # zoom. Keep Pygame Rect values bounded until camera setup lands.
+                pixel_size = max(1, min(max(view.width, view.height) * 2, int(abs(projected_size))))
                 if is_star:
                     pixel_size = max(18, pixel_size)
                 elif is_primary_system_member:
@@ -511,7 +516,7 @@ class SpaceRenderer:
 
                 if is_star:
                     star_color = layer["color"]
-                    glow_radius = max(16, pixel_size)
+                    glow_radius = max(16, min(pixel_size, max(view.width, view.height) // 3 + 32))
                     glow_surface = pygame.Surface((glow_radius * 4, glow_radius * 4), pygame.SRCALPHA)
                     glow_center = (glow_surface.get_width() // 2, glow_surface.get_height() // 2)
                     pygame.draw.circle(

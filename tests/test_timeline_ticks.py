@@ -137,6 +137,7 @@ class TimelineTickTests(unittest.TestCase):
             ]
         )
         timeline.set_selected_year(2000)
+        timeline.set_selected_year_filter_mode("all")
         timeline.active_category_filter = "contemporary"
 
         visible_ids = {item["entity_id"] for item in timeline._filtered_visible_items()}
@@ -147,6 +148,52 @@ class TimelineTickTests(unittest.TestCase):
         self.assertIn("near_end", visible_ids)
         self.assertNotIn("too_early", visible_ids)
         self.assertNotIn("too_late", visible_ids)
+
+    def test_selected_year_filters_support_contemporary_near_and_all(self):
+        timeline = TimelineUI()
+        timeline.set_rect(pygame.Rect(0, 0, 600, 200))
+        timeline.view_min_year = 1900
+        timeline.view_max_year = 2100
+        timeline._view_range_initialized = True
+        timeline.set_items(
+            [
+                {"entity_id": "period", "timeline_kind": "major_period", "start_year": 1900, "end_year": 2100},
+                {"entity_id": "extant", "dataset": "events", "start_year": 1995, "end_year": 2005},
+                {"entity_id": "at_year", "dataset": "events", "start_year": 2000, "end_year": 2000},
+                {"entity_id": "near_before", "dataset": "events", "start_year": 1990, "end_year": 1990},
+                {"entity_id": "near_after", "dataset": "events", "start_year": 2010, "end_year": 2010},
+                {"entity_id": "far", "dataset": "events", "start_year": 2011, "end_year": 2011},
+            ]
+        )
+        timeline.set_selected_year(2000)
+
+        contemporary_ids = {item["entity_id"] for item in timeline._filtered_visible_items()}
+        self.assertEqual({"period", "extant", "at_year"}, contemporary_ids)
+
+        timeline.set_selected_year_filter_mode("near")
+        near_ids = {item["entity_id"] for item in timeline._filtered_visible_items()}
+        self.assertEqual({"period", "extant", "at_year", "near_before", "near_after"}, near_ids)
+
+        timeline.set_selected_year_filter_mode("all")
+        all_ids = {item["entity_id"] for item in timeline._filtered_visible_items()}
+        self.assertEqual({"period", "extant", "at_year", "near_before", "near_after", "far"}, all_ids)
+
+    def test_selected_year_filter_controls_appear_below_nest_flat(self):
+        timeline = TimelineUI()
+        timeline.set_rect(pygame.Rect(0, 0, 720, 200))
+        timeline.set_font(pygame.font.Font(None, 16))
+        timeline.set_selected_year(2000)
+        timeline._rebuild_filter_hitboxes()
+
+        self.assertEqual(3, len(timeline.selected_year_filter_hitboxes))
+        self.assertGreater(
+            min(rect.y for _, _, rect in timeline.selected_year_filter_hitboxes),
+            max(rect.bottom for _, _, rect in timeline.sort_mode_hitboxes),
+        )
+        near_rect = next(rect for mode, _, rect in timeline.selected_year_filter_hitboxes if mode == "near")
+        action = timeline.handle_filter_click(near_rect.center)
+        self.assertEqual("selected_year_filter_changed", action["kind"])
+        self.assertEqual("near", timeline.selected_year_filter_mode)
 
     def test_species_animals_and_cladistics_are_hidden_by_default(self):
         timeline = TimelineUI()

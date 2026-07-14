@@ -3,7 +3,18 @@ import math
 
 import pygame
 
+try:
+    import numpy as np
+except ImportError:  # Keep a functional, slower path for minimal installations.
+    np = None
+
 from simulations.world_gen.material_heatmaps import load_raster_bundle_surface
+from simulations.world_gen.heightmap import (
+    contour_levels_for_heightmap,
+    display_contour_interval_m,
+    height_marker_interval_m,
+)
+from simulations.map.projection import project_normalized_point
 
 
 class MapRenderer:
@@ -17,11 +28,165 @@ class MapRenderer:
         self._scaled_image_cache = {}
         self._heightmap_surface_cache = {}
         self._scaled_heightmap_cache = {}
+        self._height_contour_surface_cache = {}
+        self._scaled_height_contour_cache = {}
+        self._large_scaled_layer_cache = {}
         self._hydrology_surface_cache = {}
         self._scaled_hydrology_cache = {}
+        self._projected_reference_hydrology_cache = {}
+        self._reference_hydrology_overlay_cache = {}
+        self._projection_surface_cache = {}
+        self._projection_coordinate_cache = {}
+        self._material_composite_cache = {}
+        self._reference_land_surface_cache = {}
+        self._static_outline_surface_cache = {}
         self._text_surface_cache = {}
-        self._scaled_cache_limit = 32
+        self._alpha_fill_cache = {}
+        self._polygon_screen_cache = {}
+        self._scaled_cache_limit = 8
         self._text_cache_limit = 256
+        self._viewport_overscan_px = 72
+
+    @staticmethod
+    def _heightmap_contour_segments(heightmap, level):
+        grid = heightmap.get("sample_grid") if isinstance(heightmap.get("sample_grid"), dict) else {}
+        rows = grid.get("rows") if isinstance(grid.get("rows"), list) else []
+        sample_h = min(len(rows), int(grid.get("height", len(rows)) or len(rows)))
+        declared_width = int(grid.get("width", len(rows[0]) if rows else 0) or 0)
+        sample_w = min(
+            min((len(row) for row in rows[:sample_h] if isinstance(row, list)), default=0),
+            declared_width,
+        )
+        if sample_w < 2 or sample_h < 2:
+            return []
+
+        def edge_point(edge, col, row, value_a, value_b):
+            denominator = value_b - value_a
+            amount = 0.5 if abs(denominator) < 1e-9 else (level - value_a) / denominator
+            amount = max(0.0, min(1.0, amount))
+            if edge == "top":
+                return col + amount, row
+            if edge == "right":
+                return col + 1, row + amount
+            if edge == "bottom":
+                return col + amount, row + 1
+            return col, row + amount
+
+        segments = []
+        for row in range(sample_h - 1):
+            for col in range(sample_w - 1):
+                try:
+                    v00 = float(rows[row][col])
+                    v10 = float(rows[row][col + 1])
+                    v01 = float(rows[row + 1][col])
+                    v11 = float(rows[row + 1][col + 1])
+                except (IndexError, TypeError, ValueError):
+                    continue
+                points = []
+                for edge, value_a, value_b in (
+                    ("top", v00, v10),
+                    ("right", v10, v11),
+                    ("bottom", v01, v11),
+                    ("left", v00, v01),
+                ):
+                    if value_a != value_b and min(value_a, value_b) <= level <= max(value_a, value_b):
+                        points.append(edge_point(edge, col, row, value_a, value_b))
+                if len(points) == 2:
+                    segments.append((points[0], points[1]))
+                elif len(points) == 4:
+                    segments.extend(((points[0], points[1]), (points[2], points[3])))
+        return segments
+
+    def _height_contour_surface_for_layer(self, layer, pixels_per_map_pixel, regions_only=False):
+        heightmap = layer.get("heightmap_model") if isinstance(layer, dict) else None
+        grid = heightmap.get("sample_grid") if isinstance(heightmap, dict) else None
+        rows = grid.get("rows") if isinstance(grid, dict) else None
+        if not rows or len(rows) < 2:
+            return None, None
+        sample_h = min(len(rows), int(grid.get("height", len(rows)) or len(rows)))
+        declared_width = int(grid.get("width", len(rows[0]) if rows else 0) or 0)
+        sample_w = min(
+            min((len(row) for row in rows[:sample_h] if isinstance(row, list)), default=0),
+            declared_width,
+        )
+        if sample_w < 2 or sample_h < 2:
+            return None, None
+
+        requested_interval = height_marker_interval_m(pixels_per_map_pixel)
+        interval = display_contour_interval_m(heightmap, requested_interval, max_levels=18)
+        cache_key = (
+            id(heightmap), id(rows), sample_w, sample_h, int(interval), bool(regions_only),
+            float(heightmap.get("min_elevation_m", 0.0) or 0.0),
+            float(heightmap.get("max_elevation_m", 0.0) or 0.0),
+            heightmap.get("sea_level_m"),
+        )
+        cached = self._height_contour_surface_cache.get(cache_key)
+        if cached is not None:
+            return cached, interval
+
+        cell_w = sample_w - 1
+        cell_h = sample_h - 1
+        source_scale = min(4.0, 512.0 / cell_w, 256.0 / cell_h)
+        source_w = max(2, int(round(cell_w * source_scale)))
+        source_h = max(2, int(round(cell_h * source_scale)))
+        scale_x = (source_w - 1) / max(1, cell_w)
+        scale_y = (source_h - 1) / max(1, cell_h)
+        surface = pygame.Surface((source_w, source_h), pygame.SRCALPHA)
+        sea_level = heightmap.get("sea_level_m")
+        datum = float(sea_level) if sea_level is not None else 0.0
+        major_step = max(float(interval) * 5.0, 1.0)
+
+        for level in contour_levels_for_heightmap(heightmap, interval, max_levels=18):
+            is_datum = abs(float(level) - datum) < float(interval) * 0.45
+            is_major = abs(float(level) / major_step - round(float(level) / major_step)) < 1e-6
+            if is_datum:
+                color = (116, 202, 246, 224 if regions_only else 188)
+                line_width = 2
+            elif is_major:
+                color = (224, 232, 238, 174 if regions_only else 116)
+                line_width = 1
+            elif float(level) < datum:
+                color = (108, 162, 204, 138 if regions_only else 84)
+                line_width = 1
+            else:
+                color = (206, 214, 220, 148 if regions_only else 92)
+                line_width = 1
+            for point_a, point_b in self._heightmap_contour_segments(heightmap, level):
+                pygame.draw.line(
+                    surface,
+                    color,
+                    (round(point_a[0] * scale_x), round(point_a[1] * scale_y)),
+                    (round(point_b[0] * scale_x), round(point_b[1] * scale_y)),
+                    line_width,
+                )
+        self._cache_put(self._height_contour_surface_cache, cache_key, surface, limit=18)
+        return surface, interval
+
+    def _draw_height_contours(self, screen, layer, camera, regions_only=False):
+        center = camera.world_to_screen((layer.get("x", 0.0), layer.get("y", 0.0)))
+        if center is None:
+            return
+        pixel_w = max(1, int(float(layer.get("width_world", 1.0) or 1.0) * camera.zoom))
+        pixel_h = max(1, int(float(layer.get("height_world", 1.0) or 1.0) * camera.zoom))
+        rect = pygame.Rect(int(center[0] - pixel_w / 2), int(center[1] - pixel_h / 2), pixel_w, pixel_h)
+        if not rect.colliderect(screen.get_rect()):
+            return
+        canvas_w = max(1, int(layer.get("canvas_width_px", pixel_w) or pixel_w))
+        source, _interval = self._height_contour_surface_for_layer(
+            layer, pixel_w / canvas_w, regions_only=regions_only,
+        )
+        if source is None:
+            return
+        source = self._projected_spherical_surface(source, layer)
+        previous_clip = screen.get_clip()
+        screen.set_clip(rect.clip(screen.get_rect()))
+        self._blit_scaled_layer(
+            screen, source, rect, self._scaled_height_contour_cache,
+            "height_contours_regions" if regions_only else "height_contours", smooth=True,
+        )
+        screen.set_clip(previous_clip)
+        self._draw_planet_equator(screen, rect, layer)
+        self._draw_map_frame(screen, rect, color=(110, 126, 142), width=1, crosshair=False)
 
     def _cache_put(self, cache, key, value, limit=None):
         cache[key] = value
@@ -30,6 +195,112 @@ class MapRenderer:
         while len(cache) > limit:
             cache.pop(next(iter(cache)))
         return value
+
+    def _projected_spherical_surface(self, source, layer):
+        """Reproject an equirectangular texture around a movable globe front."""
+        focus_x = float(layer.get("projection_focus_x", 0.0) or 0.0) % 1.0
+        focus_y = max(-0.5, min(0.5, float(layer.get("projection_focus_y", 0.0) or 0.0)))
+        width, height = source.get_size()
+        if width * height > 512 * 256:
+            source = pygame.transform.smoothscale(source, (512, 256))
+            width, height = source.get_size()
+        longitude_step = int(round(focus_x * width)) % max(1, width)
+        latitude_step = int(round(focus_y * max(1, (height - 1) * 2)))
+        if longitude_step == 0 and latitude_step == 0:
+            return source
+        cache_key = (id(source), longitude_step, latitude_step, width, height, "oblique_equirectangular_v2")
+        cached = self._projection_surface_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        longitude = longitude_step / max(1, width) * math.tau
+        latitude = -(latitude_step / max(1, (height - 1) * 2)) * math.pi
+        sin_lon, cos_lon = math.sin(longitude), math.cos(longitude)
+        sin_lat, cos_lat = math.sin(latitude), math.cos(latitude)
+        projected = pygame.Surface(source.get_size(), source.get_flags() & pygame.SRCALPHA, source.get_bitsize())
+        coordinate_key = (width, height)
+        coordinates = self._projection_coordinate_cache.get(coordinate_key)
+        if coordinates is None:
+            view_longitudes = [x / max(1, width) * math.tau - math.pi for x in range(width)]
+            view_latitudes = [math.pi * (0.5 - y / max(1, height - 1)) for y in range(height)]
+            coordinates = (
+                [math.cos(value) for value in view_longitudes],
+                [math.sin(value) for value in view_longitudes],
+                [math.cos(value) for value in view_latitudes],
+                [math.sin(value) for value in view_latitudes],
+            )
+            self._cache_put(self._projection_coordinate_cache, coordinate_key, coordinates, limit=6)
+        longitude_cosines, longitude_sines, latitude_cosines, latitude_sines = coordinates
+        if np is not None:
+            lon_cos = np.asarray(longitude_cosines, dtype=np.float64)[:, None]
+            lon_sin = np.asarray(longitude_sines, dtype=np.float64)[:, None]
+            lat_cos = np.asarray(latitude_cosines, dtype=np.float64)[None, :]
+            lat_sin = np.asarray(latitude_sines, dtype=np.float64)[None, :]
+            view_x = lat_cos * lon_cos
+            view_y = lat_cos * lon_sin
+            tilted_x = cos_lat * view_x - sin_lat * lat_sin
+            world_z = sin_lat * view_x + cos_lat * lat_sin
+            world_x = cos_lon * tilted_x - sin_lon * view_y
+            world_y = sin_lon * tilted_x + cos_lon * view_y
+            source_longitudes = np.arctan2(world_y, world_x)
+            source_latitudes = np.arcsin(np.clip(world_z, -1.0, 1.0))
+            source_x_indices = np.rint((source_longitudes + math.pi) / math.tau * width).astype(np.int32) % width
+            source_y_indices = np.clip(
+                np.rint((0.5 - source_latitudes / math.pi) * (height - 1)).astype(np.int32),
+                0,
+                height - 1,
+            )
+            source_rgb = pygame.surfarray.array3d(source)
+            pygame.surfarray.blit_array(projected, source_rgb[source_x_indices, source_y_indices])
+            if source.get_flags() & pygame.SRCALPHA:
+                source_alpha = pygame.surfarray.array_alpha(source)
+                destination_alpha = pygame.surfarray.pixels_alpha(projected)
+                destination_alpha[:, :] = source_alpha[source_x_indices, source_y_indices]
+                del destination_alpha
+            return self._cache_put(self._projection_surface_cache, cache_key, projected, limit=24)
+
+        source_pixels = pygame.PixelArray(source)
+        destination_pixels = pygame.PixelArray(projected)
+        try:
+            for destination_y in range(height):
+                view_cos_lat = latitude_cosines[destination_y]
+                view_sin_lat = latitude_sines[destination_y]
+                for destination_x in range(width):
+                    view_x = view_cos_lat * longitude_cosines[destination_x]
+                    view_y = view_cos_lat * longitude_sines[destination_x]
+                    view_z = view_sin_lat
+                    # Ry(-latitude), followed by Rz(longitude), rotates the
+                    # selected surface point onto the front of the view.
+                    tilted_x = cos_lat * view_x - sin_lat * view_z
+                    world_z = sin_lat * view_x + cos_lat * view_z
+                    world_x = cos_lon * tilted_x - sin_lon * view_y
+                    world_y = sin_lon * tilted_x + cos_lon * view_y
+                    source_longitude = math.atan2(world_y, world_x)
+                    source_latitude = math.asin(max(-1.0, min(1.0, world_z)))
+                    source_x = int(round((source_longitude + math.pi) / math.tau * width)) % width
+                    source_y = max(0, min(height - 1, int(round((0.5 - source_latitude / math.pi) * (height - 1)))))
+                    destination_pixels[destination_x, destination_y] = source_pixels[source_x, source_y]
+        finally:
+            del destination_pixels
+            del source_pixels
+        return self._cache_put(self._projection_surface_cache, cache_key, projected, limit=24)
+
+    @staticmethod
+    def _projected_normalized_point(nx, ny, layer):
+        return project_normalized_point(
+            nx, ny, layer.get("projection_focus_x", 0.0), layer.get("projection_focus_y", 0.0)
+        )
+
+    def _draw_planet_equator(self, screen, rect, layer):
+        if not layer.get("show_planet_equator") or rect.width < 8 or rect.height < 8:
+            return
+        previous = None
+        for index in range(361):
+            projected = self._projected_normalized_point(index / 360.0, 0.5, layer)
+            point = (int(round(rect.x + projected[0] * rect.width)), int(round(rect.y + projected[1] * rect.height)))
+            if previous is not None and abs(point[0] - previous[0]) < rect.width * 0.25 and abs(point[1] - previous[1]) < rect.height * 0.25:
+                pygame.draw.line(screen, (28, 34, 42), previous, point, 3)
+                pygame.draw.line(screen, (232, 190, 92), previous, point, 1)
+            previous = point
 
     def _render_text(self, text, color):
         font = self.app_view.default_font
@@ -238,20 +509,30 @@ class MapRenderer:
 
         screen_w = max(1, self.app_view.width)
         screen_h = max(1, self.app_view.height)
-        is_large_dest = dest_rect.width > screen_w * 1.5 or dest_rect.height > screen_h * 1.5
+        # Scaling the full world map for every wheel step is both slower and far
+        # more memory hungry than scaling only the visible source window.
+        viewport_area = screen_w * screen_h
+        dest_area = max(1, dest_rect.width) * max(1, dest_rect.height)
+        is_large_dest = (
+            dest_rect.width > screen_w
+            or dest_rect.height > screen_h
+            or dest_area > viewport_area * 0.72
+        )
 
         if is_large_dest:
-            source_rect = self._source_rect_for_visible_dest(source_surface, dest_rect, visible)
-            if source_rect is None:
-                return False
-            source_key = (source_rect.x, source_rect.y, source_rect.width, source_rect.height)
-            scale_size = (visible.width, visible.height)
-            blit_pos = visible.topleft
-        else:
-            source_rect = source_surface.get_rect()
-            source_key = None
-            scale_size = (dest_rect.width, dest_rect.height)
-            blit_pos = dest_rect.topleft
+            return self._blit_large_scaled_layer(
+                screen,
+                source_surface,
+                dest_rect,
+                visible,
+                cache_prefix,
+                alpha=alpha,
+            )
+
+        source_rect = source_surface.get_rect()
+        source_key = None
+        scale_size = (dest_rect.width, dest_rect.height)
+        blit_pos = dest_rect.topleft
 
         effective_smooth = bool(smooth and not is_large_dest)
         cache_key = (
@@ -276,8 +557,84 @@ class MapRenderer:
         screen.blit(scaled, blit_pos)
         return True
 
+    def _blit_large_scaled_layer(self, screen, source_surface, dest_rect, visible, cache_prefix, *, alpha=None):
+        """Scale only a small viewport tile and reuse it during nearby pans."""
+        requested_source = self._source_rect_for_visible_dest(source_surface, dest_rect, visible)
+        if requested_source is None:
+            return False
+
+        cache_key = (cache_prefix, id(source_surface), alpha)
+        entry = self._large_scaled_layer_cache.get(cache_key)
+        reusable = (
+            isinstance(entry, dict)
+            and entry.get("dest_size") == dest_rect.size
+            and entry.get("source_rect") is not None
+            and entry["source_rect"].contains(requested_source)
+        )
+
+        if not reusable:
+            overscan = max(16, int(self._viewport_overscan_px))
+            overscan_dest = visible.inflate(overscan * 2, overscan * 2).clip(dest_rect)
+            source_rect = self._source_rect_for_visible_dest(source_surface, dest_rect, overscan_dest)
+            if source_rect is None:
+                return False
+
+            offset_x = overscan_dest.x - dest_rect.x
+            offset_y = overscan_dest.y - dest_rect.y
+            scaled_size = (max(1, overscan_dest.width), max(1, overscan_dest.height))
+            scaled = pygame.transform.scale(source_surface.subsurface(source_rect), scaled_size)
+            if alpha is not None:
+                scaled = scaled.copy()
+                scaled.set_alpha(max(0, min(255, int(alpha))))
+            entry = {
+                "dest_size": dest_rect.size,
+                "source_rect": source_rect,
+                "dest_offset": (offset_x, offset_y),
+                "surface": scaled,
+            }
+            self._cache_put(self._large_scaled_layer_cache, cache_key, entry, limit=8)
+
+        offset_x, offset_y = entry["dest_offset"]
+        screen.blit(entry["surface"], (dest_rect.x + offset_x, dest_rect.y + offset_y))
+        return True
+
+    def _draw_cached_alpha_fill(self, screen, rect, color, alpha):
+        visible = rect.clip(screen.get_rect())
+        if visible.width <= 0 or visible.height <= 0 or alpha <= 0:
+            return
+        rgb = self._coerce_rgb(color, fallback=(170, 180, 192))
+        alpha = max(0, min(255, int(alpha)))
+        cache_key = (screen.get_size(), rgb, alpha)
+        overlay = self._alpha_fill_cache.get(cache_key)
+        if overlay is None:
+            overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+            overlay.fill((*rgb, alpha))
+            self._cache_put(self._alpha_fill_cache, cache_key, overlay, limit=6)
+        source_rect = pygame.Rect(0, 0, visible.width, visible.height)
+        screen.blit(overlay, visible.topleft, source_rect)
+
+    def _draw_map_frame(self, screen, rect, color=(220, 220, 220), width=3, crosshair=True):
+        viewport = screen.get_rect()
+        if rect.left >= 0:
+            pygame.draw.line(screen, color, (rect.left, max(0, rect.top)), (rect.left, min(viewport.bottom - 1, rect.bottom)), width)
+        if rect.right <= viewport.right:
+            pygame.draw.line(screen, color, (rect.right - 1, max(0, rect.top)), (rect.right - 1, min(viewport.bottom - 1, rect.bottom)), width)
+        if rect.top >= 0:
+            pygame.draw.line(screen, color, (max(0, rect.left), rect.top), (min(viewport.right - 1, rect.right), rect.top), width)
+        if rect.bottom <= viewport.bottom:
+            pygame.draw.line(screen, color, (max(0, rect.left), rect.bottom - 1), (min(viewport.right - 1, rect.right), rect.bottom - 1), width)
+        if not crosshair:
+            return
+        if 0 <= rect.centery < viewport.height:
+            pygame.draw.line(screen, (110, 125, 150), (max(0, rect.left), rect.centery), (min(viewport.right - 1, rect.right), rect.centery), 1)
+        if 0 <= rect.centerx < viewport.width:
+            pygame.draw.line(screen, (110, 125, 150), (rect.centerx, max(0, rect.top)), (rect.centerx, min(viewport.bottom - 1, rect.bottom)), 1)
+
     def _draw_image_rect_layer(self, screen, layer, camera):
-        if layer.get("bundle_path"):
+        image_surface = layer.get("_prepared_surface")
+        if image_surface is not None:
+            pass
+        elif layer.get("bundle_path"):
             image_surface = self._load_raster_bundle_surface(
                 layer.get("bundle_path"),
                 layer.get("bundle_layer_id"),
@@ -286,6 +643,8 @@ class MapRenderer:
             image_surface = self._load_image_surface(layer.get("image_path"))
         if image_surface is None:
             return
+        if "projection_focus_x" in layer or "projection_focus_y" in layer:
+            image_surface = self._projected_spherical_surface(image_surface, layer)
 
         center = camera.world_to_screen((layer["x"], layer["y"]))
         if center is None:
@@ -318,6 +677,7 @@ class MapRenderer:
             smooth=True,
             alpha=alpha,
         )
+        self._draw_planet_equator(screen, rect, layer)
 
         if layer.get("is_ghost_context") and layer.get("name"):
             text = self._render_text(
@@ -325,6 +685,138 @@ class MapRenderer:
                 (210, 218, 230),
             )
             screen.blit(text, (rect.x + 6, rect.y + 6))
+
+    def _reference_land_surface_for_layer(self, layer):
+        polygons = layer.get("polygons") if isinstance(layer.get("polygons"), list) else []
+        if not polygons:
+            return None
+        cache_key = (
+            id(polygons), len(polygons),
+            self._coerce_rgb(layer.get("color"), fallback=(82, 108, 92)),
+            self._coerce_rgb(layer.get("border_color"), fallback=(218, 236, 220)),
+            int(layer.get("border_width", 1) or 0),
+        )
+        cached = self._reference_land_surface_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        source_w, source_h = 1024, 512
+        surface = pygame.Surface((source_w, source_h), pygame.SRCALPHA)
+        width_world = max(1e-9, float(layer.get("width_world", 1.0) or 1.0))
+        height_world = max(1e-9, float(layer.get("height_world", 1.0) or 1.0))
+        left = float(layer.get("x", 0.0) or 0.0) - width_world * 0.5
+        top = float(layer.get("y", 0.0) or 0.0) - height_world * 0.5
+        fill_color = self._coerce_rgb(layer.get("color"), fallback=(82, 108, 92))
+        border_color = self._coerce_rgb(layer.get("border_color"), fallback=(218, 236, 220))
+        border_width = max(0, int(layer.get("border_width", 1) or 0))
+        for polygon in polygons:
+            points = [
+                (
+                    int(round((float(point[0]) - left) / width_world * (source_w - 1))),
+                    int(round((float(point[1]) - top) / height_world * (source_h - 1))),
+                )
+                for point in polygon
+            ]
+            if len(points) >= 3:
+                pygame.draw.polygon(surface, fill_color, points)
+                if border_width > 0:
+                    pygame.draw.polygon(surface, border_color, points, border_width)
+        return self._cache_put(self._reference_land_surface_cache, cache_key, surface, limit=6)
+
+    def _draw_reference_land_layer(self, screen, layer, camera):
+        source = self._reference_land_surface_for_layer(layer)
+        if source is None:
+            return
+        prepared = dict(layer)
+        prepared["_prepared_surface"] = source
+        prepared["alpha"] = None
+        self._draw_image_rect_layer(screen, prepared, camera)
+
+    def _is_batchable_static_outline(self, layer):
+        try:
+            min_zoom = float(layer.get("min_zoom", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            min_zoom = 0.0
+        return (
+            layer.get("shape") == "polygon"
+            and bool(layer.get("outline_only"))
+            and bool(layer.get("suppress_label"))
+            and min_zoom <= 0.0
+            and not layer.get("is_ghost_context")
+            and not layer.get("is_placement_ancestor")
+        )
+
+    def _static_outline_surface(self, layers, root_layer):
+        cache_key = (id(layers), id(root_layer), len(layers))
+        cached = self._static_outline_surface_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        source_w, source_h = 1536, 768
+        surface = pygame.Surface((source_w, source_h), pygame.SRCALPHA)
+        width_world = max(1e-9, float(root_layer.get("width_world", 1.0) or 1.0))
+        height_world = max(1e-9, float(root_layer.get("height_world", 1.0) or 1.0))
+        left = float(root_layer.get("x", 0.0) or 0.0) - width_world * 0.5
+        top = float(root_layer.get("y", 0.0) or 0.0) - height_world * 0.5
+        for layer in layers:
+            if not self._is_batchable_static_outline(layer):
+                continue
+            points = [
+                (
+                    int(round((float(point[0]) - left) / width_world * (source_w - 1))),
+                    int(round((float(point[1]) - top) / height_world * (source_h - 1))),
+                )
+                for point in layer.get("points") or []
+            ]
+            if len(points) >= 3:
+                color = self._coerce_rgb(layer.get("border_color") or layer.get("color"), fallback=(170, 180, 194))
+                pygame.draw.polygon(surface, color, points, max(1, int(layer.get("border_width", 1) or 1)))
+        return self._cache_put(self._static_outline_surface_cache, cache_key, surface, limit=4)
+
+    def _draw_static_outline_batch(self, screen, layers, root_layer, camera):
+        source = self._static_outline_surface(layers, root_layer)
+        prepared = dict(root_layer)
+        prepared["shape"] = "image_rect"
+        prepared["_prepared_surface"] = source
+        prepared["alpha"] = None
+        prepared["name"] = None
+        prepared["show_planet_equator"] = False
+        # Polygon points are transformed into the focused view before this
+        # batch is rasterized. Inheriting these fields projected the completed
+        # outline texture a second time and detached borders from the land.
+        prepared.pop("projection_focus_x", None)
+        prepared.pop("projection_focus_y", None)
+        self._draw_image_rect_layer(screen, prepared, camera)
+
+    def _material_composite_surface(self, material_layer, heightmap_layer):
+        heightmap = heightmap_layer.get("heightmap_model") if isinstance(heightmap_layer, dict) else None
+        sample_grid = heightmap.get("sample_grid") if isinstance(heightmap, dict) else None
+        rows = sample_grid.get("rows") if isinstance(sample_grid, dict) else None
+        if not rows:
+            return None
+        terrain_surface = self._heightmap_surface_for_layer(heightmap_layer, heightmap, rows)
+        if terrain_surface is None:
+            return None
+        if material_layer.get("bundle_path"):
+            material_surface = self._load_raster_bundle_surface(
+                material_layer.get("bundle_path"),
+                material_layer.get("bundle_layer_id"),
+            )
+        else:
+            material_surface = self._load_image_surface(material_layer.get("image_path"))
+        if material_surface is None:
+            return None
+        alpha = max(0, min(255, int(material_layer.get("alpha", 232) or 232)))
+        cache_key = (id(terrain_surface), id(material_surface), alpha)
+        cached = self._material_composite_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        if material_surface.get_size() != terrain_surface.get_size():
+            material_surface = pygame.transform.scale(material_surface, terrain_surface.get_size())
+        else:
+            material_surface = material_surface.copy()
+        material_surface.set_alpha(alpha)
+        composite = terrain_surface.copy()
+        composite.blit(material_surface, (0, 0))
+        return self._cache_put(self._material_composite_cache, cache_key, composite, limit=8)
 
     def _heightmap_color(self, elevation, heightmap, has_ice=False, layer=None):
         return self._heightmap_color_from_context(
@@ -336,12 +828,20 @@ class MapRenderer:
     def _heightmap_color_context(self, heightmap, layer=None):
         sea_level_value = heightmap.get("sea_level_m")
         layer = layer if isinstance(layer, dict) else {}
+        weathering = layer.get("surface_weathering_model")
+        if not isinstance(weathering, dict):
+            weathering = {}
+        radar_bright = weathering.get("radar_bright_highlands")
+        if not isinstance(radar_bright, dict):
+            radar_bright = {}
         return {
             "has_ocean": sea_level_value is not None,
             "sea_level": 0.0 if sea_level_value is None else float(sea_level_value or 0.0),
             "min_elevation": float(heightmap.get("min_elevation_m", -4000.0) or -4000.0),
             "max_elevation": float(heightmap.get("max_elevation_m", 4000.0) or 4000.0),
             "palette": self._surface_palette_colors(layer),
+            "radar_bright_highlands": bool(radar_bright.get("enabled")),
+            "radar_bright_threshold_m": float(radar_bright.get("elevation_threshold_m", 4700.0) or 4700.0),
         }
 
     def _heightmap_color_from_context(self, elevation, context, has_ice=False):
@@ -366,12 +866,18 @@ class MapRenderer:
                 depth,
             )
 
-        relief = min(1.0, (elevation - sea_level) / max(1.0, max_elevation - sea_level))
+        land_base = sea_level if has_ocean else min_elevation
+        relief = max(0.0, min(1.0, (elevation - land_base) / max(1.0, max_elevation - land_base)))
         if relief < 0.45:
-            return self._mix_rgb(land_dark, land_mid, relief / 0.45)
-        if relief < 0.82:
-            return self._mix_rgb(land_mid, land_high, (relief - 0.45) / 0.37)
-        return self._mix_rgb(land_high, (214, 212, 196), (relief - 0.82) / 0.18)
+            color = self._mix_rgb(land_dark, land_mid, relief / 0.45)
+        elif relief < 0.82:
+            color = self._mix_rgb(land_mid, land_high, (relief - 0.45) / 0.37)
+        else:
+            color = self._mix_rgb(land_high, (214, 212, 196), (relief - 0.82) / 0.18)
+        if context.get("radar_bright_highlands") and elevation >= context.get("radar_bright_threshold_m", 4700.0):
+            excess = min(1.0, (elevation - context["radar_bright_threshold_m"]) / 2500.0)
+            color = self._mix_rgb(color, (244, 218, 154), 0.32 + 0.24 * excess)
+        return color
 
     def _draw_heightmap_base_layer(self, screen, layer, camera):
         heightmap = layer.get("heightmap_model") if isinstance(layer, dict) else None
@@ -404,11 +910,14 @@ class MapRenderer:
         screen.set_clip(rect.clip(screen.get_rect()))
         cell_cols = max(1, min(len(row) for row in rows) - 1)
         cell_rows = max(1, len(rows) - 1)
-        if cell_cols * cell_rows <= 4096:
+        has_projection_focus = abs(float(layer.get("projection_focus_x", 0.0) or 0.0)) > 1e-9 or abs(float(layer.get("projection_focus_y", 0.0) or 0.0)) > 1e-9
+        if cell_cols * cell_rows <= 4096 and not has_projection_focus:
             self._draw_heightmap_grid_cells(screen, rect, layer, heightmap, rows, cell_cols, cell_rows)
         else:
             heightmap_surface = self._heightmap_surface_for_layer(layer, heightmap, rows)
             if heightmap_surface is not None:
+                heightmap_surface = self._composite_refined_surface(heightmap_surface, layer, "heightmap")
+                heightmap_surface = self._projected_spherical_surface(heightmap_surface, layer)
                 self._blit_scaled_layer(
                     screen,
                     heightmap_surface,
@@ -418,10 +927,9 @@ class MapRenderer:
                 )
         screen.set_clip(clip)
 
-        pygame.draw.rect(screen, (75, 92, 112), rect, 1)
-        if heightmap.get("wrap_x"):
-            pygame.draw.line(screen, (120, 190, 230), (rect.x, rect.y), (rect.x, rect.bottom), 1)
-            pygame.draw.line(screen, (120, 190, 230), (rect.right - 1, rect.y), (rect.right - 1, rect.bottom), 1)
+        self._draw_planet_equator(screen, rect, layer)
+        self._draw_map_frame(screen, rect, color=(75, 92, 112), width=1, crosshair=False)
+        # The border is a viewport edge, not a fixed planetary seam.
 
     def _draw_heightmap_grid_cells(self, screen, rect, layer, heightmap, rows, cell_cols, cell_rows):
         masks = heightmap.get("surface_masks") if isinstance(heightmap.get("surface_masks"), dict) else {}
@@ -469,54 +977,140 @@ class MapRenderer:
         cell_rows = max(1, len(rows) - 1)
         masks = heightmap.get("surface_masks") if isinstance(heightmap.get("surface_masks"), dict) else {}
         ice_rows = masks.get("ice_rows") if isinstance(masks.get("ice_rows"), list) else []
-        cache_key = (
+        base_cache_key = (
+            "terrain",
             id(heightmap),
             id(rows),
             id(ice_rows),
+            repr(layer.get("heightmap_color_context_override")),
             repr(layer.get("surface_palette")),
             repr(layer.get("color")),
             repr(layer.get("display_color")),
+            repr(layer.get("surface_weathering_model")),
             cell_cols,
             cell_rows,
         )
-        cached = self._heightmap_surface_cache.get(cache_key)
+        surface = self._heightmap_surface_cache.get(base_cache_key)
+        if surface is None:
+            color_context = layer.get("heightmap_color_context_override")
+            if not isinstance(color_context, dict):
+                color_context = self._heightmap_color_context(heightmap, layer)
+            surface = pygame.Surface((cell_cols, cell_rows))
+            color_lut = {}
+            min_elevation = float(color_context.get("min_elevation", -4000.0))
+            elevation_span = max(1.0, float(color_context.get("max_elevation", 4000.0)) - min_elevation)
+            lut_steps = 511
+            for row_index in range(cell_rows):
+                row_a = rows[row_index]
+                row_b = rows[min(row_index + 1, len(rows) - 1)]
+                for col_index in range(cell_cols):
+                    values = (
+                        row_a[col_index],
+                        row_a[min(col_index + 1, len(row_a) - 1)],
+                        row_b[col_index],
+                        row_b[min(col_index + 1, len(row_b) - 1)],
+                    )
+                    elevation = sum(float(value or 0.0) for value in values) / 4.0
+                    has_ice = (
+                        row_index < len(ice_rows)
+                        and isinstance(ice_rows[row_index], list)
+                        and col_index < len(ice_rows[row_index])
+                        and bool(ice_rows[row_index][col_index])
+                    )
+                    elevation_bin = max(0, min(lut_steps, int((elevation - min_elevation) / elevation_span * lut_steps)))
+                    color_key = (elevation_bin, has_ice)
+                    color = color_lut.get(color_key)
+                    if color is None:
+                        representative_elevation = min_elevation + elevation_span * elevation_bin / lut_steps
+                        color = self._heightmap_color_from_context(
+                            representative_elevation,
+                            color_context,
+                            has_ice=has_ice,
+                        )
+                        color_lut[color_key] = color
+                    surface.set_at((col_index, row_index), color)
+            self._cache_put(self._heightmap_surface_cache, base_cache_key, surface, limit=16)
+
+        tint = layer.get("atmosphere_tint")
+        opacity = max(0.0, min(1.0, float(layer.get("atmosphere_opacity", 0.0) or 0.0)))
+        if not (isinstance(tint, (list, tuple)) and len(tint) >= 3 and opacity > 0.0):
+            return surface
+
+        atmosphere_cache_key = (
+            "atmosphere",
+            id(surface),
+            tuple(tint[:3]),
+            round(opacity, 4),
+        )
+        tinted = self._heightmap_surface_cache.get(atmosphere_cache_key)
+        if tinted is None:
+            tinted = surface.copy()
+            overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+            overlay.fill((*self._coerce_rgb(tint), round(opacity * 255)))
+            tinted.blit(overlay, (0, 0))
+            self._cache_put(self._heightmap_surface_cache, atmosphere_cache_key, tinted, limit=16)
+        return tinted
+
+    def _composite_refined_surface(self, base_surface, layer, surface_kind):
+        models = layer.get("refined_region_models") if isinstance(layer.get("refined_region_models"), list) else []
+        models = [model for model in models if isinstance(model, dict) and isinstance(model.get(f"{surface_kind}_model"), dict)]
+        if not models:
+            return base_surface
+        root_level = int((layer.get("heightmap_model") or {}).get("map_detail_level", 0) or 0)
+        maximum_level = max(int(model.get("detail_level", root_level) or root_level) for model in models)
+        scale = 2 ** min(3, max(1, maximum_level - root_level))
+        target_size = (min(2048, base_surface.get_width() * scale), min(1024, base_surface.get_height() * scale))
+        cache_key = ("refined_composite", surface_kind, id(base_surface), tuple((model.get("entity_id"), model.get("detail_level"), model.get("refinement_revision", 0)) for model in models), target_size)
+        cached = self._heightmap_surface_cache.get(cache_key) if surface_kind == "heightmap" else self._hydrology_surface_cache.get(cache_key)
         if cached is not None:
             return cached
-
-        color_context = self._heightmap_color_context(heightmap, layer)
-        surface = pygame.Surface((cell_cols, cell_rows))
-        for row_index in range(cell_rows):
-            row_a = rows[row_index]
-            row_b = rows[min(row_index + 1, len(rows) - 1)]
-            for col_index in range(cell_cols):
-                values = (
-                    row_a[col_index],
-                    row_a[min(col_index + 1, len(row_a) - 1)],
-                    row_b[col_index],
-                    row_b[min(col_index + 1, len(row_b) - 1)],
+        composite = pygame.transform.scale(base_surface, target_size)
+        for model in models:
+            uv = model.get("uv_bounds") or {}
+            left = int(round(float(uv.get("min_u", 0.0)) * target_size[0]))
+            right = int(round(float(uv.get("max_u", 0.0)) * target_size[0]))
+            top = int(round(float(uv.get("min_v", 0.0)) * target_size[1]))
+            bottom = int(round(float(uv.get("max_v", 0.0)) * target_size[1]))
+            destination = pygame.Rect(left, top, max(1, right - left), max(1, bottom - top)).clip(composite.get_rect())
+            if destination.width <= 0 or destination.height <= 0:
+                continue
+            if surface_kind == "heightmap":
+                child_model = model["heightmap_model"]
+                child_grid = child_model.get("sample_grid") or {}
+                child_rows = child_grid.get("rows") or []
+                child_layer = dict(layer)
+                child_layer.pop("refined_region_models", None)
+                child_layer["heightmap_model"] = child_model
+                # All nested patches use the root map's absolute elevation
+                # palette.  Normalizing each child to its own local min/max
+                # turned ordinary refinement footprints into pale polygons.
+                child_layer["heightmap_color_context_override"] = self._heightmap_color_context(
+                    layer.get("heightmap_model") or {}, layer,
                 )
-                elevation = sum(float(value or 0.0) for value in values) / 4.0
-                has_ice = (
-                    row_index < len(ice_rows)
-                    and isinstance(ice_rows[row_index], list)
-                    and col_index < len(ice_rows[row_index])
-                    and bool(ice_rows[row_index][col_index])
-                )
-                surface.set_at(
-                    (col_index, row_index),
-                    self._heightmap_color_from_context(
-                        elevation,
-                        color_context,
-                        has_ice=has_ice,
-                    ),
-                )
-
-        return self._cache_put(
-            self._heightmap_surface_cache,
-            cache_key,
-            surface,
-            limit=16,
-        )
+                child_surface = self._heightmap_surface_for_layer(child_layer, child_model, child_rows) if child_rows else None
+            else:
+                child_surface = self._hydrology_surface_for_layer({}, model["water_cycle_model"])
+            if child_surface is None:
+                continue
+            patch = pygame.transform.scale(child_surface, destination.size).convert_alpha()
+            feather = min(12, max(0, min(destination.width, destination.height) // 8))
+            if feather >= 2:
+                alpha_mask = pygame.Surface(destination.size, pygame.SRCALPHA)
+                for inset in range(feather + 1):
+                    alpha = int(round(255 * inset / feather))
+                    mask_rect = pygame.Rect(
+                        inset,
+                        inset,
+                        destination.width - inset * 2,
+                        destination.height - inset * 2,
+                    )
+                    if mask_rect.width <= 0 or mask_rect.height <= 0:
+                        break
+                    pygame.draw.rect(alpha_mask, (255, 255, 255, alpha), mask_rect)
+                patch.blit(alpha_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            composite.blit(patch, destination.topleft)
+        cache = self._heightmap_surface_cache if surface_kind == "heightmap" else self._hydrology_surface_cache
+        return self._cache_put(cache, cache_key, composite, limit=12)
 
     def _climate_zone_colors(self, water_cycle):
         colors = {
@@ -549,6 +1143,22 @@ class MapRenderer:
             return None
 
         elevation_rows = climate_grid.get("elevation_rows") if isinstance(climate_grid.get("elevation_rows"), list) else []
+        lakes = water_cycle.get("lakes") if isinstance(water_cycle.get("lakes"), list) else []
+        drainage = water_cycle.get("drainage_network_model") if isinstance(water_cycle.get("drainage_network_model"), dict) else {}
+        basin_rows = drainage.get("drainage_basin_rows") if isinstance(drainage.get("drainage_basin_rows"), list) else []
+        cache_key = (
+            id(water_cycle),
+            id(rows),
+            id(elevation_rows),
+            id(lakes),
+            id(basin_rows),
+            col_count,
+            row_count,
+        )
+        cached = self._hydrology_surface_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         elevations = [
             float(value or 0.0)
             for row in elevation_rows[:row_count]
@@ -557,16 +1167,6 @@ class MapRenderer:
         min_elevation = min(elevations) if elevations else 0.0
         max_elevation = max(elevations) if elevations else 1.0
         elevation_span = max(1.0, max_elevation - min_elevation)
-        cache_key = (
-            id(water_cycle),
-            id(rows),
-            id(elevation_rows),
-            col_count,
-            row_count,
-        )
-        cached = self._hydrology_surface_cache.get(cache_key)
-        if cached is not None:
-            return cached
 
         colors = self._climate_zone_colors(water_cycle)
         surface = pygame.Surface((col_count, row_count))
@@ -581,7 +1181,32 @@ class MapRenderer:
                     elevation_norm = max(0.0, min(1.0, (elevation - min_elevation) / elevation_span))
                     shade = 0.76 + (1.0 - elevation_norm) * 0.14 if str(zone_id) == "ocean" else 0.78 + elevation_norm * 0.24
                     color = tuple(max(0, min(255, int(channel * shade))) for channel in color)
-                surface.set_at((col_index, row_index), color)
+                    surface.set_at((col_index, row_index), color)
+
+        for lake in lakes:
+            if not isinstance(lake, dict):
+                continue
+            depth = float(lake.get("maximum_depth_m", 0.0) or 0.0)
+            lake_color = self._mix_rgb((62, 132, 178), (24, 76, 132), min(1.0, depth / 900.0))
+            for cell in lake.get("cells") or []:
+                if isinstance(cell, (list, tuple)) and len(cell) >= 2:
+                    x, y = int(cell[0]), int(cell[1])
+                    if 0 <= x < col_count and 0 <= y < row_count:
+                        surface.set_at((x, y), lake_color)
+
+        if basin_rows:
+            boundary_color = (104, 142, 154)
+            basin_height = min(row_count, len(basin_rows))
+            for y in range(basin_height):
+                basin_width = min(col_count, len(basin_rows[y]))
+                for x in range(basin_width):
+                    basin_id = basin_rows[y][x]
+                    if basin_id < 0:
+                        continue
+                    right = basin_rows[y][(x + 1) % basin_width]
+                    down = basin_rows[y + 1][x] if y + 1 < basin_height and x < len(basin_rows[y + 1]) else basin_id
+                    if right != basin_id or down != basin_id:
+                        surface.set_at((x, y), self._mix_rgb(surface.get_at((x, y))[:3], boundary_color, 0.18))
 
         return self._cache_put(
             self._hydrology_surface_cache,
@@ -590,11 +1215,83 @@ class MapRenderer:
             limit=16,
         )
 
+    def _projected_reference_hydrology(self, water_cycle, layer, max_river_rank=6):
+        """Cache expensive spherical projection for authored hydrography."""
+        focus_x = float(layer.get("projection_focus_x", 0.0) or 0.0) % 1.0
+        focus_y = max(-0.5, min(0.5, float(layer.get("projection_focus_y", 0.0) or 0.0)))
+        key = (id(water_cycle), round(focus_x * 512), round(focus_y * 512), int(max_river_rank))
+        cached = self._projected_reference_hydrology_cache.get(key)
+        if cached is not None:
+            return cached
+        lakes = []
+        for lake in water_cycle.get("reference_lakes") or []:
+            if not isinstance(lake, dict):
+                continue
+            points = [
+                self._projected_normalized_point(point.get("x", 0.0), point.get("y", 0.0), layer)
+                for point in lake.get("points") or []
+                if isinstance(point, dict)
+            ]
+            lakes.append((lake, points))
+        rivers = {}
+        for river in water_cycle.get("rivers") or []:
+            if not isinstance(river, dict) or not str(river.get("source", "")).startswith("Natural Earth"):
+                continue
+            if int(river.get("scalerank", 99) or 0) > int(max_river_rank):
+                continue
+            rivers[id(river)] = [
+                self._projected_normalized_point(point.get("x", 0.0), point.get("y", 0.0), layer)
+                for point in river.get("display_points") or river.get("points") or []
+                if isinstance(point, dict)
+            ]
+        return self._cache_put(
+            self._projected_reference_hydrology_cache, key, (lakes, rivers), limit=12,
+        )
+
+    def _reference_hydrology_overlay(self, water_cycle, layer, rect, max_river_rank):
+        focus_x = float(layer.get("projection_focus_x", 0.0) or 0.0) % 1.0
+        focus_y = max(-0.5, min(0.5, float(layer.get("projection_focus_y", 0.0) or 0.0)))
+        key = (
+            id(water_cycle), round(focus_x * 512), round(focus_y * 512),
+            rect.width, rect.height, int(max_river_rank),
+        )
+        cached = self._reference_hydrology_overlay_cache.get(key)
+        if cached is not None:
+            return cached
+        overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
+        lakes, rivers = self._projected_reference_hydrology(water_cycle, layer, max_river_rank)
+        for lake, projected_points in lakes:
+            points = [(int(x * rect.width), int(y * rect.height)) for x, y in projected_points]
+            seam_crossing = any(abs(points[index][0] - points[index - 1][0]) > rect.width * 0.5 for index in range(1, len(points)))
+            if len(points) >= 3 and not seam_crossing:
+                pygame.draw.polygon(overlay, (42, 111, 169), points)
+                pygame.draw.aalines(overlay, (88, 164, 210), True, points)
+        for river in water_cycle.get("rivers") or []:
+            projected_points = rivers.get(id(river))
+            if projected_points is None:
+                continue
+            points = [(int(x * rect.width), int(y * rect.height)) for x, y in projected_points]
+            stream_order = max(1, int(river.get("stream_order", 1) or 1))
+            line_width = max(1, min(6, stream_order - 1 + int(float(river.get("flow", 0.1) or 0.1) * 3)))
+            role = river.get("network_role")
+            color = (112, 198, 244) if role == "feeder" else ((72, 164, 232) if role == "tributary" else (48, 136, 220))
+            segment = []
+            for point in points:
+                if segment and (abs(point[0] - segment[-1][0]) > rect.width * 0.5 or abs(point[1] - segment[-1][1]) > rect.height * 0.55):
+                    if len(segment) >= 2:
+                        pygame.draw.lines(overlay, color, False, segment, line_width)
+                    segment = []
+                segment.append(point)
+            if len(segment) >= 2:
+                pygame.draw.lines(overlay, color, False, segment, line_width)
+        return self._cache_put(self._reference_hydrology_overlay_cache, key, overlay, limit=12)
+
     def _draw_hydrology_layer(self, screen, layer, camera):
         water_cycle = layer.get("water_cycle_model") if isinstance(layer, dict) else None
         surface = self._hydrology_surface_for_layer(layer, water_cycle)
         if surface is None:
             return
+        surface = self._composite_refined_surface(surface, layer, "water_cycle")
 
         center = camera.world_to_screen((layer["x"], layer["y"]))
         if center is None:
@@ -620,25 +1317,133 @@ class MapRenderer:
         screen.set_clip(rect.clip(screen.get_rect()))
         self._blit_scaled_layer(
             screen,
-            surface,
+            self._projected_spherical_surface(surface, layer),
             rect,
             self._scaled_hydrology_cache,
             "hydrology",
         )
-        for river in water_cycle.get("rivers") or []:
+        ocean_model = water_cycle.get("ocean_circulation_model") if isinstance(water_cycle, dict) else None
+        vector_rows = ocean_model.get("vector_rows") if isinstance(ocean_model, dict) else None
+        sst_rows = ocean_model.get("sea_surface_temperature_rows_k") if isinstance(ocean_model, dict) else None
+        if isinstance(vector_rows, list) and vector_rows:
+            current_h = len(vector_rows)
+            current_w = min((len(row) for row in vector_rows if isinstance(row, list)), default=0)
+            stride = max(2, math.ceil(current_w / 28), math.ceil(current_h / 14)) if current_w else 2
+            cell_w = rect.width / max(1, current_w - 1)
+            cell_h = rect.height / max(1, current_h - 1)
+            arrow_scale = max(4.0, min(22.0, min(abs(cell_w), abs(cell_h)) * stride * 0.62))
+            for y in range(stride // 2, current_h, stride):
+                for x in range(stride // 2, current_w, stride):
+                    vector = vector_rows[y][x] if x < len(vector_rows[y]) else None
+                    if not isinstance(vector, (list, tuple)) or len(vector) < 2:
+                        continue
+                    u, v = float(vector[0] or 0.0), float(vector[1] or 0.0)
+                    strength = min(1.0, math.hypot(u, v))
+                    if strength < 0.08:
+                        continue
+                    source_nx = x / max(1, current_w - 1)
+                    source_ny = y / max(1, current_h - 1)
+                    projected = self._projected_normalized_point(source_nx, source_ny, layer)
+                    if projected is None:
+                        continue
+                    start = (int(rect.x + projected[0] * rect.width), int(rect.y + projected[1] * rect.height))
+                    projected_end = self._projected_normalized_point(
+                        source_nx + u * arrow_scale / max(1.0, rect.width),
+                        source_ny + v * arrow_scale / max(1.0, rect.height),
+                        layer,
+                    )
+                    if projected_end is None:
+                        continue
+                    end = (int(rect.x + projected_end[0] * rect.width), int(rect.y + projected_end[1] * rect.height))
+                    if abs(end[0] - start[0]) > rect.width * 0.25 or abs(end[1] - start[1]) > rect.height * 0.25:
+                        continue
+                    sst = sst_rows[y][x] if isinstance(sst_rows, list) and y < len(sst_rows) and x < len(sst_rows[y]) else None
+                    color = (242, 170, 94) if sst is not None and float(sst) >= 285.0 else (104, 210, 232)
+                    pygame.draw.line(screen, color, start, end, 1 + int(strength > 0.62))
+                    angle = math.atan2(end[1] - start[1], end[0] - start[0])
+                    head = 3 + int(strength * 2)
+                    for offset in (-2.55, 2.55):
+                        tip = (int(end[0] + math.cos(angle + offset) * head), int(end[1] + math.sin(angle + offset) * head))
+                        pygame.draw.line(screen, color, end, tip, 1)
+        map_span = max(rect.width, rect.height)
+        maximum_reference_river_rank = 3 if map_span < 1700 else 4 if map_span < 2400 else 5 if map_span < 3200 else 6
+        if layer.get("projection_interacting"):
+            maximum_reference_river_rank = min(2, maximum_reference_river_rank)
+        projected_reference_lakes, projected_reference_rivers = self._projected_reference_hydrology(
+            water_cycle, layer, maximum_reference_river_rank,
+        )
+        screen.blit(
+            self._reference_hydrology_overlay(water_cycle, layer, rect, maximum_reference_river_rank),
+            rect.topleft,
+        )
+        river_sets = [(water_cycle.get("rivers") or [], None)]
+        for refined in layer.get("refined_region_models") or []:
+            child_water = refined.get("water_cycle_model") if isinstance(refined, dict) else None
+            if isinstance(child_water, dict):
+                river_sets.append((child_water.get("rivers") or [], refined.get("uv_bounds") or {}))
+        for river, river_uv in ((river, uv) for rivers, uv in river_sets for river in rivers):
             if not isinstance(river, dict):
                 continue
+            authored_rank = river.get("scalerank") if river_uv is None else None
+            if authored_rank is not None:
+                authored_rank = int(authored_rank or 0)
+                map_span = max(rect.width, rect.height)
+                if authored_rank >= 6 and map_span < 3200:
+                    continue
+                if authored_rank >= 5 and map_span < 2400:
+                    continue
+                if authored_rank >= 4 and map_span < 1700:
+                    continue
+            if river_uv is not None:
+                patch_screen_width = abs(float(river_uv.get("max_u", 1.0)) - float(river_uv.get("min_u", 0.0))) * rect.width
+                patch_screen_height = abs(float(river_uv.get("max_v", 1.0)) - float(river_uv.get("min_v", 0.0))) * rect.height
+                patch_screen_span = max(patch_screen_width, patch_screen_height)
+                role = str(river.get("network_role") or "feeder")
+                if role == "feeder" and patch_screen_span < 520.0:
+                    continue
+                if role == "tributary" and patch_screen_span < 190.0:
+                    continue
             points = []
-            for point in river.get("points") or []:
+            cached_reference_points = projected_reference_rivers.get(id(river)) if river_uv is None else None
+            if cached_reference_points is not None:
+                continue
+            for point in [] if cached_reference_points is not None else (river.get("display_points") or river.get("points") or []):
                 if not isinstance(point, dict):
                     continue
-                px = rect.x + float(point.get("x", 0.0) or 0.0) * rect.width
-                py = rect.y + float(point.get("y", 0.0) or 0.0) * rect.height
+                source_x = float(point.get("x", 0.0) or 0.0)
+                source_y = float(point.get("y", 0.0) or 0.0)
+                if river_uv is not None:
+                    source_x = float(river_uv.get("min_u", 0.0)) + source_x * (float(river_uv.get("max_u", 1.0)) - float(river_uv.get("min_u", 0.0)))
+                    source_y = float(river_uv.get("min_v", 0.0)) + source_y * (float(river_uv.get("max_v", 1.0)) - float(river_uv.get("min_v", 0.0)))
+                projected = self._projected_normalized_point(source_x, source_y, layer)
+                if projected is None:
+                    continue
+                px = rect.x + projected[0] * rect.width
+                py = rect.y + projected[1] * rect.height
                 points.append((int(px), int(py)))
             if len(points) >= 2:
-                line_width = 1 + int(float(river.get("flow", 0.1) or 0.1) * 4)
-                pygame.draw.lines(screen, (82, 172, 238), False, points, line_width)
+                stream_order = max(1, int(river.get("stream_order", 1) or 1))
+                line_width = max(1, min(6, stream_order - 1 + int(float(river.get("flow", 0.1) or 0.1) * 3)))
+                role = river.get("network_role")
+                river_color = (112, 198, 244) if role == "feeder" else ((72, 164, 232) if role == "tributary" else (48, 136, 220))
+                visible_segment = []
+                for point in points:
+                    if visible_segment and (
+                        abs(point[0] - visible_segment[-1][0]) > rect.width * 0.5
+                        or abs(point[1] - visible_segment[-1][1]) > rect.height * 0.55
+                    ):
+                        if len(visible_segment) >= 2:
+                            if line_width > 1:
+                                pygame.draw.lines(screen, river_color, False, visible_segment, line_width)
+                            pygame.draw.aalines(screen, river_color, False, visible_segment)
+                        visible_segment = []
+                    visible_segment.append(point)
+                if len(visible_segment) >= 2:
+                    if line_width > 1:
+                        pygame.draw.lines(screen, river_color, False, visible_segment, line_width)
+                    pygame.draw.aalines(screen, river_color, False, visible_segment)
         screen.set_clip(clip)
+        self._draw_planet_equator(screen, rect, layer)
         pygame.draw.rect(screen, (118, 132, 158), rect, 1)
 
     def _draw_point_location_draft_preview(self, screen, preview, camera):
@@ -680,9 +1485,49 @@ class MapRenderer:
                 color = layer.get("color", (180, 170, 150))
             y0 = rect.y + int(index * rect.height / band_count)
             y1 = rect.y + int((index + 1) * rect.height / band_count)
-            pygame.draw.rect(screen, color, pygame.Rect(rect.x, y0, rect.width, max(1, y1 - y0)))
-        pygame.draw.line(screen, (238, 238, 232), (rect.x, rect.centery), (rect.right, rect.centery), 1)
+            band_rect = pygame.Rect(rect.x, y0, rect.width, max(1, y1 - y0)).clip(screen.get_rect())
+            if band_rect.width > 0 and band_rect.height > 0:
+                pygame.draw.rect(screen, color, band_rect)
+        if 0 <= rect.centery < screen.get_height():
+            pygame.draw.line(screen, (238, 238, 232), (max(0, rect.x), rect.centery), (min(screen.get_width() - 1, rect.right), rect.centery), 1)
         screen.set_clip(clip)
+
+    def _polygon_screen_points(self, layer, camera):
+        world_points = layer.get("points") or []
+        cache_key = (
+            id(world_points),
+            len(world_points),
+            round(float(getattr(camera, "x", 0.0) or 0.0), 5),
+            round(float(getattr(camera, "y", 0.0) or 0.0), 5),
+            round(float(getattr(camera, "zoom", 1.0) or 1.0), 7),
+            int(getattr(camera, "width", self.app_view.width) or self.app_view.width),
+            int(getattr(camera, "height", self.app_view.height) or self.app_view.height),
+        )
+        cached = self._polygon_screen_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        points = []
+        previous = None
+        for point in world_points:
+            screen_point = camera.world_to_screen(point)
+            if screen_point is None:
+                return []
+            candidate = (int(screen_point[0]), int(screen_point[1]))
+            if previous is not None:
+                dx = candidate[0] - previous[0]
+                dy = candidate[1] - previous[1]
+                if dx * dx + dy * dy < 0.64:
+                    continue
+            points.append(candidate)
+            previous = candidate
+        if len(points) < 3 and len(world_points) >= 3:
+            points = []
+            for point in world_points[:3]:
+                screen_point = camera.world_to_screen(point)
+                if screen_point is not None:
+                    points.append((int(screen_point[0]), int(screen_point[1])))
+        return self._cache_put(self._polygon_screen_cache, cache_key, points, limit=24)
 
     def _draw_polygon_layer(self, screen, layer, camera, is_selected, is_hovered, visible_world_bounds=None):
         min_zoom = layer.get("min_zoom")
@@ -700,14 +1545,7 @@ class MapRenderer:
         ):
             return
 
-        screen_points = []
-
-        for point in layer.get("points", []):
-            screen_point = camera.world_to_screen(point)
-            if screen_point is None:
-                return
-
-            screen_points.append((int(screen_point[0]), int(screen_point[1])))
+        screen_points = self._polygon_screen_points(layer, camera)
 
         if len(screen_points) < 3:
             return
@@ -985,12 +1823,28 @@ class MapRenderer:
         hover_spatial_feature_id = getattr(sim, "hover_spatial_feature_id", None)
 
         active_layer_kind = getattr(sim, "get_active_layer_kind", lambda: None)()
-        if active_layer_kind in {"material_heatmaps"} and hasattr(sim, "get_heightmap_base_layer"):
+        layers = sim.get_layers()
+        heightmap_base_layer = None
+        if hasattr(sim, "get_heightmap_base_layer"):
             heightmap_base_layer = sim.get_heightmap_base_layer()
             if heightmap_base_layer is not None:
-                self._draw_heightmap_base_layer(screen, heightmap_base_layer, camera)
+                heightmap_base_layer = dict(heightmap_base_layer)
+                heightmap_base_layer["projection_focus_x"] = float(
+                    getattr(sim, "map_projection_focus_x", 0.0) or 0.0
+                )
+                heightmap_base_layer["projection_focus_y"] = float(
+                    getattr(sim, "map_projection_focus_y", 0.0) or 0.0
+                )
+                root_entity = getattr(sim, "get_root_entity", lambda: None)()
+                heightmap_base_layer["show_planet_equator"] = bool(
+                    isinstance(root_entity, dict)
+                    and root_entity.get("location_class") in {"planet", "moon"}
+                )
 
-        for layer in sim.get_layers():
+        root_map_layer = next((layer for layer in layers if layer.get("shape") == "map_rect"), None)
+        static_outline_batch_drawn = False
+
+        for layer in layers:
             shape = layer.get("shape", "marker")
             entity_id = layer.get("entity_id")
             spatial_feature_id = layer.get("spatial_feature_id")
@@ -1013,6 +1867,14 @@ class MapRenderer:
                     pass
 
             if shape == "image_rect":
+                if active_layer_kind == "material_heatmaps" and heightmap_base_layer is not None:
+                    composite = self._material_composite_surface(layer, heightmap_base_layer)
+                    if composite is not None:
+                        prepared_layer = dict(layer)
+                        prepared_layer["_prepared_surface"] = composite
+                        prepared_layer["alpha"] = None
+                        self._draw_image_rect_layer(screen, prepared_layer, camera)
+                        continue
                 self._draw_image_rect_layer(screen, layer, camera)
                 continue
 
@@ -1020,11 +1882,26 @@ class MapRenderer:
                 self._draw_heightmap_base_layer(screen, layer, camera)
                 continue
 
+            if shape == "reference_land":
+                self._draw_reference_land_layer(screen, layer, camera)
+                continue
+
             if shape == "hydrology_climate":
                 self._draw_hydrology_layer(screen, layer, camera)
                 continue
 
             if shape == "polygon":
+                if (
+                    root_map_layer is not None
+                    and float(getattr(camera, "zoom", 1.0) or 1.0) <= 8.0
+                    and self._is_batchable_static_outline(layer)
+                    and not is_selected
+                    and not is_hovered
+                ):
+                    if not static_outline_batch_drawn:
+                        self._draw_static_outline_batch(screen, layers, root_map_layer, camera)
+                        static_outline_batch_drawn = True
+                    continue
                 self._draw_polygon_layer(
                     screen=screen,
                     layer=layer,
@@ -1068,23 +1945,20 @@ class MapRenderer:
                     pygame.draw.rect(screen, layer["color"], rect)
 
                 if shape == "map_rect":
-                    pygame.draw.rect(screen, (220, 220, 220), rect, 3)
-
-                    if layer.get("render_style") != "gas_giant_bands":
-                        pygame.draw.line(
-                            screen,
-                            (110, 125, 150),
-                            (rect.x, rect.centery),
-                            (rect.right, rect.centery),
-                            1,
-                        )
-                        pygame.draw.line(
-                            screen,
-                            (110, 125, 150),
-                            (rect.centerx, rect.y),
-                            (rect.centerx, rect.bottom),
-                            1,
-                        )
+                    tint = layer.get("atmosphere_tint")
+                    opacity = max(0.0, min(1.0, float(layer.get("atmosphere_opacity", 0.0) or 0.0)))
+                    if (
+                        not layer.get("atmosphere_baked_into_surface")
+                        and isinstance(tint, (list, tuple))
+                        and len(tint) >= 3
+                        and opacity > 0.0
+                    ):
+                        self._draw_cached_alpha_fill(screen, rect, tint, round(opacity * 255))
+                    self._draw_map_frame(
+                        screen,
+                        rect,
+                        crosshair=False,
+                    )
                 else:
                     pygame.draw.rect(screen, (220, 220, 220), rect, 2)
 
@@ -1143,6 +2017,17 @@ class MapRenderer:
                 (240, 240, 240)
             )
             screen.blit(text, (rect.x + 8, rect.y - 2))
+
+        # A single cached contour overlay keeps every raster subtype on the
+        # same elevation reference. Regions deliberately omits the terrain
+        # fill, so its contour treatment is stronger.
+        if heightmap_base_layer is not None and active_layer_kind != "hydrology":
+            self._draw_height_contours(
+                screen,
+                heightmap_base_layer,
+                camera,
+                regions_only=active_layer_kind == "ground_materials",
+            )
 
         if hasattr(sim, "get_spatial_feature_draft_preview"):
             preview = sim.get_spatial_feature_draft_preview()

@@ -6,9 +6,11 @@ import os
 import random
 import re
 import shutil
+import time
 from pathlib import Path
 
 import pygame
+from engine.performance_debug import performance_debug
 import tkinter as tk
 from tkinter import filedialog
 
@@ -176,6 +178,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.random_task_button = None
         self.new_entry_button = None
         self.clear_canvas_button = None
+        self.keep_card_open_button = None
         self.contemporary_spawn_decrease_button = None
         self.contemporary_spawn_value_button = None
         self.contemporary_spawn_increase_button = None
@@ -223,6 +226,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.contemporary_spawn_max = 12
         self.phylogeny_clade_member_count = 3
         self.phylogeny_species_relative_count = 4
+        self.performance_debug_enabled = False
+        self.keep_card_open = False
         self.knowledge_settings = self._load_knowledge_settings()
         self._apply_knowledge_settings()
         self.relation_tree_neighbor_cache = {}
@@ -277,8 +282,12 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.timeline_pan_last_mouse_x = None
         self.app_width = 0
         self.app_height = 0
-        self.schema_loader = SchemaLoader()
-        self.schema_field_usage = self._build_schema_field_usage()
+        # The application WorldModel already owns the decoded schemas. Keep
+        # startup lightweight and bind that loader on the first repository
+        # rebuild instead of loading the complete ontology a second time.
+        self.schema_loader = SchemaLoader(schema_entities=[])
+        self.schema_field_usage = {}
+        self._schema_world_model_id = None
         self.card_drafts = self._load_card_drafts()
         self._text_surface_cache = {}
         self._text_surface_cache_limit = 1024
@@ -310,6 +319,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.random_task_button = None
         self.new_entry_button = None
         self.clear_canvas_button = None
+        self.keep_card_open_button = None
         self.contemporary_spawn_decrease_button = None
         self.contemporary_spawn_value_button = None
         self.contemporary_spawn_increase_button = None
@@ -340,6 +350,9 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             json.dump(self.knowledge_settings, f, indent=2, sort_keys=True)
 
     def _apply_knowledge_settings(self):
+        self.performance_debug_enabled = bool(self.knowledge_settings.get("performance_debug_enabled", False))
+        self.keep_card_open = bool(self.knowledge_settings.get("keep_card_open", False))
+        performance_debug.set_enabled(self.performance_debug_enabled, announce=False)
         value = self.knowledge_settings.get("contemporary_spawn_count", self.contemporary_spawn_count)
         try:
             value = int(value)
@@ -374,6 +387,29 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self._write_knowledge_settings()
         self._build_header_button()
         return True
+
+    def _set_performance_debug_enabled(self, enabled):
+        enabled = bool(enabled)
+        if enabled == self.performance_debug_enabled:
+            return False
+        self.performance_debug_enabled = enabled
+        self.knowledge_settings["performance_debug_enabled"] = enabled
+        self._write_knowledge_settings()
+        performance_debug.set_enabled(enabled)
+        return True
+
+    def _set_keep_card_open(self, enabled):
+        enabled = bool(enabled)
+        changed = enabled != bool(getattr(self, "keep_card_open", False))
+        self.keep_card_open = enabled
+        self.knowledge_settings["keep_card_open"] = enabled
+        self._write_knowledge_settings()
+        if enabled:
+            opened_card = self._ensure_keep_card_open()
+            if opened_card:
+                self._relayout_cards()
+        self._build_header_button()
+        return changed
 
     def _set_phylogeny_clade_member_count(self, value):
         try:
@@ -732,7 +768,14 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         for match in matches:
             entity = self.world_model.get_entity(match.get("id")) if self.world_model is not None else None
             if self._entity_matches_relation_target(entity, target):
-                filtered.append(match)
+                enriched = dict(match)
+                parent_id = ""
+                if isinstance(entity, dict):
+                    parent_id = str(entity.get("parent_location") or entity.get("parent_entity") or "")
+                parent = self.world_model.get_entity(parent_id) if self.world_model is not None and parent_id else None
+                if isinstance(parent, dict):
+                    enriched["scope_label"] = self._entity_display_label(parent, fallback=parent_id)
+                filtered.append(enriched)
         return filtered
 
     def _insert_relation_from_picker(self, card, match_index=None):
@@ -867,6 +910,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             self.random_task_button = None
             self.new_entry_button = None
             self.clear_canvas_button = None
+            self.keep_card_open_button = None
             self.contemporary_spawn_decrease_button = None
             self.contemporary_spawn_value_button = None
             self.contemporary_spawn_increase_button = None
@@ -913,6 +957,16 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             enabled=True,
         )
         button_right = self.clear_canvas_button.rect.x - button_gap
+        self.keep_card_open_button = UIButton(
+            button_id="knowledge_keep_card_open",
+            label="Keep Card Open",
+            rect=pygame.Rect(button_right - 150, button_y, 150, 28),
+            visible=True,
+            enabled=True,
+        )
+        self.keep_card_open_button.check_button = True
+        self.keep_card_open_button.checked = bool(getattr(self, "keep_card_open", False))
+        button_right = self.keep_card_open_button.rect.x - button_gap
         contemporary_value_w = 86
         contemporary_step_w = 28
         self.contemporary_spawn_increase_button = UIButton(
@@ -964,7 +1018,47 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             visible=True,
             enabled=self.relation_tree_touch_degree > self.relation_tree_min_touch_degree,
         )
+        self._layout_header_controls(right_rect)
         self._build_template_picker_hitboxes()
+
+    def _layout_header_controls(self, right_rect):
+        controls = [
+            self.relation_touch_decrease_button,
+            self.relation_touch_value_button,
+            self.relation_touch_increase_button,
+            self.contemporary_spawn_decrease_button,
+            self.contemporary_spawn_value_button,
+            self.contemporary_spawn_increase_button,
+            self.keep_card_open_button,
+            self.clear_canvas_button,
+            self.random_entry_button,
+            self.random_task_button,
+            self.new_entry_button,
+        ]
+        font = self.font_for_layout
+        gap = 6
+        row_gap = 6
+        row = 0
+        button_right = right_rect.right - 10
+        for button in reversed([candidate for candidate in controls if candidate is not None]):
+            if len(button.label) == 1:
+                width = 28
+            else:
+                label_width = font.size(button.label)[0] if font is not None else len(button.label) * 8
+                checkbox_width = 22 if getattr(button, "check_button", False) else 0
+                width = max(64, label_width + 16 + checkbox_width)
+            row_left = right_rect.x + (180 if row == 0 else 10)
+            if button_right - width < row_left and row == 0:
+                row = 1
+                button_right = right_rect.right - 10
+                row_left = right_rect.x + 10
+            button.rect = pygame.Rect(
+                button_right - width,
+                right_rect.y + 8 + row * (28 + row_gap),
+                width,
+                28,
+            )
+            button_right = button.rect.x - gap
 
     def _set_relation_tree_touch_degree(self, value):
         try:
@@ -1102,6 +1196,11 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             field_names.update(str(field_name) for field_name in fields.keys())
 
         usage_modules_by_field = {field_name: set() for field_name in field_names}
+        identifier_fields = {
+            field_name for field_name in field_names
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", field_name)
+        }
+        other_fields = field_names - identifier_fields
 
         for path in simulation_dir.rglob("*.py"):
             try:
@@ -1112,9 +1211,11 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             rel_parts = path.relative_to(simulation_dir).parts
             simulation_name = rel_parts[0] if rel_parts else path.stem
 
-            for field_name in field_names:
-                pattern = rf"(?<![A-Za-z0-9_]){re.escape(field_name)}(?![A-Za-z0-9_])"
-                if re.search(pattern, text):
+            source_identifiers = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", text))
+            for field_name in identifier_fields.intersection(source_identifiers):
+                usage_modules_by_field[field_name].add(simulation_name)
+            for field_name in other_fields:
+                if field_name in text:
                     usage_modules_by_field[field_name].add(simulation_name)
 
         return {
@@ -1897,6 +1998,9 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         if not isinstance(schema, dict):
             return None
 
+        if not self.schema_field_usage:
+            self.schema_field_usage = self._build_schema_field_usage()
+
         card_index = len(self.cards)
         spawn_x = 24 + (card_index % 3) * 40
         spawn_y = 84 + (card_index % 5) * 32
@@ -1999,6 +2103,9 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
     def _relayout_cards(self, *args, **kwargs):
         return getattr(self._canvas_controller(), "_relayout_cards")(*args, **kwargs)
+
+    def _relayout_single_card(self, *args, **kwargs):
+        return getattr(self._canvas_controller(), "_relayout_single_card")(*args, **kwargs)
 
     def _card_font_for_zoom(self, *args, **kwargs):
         return getattr(self._canvas_controller(), "_card_font_for_zoom")(*args, **kwargs)
@@ -2144,10 +2251,18 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self._rebuild_browser_hitboxes()
         return True
 
-    def _random_entity(self):
+    def _random_entity(self, excluded_entity_ids=None):
         if self.world_model is None or not self.world_model.loader.entities:
             return None
-        return random.choice(list(self.world_model.loader.entities.values()))
+        excluded_entity_ids = {str(entity_id) for entity_id in (excluded_entity_ids or []) if entity_id}
+        entities = [
+            entity
+            for entity in self.world_model.loader.entities.values()
+            if isinstance(entity, dict)
+            and entity.get("id")
+            and str(entity.get("id")) not in excluded_entity_ids
+        ]
+        return random.choice(entities) if entities else None
 
     def _startup_entity(self):
         if self.world_model is None:
@@ -2169,6 +2284,12 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             return False
         self._ensure_card(entity)
         return True
+
+    def _ensure_keep_card_open(self, excluded_entity_ids=None):
+        if not bool(getattr(self, "keep_card_open", False)) or self.cards or self.world_model is None:
+            return False
+        entity = self._random_entity(excluded_entity_ids=excluded_entity_ids)
+        return self._ensure_card(entity, relayout=False) is not None if entity is not None else False
 
     def _random_task_entity(self):
         if self.world_model is None:
@@ -2211,6 +2332,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         return True
 
     def _clear_card_canvas(self):
+        closed_entity_ids = [card.get("entity_id") for card in self.cards]
         self.cards = []
         self.selected_entity_id = None
         self.active_card_drag_id = None
@@ -2221,6 +2343,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.canvas_relation_edges = []
         self.timeline_ui.set_open_canvas_entity_ids([])
         self.timeline_ui.rebuild_layout()
+        self._ensure_keep_card_open(excluded_entity_ids=closed_entity_ids)
         self._layout_all_cards()
         return True
 
@@ -2645,6 +2768,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
         red, green, blue = colorsys.hsv_to_rgb(hue, saturation, brightness)
         color_hex = self._rgb_to_hex((round(red * 255), round(green * 255), round(blue * 255)))
+        if str(self._card_color_value(entity, role=role, section_id=section_id)).lower() == color_hex.lower():
+            return False
         return self._set_card_color(card, color_hex, persist=persist, role=role, section_id=section_id)
 
     def _close_entry_name_prompt(self):
@@ -4097,6 +4222,9 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
     def _persist_card_entity(self, card):
         return self._repository_service()._persist_card_entity(card)
 
+    def _persist_card_palette(self, card):
+        return self._repository_service()._persist_card_palette(card)
+
     def _finalize_relation_picker_edit(self, card):
         action = card.get("last_edit_action")
         if action == "commit":
@@ -4121,10 +4249,19 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         if not card.get("pending_color_persist", False):
             return False
 
+        persist_started = time.perf_counter() if performance_debug.enabled else None
         if card.get("is_draft_entity", False):
             saved = self._save_card_draft(card)
+            persist_kind = "draft"
         else:
-            saved = self._persist_card_entity(card)
+            saved = self._persist_card_palette(card)
+            persist_kind = "repository_palette"
+        if persist_started is not None:
+            performance_debug.record(
+                "color.persist",
+                (time.perf_counter() - persist_started) * 1000.0,
+                f"kind={persist_kind} saved={bool(saved)}",
+            )
         if saved:
             card.pop("pending_color_persist", None)
         return saved
@@ -4457,29 +4594,32 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         location_class = str(entity.get("location_class") or "").strip().lower()
         vehicle_class = str(entity.get("vehicle_class") or "").strip().lower()
 
+        def denser(width, height):
+            return max(1, round(width * 1.5)), max(1, round(height * 1.5))
+
         if location_class in {"planet", "moon", "star"}:
-            return 128, 128
+            return denser(128, 128)
         if location_class in {"continent", "country", "state", "region"}:
-            return 160, 120
+            return denser(160, 120)
         if location_class in {"city", "quarter", "site", "building"}:
-            return 120, 80
+            return denser(120, 80)
         if vehicle_class or entity_type in {"vehicle", "vehicles"}:
             if metric_size_m <= 1.0:
-                return 50, 50
+                return denser(50, 50)
             if metric_size_m <= 8:
-                return 80, 50
+                return denser(80, 50)
             if metric_size_m <= 60:
-                return 120, 60
-            return 160, 80
+                return denser(120, 60)
+            return denser(160, 80)
         if metric_size_m <= 1.0:
-            return 50, 50
+            return denser(50, 50)
         if metric_size_m <= 5.0:
-            return 75, 75
+            return denser(75, 75)
         if metric_size_m <= 20.0:
-            return 100, 100
+            return denser(100, 100)
         if metric_size_m <= 200.0:
-            return 150, 150
-        return 200, 200
+            return denser(150, 150)
+        return denser(200, 200)
     def _pixel_art_editor_controller(self):
         controller = getattr(self, "_pixel_art_editor_ui", None)
         if controller is None:
@@ -4541,8 +4681,20 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
     def _handle_pixel_art_editor_click(self, mouse_pos):
         return self._pixel_art_editor_controller().handle_click(mouse_pos)
 
-    def _handle_pixel_art_editor_motion(self, mouse_pos):
-        return self._pixel_art_editor_controller().handle_motion(mouse_pos)
+    def _handle_pixel_art_editor_motion(self, mouse_pos, pressure=None):
+        return self._pixel_art_editor_controller().handle_motion(mouse_pos, pressure)
+
+    def _finish_pixel_art_editor_stroke(self):
+        return self._pixel_art_editor_controller().finish_stroke()
+
+    def _handle_pixel_art_editor_wheel(self, delta, mouse_pos=None):
+        return self._pixel_art_editor_controller().handle_wheel(delta, mouse_pos)
+
+    def _begin_pixel_art_editor_pan(self, mouse_pos):
+        return self._pixel_art_editor_controller().begin_pan(mouse_pos)
+
+    def _begin_pixel_art_editor_eraser(self, mouse_pos):
+        return self._pixel_art_editor_controller().begin_temporary_eraser(mouse_pos)
     def _rebuild_browser_hitboxes(self):
         self.browser_hitboxes = []
         self.browser_toggle_hitboxes = []
@@ -4698,6 +4850,20 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             self.timeline_collapsed,
         )
 
+    def _bind_world_schema_loader(self, world_model):
+        if world_model is None:
+            return
+        shared_loader = getattr(world_model, "schemas", None)
+        if shared_loader is None or (
+            id(world_model) == self._schema_world_model_id
+            and self.schema_loader is shared_loader
+        ):
+            return
+        self.schema_loader = shared_loader
+        self._schema_world_model_id = id(world_model)
+        self.schema_field_usage = {}
+        self.schema_entry_templates = self._load_schema_entry_templates()
+
     def rebuild(
         self,
         app_width,
@@ -4724,6 +4890,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.app_height = app_height
         self.font_for_layout = font
         self.world_model = world_model
+        self._bind_world_schema_loader(world_model)
         self.parent_assignment_request = (
             dict(parent_assignment_request)
             if isinstance(parent_assignment_request, dict)
@@ -4751,7 +4918,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             self._ensure_card(scope_entity)
             self.selected_entity_id = scope_entity.get("id")
 
-        elif not self.cards and world_model is not None:
+        elif not self.cards and world_model is not None and self.keep_card_open:
             self._ensure_card(self._startup_entity())
             self.browser_items = self._build_browser_items(world_model)
             self._rebuild_browser_hitboxes()
@@ -5224,10 +5391,23 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         had_card_resize = self.active_card_resize_id is not None
         self.active_wiki_text_selection = None
         if active_color_slider is not None:
+            pending_mouse_x = active_color_slider.get("pending_mouse_x")
+            card = self._find_card_by_entity_id(active_color_slider.get("entity_id"))
+            if card is not None and pending_mouse_x is not None:
+                self._set_card_color_from_slider(
+                    card,
+                    active_color_slider.get("channel"),
+                    active_color_slider.get("slider_rect"),
+                    pending_mouse_x,
+                    persist=False,
+                    role=active_color_slider.get("role"),
+                    section_id=active_color_slider.get("section_id"),
+                )
             self._finalize_card_color_slider_edit(active_color_slider)
         self.active_card_drag_id = None
         self.active_card_resize_id = None
         self.active_card_color_slider = None
+        self._card_color_drag_surface_cache = {}
         self.active_canvas_pan = False
         self.card_drag_mouse_offset = (0, 0)
         self.card_drag_last_mouse_pos = None
@@ -5293,8 +5473,17 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
         if self.active_card_color_slider is not None:
             slider = self.active_card_color_slider
-            card = self._find_card_by_entity_id(slider.get("entity_id"))
+            slider["pending_mouse_x"] = event.pos[0]
+            now_ms = pygame.time.get_ticks()
+            last_update_ms = slider.get("last_update_ms")
+            preview_interval_ms = max(16, int(slider.get("preview_interval_ms", 33) or 33))
+            if last_update_ms is None or now_ms - last_update_ms >= preview_interval_ms:
+                card = self._find_card_by_entity_id(slider.get("entity_id"))
+                slider["last_update_ms"] = now_ms
+            else:
+                card = None
             if card is not None:
+                update_started = time.perf_counter() if performance_debug.enabled else None
                 self._set_card_color_from_slider(
                     card,
                     slider.get("channel"),
@@ -5304,6 +5493,12 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                     role=slider.get("role"),
                     section_id=slider.get("section_id"),
                 )
+                if update_started is not None:
+                    performance_debug.record(
+                        "color.drag_update",
+                        (time.perf_counter() - update_started) * 1000.0,
+                        f"channel={slider.get('channel')} interval={preview_interval_ms}ms",
+                    )
             return "__ui_consumed__"
 
         if self.active_card_drag_id is not None:
@@ -5961,24 +6156,21 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             if event.key == pygame.K_ESCAPE:
                 child_card["phylogeny_child_input_active"] = False
                 child_card["phylogeny_status"] = ""
-                self._relayout_cards()
                 return True
             if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 return self._confirm_phylogeny_child_input(child_card)
             if event.key == pygame.K_UP and matches:
                 child_card["phylogeny_child_selected_index"] = max(0, int(child_card.get("phylogeny_child_selected_index", 0)) - 1)
-                self._relayout_cards()
                 return True
             if event.key == pygame.K_DOWN and matches:
                 child_card["phylogeny_child_selected_index"] = min(len(matches) - 1, int(child_card.get("phylogeny_child_selected_index", 0)) + 1)
-                self._relayout_cards()
                 return True
             if event.key == pygame.K_BACKSPACE:
                 child_card["phylogeny_child_query"] = query[:-1]
                 child_card["phylogeny_child_matches"] = self._phylogeny_child_matches_for_card(child_card, child_card["phylogeny_child_query"])
                 child_card["phylogeny_child_selected_index"] = 0
                 child_card["phylogeny_status"] = ""
-                self._relayout_cards()
+                self._relayout_single_card(child_card)
                 return True
             text = getattr(event, "unicode", "")
             if text and text.isprintable():
@@ -5986,7 +6178,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 child_card["phylogeny_child_matches"] = self._phylogeny_child_matches_for_card(child_card, child_card["phylogeny_child_query"])
                 child_card["phylogeny_child_selected_index"] = 0
                 child_card["phylogeny_status"] = ""
-                self._relayout_cards()
+                self._relayout_single_card(child_card)
                 return True
             return True
 
@@ -5999,24 +6191,21 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         if event.key == pygame.K_ESCAPE:
             card["phylogeny_parent_input_active"] = False
             card["phylogeny_status"] = ""
-            self._relayout_cards()
             return True
         if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             return self._confirm_phylogeny_parent_input(card)
         if event.key == pygame.K_UP and matches:
             card["phylogeny_parent_selected_index"] = max(0, int(card.get("phylogeny_parent_selected_index", 0)) - 1)
-            self._relayout_cards()
             return True
         if event.key == pygame.K_DOWN and matches:
             card["phylogeny_parent_selected_index"] = min(len(matches) - 1, int(card.get("phylogeny_parent_selected_index", 0)) + 1)
-            self._relayout_cards()
             return True
         if event.key == pygame.K_BACKSPACE:
             card["phylogeny_parent_query"] = query[:-1]
             card["phylogeny_parent_matches"] = find_clade_matches(self.world_model, card["phylogeny_parent_query"])
             card["phylogeny_parent_selected_index"] = 0
             card["phylogeny_status"] = ""
-            self._relayout_cards()
+            self._relayout_single_card(card)
             return True
         text = getattr(event, "unicode", "")
         if text and text.isprintable():
@@ -6024,7 +6213,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             card["phylogeny_parent_matches"] = find_clade_matches(self.world_model, card["phylogeny_parent_query"])
             card["phylogeny_parent_selected_index"] = 0
             card["phylogeny_status"] = ""
-            self._relayout_cards()
+            self._relayout_single_card(card)
             return True
         return True
 
@@ -6447,6 +6636,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             draw_button_fn(screen, font, self.new_entry_button)
         if self.clear_canvas_button is not None:
             draw_button_fn(screen, font, self.clear_canvas_button)
+        if self.keep_card_open_button is not None:
+            draw_button_fn(screen, font, self.keep_card_open_button)
         if self.contemporary_spawn_decrease_button is not None:
             draw_button_fn(screen, font, self.contemporary_spawn_decrease_button)
         if self.contemporary_spawn_value_button is not None:
@@ -6613,17 +6804,38 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
         if getattr(self, "pixel_art_editor", None) is not None:
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if isinstance(self.pixel_art_editor, dict):
+                    self.pixel_art_editor["pressure"] = max(0.05, min(1.0, float(getattr(event, "pressure", 1.0))))
                 self._handle_pixel_art_editor_click(event.pos)
                 return "__ui_consumed__"
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 2:
+                self._begin_pixel_art_editor_pan(event.pos)
+                return "__ui_consumed__"
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
+                self._begin_pixel_art_editor_eraser(event.pos)
+                return "__ui_consumed__"
             if event.type == pygame.MOUSEBUTTONUP:
-                self.pixel_art_painting = False
-                if isinstance(self.pixel_art_editor, dict):
-                    self.pixel_art_editor["active_slider"] = None
+                self._finish_pixel_art_editor_stroke()
                 return "__ui_consumed__"
             if event.type == pygame.MOUSEMOTION:
-                self._handle_pixel_art_editor_motion(event.pos)
+                self._handle_pixel_art_editor_motion(event.pos, getattr(event, "pressure", None))
                 return "__ui_consumed__"
             if event.type == pygame.MOUSEWHEEL:
+                self._handle_pixel_art_editor_wheel(event.y, pygame.mouse.get_pos())
+                return "__ui_consumed__"
+            if event.type == pygame.FINGERDOWN:
+                pos = (round(event.x * self.layout["screen_rect"].width), round(event.y * self.layout["screen_rect"].height)) if "screen_rect" in self.layout else (round(event.x * pygame.display.get_surface().get_width()), round(event.y * pygame.display.get_surface().get_height()))
+                if isinstance(self.pixel_art_editor, dict):
+                    self.pixel_art_editor["pressure"] = max(0.05, min(1.0, float(getattr(event, "pressure", 1.0))))
+                self._handle_pixel_art_editor_click(pos)
+                return "__ui_consumed__"
+            if event.type == pygame.FINGERMOTION:
+                surface = pygame.display.get_surface()
+                pos = (round(event.x * surface.get_width()), round(event.y * surface.get_height()))
+                self._handle_pixel_art_editor_motion(pos, getattr(event, "pressure", None))
+                return "__ui_consumed__"
+            if event.type == pygame.FINGERUP:
+                self._finish_pixel_art_editor_stroke()
                 return "__ui_consumed__"
 
         if getattr(self, "stellar_neighbourhood_prompt", None) is not None:
@@ -6721,6 +6933,10 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
         if self.clear_canvas_button is not None and self.clear_canvas_button.rect.collidepoint(mouse_pos):
             self._clear_card_canvas()
+            return "__ui_consumed__"
+
+        if self.keep_card_open_button is not None and self.keep_card_open_button.rect.collidepoint(mouse_pos):
+            self._set_keep_card_open(not self.keep_card_open)
             return "__ui_consumed__"
 
         if (
