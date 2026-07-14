@@ -37,6 +37,7 @@ class MapRenderer:
         self._reference_hydrology_overlay_cache = {}
         self._projection_surface_cache = {}
         self._projection_coordinate_cache = {}
+        self._projection_source_cache = {}
         self._material_composite_cache = {}
         self._reference_land_surface_cache = {}
         self._static_outline_surface_cache = {}
@@ -202,18 +203,27 @@ class MapRenderer:
         focus_y = max(-0.5, min(0.5, float(layer.get("projection_focus_y", 0.0) or 0.0)))
         width, height = source.get_size()
         if width * height > 512 * 256:
-            source = pygame.transform.smoothscale(source, (512, 256))
+            source_key = (id(source), width, height, 512, 256)
+            projected_source = self._projection_source_cache.get(source_key)
+            if projected_source is None:
+                projected_source = pygame.transform.smoothscale(source, (512, 256))
+                self._cache_put(self._projection_source_cache, source_key, projected_source, limit=8)
+            source = projected_source
             width, height = source.get_size()
-        longitude_step = int(round(focus_x * width)) % max(1, width)
-        latitude_step = int(round(focus_y * max(1, (height - 1) * 2)))
-        if longitude_step == 0 and latitude_step == 0:
+
+        # Rotation must be identical for every map layer.  Quantizing by the
+        # source dimensions made a 256px heightmap and a 512px land mask use
+        # different globe centres even when they shared the same focus values.
+        focus_key_x = round(focus_x, 9)
+        focus_key_y = round(focus_y, 9)
+        if focus_key_x == 0.0 and focus_key_y == 0.0:
             return source
-        cache_key = (id(source), longitude_step, latitude_step, width, height, "oblique_equirectangular_v2")
+        cache_key = (id(source), focus_key_x, focus_key_y, width, height, "oblique_equirectangular_v3")
         cached = self._projection_surface_cache.get(cache_key)
         if cached is not None:
             return cached
-        longitude = longitude_step / max(1, width) * math.tau
-        latitude = -(latitude_step / max(1, (height - 1) * 2)) * math.pi
+        longitude = focus_key_x * math.tau
+        latitude = -focus_key_y * math.pi
         sin_lon, cos_lon = math.sin(longitude), math.cos(longitude)
         sin_lat, cos_lat = math.sin(latitude), math.cos(latitude)
         projected = pygame.Surface(source.get_size(), source.get_flags() & pygame.SRCALPHA, source.get_bitsize())
@@ -741,6 +751,7 @@ class MapRenderer:
             and bool(layer.get("outline_only"))
             and bool(layer.get("suppress_label"))
             and min_zoom <= 0.0
+            and "projection_geometry_copy" not in layer
             and not layer.get("is_ghost_context")
             and not layer.get("is_placement_ancestor")
         )

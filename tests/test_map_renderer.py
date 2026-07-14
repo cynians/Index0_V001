@@ -175,6 +175,19 @@ class MapRendererTests(unittest.TestCase):
             "projection_geometry_copy": 0,
         }))
 
+    def test_mixed_resolution_rasters_use_the_same_projection_focus(self):
+        renderer = self._renderer()
+        layer = {
+            "projection_focus_x": 24.9 / 360.0,
+            "projection_focus_y": -2.9 / 180.0,
+        }
+
+        renderer._projected_spherical_surface(pygame.Surface((64, 32)), layer)
+        renderer._projected_spherical_surface(pygame.Surface((128, 64)), layer)
+
+        focus_keys = {(key[1], key[2]) for key in renderer._projection_surface_cache}
+        self.assertEqual({(round(layer["projection_focus_x"], 9), round(layer["projection_focus_y"], 9))}, focus_keys)
+
 
 if __name__ == "__main__":
     unittest.main()
