@@ -536,6 +536,7 @@ class MapRenderer:
                 dest_rect,
                 visible,
                 cache_prefix,
+                smooth=smooth,
                 alpha=alpha,
             )
 
@@ -567,13 +568,13 @@ class MapRenderer:
         screen.blit(scaled, blit_pos)
         return True
 
-    def _blit_large_scaled_layer(self, screen, source_surface, dest_rect, visible, cache_prefix, *, alpha=None):
+    def _blit_large_scaled_layer(self, screen, source_surface, dest_rect, visible, cache_prefix, *, smooth=False, alpha=None):
         """Scale only a small viewport tile and reuse it during nearby pans."""
         requested_source = self._source_rect_for_visible_dest(source_surface, dest_rect, visible)
         if requested_source is None:
             return False
 
-        cache_key = (cache_prefix, id(source_surface), alpha)
+        cache_key = (cache_prefix, id(source_surface), bool(smooth), alpha)
         entry = self._large_scaled_layer_cache.get(cache_key)
         reusable = (
             isinstance(entry, dict)
@@ -592,7 +593,8 @@ class MapRenderer:
             offset_x = overscan_dest.x - dest_rect.x
             offset_y = overscan_dest.y - dest_rect.y
             scaled_size = (max(1, overscan_dest.width), max(1, overscan_dest.height))
-            scaled = pygame.transform.scale(source_surface.subsurface(source_rect), scaled_size)
+            transform = pygame.transform.smoothscale if smooth else pygame.transform.scale
+            scaled = transform(source_surface.subsurface(source_rect), scaled_size)
             if alpha is not None:
                 scaled = scaled.copy()
                 scaled.set_alpha(max(0, min(255, int(alpha))))
@@ -754,6 +756,7 @@ class MapRenderer:
             and "projection_geometry_copy" not in layer
             and not layer.get("is_ghost_context")
             and not layer.get("is_placement_ancestor")
+            and not layer.get("render_when_interacting_only")
         )
 
     def _static_outline_surface(self, layers, root_layer):
@@ -803,9 +806,25 @@ class MapRenderer:
         rows = sample_grid.get("rows") if isinstance(sample_grid, dict) else None
         if not rows:
             return None
-        terrain_surface = self._heightmap_surface_for_layer(heightmap_layer, heightmap, rows)
+        # The Material Distribution layer is intentionally a full-strength
+        # view.  Do not first apply the subtle normal-map material tint and
+        # then stack the same raster a second time.
+        terrain_layer = dict(heightmap_layer)
+        terrain_layer.pop("surface_material_layer", None)
+        terrain_layer.pop("surface_material_opacity", None)
+        terrain_surface = self._heightmap_surface_for_layer(terrain_layer, heightmap, rows)
         if terrain_surface is None:
             return None
+        return self._surface_material_composite(
+            terrain_surface,
+            material_layer,
+            opacity=material_layer.get("alpha", 232),
+        )
+
+    def _surface_material_composite(self, terrain_surface, material_layer, opacity=92):
+        """Tint terrain with the probabilistic material raster while retaining relief."""
+        if terrain_surface is None or not isinstance(material_layer, dict):
+            return terrain_surface
         if material_layer.get("bundle_path"):
             material_surface = self._load_raster_bundle_surface(
                 material_layer.get("bundle_path"),
@@ -814,8 +833,8 @@ class MapRenderer:
         else:
             material_surface = self._load_image_surface(material_layer.get("image_path"))
         if material_surface is None:
-            return None
-        alpha = max(0, min(255, int(material_layer.get("alpha", 232) or 232)))
+            return terrain_surface
+        alpha = max(0, min(255, int(opacity or 0)))
         cache_key = (id(terrain_surface), id(material_surface), alpha)
         cached = self._material_composite_cache.get(cache_key)
         if cached is not None:
@@ -935,6 +954,7 @@ class MapRenderer:
                     rect,
                     self._scaled_heightmap_cache,
                     "heightmap",
+                    smooth=True,
                 )
         screen.set_clip(clip)
 
@@ -1010,6 +1030,8 @@ class MapRenderer:
             color_lut = {}
             min_elevation = float(color_context.get("min_elevation", -4000.0))
             elevation_span = max(1.0, float(color_context.get("max_elevation", 4000.0)) - min_elevation)
+            spacing_x = max(1.0, float(heightmap.get("sample_spacing_x_m") or heightmap.get("equator_resolution_m_per_px") or 1.0))
+            spacing_y = max(1.0, float(heightmap.get("sample_spacing_y_m") or spacing_x))
             lut_steps = 511
             for row_index in range(cell_rows):
                 row_a = rows[row_index]
@@ -1039,8 +1061,30 @@ class MapRenderer:
                             has_ice=has_ice,
                         )
                         color_lut[color_key] = color
+                    # Directional relief shading exposes valleys and ridges
+                    # that an elevation-only ramp hides.  Moderate vertical
+                    # exaggeration is visual only; stored elevations remain
+                    # the simulation truth.
+                    left = float(row_a[max(0, col_index - 1)] or 0.0)
+                    right = float(row_a[min(len(row_a) - 1, col_index + 1)] or 0.0)
+                    upper_row = rows[max(0, row_index - 1)]
+                    lower_row = rows[min(len(rows) - 1, row_index + 1)]
+                    up = float(upper_row[min(col_index, len(upper_row) - 1)] or 0.0)
+                    down = float(lower_row[min(col_index, len(lower_row) - 1)] or 0.0)
+                    dzdx = (right - left) / (2.0 * spacing_x) * 5.0
+                    dzdy = (down - up) / (2.0 * spacing_y) * 5.0
+                    normal_length = math.sqrt(dzdx * dzdx + dzdy * dzdy + 1.0)
+                    illumination = max(0.0, min(1.0, (dzdx * 0.48 + dzdy * 0.48 + 0.735) / normal_length))
+                    shade = 0.78 + illumination * 0.34
+                    color = tuple(max(0, min(255, int(channel * shade))) for channel in color)
                     surface.set_at((col_index, row_index), color)
             self._cache_put(self._heightmap_surface_cache, base_cache_key, surface, limit=16)
+
+        surface = self._surface_material_composite(
+            surface,
+            layer.get("surface_material_layer"),
+            opacity=layer.get("surface_material_opacity", 0),
+        )
 
         tint = layer.get("atmosphere_tint")
         opacity = max(0.0, min(1.0, float(layer.get("atmosphere_opacity", 0.0) or 0.0)))
@@ -1332,6 +1376,7 @@ class MapRenderer:
             rect,
             self._scaled_hydrology_cache,
             "hydrology",
+            smooth=True,
         )
         ocean_model = water_cycle.get("ocean_circulation_model") if isinstance(water_cycle, dict) else None
         vector_rows = ocean_model.get("vector_rows") if isinstance(ocean_model, dict) else None
@@ -1434,7 +1479,8 @@ class MapRenderer:
                 points.append((int(px), int(py)))
             if len(points) >= 2:
                 stream_order = max(1, int(river.get("stream_order", 1) or 1))
-                line_width = max(1, min(6, stream_order - 1 + int(float(river.get("flow", 0.1) or 0.1) * 3)))
+                morphology = river.get("channel_morphology") if isinstance(river.get("channel_morphology"), dict) else {}
+                line_width = max(1, min(3, int(morphology.get("render_width_px", 1) or 1)))
                 role = river.get("network_role")
                 river_color = (112, 198, 244) if role == "feeder" else ((72, 164, 232) if role == "tributary" else (48, 136, 220))
                 visible_segment = []
@@ -1541,6 +1587,8 @@ class MapRenderer:
         return self._cache_put(self._polygon_screen_cache, cache_key, points, limit=24)
 
     def _draw_polygon_layer(self, screen, layer, camera, is_selected, is_hovered, visible_world_bounds=None):
+        if layer.get("render_when_interacting_only") and not (is_selected or is_hovered):
+            return
         min_zoom = layer.get("min_zoom")
         if min_zoom is not None and not (is_selected or is_hovered):
             try:
@@ -1644,6 +1692,40 @@ class MapRenderer:
                 text_color,
             )
             screen.blit(text, (int(label_pos[0]) + 6, int(label_pos[1]) + 6))
+
+    def _draw_polyline_layer(self, screen, layer, camera, is_selected, is_hovered):
+        min_zoom = layer.get("min_zoom")
+        if min_zoom is not None and not (is_selected or is_hovered):
+            try:
+                if float(getattr(camera, "zoom", 1.0) or 1.0) < float(min_zoom):
+                    return
+            except (TypeError, ValueError):
+                pass
+
+        screen_points = []
+        for point in layer.get("points") or []:
+            screen_point = camera.world_to_screen(point)
+            if screen_point is None:
+                return
+            screen_points.append((int(screen_point[0]), int(screen_point[1])))
+        if len(screen_points) < 2:
+            return
+
+        color = self._coerce_rgb(layer.get("color"), fallback=(72, 164, 232))
+        line_width = max(1, int(layer.get("line_width", 2) or 2))
+        pygame.draw.lines(screen, color, False, screen_points, line_width)
+        if line_width > 1:
+            pygame.draw.aalines(screen, color, False, screen_points)
+        if is_hovered and not is_selected:
+            pygame.draw.lines(screen, (120, 220, 255), False, screen_points, line_width + 2)
+        if is_selected:
+            pygame.draw.lines(screen, (255, 230, 120), False, screen_points, line_width + 3)
+
+        if (is_selected or is_hovered) and layer.get("name"):
+            label_pos = camera.world_to_screen((layer.get("x", 0), layer.get("y", 0)))
+            if label_pos is not None:
+                text = self._render_text(layer["name"], (245, 245, 245))
+                screen.blit(text, (int(label_pos[0]) + 6, int(label_pos[1]) + 6))
 
     def _draw_spatial_feature_draft_preview(self, screen, preview, camera):
         points = preview.get("points", [])
@@ -1923,6 +2005,16 @@ class MapRenderer:
                 )
                 continue
 
+            if shape == "polyline":
+                self._draw_polyline_layer(
+                    screen=screen,
+                    layer=layer,
+                    camera=camera,
+                    is_selected=is_selected,
+                    is_hovered=is_hovered,
+                )
+                continue
+
             center = camera.world_to_screen((layer["x"], layer["y"]))
 
             if center is None:
@@ -2032,7 +2124,11 @@ class MapRenderer:
         # A single cached contour overlay keeps every raster subtype on the
         # same elevation reference. Regions deliberately omits the terrain
         # fill, so its contour treatment is stronger.
-        if heightmap_base_layer is not None and active_layer_kind != "hydrology":
+        if (
+            heightmap_base_layer is not None
+            and active_layer_kind != "hydrology"
+            and bool(getattr(sim, "is_height_contours_visible", lambda: True)())
+        ):
             self._draw_height_contours(
                 screen,
                 heightmap_base_layer,

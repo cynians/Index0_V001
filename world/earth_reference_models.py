@@ -1,8 +1,11 @@
 import gzip
 import json
+import re
+from functools import lru_cache
 from pathlib import Path
 
 
+@lru_cache(maxsize=1)
 def _earth_reference_land_polygons():
     path = Path(__file__).resolve().parent / "reference_data" / "earth_land_110m.json"
     try:
@@ -12,6 +15,7 @@ def _earth_reference_land_polygons():
     return payload if isinstance(payload, dict) else {}
 
 
+@lru_cache(maxsize=1)
 def _earth_reference_region_geometries():
     path = Path(__file__).resolve().parent / "reference_data" / "earth_regions_reference.json"
     try:
@@ -19,6 +23,93 @@ def _earth_reference_region_geometries():
     except (OSError, ValueError):
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+@lru_cache(maxsize=1)
+def _earth_reference_countries():
+    path = Path(__file__).resolve().parent / "reference_data" / "earth_countries_reference.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _reference_slug(value):
+    return re.sub(r"[^a-z0-9]+", "_", str(value or "").lower()).strip("_")
+
+
+def _reference_name_key(value):
+    key = _reference_slug(value)
+    for suffix in ("_river", "_republic", "_state", "_of", "_the"):
+        if key.endswith(suffix):
+            key = key[:-len(suffix)].strip("_")
+    return key
+
+
+# A handful of older ontology ids predate the generated country naming scheme.
+# Preserve them so existing links keep working while their geometry is filled in.
+_COUNTRY_REFERENCE_IDS = {
+    "usa": "loc_united_states_of_america",
+    "chn": "loc_peoples_republic_of_china",
+    "ind": "loc_india",
+    "jpn": "loc_japan",
+    "kor": "loc_south_korea",
+    "col": "loc_republic_of_colombia",
+    "deu": "loc_germany",
+    "cze": "loc_czech_republic",
+    "rou": "loc_romania",
+    "ukr": "loc_ukraine",
+    "est": "loc_estonia",
+    "aut": "loc_austria",
+    "grl": "loc_greenland",
+}
+
+
+# These are already present in the bundled region-geometry payload but used to
+# remain invisible when no ontology entity happened to exist for them.
+_EARTH_REFERENCE_LOCATION_METADATA = {
+    "loc_north_america": {"name": "North America", "location_class": "continent"},
+    "loc_south_america": {"name": "South America", "location_class": "continent"},
+    "loc_europe": {"name": "Europe", "location_class": "continent"},
+    "loc_asia": {"name": "Asia", "location_class": "continent"},
+    "loc_eurasia": {"name": "Eurasia", "location_class": "region"},
+    "loc_australia": {"name": "Australia", "location_class": "continent"},
+    "loc_greenland": {"name": "Greenland", "location_class": "country"},
+    "loc_tasmania": {"name": "Tasmania", "location_class": "region", "parent_location": "loc_country_aus"},
+    "loc_victoria_state_australia": {"name": "Victoria", "location_class": "state", "parent_location": "loc_country_aus"},
+    "loc_gansu_province": {"name": "Gansu", "location_class": "province", "parent_location": "loc_peoples_republic_of_china"},
+    "loc_state_bihar": {"name": "Bihar", "location_class": "state", "parent_location": "loc_india"},
+    "loc_california": {"name": "California", "location_class": "state", "parent_location": "loc_united_states_of_america"},
+    "loc_iowa_state_usa": {"name": "Iowa", "location_class": "state", "parent_location": "loc_united_states_of_america"},
+    "loc_east_asia": {"name": "East Asia", "location_class": "region"},
+}
+
+
+_COUNTRY_CONTINENT_PARENTS = {
+    "Africa": "loc_africa",
+    "Antarctica": "loc_antarctica",
+    "Asia": "loc_asia",
+    "Europe": "loc_europe",
+    "North America": "loc_north_america",
+    "Oceania": "loc_oceania",
+    "South America": "loc_south_america",
+    "Seven seas (open ocean)": "loc_open_ocean_territories",
+}
+
+
+_EARTH_HIERARCHY_CONTAINERS = {
+    "loc_oceania": {
+        "name": "Oceania",
+        "location_class": "continent",
+        "parent_location": "planet_earth",
+    },
+    "loc_open_ocean_territories": {
+        "name": "Open Ocean Territories",
+        "location_class": "region",
+        "parent_location": "planet_earth",
+    },
+}
 
 
 def _earth_height_rows():
@@ -220,6 +311,7 @@ def _legacy_earth_reference_payload():
     }
 
 
+@lru_cache(maxsize=1)
 def _earth_worldgen_reference_bundle():
     path = Path(__file__).resolve().parent / "reference_data" / "earth_worldgen_reference.json.gz"
     try:
@@ -279,6 +371,190 @@ def _runtime_entity_store(target):
         datasets = getattr(target, "datasets", {}) or {}
         return entities, datasets
     return target, {}
+
+
+def _location_dataset(entities, datasets):
+    if not isinstance(datasets, dict):
+        return []
+    locations = datasets.setdefault("locations", [])
+    return locations if isinstance(locations, list) else []
+
+
+def _ensure_location_dataset_entry(location_dataset, entity):
+    entity_id = entity.get("id") if isinstance(entity, dict) else None
+    if not entity_id:
+        return
+    if not any(isinstance(item, dict) and item.get("id") == entity_id for item in location_dataset):
+        location_dataset.append(entity)
+
+
+def _ensure_constituent(parent, child_id):
+    if not isinstance(parent, dict) or not child_id:
+        return False
+    constituents = parent.get("constituents")
+    if isinstance(constituents, str):
+        constituents = [constituents] if constituents else []
+    elif isinstance(constituents, list):
+        constituents = list(constituents)
+    else:
+        constituents = []
+    if child_id in constituents:
+        return False
+    constituents.append(child_id)
+    parent["constituents"] = constituents
+    return True
+
+
+def _remove_constituent(parent, child_id):
+    if not isinstance(parent, dict) or not child_id:
+        return False
+    constituents = parent.get("constituents")
+    if isinstance(constituents, str):
+        constituents = [constituents] if constituents else []
+    elif isinstance(constituents, list):
+        constituents = list(constituents)
+    else:
+        return False
+    filtered = [item for item in constituents if item != child_id]
+    if filtered == constituents:
+        return False
+    parent["constituents"] = filtered
+    return True
+
+
+def _ensure_earth_hierarchy_location(entities, locations, earth, entity_id, name, location_class, parent_id):
+    entity = entities.get(entity_id)
+    changed = False
+    if not isinstance(entity, dict):
+        entity = {
+            "id": entity_id,
+            "name": name,
+            "pretty_name": name,
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": location_class,
+            "parent_location": parent_id,
+            "parents": [parent_id],
+            "map_reference_generated": True,
+            "map_reference_kind": "hierarchy_container",
+        }
+        entities[entity_id] = entity
+        changed = True
+    _ensure_location_dataset_entry(locations, entity)
+    parent = entities.get(parent_id) if parent_id else earth
+    changed = _ensure_constituent(parent or earth, entity_id) or changed
+    return entity, changed
+
+
+def _country_hierarchy_parent(reference, entities, locations, earth):
+    continent_name = str(reference.get("continent") or "").strip()
+    continent_id = _COUNTRY_CONTINENT_PARENTS.get(continent_name)
+    if not continent_id:
+        return "planet_earth", False
+
+    if continent_id in _EARTH_HIERARCHY_CONTAINERS:
+        container = _EARTH_HIERARCHY_CONTAINERS[continent_id]
+        continent, changed = _ensure_earth_hierarchy_location(
+            entities, locations, earth, continent_id,
+            container["name"], container["location_class"], container["parent_location"],
+        )
+    else:
+        continent, changed = _ensure_earth_hierarchy_location(
+            entities, locations, earth, continent_id,
+            continent_name, "continent", "planet_earth",
+        )
+
+    subregion_name = str(reference.get("subregion") or "").strip()
+    if not subregion_name or subregion_name == continent_name:
+        return continent["id"], changed
+
+    subregion_id = f"loc_subregion_{_reference_slug(subregion_name)}"
+    subregion, subregion_changed = _ensure_earth_hierarchy_location(
+        entities, locations, earth, subregion_id, subregion_name, "region", continent["id"],
+    )
+    return subregion["id"], changed or subregion_changed
+
+
+def _reference_country_entity_id(reference, entities):
+    reference_id = str(reference.get("id") or "")
+    iso_a3 = str(reference.get("iso_a3") or "").lower()
+    preferred_id = _COUNTRY_REFERENCE_IDS.get(iso_a3, reference_id)
+    if preferred_id in entities:
+        return preferred_id
+    if reference_id in entities:
+        return reference_id
+
+    name_key = _reference_name_key(reference.get("name"))
+    for entity_id, entity in entities.items():
+        if not isinstance(entity, dict):
+            continue
+        if str(entity.get("location_class") or "").lower() not in {"", "country"}:
+            continue
+        if _reference_name_key(entity.get("name") or entity.get("pretty_name")) == name_key:
+            return entity_id
+    return preferred_id
+
+
+def _polyline_from_reference_rivers(rivers):
+    paths = []
+    for river in rivers:
+        points = []
+        for point in river.get("display_points") or []:
+            if not isinstance(point, dict):
+                continue
+            try:
+                points.append([
+                    round(float(point.get("x")) * 360.0 - 180.0, 5),
+                    round(float(point.get("y")) * 180.0 - 90.0, 5),
+                ])
+            except (TypeError, ValueError):
+                continue
+        if len(points) >= 2:
+            paths.append(points)
+    return {
+        "type": "polyline",
+        "coordinate_space": "map_world",
+        "paths": paths,
+    }
+
+
+def _earth_reference_river_groups(max_scalerank=None):
+    bundle = _earth_worldgen_reference_bundle()
+    water_cycle = bundle.get("water_cycle_model") if isinstance(bundle, dict) else {}
+    groups = {}
+    for river in water_cycle.get("rivers") or []:
+        if not isinstance(river, dict):
+            continue
+        try:
+            scalerank = int(river.get("scalerank", 99) or 99)
+        except (TypeError, ValueError):
+            scalerank = 99
+        if max_scalerank is not None and scalerank > max_scalerank:
+            continue
+        name = str(river.get("name") or "").strip()
+        key = _reference_name_key(name)
+        if not key or key == "river":
+            continue
+        # Natural Earth stores the Yangtze under both its English and Chinese
+        # mainstem names.  One location should own the complete river.
+        if key in {"yangtze", "chang_jiang"}:
+            key = "yangtze"
+        group = groups.setdefault(key, {"key": key, "names": [], "rivers": [], "scalerank": scalerank})
+        if name and name not in group["names"]:
+            group["names"].append(name)
+        group["rivers"].append(river)
+        group["scalerank"] = min(group["scalerank"], scalerank)
+
+    for group in groups.values():
+        if group["key"] == "yangtze":
+            group["name"] = "Yangtze River"
+            group["aliases"] = ["Yangtze", "Chang Jiang"]
+        else:
+            display_name = group["names"][0]
+            group["name"] = display_name if display_name.lower().endswith("river") else f"{display_name} River"
+            group["aliases"] = list(group["names"])
+        group["bounds"] = _polyline_from_reference_rivers(group["rivers"])
+    return groups
 
 
 def _bbox(min_x, max_x, min_y, max_y):
@@ -474,6 +750,200 @@ def _apply_missing_earth_surface_regions(target, earth):
     return changed
 
 
+def _apply_earth_reference_locations(target, earth):
+    """Materialize named country and region records for bundled Earth geometry."""
+    entities, datasets = _runtime_entity_store(target)
+    if not isinstance(entities, dict) or not isinstance(earth, dict):
+        return False
+
+    changed = False
+    locations = _location_dataset(entities, datasets)
+    countries = _earth_reference_countries().get("countries") or []
+
+    for reference in countries:
+        if not isinstance(reference, dict) or not reference.get("id") or not reference.get("name"):
+            continue
+        entity_id = _reference_country_entity_id(reference, entities)
+        entity = entities.get(entity_id)
+        generated = not isinstance(entity, dict)
+        if generated:
+            entity = {
+                "id": entity_id,
+                "pretty_name": reference["name"],
+                "name": reference["name"],
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "country",
+                "parent_location": "planet_earth",
+                "parents": ["planet_earth"],
+                "map_reference_generated": True,
+                "map_reference_kind": "country",
+            }
+            entities[entity_id] = entity
+            changed = True
+
+        for field in ("coords", "bounds"):
+            if entity.get(field) != reference.get(field):
+                entity[field] = reference[field]
+                changed = True
+        for field in ("iso_a2", "iso_a3", "continent", "subregion", "formal_name"):
+            if reference.get(field) and entity.get(field) != reference[field]:
+                entity[field] = reference[field]
+                changed = True
+        if not entity.get("name"):
+            entity["name"] = reference["name"]
+            entity["pretty_name"] = reference["name"]
+            changed = True
+        if not entity.get("location_class"):
+            entity["location_class"] = "country"
+            changed = True
+        hierarchy_parent_id, hierarchy_changed = _country_hierarchy_parent(
+            reference, entities, locations, earth,
+        )
+        changed = hierarchy_changed or changed
+        existing_parent_id = entity.get("parent_location")
+        should_nest = (
+            not existing_parent_id
+            or existing_parent_id == "planet_earth"
+            or entity.get("map_reference_generated")
+            or entity.get("map_reference_kind") == "country"
+        )
+        if should_nest and existing_parent_id != hierarchy_parent_id:
+            entity["parent_location"] = hierarchy_parent_id
+            entity["parents"] = [hierarchy_parent_id]
+            changed = True
+        elif not entity.get("parents"):
+            entity["parents"] = [entity["parent_location"]]
+            changed = True
+        entity["bounds_source"] = "natural_earth_admin_0_reference"
+        entity["map_reference_geometry"] = True
+        _ensure_location_dataset_entry(locations, entity)
+        parent = entities.get(entity.get("parent_location")) or earth
+        changed = _ensure_constituent(parent, entity_id) or changed
+        if parent is not earth:
+            changed = _remove_constituent(earth, entity_id) or changed
+
+    geometries = _earth_reference_region_geometries().get("regions") or {}
+    for entity_id, metadata in _EARTH_REFERENCE_LOCATION_METADATA.items():
+        reference = geometries.get(entity_id)
+        if not isinstance(reference, dict):
+            continue
+        entity = entities.get(entity_id)
+        if isinstance(entity, dict) and (
+            entity.get("location_class") == "country"
+            or entity.get("map_reference_kind") == "country"
+        ):
+            # A legacy location id can coincide with a named country. The
+            # country boundary is more specific and must retain ownership.
+            continue
+        if not isinstance(entity, dict):
+            parent_id = metadata.get("parent_location") or "planet_earth"
+            entity = {
+                "id": entity_id,
+                "pretty_name": metadata["name"],
+                "name": metadata["name"],
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": metadata["location_class"],
+                "parent_location": parent_id,
+                "parents": [parent_id],
+                "map_reference_generated": True,
+                "map_reference_kind": "region",
+            }
+            entities[entity_id] = entity
+            changed = True
+        for field in ("coords", "bounds"):
+            if entity.get(field) != reference.get(field):
+                entity[field] = reference[field]
+                changed = True
+        entity["bounds_source"] = "natural_earth_reference"
+        entity["map_reference_geometry"] = True
+        _ensure_location_dataset_entry(locations, entity)
+        parent = entities.get(entity.get("parent_location")) or earth
+        changed = _ensure_constituent(parent, entity_id) or changed
+
+    return changed
+
+
+def _apply_earth_reference_rivers(target, earth):
+    """Attach real river paths to named locations and expose primary rivers."""
+    entities, datasets = _runtime_entity_store(target)
+    if not isinstance(entities, dict) or not isinstance(earth, dict):
+        return False
+
+    changed = False
+    locations = _location_dataset(entities, datasets)
+    all_groups = _earth_reference_river_groups()
+    primary_groups = {
+        key: group
+        for key, group in all_groups.items()
+        if int(group.get("scalerank", 99) or 99) <= 1
+    }
+    entity_groups = {}
+    for entity_id, entity in entities.items():
+        if not isinstance(entity, dict):
+            continue
+        if entity.get("location_class") == "country" or entity.get("map_reference_kind") == "country":
+            # Names such as Jordan and Niger may occur in hydrography too;
+            # materialize a separate river rather than replacing the country.
+            continue
+        key = _reference_name_key(entity.get("name") or entity.get("pretty_name"))
+        if key in all_groups:
+            entity_groups[entity_id] = all_groups[key]
+
+    for entity_id, group in entity_groups.items():
+        entity = entities[entity_id]
+        existing_bounds = entity.get("bounds") if isinstance(entity.get("bounds"), dict) else {}
+        if not existing_bounds or entity.get("map_reference_geometry"):
+            if existing_bounds != group["bounds"]:
+                entity["bounds"] = group["bounds"]
+                entity["bounds_source"] = "natural_earth_river_reference"
+                entity["map_reference_geometry"] = True
+                changed = True
+        if not entity.get("parent_location"):
+            entity["parent_location"] = "planet_earth"
+            entity["parents"] = ["planet_earth"]
+            changed = True
+        _ensure_location_dataset_entry(locations, entity)
+        changed = _ensure_constituent(earth, entity_id) or changed
+
+    represented_keys = {group["key"] for group in entity_groups.values()}
+    for group in primary_groups.values():
+        if group["key"] in represented_keys or not group["bounds"].get("paths"):
+            continue
+        entity_id = f"loc_river_{group['key']}"
+        entity = entities.get(entity_id)
+        if not isinstance(entity, dict):
+            first_path = group["bounds"]["paths"][0]
+            midpoint = first_path[len(first_path) // 2]
+            entity = {
+                "id": entity_id,
+                "pretty_name": group["name"],
+                "name": group["name"],
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "river",
+                "location_role": "waterway",
+                "parent_location": "planet_earth",
+                "parents": ["planet_earth"],
+                "coords": {"type": "point", "x": midpoint[0], "y": midpoint[1]},
+                "bounds": group["bounds"],
+                "aliases": group["aliases"],
+                "waterway_class": "river",
+                "map_reference_generated": True,
+                "map_reference_kind": "river",
+                "bounds_source": "natural_earth_river_reference",
+                "map_reference_geometry": True,
+                "wiki_entry": "Natural Earth reference river available as a selectable Earth map location.",
+            }
+            entities[entity_id] = entity
+            changed = True
+        _ensure_location_dataset_entry(locations, entity)
+        changed = _ensure_constituent(earth, entity_id) or changed
+
+    return changed
+
+
 def _apply_earth_reference_region_geometries(target, earth):
     entities, _datasets = _runtime_entity_store(target)
     if not isinstance(entities, dict) or not isinstance(earth, dict):
@@ -489,12 +959,16 @@ def _apply_earth_reference_region_geometries(target, earth):
         entity = entities.get(entity_id)
         if not isinstance(entity, dict):
             continue
+        if entity.get("location_class") == "country" or entity.get("map_reference_kind") == "country":
+            continue
         bounds = reference.get("bounds")
         coords = reference.get("coords")
         if isinstance(bounds, dict) and entity.get("bounds") != bounds:
             entity["bounds"] = bounds
-            entity["bounds_source"] = "natural_earth_reference"
             entity["map_reference_geometry"] = True
+            changed = True
+        if isinstance(bounds, dict) and entity.get("bounds_source") != "natural_earth_reference":
+            entity["bounds_source"] = "natural_earth_reference"
             changed = True
         if isinstance(coords, dict) and entity.get("coords") != coords:
             entity["coords"] = coords
@@ -520,6 +994,7 @@ def apply_earth_reference_models(target):
         existing_status = existing.get("status", "") if isinstance(existing, dict) else ""
         legacy_reference = (
             str(existing_status).startswith("earth_reference_")
+            or (key == "water_cycle_model" and existing_status == "water_cycle_authored_reference")
             or (key == "reference_land_polygons" and isinstance(existing, dict) and "110m" in str(existing.get("source", "")))
             or (key == "map_status" and str(existing).startswith("earth_reference_"))
             or (key == "map_canvas_width_px" and existing == 2048)
@@ -543,5 +1018,7 @@ def apply_earth_reference_models(target):
         changed = True
 
     changed = _apply_missing_earth_surface_regions(target, earth) or changed
+    changed = _apply_earth_reference_locations(target, earth) or changed
+    changed = _apply_earth_reference_rivers(target, earth) or changed
     changed = _apply_earth_reference_region_geometries(target, earth) or changed
     return changed

@@ -6,7 +6,7 @@ from simulations.world_gen.ocean_circulation import derive_ocean_circulation
 from simulations.world_gen.drainage import derive_drainage_network
 
 
-WATER_CYCLE_MODEL_VERSION = "coupled-ocean-climate-hydrology-v4"
+WATER_CYCLE_MODEL_VERSION = "coupled-ocean-climate-hydrology-v7"
 
 CLIMATE_ZONES = {
     "polar_ice": {"label": "Polar Ice", "color": [202, 224, 232]},
@@ -36,6 +36,11 @@ CLIMATE_ZONES = {
 
 def _clamp(value, low=0.0, high=1.0):
     return max(low, min(high, float(value)))
+
+
+def _orbital_eccentricity(seed):
+    seed = seed if isinstance(seed, dict) else {}
+    return _clamp(seed.get("orbital_eccentricity", seed.get("eccentricity", 0.0)), 0.0, 0.85)
 
 
 def _sample_inherited_rows(rows, global_u, global_v, source_bounds=None):
@@ -333,6 +338,27 @@ def _nearest_ocean_temperature_rows(ocean_mask, sst_rows):
             distance[ny][nx] = distance[y][x] + 1
             result[ny][nx] = result[y][x]
             queue.append((nx, ny))
+    # Nearest-source propagation is useful for filling the field but creates
+    # Voronoi-like polygons and vertical seams where two coasts are equally
+    # near. Diffuse the maritime reference temperature over land while
+    # keeping actual sea-surface temperatures fixed.
+    for _iteration in range(18):
+        smoothed = [row[:] for row in result]
+        for y in range(height):
+            for x in range(width):
+                if ocean_mask[y][x] or result[y][x] is None:
+                    continue
+                neighbours = [
+                    result[ny][nx]
+                    for nx, ny in (
+                        ((x - 1) % width, y), ((x + 1) % width, y),
+                        (x, max(0, y - 1)), (x, min(height - 1, y + 1)),
+                    )
+                    if result[ny][nx] is not None
+                ]
+                if neighbours:
+                    smoothed[y][x] = result[y][x] * 0.42 + sum(neighbours) / len(neighbours) * 0.58
+        result = smoothed
     return result
 
 
@@ -374,6 +400,40 @@ def _upwind_ocean_fetch(ocean_mask, sst_rows, x, y, wind_x, wind_y, steps=14):
             fetch += weight
             thermal += weight * _clamp((float(sst_rows[iy][ix] or 273.0) - 273.0) / 28.0)
     return _clamp(fetch / 3.8), _clamp(thermal / 3.8)
+
+
+def _upwind_relief_context(rows, ocean_mask, x, y, wind_x, wind_y, span, steps=24):
+    """Measure cumulative windward ascent and intervening rain-shadow relief."""
+    height = len(rows)
+    width = len(rows[0]) if height else 0
+    if width <= 0:
+        return {"windward_uplift": 0.0, "barrier_shadow": 0.0, "land_fetch": 0.0}
+    current = float(rows[y][x] or 0.0)
+    px, py = float(x), float(y)
+    previous = current
+    cumulative_ascent = 0.0
+    maximum_barrier = current
+    land_steps = 0
+    for _step in range(1, steps + 1):
+        px = (px - wind_x) % width
+        py -= wind_y
+        iy = int(round(py))
+        if not 0 <= iy < height:
+            break
+        ix = int(round(px)) % width
+        if ocean_mask[iy][ix]:
+            break
+        elevation = float(rows[iy][ix] or 0.0)
+        # Walking upwind, a drop means air approaching the target had to rise.
+        cumulative_ascent += max(0.0, previous - elevation)
+        maximum_barrier = max(maximum_barrier, elevation)
+        previous = elevation
+        land_steps += 1
+    return {
+        "windward_uplift": _clamp(cumulative_ascent / max(1.0, span * 0.42)),
+        "barrier_shadow": _clamp((maximum_barrier - current) / max(1.0, span * 0.32)),
+        "land_fetch": _clamp(land_steps / max(1.0, steps)),
+    }
 
 
 def _flow_accumulation(rows, ocean_mask, runoff_rows):
@@ -597,6 +657,7 @@ def derive_water_cycle_model(terrain, heightmap, atmosphere=None, seed=None, pla
     sea_level = heightmap.get("sea_level_m")
     sea_level = None if sea_level is None else float(sea_level or 0.0)
     hydrology = terrain.get("hydrology") if isinstance(terrain.get("hydrology"), dict) else {}
+    hydrology_cycle = str(hydrology.get("cycle") or "none")
     surface_temp_k = float(
         atmosphere.get("estimated_surface_temperature_k")
         or atmosphere.get("surface_temperature_k")
@@ -621,6 +682,7 @@ def derive_water_cycle_model(terrain, heightmap, atmosphere=None, seed=None, pla
         [bool(sea_level is not None and float(value or 0.0) <= sea_level) for value in row]
         for row in rows
     ]
+    ocean_fraction = sum(1 for row in ocean_mask for value in row if value) / max(1, height * width)
     surface_ice_rows = ((heightmap.get("surface_masks") or {}).get("ice_rows") or [])
     shore_distances = _shore_distance_rows(ocean_mask)
     rotation_hours = float((seed or {}).get("rotation_hours", (seed or {}).get("rotation_period_hours", 24.0)) or 24.0)
@@ -644,18 +706,32 @@ def derive_water_cycle_model(terrain, heightmap, atmosphere=None, seed=None, pla
     upwelling_rows = ocean_circulation.get("upwelling_rows") or [[0.0 for _x in range(width)] for _y in range(height)]
     nearest_ocean_temperatures = _nearest_ocean_temperature_rows(ocean_mask, sst_rows)
     axial_tilt_deg = abs(float((seed or {}).get("axial_tilt_deg", 23.4) or 23.4))
+    orbital_eccentricity = _orbital_eccentricity(seed)
     climate_mode = str((seed or {}).get("climate_mode") or "latitudinal_seasonal")
     synchronous_rotation = bool((seed or {}).get("synchronous_rotation")) or climate_mode == "tidally_locked"
     substellar_longitude_deg = float((seed or {}).get("substellar_longitude_deg", 0.0) or 0.0)
     heat_transport = _clamp(math.log1p(pressure_bar) / math.log(11.0), 0.08, 0.92)
+    # Eccentric orbits have a changing stellar flux.  Ocean coverage and a
+    # denser atmosphere store/transport heat and therefore damp the local
+    # temperature swing; a dry, thin-atmosphere world retains much more of it.
+    ocean_thermal_buffer = _clamp(ocean_fraction * 0.68 + heat_transport * 0.28, 0.0, 0.86)
+    orbital_temperature_amplitude_k = min(
+        95.0,
+        surface_temp_k * orbital_eccentricity * 0.46 * (1.0 - ocean_thermal_buffer * 0.72),
+    )
     climate_rows = []
     temperature_rows = []
     precipitation_rows = []
     seasonality_rows = []
     runoff_rows = []
     evapotranspiration_rows = []
+    potential_evaporation_rows = []
     infiltration_rows = []
+    groundwater_recharge_rows = []
+    snowmelt_runoff_rows = []
     snow_fraction_rows = []
+    seasonal_min_temperature_rows = []
+    seasonal_max_temperature_rows = []
     zone_counts = {zone_id: 0 for zone_id in CLIMATE_ZONES}
     source_uv = heightmap.get("source_uv_bounds") if isinstance(heightmap.get("source_uv_bounds"), dict) else {}
     source_u0 = float(source_uv.get("min_u", 0.0) or 0.0)
@@ -677,8 +753,13 @@ def derive_water_cycle_model(terrain, heightmap, atmosphere=None, seed=None, pla
         seasonality_row = []
         runoff_row = []
         evapotranspiration_row = []
+        potential_evaporation_row = []
         infiltration_row = []
+        groundwater_recharge_row = []
+        snowmelt_runoff_row = []
         snow_fraction_row = []
+        seasonal_min_temperature_row = []
+        seasonal_max_temperature_row = []
         for x, value in enumerate(row):
             local_nx = x / max(1, width - 1)
             nx = source_u0 + (source_u1 - source_u0) * local_nx
@@ -699,12 +780,19 @@ def derive_water_cycle_model(terrain, heightmap, atmosphere=None, seed=None, pla
             terrain = _terrain_metrics(rows, x, y, span)
             wind_x, wind_y = _prevailing_wind_vector(ny, map_seed)
             wind_gradient = terrain["gradient_x"] * wind_x + terrain["gradient_y"] * wind_y
-            windward = max(0.0, wind_gradient) * 7.0
+            relief_context = _upwind_relief_context(
+                rows, ocean_mask, x, y, wind_x, wind_y, span,
+            )
+            windward = max(0.0, wind_gradient) * 7.0 + relief_context["windward_uplift"] * 0.46
             leeward = max(0.0, -wind_gradient) * 8.5
             circulation_texture = _wave_noise(map_seed, "climate_circulation", nx, ny)
             texture = _climate_texture(map_seed, "climate_texture", nx, ny)
             subtropical_dryness = max(0.0, 1.0 - abs(latitude_abs - 0.52) / 0.24) * 0.22
-            rain_shadow = max(0.0, elevation_norm - 0.50) * 0.34 + leeward
+            rain_shadow = (
+                max(0.0, elevation_norm - 0.50) * 0.34
+                + leeward
+                + relief_context["barrier_shadow"] * (0.52 + relief_context["land_fetch"] * 0.34)
+            )
             ocean_fetch, warm_fetch = _upwind_ocean_fetch(ocean_mask, sst_rows, x, y, wind_x, wind_y)
             temperature = surface_temp_k + 12.0 - latitude_abs * 48.0 - max(0.0, elevation) * 0.0062
             if synchronous_rotation:
@@ -721,6 +809,7 @@ def derive_water_cycle_model(terrain, heightmap, atmosphere=None, seed=None, pla
                 temperature += (float(nearest_ocean_temperatures[y][x]) - temperature) * maritime
             continentality = 1.0 - shore
             seasonality = 4.0 + latitude_abs * (axial_tilt_deg / 23.44) * (10.0 + continentality * 18.0)
+            seasonality += orbital_temperature_amplitude_k * (0.48 + continentality * 0.52)
             inherited_temperature = _sample_inherited_rows(
                 parent_climate_grid.get("temperature_rows_k"), nx, ny, parent_source_uv,
             ) if isinstance(parent_climate_grid, dict) else None
@@ -752,7 +841,12 @@ def derive_water_cycle_model(terrain, heightmap, atmosphere=None, seed=None, pla
             if inherited_precipitation is not None:
                 parent_weight = inheritance_weights["precipitation"]
                 precipitation = inherited_precipitation * parent_weight + precipitation * (1.0 - parent_weight)
-            precipitation = max(15.0, min(4200.0, precipitation))
+            precipitation = (
+                max(15.0, min(4200.0, precipitation))
+                if liquid_water else 0.0
+            )
+            if hydrology_cycle == "limited":
+                precipitation *= 0.24
             potential_evaporation = max(80.0, (temperature - 250.0) * 24.0) * (1.0 + subtropical_dryness)
             wetness = _clamp(precipitation / max(1.0, precipitation + potential_evaporation))
             zone_id = _classify_climate(
@@ -773,16 +867,47 @@ def derive_water_cycle_model(terrain, heightmap, atmosphere=None, seed=None, pla
             temperature_row.append(round(temperature, 1))
             precipitation_row.append(round(precipitation, 1))
             seasonality_row.append(round(seasonality, 1))
-            infiltration_fraction = _clamp(0.48 - terrain["slope"] * 0.24 + (0.08 if wetness < 0.3 else 0.0), 0.14, 0.62)
-            actual_evapotranspiration = 0.0 if is_ocean else min(precipitation * 0.88, potential_evaporation * (0.28 + wetness * 0.72))
-            available_water = 0.0 if is_ocean else max(0.0, precipitation - actual_evapotranspiration)
-            runoff = available_water * (1.0 - infiltration_fraction)
-            infiltration = available_water - runoff
-            snow_fraction = 0.0 if is_ocean else _clamp((273.15 - temperature + seasonality * 0.22) / 18.0)
+            seasonal_min_temperature = temperature - seasonality * 0.5
+            seasonal_max_temperature = temperature + seasonality * 0.5
+            # Fraction of a notional seasonal cycle below freezing.  This is
+            # more physically meaningful than treating annual mean temperature
+            # as a permanent ice switch on high-obliquity/eccentric worlds.
+            snow_fraction = 0.0 if is_ocean else _clamp(
+                (273.15 - seasonal_min_temperature) / max(2.0, seasonality)
+            )
+            snowfall_storage = precipitation * snow_fraction * 0.78
+            melt_fraction = _clamp((seasonal_max_temperature - 268.15) / 18.0)
+            snowmelt_release = snowfall_storage * melt_fraction
+            liquid_input = max(0.0, precipitation - snowfall_storage + snowmelt_release)
+            frozen_ground = _clamp((273.15 - seasonal_min_temperature) / 24.0) * snow_fraction
+            infiltration_fraction = _clamp(
+                0.48
+                - terrain["slope"] * 0.24
+                - frozen_ground * 0.26
+                + (0.08 if wetness < 0.3 else 0.0),
+                0.10,
+                0.66,
+            )
+            actual_evapotranspiration = 0.0 if is_ocean else min(
+                liquid_input * 0.88,
+                potential_evaporation * (0.28 + wetness * 0.72),
+            )
+            available_water = 0.0 if is_ocean else max(0.0, liquid_input - actual_evapotranspiration)
+            infiltration = available_water * infiltration_fraction
+            quickflow = available_water - infiltration
+            baseflow_fraction = _clamp(0.10 + wetness * 0.24 - frozen_ground * 0.08, 0.05, 0.34)
+            baseflow = infiltration * baseflow_fraction
+            groundwater_recharge = max(0.0, infiltration - baseflow)
+            runoff = quickflow + baseflow
             runoff_row.append(round(runoff, 1))
             evapotranspiration_row.append(round(actual_evapotranspiration, 1))
+            potential_evaporation_row.append(round(potential_evaporation, 1))
             infiltration_row.append(round(infiltration, 1))
+            groundwater_recharge_row.append(round(groundwater_recharge, 1))
+            snowmelt_runoff_row.append(round(snowmelt_release, 1))
             snow_fraction_row.append(round(snow_fraction, 3))
+            seasonal_min_temperature_row.append(round(seasonal_min_temperature, 1))
+            seasonal_max_temperature_row.append(round(seasonal_max_temperature, 1))
             zone_counts[zone_id] = zone_counts.get(zone_id, 0) + 1
         climate_rows.append(climate_row)
         temperature_rows.append(temperature_row)
@@ -790,8 +915,13 @@ def derive_water_cycle_model(terrain, heightmap, atmosphere=None, seed=None, pla
         seasonality_rows.append(seasonality_row)
         runoff_rows.append(runoff_row)
         evapotranspiration_rows.append(evapotranspiration_row)
+        potential_evaporation_rows.append(potential_evaporation_row)
         infiltration_rows.append(infiltration_row)
+        groundwater_recharge_rows.append(groundwater_recharge_row)
+        snowmelt_runoff_rows.append(snowmelt_runoff_row)
         snow_fraction_rows.append(snow_fraction_row)
+        seasonal_min_temperature_rows.append(seasonal_min_temperature_row)
+        seasonal_max_temperature_rows.append(seasonal_max_temperature_row)
 
     total_cells = max(1, width * height)
     climate_zones = []
@@ -806,14 +936,6 @@ def derive_water_cycle_model(terrain, heightmap, atmosphere=None, seed=None, pla
             "fraction": round(count / total_cells, 3),
         })
 
-    drainage_network = derive_drainage_network(
-        rows,
-        ocean_mask,
-        runoff_rows,
-        wrap_x=bool(heightmap.get("wrap_x", True)),
-        detail_level=detail_level,
-    ) if drainage_enabled else {"status": "inactive", "rivers": [], "lakes": [], "drainage_basins": []}
-    rivers = list(drainage_network.get("rivers") or [])
     region_width_m = float(heightmap.get("region_width_m") or 0.0)
     region_height_m = float(heightmap.get("region_height_m") or 0.0)
     represented_area_m2 = (
@@ -821,6 +943,35 @@ def derive_water_cycle_model(terrain, heightmap, atmosphere=None, seed=None, pla
         if region_width_m > 0.0 and region_height_m > 0.0
         else circumference_m * circumference_m / math.pi
     )
+    drainage_network = derive_drainage_network(
+        rows,
+        ocean_mask,
+        runoff_rows,
+        wrap_x=bool(heightmap.get("wrap_x", True)),
+        detail_level=detail_level,
+        precipitation_rows=precipitation_rows,
+        potential_evaporation_rows=potential_evaporation_rows,
+        represented_area_m2=represented_area_m2,
+    ) if drainage_enabled else {"status": "inactive", "rivers": [], "lakes": [], "drainage_basins": []}
+    if hydrology_cycle == "limited":
+        episodic_river_limit = min(18, 6 + max(0, int(detail_level or 0)) * 3)
+        drainage_network["rivers"] = sorted(
+            drainage_network.get("rivers") or [],
+            key=lambda river: float(river.get("flow", 0.0) or 0.0),
+            reverse=True,
+        )[:episodic_river_limit]
+        drainage_network["lakes"] = list(
+            drainage_network.get("lakes") or []
+        )[:max(2, episodic_river_limit // 2)]
+        drainage_network["hydrology_character"] = "episodic_sparse_channels"
+        retained_lakes = drainage_network["lakes"]
+        drainage_network["lake_count"] = len(retained_lakes)
+        drainage_network["lake_area_fraction"] = round(sum(float(lake.get("area_fraction", 0.0) or 0.0) for lake in retained_lakes), 6)
+        drainage_network["largest_lake_area_fraction"] = round(max((float(lake.get("area_fraction", 0.0) or 0.0) for lake in retained_lakes), default=0.0), 6)
+        drainage_network["endorheic_lake_fraction"] = round(sum(bool(lake.get("endorheic")) for lake in retained_lakes) / max(1, len(retained_lakes)), 3)
+        drainage_network["lake_outlet_fraction"] = round(sum(not lake.get("endorheic") for lake in retained_lakes) / max(1, len(retained_lakes)), 3)
+        drainage_network["river_segment_count"] = len(drainage_network["rivers"])
+    rivers = list(drainage_network.get("rivers") or [])
     mean_cell_area_m2 = represented_area_m2 / max(1, width * height)
     seconds_per_year = 365.2425 * 24.0 * 3600.0
     for river in rivers:
@@ -848,6 +999,12 @@ def derive_water_cycle_model(terrain, heightmap, atmosphere=None, seed=None, pla
     return {
         "status": "water_cycle_seeded",
         "model_version": WATER_CYCLE_MODEL_VERSION,
+        "climate_hierarchy": {
+            "level": 2,
+            "method": "latitude_longitude_energy_balance_orographic_moisture_and_parameterized_circulation",
+            "resolved_feedbacks": ["ice_albedo", "ocean_thermal_inertia", "seasonality", "orographic_rain_shadow", "surface_water_balance"],
+            "deferred_tier_3": ["full_general_circulation", "spectral_radiative_transfer", "dynamic_ocean_coupling"],
+        },
         "map_seed": map_seed,
         "hydrology_enabled": drainage_enabled,
         "liquid_water_possible": liquid_water,
@@ -861,13 +1018,20 @@ def derive_water_cycle_model(terrain, heightmap, atmosphere=None, seed=None, pla
             "terminator_transition_modeled": synchronous_rotation,
         },
         "seasonal_cycle_model": {
-            "enabled": bool((seed or {}).get("seasonal_cycle")) or axial_tilt_deg >= 28.0,
+            "enabled": bool((seed or {}).get("seasonal_cycle")) or axial_tilt_deg >= 28.0 or orbital_eccentricity >= 0.03,
             "axial_tilt_deg": round(axial_tilt_deg, 2),
+            "orbital_eccentricity": round(orbital_eccentricity, 5),
+            "orbital_temperature_amplitude_k": round(orbital_temperature_amplitude_k, 2),
+            "ocean_thermal_buffer": round(ocean_thermal_buffer, 3),
             "orbital_phases": [
                 {
                     "phase": index,
                     "solar_longitude_deg": index * 45,
-                    "global_temperature_anomaly_k": round(math.sin(math.radians(index * 45)) * min(24.0, axial_tilt_deg * 0.22), 2),
+                    "global_temperature_anomaly_k": round(
+                        math.sin(math.radians(index * 45)) * min(24.0, axial_tilt_deg * 0.22)
+                        + math.cos(math.radians(index * 45)) * orbital_temperature_amplitude_k,
+                        2,
+                    ),
                     "frost_migration_bias": round(math.sin(math.radians(index * 45)) * min(1.0, axial_tilt_deg / 60.0), 3),
                 }
                 for index in range(8)
@@ -890,9 +1054,14 @@ def derive_water_cycle_model(terrain, heightmap, atmosphere=None, seed=None, pla
             "temperature_rows_k": temperature_rows,
             "annual_precipitation_rows_mm": precipitation_rows,
             "temperature_seasonality_rows_k": seasonality_rows,
+            "seasonal_min_temperature_rows_k": seasonal_min_temperature_rows,
+            "seasonal_max_temperature_rows_k": seasonal_max_temperature_rows,
             "annual_runoff_rows_mm": runoff_rows,
             "annual_evapotranspiration_rows_mm": evapotranspiration_rows,
+            "annual_potential_evaporation_rows_mm": potential_evaporation_rows,
             "annual_infiltration_rows_mm": infiltration_rows,
+            "annual_groundwater_recharge_rows_mm": groundwater_recharge_rows,
+            "annual_snowmelt_release_rows_mm": snowmelt_runoff_rows,
             "seasonal_snow_fraction_rows": snow_fraction_rows,
             "source_uv_bounds": {
                 "min_u": source_u0, "max_u": source_u1,
@@ -910,6 +1079,9 @@ def derive_water_cycle_model(terrain, heightmap, atmosphere=None, seed=None, pla
         "drainage_basins": drainage_network.get("drainage_basins") or [],
         "lakes": drainage_network.get("lakes") or [],
         "lake_count": int(drainage_network.get("lake_count", 0) or 0),
+        "lake_outlet_fraction": float(drainage_network.get("lake_outlet_fraction", 0.0) or 0.0),
+        "deltas": drainage_network.get("deltas") or [],
+        "delta_count": int(drainage_network.get("delta_count", 0) or 0),
         "climate_zones": climate_zones,
         "rivers": rivers,
         "river_count": len(rivers),

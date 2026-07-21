@@ -42,11 +42,20 @@ EXPLICIT_AIRLESS_SURFACE_CLASSES = {
 }
 
 
-def equilibrium_temperature_k(luminosity_solar, semi_major_axis_au, bond_albedo=0.30):
+def equilibrium_temperature_k(luminosity_solar, semi_major_axis_au, bond_albedo=0.30, eccentricity=0.0):
+    """Annual-mean radiative equilibrium temperature.
+
+    The time-mean stellar flux of an eccentric Keplerian orbit is larger than
+    the circular-orbit flux at the same semi-major axis by
+    ``1 / sqrt(1 - e²)``.  The fourth-root temperature response makes the
+    correction modest, but omitting it systematically cools eccentric worlds.
+    """
     luminosity = max(0.0001, float(luminosity_solar or 1.0))
     orbit = max(0.01, float(semi_major_axis_au or 1.0))
     absorbed = max(0.01, 1.0 - float(bond_albedo))
-    return 278.5 * (luminosity ** 0.25) * (absorbed ** 0.25) / math.sqrt(orbit)
+    e = _clamp(eccentricity, 0.0, 0.85)
+    annual_flux_factor = 1.0 / math.sqrt(max(1e-6, 1.0 - e * e))
+    return 278.5 * (luminosity ** 0.25) * (absorbed ** 0.25) * (annual_flux_factor ** 0.25) / math.sqrt(orbit)
 
 
 def escape_velocity_m_s(mass_kg, radius_m):
@@ -123,6 +132,84 @@ def _element_profile(seed):
     return profile
 
 
+def _mantle_redox_model(seed):
+    """Infer a coarse outgassing redox regime from authored bulk chemistry."""
+    explicit = str(seed.get("mantle_redox_state") or "").strip().lower()
+    if explicit in {"oxidized", "intermediate", "reduced", "strongly_reduced"}:
+        score = {
+            "oxidized": 0.0,
+            "intermediate": 0.35,
+            "reduced": 0.68,
+            "strongly_reduced": 1.0,
+        }[explicit]
+        return {
+            "state": explicit,
+            "reducing_index": score,
+            "source": "authored",
+        }
+
+    profile = _element_profile(seed)
+    carbon = max(0.0, float(profile.get("C", 0.0) or 0.0))
+    oxygen = max(0.001, float(profile.get("O", 0.0) or 0.0))
+    iron = max(0.0, float(profile.get("Fe", 0.0) or 0.0))
+    sulfur = max(0.0, float(profile.get("S", 0.0) or 0.0))
+    carbon_oxygen_ratio = carbon / oxygen
+    reducing_index = _clamp(
+        carbon_oxygen_ratio / 0.65 * 0.72
+        + min(1.0, sulfur / 4.0) * 0.10
+        + min(1.0, iron / 18.0) * 0.08,
+        0.0,
+        1.0,
+    )
+    if reducing_index >= 0.82:
+        state = "strongly_reduced"
+    elif reducing_index >= 0.48:
+        state = "reduced"
+    elif reducing_index >= 0.18:
+        state = "intermediate"
+    else:
+        state = "oxidized"
+    return {
+        "state": state,
+        "reducing_index": round(reducing_index, 4),
+        "carbon_oxygen_ratio": round(carbon_oxygen_ratio, 4),
+        "source": "bulk_crust_proxy",
+        "note": "Crust chemistry is a proxy until a distinct mantle-composition editor exists.",
+    }
+
+
+def _redox_adjusted_rocky_mix(raw_mix, redox_model, atmosphere_class):
+    reducing_index = float(redox_model.get("reducing_index", 0.0) or 0.0)
+    if reducing_index < 0.35 or atmosphere_class in {
+        "runaway_co2",
+        "oxygenated_nitrogen",
+        "anoxic_nitrogen",
+        "cold_nitrogen",
+        "exosphere",
+        "rock_vapor",
+    }:
+        return raw_mix
+
+    reduced_endmember = {
+        "CO": 0.40,
+        "CO2": 0.24,
+        "CH4": 0.10,
+        "H2": 0.10,
+        "N2": 0.08,
+        "H2S": 0.035,
+        "H2O": 0.02,
+        "Ar": 0.01,
+        "SO2": 0.005,
+    }
+    blend = _clamp((reducing_index - 0.35) / 0.65, 0.0, 1.0)
+    molecules = set(raw_mix) | set(reduced_endmember)
+    return {
+        molecule: float(raw_mix.get(molecule, 0.0) or 0.0) * (1.0 - blend)
+        + reduced_endmember.get(molecule, 0.0) * blend
+        for molecule in molecules
+    }
+
+
 def _element_availability(symbol, profile):
     if not profile:
         return 1.0
@@ -151,6 +238,18 @@ def _is_gas_giant(seed, physics):
         return False
     if explicit_kind in {"gas_giant", "ice_giant", "jovian", "neptune", "sub_neptune"}:
         return True
+    if explicit_kind and any(
+        marker in explicit_kind
+        for marker in (
+            "terrestrial",
+            "rocky",
+            "airless",
+            "ocean_world",
+            "icy_satellite",
+            "dwarf_planet",
+        )
+    ):
+        return False
     return radius_earth >= 3.0 or mass_earth >= 12.0
 
 
@@ -218,6 +317,14 @@ def _rocky_atmosphere_class(seed, equilibrium_temp, gravity_g):
     inventory = str(seed.get("volatile_inventory") or "earthlike").strip().lower()
     pressure = _volatile_pressure(seed)
     radius_earth = max(0.01, float(seed.get("radius_earth", 1.0) or 1.0))
+    explicit_kind = str(
+        seed.get("planet_class")
+        or seed.get("planet_template")
+        or ""
+    ).strip().lower()
+
+    if explicit_kind in EXPLICIT_AIRLESS_SURFACE_CLASSES:
+        return "exosphere"
 
     requested = str(seed.get("atmosphere_regime") or "").strip().lower()
     if requested in {
@@ -332,18 +439,26 @@ def _base_outgassing_mix(seed, equilibrium_temp, atmosphere_class):
             "He": 0.008,
         }
     if atmosphere_class == "temperate_nitrogen":
-        oxygen = 0.012 if water_fraction < 0.65 else 0.035
+        # A mature wet rocky world draws much of its early CO2 into oceans and
+        # weathered crust even before biology exists.  Keep oxygen abiotic and
+        # trace; a future biosphere stage owns Earth-like O2 abundance.
+        system_age_gyr = max(0.05, float(seed.get("system_age_gyr", 4.5) or 4.5))
+        carbon = max(0.0, float(_element_profile(seed).get("C", 0.0) or 0.0))
+        carbon_inventory = _clamp(carbon / 0.18, 0.35, 3.0)
+        weathering_drawdown = _clamp(water_fraction * min(1.0, system_age_gyr / 2.5), 0.0, 0.92)
+        co2 = _clamp(0.075 * carbon_inventory * (1.0 - weathering_drawdown * 0.88), 0.00035, 0.11)
+        oxygen = 0.0004 + water_fraction * 0.0012
         return {
-            "N2": 0.58,
-            "CO2": 0.16,
-            "H2O": 0.065 + water_fraction * 0.07,
+            "N2": 0.86,
+            "CO2": co2,
+            "H2O": 0.018 + water_fraction * 0.032,
             "O2": oxygen,
-            "Ar": 0.014,
-            "CH4": 0.01,
-            "NH3": 0.004,
-            "SO2": 0.005,
-            "H2": 0.006,
-            "He": 0.003,
+            "Ar": 0.012,
+            "CH4": 0.0012,
+            "NH3": 0.0003,
+            "SO2": 0.0008,
+            "H2": 0.0015,
+            "He": 0.0005,
         }
     return {
         "N2": 0.42,
@@ -410,10 +525,33 @@ def _greenhouse_model(composition, pressure_bar, gas_giant, atmosphere_state, gr
         + 38.0 * optical_strength
         + dense_pressure_broadening * (22.5 + 37.0 * fractions.get("CO2", 0.0))
     )
+    co2_partial_pressure_bar = pressure_bar * fractions.get("CO2", 0.0)
+    logarithmic_co2_forcing_k = 0.0
+    if not gas_giant and 0.0 < pressure_bar < 12.0 and co2_partial_pressure_bar > 0.0004:
+        # At terrestrial pressures, CO2 forcing grows approximately
+        # logarithmically rather than linearly with mixing ratio.  This
+        # conservative climate-sensitivity term prevents high-CO2 temperate
+        # atmospheres from receiving less greenhouse warming than modern Earth.
+        pressure_blend = (
+            1.0
+            if pressure_bar <= 4.0
+            else _clamp((12.0 - pressure_bar) / 8.0, 0.0, 1.0)
+        )
+        logarithmic_co2_forcing_k = min(
+            32.0,
+            3.2 * math.log(co2_partial_pressure_bar / 0.0004),
+        ) * pressure_blend
+        delta_k += logarithmic_co2_forcing_k
     delta_k *= _clamp(greenhouse_efficiency, 0.25, 4.0)
     delta_k = min(350.0 if gas_giant else 650.0, delta_k)
     dominant = [gas for gas, value in sorted(contributions.items(), key=lambda item: item[1], reverse=True) if value > 0.001][:3]
-    return {"delta_k": delta_k, "optical_strength": optical_strength, "dominant_absorbers": dominant}
+    return {
+        "delta_k": delta_k,
+        "optical_strength": optical_strength,
+        "dominant_absorbers": dominant,
+        "co2_partial_pressure_bar": co2_partial_pressure_bar,
+        "logarithmic_co2_forcing_k": logarithmic_co2_forcing_k,
+    }
 
 
 def _cloud_model(seed, composition, pressure_bar, atmosphere_class):
@@ -438,6 +576,34 @@ def _cloud_model(seed, composition, pressure_bar, atmosphere_class):
             "cloud_class": "methane_haze_and_clouds", "coverage_fraction": 0.72,
             "optical_depth": 4.5, "condensate": "CH4-C2H6",
             "condensate_cycle": "hydrocarbon_precipitation_cycle",
+        }
+    if atmosphere_class in {"gas_giant", "ice_giant", "hot_gas_giant"}:
+        methane_ammonia = fractions.get("CH4", 0.0) + fractions.get("NH3", 0.0)
+        water = fractions.get("H2O", 0.0)
+        if methane_ammonia >= 0.003:
+            cloud_class = "methane_ammonia_cloud_deck"
+            condensate = "CH4-NH3"
+        elif water >= 0.001:
+            cloud_class = "deep_water_cloud_deck"
+            condensate = "H2O"
+        else:
+            cloud_class = "hydrogen_helium_haze"
+            condensate = "photochemical_haze"
+        return {
+            "cloud_class": cloud_class,
+            "coverage_fraction": _clamp(
+                0.42 + math.log1p(max(0.0, pressure_bar)) * 0.10,
+                0.42,
+                0.98,
+            ),
+            "optical_depth": _clamp(
+                (methane_ammonia * 85.0 + water * 45.0)
+                * math.log1p(max(1.0, pressure_bar)),
+                0.4,
+                18.0,
+            ),
+            "condensate": condensate,
+            "condensate_cycle": "giant_planet_cloud_circulation",
         }
     return {
         "cloud_class": "water_or_mixed_clouds" if fractions.get("H2O", 0.0) > 0.01 else "mostly_clear",
@@ -485,12 +651,22 @@ def _visual_model(composition, pressure_bar, atmosphere_state, cloud_model=None)
 
 
 def derive_atmosphere_model(seed, physics, stellar_luminosity_solar, semi_major_axis_au):
+    orbital_eccentricity = _clamp(seed.get("orbital_eccentricity", seed.get("eccentricity", 0.0)), 0.0, 0.85)
     equilibrium_temp = equilibrium_temperature_k(
         stellar_luminosity_solar,
         semi_major_axis_au,
         bond_albedo=float(seed.get("bond_albedo", 0.30) or 0.30),
+        eccentricity=orbital_eccentricity,
     )
-    exobase_temp = max(450.0, equilibrium_temp * 3.0)
+    stellar_age_gyr = max(0.05, float(seed.get("system_age_gyr", 4.5) or 4.5))
+    stellar_temperature_k = max(1800.0, float(seed.get("stellar_effective_temperature_k", 5772.0) or 5772.0))
+    uv_xray_activity = _clamp(
+        (0.75 / stellar_age_gyr) ** 0.72
+        * (stellar_temperature_k / 5772.0) ** 2.2,
+        0.08,
+        8.0,
+    )
+    exobase_temp = max(450.0, equilibrium_temp * (2.55 + 0.45 * math.sqrt(uv_xray_activity)))
     escape_velocity = escape_velocity_m_s(physics.get("mass_kg"), physics.get("radius_m"))
     surface_gravity_g = max(0.03, float(physics.get("surface_gravity_g", 1.0) or 1.0))
     gas_giant = _is_gas_giant(seed, physics)
@@ -515,10 +691,17 @@ def derive_atmosphere_model(seed, physics, stellar_luminosity_solar, semi_major_
             "status": status,
         })
 
+    mantle_redox_model = _mantle_redox_model(seed)
     raw_mix = (
         _gas_giant_mix(atmosphere_class, equilibrium_temp)
         if gas_giant else _base_outgassing_mix(seed, equilibrium_temp, atmosphere_class)
     )
+    if not gas_giant:
+        raw_mix = _redox_adjusted_rocky_mix(
+            raw_mix,
+            mantle_redox_model,
+            atmosphere_class,
+        )
     raw_mix = _normalized_mix(raw_mix)
     adjusted = {}
     elemental_profile = _element_profile(seed)
@@ -576,9 +759,35 @@ def derive_atmosphere_model(seed, physics, stellar_luminosity_solar, semi_major_
     )
     greenhouse_k = greenhouse_model["delta_k"]
     surface_temp = equilibrium_temp + greenhouse_k
+    periapsis_au = max(0.001, float(semi_major_axis_au or 1.0) * (1.0 - orbital_eccentricity))
+    apoapsis_au = max(periapsis_au, float(semi_major_axis_au or 1.0) * (1.0 + orbital_eccentricity))
+    circular_flux = max(0.0001, float(stellar_luminosity_solar or 1.0)) / max(0.01, float(semi_major_axis_au or 1.0)) ** 2
+    periapsis_flux = max(0.0001, float(stellar_luminosity_solar or 1.0)) / periapsis_au ** 2
+    apoapsis_flux = max(0.0001, float(stellar_luminosity_solar or 1.0)) / apoapsis_au ** 2
     cloud_model = _cloud_model(seed, composition, pressure_bar, atmosphere_class)
     circulation_model = _circulation_model(seed, pressure_bar, cloud_model)
     visual_model = _visual_model(composition, pressure_bar, atmosphere_state, cloud_model=cloud_model)
+    rotation_hours = max(0.1, abs(float(physics.get("rotation_period_hours", 24.0) or 24.0)))
+    core_fraction = _clamp(physics.get("core_radius_fraction", 0.0), 0.0, 0.95)
+    magnetic_shielding_proxy = _clamp(
+        core_fraction / 0.55 * (24.0 / rotation_hours) ** 0.28,
+        0.0,
+        1.5,
+    )
+    nonthermal_escape_pressure = uv_xray_activity * (1.0 - min(1.0, magnetic_shielding_proxy))
+    water_fraction = _clamp(seed.get("water_fraction", 0.0), 0.0, 1.0)
+    h2o_surface = "vapor"
+    if surface_temp < 250.0:
+        h2o_surface = "surface_ice_or_subsurface_liquid"
+    elif surface_temp <= 373.15 and pressure_bar >= 0.006:
+        h2o_surface = "liquid_and_vapor"
+    elif surface_temp > 647.1 and pressure_bar > 220.6:
+        h2o_surface = "supercritical"
+    co2_surface = "gas"
+    if surface_temp < 195.0:
+        co2_surface = "polar_or_surface_ice"
+    elif pressure_bar > 5.2 and surface_temp < 304.1:
+        co2_surface = "gas_with_possible_condensed_reservoir"
 
     notes = [
         "Atmosphere class is inferred from size, temperature, volatile inventory, gravity, and water fraction.",
@@ -596,13 +805,30 @@ def derive_atmosphere_model(seed, physics, stellar_luminosity_solar, semi_major_
         ])
 
     return {
+        "climate_hierarchy": {
+            "level": 0,
+            "method": "global_energy_balance_with_parameterized_greenhouse_clouds_and_escape",
+            "next_level": "latitude_or_spatial_climate_in_water_cycle_stage",
+        },
         "atmosphere_class": atmosphere_class,
+        "mantle_redox_model": mantle_redox_model,
+        "outgassing_redox_state": mantle_redox_model.get("state"),
         "atmosphere_state": atmosphere_state,
         "has_collisional_atmosphere": atmosphere_state not in {"vacuum", "exosphere"},
         "has_exosphere": atmosphere_state == "exosphere",
         "has_solid_surface": not gas_giant,
         "equilibrium_temperature_k": equilibrium_temp,
         "equilibrium_temperature_c": equilibrium_temp - 273.15,
+        "orbital_forcing": {
+            "eccentricity": round(orbital_eccentricity, 5),
+            "semi_major_axis_au": round(float(semi_major_axis_au or 1.0), 6),
+            "periapsis_au": round(periapsis_au, 6),
+            "apoapsis_au": round(apoapsis_au, 6),
+            "annual_mean_flux_factor": round((1.0 - orbital_eccentricity * orbital_eccentricity) ** -0.5, 5),
+            "periapsis_flux_factor": round(periapsis_flux / circular_flux, 4),
+            "apoapsis_flux_factor": round(apoapsis_flux / circular_flux, 4),
+            "annual_mean_temperature_corrected": orbital_eccentricity > 0.0,
+        },
         "estimated_surface_temperature_k": surface_temp,
         "estimated_surface_temperature_c": surface_temp - 273.15,
         "greenhouse_delta_k": greenhouse_k,
@@ -612,6 +838,14 @@ def derive_atmosphere_model(seed, physics, stellar_luminosity_solar, semi_major_
         "circulation_model": circulation_model,
         "exobase_temperature_k": exobase_temp,
         "exobase_temperature_c": exobase_temp - 273.15,
+        "stellar_escape_forcing": {
+            "stellar_age_gyr": round(stellar_age_gyr, 4),
+            "effective_temperature_k": round(stellar_temperature_k, 1),
+            "uv_xray_activity_relative_sun": round(uv_xray_activity, 3),
+            "magnetic_shielding_proxy": round(magnetic_shielding_proxy, 3),
+            "nonthermal_escape_pressure": round(nonthermal_escape_pressure, 3),
+            "included_mechanisms": ["jeans_escape", "hydrodynamic_proxy", "nonthermal_magnetic_shielding_proxy", "volcanic_replenishment"],
+        },
         "escape_velocity_m_s": escape_velocity,
         "volatile_supply_bar": volatile_supply_bar,
         "volatile_history": volatile_history,
@@ -620,5 +854,11 @@ def derive_atmosphere_model(seed, physics, stellar_luminosity_solar, semi_major_
         "surface_pressure_bar": pressure_bar,
         "composition": composition,
         "retention": retention_rows,
+        "volatile_phase_state": {
+            "H2O": h2o_surface if water_fraction > 0.0 else "trace_or_absent",
+            "CO2": co2_surface,
+            "reservoirs_considered": ["atmosphere", "surface_liquid", "surface_ice", "subsurface", "mineral_bound"],
+            "model_level": "global_pressure_temperature_screen",
+        },
         "notes": notes,
     }

@@ -703,6 +703,176 @@ class TimelineTickTests(unittest.TestCase):
         self.assertEqual((1940, 1980), (timeline.layout_items[0]["start_year"], timeline.layout_items[0]["end_year"]))
         self.assertEqual(1, timeline.layout_items[1]["nest_depth"])
 
+    def test_default_timeline_bundles_transitively_related_entries(self):
+        timeline = TimelineUI()
+        timeline.set_rect(pygame.Rect(0, 0, 600, 300))
+        timeline.view_min_year = 1900
+        timeline.view_max_year = 2000
+        timeline._view_range_initialized = True
+        timeline.set_entity_lookup(
+            {
+                "alpha": {"id": "alpha", "_dataset": "ideas", "related": ["beta"]},
+                "beta": {"id": "beta", "_dataset": "ideas", "parents": ["gamma"]},
+                "gamma": {"id": "gamma", "_dataset": "ideas", "offspring": ["beta"]},
+                "unrelated": {"id": "unrelated", "_dataset": "ideas"},
+            }
+        )
+        timeline.set_items(
+            [
+                {"entity_id": "alpha", "label": "Alpha", "dataset": "ideas", "start_year": 1940, "end_year": 1980},
+                {"entity_id": "unrelated", "label": "Unrelated", "dataset": "ideas", "start_year": 1945, "end_year": 1985},
+                {"entity_id": "beta", "label": "Beta", "dataset": "ideas", "start_year": 1950, "end_year": 1990},
+                {"entity_id": "gamma", "label": "Gamma", "dataset": "ideas", "start_year": 1960, "end_year": 2000},
+            ]
+        )
+
+        timeline.rebuild_layout()
+
+        by_id = {item["entity_id"]: item for item in timeline.layout_items}
+        linked_cluster = by_id["alpha"]["relationship_cluster"]
+        self.assertEqual("relations", timeline.timeline_sort_mode)
+        self.assertEqual(linked_cluster, by_id["beta"]["relationship_cluster"])
+        self.assertEqual(linked_cluster, by_id["gamma"]["relationship_cluster"])
+        self.assertNotEqual(linked_cluster, by_id["unrelated"]["relationship_cluster"])
+        linked_lanes = sorted(by_id[entity_id]["lane"] for entity_id in ("alpha", "beta", "gamma"))
+        self.assertEqual(list(range(linked_lanes[0], linked_lanes[-1] + 1)), linked_lanes)
+        self.assertFalse(linked_lanes[0] < by_id["unrelated"]["lane"] < linked_lanes[-1])
+
+    def test_unrelated_timeline_entries_remain_compact(self):
+        timeline = self._timeline(1900, 2000, width=500)
+        items = [
+            {"entity_id": "early", "label": "Early", "start_year": 1900, "end_year": 1910},
+            {"entity_id": "middle", "label": "Middle", "start_year": 1940, "end_year": 1950},
+            {"entity_id": "late", "label": "Late", "start_year": 1980, "end_year": 1990},
+        ]
+
+        layout_items, lane_count = timeline._assign_relationship_clustered_lanes(items)
+
+        self.assertEqual(1, lane_count)
+        self.assertEqual({0}, {item["lane"] for item in layout_items})
+        self.assertEqual(1, len(timeline.relationship_cluster_lane_ranges))
+        self.assertFalse(timeline.relationship_cluster_lane_ranges[0]["has_links"])
+
+    def test_timeline_vertical_pan_reaches_lower_lanes_and_clamps(self):
+        timeline = TimelineUI()
+        timeline.set_rect(pygame.Rect(0, 0, 420, 180))
+        timeline.view_min_year = 1900
+        timeline.view_max_year = 2000
+        timeline._view_range_initialized = True
+        timeline.set_items(
+            [
+                {
+                    "entity_id": f"overlap_{index}",
+                    "label": f"Overlapping entry {index}",
+                    "dataset": "ideas",
+                    "start_year": 1940,
+                    "end_year": 1980,
+                }
+                for index in range(14)
+            ]
+        )
+        timeline.rebuild_layout()
+        original_lane_base = timeline._lane_base_y()
+
+        self.assertGreater(timeline._max_vertical_scroll_px(), 0)
+        self.assertTrue(timeline.pan_vertical_by_pixels(40))
+        self.assertEqual(original_lane_base - 40, timeline._lane_base_y())
+
+        self.assertTrue(timeline.pan_vertical_by_pixels(100_000))
+        self.assertEqual(timeline._max_vertical_scroll_px(), timeline.vertical_scroll_px)
+        self.assertFalse(timeline.pan_vertical_by_pixels(1))
+
+        self.assertTrue(timeline.pan_vertical_by_pixels(-100_000))
+        self.assertEqual(0, timeline.vertical_scroll_px)
+
+    def test_timeline_vertical_scroll_resets_when_content_becomes_shorter(self):
+        timeline = TimelineUI()
+        timeline.set_rect(pygame.Rect(0, 0, 420, 180))
+        timeline.set_items(
+            [
+                {
+                    "entity_id": f"entry_{index}",
+                    "label": f"Entry {index}",
+                    "dataset": "ideas",
+                    "start_year": 100,
+                    "end_year": 200,
+                }
+                for index in range(12)
+            ]
+        )
+        timeline.rebuild_layout()
+        timeline.pan_vertical_by_pixels(100_000)
+        self.assertGreater(timeline.vertical_scroll_px, 0)
+
+        timeline.set_items(
+            [{"entity_id": "single", "label": "Single", "dataset": "ideas", "start_year": 150, "end_year": 150}]
+        )
+        timeline.rebuild_layout()
+
+        self.assertEqual(0, timeline.vertical_scroll_px)
+
+    def test_timeline_drag_pans_horizontal_and_vertical_axes(self):
+        ui = KnowledgeBrowserUI()
+        horizontal_calls = []
+        vertical_calls = []
+        ui.active_timeline_pan = True
+        ui.timeline_pan_last_mouse_x = 100
+        ui.timeline_pan_last_mouse_y = 100
+        ui.timeline_ui.pan_by_pixels = lambda delta: horizontal_calls.append(delta)
+        ui.timeline_ui.pan_vertical_by_pixels = lambda delta: vertical_calls.append(delta)
+
+        result = ui._handle_mousemotion_event(
+            type("Event", (), {"pos": (88, 72)})()
+        )
+
+        self.assertEqual("__ui_consumed__", result)
+        self.assertEqual([12], horizontal_calls)
+        self.assertEqual([28], vertical_calls)
+
+    def test_scrolled_timeline_draws_inside_fixed_vertical_viewport(self):
+        pygame.font.init()
+        font = pygame.font.SysFont("consolas", 14)
+        timeline = TimelineUI()
+        timeline.set_rect(pygame.Rect(0, 0, 520, 210))
+        timeline.set_font(font)
+        timeline.set_items(
+            [
+                {
+                    "entity_id": f"draw_{index}",
+                    "label": f"Draw entry {index}",
+                    "dataset": "ideas",
+                    "start_year": 1940,
+                    "end_year": 1980,
+                }
+                for index in range(16)
+            ]
+        )
+        timeline.rebuild_layout()
+        timeline.pan_vertical_by_pixels(60)
+        screen = pygame.Surface((520, 210))
+
+        timeline.draw(screen, font)
+
+        self.assertEqual(60, timeline.vertical_scroll_px)
+        self.assertGreater(timeline._max_vertical_scroll_px(), 0)
+
+    def test_related_field_change_invalidates_relationship_layout(self):
+        timeline = TimelineUI()
+        initial_lookup = {
+            "alpha": {"id": "alpha", "_dataset": "ideas", "related": []},
+            "beta": {"id": "beta", "_dataset": "ideas", "related": []},
+        }
+        self.assertTrue(timeline.set_entity_lookup(initial_lookup))
+        timeline._layout_cache_key = ("cached",)
+
+        changed_lookup = {
+            "alpha": {"id": "alpha", "_dataset": "ideas", "related": ["beta"]},
+            "beta": {"id": "beta", "_dataset": "ideas", "related": ["alpha"]},
+        }
+
+        self.assertTrue(timeline.set_entity_lookup(changed_lookup))
+        self.assertIsNone(timeline._layout_cache_key)
+
     def test_sort_mode_button_changes_layout_mode(self):
         pygame.font.init()
         font = pygame.font.SysFont("consolas", 14)
@@ -710,7 +880,10 @@ class TimelineTickTests(unittest.TestCase):
         timeline.set_rect(pygame.Rect(0, 0, 500, 180))
         timeline.set_font(font)
         timeline._rebuild_filter_hitboxes()
+        links_rect = next(rect for mode, _, rect in timeline.sort_mode_hitboxes if mode == "relations")
         nest_rect = next(rect for mode, _, rect in timeline.sort_mode_hitboxes if mode == "offspring")
+
+        self.assertTrue(links_rect.width > 0)
 
         action = timeline.handle_click(nest_rect.center)
 

@@ -23,6 +23,7 @@ class KnowledgeCanvasController:
         "toolbelt_hitboxes",
         "section_hitboxes",
         "year_hitboxes",
+        "timeline_snapshot_timeline_hitboxes",
         "media_import_hitboxes",
         "media_pixel_art_hitboxes",
         "media_illustration_link_hitboxes",
@@ -45,6 +46,7 @@ class KnowledgeCanvasController:
         "header_description_rect",
         "header_icon_rect",
         "content_viewport_rect",
+        "random_year_rect",
         "launch_rect",
         "tag_bar_rect",
         "general_content_rect",
@@ -1491,6 +1493,14 @@ class KnowledgeCanvasController:
                 if schema_result is not None:
                     return schema_result
 
+            random_year_rect = card.get("random_year_rect")
+            if random_year_rect is not None and random_year_rect.collidepoint(mouse_pos):
+                selected_year = self._set_random_working_year_from_card(card)
+                if selected_year is not None:
+                    self._bring_card_to_front(index)
+                    self._layout_all_cards()
+                return "__ui_consumed__"
+
             relation_add_rect = card.get("canvas_relation_add_rect")
             if relation_add_rect is not None and relation_add_rect.collidepoint(mouse_pos):
                 card_obj = self._bring_card_to_front(index)
@@ -1904,6 +1914,26 @@ class KnowledgeCanvasController:
                     self._relayout_cards()
                     return "__ui_consumed__"
 
+                for snapshot_info in card.get("timeline_snapshot_chip_hitboxes", []):
+                    snapshot_rect = snapshot_info.get("rect")
+                    if snapshot_rect is None or not snapshot_rect.collidepoint(mouse_pos):
+                        continue
+                    card_obj = self._bring_card_to_front(index)
+                    selected_range = (
+                        int(snapshot_info.get("start_year")),
+                        int(snapshot_info.get("end_year")),
+                    )
+                    if (
+                        card_obj.get("active_timeline_snapshot_range") == selected_range
+                        and card_obj.get("working_year_range") is None
+                    ):
+                        card_obj.pop("active_timeline_snapshot_range", None)
+                    else:
+                        card_obj["active_timeline_snapshot_range"] = selected_range
+                    card_obj["scroll_y"] = 0
+                    self._relayout_cards()
+                    return "__ui_consumed__"
+
             editable_result = self._handle_editable_field_click(card, index, mouse_pos)
             if editable_result is not None:
                 return editable_result
@@ -2045,6 +2075,17 @@ class KnowledgeCanvasController:
                     self._focus_timeline_year(year)
                     self._layout_all_cards()
                     return "__ui_consumed__"
+
+            for snapshot_info in card.get("timeline_snapshot_timeline_hitboxes", []):
+                snapshot_rect = snapshot_info.get("rect")
+                if snapshot_rect is None or not snapshot_rect.collidepoint(mouse_pos):
+                    continue
+                start_year = int(snapshot_info.get("start_year"))
+                end_year = int(snapshot_info.get("end_year", start_year))
+                self._set_working_year_from_card_snapshot(start_year, end_year)
+                self._bring_card_to_front(index)
+                self._layout_all_cards()
+                return "__ui_consumed__"
 
             if card_view is not None:
                 period_action = card_view.handle_temporal_period_timeline_click(card, mouse_pos)

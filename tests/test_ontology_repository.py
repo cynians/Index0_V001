@@ -1,3 +1,4 @@
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -70,6 +71,87 @@ class OntologyRepositoryTests(unittest.TestCase):
 
             self.assertEqual("#123456", entity["card_color"])
             self.assertEqual("#legacy", entity["wiki_link_color"])
+
+    def test_palette_persistence_falls_back_when_quadstore_is_locked(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ontology_path = Path(temp_dir) / "ontology" / "index0.owl"
+            ontology_path.parent.mkdir(parents=True)
+            ontology_path.write_text("unchanged ontology", encoding="utf-8")
+            entity = {"id": "clade_test", "card_color": "#123456", "card_color_source": "derived_offspring"}
+            loader = EntityLoader.__new__(EntityLoader)
+            loader.use_ontology = True
+            loader.ontology_path = ontology_path
+            loader.datasets = {"cladistics": [entity]}
+            loader._persistent_store = SimpleNamespace(
+                persist_entity_fields=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                    sqlite3.OperationalError("database is locked")
+                )
+            )
+
+            self.assertTrue(loader.persist_entity_palette(entity))
+
+            overrides = loader._load_palette_overrides()
+            self.assertEqual("#123456", overrides["clade_test"]["card_color"])
+            self.assertEqual("derived_offspring", overrides["clade_test"]["card_color_source"])
+
+    def test_entity_persistence_reports_lock_without_terminating_application(self):
+        entity = {"id": "idea_locked", "type": "idea", "_dataset": "ideas"}
+        loader = EntityLoader.__new__(EntityLoader)
+        loader.use_ontology = True
+        loader.ontology_path = Path("index0.owl")
+        loader.entities = {}
+        loader.datasets = {}
+        loader._persistent_store = SimpleNamespace(
+            persist_entity=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                sqlite3.OperationalError("database is locked")
+            )
+        )
+
+        self.assertFalse(loader.persist_entity(entity))
+        self.assertIs(entity, loader.entities["idea_locked"])
+
+    def test_persistent_store_retries_locked_world_open(self):
+        class FakeConnection:
+            def __init__(self):
+                self.closed = False
+
+            def execute(self, _statement):
+                return None
+
+            def close(self):
+                self.closed = True
+
+        connections = []
+        calls = []
+        sentinel_world = object()
+
+        def connect(*_args, **_kwargs):
+            connection = FakeConnection()
+            connections.append(connection)
+            return connection
+
+        def open_world(**kwargs):
+            calls.append(kwargs)
+            if len(calls) < 3:
+                raise sqlite3.OperationalError("database is locked")
+            return sentinel_world
+
+        store = PersistentOntologyStore.__new__(PersistentOntologyStore)
+        store.database_path = Path("retry-test.sqlite3")
+        store.LOCK_RETRY_ATTEMPTS = 3
+        store.SQLITE_BUSY_TIMEOUT_MS = 1
+        store._import_owlready2 = lambda: SimpleNamespace(World=open_world)
+
+        with patch("world.persistent_ontology_store.sqlite3.connect", side_effect=connect), patch(
+            "world.persistent_ontology_store.time.sleep", return_value=None,
+        ):
+            world = store._open_world()
+
+        self.assertIs(sentinel_world, world)
+        self.assertEqual(3, len(calls))
+        self.assertTrue(connections[0].closed)
+        self.assertTrue(connections[1].closed)
+        self.assertFalse(connections[2].closed)
 
     def test_parent_relation_materializes_offspring_projection(self):
         ontology = OntologyRepository({

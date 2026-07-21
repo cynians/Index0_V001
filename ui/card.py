@@ -1213,12 +1213,12 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
     def _timeline_snapshot_range(self, card=None):
         if card is None:
             return None
-        year_range = card.get("active_timeline_snapshot_range") or card.get("working_year_range")
+        # The card's launch/lifespan year is not an active wiki-history filter.
+        # Dated overview text follows the repository working year, or an
+        # explicitly selected history chip. With neither, all entries display.
+        year_range = card.get("working_year_range") or card.get("active_timeline_snapshot_range")
         if not isinstance(year_range, (list, tuple)) or len(year_range) != 2:
-            selected_year = card.get("selected_year")
-            if selected_year is None:
-                return None
-            year_range = (selected_year, selected_year)
+            return None
         try:
             start_year = int(year_range[0])
             end_year = int(year_range[1])
@@ -1312,6 +1312,95 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             return [entry for entry in raw_entries if isinstance(entry, dict)]
         return []
 
+    def _timeline_snapshot_display_entries(self, card=None):
+        entries = []
+        for entry in self._timeline_snapshot_entries():
+            try:
+                start_year = int(entry.get("start_year"))
+                end_year = int(entry.get("end_year", start_year))
+            except (TypeError, ValueError):
+                continue
+            if end_year < start_year:
+                start_year, end_year = end_year, start_year
+            entries.append(
+                {
+                    "start_year": start_year,
+                    "end_year": end_year,
+                    "wiki_entry": str(entry.get("wiki_entry") or ""),
+                }
+            )
+        entries.sort(key=lambda item: (item["start_year"], item["end_year"]))
+
+        active_range = self._timeline_snapshot_range(card)
+        if active_range is None:
+            return entries
+
+        start_year, end_year = active_range
+        text = self._timeline_snapshot_text(card)
+        return [{
+            "start_year": start_year,
+            "end_year": end_year,
+            "wiki_entry": text,
+            "active": True,
+        }]
+
+    @staticmethod
+    def _timeline_snapshot_period_label(entry):
+        start_year = int(entry.get("start_year", 0))
+        end_year = int(entry.get("end_year", start_year))
+        return str(start_year) if start_year == end_year else f"{start_year}–{end_year}"
+
+    def _measure_timeline_snapshot_blocks_height(self, card, font, width):
+        blocks = self._timeline_snapshot_display_entries(card)
+        if not blocks:
+            return 0
+        content_rect = pygame.Rect(0, 0, max(20, int(width) - 12), 0)
+        total = 6
+        for block in blocks:
+            content_height = CardWikiRenderer.measure_content(
+                block.get("wiki_entry", ""),
+                font,
+                content_rect,
+                resolve_link_label=self._resolve_wiki_link_label,
+            )
+            total += 22 + max(24, content_height) + 8
+        return total
+
+    def _timeline_snapshot_timeline_entries(self):
+        entries = []
+        seen = set()
+        for entry in self._timeline_snapshot_entries():
+            try:
+                start_year = int(entry.get("start_year"))
+                end_year = int(entry.get("end_year", start_year))
+            except (TypeError, ValueError):
+                continue
+            if end_year < start_year:
+                start_year, end_year = end_year, start_year
+            key = (start_year, end_year)
+            if key in seen:
+                continue
+            seen.add(key)
+            entries.append({"start_year": start_year, "end_year": end_year})
+        return sorted(entries, key=lambda item: (item["start_year"], item["end_year"]))
+
+    def _timeline_snapshot_chip_lane_count(self, card, font, width):
+        entries = self._timeline_snapshot_timeline_entries()
+        if not entries or font is None:
+            return 0
+        available = max(48, int(width) - 40)
+        lanes = 1
+        used = 0
+        for entry in entries:
+            chip_w = max(44, font.size(self._timeline_snapshot_period_label(entry))[0] + 16)
+            required = chip_w if used == 0 else chip_w + 5
+            if used and used + required > available:
+                lanes += 1
+                used = chip_w
+            else:
+                used += required
+        return lanes
+
     def _timeline_snapshot_text(self, card=None):
         if card is not None:
             self._sync_timeline_snapshot_edit_range(card)
@@ -1368,7 +1457,6 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 }
             )
         self.entity["timeline_snapshots"] = entries
-        self._apply_snapshot_year_to_mentions(start_year, text)
         return True
 
     def _snapshot_link_refs(self, text):
@@ -1486,12 +1574,22 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             return (point_year, point_year)
         return None
 
+    def _entity_existence_period(self):
+        """Return the explicit inclusive lifespan, never an inferred point year."""
+        start_year = self._coerce_timeline_year(self.entity.get("start_year"))
+        end_year = self._coerce_timeline_year(self.entity.get("end_year"))
+        if start_year is None or end_year is None:
+            return None
+        return (min(start_year, end_year), max(start_year, end_year))
+
     def _card_timeline_range(self, card):
         years = [
             self._coerce_timeline_year(year)
             for year in card.get("years", [])
         ]
         years = [year for year in years if year is not None]
+        for entry in self._timeline_snapshot_timeline_entries():
+            years.extend((entry["start_year"], entry["end_year"]))
         if not years:
             for period in self._temporal_period_entries():
                 for key in ("start_year", "end_year"):
@@ -3873,6 +3971,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         general_content_rect = None
         tag_bar_rect = None
         timeline_snapshot_rect = None
+        timeline_snapshot_chip_hitboxes = []
         task_checklist_rect = None
         task_finish_checkbox_rect = None
         task_checklist_hitboxes = []
@@ -4057,7 +4156,14 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         left_x = rect.x + 20
         right_x = rect.right - 20
         timeline_y = center_y - 10
-        timeline_label_y = max(top_content_y + 8, timeline_y - 18)
+        snapshot_timeline_lane_count = self._timeline_snapshot_chip_lane_count(
+            card, card["layout_font"], rect.width,
+        )
+        snapshot_timeline_lane_height = snapshot_timeline_lane_count * 23
+        timeline_label_y = max(
+            top_content_y + 8,
+            timeline_y - 18 - snapshot_timeline_lane_height,
+        )
         content_viewport_top = image_rect.y if self._uses_image_block() else top_content_y
         content_viewport_bottom = max(content_viewport_top + 40, timeline_label_y - 10)
         content_viewport_rect = pygame.Rect(
@@ -4084,6 +4190,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             wiki_top_y = tag_bar_rect.bottom + 8
             general_height = max(40, general_bottom - wiki_top_y)
             snapshot_active = self._timeline_snapshot_range(card) is not None
+            snapshot_blocks = self._timeline_snapshot_display_entries(card)
+            snapshot_visible = snapshot_active or bool(snapshot_blocks)
             general_content_rect = pygame.Rect(content_left, wiki_top_y, text_width, general_height)
             if self._is_task_card():
                 checklist_h = min(
@@ -4094,14 +4202,20 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 wiki_h = max(44, general_height - checklist_h - 8)
                 general_content_rect = pygame.Rect(content_left, wiki_top_y, text_width, wiki_h)
                 task_checklist_rect = pygame.Rect(content_left, general_content_rect.bottom + 8, text_width, checklist_h)
-            elif snapshot_active:
-                snapshot_h = max(58, min(118, int(general_height * 0.38)))
+            elif snapshot_visible:
+                desired_snapshot_h = self._measure_timeline_snapshot_blocks_height(
+                    card, card["layout_font"], text_width,
+                )
+                snapshot_h = max(
+                    58,
+                    min(max(58, general_height - 44), max(58, desired_snapshot_h)),
+                )
                 wiki_h = max(44, general_height - snapshot_h - 8)
                 general_content_rect = pygame.Rect(content_left, wiki_top_y, text_width, wiki_h)
                 timeline_snapshot_rect = pygame.Rect(content_left, general_content_rect.bottom + 8, text_width, snapshot_h)
             if card.get("is_edit_mode", False):
                 editable_field_hitboxes.append(("wiki_entry", general_content_rect))
-                if timeline_snapshot_rect is not None:
+                if timeline_snapshot_rect is not None and snapshot_active:
                     editable_field_hitboxes.append((self.TIMELINE_SNAPSHOT_FIELD, timeline_snapshot_rect))
             wiki_text = self._get_general_wiki_text(card)
             if card.get("is_edit_mode", False) and card.get("active_edit_field") == "wiki_entry":
@@ -4116,17 +4230,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 )
             content_end_y = general_content_rect.y + content_h
             if timeline_snapshot_rect is not None:
-                snapshot_text = self._timeline_snapshot_text(card)
-                if card.get("is_edit_mode", False) and card.get("active_edit_field") == self.TIMELINE_SNAPSHOT_FIELD:
-                    inner_w = max(20, timeline_snapshot_rect.width - 20)
-                    snapshot_h = len(CardWikiRenderer.wrap_edit_lines(snapshot_text, card["layout_font"], inner_w)) * self._table_line_height(card["layout_font"]) + 20
-                else:
-                    snapshot_h = CardWikiRenderer.measure_content(
-                        snapshot_text,
-                        card["layout_font"],
-                        timeline_snapshot_rect,
-                        resolve_link_label=self._resolve_wiki_link_label,
-                    )
+                snapshot_h = self._measure_timeline_snapshot_blocks_height(
+                    card, card["layout_font"], timeline_snapshot_rect.width,
+                )
                 content_end_y = max(content_end_y, timeline_snapshot_rect.y + snapshot_h)
             if task_checklist_rect is not None:
                 content_end_y = max(content_end_y, task_checklist_rect.bottom)
@@ -4976,6 +5082,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         card["tag_suggestion_hitboxes"] = []
         card["tag_remove_hitboxes"] = []
         card["timeline_snapshot_rect"] = timeline_snapshot_rect
+        card["timeline_snapshot_chip_hitboxes"] = timeline_snapshot_chip_hitboxes
         card["task_checklist_rect"] = task_checklist_rect
         card["task_finish_checkbox_rect"] = task_finish_checkbox_rect
         card["task_checklist_hitboxes"] = task_checklist_hitboxes
@@ -4988,6 +5095,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             card["person_quote_rows"] = person_quote_rows
             card["person_quote_empty_rect"] = person_quote_empty_rect
         card["timeline_label_y"] = timeline_label_y
+        card["snapshot_timeline_lane_count"] = snapshot_timeline_lane_count
+        card["snapshot_timeline_lane_height"] = snapshot_timeline_lane_height
         card["timeline_y"] = timeline_y
         card["launch_rect"] = launch_rect
         card["launch_mode_hitboxes"] = launch_mode_hitboxes
@@ -5031,6 +5140,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         including wrapped text.
         """
         section_map = self._sectioned_fields()
+        timeline_chip_h = self._timeline_snapshot_chip_lane_count(
+            card, font, int(card.get("canvas_w", 420)),
+        ) * 23
 
         if self._is_general_mode():
             content_rect = pygame.Rect(0, 0, int(card.get("canvas_w", 420)) - 24, 0)
@@ -5040,14 +5152,11 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 content_rect,
                 resolve_link_label=self._resolve_wiki_link_label,
             )
-            if self._timeline_snapshot_range(card) is not None:
+            if self._timeline_snapshot_display_entries(card):
                 general_h += 8 + max(
                     58,
-                    CardWikiRenderer.measure_content(
-                        self._timeline_snapshot_text(card),
-                        font,
-                        content_rect,
-                        resolve_link_label=self._resolve_wiki_link_label,
+                    self._measure_timeline_snapshot_blocks_height(
+                        card, font, content_rect.width,
                     ),
                 )
             if self._is_task_card():
@@ -5060,7 +5169,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             general_h += tag_bar_h + 8
             tabs_bottom_y = self.HEADER_H + 6 + self.TAB_H
             timeline_label_y = tabs_bottom_y + 10 + general_h + 8
-            timeline_y = timeline_label_y + 18
+            timeline_y = timeline_label_y + 18 + timeline_chip_h
             center_y = timeline_y + 10
             launch_top = center_y + self.TIMELINE_TO_LAUNCH_GAP
             resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
@@ -5093,7 +5202,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 visible_rows = max(1, int(card.get(limit_key, 3 if self._is_cladistics_card() else 4) or 1))
                 current_y += visible_rows * (line_h + 13)
             timeline_label_y = current_y + 12
-            timeline_y = timeline_label_y + 18
+            timeline_y = timeline_label_y + 18 + timeline_chip_h
             center_y = timeline_y + 10
             launch_top = center_y + self.TIMELINE_TO_LAUNCH_GAP
             resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
@@ -5111,7 +5220,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 input_h = 86 if card.get("is_edit_mode", False) else 0
                 current_y = tabs_bottom_y + 10 + self.SECTION_HEADER_H + self.SECTION_GAP + 4 + 24 + 6 + entries_h + input_h
             timeline_label_y = current_y + 12
-            timeline_y = timeline_label_y + 18
+            timeline_y = timeline_label_y + 18 + timeline_chip_h
             center_y = timeline_y + 10
             launch_top = center_y + self.TIMELINE_TO_LAUNCH_GAP
             resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
@@ -5141,7 +5250,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                     ):
                         current_y += min(5, len(card.get("production_matches") or [])) * 24 + 4
             timeline_label_y = current_y + 12
-            timeline_y = timeline_label_y + 18
+            timeline_y = timeline_label_y + 18 + timeline_chip_h
             center_y = timeline_y + 10
             launch_top = center_y + self.TIMELINE_TO_LAUNCH_GAP
             resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
@@ -5156,7 +5265,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             row_count = 2 + operator_count + condition_count + max(1, requirement_count)
             current_y = tabs_bottom_y + 10 + 2 * (self.SECTION_HEADER_H + self.SECTION_GAP + 4) + row_count * 30
             timeline_label_y = current_y + 12
-            timeline_y = timeline_label_y + 18
+            timeline_y = timeline_label_y + 18 + timeline_chip_h
             center_y = timeline_y + 10
             launch_top = center_y + self.TIMELINE_TO_LAUNCH_GAP
             resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
@@ -5169,7 +5278,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             content_w = max(120, int(card.get("canvas_w", 420)) - 24)
             current_y = tabs_bottom_y + 10 + self._measure_person_quotes_height(font, content_w, card)
             timeline_label_y = current_y + 12
-            timeline_y = timeline_label_y + 18
+            timeline_y = timeline_label_y + 18 + timeline_chip_h
             center_y = timeline_y + 10
             launch_top = center_y + self.TIMELINE_TO_LAUNCH_GAP
             resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
@@ -5196,7 +5305,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 current_y += self.SECTION_GAP
 
         timeline_label_y = current_y + 8
-        timeline_y = timeline_label_y + 18
+        timeline_y = timeline_label_y + 18 + timeline_chip_h
         center_y = timeline_y + 10
         launch_top = center_y + self.TIMELINE_TO_LAUNCH_GAP
         resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
@@ -5474,13 +5583,87 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         else:
             timeline_label = "Year: missing"
 
+        existence_period = self._entity_existence_period()
+        random_year_rect = None
+        if existence_period is not None and rect.width >= 140:
+            button_w = max(20, font.size("R")[0] + 12)
+            random_year_rect = pygame.Rect(
+                rect.right - 12 - button_w,
+                timeline_label_y - 1,
+                button_w,
+                font_h + 2,
+            )
+        card["random_year_rect"] = random_year_rect
+
         label_fits_above_line = timeline_label_y + font_h <= center_y - 4
         if label_fits_above_line and rect.width >= 180:
-            timeline_label = self._ellipsize_text(timeline_label, font, rect.width - 24)
+            label_right = random_year_rect.x - 6 if random_year_rect is not None else rect.right - 12
+            timeline_label = self._ellipsize_text(
+                timeline_label,
+                font,
+                max(20, label_right - (rect.x + 12)),
+            )
             timeline_label_surface = font.render(timeline_label, True, body_text_color)
             screen.blit(timeline_label_surface, (rect.x + 12, timeline_label_y))
+        if random_year_rect is not None:
+            pygame.draw.rect(screen, (38, 47, 64), random_year_rect)
+            pygame.draw.rect(screen, (132, 156, 194), random_year_rect, 1)
+            random_surface = font.render("R", True, (226, 236, 250))
+            screen.blit(random_surface, random_surface.get_rect(center=random_year_rect.center))
 
         pygame.draw.line(screen, (170, 170, 170), (left_x, center_y), (right_x, center_y), 1)
+        card["timeline_snapshot_timeline_hitboxes"] = []
+        snapshot_timeline_entries = self._timeline_snapshot_timeline_entries()
+        card_range = self._card_timeline_range(card)
+        if snapshot_timeline_entries and card_range is not None:
+            range_start, range_end = card_range
+            range_span = max(1, range_end - range_start)
+            chip_x = left_x
+            chip_y = timeline_label_y + font_h + 3
+            chip_h = 19
+            lane_step = 23
+            active_range = card.get("working_year_range")
+            if isinstance(active_range, (list, tuple)) and len(active_range) == 2:
+                try:
+                    active_range = (int(active_range[0]), int(active_range[1]))
+                except (TypeError, ValueError):
+                    active_range = None
+            else:
+                active_range = None
+
+            for entry in snapshot_timeline_entries:
+                period_label = self._timeline_snapshot_period_label(entry)
+                chip_w = max(44, font.size(period_label)[0] + 16)
+                if chip_x > left_x and chip_x + chip_w > right_x:
+                    chip_x = left_x
+                    chip_y += lane_step
+                chip_rect = pygame.Rect(chip_x, chip_y, min(chip_w, right_x - left_x), chip_h)
+                point_year = (entry["start_year"] + entry["end_year"]) / 2.0
+                ratio = max(0.0, min(1.0, (point_year - range_start) / float(range_span)))
+                marker_x = left_x + int(round((right_x - left_x) * ratio))
+                selected = active_range == (entry["start_year"], entry["end_year"])
+                fill = (68, 92, 130) if selected else (38, 47, 64)
+                border = (190, 218, 250) if selected else (112, 136, 170)
+                text_color = (244, 248, 255) if selected else (206, 220, 240)
+                pygame.draw.line(
+                    screen,
+                    border,
+                    (chip_rect.centerx, chip_rect.bottom),
+                    (marker_x, center_y - 2),
+                    1,
+                )
+                pygame.draw.rect(screen, fill, chip_rect)
+                pygame.draw.rect(screen, border, chip_rect, 1)
+                chip_surface = font.render(period_label, True, text_color)
+                screen.blit(chip_surface, chip_surface.get_rect(center=chip_rect.center))
+                pygame.draw.rect(screen, fill, pygame.Rect(marker_x - 3, center_y - 3, 7, 7))
+                pygame.draw.rect(screen, border, pygame.Rect(marker_x - 3, center_y - 3, 7, 7), 1)
+                card["timeline_snapshot_timeline_hitboxes"].append({
+                    "start_year": entry["start_year"],
+                    "end_year": entry["end_year"],
+                    "rect": chip_rect,
+                })
+                chip_x = chip_rect.right + 5
 
         year_label_rects = []
         year_label_y = center_y + 22
@@ -6243,7 +6426,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
         snapshot_rect = card.get("timeline_snapshot_rect")
         if snapshot_rect is not None:
-            label_rect = pygame.Rect(snapshot_rect.x, snapshot_rect.y, snapshot_rect.width, 18)
+            card["timeline_snapshot_chip_hitboxes"] = []
             snapshot_editing = (
                 card.get("is_edit_mode", False)
                 and card.get("active_edit_field") == self.TIMELINE_SNAPSHOT_FIELD
@@ -6251,37 +6434,79 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             has_snapshot_draft = self._has_timeline_snapshot_draft(card)
             label_fill = (40, 52, 76) if has_snapshot_draft or snapshot_editing else (30, 36, 50)
             border_color = (178, 202, 244) if has_snapshot_draft or snapshot_editing else (88, 104, 132)
-            pygame.draw.rect(screen, label_fill, label_rect)
+            pygame.draw.rect(screen, (25, 31, 43), snapshot_rect)
             pygame.draw.rect(screen, border_color, snapshot_rect, 1)
-            label = self._working_year_wiki_stub(card) or "Timeline Snapshot"
-            if has_snapshot_draft and not snapshot_editing:
-                label = f"{label} (draft)"
-            label_surface = font.render(
-                self._ellipsize_text(label, font, snapshot_rect.width - 16),
-                True,
-                (232, 240, 255) if has_snapshot_draft or snapshot_editing else (210, 222, 244),
-            )
-            screen.blit(label_surface, (snapshot_rect.x + 8, snapshot_rect.y + 2))
-            content_rect = pygame.Rect(
-                snapshot_rect.x,
-                snapshot_rect.y + 18,
-                snapshot_rect.width,
-                max(20, snapshot_rect.height - 18),
-            )
-            CardWikiRenderer.draw_content(
-                screen,
-                font,
-                content_rect,
-                self._timeline_snapshot_text(card),
-                is_editing=snapshot_editing,
-                resolve_link_label=self._resolve_wiki_link_label,
-                resolve_link_color=self._resolve_wiki_link_color,
-                resolve_link_palette=self._resolve_wiki_link_palette,
-                section_colors=self._wiki_field_colors(),
-                cursor_index=card.get("edit_cursor", 0),
-                scroll_y=card.get("scroll_y", 0),
-                selection_range=self._edit_selection_range(card),
-            )
+            blocks = self._timeline_snapshot_display_entries(card)
+            previous_clip = screen.get_clip()
+            screen.set_clip(previous_clip.clip(snapshot_rect.inflate(-1, -1)))
+            try:
+                block_y = snapshot_rect.y + 5
+                for block in blocks:
+                    period_label = self._timeline_snapshot_period_label(block)
+                    chip_w = min(
+                        snapshot_rect.width - 16,
+                        max(48, font.size(period_label)[0] + 18),
+                    )
+                    chip_rect = pygame.Rect(snapshot_rect.x + 7, block_y, chip_w, 20)
+                    pygame.draw.rect(screen, label_fill, chip_rect)
+                    pygame.draw.rect(screen, border_color, chip_rect, 1)
+                    chip_surface = font.render(
+                        period_label,
+                        True,
+                        (236, 242, 255) if block.get("active") else (205, 220, 242),
+                    )
+                    screen.blit(chip_surface, chip_surface.get_rect(center=chip_rect.center))
+                    card["timeline_snapshot_chip_hitboxes"].append({
+                        "start_year": block["start_year"],
+                        "end_year": block["end_year"],
+                        "rect": chip_rect,
+                    })
+
+                    if block.get("active"):
+                        heading = self._working_year_wiki_stub(card) or "Year-bound overview"
+                    else:
+                        heading = "Year-bound overview"
+                    if has_snapshot_draft and block.get("active") and not snapshot_editing:
+                        heading = f"{heading} (draft)"
+                    heading_x = chip_rect.right + 7
+                    heading_surface = font.render(
+                        self._ellipsize_text(heading, font, max(20, snapshot_rect.right - heading_x - 6)),
+                        True,
+                        (190, 202, 224),
+                    )
+                    screen.blit(heading_surface, (heading_x, block_y + 2))
+
+                    content_y = chip_rect.bottom + 3
+                    measured_h = CardWikiRenderer.measure_content(
+                        block.get("wiki_entry", ""),
+                        font,
+                        pygame.Rect(snapshot_rect.x + 4, content_y, snapshot_rect.width - 8, 0),
+                        resolve_link_label=self._resolve_wiki_link_label,
+                    )
+                    content_h = max(24, measured_h)
+                    content_rect = pygame.Rect(
+                        snapshot_rect.x + 3,
+                        content_y,
+                        snapshot_rect.width - 6,
+                        content_h,
+                    )
+                    CardWikiRenderer.draw_content(
+                        screen,
+                        font,
+                        content_rect,
+                        block.get("wiki_entry", ""),
+                        is_editing=bool(snapshot_editing and block.get("active")),
+                        resolve_link_label=self._resolve_wiki_link_label,
+                        resolve_link_color=self._resolve_wiki_link_color,
+                        resolve_link_palette=self._resolve_wiki_link_palette,
+                        section_colors=self._wiki_field_colors(),
+                        cursor_index=card.get("edit_cursor", 0),
+                        scroll_y=0,
+                        selection_range=self._edit_selection_range(card),
+                    )
+                    block_y = content_rect.bottom + 8
+            finally:
+                screen.set_clip(previous_clip)
 
         if card.get("wiki_link_picker_open", False):
             self._draw_wiki_link_picker(screen, font, card, general_rect)

@@ -1,5 +1,8 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
+
+import pygame
 
 from ui.card import EntityCard
 from ui.knowledge_browser_ui import KnowledgeBrowserUI
@@ -94,6 +97,32 @@ class TemporalFilteringTests(unittest.TestCase):
 
         self.assertEqual("Start: started / End: ended", items["commented"]["commentary"])
 
+    def test_year_bound_wiki_entries_do_not_duplicate_repository_timeline_entity(self):
+        loader = DummyLoader()
+        loader.entities["faction"] = {
+            "id": "faction",
+            "type": "faction",
+            "pretty_name": "Geigengeist Group",
+            "start_year": 8435,
+            "end_year": 8694,
+            "snapshot_year": 8445,
+            "timeline_snapshots": [
+                {"start_year": 8440, "end_year": 8440, "wiki_entry": "First."},
+                {"start_year": 8445, "end_year": 8445, "wiki_entry": "Second."},
+            ],
+        }
+        model = WorldModel.__new__(WorldModel)
+        model.loader = loader
+        model.yearer = Yearer(loader)
+
+        faction_items = [
+            item for item in model.get_timeline_items()
+            if item.get("entity_id") == "faction"
+        ]
+
+        self.assertEqual(1, len(faction_items))
+        self.assertEqual((8435, 8694), (faction_items[0]["start_year"], faction_items[0]["end_year"]))
+
     def test_card_years_do_not_fallback_to_zero_when_start_year_is_missing(self):
         ui = KnowledgeBrowserUI()
         card = {
@@ -129,6 +158,69 @@ class TemporalFilteringTests(unittest.TestCase):
 
         self.assertEqual([0], card["years"])
         self.assertEqual(0, card["selected_year"])
+
+    def test_card_snapshot_chip_sets_repository_working_year(self):
+        ui = KnowledgeBrowserUI()
+        ui.cards = [{"active_timeline_snapshot_range": (10, 10)}]
+        ui._refresh_timeline_items = lambda: None
+
+        self.assertTrue(ui._set_working_year_from_card_snapshot(8440, 8440))
+
+        self.assertEqual((8440, 8440), ui.timeline_ui.get_working_year_range())
+        self.assertEqual((8440, 8440), ui.cards[0]["working_year_range"])
+        self.assertNotIn("active_timeline_snapshot_range", ui.cards[0])
+
+    def test_card_random_year_selects_inclusive_lifespan_and_working_year(self):
+        ui = KnowledgeBrowserUI()
+        entity = {
+            "id": "faction",
+            "type": "faction",
+            "start_year": 8435,
+            "end_year": 8694,
+        }
+        card = {
+            "entity_id": "faction",
+            "card_view": SimpleNamespace(entity=entity),
+            "selected_year": 8435,
+        }
+        ui.cards = [card]
+        ui._refresh_timeline_items = lambda: None
+
+        with patch("ui.knowledge_browser_ui.random.randint", return_value=8440) as choose:
+            selected_year = ui._set_random_working_year_from_card(card)
+
+        choose.assert_called_once_with(8435, 8694)
+        self.assertEqual(8440, selected_year)
+        self.assertEqual(8440, card["selected_year"])
+        self.assertEqual((8440, 8440), card["active_timeline_snapshot_range"])
+        self.assertEqual((8440, 8440), ui.timeline_ui.get_working_year_range())
+
+    def test_card_random_year_button_click_uses_card_lifespan(self):
+        ui = KnowledgeBrowserUI()
+        entity = {
+            "id": "faction",
+            "type": "faction",
+            "start_year": 8435,
+            "end_year": 8694,
+        }
+        card = {
+            "entity_id": "faction",
+            "card_view": EntityCard(entity, dataset_name="factions"),
+            "random_year_rect": pygame.Rect(50, 50, 24, 20),
+        }
+        ui.cards = [card]
+        ui._refresh_timeline_items = lambda: None
+        ui._layout_all_cards = lambda: None
+
+        with patch("ui.knowledge_browser_ui.random.randint", return_value=8500):
+            result = ui._handle_card_canvas_click(
+                card["random_year_rect"].center,
+                pygame.Rect(0, 0, 500, 500),
+            )
+
+        self.assertEqual("__ui_consumed__", result)
+        self.assertEqual(8500, card["selected_year"])
+        self.assertEqual((8500, 8500), ui.timeline_ui.get_working_year_range())
 
     def test_postmodernist_period_starts_in_2000(self):
         postmodernist = next(

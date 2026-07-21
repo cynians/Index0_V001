@@ -22,6 +22,41 @@ def _wrapped_distance(ax, ay, bx, by):
     return math.hypot(dx, dy)
 
 
+def _rotate_spherical_point(nx, ny, pole_longitude_deg, pole_latitude_deg, angle_deg):
+    longitude = float(nx) * math.tau - math.pi
+    latitude = (0.5 - float(ny)) * math.pi
+    vector = [math.cos(latitude) * math.cos(longitude), math.cos(latitude) * math.sin(longitude), math.sin(latitude)]
+    pole_lon = math.radians(float(pole_longitude_deg))
+    pole_lat = math.radians(float(pole_latitude_deg))
+    pole = [math.cos(pole_lat) * math.cos(pole_lon), math.cos(pole_lat) * math.sin(pole_lon), math.sin(pole_lat)]
+    angle = math.radians(float(angle_deg))
+    cos_angle, sin_angle = math.cos(angle), math.sin(angle)
+    dot = sum(vector[index] * pole[index] for index in range(3))
+    cross = [
+        pole[1] * vector[2] - pole[2] * vector[1],
+        pole[2] * vector[0] - pole[0] * vector[2],
+        pole[0] * vector[1] - pole[1] * vector[0],
+    ]
+    rotated = [
+        vector[index] * cos_angle + cross[index] * sin_angle + pole[index] * dot * (1.0 - cos_angle)
+        for index in range(3)
+    ]
+    new_lon = math.atan2(rotated[1], rotated[0])
+    new_lat = math.asin(_clamp(rotated[2], -1.0, 1.0))
+    return ((new_lon + math.pi) / math.tau) % 1.0, _clamp(0.5 - new_lat / math.pi, 0.0, 1.0)
+
+
+def _element_abundance(seed, symbol):
+    composition = seed.get("crust_composition") if isinstance(seed, dict) else {}
+    composition = composition if isinstance(composition, dict) else {}
+    total = 0.0
+    for group in ("major_elements", "trace_elements"):
+        for item in composition.get(group) or []:
+            if isinstance(item, dict) and item.get("symbol") == symbol:
+                total += float(item.get("abundance_percent", 0.0) or 0.0)
+    return total
+
+
 def _mantle_current_at(nx, ny, cell_count=3, map_seed=""):
     vx = 0.0
     vy = 0.0
@@ -74,15 +109,74 @@ def _continent_seed_signal(nx, ny, map_seed=""):
     )
 
 
+def _plate_distance(nx, ny, plate):
+    """Distance in a seeded, anisotropic plate metric with lobed margins."""
+    dx = _wrapped_delta(nx, float(plate.get("center_x", 0.0) or 0.0))
+    dy = float(ny) - float(plate.get("center_y", 0.5) or 0.5)
+    shape = plate.get("boundary_shape") if isinstance(plate.get("boundary_shape"), dict) else {}
+    orientation = float(shape.get("orientation_rad", 0.0) or 0.0)
+    axis_ratio = _clamp(shape.get("axis_ratio", 1.0), 0.72, 1.38)
+    cos_angle = math.cos(orientation)
+    sin_angle = math.sin(orientation)
+    rx = dx * cos_angle - dy * sin_angle
+    ry = dx * sin_angle + dy * cos_angle
+    rx /= axis_ratio
+    ry *= axis_ratio
+    angle = math.atan2(ry, rx)
+    lobe_scale = 1.0
+    lobe_scale += float(shape.get("lobe_a_amplitude", 0.0) or 0.0) * math.sin(
+        angle * int(shape.get("lobe_a_frequency", 3) or 3)
+        + float(shape.get("lobe_a_phase", 0.0) or 0.0)
+    )
+    lobe_scale += float(shape.get("lobe_b_amplitude", 0.0) or 0.0) * math.sin(
+        angle * int(shape.get("lobe_b_frequency", 5) or 5)
+        + float(shape.get("lobe_b_phase", 0.0) or 0.0)
+    )
+    return math.hypot(rx, ry) / max(0.68, lobe_scale)
+
+
 def _nearest_plate_index(nx, ny, plates):
     best_index = 0
     best_distance = 999.0
     for index, plate in enumerate(plates):
-        distance = _wrapped_distance(nx, ny, plate["center_x"], plate["center_y"])
+        distance = _plate_distance(nx, ny, plate)
         if distance < best_distance:
             best_distance = distance
             best_index = index
     return best_index
+
+
+def _plate_area_fractions(plates, sample_width=96, sample_height=48):
+    """Estimate spherical Voronoi areas so plate roles are area-stable."""
+    areas = [0.0 for _ in plates]
+    total = 0.0
+    for row in range(sample_height):
+        ny = (row + 0.5) / sample_height
+        latitude_weight = math.sin(math.pi * ny)
+        for col in range(sample_width):
+            nx = (col + 0.5) / sample_width
+            areas[_nearest_plate_index(nx, ny, plates)] += latitude_weight
+            total += latitude_weight
+    if total <= 0.0:
+        return [1.0 / max(1, len(plates)) for _ in plates]
+    return [area / total for area in areas]
+
+
+def _take_ranked_area(candidates, target_fraction):
+    """Take ranked plates until their spherical area best matches a target."""
+    selected = []
+    selected_area = 0.0
+    for plate in candidates:
+        if selected and selected_area >= target_fraction:
+            break
+        selected.append(plate)
+        selected_area += float(plate.get("area_fraction", 0.0) or 0.0)
+    if len(selected) > 1:
+        last_area = float(selected[-1].get("area_fraction", 0.0) or 0.0)
+        without_last = selected_area - last_area
+        if abs(without_last - target_fraction) < abs(selected_area - target_fraction):
+            selected.pop()
+    return selected
 
 
 def _boundary_kind(plate_a, plate_b):
@@ -106,6 +200,346 @@ def _boundary_kind(plate_a, plate_b):
     return "passive"
 
 
+def _segment_kinematics(segment, plates_by_id):
+    plate_a = plates_by_id.get(segment.get("plate_a")) or {}
+    plate_b = plates_by_id.get(segment.get("plate_b")) or {}
+    nx = float(segment.get("normal_x", 0.0) or 0.0)
+    ny = float(segment.get("normal_y", 0.0) or 0.0)
+    normal_length = math.hypot(nx, ny) or 1.0
+    nx, ny = nx / normal_length, ny / normal_length
+    rel_vx = float(plate_b.get("velocity_x_cm_year", 0.0) or 0.0) - float(plate_a.get("velocity_x_cm_year", 0.0) or 0.0)
+    rel_vy = float(plate_b.get("velocity_y_cm_year", 0.0) or 0.0) - float(plate_a.get("velocity_y_cm_year", 0.0) or 0.0)
+    normal_motion = rel_vx * nx + rel_vy * ny
+    shear_motion = rel_vx * -ny + rel_vy * nx
+    if normal_motion < -0.48:
+        kind = "subduction" if "oceanic" in {plate_a.get("plate_type"), plate_b.get("plate_type")} else "collision"
+    elif normal_motion > 0.42:
+        kind = "divergent"
+    elif abs(shear_motion) > 0.58:
+        kind = "transform"
+    else:
+        kind = "passive"
+    subducting = None
+    overriding = None
+    if kind == "subduction":
+        density_rank = {"oceanic": 3, "mixed": 2, "continental": 1}
+        if density_rank.get(plate_a.get("plate_type"), 2) >= density_rank.get(plate_b.get("plate_type"), 2):
+            subducting, overriding = plate_a.get("id"), plate_b.get("id")
+        else:
+            subducting, overriding = plate_b.get("id"), plate_a.get("id")
+    relative_speed = math.hypot(rel_vx, rel_vy)
+    obliquity = math.degrees(math.atan2(abs(shear_motion), max(1e-6, abs(normal_motion))))
+    return {
+        "kind": kind,
+        "normal_x": round(nx, 4),
+        "normal_y": round(ny, 4),
+        "normal_velocity_cm_year": round(normal_motion, 3),
+        "shear_velocity_cm_year": round(shear_motion, 3),
+        "relative_speed_cm_year": round(relative_speed, 3),
+        "obliquity_deg": round(obliquity, 1),
+        "subducting_plate": subducting,
+        "overriding_plate": overriding,
+    }
+
+
+def _topology_and_lithosphere(owner_rows, plates, boundary_segments, map_seed):
+    height = len(owner_rows)
+    width = len(owner_rows[0]) if height else 0
+    neighbours = {plate["id"]: set() for plate in plates}
+    for segment in boundary_segments:
+        a, b = segment.get("plate_a"), segment.get("plate_b")
+        if a in neighbours and b in neighbours:
+            neighbours[a].add(b)
+            neighbours[b].add(a)
+    triple_junctions = []
+    for y in range(max(0, height - 1)):
+        for x in range(max(0, width - 1)):
+            owners = {
+                owner_rows[y][x], owner_rows[y][x + 1],
+                owner_rows[y + 1][x], owner_rows[y + 1][x + 1],
+            }
+            if len(owners) >= 3:
+                triple_junctions.append({
+                    "x": round((x + 0.5) / max(1, width - 1), 4),
+                    "y": round((y + 0.5) / max(1, height - 1), 4),
+                    "plates": [plates[index]["id"] for index in sorted(owners)],
+                    "junction_type": "ridge_ridge_transform_or_mixed",
+                })
+
+    ridge_cells = set()
+    for segment in boundary_segments:
+        if segment.get("kind") != "divergent":
+            continue
+        x = int(round(((float(segment["x1"]) + float(segment["x2"])) * 0.5) * max(1, width - 1)))
+        y = int(round(((float(segment["y1"]) + float(segment["y2"])) * 0.5) * max(1, height - 1)))
+        ridge_cells.add((x % max(1, width), max(0, min(height - 1, y))))
+    distance_rows = [[999.0 for _x in range(width)] for _y in range(height)]
+    frontier = []
+    for x, y in ridge_cells:
+        distance_rows[y][x] = 0
+        frontier.append((x, y))
+    # Chamfer distance from active ridges approximates seafloor spreading age.
+    # Eight directions avoid the square/Manhattan bands produced by a cardinal
+    # flood fill while retaining the wrapped spherical map seam.
+    for _pass in range(max(width, height)):
+        changed = False
+        for y in range(height):
+            for x in range(width):
+                current = distance_rows[y][x]
+                for dx, dy, cost in (
+                    (-1, 0, 1.0), (1, 0, 1.0), (0, -1, 1.0), (0, 1, 1.0),
+                    (-1, -1, math.sqrt(2.0)), (1, -1, math.sqrt(2.0)),
+                    (-1, 1, math.sqrt(2.0)), (1, 1, math.sqrt(2.0)),
+                ):
+                    neighbour_y = y + dy
+                    if neighbour_y < 0 or neighbour_y >= height:
+                        continue
+                    candidate = distance_rows[neighbour_y][(x + dx) % width] + cost
+                    if candidate + 1e-6 < current:
+                        current = candidate
+                if current + 1e-6 < distance_rows[y][x]:
+                    distance_rows[y][x] = current
+                    changed = True
+        if not changed:
+            break
+    age_rows = []
+    crust_rows = []
+    continental_fraction_rows = []
+    for y, owner_row in enumerate(owner_rows):
+        age_row = []
+        crust_row = []
+        continental_fraction_row = []
+        for x, owner in enumerate(owner_row):
+            plate = plates[owner]
+            plate_type = plate.get("plate_type", "mixed")
+            if plate_type == "continental":
+                crust_type = "continental"
+                continental_fraction = 1.0
+                age = seed_range(map_seed, f"craton_age:{plate['id']}", 650.0, 3200.0)
+            elif plate_type == "oceanic":
+                crust_type = "oceanic"
+                continental_fraction = 0.0
+                age = min(220.0, distance_rows[y][x] * seed_range(map_seed, "ocean_age_cell_myr", 2.4, 4.2))
+            else:
+                # Mixed plates carry coherent terranes.  A former block-hash
+                # implementation made every 6x6 sample province a visible
+                # rectangle in elevation, climate, and material maps.
+                nx = x / max(1, width - 1)
+                ny = y / max(1, height - 1)
+                phase_a = seed_range(map_seed, f"mixed_crust:{plate['id']}:phase_a", 0.0, math.tau)
+                phase_b = seed_range(map_seed, f"mixed_crust:{plate['id']}:phase_b", 0.0, math.tau)
+                province = (
+                    0.52
+                    + 0.27 * math.sin(math.tau * (nx * 2.3 + ny * 1.1) + phase_a)
+                    + 0.18 * math.cos(math.tau * (nx * 4.7 - ny * 2.4) + phase_b)
+                    + 0.10 * _continent_seed_signal(nx, ny, f"{map_seed}:{plate['id']}:terrane")
+                )
+                continental_fraction = _clamp((province - 0.48) / 0.30, 0.0, 1.0)
+                continental_fraction = continental_fraction * continental_fraction * (3.0 - 2.0 * continental_fraction)
+                crust_type = "continental_fragment" if continental_fraction >= 0.5 else "oceanic"
+                age = (
+                    seed_range(map_seed, f"fragment_age:{plate['id']}", 350.0, 1800.0)
+                    if crust_type == "continental_fragment"
+                    else min(220.0, distance_rows[y][x] * 3.2)
+                )
+            crust_row.append(crust_type)
+            continental_fraction_row.append(round(continental_fraction, 4))
+            age_row.append(round(age, 1))
+        crust_rows.append(crust_row)
+        continental_fraction_rows.append(continental_fraction_row)
+        age_rows.append(age_row)
+    return {
+        "plate_topology": {
+            "model": "closed_spherical_partition_v1",
+            "closed_surface": True,
+            "plate_neighbours": {key: sorted(value) for key, value in neighbours.items()},
+            "triple_junctions": triple_junctions,
+        },
+        "lithosphere_grid": {
+            "model": "mixed_crust_and_ocean_floor_age_v1",
+            "width": width,
+            "height": height,
+            "crust_type_rows": crust_rows,
+            "continental_fraction_rows": continental_fraction_rows,
+            "ocean_floor_age_rows_myr": age_rows,
+            "ocean_floor_max_age_myr": 220.0,
+            "ridge_source_count": len(ridge_cells),
+            "thermal_subsidence_rule": "depth_increases_with_sqrt_ocean_floor_age",
+        },
+    }
+
+
+def _hotspot_model(plates, map_seed):
+    hotspot_count = int(round(seed_range(map_seed, "hotspot_count", 2.0, 5.0)))
+    hotspots = []
+    for index in range(hotspot_count):
+        x = seed_range(map_seed, f"hotspot:{index}:x", 0.0, 1.0)
+        y = seed_range(map_seed, f"hotspot:{index}:y", 0.12, 0.88)
+        plate = plates[_nearest_plate_index(x, y, plates)]
+        vx = float(plate.get("velocity_x_cm_year", 0.0) or 0.0)
+        vy = float(plate.get("velocity_y_cm_year", 0.0) or 0.0)
+        track = []
+        for step, age_myr in enumerate((0.0, 12.0, 28.0, 50.0, 78.0, 110.0)):
+            track.append({
+                "age_myr": age_myr,
+                "x": round((x - vx * age_myr * 0.00115) % 1.0, 4),
+                "y": round(_clamp(y - vy * age_myr * 0.00082, 0.04, 0.96), 4),
+                "relative_volume": round(math.exp(-age_myr / seed_range(map_seed, f"hotspot:{index}:decay", 55.0, 105.0)), 3),
+            })
+        hotspots.append({
+            "id": f"hotspot_{index + 1:02d}",
+            "mantle_x": round(x, 4),
+            "mantle_y": round(y, 4),
+            "present_plate": plate["id"],
+            "buoyancy_flux_class": "major" if seed_range(map_seed, f"hotspot:{index}:flux", 0.0, 1.0) > 0.72 else "moderate",
+            "track": track,
+        })
+    return {
+        "model": "mantle_fixed_age_progressive_tracks_v1",
+        "hotspots": hotspots,
+        "large_igneous_province_possible": any(item["buoyancy_flux_class"] == "major" for item in hotspots),
+    }
+
+
+def _continental_province_model(plates, map_seed):
+    cratons, failed_rifts, basins = [], [], []
+    for plate_index, plate in enumerate(plates):
+        if plate.get("plate_type") == "oceanic":
+            continue
+        province_count = 2 if plate.get("plate_type") == "continental" else 1
+        for province_index in range(province_count):
+            key = f"province:{plate['id']}:{province_index}"
+            offset_x = seed_range(map_seed, f"{key}:offset_x", -0.055, 0.055)
+            offset_y = seed_range(map_seed, f"{key}:offset_y", -0.045, 0.045)
+            cratons.append({
+                "id": f"craton_{plate_index + 1:02d}_{province_index + 1:02d}",
+                "plate_id": plate["id"],
+                "center_x": round((float(plate["center_x"]) + offset_x) % 1.0, 4),
+                "center_y": round(_clamp(float(plate["center_y"]) + offset_y, 0.06, 0.94), 4),
+                "width": round(seed_range(map_seed, f"{key}:width", 0.055, 0.135), 4),
+                "height": round(seed_range(map_seed, f"{key}:height", 0.045, 0.110), 4),
+                "crustal_age_myr": round(seed_range(map_seed, f"{key}:age", 900.0, 3600.0), 1),
+                "crust_thickness_km": round(seed_range(map_seed, f"{key}:thickness", 34.0, 52.0), 1),
+                "state": "exposed_shield" if seed_range(map_seed, f"{key}:shield", 0.0, 1.0) > 0.48 else "sediment_covered_craton",
+            })
+        angle = seed_range(map_seed, f"failed_rift:{plate['id']}:angle", 0.0, math.tau)
+        half_length = seed_range(map_seed, f"failed_rift:{plate['id']}:length", 0.055, 0.13)
+        failed_rifts.append({
+            "id": f"failed_rift_{plate_index + 1:02d}",
+            "plate_id": plate["id"],
+            "x1": round((float(plate["center_x"]) - math.cos(angle) * half_length) % 1.0, 4),
+            "y1": round(_clamp(float(plate["center_y"]) - math.sin(angle) * half_length, 0.05, 0.95), 4),
+            "x2": round((float(plate["center_x"]) + math.cos(angle) * half_length) % 1.0, 4),
+            "y2": round(_clamp(float(plate["center_y"]) + math.sin(angle) * half_length, 0.05, 0.95), 4),
+            "subsidence_m": round(seed_range(map_seed, f"failed_rift:{plate['id']}:subsidence", 350.0, 1100.0), 1),
+            "status": "aulacogen_or_inverted_rift",
+        })
+        basins.append({
+            "id": f"intracratonic_basin_{plate_index + 1:02d}",
+            "plate_id": plate["id"],
+            "center_x": round((float(plate["center_x"]) + seed_range(map_seed, f"basin:{plate['id']}:x", -0.08, 0.08)) % 1.0, 4),
+            "center_y": round(_clamp(float(plate["center_y"]) + seed_range(map_seed, f"basin:{plate['id']}:y", -0.07, 0.07), 0.06, 0.94), 4),
+            "radius": round(seed_range(map_seed, f"basin:{plate['id']}:radius", 0.035, 0.095), 4),
+            "sediment_capacity_m": round(seed_range(map_seed, f"basin:{plate['id']}:capacity", 1200.0, 6500.0), 1),
+        })
+    return {
+        "model": "craton_shield_failed_rift_basin_v1",
+        "cratons": cratons,
+        "failed_rifts": failed_rifts,
+        "intracratonic_basins": basins,
+    }
+
+
+def _latent_geologic_history(plates, terrain, map_seed, boundaries=None):
+    """Reconstruct a seeded pre-present plate history, separate from game time."""
+    canvas = terrain.get("map_canvas") if isinstance(terrain.get("map_canvas"), dict) else {}
+    circumference_m = max(1.0, float(canvas.get("circumference_m", 40_075_000.0) or 40_075_000.0))
+    history_span_myr = seed_range(map_seed, "geologic_history_span_myr", 720.0, 1250.0)
+    snapshot_ages = (history_span_myr, history_span_myr * 0.58, history_span_myr * 0.24, 0.0)
+    snapshots = []
+    positions_by_age = {}
+    for age_myr in snapshot_ages:
+        positions = []
+        for plate in plates:
+            motion = plate.get("motion_model") if isinstance(plate.get("motion_model"), dict) else {}
+            x, y = _rotate_spherical_point(
+                float(plate.get("center_x", 0.0) or 0.0),
+                float(plate.get("center_y", 0.5) or 0.5),
+                motion.get("euler_pole_longitude_deg", 0.0),
+                motion.get("euler_pole_latitude_deg", 90.0),
+                -float(motion.get("angular_velocity_deg_myr", 0.0) or 0.0) * age_myr,
+            )
+            y = _clamp(y, 0.05, 0.95)
+            positions.append({"plate_id": plate["id"], "center_x": round(x, 4), "center_y": round(y, 4)})
+        positions_by_age[round(age_myr, 3)] = positions
+        snapshots.append({"age_before_present_myr": round(age_myr, 1), "plates": positions})
+
+    oldest = positions_by_age[round(snapshot_ages[0], 3)]
+    present = positions_by_age[0.0]
+    oldest_by_id = {item["plate_id"]: item for item in oldest}
+    present_by_id = {item["plate_id"]: item for item in present}
+    events = []
+    for first_index, first in enumerate(plates):
+        for second in plates[first_index + 1:]:
+            old_a, old_b = oldest_by_id[first["id"]], oldest_by_id[second["id"]]
+            now_a, now_b = present_by_id[first["id"]], present_by_id[second["id"]]
+            old_distance = _wrapped_distance(old_a["center_x"], old_a["center_y"], old_b["center_x"], old_b["center_y"])
+            present_distance = _wrapped_distance(now_a["center_x"], now_a["center_y"], now_b["center_x"], now_b["center_y"])
+            if old_distance < 0.18 and present_distance > old_distance + 0.08:
+                kind = "continental_rifting"
+            elif present_distance < 0.18 and old_distance > present_distance + 0.07:
+                kind = "terrane_accretion_or_collision"
+            else:
+                continue
+            events.append({
+                "kind": kind,
+                "plate_a": first["id"],
+                "plate_b": second["id"],
+                "old_distance": round(old_distance, 3),
+                "present_distance": round(present_distance, 3),
+            })
+    continental_ids = [plate["id"] for plate in plates if plate.get("plate_type") == "continental"]
+    if len(continental_ids) >= 2:
+        events.extend([
+            {
+                "kind": "supercontinent_assembly",
+                "age_before_present_myr": round(history_span_myr * seed_range(map_seed, "history:assembly_age", 0.55, 0.82), 1),
+                "participants": continental_ids,
+            },
+            {
+                "kind": "supercontinent_rifting_and_breakup",
+                "age_before_present_myr": round(history_span_myr * seed_range(map_seed, "history:breakup_age", 0.24, 0.48), 1),
+                "participants": continental_ids,
+            },
+        ])
+    for index, boundary in enumerate(boundaries or []):
+        kind = boundary.get("kind")
+        event_kind = {
+            "divergent": "ocean_basin_opening_and_passive_margin_birth",
+            "subduction": "subduction_arc_and_terrane_accretion",
+            "collision": "continental_suture_and_orogeny",
+            "transform": "transform_reorganization_and_pull_apart_basins",
+        }.get(kind)
+        if event_kind:
+            events.append({
+                "kind": event_kind,
+                "age_before_present_myr": round(seed_range(map_seed, f"history:boundary:{index}:age", 18.0, min(420.0, history_span_myr * 0.55)), 1),
+                "plate_a": boundary.get("plate_a"),
+                "plate_b": boundary.get("plate_b"),
+                "activity": boundary.get("activity"),
+            })
+    events.sort(key=lambda item: float(item.get("age_before_present_myr", history_span_myr) or 0.0), reverse=True)
+    return {
+        "model_version": "eventful-prepresent-plate-history-v2",
+        "time_domain": "pre_generation_geologic_history",
+        "registry_time_coupled": False,
+        "history_span_myr": round(history_span_myr, 1),
+        "snapshots": snapshots,
+        "events": events,
+        "purpose": "causal_scaffold_for_continents_margins_basins_and_orogens",
+    }
+
+
 def derive_tectonic_model(terrain, seed=None, physics=None, planet_id=""):
     terrain = terrain if isinstance(terrain, dict) else {}
     tectonics = terrain.get("tectonics") if isinstance(terrain.get("tectonics"), dict) else {}
@@ -113,31 +547,85 @@ def derive_tectonic_model(terrain, seed=None, physics=None, planet_id=""):
     map_seed = terrain.get("map_seed") or resolved_map_seed(seed, planet_id=planet_id)
     requested_count = int(tectonics.get("plate_count", 8) or 8)
     plate_count = max(3, min(18, requested_count))
-    ocean_fraction = _clamp(hydrology.get("target_ocean_fraction", 0.45), 0.0, 0.92)
+    water_inventory = _clamp(hydrology.get("water_inventory_index", 0.35), 0.0, 1.0)
+    # Plate composition precedes the final coastline. Use volatile-enabled
+    # differentiation as a weak lithosphere prior, never the resolved or
+    # requested ocean coverage (which would reverse the causal direction).
+    expected_oceanic_lithosphere = _clamp(0.42 + water_inventory * 0.25, 0.34, 0.72)
+    felsic_inventory = sum(_element_abundance(seed or {}, symbol) for symbol in ("Si", "Al", "Na", "K"))
+    continental_crust_potential = _clamp((felsic_inventory - 20.0) / 38.0, 0.0, 1.0)
 
     plates = []
     for index, (center_x, center_y) in enumerate(_plate_centers(plate_count, map_seed=map_seed)):
         current = _mantle_current_at(center_x, center_y, map_seed=map_seed)
         continentality = _continent_seed_signal(center_x, center_y, map_seed=map_seed)
-        continentality += (0.5 - ocean_fraction) * 0.65
+        continentality += (0.5 - expected_oceanic_lithosphere) * 0.65
         continentality += seed_range(map_seed, f"plate_{index}_continentality_jitter", -0.22, 0.22)
-        if continentality > 0.18:
-            plate_type = "continental"
-        elif continentality < -0.18:
-            plate_type = "oceanic"
-        else:
-            plate_type = "mixed"
         speed = current["speed_cm_per_year"]
         plates.append({
             "id": f"plate_{index + 1:02d}",
             "center_x": round(center_x, 4),
             "center_y": round(center_y, 4),
-            "plate_type": plate_type,
+            "plate_type": "mixed",
             "continentality": round(_clamp((continentality + 1.4) / 2.8, 0.0, 1.0), 3),
+            "_continentality_score": continentality,
+            "boundary_shape": {
+                "model": "anisotropic_lobed_plate_metric_v1",
+                "orientation_rad": round(seed_range(map_seed, f"plate_{index}_shape_orientation", 0.0, math.tau), 5),
+                "axis_ratio": round(seed_range(map_seed, f"plate_{index}_shape_axis", 0.78, 1.28), 4),
+                "lobe_a_frequency": int(round(seed_range(map_seed, f"plate_{index}_shape_freq_a", 2.0, 4.0))),
+                "lobe_a_amplitude": round(seed_range(map_seed, f"plate_{index}_shape_amp_a", 0.10, 0.22), 4),
+                "lobe_a_phase": round(seed_range(map_seed, f"plate_{index}_shape_phase_a", 0.0, math.tau), 5),
+                "lobe_b_frequency": int(round(seed_range(map_seed, f"plate_{index}_shape_freq_b", 5.0, 8.0))),
+                "lobe_b_amplitude": round(seed_range(map_seed, f"plate_{index}_shape_amp_b", 0.04, 0.11), 4),
+                "lobe_b_phase": round(seed_range(map_seed, f"plate_{index}_shape_phase_b", 0.0, math.tau), 5),
+            },
             "velocity_x_cm_year": round(current["dir_x"] * speed, 3),
             "velocity_y_cm_year": round(current["dir_y"] * speed, 3),
             "speed_cm_per_year": speed,
+            "motion_model": {
+                "type": "spherical_euler_rotation",
+                "euler_pole_longitude_deg": round(seed_range(map_seed, f"plate_{index}_euler_lon", -180.0, 180.0), 2),
+                "euler_pole_latitude_deg": round(seed_range(map_seed, f"plate_{index}_euler_lat", -72.0, 72.0), 2),
+                "angular_velocity_deg_myr": round(seed_range(map_seed, f"plate_{index}_euler_rate", 0.035, 0.22) * (0.55 + speed / 8.5), 4),
+            },
         })
+
+    for plate, area_fraction in zip(plates, _plate_area_fractions(plates)):
+        plate["area_fraction"] = round(area_fraction, 4)
+
+    # Counts are a poor control because polar and equatorial Voronoi plates
+    # can differ greatly in spherical area. Composition sets a broad target
+    # area of differentiated continental crust; seeded plate geometry and
+    # ranking decide which plates carry it. This is still upstream of relief,
+    # sea level and the final coastline.
+    continental_area_target = _clamp(0.30 + continental_crust_potential * 0.16, 0.28, 0.47)
+    oceanic_area_target = _clamp(0.43 + (1.0 - continental_crust_potential) * 0.12, 0.40, 0.56)
+    descending = sorted(plates, key=lambda item: float(item.get("_continentality_score", 0.0)), reverse=True)
+    continental_plates = _take_ranked_area(descending, continental_area_target)
+    continental_ids = {plate["id"] for plate in continental_plates}
+    ascending_remaining = sorted(
+        (plate for plate in plates if plate["id"] not in continental_ids),
+        key=lambda item: float(item.get("_continentality_score", 0.0)),
+    )
+    oceanic_plates = _take_ranked_area(ascending_remaining, oceanic_area_target)
+    oceanic_ids = {plate["id"] for plate in oceanic_plates}
+    if len(continental_ids | oceanic_ids) == plate_count and plate_count >= 3:
+        oceanic_ids.discard(oceanic_plates[-1]["id"])
+
+    for plate in plates:
+        if plate["id"] in continental_ids:
+            plate["plate_type"] = "continental"
+        elif plate["id"] in oceanic_ids:
+            plate["plate_type"] = "oceanic"
+        else:
+            plate["plate_type"] = "mixed"
+        plate.pop("_continentality_score", None)
+
+    continental_count = sum(1 for plate in plates if plate["plate_type"] == "continental")
+    oceanic_count = sum(1 for plate in plates if plate["plate_type"] == "oceanic")
+    continental_area = sum(float(plate.get("area_fraction", 0.0) or 0.0) for plate in plates if plate["plate_type"] == "continental")
+    oceanic_area = sum(float(plate.get("area_fraction", 0.0) or 0.0) for plate in plates if plate["plate_type"] == "oceanic")
 
     currents = []
     for row in range(3):
@@ -151,8 +639,8 @@ def derive_tectonic_model(terrain, seed=None, physics=None, planet_id=""):
                 **current,
             })
 
-    sample_w = 57
-    sample_h = 29
+    sample_w = 97
+    sample_h = 49
     owner_rows = []
     boundary_segments = []
     boundary_pairs = {}
@@ -174,32 +662,64 @@ def derive_tectonic_model(terrain, seed=None, physics=None, planet_id=""):
                 x = (col + 0.5) / max(1, sample_w - 1)
                 y1 = row / max(1, sample_h - 1)
                 y2 = (row + 1) / max(1, sample_h - 1)
-                boundary_segments.append({"x1": x, "y1": y1, "x2": x, "y2": y2, "plate_a": plates[pair[0]]["id"], "plate_b": plates[pair[1]]["id"]})
+                normal_x = 1.0 if pair[0] == a else -1.0
+                boundary_segments.append({"x1": x, "y1": y1, "x2": x, "y2": y2, "plate_a": plates[pair[0]]["id"], "plate_b": plates[pair[1]]["id"], "normal_x": normal_x, "normal_y": 0.0})
                 boundary_pairs[pair] = boundary_pairs.get(pair, 0) + 1
             if south != a:
                 pair = tuple(sorted((a, south)))
                 x1 = col / max(1, sample_w - 1)
                 x2 = (col + 1) / max(1, sample_w - 1)
                 y = (row + 0.5) / max(1, sample_h - 1)
-                boundary_segments.append({"x1": x1, "y1": y, "x2": x2, "y2": y, "plate_a": plates[pair[0]]["id"], "plate_b": plates[pair[1]]["id"]})
+                normal_y = 1.0 if pair[0] == a else -1.0
+                boundary_segments.append({"x1": x1, "y1": y, "x2": x2, "y2": y, "plate_a": plates[pair[0]]["id"], "plate_b": plates[pair[1]]["id"], "normal_x": 0.0, "normal_y": normal_y})
                 boundary_pairs[pair] = boundary_pairs.get(pair, 0) + 1
 
-    boundaries = []
-    boundary_kind_by_pair = {}
-    for (a, b), length in sorted(boundary_pairs.items(), key=lambda item: item[1], reverse=True):
-        kind = _boundary_kind(plates[a], plates[b])
-        boundary_kind_by_pair[tuple(sorted((plates[a]["id"], plates[b]["id"])))] = kind
-        boundaries.append({
-            "plate_a": plates[a]["id"],
-            "plate_b": plates[b]["id"],
-            "kind": kind,
-            "sample_length": length,
-            "activity": round(min(1.0, length / max(1, sample_w)), 3),
-        })
-
+    plates_by_id = {plate["id"]: plate for plate in plates}
     for segment in boundary_segments:
         pair = tuple(sorted((segment.get("plate_a"), segment.get("plate_b"))))
-        segment["kind"] = boundary_kind_by_pair.get(pair, "passive")
+        segment.update(_segment_kinematics(segment, plates_by_id))
+        pair_key = f"{pair[0]}:{pair[1]}"
+        midpoint_x = (float(segment["x1"]) + float(segment["x2"])) * 0.5
+        midpoint_y = (float(segment["y1"]) + float(segment["y2"])) * 0.5
+        activity_phase = seed_range(map_seed, f"boundary:{pair_key}:activity_phase", 0.0, math.tau)
+        activity_frequency = seed_range(map_seed, f"boundary:{pair_key}:activity_frequency", 2.4, 5.8)
+        activity_wave = 0.5 + 0.5 * math.sin(
+            math.tau * activity_frequency * (midpoint_x + midpoint_y * 0.57)
+            + activity_phase
+        )
+        segment["activity_scale"] = round(0.42 + activity_wave * 0.78, 3)
+        segment["influence_width"] = round(
+            seed_range(map_seed, f"boundary:{pair_key}:base_width", 0.018, 0.033)
+            * (0.82 + activity_wave * 0.34),
+            5,
+        )
+
+    boundaries = []
+    segments_by_pair = {}
+    for segment in boundary_segments:
+        pair = tuple(sorted((segment.get("plate_a"), segment.get("plate_b"))))
+        segments_by_pair.setdefault(pair, []).append(segment)
+    for pair, pair_segments in sorted(segments_by_pair.items(), key=lambda item: len(item[1]), reverse=True):
+        kind_counts = {}
+        for segment in pair_segments:
+            kind_counts[segment["kind"]] = kind_counts.get(segment["kind"], 0) + 1
+        dominant_kind = max(kind_counts, key=kind_counts.get)
+        boundaries.append({
+            "plate_a": pair[0],
+            "plate_b": pair[1],
+            "kind": dominant_kind,
+            "segment_kind_counts": kind_counts,
+            "sample_length": len(pair_segments),
+            "activity": round(sum(float(item.get("activity_scale", 1.0)) for item in pair_segments) / len(pair_segments), 3),
+            "mean_normal_velocity_cm_year": round(sum(float(item.get("normal_velocity_cm_year", 0.0)) for item in pair_segments) / len(pair_segments), 3),
+            "mean_shear_velocity_cm_year": round(sum(float(item.get("shear_velocity_cm_year", 0.0)) for item in pair_segments) / len(pair_segments), 3),
+        })
+
+    topology = _topology_and_lithosphere(owner_rows, plates, boundary_segments, map_seed)
+
+    geologic_history = _latent_geologic_history(plates, terrain, map_seed, boundaries=boundaries)
+    hotspot_model = _hotspot_model(plates, map_seed)
+    continental_provinces = _continental_province_model(plates, map_seed)
 
     return {
         "status": "plates_defined",
@@ -207,11 +727,30 @@ def derive_tectonic_model(terrain, seed=None, physics=None, planet_id=""):
         "map_seed": map_seed,
         "age_myr": 0.0,
         "plate_count": plate_count,
+        "lithosphere_prior": {
+            "source": "first_screen_composition_and_volatile_history",
+            "water_inventory_index": round(water_inventory, 4),
+            "felsic_inventory_percent": round(felsic_inventory, 4),
+            "continental_crust_potential": round(continental_crust_potential, 3),
+            "continental_plate_count": continental_count,
+            "oceanic_plate_count": oceanic_count,
+            "continental_lithosphere_area_target": round(continental_area_target, 3),
+            "resolved_continental_plate_area": round(continental_area, 3),
+            "oceanic_lithosphere_area_target": round(oceanic_area_target, 3),
+            "resolved_oceanic_plate_area": round(oceanic_area, 3),
+            "expected_oceanic_lithosphere_fraction": round(expected_oceanic_lithosphere, 3),
+            "uses_final_ocean_coverage": False,
+        },
         "sample_grid": {"width": sample_w, "height": sample_h, "owners": owner_rows},
         "plates": plates,
         "mantle_currents": currents,
         "boundary_segments": boundary_segments,
         "boundaries": boundaries,
+        **topology,
+        "geologic_history": geologic_history,
+        "hotspot_model": hotspot_model,
+        "continental_province_model": continental_provinces,
+        "registry_time_coupled": False,
         "notes": [
             "Plate motion is seeded from mantle current cells before terrain is uplifted.",
             "Advancing tectonics turns convergent boundaries into mountains/trenches and divergent boundaries into ocean basins.",
@@ -264,9 +803,19 @@ def advance_tectonics_model(tectonic_model, terrain, million_years=125.0):
         plates.append(updated)
     if plates:
         advanced["plates"] = plates
+        plates_by_id = {plate["id"]: plate for plate in plates}
+        updated_segments = []
+        for segment in advanced.get("boundary_segments") or []:
+            updated_segment = dict(segment)
+            updated_segment.update(_segment_kinematics(updated_segment, plates_by_id))
+            updated_segments.append(updated_segment)
+        if updated_segments:
+            advanced["boundary_segments"] = updated_segments
     advanced["status"] = "tectonics_advanced"
     advanced["age_myr"] = round(age, 1)
     advanced["geologic_time_step_myr"] = max(1.0, float(million_years or 1.0))
+    advanced["time_domain"] = "pre_generation_geologic_history"
+    advanced["registry_time_coupled"] = False
     time_factor = min(1.0, age / 125.0)
     advanced["surface_effects"] = {
         "orogenic_uplift": round(min(1.0, time_factor * 0.65 + uplift / max(1.0, len(boundaries) * 0.12)), 3),

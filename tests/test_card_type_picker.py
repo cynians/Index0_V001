@@ -1,5 +1,6 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pygame
 
@@ -324,6 +325,40 @@ class CardTypePickerTests(unittest.TestCase):
 
         self.assertTrue(text.endswith("..."))
         self.assertLessEqual(font.size(text)[0], 48)
+
+    def test_template_picker_accepts_fractional_mousewheel_offsets(self):
+        ui = KnowledgeBrowserUI()
+        ui.layout = {"right_rect": pygame.Rect(400, 0, 400, 300)}
+        ui.show_template_picker = True
+        ui.schema_entry_templates = [
+            {"dataset_name": f"dataset_{index}", "label": f"Template {index}"}
+            for index in range(24)
+        ]
+        ui.template_picker_scroll = 1.75
+
+        ui._build_template_picker_hitboxes()
+
+        self.assertIsInstance(ui.template_picker_scroll, int)
+        picker_pos = ui.template_picker_rect.center
+        with patch("pygame.mouse.get_pos", return_value=picker_pos):
+            result = ui._handle_mousewheel_event(
+                SimpleNamespace(y=-0.75),
+                pygame.Rect(0, 0, 10, 10),
+                pygame.Rect(20, 0, 100, 100),
+                ui.layout["right_rect"],
+            )
+
+        self.assertEqual("__ui_consumed__", result)
+        self.assertIsInstance(ui.template_picker_scroll, int)
+
+    def test_ellipsize_helper_respects_ultra_narrow_width(self):
+        pygame.font.init()
+        ui = KnowledgeBrowserUI()
+        font = pygame.font.SysFont("consolas", 14)
+
+        text = ui._ellipsize_text("Deeply nested browser row", font, 1)
+
+        self.assertLessEqual(font.size(text)[0], 1)
 
     def test_card_class_click_opens_template_picker_convert_mode(self):
         ui = KnowledgeBrowserUI()

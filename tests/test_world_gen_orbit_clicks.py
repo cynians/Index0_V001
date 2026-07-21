@@ -135,11 +135,14 @@ class WorldGenOrbitClickTests(unittest.TestCase):
     def test_natural_material_catalog_has_expanded_surface_coverage(self):
         material_ids = {material["id"] for material in NATURAL_MATERIAL_CATALOG}
 
-        self.assertEqual("natural-materials-v2", NATURAL_MATERIAL_CATALOG_VERSION)
-        self.assertGreaterEqual(len(NATURAL_MATERIAL_CATALOG), 48)
+        self.assertEqual("natural-materials-v3", NATURAL_MATERIAL_CATALOG_VERSION)
+        self.assertEqual(78, len(NATURAL_MATERIAL_CATALOG))
         self.assertIn("mat_limestone", material_ids)
         self.assertIn("mat_chalcopyrite", material_ids)
         self.assertIn("mat_water_ice", material_ids)
+        self.assertIn("mat_alluvium", material_ids)
+        self.assertIn("mat_nickel_laterite", material_ids)
+        self.assertIn("mat_eclogite", material_ids)
 
     def test_orbit_draft_preview_skips_planet_surface_derivations(self):
         sim = self._sim()
@@ -1247,6 +1250,21 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         self.assertLessEqual(sum(element["abundance_percent"] for element in sim.crust_composition["trace_elements"]), 1.0)
         self.assertAlmostEqual(MAJOR_CRUST_TARGET_PERCENT, sim._crust_major_total(), places=3)
         self.assertEqual("Generated eccentric seed", sim.commit_status)
+
+    def test_eccentric_randomizer_does_not_duplicate_template_elements(self):
+        sim = self._sim()
+
+        self.assertTrue(sim.randomize_seed(
+            "eccentric",
+            rng=random.Random(12500181283558051139),
+        ))
+
+        self.assertEqual("carbon_rich", sim.active_planet_template)
+        symbols = [
+            element["symbol"]
+            for element in sim.crust_composition["major_elements"]
+        ]
+        self.assertEqual(len(symbols), len(set(symbols)))
 
     def test_seed_randomizer_buttons_apply_mode(self):
         sim = self._sim()

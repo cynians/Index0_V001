@@ -425,9 +425,13 @@ class KnowledgeTemplatePickerMixin:
 
         visible_rows = max(1, (picker_h - header_h - 8) // row_h)
         max_scroll = max(0, self.template_picker_total_rows - visible_rows)
+        try:
+            scroll_index = int(self.template_picker_scroll or 0)
+        except (TypeError, ValueError, OverflowError):
+            scroll_index = 0
         self.template_picker_scroll = max(
             0,
-            min(max_scroll, self.template_picker_scroll),
+            min(max_scroll, scroll_index),
         )
 
         button_y = picker_y + header_h

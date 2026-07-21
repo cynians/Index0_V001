@@ -8,15 +8,16 @@ class KnowledgeBrowserModel:
     def __setattr__(self, name, value):
         setattr(self.host, name, value)
 
-    def _is_expanded(self, entity_id):
-        location_state = self.browser_tree_state.setdefault("locations", {})
-        legacy_state = self.browser_tree_state.get("systems", {})
-        if entity_id in legacy_state and entity_id not in location_state:
-            location_state[entity_id] = legacy_state[entity_id]
-        return location_state.get(entity_id, False)
+    def _is_expanded(self, entity_id, dataset_name="locations"):
+        state = self.browser_tree_state.setdefault(dataset_name, {})
+        if dataset_name == "locations":
+            legacy_state = self.browser_tree_state.get("systems", {})
+            if entity_id in legacy_state and entity_id not in state:
+                state[entity_id] = legacy_state[entity_id]
+        return state.get(entity_id, False)
 
-    def _set_expanded(self, entity_id, expanded):
-        self.browser_tree_state.setdefault("locations", {})[entity_id] = expanded
+    def _set_expanded(self, entity_id, expanded, dataset_name="locations"):
+        self.browser_tree_state.setdefault(dataset_name, {})[entity_id] = expanded
 
     def _browser_dataset_filters(self):
         if self.world_model is None:
@@ -352,6 +353,163 @@ class KnowledgeBrowserModel:
             "expandable": expandable,
             "expanded": expanded,
         }
+
+    def _material_tree_entity_matches(self, entity):
+        return self._matches_browser_filters(entity, "materials")
+
+    def _material_tree_auto_reveal_descendants(self):
+        return bool(self.browser_search_query.strip() or self.browser_filter_incomplete_only)
+
+    def _material_hierarchy_sort_key(self, entity):
+        label = self._entity_display_label(entity, fallback=entity.get("id", "")).lower()
+        return (label, str(entity.get("id", "")))
+
+    def _material_tree_item(self, entity, depth, expandable, expanded):
+        return self._location_tree_item(
+            entity,
+            "materials",
+            depth,
+            expandable,
+            expanded,
+            meta_label=self._entity_class_label("materials", entity),
+        )
+
+    def _build_material_browser_items(self, world_model):
+        """Build the canonical material taxonomy for the repository browser.
+
+        Materials deliberately have one display parent: ``canonical_parent``
+        when present, otherwise the first resolvable ``parents`` relation.
+        Engineering properties remain tags, so the repository stays a readable
+        tree rather than duplicating an alloy under several property branches.
+        """
+        if world_model is None:
+            return []
+
+        material_by_id = {
+            str(entity.get("id")): entity
+            for entity in world_model.get_entities_by_dataset("materials")
+            if isinstance(entity, dict) and entity.get("id")
+        }
+        material_entities = list(material_by_id.values())
+        children_by_parent = {}
+        parent_id_by_child = {}
+
+        def relation_values(value):
+            if value is None:
+                return []
+            if isinstance(value, str):
+                return [value]
+            if isinstance(value, dict):
+                candidate = value.get("id") or value.get("entity_id") or value.get("target")
+                return [candidate] if candidate else []
+            if isinstance(value, (list, tuple, set)):
+                values = []
+                for item in value:
+                    values.extend(relation_values(item))
+                return values
+            return []
+
+        def structural_parent_id(entity):
+            entity_id = str(entity.get("id"))
+            candidates = relation_values(entity.get("canonical_parent"))
+            candidates.extend(relation_values(entity.get("parents")))
+            for parent_id in candidates:
+                parent_id = str(parent_id)
+                if parent_id and parent_id != entity_id and parent_id in material_by_id:
+                    return parent_id
+            return None
+
+        for entity in material_entities:
+            entity_id = str(entity.get("id"))
+            parent_id = structural_parent_id(entity)
+            if parent_id:
+                parent_id_by_child[entity_id] = parent_id
+                children_by_parent.setdefault(parent_id, []).append(entity)
+
+        for parent_id, child_list in children_by_parent.items():
+            unique_children = {str(child.get("id")): child for child in child_list}
+            child_list[:] = sorted(unique_children.values(), key=self._material_hierarchy_sort_key)
+
+        def material_subtree_matches(entity, ancestry=None):
+            ancestry = set(ancestry or ())
+            entity_id = str(entity.get("id"))
+            if not entity_id or entity_id in ancestry:
+                return False
+            ancestry.add(entity_id)
+            if self._material_tree_entity_matches(entity):
+                return True
+            return any(
+                material_subtree_matches(child, ancestry)
+                for child in children_by_parent.get(entity_id, [])
+            )
+
+        auto_reveal = self._material_tree_auto_reveal_descendants()
+        state = self.browser_tree_state.setdefault("materials", {})
+        emitted_ids = set()
+        items = []
+
+        def add_material_subtree(entity, depth, ancestry=None):
+            ancestry = set(ancestry or ())
+            entity_id = str(entity.get("id"))
+            if not entity_id or entity_id in emitted_ids or entity_id in ancestry:
+                return
+            ancestry.add(entity_id)
+
+            children = children_by_parent.get(entity_id, [])
+            descendant_match = any(material_subtree_matches(child) for child in children)
+            if not self._material_tree_entity_matches(entity) and not descendant_match:
+                return
+
+            visible_children = [
+                child for child in children
+                if self._material_tree_entity_matches(child) or material_subtree_matches(child)
+            ]
+            expandable = bool(visible_children)
+            # Show the complete taxonomy on first open.  Once the user toggles
+            # a branch, its explicit state is preserved independently.
+            expanded = state.get(entity_id, expandable)
+            items.append(self._material_tree_item(entity, depth, expandable, expanded))
+            emitted_ids.add(entity_id)
+
+            if expandable and (expanded or (auto_reveal and descendant_match)):
+                for child in visible_children:
+                    add_material_subtree(child, depth + 1, ancestry)
+
+        root_materials = sorted(
+            [
+                entity for entity in material_entities
+                if str(entity.get("id")) not in parent_id_by_child
+            ],
+            key=self._material_hierarchy_sort_key,
+        )
+
+        reachable_ids = set()
+
+        def collect_reachable(entity, ancestry=None):
+            ancestry = set(ancestry or ())
+            entity_id = str(entity.get("id"))
+            if not entity_id or entity_id in ancestry or entity_id in reachable_ids:
+                return
+            ancestry.add(entity_id)
+            reachable_ids.add(entity_id)
+            for child in children_by_parent.get(entity_id, []):
+                collect_reachable(child, ancestry)
+
+        for material_entity in root_materials:
+            collect_reachable(material_entity)
+        for material_entity in root_materials:
+            add_material_subtree(material_entity, 0)
+
+        # Preserve access to malformed or cyclic legacy entries rather than
+        # silently losing them from the repository.
+        for material_entity in sorted(material_entities, key=self._material_hierarchy_sort_key):
+            if (
+                str(material_entity.get("id")) not in reachable_ids
+                and str(material_entity.get("id")) not in emitted_ids
+            ):
+                add_material_subtree(material_entity, 0)
+
+        return items
 
     def _canonical_location_class_key(self, entity):
         if not isinstance(entity, dict):
@@ -711,6 +869,8 @@ class KnowledgeBrowserModel:
             return entity.get("idea_class", entity.get("type", "entity"))
         if dataset_name == "species":
             return entity.get("species_class", entity.get("type", "entity"))
+        if dataset_name == "materials":
+            return entity.get("material_subclass", entity.get("type", "material"))
         if dataset_name == "systems":
             if entity.get("system_role") == "star_system":
                 return entity.get("system_class", entity.get("type", "entity"))
@@ -757,6 +917,17 @@ class KnowledgeBrowserModel:
                 if hide_empty_sections and not dataset_items:
                     continue
                 items.append({"kind": "section", "text": "Locations / Systems"})
+                items.extend(dataset_items)
+                items.append({"kind": "spacer"})
+                continue
+
+            if dataset_name == "materials":
+                if self.browser_filter_dataset not in {"all", "materials"}:
+                    continue
+                dataset_items = self._build_material_browser_items(world_model)
+                if hide_empty_sections and not dataset_items:
+                    continue
+                items.append({"kind": "section", "text": "Materials"})
                 items.extend(dataset_items)
                 items.append({"kind": "spacer"})
                 continue

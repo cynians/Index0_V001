@@ -1,8 +1,11 @@
+import math
+
 from simulations.world_gen.crust import crust_composition_from_seed
+from simulations.world_gen.material_affinities import material_affinity_profile
 from simulations.world_gen.material_catalog import ELEMENT_MATERIAL_CATALOG
 
 
-NATURAL_MATERIAL_CATALOG_VERSION = "natural-materials-v2"
+NATURAL_MATERIAL_CATALOG_VERSION = "natural-materials-v3"
 
 
 NATURAL_MATERIAL_CATALOG = [
@@ -543,6 +546,223 @@ NATURAL_MATERIAL_CATALOG = [
     },
 ]
 
+# Additional common rocks, sediments, regoliths, ores, and metamorphic
+# assemblages.  These remain chemistry candidates here; their actual surface
+# distribution is constrained by the explicit profiles in
+# ``material_affinities.py``.
+NATURAL_MATERIAL_CATALOG.extend([
+    {
+        "id": "mat_obsidian", "name": "Obsidian", "scientific_name": "volcanic glass",
+        "chemical_formula": "silica-rich amorphous volcanic glass", "material_subclass": "rock",
+        "scientific_classification": "igneous rock; volcanic glass",
+        "display_color": [42, 38, 42], "required_element_thresholds": {"O": 20.0, "Si": 9.0},
+        "favorable_planet_tags": ["volcanic_surface", "silica_rich_crust"],
+    },
+    {
+        "id": "mat_pumice", "name": "Pumice", "scientific_name": "vesicular felsic volcanic glass",
+        "chemical_formula": "vesicular silicic glass", "material_subclass": "rock",
+        "scientific_classification": "igneous rock; pyroclastic; highly vesicular",
+        "display_color": [190, 184, 170], "required_element_thresholds": {"O": 20.0, "Si": 9.0},
+        "favorable_planet_tags": ["volcanic_surface", "silica_rich_crust"],
+    },
+    {
+        "id": "mat_scoria", "name": "Scoria", "scientific_name": "mafic scoria",
+        "chemical_formula": "vesicular mafic volcanic rock", "material_subclass": "rock",
+        "scientific_classification": "igneous rock; volcanic; vesicular mafic",
+        "display_color": [92, 54, 44], "required_element_thresholds": {"O": 18.0, "Si": 6.0, "Fe": 1.5},
+        "favorable_planet_tags": ["volcanic_surface", "mafic_crust"],
+    },
+    {
+        "id": "mat_tuff", "name": "Tuff", "scientific_name": "lithified volcanic ash",
+        "chemical_formula": "consolidated pyroclastic material", "material_subclass": "rock",
+        "scientific_classification": "igneous rock; pyroclastic; ash deposit",
+        "display_color": [154, 142, 126], "required_element_thresholds": {"O": 18.0, "Si": 7.0},
+        "favorable_planet_tags": ["volcanic_surface", "weathered_surface"],
+    },
+    {
+        "id": "mat_mudstone", "name": "Mudstone", "scientific_name": "massive mudrock",
+        "chemical_formula": "clay- and silt-rich sedimentary rock", "material_subclass": "rock",
+        "scientific_classification": "sedimentary rock; fine clastic; mudrock",
+        "display_color": [104, 94, 80], "required_element_thresholds": {"O": 18.0, "Si": 6.0, "Al": 1.5},
+        "favorable_planet_tags": ["active_hydrology", "weathered_surface"],
+    },
+    {
+        "id": "mat_chert", "name": "Chert", "scientific_name": "microcrystalline quartz",
+        "chemical_formula": "SiO2", "material_subclass": "rock",
+        "scientific_classification": "sedimentary rock; chemical or biogenic silica",
+        "display_color": [132, 126, 114], "required_element_thresholds": {"O": 20.0, "Si": 10.0},
+        "favorable_planet_tags": ["silica_rich_crust", "active_hydrology"],
+    },
+    {
+        "id": "mat_marl", "name": "Marl", "scientific_name": "calcareous mud",
+        "chemical_formula": "carbonate-clay sediment", "material_subclass": "sediment",
+        "scientific_classification": "sediment; mixed carbonate and clay",
+        "display_color": [176, 174, 150], "required_element_thresholds": {"O": 14.0, "Ca": 1.0, "C": 0.02, "Al": 1.0},
+        "favorable_planet_tags": ["carbonate_favorable", "active_hydrology"],
+    },
+    {
+        "id": "mat_slate", "name": "Slate", "scientific_name": "slate",
+        "chemical_formula": "fine-grained foliated aluminosilicate rock", "material_subclass": "rock",
+        "scientific_classification": "metamorphic rock; low-grade; foliated",
+        "display_color": [78, 84, 88], "required_element_thresholds": {"O": 18.0, "Si": 6.0, "Al": 1.5},
+        "favorable_planet_tags": ["plate_tectonic_surface", "silicate_crust"],
+    },
+    {
+        "id": "mat_quartzite", "name": "Quartzite", "scientific_name": "quartzite",
+        "chemical_formula": "metamorphosed quartz sandstone", "material_subclass": "rock",
+        "scientific_classification": "metamorphic rock; non-foliated; silica-rich",
+        "display_color": [184, 180, 170], "required_element_thresholds": {"O": 20.0, "Si": 10.0},
+        "favorable_planet_tags": ["plate_tectonic_surface", "silica_rich_crust"],
+    },
+    {
+        "id": "mat_loess", "name": "Loess", "scientific_name": "windblown silt",
+        "chemical_formula": "quartz-feldspar silt", "material_subclass": "sediment",
+        "scientific_classification": "unconsolidated sediment; aeolian silt",
+        "display_color": [194, 172, 128], "required_element_thresholds": {"O": 18.0, "Si": 7.0},
+        "favorable_planet_tags": ["aeolian_surface", "weathered_surface"],
+    },
+    {
+        "id": "mat_alluvium", "name": "Alluvium", "scientific_name": "fluvial alluvium",
+        "chemical_formula": "mixed river-transported sediment", "material_subclass": "sediment",
+        "scientific_classification": "unconsolidated sediment; fluvial deposit",
+        "display_color": [158, 138, 104], "required_element_thresholds": {"O": 12.0, "Si": 5.0},
+        "favorable_planet_tags": ["active_hydrology", "weathered_surface"],
+    },
+    {
+        "id": "mat_glacial_till", "name": "Glacial Till", "scientific_name": "diamicton",
+        "chemical_formula": "unsorted glacial sediment", "material_subclass": "sediment",
+        "scientific_classification": "unconsolidated sediment; glacial diamicton",
+        "display_color": [126, 124, 116], "required_element_thresholds": {"O": 12.0, "Si": 5.0},
+        "favorable_planet_tags": ["water_rich_surface", "weathered_surface"],
+    },
+    {
+        "id": "mat_evaporite_crust", "name": "Evaporite Crust", "scientific_name": "mixed saline duricrust",
+        "chemical_formula": "mixed chloride and sulfate salts", "material_subclass": "regolith",
+        "scientific_classification": "chemical sediment; evaporitic surface crust",
+        "display_color": [216, 206, 178], "required_element_thresholds": {"Na": 0.8, "S": 0.01},
+        "favorable_planet_tags": ["evaporite_favorable", "arid_surface"],
+    },
+    {
+        "id": "mat_travertine", "name": "Travertine", "scientific_name": "freshwater carbonate",
+        "chemical_formula": "CaCO3", "material_subclass": "rock",
+        "scientific_classification": "chemical sedimentary rock; spring carbonate",
+        "display_color": [204, 192, 158], "required_element_thresholds": {"O": 12.0, "Ca": 1.0, "C": 0.02},
+        "favorable_planet_tags": ["carbonate_favorable", "active_hydrology", "volcanic_surface"],
+    },
+    {
+        "id": "mat_phosphorite", "name": "Phosphorite", "scientific_name": "phosphate rock",
+        "chemical_formula": "apatite-rich sedimentary rock", "material_subclass": "rock",
+        "scientific_classification": "sedimentary rock; chemical; phosphate-rich",
+        "display_color": [118, 112, 82], "required_element_thresholds": {"O": 12.0, "Ca": 0.8, "P": 0.01},
+        "favorable_planet_tags": ["active_hydrology", "carbonate_favorable"],
+    },
+    {
+        "id": "mat_banded_iron_formation", "name": "Banded Iron Formation", "scientific_name": "banded iron formation",
+        "chemical_formula": "alternating iron oxide and silica", "material_subclass": "rock",
+        "scientific_classification": "chemical sedimentary rock; iron formation",
+        "display_color": [126, 70, 62], "required_element_thresholds": {"O": 14.0, "Fe": 3.0, "Si": 5.0},
+        "favorable_planet_tags": ["iron_rich_crust", "active_hydrology"],
+    },
+    {
+        "id": "mat_goethite", "name": "Goethite", "scientific_name": "goethite",
+        "chemical_formula": "FeO(OH)", "material_subclass": "mineral",
+        "scientific_classification": "oxide-hydroxide mineral; weathering product",
+        "display_color": [138, 92, 44], "required_element_thresholds": {"O": 12.0, "Fe": 1.5},
+        "favorable_planet_tags": ["oxidizing_surface", "weathered_surface", "active_hydrology"],
+    },
+    {
+        "id": "mat_limonite", "name": "Limonite", "scientific_name": "hydrated iron oxide mixture",
+        "chemical_formula": "FeO(OH)*nH2O", "material_subclass": "regolith",
+        "scientific_classification": "weathering residue; hydrated iron oxides",
+        "display_color": [156, 108, 46], "required_element_thresholds": {"O": 12.0, "Fe": 1.5},
+        "favorable_planet_tags": ["oxidizing_surface", "weathered_surface", "active_hydrology"],
+    },
+    {
+        "id": "mat_garnet", "name": "Garnet", "scientific_name": "garnet group",
+        "chemical_formula": "X3Y2(SiO4)3", "material_subclass": "mineral",
+        "scientific_classification": "metamorphic silicate mineral; nesosilicate",
+        "display_color": [118, 48, 54], "required_element_thresholds": {"O": 16.0, "Si": 5.0, "Al": 1.0},
+        "favorable_planet_tags": ["plate_tectonic_surface", "silicate_crust"],
+    },
+    {
+        "id": "mat_zircon", "name": "Zircon", "scientific_name": "zircon",
+        "chemical_formula": "ZrSiO4", "material_subclass": "mineral",
+        "scientific_classification": "accessory silicate mineral; zircon group",
+        "display_color": [150, 116, 76], "required_element_thresholds": {"O": 12.0, "Si": 5.0, "Zr": 0.005},
+        "favorable_planet_tags": ["felsic_crust", "silica_rich_crust"],
+    },
+    {
+        "id": "mat_apatite", "name": "Apatite", "scientific_name": "apatite group",
+        "chemical_formula": "Ca5(PO4)3(F,Cl,OH)", "material_subclass": "mineral",
+        "scientific_classification": "phosphate mineral; apatite group",
+        "display_color": [116, 152, 118], "required_element_thresholds": {"O": 12.0, "Ca": 0.8, "P": 0.01},
+        "favorable_planet_tags": ["silicate_crust", "volcanic_surface"],
+    },
+    {
+        "id": "mat_fluorite", "name": "Fluorite", "scientific_name": "fluorite",
+        "chemical_formula": "CaF2", "material_subclass": "mineral",
+        "scientific_classification": "halide mineral; hydrothermal vein mineral",
+        "display_color": [136, 116, 168], "required_element_thresholds": {"Ca": 0.8, "F": 0.005},
+        "favorable_planet_tags": ["volcanic_surface", "plate_tectonic_surface"],
+    },
+    {
+        "id": "mat_native_sulfur", "name": "Native Sulfur", "scientific_name": "alpha-sulfur",
+        "chemical_formula": "S8", "material_subclass": "mineral",
+        "scientific_classification": "native element; volcanic and evaporitic mineral",
+        "display_color": [224, 194, 54], "required_element_thresholds": {"S": 0.02},
+        "favorable_planet_tags": ["sulfur_bearing_crust", "volcanic_surface", "evaporite_favorable"],
+    },
+    {
+        "id": "mat_nickel_laterite", "name": "Nickel Laterite", "scientific_name": "lateritic nickel ore",
+        "chemical_formula": "Ni-bearing Fe/Mg oxide weathering residue", "material_subclass": "regolith",
+        "scientific_classification": "weathering residue; supergene nickel ore",
+        "display_color": [142, 78, 44], "required_element_thresholds": {"O": 14.0, "Fe": 1.0, "Ni": 0.005},
+        "favorable_planet_tags": ["weathered_surface", "active_hydrology", "ultramafic_tendency"],
+    },
+    {
+        "id": "mat_saprolite", "name": "Saprolite", "scientific_name": "in-situ weathered bedrock",
+        "chemical_formula": "chemically decomposed silicate rock", "material_subclass": "regolith",
+        "scientific_classification": "weathering profile; isovolumetric regolith",
+        "display_color": [160, 132, 94], "required_element_thresholds": {"O": 16.0, "Si": 6.0, "Al": 1.0},
+        "favorable_planet_tags": ["weathered_surface", "active_hydrology"],
+    },
+    {
+        "id": "mat_calcrete", "name": "Calcrete", "scientific_name": "pedogenic carbonate duricrust",
+        "chemical_formula": "CaCO3-cemented regolith", "material_subclass": "regolith",
+        "scientific_classification": "duricrust; pedogenic carbonate accumulation",
+        "display_color": [202, 190, 154], "required_element_thresholds": {"O": 12.0, "Ca": 1.0, "C": 0.02},
+        "favorable_planet_tags": ["carbonate_favorable", "arid_surface", "weathered_surface"],
+    },
+    {
+        "id": "mat_ferricrete", "name": "Ferricrete", "scientific_name": "iron-cemented duricrust",
+        "chemical_formula": "Fe oxide-cemented regolith", "material_subclass": "regolith",
+        "scientific_classification": "duricrust; ferruginous weathering profile",
+        "display_color": [134, 66, 42], "required_element_thresholds": {"O": 12.0, "Fe": 1.5},
+        "favorable_planet_tags": ["oxidizing_surface", "weathered_surface"],
+    },
+    {
+        "id": "mat_zeolite", "name": "Zeolite", "scientific_name": "zeolite group",
+        "chemical_formula": "hydrated aluminosilicate framework", "material_subclass": "mineral",
+        "scientific_classification": "silicate mineral; low-grade alteration product",
+        "display_color": [190, 202, 188], "required_element_thresholds": {"O": 18.0, "Si": 6.0, "Al": 1.5},
+        "favorable_planet_tags": ["hydrated_crust", "volcanic_surface", "active_hydrology"],
+    },
+    {
+        "id": "mat_blueschist", "name": "Blueschist", "scientific_name": "blueschist facies rock",
+        "chemical_formula": "glaucophane-bearing metamorphic rock", "material_subclass": "rock",
+        "scientific_classification": "metamorphic rock; high-pressure low-temperature facies",
+        "display_color": [70, 88, 116], "required_element_thresholds": {"O": 18.0, "Si": 6.0, "Na": 0.8},
+        "favorable_planet_tags": ["plate_tectonic_surface", "hydrated_crust"],
+    },
+    {
+        "id": "mat_eclogite", "name": "Eclogite", "scientific_name": "eclogite",
+        "chemical_formula": "garnet-clinopyroxene metamorphic rock", "material_subclass": "rock",
+        "scientific_classification": "metamorphic rock; high-pressure mafic facies",
+        "display_color": [78, 98, 72], "required_element_thresholds": {"O": 16.0, "Si": 5.0, "Fe": 1.0, "Mg": 0.8},
+        "favorable_planet_tags": ["plate_tectonic_surface", "mafic_crust"],
+    },
+])
+
 
 ATMOSPHERIC_MATERIAL_CATALOG = [
     {
@@ -705,6 +925,111 @@ def material_display_color(material_id, fallback=None):
     return _coerce_color(material.get("display_color"), _coerce_color(material.get("band_color"), _coerce_color(fallback, [142, 142, 136])))
 
 
+# These compact phase data are deliberately conservative.  They decide
+# whether a material can persist as the listed surface phase; the geological
+# heatmap decides where a viable material can accumulate.
+SURFACE_PHASE_PROPERTIES = {
+    "mat_water_ice": {
+        "phase": "water_frost",
+        "molecule": "H2O",
+        "triple_temperature_k": 273.16,
+        "triple_pressure_bar": 0.006117,
+        "sublimation_enthalpy_j_mol": 51_000.0,
+    },
+    "mat_carbon_dioxide_ice": {
+        "phase": "carbon_dioxide_frost",
+        "molecule": "CO2",
+        "triple_temperature_k": 216.58,
+        "triple_pressure_bar": 5.185,
+        "sublimation_enthalpy_j_mol": 25_200.0,
+    },
+    "mat_sulfur_ice": {
+        "phase": "solid_elemental_sulfur",
+        "solid_temperature_max_k": 388.36,
+    },
+}
+PHASE_MODEL_VERSION = "surface-phase-v1"
+GAS_CONSTANT_J_MOL_K = 8.314462618
+
+
+def _atmospheric_partial_pressure_bar(atmosphere, molecule):
+    atmosphere = atmosphere if isinstance(atmosphere, dict) else {}
+    try:
+        total_pressure = max(0.0, float(atmosphere.get("surface_pressure_bar", 0.0) or 0.0))
+    except (TypeError, ValueError):
+        total_pressure = 0.0
+    fraction = 0.0
+    for component in atmosphere.get("composition") or []:
+        if not isinstance(component, dict) or str(component.get("molecule") or "") != str(molecule):
+            continue
+        try:
+            fraction = max(fraction, float(component.get("fraction", 0.0) or 0.0))
+        except (TypeError, ValueError):
+            continue
+    return total_pressure * fraction
+
+
+def material_surface_phase_profile(material_id, atmosphere=None):
+    """Return phase constraints for one material at the world's atmosphere."""
+    material_id = str(material_id or "")
+    property_model = SURFACE_PHASE_PROPERTIES.get(material_id)
+    if not isinstance(property_model, dict):
+        return {
+            "model_version": PHASE_MODEL_VERSION,
+            "material_id": material_id,
+            "phase": "structural_solid",
+            "stability_kind": "solid",
+            "transition_temperature_k": None,
+        }
+
+    profile = dict(property_model)
+    profile.update({"model_version": PHASE_MODEL_VERSION, "material_id": material_id})
+    if "solid_temperature_max_k" in profile:
+        profile["stability_kind"] = "solid_to_liquid"
+        profile["transition_temperature_k"] = float(profile["solid_temperature_max_k"])
+        return profile
+
+    partial_pressure = max(1e-12, _atmospheric_partial_pressure_bar(atmosphere, profile["molecule"]))
+    triple_pressure = max(1e-12, float(profile["triple_pressure_bar"]))
+    triple_temperature = float(profile["triple_temperature_k"])
+    sublimation_enthalpy = max(1.0, float(profile["sublimation_enthalpy_j_mol"]))
+    # Clausius–Clapeyron, anchored at the triple point.  It is an explicit
+    # approximation, suitable for a generator rather than a full EOS.
+    denominator = (
+        1.0 / triple_temperature
+        - GAS_CONSTANT_J_MOL_K / sublimation_enthalpy * math.log(partial_pressure / triple_pressure)
+    )
+    transition = triple_temperature if denominator <= 0.0 else 1.0 / denominator
+    profile.update({
+        "stability_kind": "sublimation",
+        "partial_pressure_bar": partial_pressure,
+        "transition_temperature_k": max(35.0, min(triple_temperature, transition)),
+    })
+    return profile
+
+
+def material_surface_phase_stability(material_id, temperature_k, atmosphere=None, profile=None):
+    """Evaluate whether a material can persist in its named surface phase."""
+    profile = profile if isinstance(profile, dict) else material_surface_phase_profile(material_id, atmosphere=atmosphere)
+    try:
+        temperature_k = float(temperature_k)
+    except (TypeError, ValueError):
+        temperature_k = 0.0
+    transition = profile.get("transition_temperature_k")
+    if transition is None or temperature_k <= 0.0:
+        stability = 1.0
+    else:
+        transition = float(transition)
+        softness = max(2.5, transition * 0.025)
+        stability = max(0.0, min(1.0, 0.5 + (transition - temperature_k) / (softness * 2.0)))
+    return {
+        **profile,
+        "temperature_k": round(temperature_k, 3),
+        "stability": round(stability, 5),
+        "stable": stability >= 0.5,
+    }
+
+
 def _blend_colors(weighted_colors, fallback=(132, 126, 116)):
     total = sum(max(0.0, float(weight or 0.0)) for _color, weight in weighted_colors)
     if total <= 0.0:
@@ -725,11 +1050,112 @@ def _shift_color(color, offset):
     return [max(20, min(245, int(channel + offset))) for channel in color]
 
 
+def _mix_colors(color_a, color_b, weight_b):
+    """Return a bounded RGB mix without leaking palette math into renderers."""
+    color_a = _coerce_color(color_a, [132, 126, 116])
+    color_b = _coerce_color(color_b, [132, 126, 116])
+    weight_b = max(0.0, min(1.0, float(weight_b or 0.0)))
+    return [
+        max(20, min(245, int(round(color_a[index] * (1.0 - weight_b) + color_b[index] * weight_b))))
+        for index in range(3)
+    ]
+
+
+def _surface_phase_candidates(material_model, atmosphere=None):
+    """Choose materials that can control a planet's visible ground colour.
+
+    A composition inference lists every material plausibly present in the
+    crust.  Ore minerals are important for resources but should not turn a
+    sulfur-coated or basaltic world into an average of every trace mineral.
+    Ices, regolith and exposed rocks are therefore treated as surface phases;
+    the returned weight is a visual coverage proxy, not a mass fraction.
+    """
+    atmosphere = atmosphere if isinstance(atmosphere, dict) else {}
+    try:
+        surface_temperature_k = float(
+            atmosphere.get("estimated_surface_temperature_k", atmosphere.get("equilibrium_temperature_k", 0.0)) or 0.0
+        )
+    except (TypeError, ValueError):
+        surface_temperature_k = 0.0
+    class_weights = {
+        "ice": 5.0,
+        "regolith": 1.15,
+        "rock": 2.20,
+        "mineral": 0.42,
+    }
+    candidates = []
+    planetary_phases = material_model.get("planetary_surface_materials")
+    source_materials = (
+        planetary_phases
+        if isinstance(planetary_phases, list) and planetary_phases
+        else material_model.get("likely_materials") or []
+    )
+    for index, item in enumerate(source_materials):
+        if not isinstance(item, dict) or not item.get("material_id"):
+            continue
+        detail_level = int(item.get("minimum_map_detail_level", 0) or 0)
+        if detail_level > 0:
+            continue
+        material_id = str(item["material_id"])
+        catalog_item = MATERIAL_BY_ID.get(material_id, {})
+        material_subclass = str(item.get("material_subclass") or catalog_item.get("material_subclass") or "").lower()
+        class_weight = class_weights.get(material_subclass, 0.25)
+        confidence = max(0.05, float(item.get("confidence", item.get("fraction", 0.0)) or 0.0))
+        evidence_tags = {str(tag) for tag in (item.get("evidence_tags") or [])}
+        surface_evidence = sum(
+            1
+            for tag in evidence_tags
+            if tag.endswith("_surface") or tag in {"airless_regolith", "cratered_regolith", "impact_gardening"}
+        )
+        rank_weight = max(0.45, 1.0 - index * 0.06)
+        visual_weight = confidence * class_weight * (1.0 + min(0.35, surface_evidence * 0.12)) * rank_weight
+        # Deposits and transported regolith can dominate individual basins,
+        # but they must not recolour an entire planet at global resolution.
+        distribution_scale = str(item.get("distribution_scale") or "planetary_province")
+        if distribution_scale != "planetary_province":
+            visual_weight *= 0.18
+        if material_subclass == "regolith" and not evidence_tags.intersection(
+            {"airless_regolith", "cratered_regolith", "impact_gardening"}
+        ):
+            visual_weight *= 0.58
+        phase_stability = material_surface_phase_stability(
+            material_id,
+            surface_temperature_k,
+            atmosphere=atmosphere,
+        )
+        visual_weight *= float(phase_stability["stability"])
+        if visual_weight <= 0.002:
+            continue
+        candidates.append({
+            "material_id": material_id,
+            "name": item.get("name") or catalog_item.get("name") or material_id,
+            "material_subclass": material_subclass or "unknown",
+            "display_color": material_display_color(material_id, item.get("display_color")),
+            "confidence": confidence,
+            "visual_weight": visual_weight,
+            "evidence_tags": sorted(evidence_tags),
+            "phase_stability": phase_stability,
+        })
+
+    # Volatile solids are visually dominant where they persist.  This gives a
+    # cold sulfur world its own yellow, sulfur-frosted identity instead of
+    # blending it into the colours of associated sulphides and ores.
+    ices = [item for item in candidates if item["material_subclass"] == "ice"]
+    if ices:
+        return sorted(ices, key=lambda item: (-item["visual_weight"], item["name"]))[:4]
+
+    exposed = [item for item in candidates if item["material_subclass"] in {"regolith", "rock"}]
+    if exposed:
+        return sorted(exposed, key=lambda item: (-item["visual_weight"], item["name"]))[:4]
+    return sorted(candidates, key=lambda item: (-item["visual_weight"], item["name"]))[:5]
+
+
 def natural_material_entries():
     entries = []
     for material in [*ELEMENT_MATERIAL_CATALOG, *NATURAL_MATERIAL_CATALOG, *ATMOSPHERIC_MATERIAL_CATALOG]:
         is_gas = material["material_subclass"] == "atmospheric_gas"
         is_element = material["material_subclass"] == "element"
+        affinity_profile = material_affinity_profile(material["id"])
         entry = {
             "id": material["id"],
             "_dataset": "materials",
@@ -751,6 +1177,14 @@ def natural_material_entries():
             "required_element_thresholds": dict(material.get("required_element_thresholds") or {}),
             "required_element_groups": list(material.get("required_element_groups") or []),
             "favorable_planet_tags": list(material.get("favorable_planet_tags") or []),
+            "surface_affinity_profile": (
+                {
+                    **affinity_profile,
+                    "weights": dict(affinity_profile.get("weights") or {}),
+                }
+                if affinity_profile is not None
+                else None
+            ),
             "atmosphere_molecule": material.get("atmosphere_molecule"),
             "molar_mass_kg_mol": material.get("molar_mass_kg_mol"),
             "display_color": material_display_color(material["id"]),
@@ -918,6 +1352,8 @@ def derive_planet_material_tags(seed, atmosphere=None, regime=None, terrain=None
         tags.add("airless_regolith")
     if interior.get("volcanic_activity") in {"low", "moderate", "high"}:
         tags.add("volcanic_surface")
+    if interior.get("volcanic_activity") in {"moderate", "high"}:
+        tags.add("active_volcanism")
     if interior.get("tectonic_regime") in {"plate_tectonics", "mobile_lid"}:
         tags.add("plate_tectonic_surface")
     if crust_type_key in {"mafic", "metal-rich"} or "mafic_crust" in tags:
@@ -931,7 +1367,19 @@ def derive_planet_material_tags(seed, atmosphere=None, regime=None, terrain=None
         tags.add("oxidizing_surface")
     if "active_hydrology" in tags and "co2_bearing_atmosphere" in tags and composition.get("Ca", 0.0) >= 1.0:
         tags.add("carbonate_favorable")
-    if composition.get("S", 0.0) >= 0.01 and composition.get("Ca", 0.0) >= 1.0:
+    credible_aqueous_reservoir = (
+        "active_hydrology" in tags
+        or (
+            float(seed.get("water_fraction", 0.0) or 0.0) >= 0.08
+            and str(seed.get("volatile_inventory") or "").strip().lower()
+            not in {"", "none"}
+        )
+    )
+    if (
+        composition.get("S", 0.0) >= 0.01
+        and composition.get("Ca", 0.0) >= 1.0
+        and credible_aqueous_reservoir
+    ):
         tags.add("evaporite_favorable")
     if seed.get("volatile_inventory") in {"dry", "thin"}:
         tags.add("arid_surface")
@@ -983,6 +1431,25 @@ def derive_natural_material_model(crust_composition, planet_tags):
             occurrence = "probable"
         else:
             occurrence = "possible"
+        affinity_profile = material_affinity_profile(material["id"])
+        minimum_detail_level = int(
+            (affinity_profile or {}).get("minimum_map_detail_level", 0) or 0
+        )
+        carbon_rich_foundation = (
+            material.get("id") == "mat_graphite"
+            and elements.get("C", 0.0) >= 8.0
+        )
+        if carbon_rich_foundation:
+            minimum_detail_level = 0
+        elif material.get("material_subclass") == "mineral":
+            minimum_detail_level = max(1, minimum_detail_level)
+        distribution_scale = {
+            0: "planetary_province",
+            1: "macroregional_occurrence",
+            2: "regional_deposit",
+            3: "local_occurrence",
+            4: "site_outcrop",
+        }.get(minimum_detail_level, "local_occurrence")
         candidates.append({
             "material_id": material["id"],
             "name": material["name"],
@@ -992,7 +1459,11 @@ def derive_natural_material_model(crust_composition, planet_tags):
             "display_color": material_display_color(material["id"]),
             "confidence": confidence,
             "occurrence": occurrence,
+            "minimum_map_detail_level": minimum_detail_level,
+            "distribution_scale": distribution_scale,
             "evidence_tags": favorable,
+            "surface_affinity_profile": affinity_profile,
+            "foundational_lithology": carbon_rich_foundation,
         })
 
     candidates.sort(key=lambda item: (-item["confidence"], item["name"]))
@@ -1000,13 +1471,25 @@ def derive_natural_material_model(crust_composition, planet_tags):
         "likely_materials": candidates,
         "element_profile": elements,
     })
+    planetary_materials = [
+        item for item in candidates
+        if int(item.get("minimum_map_detail_level", 0) or 0) == 0
+    ]
+    regional_candidates = [
+        item for item in candidates
+        if int(item.get("minimum_map_detail_level", 0) or 0) > 0
+    ]
     return {
         "status": "inferred",
         "catalog_version": NATURAL_MATERIAL_CATALOG_VERSION,
         "planet_tags": sorted(tag_set),
         "element_profile": elements,
         "likely_materials": candidates,
-        "dominant_materials": [item["material_id"] for item in candidates[:5]],
+        "planetary_surface_materials": planetary_materials,
+        "regional_material_candidates": regional_candidates,
+        "dominant_materials": [
+            item["material_id"] for item in planetary_materials[:5]
+        ],
         "surface_palette": palette,
     }
 
@@ -1015,39 +1498,43 @@ def derive_planet_surface_palette(material_model, atmosphere=None, terrain=None)
     material_model = material_model if isinstance(material_model, dict) else {}
     atmosphere = atmosphere if isinstance(atmosphere, dict) else {}
     terrain = terrain if isinstance(terrain, dict) else {}
-    weighted = []
-    evidence = []
-
-    for index, item in enumerate(material_model.get("likely_materials") or []):
-        if not isinstance(item, dict):
-            continue
-        material_id = item.get("material_id")
-        color = material_display_color(material_id, item.get("display_color"))
-        confidence = max(0.05, float(item.get("confidence", item.get("fraction", 0.0)) or 0.0))
-        rank_weight = max(0.25, 1.0 - index * 0.11)
-        weight = confidence * rank_weight
-        weighted.append((color, weight))
-        evidence.append({
-            "material_id": material_id,
-            "name": item.get("name"),
-            "weight": round(weight, 4),
-            "display_color": color,
-        })
-        if index >= 7:
-            break
+    surface_phases = _surface_phase_candidates(material_model, atmosphere=atmosphere)
+    weighted = [
+        (item["display_color"], item["visual_weight"])
+        for item in surface_phases
+    ]
+    evidence = [
+        {
+            "material_id": item["material_id"],
+            "name": item["name"],
+            "material_subclass": item["material_subclass"],
+            "weight": round(item["visual_weight"], 4),
+            "confidence": round(item["confidence"], 3),
+            "display_color": item["display_color"],
+            "phase": item["phase_stability"].get("phase"),
+            "phase_transition_temperature_k": item["phase_stability"].get("transition_temperature_k"),
+            "phase_stability": item["phase_stability"].get("stability"),
+        }
+        for item in surface_phases
+    ]
 
     element_profile = material_model.get("element_profile") if isinstance(material_model.get("element_profile"), dict) else {}
-    for symbol, abundance in sorted(element_profile.items(), key=lambda row: -float(row[1] or 0.0))[:4]:
-        element_id = f"mat_element_{str(symbol).lower()}"
-        color = material_display_color(element_id)
-        weight = max(0.0, float(abundance or 0.0)) / 100.0 * 0.35
-        weighted.append((color, weight))
-        evidence.append({
-            "material_id": element_id,
-            "name": symbol,
-            "weight": round(weight, 4),
-            "display_color": color,
-        })
+    phase_subclasses = {item["material_subclass"] for item in surface_phases}
+    # Bulk chemistry supplies a useful fallback for ordinary rock worlds, but
+    # it must not wash out a physically distinct surface phase such as sulfur
+    # ice.  That phase has already formed from the bulk composition.
+    if not phase_subclasses.intersection({"ice", "regolith", "rock"}):
+        for symbol, abundance in sorted(element_profile.items(), key=lambda row: -float(row[1] or 0.0))[:4]:
+            element_id = f"mat_element_{str(symbol).lower()}"
+            color = material_display_color(element_id)
+            weight = max(0.0, float(abundance or 0.0)) / 100.0 * 0.35
+            weighted.append((color, weight))
+            evidence.append({
+                "material_id": element_id,
+                "name": symbol,
+                "weight": round(weight, 4),
+                "display_color": color,
+            })
 
     hydrology = terrain.get("hydrology") if isinstance(terrain.get("hydrology"), dict) else {}
     try:
@@ -1056,23 +1543,45 @@ def derive_planet_surface_palette(material_model, atmosphere=None, terrain=None)
     except (TypeError, ValueError):
         ocean_fraction = 0.0
         ice_fraction = 0.0
-    if ocean_fraction > 0.02:
-        weighted.append(([36, 82, 128], min(0.8, ocean_fraction * 1.15)))
+    # Oceans and sea ice have their own renderer layers.  Mixing their colours
+    # into the land palette made every continent converge toward one muddy
+    # global tint.  Only grounded ice modifies the land palette here.
     if ice_fraction > 0.02:
-        weighted.append(([210, 224, 232], min(0.65, ice_fraction * 1.0)))
+        weighted.append(([210, 224, 232], min(0.35, ice_fraction * 0.45)))
 
     if not weighted and isinstance(atmosphere.get("composition"), list):
         atmosphere_palette = atmospheric_band_palette(atmosphere)
         weighted.append((atmosphere_palette.get("base_color", [150, 160, 172]), 1.0))
 
     surface = _blend_colors(weighted)
-    return {
-        "surface_color": surface,
-        "palette": [
+    phase_palette = bool(surface_phases and phase_subclasses.intersection({"ice", "regolith", "rock"}))
+    if phase_palette:
+        # A phase-led palette preserves the terrain's relief while keeping the
+        # material legible at a glance.  Sulfur ice consequently reads as
+        # dark ochre lowlands, sulfur-yellow plains and pale sulfur frost at
+        # altitude rather than a uniformly tan crater field.
+        palette = [
+            _mix_colors(surface, [26, 24, 20], 0.43),
+            surface,
+            _mix_colors(surface, [238, 232, 204], 0.30),
+            _mix_colors(surface, [20, 18, 16], 0.58),
+        ]
+    else:
+        palette = [
             _shift_color(surface, -28),
             surface,
             _shift_color(surface, 24),
             _shift_color(surface, -12),
-        ],
+        ]
+    primary = surface_phases[0] if surface_phases else None
+    return {
+        "palette_version": 3,
+        "selection_scope": "planetary_surface_only",
+        "render_mode": "surface_phase" if phase_palette else "bulk_composition",
+        "surface_color": surface,
+        "palette": palette,
+        "primary_surface_material": primary.get("material_id") if primary else None,
+        "primary_surface_material_name": primary.get("name") if primary else None,
+        "surface_materials": evidence[:4],
         "evidence": evidence[:8],
     }

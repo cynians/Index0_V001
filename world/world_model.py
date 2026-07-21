@@ -3,6 +3,7 @@ import re
 from world.entity_loader import EntityLoader
 from world.dione_reference_models import apply_dione_reference_models
 from world.earth_reference_models import apply_earth_reference_models
+from world.material_reference_models import apply_material_reference_models
 from world.relationship_graph import TouchDegrees
 from world.schema_loader import SchemaLoader
 from world.yearer import Yearer
@@ -215,6 +216,7 @@ class WorldModel:
         )
         apply_earth_reference_models(self.loader)
         apply_dione_reference_models(self.loader)
+        apply_material_reference_models(self.loader)
         # Reuse schemas already decoded by EntityLoader. Parsing the complete
         # ontology a second time is especially costly once generated maps are
         # persisted in the repository.
@@ -406,8 +408,6 @@ class WorldModel:
         for entity_id, entity in self.loader.entities.items():
             start_year = self.yearer.normalize_year(entity.get("start_year"))
             end_year = self.yearer.normalize_year(entity.get("end_year"))
-            snapshot_year = self.yearer.normalize_year(entity.get("snapshot_year"))
-
             dataset_name = entity.get("_dataset", entity.get("type", "entity"))
             if dataset_name == "species" or entity.get("type") == "species":
                 common_name = str(entity.get("common_name") or "").strip()
@@ -419,25 +419,6 @@ class WorldModel:
             else:
                 label = entity.get("pretty_name") or entity.get("name") or entity_id
             card_color = entity.get("card_color", "")
-
-            if snapshot_year is not None:
-                items.append(
-                    {
-                        "entity_id": entity_id,
-                        "label": str(label),
-                        "dataset": dataset_name,
-                        "entity_type": entity.get("type", "entity"),
-                        "start_year": snapshot_year,
-                        "end_year": snapshot_year,
-                        "is_point": True,
-                        "card_color": card_color,
-                        "timeline_kind": "snapshot",
-                        "commentary": "Snapshot",
-                    }
-                )
-
-            for snapshot_item in self._timeline_snapshot_items(entity_id, entity, str(label), dataset_name, card_color):
-                items.append(snapshot_item)
 
             if start_year is None:
                 continue
@@ -524,6 +505,7 @@ class WorldModel:
         self.loader.refresh()
         apply_earth_reference_models(self.loader)
         apply_dione_reference_models(self.loader)
+        apply_material_reference_models(self.loader)
         self.schemas = SchemaLoader(schema_entities=self.loader.get_dataset("schemas"))
         self.touch_degrees.schemas = self.schemas
         self.touch_degrees.refresh()

@@ -1,4 +1,5 @@
 import math
+from pathlib import Path
 
 import pygame
 
@@ -11,6 +12,8 @@ from simulations.world_gen.terrain_seed import (
     PLANETARY_CANVAS_HEIGHT_PX,
     PLANETARY_CANVAS_WIDTH_PX,
 )
+from simulations.world_gen.natural_materials import derive_planet_surface_palette
+from simulations.world_gen.material_heatmaps import load_raster_bundle_surface
 
 
 class WorldGenRenderer:
@@ -24,6 +27,7 @@ class WorldGenRenderer:
         self.app_view = app_view
         self._orbit_path_cache = {}
         self._water_cycle_preview_cache = {}
+        self._material_preview_surface_cache = {}
 
     def _coerce_rgb(self, value, fallback=(122, 176, 232)):
         if isinstance(value, (list, tuple)) and len(value) >= 3:
@@ -41,13 +45,44 @@ class WorldGenRenderer:
             for index in range(3)
         )
 
-    def _surface_palette_colors(self, entity=None, material_model=None):
-        if isinstance(material_model, dict):
-            palette = material_model.get("surface_palette")
+    def _material_preview_surface(self, material_heatmap_model):
+        model = material_heatmap_model if isinstance(material_heatmap_model, dict) else {}
+        layer = model.get("composite_layer") if isinstance(model.get("composite_layer"), dict) else {}
+        bundle_path = layer.get("bundle_path")
+        layer_id = layer.get("bundle_layer_id") or "composite"
+        image_path = layer.get("image_path")
+        cache_key = (id(model), str(bundle_path or image_path or ""), str(layer_id))
+        if not cache_key[1]:
+            return None
+        if cache_key in self._material_preview_surface_cache:
+            return self._material_preview_surface_cache[cache_key]
+        path = Path(cache_key[1])
+        if not path.is_absolute():
+            storage_root = getattr(self.app_view, "storage_root", None)
+            path = Path(storage_root).resolve() / path if storage_root else Path(__file__).resolve().parents[2] / path
+        if bundle_path:
+            surface = load_raster_bundle_surface(path, layer_id)
         else:
-            palette = None
-        if not isinstance(palette, dict) and isinstance(entity, dict):
-            palette = entity.get("surface_palette")
+            try:
+                surface = pygame.image.load(str(path)).convert_alpha()
+            except (OSError, pygame.error):
+                surface = None
+        self._material_preview_surface_cache[cache_key] = surface
+        return surface
+
+    def _surface_palette_colors(self, entity=None, material_model=None):
+        palette = entity.get("surface_palette") if isinstance(entity, dict) else None
+        if not isinstance(palette, dict) and isinstance(material_model, dict):
+            palette = material_model.get("surface_palette")
+        if (
+            isinstance(material_model, dict)
+            and (not isinstance(palette, dict) or int(palette.get("palette_version", 0) or 0) < 3)
+        ):
+            palette = derive_planet_surface_palette(
+                material_model,
+                atmosphere=(entity or {}).get("atmosphere_model"),
+                terrain=(entity or {}).get("terrain_seed_model"),
+            )
         if not isinstance(palette, dict):
             palette = {}
 
@@ -1547,7 +1582,7 @@ class WorldGenRenderer:
         label_surface = font.render(label, True, (164, 204, 238))
         screen.blit(label_surface, (clip_rect.x + 10, clip_rect.y + 10))
 
-    def _draw_heightmap_land_ocean(self, screen, map_rect, clip_rect, heightmap, selected_planet=None, material_model=None):
+    def _draw_heightmap_land_ocean(self, screen, map_rect, clip_rect, heightmap, selected_planet=None, material_model=None, material_heatmap_model=None):
         grid = heightmap.get("sample_grid") if isinstance(heightmap.get("sample_grid"), dict) else {}
         rows = grid.get("rows") if isinstance(grid.get("rows"), list) else []
         sample_h = int(grid.get("height", len(rows)) or len(rows))
@@ -1557,6 +1592,7 @@ class WorldGenRenderer:
         masks = heightmap.get("surface_masks") if isinstance(heightmap.get("surface_masks"), dict) else {}
         ice_rows = masks.get("ice_rows") if isinstance(masks.get("ice_rows"), list) else []
         land_dark, land_mid, land_high, land_shadow = self._surface_palette_colors(selected_planet, material_model)
+        material_surface = self._material_preview_surface(material_heatmap_model)
         ice_low = self._mix_rgb((182, 204, 216), land_mid, 0.14)
         ice_high = self._mix_rgb((232, 242, 246), land_high, 0.10)
         ocean_deep = self._mix_rgb((8, 26, 48), land_shadow, 0.10)
@@ -1571,15 +1607,12 @@ class WorldGenRenderer:
         ocean_span = max(1.0, sea_level - min_elevation)
         cell_cols = max(1, sample_w - 1)
         cell_rows = max(1, sample_h - 1)
-        x_edges = [map_rect.x + int(col_index * map_rect.width / cell_cols) for col_index in range(cell_cols + 1)]
-        y_edges = [map_rect.y + int(row_index * map_rect.height / cell_rows) for row_index in range(cell_rows + 1)]
+        source_surface = pygame.Surface((cell_cols, cell_rows))
 
         previous_clip = screen.get_clip()
         screen.set_clip(clip_rect)
         try:
             for row_index, row in enumerate(rows[:sample_h - 1]):
-                y0 = y_edges[row_index]
-                y1 = y_edges[row_index + 1]
                 for col_index, value in enumerate(row[:sample_w - 1]):
                     try:
                         elevation = float(value)
@@ -1605,15 +1638,28 @@ class WorldGenRenderer:
                             color = self._mix_rgb(land_mid, land_high, (height - 0.45) / 0.37)
                         else:
                             color = self._mix_rgb(land_high, (214, 212, 196), (height - 0.82) / 0.18)
-                    x0 = x_edges[col_index]
-                    x1 = x_edges[col_index + 1]
-                    rect = pygame.Rect(
-                        x0,
-                        y0,
-                        max(1, x1 - x0),
-                        max(1, y1 - y0),
-                    )
-                    pygame.draw.rect(screen, color, rect)
+                    if material_surface is not None:
+                        material_x = min(
+                            material_surface.get_width() - 1,
+                            int((col_index + 0.5) * material_surface.get_width() / cell_cols),
+                        )
+                        material_y = min(
+                            material_surface.get_height() - 1,
+                            int((row_index + 0.5) * material_surface.get_height() / cell_rows),
+                        )
+                        material_color = material_surface.get_at((material_x, material_y))
+                        material_alpha = float(material_color[3] if len(material_color) > 3 else 255) / 255.0
+                        if material_alpha > 0.0:
+                            color = self._mix_rgb(color, material_color[:3], material_alpha * 0.38)
+                    source_surface.set_at((col_index, row_index), color)
+            # Interpolate the scientific sample grid once, as a raster. This
+            # removes staircase coastlines and seams caused by independently
+            # rounded screen rectangles without altering generated truth.
+            scaled_surface = pygame.transform.smoothscale(
+                source_surface,
+                (max(1, map_rect.width), max(1, map_rect.height)),
+            )
+            screen.blit(scaled_surface, map_rect.topleft)
         finally:
             screen.set_clip(previous_clip)
 
@@ -1694,19 +1740,23 @@ class WorldGenRenderer:
             drainage = water_cycle.get("drainage_network_model") if isinstance(water_cycle.get("drainage_network_model"), dict) else {}
             grid_w = max(2, int(climate_grid.get("width", col_count) or col_count))
             grid_h = max(2, int(climate_grid.get("height", row_count) or row_count))
+            lake_cell_width = max(1, int(math.ceil(rect.width / max(1, grid_w - 1))))
+            lake_cell_height = max(1, int(math.ceil(rect.height / max(1, grid_h - 1))))
             for lake in drainage.get("lakes") or []:
                 if not isinstance(lake, dict):
                     continue
-                lake_points = []
                 for cell in lake.get("cells") or []:
                     if not isinstance(cell, (list, tuple)) or len(cell) < 2:
                         continue
-                    lake_points.append((
-                        int(rect.x + float(cell[0]) / max(1, grid_w - 1) * rect.width),
-                        int(rect.y + float(cell[1]) / max(1, grid_h - 1) * rect.height),
-                    ))
-                for point in lake_points:
-                    pygame.draw.circle(screen, (42, 112, 170), point, max(1, int(min(rect.width / grid_w, rect.height / grid_h) * 0.65)))
+                    cell_x = int(rect.x + float(cell[0]) / max(1, grid_w - 1) * rect.width)
+                    cell_y = int(rect.y + float(cell[1]) / max(1, grid_h - 1) * rect.height)
+                    # Fill the represented cell rather than drawing isolated
+                    # dots, so adjacent lake cells read as a continuous basin.
+                    pygame.draw.rect(
+                        screen,
+                        (42, 112, 170),
+                        (cell_x, cell_y, lake_cell_width + 1, lake_cell_height + 1),
+                    )
             for river in water_cycle.get("rivers") or []:
                 if not isinstance(river, dict):
                     continue
@@ -1728,7 +1778,8 @@ class WorldGenRenderer:
                 flow = float(river.get("flow", 0.1) or 0.1)
                 order = max(1, int(river.get("stream_order", 1) or 1))
                 role = str(river.get("network_role") or "feeder")
-                line_width = max(1, min(4, int(round(0.55 + flow * 2.0 + max(0, order - 1) * 0.45))))
+                morphology = river.get("channel_morphology") if isinstance(river.get("channel_morphology"), dict) else {}
+                line_width = max(1, min(3, int(morphology.get("render_width_px", 1) or 1)))
                 color = (92, 180, 232) if role == "feeder" else ((60, 158, 224) if role == "tributary" else (38, 126, 210))
                 for points in segments:
                     if line_width > 1:
@@ -1746,6 +1797,8 @@ class WorldGenRenderer:
 
         selected_planet = payload.get("selected_planet") or {}
         water_cycle = payload.get("water_cycle_model") or {}
+        surface_evolution = payload.get("surface_evolution_model") or {}
+        climate_regulation = payload.get("climate_regulation_model") or {}
         title = (
             f"{self._worldgen_stage_badge(payload)} | World Generation: "
             f"{selected_planet.get('name', selected_planet.get('id', 'Planet'))} Water Cycle"
@@ -1798,6 +1851,31 @@ class WorldGenRenderer:
                 break
 
         y += 8
+        if surface_evolution.get("status") == "surface_evolution_seeded":
+            screen.blit(font.render("Landscape Evolution", True, (232, 238, 246)), (sidebar.x + 12, y))
+            y += 26
+            means = surface_evolution.get("process_means") if isinstance(surface_evolution.get("process_means"), dict) else {}
+            evolution_rows = [
+                ("Dominant", str(surface_evolution.get("dominant_process") or "mixed").replace("_", " ")),
+                ("Fluvial / wind", f"{float(means.get('fluvial', 0.0)):.2f} / {float(means.get('aeolian', 0.0)):.2f}"),
+                ("Sediment", f"{float(means.get('deposition', 0.0)):.2f}"),
+            ]
+            for label, value in evolution_rows:
+                row_rect = pygame.Rect(sidebar.x + 12, y, sidebar.width - 24, 22)
+                y = self._draw_status_row(screen, font, row_rect, label, value)
+            y += 6
+        if climate_regulation.get("status") == "climate_regulation_diagnosed":
+            screen.blit(font.render("Long-term Climate", True, (232, 238, 246)), (sidebar.x + 12, y))
+            y += 26
+            regulation_rows = [
+                ("Carbon balance", str(climate_regulation.get("carbon_balance_tendency") or "unknown").replace("_", " ")),
+                ("Weathering", str(climate_regulation.get("weathering_regime") or "unknown").replace("_", " ")),
+            ]
+            for label, value in regulation_rows:
+                row_rect = pygame.Rect(sidebar.x + 12, y, sidebar.width - 24, 22)
+                y = self._draw_status_row(screen, font, row_rect, label, value)
+            y += 6
+
         if water_cycle.get("river_count"):
             screen.blit(font.render("River Scale", True, (232, 238, 246)), (sidebar.x + 12, y))
             y += 26
@@ -1873,6 +1951,7 @@ class WorldGenRenderer:
         pygame.draw.rect(screen, (10, 13, 18), map_rect)
         screen.set_clip(previous_clip)
         material_model = payload.get("natural_material_model") if isinstance(payload.get("natural_material_model"), dict) else None
+        material_heatmap_model = payload.get("material_heatmap_model") if isinstance(payload.get("material_heatmap_model"), dict) else None
         self._draw_heightmap_land_ocean(
             screen,
             map_rect,
@@ -1880,6 +1959,7 @@ class WorldGenRenderer:
             heightmap,
             selected_planet=selected_planet,
             material_model=material_model,
+            material_heatmap_model=material_heatmap_model,
         )
         previous_clip = screen.get_clip()
         screen.set_clip(preview)

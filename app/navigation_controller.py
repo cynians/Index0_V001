@@ -843,6 +843,11 @@ class NavigationController:
                 getattr(active_sim, "toggle_atmosphere_visibility", lambda: False)()
             )
 
+        if action_id == "toggle_map_height_contours" and active_sim is not None:
+            return bool(
+                getattr(active_sim, "toggle_height_contours_visibility", lambda: False)()
+            )
+
         if action_id == "set_map_material_distribution_item" and active_sim is not None:
             return bool(
                 getattr(active_sim, "set_active_material_distribution_item", lambda _item_id: False)(

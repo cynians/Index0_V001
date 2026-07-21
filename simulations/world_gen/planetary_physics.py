@@ -8,6 +8,26 @@ DEFAULT_MANTLE_DENSITY_KG_M3 = 4500.0
 DEFAULT_CORE_DENSITY_KG_M3 = 11000.0
 
 
+def _with_structure_diagnostics(model):
+    """Add reduced radial-structure outputs without changing authored inputs."""
+    mass_kg = max(0.0, float(model.get("mass_kg", 0.0) or 0.0))
+    radius_m = max(1.0, float(model.get("radius_m", 1.0) or 1.0))
+    core_fraction = max(0.0, min(0.95, float(model.get("core_radius_fraction", 0.0) or 0.0)))
+    binding_energy_j = 3.0 * GRAVITATIONAL_CONSTANT * mass_kg * mass_kg / (5.0 * radius_m)
+    central_pressure_pa = 3.0 * GRAVITATIONAL_CONSTANT * mass_kg * mass_kg / (8.0 * math.pi * radius_m ** 4)
+    inertia_factor = max(0.20, min(0.40, 0.40 - core_fraction * 0.16))
+    model.update({
+        "escape_velocity_m_s": math.sqrt(2.0 * GRAVITATIONAL_CONSTANT * mass_kg / radius_m),
+        "gravitational_binding_energy_j": binding_energy_j,
+        "central_pressure_pa_proxy": central_pressure_pa,
+        "central_pressure_gpa_proxy": central_pressure_pa / 1.0e9,
+        "moment_of_inertia_factor": inertia_factor,
+        "moment_of_inertia_kg_m2": inertia_factor * mass_kg * radius_m * radius_m,
+        "structure_model": "layered_constant_density_hydrostatic_proxy_v2",
+    })
+    return model
+
+
 def sphere_volume(radius_m):
     return (4.0 / 3.0) * math.pi * max(0.0, radius_m) ** 3
 
@@ -45,7 +65,7 @@ def derive_planet_physics(seed, crust_density_kg_m3):
         surface_gravity_m_s2 = GRAVITATIONAL_CONSTANT * mass_kg / (radius_m * radius_m)
         angular_velocity_deg_per_hour = max(0.0001, float(seed.get("angular_velocity_deg_per_hour", 5.5)))
         rotation_period_hours = 360.0 / angular_velocity_deg_per_hour
-        return {
+        return _with_structure_diagnostics({
             "radius_m": radius_m,
             "radius_earth": radius_earth,
             "core_radius_fraction": rock_core_radius_m / radius_m,
@@ -70,7 +90,7 @@ def derive_planet_physics(seed, crust_density_kg_m3):
             "rock_mass_fraction": rock_mass_fraction,
             "ice_shell_thickness_km": ice_shell_thickness_m / 1000.0,
             "interior_class": "differentiated_rock_core_ice_shell",
-        }
+        })
 
     if kind in {"gas_giant", "ice_giant", "hot_gas_giant"}:
         density_anchor = 1320.0 if kind in {"gas_giant", "hot_gas_giant"} else 1650.0
@@ -86,7 +106,7 @@ def derive_planet_physics(seed, crust_density_kg_m3):
         rotation_period_hours = 360.0 / angular_velocity_deg_per_hour
         angular_velocity_rad_s = math.radians(angular_velocity_deg_per_hour) / 3600.0
 
-        return {
+        return _with_structure_diagnostics({
             "radius_m": radius_m,
             "radius_earth": radius_earth,
             "core_radius_fraction": core_radius_fraction,
@@ -107,7 +127,7 @@ def derive_planet_physics(seed, crust_density_kg_m3):
             "angular_velocity_deg_per_hour": angular_velocity_deg_per_hour,
             "angular_velocity_rad_s": angular_velocity_rad_s,
             "rotation_period_hours": rotation_period_hours,
-        }
+        })
 
     core_volume_m3 = sphere_volume(core_radius_m)
     mantle_volume_m3 = shell_volume(crust_inner_radius_m, core_radius_m)
@@ -128,7 +148,7 @@ def derive_planet_physics(seed, crust_density_kg_m3):
     rotation_period_hours = 360.0 / abs(angular_velocity_deg_per_hour)
     angular_velocity_rad_s = math.radians(angular_velocity_deg_per_hour) / 3600.0
 
-    return {
+    return _with_structure_diagnostics({
         "radius_m": radius_m,
         "radius_earth": radius_earth,
         "core_radius_fraction": core_radius_fraction,
@@ -150,4 +170,4 @@ def derive_planet_physics(seed, crust_density_kg_m3):
         "angular_velocity_rad_s": angular_velocity_rad_s,
         "rotation_period_hours": rotation_period_hours,
         "rotation_direction": "retrograde" if angular_velocity_deg_per_hour < 0.0 else "prograde",
-    }
+    })

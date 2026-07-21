@@ -1159,6 +1159,29 @@ class BuildingSimulationTests(unittest.TestCase):
         self.assertEqual(0.0, sim.get_heightmap_base_layer()["atmosphere_opacity"])
         self.assertEqual(sim.LOCATION_LAYER_KIND, sim.get_active_layer_kind())
 
+    def test_planet_map_can_toggle_height_contours_without_changing_layer(self):
+        planet = {
+            "id": "planet_contours",
+            "name": "Contours",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "heightmap_model": {
+                "sample_grid": {"rows": [[0, 1], [1, 0]]},
+            },
+        }
+        sim = MapSimulation(SimulationContext(
+            year=2400,
+            root_entity_id=planet["id"],
+            world_model=FakeWorldModel([planet]),
+        ))
+
+        self.assertTrue(sim.has_height_contours())
+        self.assertTrue(sim.is_height_contours_visible())
+        self.assertTrue(sim.toggle_height_contours_visibility())
+        self.assertFalse(sim.is_height_contours_visible())
+        self.assertEqual(sim.LOCATION_LAYER_KIND, sim.get_active_layer_kind())
+
     def test_combined_map_includes_location_geometry(self):
         world_model = FakeWorldModel([
             {

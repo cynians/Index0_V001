@@ -1,5 +1,6 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pygame
 
@@ -12,6 +13,45 @@ class CardTimelineTests(unittest.TestCase):
 
         self.assertEqual("20 years", card._timeline_duration_label([1900, 1920]))
         self.assertEqual("1 year", card._timeline_duration_label([1900, 1901]))
+
+    def test_random_year_button_requires_explicit_start_and_end_dates(self):
+        ranged = EntityCard(
+            {"id": "range_card", "type": "idea", "start_year": 1900, "end_year": 1920},
+            dataset_name="ideas",
+        )
+        open_ended = EntityCard(
+            {"id": "open_card", "type": "idea", "start_year": 1900},
+            dataset_name="ideas",
+        )
+
+        self.assertEqual((1900, 1920), ranged._entity_existence_period())
+        self.assertIsNone(open_ended._entity_existence_period())
+
+    def test_ranged_card_draws_random_year_button_beside_timeline_label(self):
+        pygame.font.init()
+        font = pygame.font.Font(None, 18)
+        card_view = EntityCard(
+            {"id": "range_card", "type": "idea", "start_year": 1900, "end_year": 1920},
+            dataset_name="ideas",
+        )
+        card = {
+            "entity_id": "range_card",
+            "title": "Range Card",
+            "subtitle": "ideas | idea",
+            "years": [1900, 1920],
+            "selected_year": 1900,
+            "is_edit_mode": False,
+            "layout_font": font,
+        }
+        screen = pygame.Surface((460, 420))
+
+        card_view.layout_card(card, pygame.Rect(10, 10, 420, 380))
+        with patch("pygame.mouse.get_pos", return_value=(-1, -1)):
+            card_view.draw_card(screen, font, card)
+
+        self.assertIsNotNone(card["random_year_rect"])
+        self.assertLess(card["random_year_rect"].right, card["rect"].right)
+        self.assertEqual(card["timeline_label_y"] - 1, card["random_year_rect"].y)
 
     def test_related_timeline_entries_include_entries_inside_card_range(self):
         entity = {

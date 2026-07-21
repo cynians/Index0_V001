@@ -88,6 +88,29 @@ def _densify_map_ring(points, maximum_step_degrees=1.5):
     return dense
 
 
+def _densify_map_line(points, maximum_step_degrees=1.5):
+    source = [(float(x), float(y)) for x, y in points]
+    if len(source) < 2:
+        return source
+    dense = [source[0]]
+    for x0, y0 in source[1:]:
+        previous_x, previous_y = dense[-1]
+        delta_x = x0 - previous_x
+        if 180.0 < abs(delta_x) < 359.999:
+            delta_x -= math.copysign(360.0, delta_x)
+        delta_y = y0 - previous_y
+        steps = max(1, int(math.ceil(max(abs(delta_x), abs(delta_y)) / maximum_step_degrees)))
+        for step in range(1, steps + 1):
+            amount = step / steps
+            x = previous_x + delta_x * amount
+            while x < -180.0:
+                x += 360.0
+            while x > 180.0:
+                x -= 360.0
+            dense.append((x, previous_y + delta_y * amount))
+    return dense
+
+
 def _clip_polygon_x(points, boundary, keep_greater):
     if not points:
         return []
@@ -147,4 +170,38 @@ def project_map_world_ring(points, focus_x=0.0, focus_y=0.0):
             continue
         signatures.add(signature)
         visible_parts.append(clipped)
+    return visible_parts
+
+
+def project_map_world_line(points, focus_x=0.0, focus_y=0.0):
+    """Morph a stored lon/lat line into the focused map view.
+
+    Lines are not clipped into polygons: off-frame endpoints are intentionally
+    retained so the renderer can draw a continuous segment to the viewport
+    edge.  Repeated shifted copies preserve lines that cross the antimeridian.
+    """
+    projected = [
+        project_map_world_point(x, y, focus_x, focus_y)
+        for x, y in _densify_map_line(points)
+    ]
+    if len(projected) < 2:
+        return []
+    unwrapped = [projected[0]]
+    for x, y in projected[1:]:
+        previous_x = unwrapped[-1][0]
+        while x - previous_x > 180.0:
+            x -= 360.0
+        while previous_x - x > 180.0:
+            x += 360.0
+        unwrapped.append((x, y))
+    minimum_x = min(x for x, _y in unwrapped)
+    maximum_x = max(x for x, _y in unwrapped)
+    first_shift = int(math.floor((-180.0 - maximum_x) / 360.0)) - 1
+    last_shift = int(math.ceil((180.0 - minimum_x) / 360.0)) + 1
+    visible_parts = []
+    for shift_index in range(first_shift, last_shift + 1):
+        shifted = [(x + shift_index * 360.0, y) for x, y in unwrapped]
+        if max(x for x, _y in shifted) < -180.0 or min(x for x, _y in shifted) > 180.0:
+            continue
+        visible_parts.append(shifted)
     return visible_parts

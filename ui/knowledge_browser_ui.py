@@ -280,6 +280,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.timeline_edit_target = None
         self.active_timeline_pan = False
         self.timeline_pan_last_mouse_x = None
+        self.timeline_pan_last_mouse_y = None
         self.app_width = 0
         self.app_height = 0
         # The application WorldModel already owns the decoded schemas. Keep
@@ -502,6 +503,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             self.timeline_collapsed = True
         self.active_timeline_resize = False
         self.active_timeline_pan = False
+        self.timeline_pan_last_mouse_x = None
+        self.timeline_pan_last_mouse_y = None
         self._refresh_layout_geometry()
         return True
 
@@ -1142,6 +1145,11 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             return text
 
         suffix = "..."
+        while suffix and self._text_width(font, suffix) > max_width:
+            suffix = suffix[:-1]
+        if not suffix:
+            self._ellipsize_cache[cache_key] = ""
+            return ""
         suffix_w = self._text_width(font, suffix)
         available_w = max(0, max_width - suffix_w)
         low = 0
@@ -2136,6 +2144,36 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
     def _focus_timeline_year(self, year):
         return self.timeline_ui.focus_year(year)
 
+    def _set_working_year_from_card_snapshot(self, start_year, end_year=None):
+        try:
+            start_year = int(start_year)
+            end_year = start_year if end_year is None else int(end_year)
+        except (TypeError, ValueError):
+            return False
+        if end_year < start_year:
+            start_year, end_year = end_year, start_year
+        working_value = str(start_year) if start_year == end_year else f"{start_year}-{end_year}"
+        changed = self.timeline_ui.set_working_year(working_value, focus=True)
+        self._sync_cards_working_year_context()
+        if changed:
+            self._refresh_timeline_items()
+        return True
+
+    def _set_random_working_year_from_card(self, card):
+        entity = self._entity_for_card(card)
+        if not isinstance(entity, dict):
+            return None
+        start_year = self._coerce_card_year(entity.get("start_year"))
+        end_year = self._coerce_card_year(entity.get("end_year"))
+        if start_year is None or end_year is None:
+            return None
+        start_year, end_year = min(start_year, end_year), max(start_year, end_year)
+        selected_year = random.randint(start_year, end_year)
+        self._set_working_year_from_card_snapshot(selected_year)
+        card["selected_year"] = selected_year
+        card["active_timeline_snapshot_range"] = (selected_year, selected_year)
+        return selected_year
+
     def _is_wiki_text_edit_field(self, card_or_view, field_key=None):
         card_view = None
         if isinstance(card_or_view, dict):
@@ -2171,9 +2209,12 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         year_range = self.timeline_ui.get_working_year_range()
         if year_range is None:
             changed = card.pop("working_year_range", None) is not None
+            changed = card.pop("active_timeline_snapshot_range", None) is not None or changed
             return changed
         normalized = (int(year_range[0]), int(year_range[1]))
         changed = card.get("working_year_range") != normalized
+        if changed:
+            card.pop("active_timeline_snapshot_range", None)
         card["working_year_range"] = normalized
         return changed
 
@@ -4473,7 +4514,12 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         if card is not None and isinstance(card.get("card_view"), EntityCard):
             card["card_view"].entity = clade
         if persist:
-            self._persist_entity_to_repository(clade)
+            loader = getattr(self.world_model, "loader", None)
+            persist_palette = getattr(loader, "persist_entity_palette", None)
+            if callable(persist_palette):
+                persist_palette(clade)
+            else:
+                self._persist_entity_to_repository(clade)
         return True
 
     def _invalidate_phylogeny_views(self):
@@ -4808,7 +4854,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         base_x = left_rect.x + 12 + depth * 18
         caret_rect = pygame.Rect(base_x, line_y + max(2, (line_height - 14) // 2), 14, 14)
         if caret_rect.collidepoint(mouse_pos):
-            return item.get("entity_id")
+            return item.get("entity_id"), item.get("dataset_name", "locations")
         return None
 
     def _world_model_signature(self, world_model):
@@ -5346,9 +5392,22 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             and self.template_picker_rect is not None
             and self.template_picker_rect.collidepoint(mouse_pos)
         ):
+            try:
+                wheel_rows = int(event.y)
+            except (AttributeError, TypeError, ValueError, OverflowError):
+                wheel_rows = 0
+            if wheel_rows == 0:
+                precise_wheel = getattr(event, "y", 0)
+                try:
+                    wheel_rows = 1 if precise_wheel > 0 else -1 if precise_wheel < 0 else 0
+                except TypeError:
+                    wheel_rows = 0
             visible_count = max(1, len(self.template_picker_visible_rows))
             max_scroll = max(0, self.template_picker_total_rows - visible_count)
-            self.template_picker_scroll = max(0, min(max_scroll, self.template_picker_scroll - event.y))
+            self.template_picker_scroll = max(
+                0,
+                min(max_scroll, int(self.template_picker_scroll or 0) - wheel_rows),
+            )
             self._build_template_picker_hitboxes()
             return "__ui_consumed__"
 
@@ -5377,6 +5436,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             self.timeline_resize_start_mouse_y = None
             self.timeline_resize_start_height = None
             self.timeline_pan_last_mouse_x = None
+            self.timeline_pan_last_mouse_y = None
             if should_toggle:
                 self._toggle_timeline_collapsed()
             return "__ui_consumed__"
@@ -5386,6 +5446,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.timeline_resize_start_mouse_y = None
         self.timeline_resize_start_height = None
         self.timeline_pan_last_mouse_x = None
+        self.timeline_pan_last_mouse_y = None
         active_color_slider = self.active_card_color_slider
         had_card_drag = self.active_card_drag_id is not None
         had_card_resize = self.active_card_resize_id is not None
@@ -5461,14 +5522,19 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             return "__ui_consumed__"
 
         if self.active_timeline_pan:
-            if self.timeline_pan_last_mouse_x is None:
+            if self.timeline_pan_last_mouse_x is None or self.timeline_pan_last_mouse_y is None:
                 self.timeline_pan_last_mouse_x = event.pos[0]
+                self.timeline_pan_last_mouse_y = event.pos[1]
                 return "__ui_consumed__"
 
             dx = event.pos[0] - self.timeline_pan_last_mouse_x
+            dy = event.pos[1] - self.timeline_pan_last_mouse_y
             self.timeline_pan_last_mouse_x = event.pos[0]
+            self.timeline_pan_last_mouse_y = event.pos[1]
             if dx:
                 self.timeline_ui.pan_by_pixels(-dx)
+            if dy:
+                self.timeline_ui.pan_vertical_by_pixels(-dy)
             return "__ui_consumed__"
 
         if self.active_card_color_slider is not None:
@@ -5613,9 +5679,14 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 self._rebuild_browser_hitboxes()
                 return "__ui_consumed__"
 
-        toggle_entity_id = self._browser_toggle_entity_at_pos(mouse_pos, left_rect)
-        if toggle_entity_id is not None:
-            self._set_expanded(toggle_entity_id, not self._is_expanded(toggle_entity_id))
+        toggle_item = self._browser_toggle_entity_at_pos(mouse_pos, left_rect)
+        if toggle_item is not None:
+            toggle_entity_id, dataset_name = toggle_item
+            self._set_expanded(
+                toggle_entity_id,
+                not self._is_expanded(toggle_entity_id, dataset_name),
+                dataset_name,
+            )
             self.browser_items = self._build_browser_items(self.world_model)
             self._rebuild_browser_hitboxes()
             return "__ui_consumed__"
@@ -6672,6 +6743,15 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         else:
             visible_browser_indices = range(start_index, len(self.browser_items))
 
+        previous_clip = screen.get_clip()
+        browser_content_rect = pygame.Rect(
+            left_rect.x + 1,
+            content_top,
+            max(0, left_rect.width - 2),
+            max(0, content_bottom - content_top),
+        )
+        screen.set_clip(previous_clip.clip(browser_content_rect))
+
         for item_index in visible_browser_indices:
             item = self.browser_items[item_index]
             row_top = line_y
@@ -6690,7 +6770,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
             if item["kind"] == "section":
                 color = (235, 235, 235)
-                text_surface = self._render_text(font, item["text"], color)
+                text = self._ellipsize_text(item["text"], font, left_rect.width - 24)
+                text_surface = self._render_text(font, text, color)
                 screen.blit(text_surface, (left_rect.x + 12, line_y + text_offset_y))
 
             elif item["kind"] == "label":
@@ -6700,8 +6781,10 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                     color = (176, 188, 208)
                 else:
                     color = (220, 220, 220)
-                text_surface = self._render_text(font, item["text"], color)
-                screen.blit(text_surface, (left_rect.x + 12 + indent_px, line_y + text_offset_y))
+                text_x = left_rect.x + 12 + indent_px
+                text = self._ellipsize_text(item["text"], font, left_rect.right - 12 - text_x)
+                text_surface = self._render_text(font, text, color)
+                screen.blit(text_surface, (text_x, line_y + text_offset_y))
 
             else:
                 entity_id = item["entity_id"]
@@ -6763,27 +6846,58 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                     else:
                         text_x = base_x + 20
 
-                    text_surface = self._render_text(font, item["text"], color)
+                    missing_count = item.get("missing_count", 0)
+                    missing_surface = None
+                    text_right = left_rect.right - 12
+                    if missing_count:
+                        missing_surface = self._render_text(font, f"missing:{missing_count}", (220, 182, 132))
+                        text_right = left_rect.right - missing_surface.get_width() - 22
+
+                    available_width = max(0, text_right - text_x)
+                    meta_text = item.get("meta_text")
+                    meta_surface = None
+                    meta_gap = 0
+                    if meta_text and available_width > 0:
+                        meta_budget = min(
+                            self._text_width(font, meta_text),
+                            max(0, available_width // 3),
+                        )
+                        if meta_budget > 0:
+                            rendered_meta = self._ellipsize_text(meta_text, font, meta_budget)
+                            meta_surface = self._render_text(font, rendered_meta, (170, 170, 170))
+                            meta_gap = 8
+
+                    name_width = max(
+                        0,
+                        available_width - (meta_surface.get_width() + meta_gap if meta_surface else 0),
+                    )
+                    rendered_text = self._ellipsize_text(item["text"], font, name_width)
+                    text_surface = self._render_text(font, rendered_text, color)
                     screen.blit(text_surface, (text_x, line_y + text_offset_y))
 
-                    meta_text = item.get("meta_text")
-                    if meta_text:
-                        meta_surface = self._render_text(font, meta_text, (170, 170, 170))
-                        screen.blit(meta_surface, (text_x + text_surface.get_width() + 8, line_y + text_offset_y))
-                    missing_count = item.get("missing_count", 0)
-                    if missing_count:
-                        missing_surface = self._render_text(font, f"missing:{missing_count}", (220, 182, 132))
+                    if meta_surface is not None:
+                        screen.blit(
+                            meta_surface,
+                            (text_x + text_surface.get_width() + meta_gap, line_y + text_offset_y),
+                        )
+                    if missing_surface is not None:
                         screen.blit(missing_surface, (left_rect.right - missing_surface.get_width() - 14, line_y + text_offset_y))
                 else:
-                    text_surface = self._render_text(font, item["text"], color)
-                    screen.blit(text_surface, (left_rect.x + 12, line_y + text_offset_y))
                     missing_count = item.get("missing_count", 0)
+                    missing_surface = None
+                    text_right = left_rect.right - 12
                     if missing_count:
                         missing_surface = self._render_text(font, f"missing:{missing_count}", (220, 182, 132))
+                        text_right = left_rect.right - missing_surface.get_width() - 22
+                    text = self._ellipsize_text(item["text"], font, text_right - (left_rect.x + 12))
+                    text_surface = self._render_text(font, text, color)
+                    screen.blit(text_surface, (left_rect.x + 12, line_y + text_offset_y))
+                    if missing_surface is not None:
                         screen.blit(missing_surface, (left_rect.right - missing_surface.get_width() - 14, line_y + text_offset_y))
 
             line_y += line_height
 
+        screen.set_clip(previous_clip)
         self._draw_card_canvas(screen, font, right_rect)
         self._draw_template_picker(screen, font)
         self._draw_entry_name_prompt(screen, font)
@@ -6890,6 +7004,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
             self.active_timeline_pan = True
             self.timeline_pan_last_mouse_x = mouse_pos[0]
+            self.timeline_pan_last_mouse_y = mouse_pos[1]
             return "__ui_consumed__"
 
         if timeline_splitter_rect.collidepoint(mouse_pos):

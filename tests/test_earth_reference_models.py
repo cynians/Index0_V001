@@ -22,7 +22,7 @@ class EarthReferenceModelTests(unittest.TestCase):
         self.assertEqual("heightmap_authored_reference", earth["heightmap_model"]["status"])
         self.assertEqual("earth_reference_atmosphere", earth["atmosphere_model"]["status"])
         self.assertEqual("earth_reference_tectonics", earth["tectonic_model"]["status"])
-        self.assertEqual("water_cycle_authored_reference", earth["water_cycle_model"]["status"])
+        self.assertEqual("earth_reference_simulated_climate", earth["water_cycle_model"]["status"])
         self.assertEqual(4096, earth["map_canvas_width_px"])
         self.assertIn("earth_reference_worldgen", earth["tags"])
         self.assertGreater(len(earth["reference_land_polygons"]["polygons"]), 100)
@@ -32,6 +32,7 @@ class EarthReferenceModelTests(unittest.TestCase):
         self.assertEqual(129, len(grid["rows"]))
         self.assertGreater(len(earth["water_cycle_model"]["rivers"]), 500)
         self.assertGreater(len(earth["water_cycle_model"]["reference_lakes"]), 300)
+        self.assertIn("annual_runoff_rows_mm", earth["water_cycle_model"]["climate_grid"])
         self.assertIn("NOAA", earth["heightmap_model"]["source"])
         self.assertEqual("materials_authored_earth_reference", earth["natural_material_model"]["status"])
         self.assertIn("mat_basalt", earth["natural_material_model"]["dominant_materials"])
@@ -51,6 +52,25 @@ class EarthReferenceModelTests(unittest.TestCase):
         apply_earth_reference_models(entities)
 
         self.assertEqual("custom", entities["planet_earth"]["heightmap_model"]["status"])
+
+    def test_apply_earth_reference_models_replaces_legacy_authored_climate(self):
+        entities = {
+            "planet_earth": {
+                "id": "planet_earth",
+                "name": "Earth",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "planet",
+                "water_cycle_model": {"status": "water_cycle_authored_reference"},
+            }
+        }
+
+        apply_earth_reference_models(entities)
+
+        self.assertEqual(
+            "earth_reference_simulated_climate",
+            entities["planet_earth"]["water_cycle_model"]["status"],
+        )
 
     def test_apply_earth_reference_models_adds_missing_surface_regions_to_loader(self):
         earth = {
@@ -138,8 +158,67 @@ class EarthReferenceModelTests(unittest.TestCase):
         self.assertTrue(apply_earth_reference_models(loader))
 
         self.assertEqual("multipolygon", japan["bounds"]["type"])
-        self.assertEqual("natural_earth_reference", japan["bounds_source"])
+        self.assertEqual("natural_earth_admin_0_reference", japan["bounds_source"])
         self.assertGreater(len(japan["bounds"]["polygons"]), 1)
+
+    def test_apply_earth_reference_models_materializes_named_country_records(self):
+        earth = {
+            "id": "planet_earth",
+            "name": "Earth",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+        }
+        loader = SimpleNamespace(entities={"planet_earth": earth}, datasets={"locations": [earth]})
+
+        apply_earth_reference_models(loader)
+
+        canada = loader.entities["loc_country_can"]
+        self.assertEqual("Canada", canada["name"])
+        self.assertEqual("country", canada["location_class"])
+        self.assertEqual("loc_subregion_northern_america", canada["parent_location"])
+        northern_america = loader.entities[canada["parent_location"]]
+        self.assertEqual("loc_north_america", northern_america["parent_location"])
+        self.assertIn("loc_country_can", northern_america["constituents"])
+        self.assertNotIn("loc_country_can", earth.get("constituents", []))
+        self.assertEqual("multipolygon", canada["bounds"]["type"])
+        self.assertEqual("natural_earth_admin_0_reference", canada["bounds_source"])
+        self.assertGreaterEqual(
+            len([entity for entity in loader.datasets["locations"] if entity.get("location_class") == "country"]),
+            177,
+        )
+        countries = [
+            entity for entity in loader.datasets["locations"]
+            if entity.get("location_class") == "country"
+        ]
+        self.assertTrue(all(
+            entity.get("bounds_source") == "natural_earth_admin_0_reference"
+            for entity in countries
+        ))
+        self.assertTrue(all(
+            entity.get("parent_location") != "planet_earth"
+            and loader.entities[entity["parent_location"]].get("location_class") in {"continent", "region"}
+            for entity in countries
+        ))
+
+    def test_apply_earth_reference_models_exposes_yangtze_as_selectable_river(self):
+        earth = {
+            "id": "planet_earth",
+            "name": "Earth",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+        }
+        loader = SimpleNamespace(entities={"planet_earth": earth}, datasets={"locations": [earth]})
+
+        apply_earth_reference_models(loader)
+
+        yangtze = loader.entities["loc_river_yangtze"]
+        self.assertEqual("Yangtze River", yangtze["name"])
+        self.assertEqual("river", yangtze["location_class"])
+        self.assertEqual("polyline", yangtze["bounds"]["type"])
+        self.assertGreater(len(yangtze["bounds"]["paths"]), 3)
+        self.assertIn("loc_river_yangtze", earth["constituents"])
 
 
 if __name__ == "__main__":

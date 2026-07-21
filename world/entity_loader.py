@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import uuid
 from pathlib import Path
 import logging
@@ -668,7 +669,7 @@ class EntityLoader:
                 if self._persistent_store is None:
                     self._persistent_store = PersistentOntologyStore(self.ontology_path)
                 self._persistent_store.persist_entity(entity, previous_entity_id=previous_entity_id)
-            except OSError as exc:
+            except (OSError, sqlite3.Error) as exc:
                 logger.error("Could not persist entity %s to ontology: %s", entity_id, exc)
                 return False
         return True
@@ -681,7 +682,17 @@ class EntityLoader:
         if not entity_id or not self.ontology_path:
             return False
         if getattr(self, "_persistent_store", None) is not None:
-            return self._persistent_store.persist_entity_fields(entity, self.FAST_PALETTE_FIELDS)
+            try:
+                return self._persistent_store.persist_entity_fields(entity, self.FAST_PALETTE_FIELDS)
+            except (OSError, sqlite3.Error) as exc:
+                # Keep color editing durable even if another application
+                # instance temporarily owns the ontology writer. The journal
+                # is merged on load and cleared after the next OWL export.
+                logger.warning(
+                    "Ontology busy while persisting palette for %s; using override journal: %s",
+                    entity_id,
+                    exc,
+                )
         overrides = self._load_palette_overrides()
         overrides[entity_id] = {
             field_name: (

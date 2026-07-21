@@ -1,6 +1,7 @@
 import math
 import random
 import re
+from collections import deque
 
 import pygame
 
@@ -51,6 +52,20 @@ class TimelineUI:
     ]
     DEFAULT_HIDDEN_DATASETS = {"animals", "cladistics", "species"}
     DEFAULT_HIDDEN_ENTITY_TYPES = {"animal", "animals", "cladistics", "species"}
+    RELATION_CLUSTER_FIELDS = (
+        "parents",
+        "related",
+        "offspring",
+        "parent_entity",
+        "parent_location",
+        "parent_body",
+        "predecessor",
+        "predecessors",
+        "successor",
+        "successors",
+        "constituents",
+        "owner_entity",
+    )
 
     ZOOM_IN_FACTOR = 0.80
     ZOOM_OUT_FACTOR = 1.25
@@ -79,7 +94,7 @@ class TimelineUI:
         self.active_filter_group = "general"
         self.active_filter_groups = {"general"}
         self.active_filter_mode = "category"
-        self.timeline_sort_mode = "flat"
+        self.timeline_sort_mode = "relations"
         self.selected_year_filter_mode = "contemporary"
         self.open_canvas_entity_ids = set()
         self.filter_hitboxes = []
@@ -124,6 +139,8 @@ class TimelineUI:
 
         self.period_lane_count = 0
         self.lane_count = 1
+        self.relationship_cluster_lane_ranges = []
+        self.vertical_scroll_px = 0
         self.content_rect = pygame.Rect(0, 0, 0, 0)
         self.axis_y = 0
 
@@ -218,11 +235,16 @@ class TimelineUI:
         relation_fields = (
             "id",
             "parents",
+            "related",
             "parent_entity",
             "parent_location",
             "parent_body",
             "offspring",
             "constituents",
+            "predecessor",
+            "predecessors",
+            "successor",
+            "successors",
             "location_entity",
             "location",
             "locations",
@@ -245,11 +267,16 @@ class TimelineUI:
         signature = []
         relation_field_names = {
             "parents",
+            "related",
             "parent_entity",
             "parent_location",
             "parent_body",
             "offspring",
             "constituents",
+            "predecessor",
+            "predecessors",
+            "successor",
+            "successors",
             "location_entity",
             "location",
             "locations",
@@ -620,9 +647,9 @@ class TimelineUI:
         return changed
 
     def set_timeline_sort_mode(self, mode):
-        mode = str(mode or "flat").strip().lower()
-        if mode not in {"flat", "offspring"}:
-            mode = "flat"
+        mode = str(mode or "relations").strip().lower()
+        if mode not in {"relations", "flat", "offspring"}:
+            mode = "relations"
         changed = mode != self.timeline_sort_mode
         self.timeline_sort_mode = mode
         if changed:
@@ -1672,10 +1699,11 @@ class TimelineUI:
         label_left = self._get_duration_label_x(x1, x2, label_w)
         return min(x1, label_left), max(bar_right, label_left + label_w)
 
-    def _assign_items_to_lanes(self, items, allow_touching=False):
+    def _assign_items_to_lanes(self, items, allow_touching=False, preserve_order=False):
         layout_items = []
         sortable = list(items)
-        sortable.sort(key=lambda item: (item["start_year"], item["end_year"], item.get("label", "")))
+        if not preserve_order:
+            sortable.sort(key=self._timeline_item_stable_key)
 
         lane_end_pixels = []
 
@@ -1707,6 +1735,173 @@ class TimelineUI:
             )
 
         return layout_items, max(0, len(lane_end_pixels))
+
+    @staticmethod
+    def _timeline_item_stable_key(item):
+        return (
+            int(item.get("start_year", 0)),
+            int(item.get("end_year", item.get("start_year", 0))),
+            str(item.get("label", "")).casefold(),
+            str(item.get("entity_id", "")),
+        )
+
+    @staticmethod
+    def _timeline_item_midpoint(item):
+        return (int(item.get("start_year", 0)) + int(item.get("end_year", 0))) / 2.0
+
+    @staticmethod
+    def _timeline_item_temporal_gap(left_item, right_item):
+        left_start = int(left_item.get("start_year", 0))
+        left_end = int(left_item.get("end_year", left_start))
+        right_start = int(right_item.get("start_year", 0))
+        right_end = int(right_item.get("end_year", right_start))
+        if left_end < right_start:
+            return right_start - left_end
+        if right_end < left_start:
+            return left_start - right_end
+        return 0
+
+    def _relationship_cluster_entity_order(self, component, graph, items_by_entity):
+        representatives = {
+            entity_id: min(items_by_entity[entity_id], key=self._timeline_item_stable_key)
+            for entity_id in component
+        }
+
+        def representative(entity_id):
+            return representatives[entity_id]
+
+        def root_key(entity_id):
+            item = representative(entity_id)
+            return (
+                -len(graph.get(entity_id, ())),
+                self._timeline_item_midpoint(item),
+                self._timeline_item_stable_key(item),
+                entity_id,
+            )
+
+        root = min(component, key=root_key)
+        ordered = []
+        queued = {root}
+        queue = deque([root])
+        while queue:
+            entity_id = queue.popleft()
+            ordered.append(entity_id)
+            source_item = representative(entity_id)
+            neighbours = [
+                neighbour_id
+                for neighbour_id in graph.get(entity_id, ())
+                if neighbour_id in component and neighbour_id not in queued
+            ]
+            neighbours.sort(key=lambda neighbour_id: (
+                self._timeline_item_temporal_gap(source_item, representative(neighbour_id)),
+                -len(graph.get(neighbour_id, ())),
+                self._timeline_item_midpoint(representative(neighbour_id)),
+                self._timeline_item_stable_key(representative(neighbour_id)),
+                neighbour_id,
+            ))
+            queue.extend(neighbours)
+            queued.update(neighbours)
+
+        for entity_id in sorted(component - set(ordered), key=root_key):
+            ordered.append(entity_id)
+        return ordered
+
+    def _relationship_item_clusters(self, items):
+        items_by_entity = {}
+        unkeyed_items = []
+        for item in items:
+            entity_id = str(item.get("entity_id") or "").strip()
+            if not entity_id:
+                unkeyed_items.append(item)
+                continue
+            items_by_entity.setdefault(entity_id, []).append(item)
+
+        visible_ids = set(items_by_entity)
+        graph = {entity_id: set() for entity_id in visible_ids}
+        for entity_id in visible_ids:
+            entity = self.entity_lookup.get(entity_id)
+            if not isinstance(entity, dict):
+                continue
+            for field_key in self.RELATION_CLUSTER_FIELDS:
+                for target_id in self._relation_entity_ids(entity.get(field_key)):
+                    target_id = str(target_id or "").strip()
+                    if target_id in visible_ids and target_id != entity_id:
+                        graph[entity_id].add(target_id)
+                        graph[target_id].add(entity_id)
+
+        linked_clusters = []
+        isolated_items = list(unkeyed_items)
+        visited = set()
+        for entity_id in sorted(visible_ids):
+            if entity_id in visited:
+                continue
+            component = set()
+            queue = deque([entity_id])
+            visited.add(entity_id)
+            while queue:
+                current_id = queue.popleft()
+                component.add(current_id)
+                for neighbour_id in sorted(graph[current_id]):
+                    if neighbour_id not in visited:
+                        visited.add(neighbour_id)
+                        queue.append(neighbour_id)
+
+            if len(component) == 1 and not graph[entity_id]:
+                isolated_items.extend(items_by_entity[entity_id])
+                continue
+
+            ordered_items = []
+            for ordered_id in self._relationship_cluster_entity_order(component, graph, items_by_entity):
+                ordered_items.extend(sorted(items_by_entity[ordered_id], key=self._timeline_item_stable_key))
+            linked_clusters.append({"items": ordered_items, "has_links": True})
+
+        clusters = linked_clusters
+        if isolated_items:
+            clusters.append({
+                "items": sorted(isolated_items, key=self._timeline_item_stable_key),
+                "has_links": False,
+            })
+
+        for cluster in clusters:
+            midpoints = sorted(self._timeline_item_midpoint(item) for item in cluster["items"])
+            cluster["temporal_center"] = midpoints[len(midpoints) // 2] if midpoints else 0
+            cluster["stable_key"] = min(
+                (self._timeline_item_stable_key(item) for item in cluster["items"]),
+                default=(0, 0, "", ""),
+            )
+        clusters.sort(key=lambda cluster: (
+            cluster["temporal_center"],
+            0 if cluster["has_links"] else 1,
+            cluster["stable_key"],
+        ))
+        return clusters
+
+    def _assign_relationship_clustered_lanes(self, items):
+        layout_items = []
+        lane_offset = 0
+        self.relationship_cluster_lane_ranges = []
+        for cluster_index, cluster in enumerate(self._relationship_item_clusters(items)):
+            clustered_items, cluster_lane_count = self._assign_items_to_lanes(
+                cluster["items"],
+                preserve_order=bool(cluster["has_links"]),
+            )
+            if cluster_lane_count <= 0:
+                continue
+            first_lane = lane_offset
+            for item in clustered_items:
+                item["lane"] += lane_offset
+                item["relationship_cluster"] = cluster_index
+                item["relationship_cluster_has_links"] = bool(cluster["has_links"])
+                layout_items.append(item)
+            lane_offset += cluster_lane_count
+            self.relationship_cluster_lane_ranges.append({
+                "cluster": cluster_index,
+                "first_lane": first_lane,
+                "last_lane": lane_offset - 1,
+                "item_count": len(clustered_items),
+                "has_links": bool(cluster["has_links"]),
+            })
+        return layout_items, lane_offset
 
     def _timeline_parent_ids_for_item(self, entity_id, visible_ids):
         entity = self.entity_lookup.get(str(entity_id or ""))
@@ -1833,8 +2028,12 @@ class TimelineUI:
             if item.get("timeline_kind") != "major_period"
         ]
         if self.timeline_sort_mode == "offspring":
+            self.relationship_cluster_lane_ranges = []
             self.layout_items, lane_count = self._assign_offspring_nested_lanes(timeline_items)
+        elif self.timeline_sort_mode == "relations":
+            self.layout_items, lane_count = self._assign_relationship_clustered_lanes(timeline_items)
         else:
+            self.relationship_cluster_lane_ranges = []
             self.layout_items, lane_count = self._assign_items_to_lanes(timeline_items)
         self.lane_count = max(1, lane_count)
 
@@ -1926,6 +2125,7 @@ class TimelineUI:
         self._build_coverage_segments(visible_items)
         self._assign_period_lanes(visible_items)
         self._assign_lanes(visible_items)
+        self._clamp_vertical_scroll()
         self._layout_cache_key = layout_key
         return True
 
@@ -2003,7 +2203,7 @@ class TimelineUI:
         self.sort_mode_hitboxes = []
         if font is None or self.rect.width < 180:
             return
-        labels = [("flat", "Flat"), ("offspring", "Nest")]
+        labels = [("relations", "Links"), ("offspring", "Nest")]
         button_h = 20
         gap = 4
         widths = [max(34, font.size(label)[0] + 14) for _, label in labels]
@@ -2330,6 +2530,62 @@ class TimelineUI:
         self.rebuild_layout()
         return (self.view_min_year != old_min) or (self.view_max_year != old_max)
 
+    def _period_section_height(self):
+        if self.period_lane_count <= 0:
+            return 0
+        return (
+            self.period_lane_count * self.PERIOD_H
+            + max(0, self.period_lane_count - 1) * self.PERIOD_GAP
+            + self.PERIOD_SECTION_GAP
+        )
+
+    def _vertical_scroll_content_height(self):
+        return self._period_section_height() + self.lane_count * self._lane_pitch()
+
+    def _unscrolled_period_base_y(self):
+        if self.period_filter_rect is None:
+            return self.content_rect.y
+        return (
+            self.period_filter_rect.bottom
+            + self.PERIOD_FILTER_GAP
+            + self.COVERAGE_H
+            + self.COVERAGE_GAP
+        )
+
+    def _vertical_viewport_rect(self):
+        top = self._unscrolled_period_base_y()
+        bottom = max(top, self.rect.bottom - self.BOTTOM_PAD)
+        return pygame.Rect(
+            self.content_rect.x,
+            top,
+            max(1, self.content_rect.width),
+            max(0, bottom - top),
+        )
+
+    def _max_vertical_scroll_px(self):
+        viewport = self._vertical_viewport_rect()
+        return max(0, self._vertical_scroll_content_height() - viewport.height)
+
+    def _clamp_vertical_scroll(self):
+        old_scroll = int(self.vertical_scroll_px or 0)
+        self.vertical_scroll_px = max(
+            0,
+            min(self._max_vertical_scroll_px(), old_scroll),
+        )
+        return self.vertical_scroll_px != old_scroll
+
+    def pan_vertical_by_pixels(self, delta_px):
+        try:
+            delta_px = int(round(float(delta_px)))
+        except (TypeError, ValueError, OverflowError):
+            return False
+        if delta_px == 0:
+            return False
+        old_scroll = self.vertical_scroll_px
+        self.vertical_scroll_px += delta_px
+        self._clamp_vertical_scroll()
+        return self.vertical_scroll_px != old_scroll
+
     def handle_event(self, event):
         if event.type == pygame.MOUSEWHEEL:
             mouse_pos = pygame.mouse.get_pos()
@@ -2512,21 +2768,14 @@ class TimelineUI:
         return pygame.Rect(left, y - 4, max(8, right - left), self._lane_pitch() + 4)
 
     def _period_base_y(self):
-        if self.period_filter_rect is None:
-            return self.content_rect.y
-        return self.period_filter_rect.bottom + self.PERIOD_FILTER_GAP + self.COVERAGE_H + self.COVERAGE_GAP
+        return self._unscrolled_period_base_y() - self.vertical_scroll_px
 
     def _lane_base_y(self):
-        period_section_h = 0
-        if self.period_lane_count > 0:
-            period_section_h = (
-                self.period_lane_count * self.PERIOD_H
-                + max(0, self.period_lane_count - 1) * self.PERIOD_GAP
-                + self.PERIOD_SECTION_GAP
-            )
-        return self._period_base_y() + period_section_h
+        return self._period_base_y() + self._period_section_height()
 
     def handle_item_click(self, mouse_pos):
+        if not self._vertical_viewport_rect().collidepoint(mouse_pos):
+            return None
         for item in reversed(self.layout_items):
             hit_rect = self._timeline_item_hit_rect(item)
             if hit_rect is not None and hit_rect.collidepoint(mouse_pos):
@@ -2752,6 +3001,21 @@ class TimelineUI:
         total = self.TOP_PAD + self.HEADER_H + self.AXIS_H + 10 + coverage_h + period_h + lanes_h + self.BOTTOM_PAD
         return max(70, total)
 
+    def _draw_vertical_scrollbar(self, screen):
+        max_scroll = self._max_vertical_scroll_px()
+        viewport = self._vertical_viewport_rect()
+        if max_scroll <= 0 or viewport.height <= 8:
+            return
+        track = pygame.Rect(self.rect.right - 7, viewport.y, 4, viewport.height)
+        pygame.draw.rect(screen, (29, 36, 50), track)
+        content_height = max(viewport.height, self._vertical_scroll_content_height())
+        thumb_height = max(18, int(round(track.height * viewport.height / float(content_height))))
+        thumb_height = min(track.height, thumb_height)
+        travel = max(0, track.height - thumb_height)
+        thumb_y = track.y + int(round(travel * self.vertical_scroll_px / float(max_scroll)))
+        thumb = pygame.Rect(track.x, thumb_y, track.width, thumb_height)
+        pygame.draw.rect(screen, (104, 126, 160), thumb)
+
     def draw(self, screen, font):
         pygame.draw.rect(screen, (14, 18, 30), self.rect)
         pygame.draw.rect(screen, (200, 200, 200), self.rect, 1)
@@ -2895,14 +3159,17 @@ class TimelineUI:
                     segment_rect = pygame.Rect(x1, coverage_y + 1, bar_w, max(1, self.COVERAGE_H - 2))
                     pygame.draw.rect(screen, fill_color, segment_rect)
 
-            period_base_y = coverage_rect.bottom + self.COVERAGE_GAP
+            timeline_content_clip = screen.get_clip()
+            vertical_viewport = self._vertical_viewport_rect()
+            screen.set_clip(timeline_content_clip.clip(vertical_viewport))
+            period_base_y = self._period_base_y()
 
             for item in self.period_layout_items:
                 lane = item["lane"]
                 x1 = self._year_to_x(item["start_year"])
                 x2 = self._year_to_x(item["end_year"])
                 y = period_base_y + lane * (self.PERIOD_H + self.PERIOD_GAP)
-                if y > self.rect.bottom or y + self.PERIOD_H < self.content_rect.y:
+                if y > vertical_viewport.bottom or y + self.PERIOD_H < vertical_viewport.y:
                     continue
                 if x2 < axis_left or x1 > axis_right:
                     continue
@@ -2918,16 +3185,24 @@ class TimelineUI:
                 label_x = max(axis_left, min(bar_rect.x + 6, axis_right - label_surface.get_width()))
                 screen.blit(label_surface, (label_x, y - 2))
 
-            period_section_h = 0
-            if self.period_lane_count > 0:
-                period_section_h = (
-                    self.period_lane_count * self.PERIOD_H
-                    + max(0, self.period_lane_count - 1) * self.PERIOD_GAP
-                    + self.PERIOD_SECTION_GAP
-                )
-
-            lane_base_y = period_base_y + period_section_h
+            lane_base_y = period_base_y + self._period_section_height()
             lane_pitch = self._lane_pitch()
+
+            if self.timeline_sort_mode == "relations":
+                for cluster_range in self.relationship_cluster_lane_ranges[1:]:
+                    separator_y = lane_base_y + cluster_range["first_lane"] * lane_pitch - max(2, self.LANE_GAP // 2)
+                    separator_color = (
+                        (62, 78, 102)
+                        if cluster_range.get("has_links")
+                        else (42, 50, 66)
+                    )
+                    pygame.draw.line(
+                        screen,
+                        separator_color,
+                        (axis_left, separator_y),
+                        (axis_right, separator_y),
+                        1,
+                    )
 
             for item in self.layout_items:
                 lane = item["lane"]
@@ -2938,7 +3213,7 @@ class TimelineUI:
                 is_point = start_year == end_year
 
                 y = lane_base_y + lane * lane_pitch
-                if y > self.rect.bottom or y + lane_pitch < self.content_rect.y:
+                if y > vertical_viewport.bottom or y + lane_pitch < vertical_viewport.y:
                     continue
                 x1 = self._year_to_x(start_year)
                 x2 = self._year_to_x(end_year)
@@ -2989,6 +3264,8 @@ class TimelineUI:
                         note_x = max(axis_left, min(x1 + 8 + depth * 12, axis_right - note_surface.get_width()))
                         screen.blit(note_surface, (note_x, y + self.ITEM_H))
 
+            screen.set_clip(timeline_content_clip)
+            self._draw_vertical_scrollbar(screen)
             self._draw_selected_year_marker(screen)
         finally:
             screen.set_clip(previous_clip)

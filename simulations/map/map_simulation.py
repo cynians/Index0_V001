@@ -6,8 +6,10 @@ from pathlib import Path
 
 from engine.logger import logger
 from world.year_utils import parse_year
+from simulations.world_gen.natural_materials import derive_planet_surface_palette
 from simulations.map.projection import (
     project_map_world_point,
+    project_map_world_line,
     project_map_world_ring,
     unproject_map_world_point,
     unproject_normalized_point,
@@ -159,6 +161,7 @@ class MapSimulation:
         self.active_layer_kind = self.LOCATION_LAYER_KIND
         self.active_material_heatmap_layer_id = "composite"
         self.atmosphere_visible = True
+        self.height_contours_visible = True
 
         self.selected_entity_id = None
         self.hover_entity_id = None
@@ -215,6 +218,7 @@ class MapSimulation:
         self.map_projection_dragging = False
         self.map_projection_drag_start = None
         self._layer_projection_focus_key = None
+        self._inherited_surface_context_cache = None
         self._map_focus_last_click_time = None
         self._map_focus_last_click_screen_pos = None
         self.last_saved_spatial_feature_id = None
@@ -445,6 +449,12 @@ class MapSimulation:
             longitude, latitude = lon_lat
             self.map_projection_focus_x = (float(longitude) / 360.0) % 1.0
             self.map_projection_focus_y = max(-0.5, min(0.5, -float(latitude) / 180.0))
+            # Re-centre the camera as well as the spherical projection.  A
+            # prior pan must not leave the chosen point off-centre after it
+            # becomes the new globe focus.
+            rect = self._planet_rect_from_entity(root)
+            camera.x = float(rect["x"])
+            camera.y = float(rect["y"])
             self._invalidate_layer_cache()
         else:
             camera.x = float(world_x)
@@ -1131,6 +1141,7 @@ class MapSimulation:
         self._layer_cache = None
         self._cache_year = None
         self._cache_layer_kind = None
+        self._inherited_surface_context_cache = None
         self._last_hover_pick_screen_pos = None
         self._last_hover_pick_camera_state = None
 
@@ -1162,6 +1173,7 @@ class MapSimulation:
             "reference_land": -2600,
             "rect": -200,
             "polygon": 0,
+            "polyline": 50,
             "marker": 1000,
         }.get(layer.get("shape"), 0)
         draw_order = layer.get("draw_order")
@@ -1170,8 +1182,9 @@ class MapSimulation:
         except (TypeError, ValueError):
             draw_order = shape_order
         depth = int(layer.get("map_hierarchy_depth", 0) or 0)
+        pick_priority = int(layer.get("pick_priority", 0) or 0)
         area = float(layer.get("area_world", 0.0) or 0.0)
-        return (draw_order, depth, -area)
+        return (draw_order, depth, pick_priority, -area)
 
     def _root_is_building(self):
         root = self.get_root_entity()
@@ -1237,6 +1250,8 @@ class MapSimulation:
             return 4.5
         if location_class == "country":
             return 3.4
+        if location_class in {"river", "waterway"}:
+            return 5.0
         if depth <= 1:
             return 0.0
         if depth == 2:
@@ -1253,6 +1268,16 @@ class MapSimulation:
         depth = self._surface_location_depth(entity)
         location_class = str((entity or {}).get("location_class") or "").lower()
         min_zoom = self._location_min_zoom_for_depth(depth, entity)
+        is_reference_country = (
+            location_class == "country"
+            and entity.get("bounds_source") == "natural_earth_admin_0_reference"
+        )
+        if is_reference_country:
+            # Keep the geometry selectable at the planet overview without
+            # turning the continent view into a political-border map.
+            min_zoom = 0.0
+            layer["pick_priority"] = 100
+            layer["render_when_interacting_only"] = True
         root = self.get_root_entity()
         has_reference_land_base = (
             isinstance(root, dict)
@@ -1263,6 +1288,7 @@ class MapSimulation:
             area_world is not None
             and location_class not in {"continent", "ocean"}
             and depth <= 1
+            and not is_reference_country
         ):
             try:
                 area_value = float(area_world or 0.0)
@@ -1275,13 +1301,18 @@ class MapSimulation:
         layer["map_hierarchy_depth"] = depth
         layer["min_zoom"] = min_zoom
         layer["draw_order"] = 100 + depth * 100
+        layer["is_broad_location_overlay"] = location_class in {"continent", "ocean"}
         if area_world is not None:
             layer["area_world"] = area_world
 
-        if depth >= 2 or float(layer.get("min_zoom") or 0.0) >= 3.4:
+        if depth >= 2 or (float(layer.get("min_zoom") or 0.0) >= 3.4 and not is_reference_country):
             layer["outline_only"] = layer.get("shape") == "polygon"
             layer["suppress_label"] = True
             layer["pickable_min_zoom"] = layer["min_zoom"]
+        elif is_reference_country and layer.get("shape") == "polygon":
+            layer["outline_only"] = True
+            layer["border_width"] = 0
+            layer["suppress_label"] = True
         elif depth == 1 and layer.get("shape") == "polygon":
             if has_reference_land_base and location_class in {"continent", "ocean"}:
                 layer["outline_only"] = True
@@ -1309,7 +1340,260 @@ class MapSimulation:
             return False
         if root.get("location_class") in {"planet", "moon"}:
             return True
-        return any(bool(root.get(field)) for field in self.VISUAL_SURFACE_FIELDS)
+        if any(bool(root.get(field)) for field in self.VISUAL_SURFACE_FIELDS):
+            return True
+        return self._root_surface_context() is not None
+
+    @staticmethod
+    def _grid_rows(model):
+        grid = model.get("sample_grid") if isinstance(model, dict) else None
+        rows = grid.get("rows") if isinstance(grid, dict) else None
+        return rows if isinstance(rows, list) and len(rows) >= 2 and len(rows[0]) >= 2 else None
+
+    def _entity_map_bounds(self, entity):
+        """Return the stored map-coordinate envelope for a location."""
+        if not isinstance(entity, dict):
+            return None
+        if entity.get("location_class") in {"planet", "moon"}:
+            rect = self._planet_rect_from_entity(entity)
+            return {
+                "min_x": float(rect["x"]) - float(rect["width_world"]) * 0.5,
+                "max_x": float(rect["x"]) + float(rect["width_world"]) * 0.5,
+                "min_y": float(rect["y"]) - float(rect["height_world"]) * 0.5,
+                "max_y": float(rect["y"]) + float(rect["height_world"]) * 0.5,
+            }
+        bounds = entity.get("bounds") or entity.get("geometry") or {}
+        if bounds.get("type") == "bbox":
+            try:
+                min_x, max_x = float(bounds["min_x"]), float(bounds["max_x"])
+                min_y, max_y = float(bounds["min_y"]), float(bounds["max_y"])
+            except (KeyError, TypeError, ValueError):
+                return None
+            return {
+                "min_x": min(min_x, max_x), "max_x": max(min_x, max_x),
+                "min_y": min(min_y, max_y), "max_y": max(min_y, max_y),
+            }
+        points = self._get_geometry_points(bounds)
+        if len(points) < 3:
+            return None
+        return {
+            "min_x": min(point[0] for point in points),
+            "max_x": max(point[0] for point in points),
+            "min_y": min(point[1] for point in points),
+            "max_y": max(point[1] for point in points),
+        }
+
+    @staticmethod
+    def _surface_rect_from_bounds(bounds, canvas_width, canvas_height):
+        width = max(1e-6, float(bounds["max_x"]) - float(bounds["min_x"]))
+        height = max(1e-6, float(bounds["max_y"]) - float(bounds["min_y"]))
+        return {
+            "x": (float(bounds["min_x"]) + float(bounds["max_x"])) * 0.5,
+            "y": (float(bounds["min_y"]) + float(bounds["max_y"])) * 0.5,
+            "width_world": width,
+            "height_world": height,
+            "canvas_width_px": max(2, int(canvas_width)),
+            "canvas_height_px": max(2, int(canvas_height)),
+        }
+
+    @staticmethod
+    def _sample_grid_value(rows, u, v, *, wrap_x=False, categorical=False):
+        valid_rows = [row for row in rows if isinstance(row, list) and row]
+        if not valid_rows:
+            return None
+        row_count = len(valid_rows)
+        col_count = min(len(row) for row in valid_rows)
+        if col_count <= 0:
+            return None
+        if wrap_x:
+            u = float(u) % 1.0
+        else:
+            u = max(0.0, min(1.0, float(u)))
+        v = max(0.0, min(1.0, float(v)))
+        if categorical:
+            row_index = min(row_count - 1, max(0, int(round(v * (row_count - 1)))))
+            col_index = min(col_count - 1, max(0, int(round(u * (col_count - 1)))))
+            return valid_rows[row_index][col_index]
+
+        source_x = u * (col_count - 1)
+        source_y = v * (row_count - 1)
+        left, top = int(math.floor(source_x)), int(math.floor(source_y))
+        right, bottom = min(col_count - 1, left + 1), min(row_count - 1, top + 1)
+        mix_x, mix_y = source_x - left, source_y - top
+        try:
+            top_value = float(valid_rows[top][left]) * (1.0 - mix_x) + float(valid_rows[top][right]) * mix_x
+            bottom_value = float(valid_rows[bottom][left]) * (1.0 - mix_x) + float(valid_rows[bottom][right]) * mix_x
+            return top_value * (1.0 - mix_y) + bottom_value * mix_y
+        except (TypeError, ValueError):
+            return valid_rows[top][left]
+
+    def _inherited_surface_context(self, root):
+        """Crop the closest terrain-bearing parent into a region-local map.
+
+        Region geometry stays in its parent map coordinates.  This projection
+        gives it a usable terrain and climate view without duplicating large
+        generated rasters into every authored region entry.
+        """
+        root_bounds = self._entity_map_bounds(root)
+        if root_bounds is None:
+            return None
+        root_width = root_bounds["max_x"] - root_bounds["min_x"]
+        root_height = root_bounds["max_y"] - root_bounds["min_y"]
+        if root_width <= 1e-9 or root_height <= 1e-9:
+            return None
+
+        parent = self.world_model.get_entity(
+            root.get("map_context_parent") or self._structural_parent_location_id(root)
+        )
+        visited = {root.get("id")}
+        source = None
+        while isinstance(parent, dict) and parent.get("id") not in visited:
+            visited.add(parent.get("id"))
+            if self._grid_rows(parent.get("heightmap_model")):
+                source = parent
+                break
+            parent = self.world_model.get_entity(self._structural_parent_location_id(parent))
+        if source is None:
+            return None
+
+        source_bounds = self._entity_map_bounds(source)
+        source_heightmap = source.get("heightmap_model")
+        source_rows = self._grid_rows(source_heightmap)
+        if source_bounds is None or source_rows is None:
+            return None
+        source_width = source_bounds["max_x"] - source_bounds["min_x"]
+        source_height = source_bounds["max_y"] - source_bounds["min_y"]
+        if source_width <= 1e-9 or source_height <= 1e-9:
+            return None
+
+        u0 = max(0.0, min(1.0, (root_bounds["min_x"] - source_bounds["min_x"]) / source_width))
+        u1 = max(0.0, min(1.0, (root_bounds["max_x"] - source_bounds["min_x"]) / source_width))
+        v0 = max(0.0, min(1.0, (root_bounds["min_y"] - source_bounds["min_y"]) / source_height))
+        v1 = max(0.0, min(1.0, (root_bounds["max_y"] - source_bounds["min_y"]) / source_height))
+        if u1 <= u0 or v1 <= v0:
+            return None
+
+        source_columns = min(len(row) for row in source_rows if isinstance(row, list) and row)
+        # Keep inherited region maps sufficiently dense for the raster
+        # renderer to interpolate smoothly when the user zooms in.  The crop
+        # does not invent terrain; it only resamples the parent surface.
+        target_columns = min(257, max(129, int(round((source_columns - 1) * (u1 - u0))) + 1))
+        target_rows = min(257, max(65, int(round((len(source_rows) - 1) * (v1 - v0))) + 1))
+        wrap_x = bool(source_heightmap.get("wrap_x", False))
+
+        def resample_rows(rows, categorical=False):
+            if not isinstance(rows, list) or not rows:
+                return []
+            result = []
+            for y_index in range(target_rows):
+                local_v = y_index / max(1, target_rows - 1)
+                source_v = v0 + (v1 - v0) * local_v
+                row = []
+                for x_index in range(target_columns):
+                    local_u = x_index / max(1, target_columns - 1)
+                    source_u = u0 + (u1 - u0) * local_u
+                    row.append(self._sample_grid_value(
+                        rows, source_u, source_v,
+                        wrap_x=wrap_x, categorical=categorical,
+                    ))
+                result.append(row)
+            return result
+
+        inherited_rows = resample_rows(source_rows)
+        if not inherited_rows:
+            return None
+        values = [float(value or 0.0) for row in inherited_rows for value in row]
+        source_masks = source_heightmap.get("surface_masks") or {}
+        inherited_ice_rows = resample_rows(source_masks.get("ice_rows") or [], categorical=True)
+        heightmap = {
+            "status": "parent_surface_inherited",
+            "model_version": "region-parent-surface-v1",
+            "coverage": "parent_region_crop",
+            "projection": "local_equirectangular",
+            "wrap_x": False,
+            "wrap_y": False,
+            "source_location_id": source.get("id"),
+            "source_bounds": dict(source_bounds),
+            "sea_level_m": source_heightmap.get("sea_level_m"),
+            "min_elevation_m": min(values),
+            "max_elevation_m": max(values),
+            "sample_grid": {
+                "width": target_columns,
+                "height": target_rows,
+                "wrap_x": False,
+                "wrap_y": False,
+                "rows": inherited_rows,
+            },
+            "surface_masks": {"ice_rows": inherited_ice_rows},
+        }
+
+        source_water = source.get("water_cycle_model")
+        water_cycle = None
+        climate_grid = source_water.get("climate_grid") if isinstance(source_water, dict) else None
+        climate_rows = climate_grid.get("rows") if isinstance(climate_grid, dict) else None
+        if isinstance(climate_rows, list) and climate_rows:
+            cropped_climate = resample_rows(climate_rows, categorical=True)
+            source_elevation_rows = climate_grid.get("elevation_rows") if isinstance(climate_grid, dict) else None
+            water_cycle = {
+                "status": "parent_climate_inherited",
+                "source_location_id": source.get("id"),
+                "climate_zones": list(source_water.get("climate_zones") or []),
+                "climate_grid": {
+                    "width": target_columns,
+                    "height": target_rows,
+                    "rows": cropped_climate,
+                    "elevation_rows": (
+                        resample_rows(source_elevation_rows)
+                        if isinstance(source_elevation_rows, list) and source_elevation_rows
+                        else inherited_rows
+                    ),
+                },
+                "rivers": [],
+                "lakes": [],
+            }
+
+        return {
+            "root": root,
+            "source": source,
+            "heightmap_model": heightmap,
+            "water_cycle_model": water_cycle,
+            "map_rect": self._surface_rect_from_bounds(root_bounds, target_columns, target_rows),
+        }
+
+    def _root_surface_context(self):
+        root = self.get_root_entity()
+        if not isinstance(root, dict):
+            return None
+        heightmap = root.get("heightmap_model")
+        if self._grid_rows(heightmap):
+            bounds = self._entity_map_bounds(root)
+            if bounds is None:
+                return None
+            grid = heightmap.get("sample_grid") or {}
+            return {
+                "root": root,
+                "source": root,
+                "heightmap_model": heightmap,
+                "water_cycle_model": root.get("water_cycle_model"),
+                "map_rect": self._surface_rect_from_bounds(
+                    bounds,
+                    root.get("map_canvas_width_px") or grid.get("width") or 2,
+                    root.get("map_canvas_height_px") or grid.get("height") or 2,
+                ),
+            }
+
+        bounds_key = repr(root.get("bounds") or root.get("geometry") or {})
+        cache_key = (
+            root.get("id"),
+            bounds_key,
+            getattr(self.world_model, "repository_revision", 0),
+        )
+        cached = getattr(self, "_inherited_surface_context_cache", None)
+        if isinstance(cached, tuple) and cached[0] == cache_key:
+            return cached[1]
+        context = self._inherited_surface_context(root)
+        self._inherited_surface_context_cache = (cache_key, context)
+        return context
 
     def _format_layer_label(self, layer_kind):
         if layer_kind in self.LAYER_LABELS:
@@ -1347,10 +1631,13 @@ class MapSimulation:
 
     def get_map_legend_items(self, max_items=12):
         root = self.get_root_entity() or {}
+        surface_context = self._root_surface_context()
+        surface_heightmap = surface_context.get("heightmap_model") if isinstance(surface_context, dict) else None
+        surface_water_cycle = surface_context.get("water_cycle_model") if isinstance(surface_context, dict) else None
         layer_kind = self.get_active_layer_kind()
         items = []
         if layer_kind == self.HYDROLOGY_LAYER_KIND:
-            water = root.get("water_cycle_model") or {}
+            water = surface_water_cycle or {}
             zones = sorted(
                 [zone for zone in (water.get("climate_zones") or []) if isinstance(zone, dict)],
                 key=lambda zone: float(zone.get("fraction", 0.0) or 0.0),
@@ -1368,7 +1655,7 @@ class MapSimulation:
                 {"label": "Cool ocean current", "color": [104, 210, 232]},
             ])
         elif layer_kind == self.HEIGHTMAP_LAYER_KIND:
-            heightmap = root.get("heightmap_model") or {}
+            heightmap = surface_heightmap or {}
             sea = heightmap.get("sea_level_m")
             minimum = float(heightmap.get("min_elevation_m", 0.0) or 0.0)
             maximum = float(heightmap.get("max_elevation_m", 0.0) or 0.0)
@@ -1399,7 +1686,7 @@ class MapSimulation:
                 {"label": "Sea level / datum", "color": [116, 202, 246]},
             ]
         if (
-            isinstance(root.get("heightmap_model"), dict)
+            isinstance(surface_heightmap, dict)
             and items
             and layer_kind != self.GROUND_MATERIALS_LAYER_KIND
         ):
@@ -1415,10 +1702,11 @@ class MapSimulation:
             return [self.LOCATION_LAYER_KIND]
         layers = [self.LOCATION_LAYER_KIND, self.GROUND_MATERIALS_LAYER_KIND]
         root = self.get_root_entity()
-        heightmap_model = root.get("heightmap_model") if isinstance(root, dict) else None
+        surface_context = self._root_surface_context()
+        heightmap_model = surface_context.get("heightmap_model") if isinstance(surface_context, dict) else None
         if isinstance(heightmap_model, dict):
             layers.append(self.HEIGHTMAP_LAYER_KIND)
-        water_cycle_model = root.get("water_cycle_model") if isinstance(root, dict) else None
+        water_cycle_model = surface_context.get("water_cycle_model") if isinstance(surface_context, dict) else None
         climate_grid = water_cycle_model.get("climate_grid") if isinstance(water_cycle_model, dict) else None
         if isinstance(climate_grid, dict) and climate_grid.get("rows"):
             layers.append(self.HYDROLOGY_LAYER_KIND)
@@ -1434,7 +1722,14 @@ class MapSimulation:
         root = self.get_root_entity()
         if not isinstance(root, dict):
             return False
-        visual = root.get("atmosphere_visual_model") or (root.get("atmosphere_model") or {}).get("visual_model") or {}
+        surface_context = self._root_surface_context()
+        source = surface_context.get("source") if isinstance(surface_context, dict) else None
+        visual = (
+            root.get("atmosphere_visual_model")
+            or (source.get("atmosphere_visual_model") if isinstance(source, dict) else None)
+            or ((source or root).get("atmosphere_model") or {}).get("visual_model")
+            or {}
+        )
         return bool(visual.get("visible") or float(visual.get("opacity", 0.0) or 0.0) > 0.0)
 
     def is_atmosphere_visible(self):
@@ -1445,6 +1740,21 @@ class MapSimulation:
             return False
         self.atmosphere_visible = not self.atmosphere_visible
         self._invalidate_layer_cache()
+        return True
+
+    def has_height_contours(self):
+        surface_context = self._root_surface_context()
+        heightmap = surface_context.get("heightmap_model") if isinstance(surface_context, dict) else None
+        grid = heightmap.get("sample_grid") if isinstance(heightmap, dict) else None
+        return bool(isinstance(grid, dict) and grid.get("rows"))
+
+    def is_height_contours_visible(self):
+        return bool(self.height_contours_visible and self.has_height_contours())
+
+    def toggle_height_contours_visibility(self):
+        if not self.has_height_contours():
+            return False
+        self.height_contours_visible = not self.height_contours_visible
         return True
 
     def set_active_layer_kind(self, layer_kind):
@@ -3284,11 +3594,18 @@ class MapSimulation:
 
         try:
             self._append_location_record(location)
+            parent_id = location.get("parent_location") or self.context.root_entity_id
+            linked_parent = self._append_offspring_reference_to_location(parent_id, location["id"])
         except OSError as exc:
             logger.error(
                 f"[MapSimulation] Failed to save map rectangle draft: {exc}"
             )
             return False
+        if not linked_parent:
+            logger.info(
+                f"[MapSimulation] Saved {location['id']} without parent offspring link "
+                f"parent={location.get('parent_location') or self.context.root_entity_id}"
+            )
 
         self.is_creating_map_square = False
         self.map_square_anchor = None
@@ -3780,6 +4097,11 @@ class MapSimulation:
             "parent_location": parent_id,
             "parent_entity": parent_id,
             "parents": [parent_id],
+            # A map-created location has its own editable boundary but uses a
+            # cropped view of this parent surface until it receives a refined
+            # terrain model of its own.
+            "map_context_parent": parent_id,
+            "inherits_parent_surface": True,
             "geometry": {
                 "type": "polygon",
                 "coordinate_space": "map_world",
@@ -3904,6 +4226,10 @@ class MapSimulation:
             "type": "location",
             "location_class": "region",
             "parent_location": self.context.root_entity_id,
+            "parent_entity": self.context.root_entity_id,
+            "parents": [self.context.root_entity_id],
+            "map_context_parent": self.context.root_entity_id,
+            "inherits_parent_surface": True,
             "wiki_entry": notes,
             "bounds": self._current_map_square_bounds(),
             "start_year": self.year,
@@ -4217,13 +4543,27 @@ class MapSimulation:
         return updated_repository
 
     def _update_location_parent(self, location_id, parent_location_id):
+        location = self.get_location(location_id)
+        previous_parent_id = (
+            self._structural_parent_location_id(location)
+            if isinstance(location, dict)
+            else None
+        )
         updated_repository = self._update_repository_entity_fields(
             location_id,
             {
                 "parent_location": parent_location_id,
+                "parent_entity": parent_location_id,
                 "parents": [parent_location_id] if parent_location_id else [],
+                "map_context_parent": parent_location_id,
             },
         )
+        if not updated_repository:
+            return False
+        if previous_parent_id and previous_parent_id != parent_location_id:
+            self._remove_offspring_reference_from_location(previous_parent_id, location_id)
+        if parent_location_id:
+            self._append_offspring_reference_to_location(parent_location_id, location_id)
         return updated_repository
 
     def _update_spatial_feature_end_year(self, spatial_feature_id, end_year):
@@ -4284,15 +4624,6 @@ class MapSimulation:
         self.camera_drag_has_moved = False
         self.map_projection_dragging = False
         self.map_projection_drag_start = None
-        root = self.get_root_entity()
-        if isinstance(root, dict) and root.get("location_class") in {"planet", "moon"} and self._root_has_visual_surface():
-            world_x, world_y = self._screen_to_world(camera, screen_pos)
-            rect = self._planet_rect_from_entity(root)
-            half_w = float(rect.get("width_world", 0.0) or 0.0) * 0.5
-            half_h = float(rect.get("height_world", 0.0) or 0.0) * 0.5
-            if abs(world_x - rect["x"]) <= half_w and abs(world_y - rect["y"]) <= half_h:
-                self.map_projection_dragging = True
-                self.map_projection_drag_start = (self.map_projection_focus_x, self.map_projection_focus_y)
 
     def _reset_camera_drag(self):
         self.is_camera_dragging = False
@@ -4322,31 +4653,10 @@ class MapSimulation:
 
             self.camera_drag_has_moved = True
 
-        if self.map_projection_dragging and self.map_projection_drag_start is not None:
-            root = self.get_root_entity()
-            rect = self._planet_rect_from_entity(root) if isinstance(root, dict) else None
-            pixel_w = max(1.0, float((rect or {}).get("width_world", 1.0)) * float(camera.zoom))
-            pixel_h = max(1.0, float((rect or {}).get("height_world", 1.0)) * float(camera.zoom))
-            start_focus_x, start_focus_y = self.map_projection_drag_start
-            self.map_projection_focus_x = (start_focus_x - dx / pixel_w) % 1.0
-            self.map_projection_focus_y = max(-0.5, min(0.5, start_focus_y - dy / pixel_h))
-            vector_key = self._vector_projection_focus_key()
-            raster_only = self.active_layer_kind in {
-                self.HEIGHTMAP_LAYER_KIND,
-                self.HYDROLOGY_LAYER_KIND,
-                self.MATERIAL_HEATMAP_LAYER_KIND,
-            }
-            if not raster_only and vector_key != self._layer_projection_focus_key:
-                self._invalidate_layer_cache()
-            else:
-                for layer in self._layer_cache or []:
-                    layer["projection_focus_x"] = self.map_projection_focus_x
-                    layer["projection_focus_y"] = self.map_projection_focus_y
-        else:
-            start_camera_x, start_camera_y = self.camera_drag_start_camera_pos
-            zoom = max(float(camera.zoom), 1e-9)
-            camera.x = start_camera_x - (dx / zoom)
-            camera.y = start_camera_y - (dy / zoom)
+        start_camera_x, start_camera_y = self.camera_drag_start_camera_pos
+        zoom = max(float(camera.zoom), 1e-9)
+        camera.x = start_camera_x - (dx / zoom)
+        camera.y = start_camera_y - (dy / zoom)
 
         self.hover_entity_id = None
         self.hover_spatial_feature_id = None
@@ -4431,6 +4741,14 @@ class MapSimulation:
                 )
             return points
 
+        if geometry_type == "polyline":
+            points = geometry.get("points", [])
+            return [
+                (float(point[0]), float(point[1]))
+                for point in points
+                if isinstance(point, (list, tuple)) and len(point) >= 2
+            ]
+
         return []
 
     def _point_coords_from_entity(self, entity):
@@ -4499,6 +4817,47 @@ class MapSimulation:
                 if len(rings) > 1 or copy_index > 0:
                     layer["suppress_label"] = True
                     layer["draw_order"] = float(layer.get("draw_order", 0.0) or 0.0) + ring_index * 0.001
+                layers.append(layer)
+        return layers
+
+    def _build_location_polyline_layers(self, entity, geometry, color):
+        if not isinstance(geometry, dict) or geometry.get("type") != "polyline":
+            return []
+        raw_paths = geometry.get("paths") or [geometry.get("points") or []]
+        root = self.get_root_entity()
+        entity_id = entity.get("id")
+        layers = []
+        for path_index, raw_path in enumerate(raw_paths):
+            map_points = [
+                (float(point[0]), float(point[1]))
+                for point in raw_path
+                if isinstance(point, (list, tuple)) and len(point) >= 2
+            ] if isinstance(raw_path, list) else []
+            if len(map_points) < 2:
+                continue
+            if isinstance(root, dict) and root.get("location_class") in {"planet", "moon"}:
+                focus_x, focus_y = self._vector_projection_focus()
+                display_paths = project_map_world_line(map_points, focus_x, focus_y)
+            else:
+                display_paths = [[self._map_point_to_world(*point) for point in map_points]]
+            for copy_index, points in enumerate(display_paths):
+                if len(points) < 2:
+                    continue
+                midpoint = points[len(points) // 2]
+                layer = {
+                    "shape": "polyline",
+                    "x": midpoint[0], "y": midpoint[1],
+                    "points": points,
+                    "name": entity.get("name"),
+                    "entity_id": entity_id,
+                    "color": color,
+                    "line_width": entity.get("map_line_width", 2),
+                    "geometry_part": path_index,
+                    "projection_geometry_copy": copy_index,
+                }
+                self._decorate_surface_location_layer(layer, entity)
+                layer["suppress_label"] = True
+                layer["draw_order"] = float(layer.get("draw_order", 0.0) or 0.0) + path_index * 0.001
                 layers.append(layer)
         return layers
 
@@ -4684,8 +5043,11 @@ class MapSimulation:
             return False
 
         bounds = entity.get("bounds") or {}
-        if bounds.get("type") in {"bbox", "polygon"}:
+        if bounds.get("type") in {"bbox", "polygon", "multipolygon"}:
             return len(self._get_geometry_points(bounds)) >= 3
+        if bounds.get("type") == "polyline":
+            paths = bounds.get("paths") or [bounds.get("points") or []]
+            return any(isinstance(path, list) and len(path) >= 2 for path in paths)
 
         if entity.get("location_class") in {"planet", "moon"}:
             return True
@@ -5048,19 +5410,20 @@ class MapSimulation:
         root_entity = self.get_root_entity()
         if not isinstance(root_entity, dict):
             return []
-        if root_entity.get("location_class") not in {"planet", "moon", "generated_region"}:
-            return []
         if self._entity_is_gas_giant(root_entity):
             return []
 
-        water_cycle = root_entity.get("water_cycle_model")
+        surface_context = self._root_surface_context()
+        if not isinstance(surface_context, dict):
+            return []
+        water_cycle = surface_context.get("water_cycle_model")
         if not isinstance(water_cycle, dict):
             return []
         climate_grid = water_cycle.get("climate_grid")
         if not isinstance(climate_grid, dict) or not climate_grid.get("rows"):
             return []
 
-        rect = self._planet_rect_from_entity(root_entity)
+        rect = surface_context["map_rect"]
         return [{
             "shape": "hydrology_climate",
             "x": rect["x"],
@@ -5070,7 +5433,7 @@ class MapSimulation:
             "canvas_width_px": rect["canvas_width_px"],
             "canvas_height_px": rect["canvas_height_px"],
             "water_cycle_model": water_cycle,
-            "heightmap_model": root_entity.get("heightmap_model"),
+            "heightmap_model": surface_context.get("heightmap_model"),
             "name": root_entity.get("name") or "Hydrology",
             "entity_id": root_entity.get("id"),
             "draw_order": -960,
@@ -5192,6 +5555,8 @@ class MapSimulation:
             coords = self._point_coords_from_entity(entity) or {}
             color = self._color_for_entity(entity)
             geometry_layers = self._build_location_geometry_layers(entity, bounds, color)
+            if not geometry_layers:
+                geometry_layers = self._build_location_polyline_layers(entity, bounds, color)
             if geometry_layers:
                 for layer in geometry_layers:
                     layer.update({
@@ -5359,6 +5724,8 @@ class MapSimulation:
                 continue
 
             geometry_layers = self._build_location_geometry_layers(entity, bounds, color)
+            if not geometry_layers:
+                geometry_layers = self._build_location_polyline_layers(entity, bounds, color)
             if geometry_layers:
                 # The root region's generated terrain is already the map
                 # canvas.  Keep its bounds selectable but never paint an
@@ -5398,15 +5765,12 @@ class MapSimulation:
 
     def get_heightmap_base_layer(self):
         root_entity = self.get_root_entity()
-        if not isinstance(root_entity, dict):
+        if not isinstance(root_entity, dict) or self._entity_is_gas_giant(root_entity):
             return None
-
-        if root_entity.get("location_class") not in {"planet", "moon", "generated_region"}:
+        surface_context = self._root_surface_context()
+        if not isinstance(surface_context, dict):
             return None
-        if self._entity_is_gas_giant(root_entity):
-            return None
-
-        heightmap = root_entity.get("heightmap_model")
+        heightmap = surface_context.get("heightmap_model")
         if not isinstance(heightmap, dict):
             return None
 
@@ -5414,8 +5778,37 @@ class MapSimulation:
         if not isinstance(sample_grid, dict) or not sample_grid.get("rows"):
             return None
 
-        rect = self._planet_rect_from_entity(root_entity)
-        atmosphere_visual = root_entity.get("atmosphere_visual_model") or (root_entity.get("atmosphere_model") or {}).get("visual_model") or {}
+        rect = surface_context["map_rect"]
+        source_entity = surface_context.get("source") or root_entity
+        natural_material_model = (
+            root_entity.get("natural_material_model")
+            if isinstance(root_entity.get("natural_material_model"), dict)
+            else source_entity.get("natural_material_model")
+        )
+        surface_palette = root_entity.get("surface_palette") or source_entity.get("surface_palette")
+        # Existing generated worlds retain their data, but maps should still
+        # render with the current material-aware palette after an application
+        # update.  New generations persist this v2 palette normally.
+        if (
+            isinstance(natural_material_model, dict)
+            and (not isinstance(surface_palette, dict) or int(surface_palette.get("palette_version", 0) or 0) < 2)
+        ):
+            surface_palette = derive_planet_surface_palette(
+                natural_material_model,
+                atmosphere=source_entity.get("atmosphere_model"),
+                terrain=source_entity.get("terrain_seed_model"),
+            )
+        material_heatmap_model = root_entity.get("material_heatmap_model")
+        if not isinstance(material_heatmap_model, dict):
+            material_heatmap_model = source_entity.get("material_heatmap_model")
+        material_layer = (
+            material_heatmap_model.get("composite_layer")
+            if isinstance(material_heatmap_model, dict)
+            else None
+        )
+        if not self._material_heatmap_layer_has_raster(material_layer):
+            material_layer = None
+        atmosphere_visual = root_entity.get("atmosphere_visual_model") or source_entity.get("atmosphere_visual_model") or (source_entity.get("atmosphere_model") or {}).get("visual_model") or {}
         atmosphere_enabled = self.is_atmosphere_visible()
         return {
             "shape": "heightmap_base",
@@ -5426,10 +5819,15 @@ class MapSimulation:
             "canvas_width_px": rect["canvas_width_px"],
             "canvas_height_px": rect["canvas_height_px"],
             "heightmap_model": heightmap,
-            "surface_palette": root_entity.get("surface_palette"),
-            "color": root_entity.get("display_color") or root_entity.get("color"),
-            "display_color": root_entity.get("display_color"),
-            "surface_weathering_model": root_entity.get("surface_weathering_model"),
+            "surface_palette": surface_palette,
+            # The global palette establishes the broad surface phase; this
+            # low-opacity composite then places individual materials where
+            # their generated geological affinities make them probable.
+            "surface_material_layer": material_layer,
+            "surface_material_opacity": 92,
+            "color": root_entity.get("display_color") or root_entity.get("color") or source_entity.get("display_color"),
+            "display_color": root_entity.get("display_color") or source_entity.get("display_color"),
+            "surface_weathering_model": root_entity.get("surface_weathering_model") or source_entity.get("surface_weathering_model"),
             "atmosphere_tint": list(atmosphere_visual.get("tint_color") or []),
             "atmosphere_opacity": float(atmosphere_visual.get("opacity", 0.0) or 0.0) if atmosphere_enabled else 0.0,
             "name": root_entity.get("name"),
@@ -5680,6 +6078,18 @@ class MapSimulation:
             edge_tolerance=3.0,
         )
 
+    def _point_near_polyline_points(self, x, y, points, tolerance=0.0):
+        if len(points) < 2:
+            return False
+        previous_x, previous_y = points[0]
+        for current_x, current_y in points[1:]:
+            if self._point_near_segment(
+                x, y, previous_x, previous_y, current_x, current_y, tolerance,
+            ):
+                return True
+            previous_x, previous_y = current_x, current_y
+        return False
+
     def _pick_layer_at_world(self, world_x, world_y, camera, screen_pos=None):
         """
         Pick from topmost to bottommost.
@@ -5691,6 +6101,7 @@ class MapSimulation:
         """
         layers = self.get_layers()
 
+        deferred_broad_location_layer = None
         for layer in reversed(layers):
             if layer.get("pickable") is False or layer.get("is_ghost_context"):
                 continue
@@ -5707,6 +6118,9 @@ class MapSimulation:
 
             if shape in ("map_rect", "rect"):
                 if self._point_in_rect_layer(world_x, world_y, layer):
+                    if layer.get("is_broad_location_overlay"):
+                        deferred_broad_location_layer = deferred_broad_location_layer or layer
+                        continue
                     return layer
 
             elif shape == "polygon":
@@ -5721,13 +6135,23 @@ class MapSimulation:
                     points=layer.get("points", []),
                     edge_tolerance=tolerance,
                 ):
+                    if layer.get("is_broad_location_overlay"):
+                        deferred_broad_location_layer = deferred_broad_location_layer or layer
+                        continue
+                    return layer
+
+            elif shape == "polyline":
+                tolerance = 4.0 / max(float(getattr(camera, "zoom", 1.0) or 1.0), 1e-9)
+                if self._point_near_polyline_points(
+                    world_x, world_y, layer.get("points", []), tolerance=tolerance,
+                ):
                     return layer
 
             elif shape == "marker":
                 if self._point_in_marker_layer(world_x, world_y, layer, camera):
                     return layer
 
-        return None
+        return deferred_broad_location_layer
 
     def _select_picked_layer(self, picked_layer, screen_pos, record_click=False):
         self.hover_screen_pos = screen_pos

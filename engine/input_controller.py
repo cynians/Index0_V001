@@ -23,8 +23,10 @@ class InputController:
         self.show_fps = True
 
     def process(self, events):
-        if getattr(self.simulation, "knowledge_layer_active", False):
-            events = self._coalesce_mousewheel_events(events)
+        # Wheel bursts are coalesced for every simulation. Previously this was
+        # done only for the knowledge layer, leaving maps exposed to hundreds
+        # of camera changes from one physical touchpad gesture.
+        events = self._coalesce_mousewheel_events(events)
 
         for event in events:
 
@@ -66,22 +68,44 @@ class InputController:
     def _coalesce_mousewheel_events(self, events):
         coalesced = []
         pending_wheel = None
+        remaining_y_budget = 6.0
+        remaining_x_budget = 6.0
 
         for event in events:
             if event.type == pygame.MOUSEWHEEL:
                 if pending_wheel is None:
-                    pending_wheel = event
+                    pending_wheel = dict(getattr(event, "dict", {}) or {})
                 else:
-                    pending_wheel.y = getattr(pending_wheel, "y", 0) + getattr(event, "y", 0)
-                    pending_wheel.x = getattr(pending_wheel, "x", 0) + getattr(event, "x", 0)
+                    pending_wheel["y"] = pending_wheel.get("y", 0) + getattr(event, "y", 0)
+                    pending_wheel["x"] = pending_wheel.get("x", 0) + getattr(event, "x", 0)
                 continue
 
             if pending_wheel is not None:
-                coalesced.append(pending_wheel)
+                remaining_y_budget, remaining_x_budget = self._append_bounded_wheel(
+                    coalesced, pending_wheel, remaining_y_budget, remaining_x_budget,
+                )
                 pending_wheel = None
             coalesced.append(event)
 
         if pending_wheel is not None:
-            coalesced.append(pending_wheel)
+            self._append_bounded_wheel(
+                coalesced, pending_wheel, remaining_y_budget, remaining_x_budget,
+            )
 
         return coalesced
+
+    @staticmethod
+    def _append_bounded_wheel(output, attributes, remaining_y_budget, remaining_x_budget):
+        raw_y = float(attributes.get("y", 0) or 0)
+        raw_x = float(attributes.get("x", 0) or 0)
+        bounded_y = max(-remaining_y_budget, min(remaining_y_budget, raw_y))
+        bounded_x = max(-remaining_x_budget, min(remaining_x_budget, raw_x))
+        if bounded_y or bounded_x:
+            safe = dict(attributes)
+            safe["y"] = bounded_y
+            safe["x"] = bounded_x
+            output.append(pygame.event.Event(pygame.MOUSEWHEEL, safe))
+        return (
+            max(0.0, remaining_y_budget - abs(bounded_y)),
+            max(0.0, remaining_x_budget - abs(bounded_x)),
+        )

@@ -8,6 +8,8 @@ from simulations.world_gen.heightmap import (
     _clamp, _crater_height_adjustment_m, _crater_spatial_index, _fbm_noise,
 )
 from simulations.world_gen.map_seed import seed_range
+from simulations.world_gen.regional_materials import derive_regional_material_model
+from simulations.world_gen.surface_evolution import derive_surface_evolution_model
 from simulations.world_gen.water_cycle import derive_water_cycle_model
 
 
@@ -365,8 +367,18 @@ def generate_refined_region(world_model, parent_entity, bounds, *, seed_suffix="
     map_seed = f"{parent_heightmap.get('map_seed') or parent_entity.get('id')}:{seed_suffix}:{region_id}"
 
     aspect = max(0.5, min(3.0, (float(bounds["max_x"]) - float(bounds["min_x"])) / max(1e-9, float(bounds["max_y"]) - float(bounds["min_y"]))))
-    sample_width = 257
-    sample_height = max(129, min(257, int(round((sample_width - 1) / aspect)) + 1))
+    # Macroregions and regions are commonly displayed across most of a
+    # 1600-1920 px viewport.  A 257-column source exposes 6-8 px cells and
+    # forces both contours and tributaries into visibly blocky geometry.
+    # Resolve the scientifically meaningful first two regional levels more
+    # densely; deeper footprints are physically smaller and remain adequately
+    # sampled at 385 columns.
+    sample_width = 513 if level <= 2 else 385
+    minimum_sample_height = 257 if level <= 2 else 193
+    sample_height = max(
+        minimum_sample_height,
+        min(sample_width, int(round((sample_width - 1) / aspect)) + 1),
+    )
     if sample_height % 2 == 0:
         sample_height += 1
     sea_level = parent_heightmap.get("sea_level_m")
@@ -555,6 +567,86 @@ def generate_refined_region(world_model, parent_entity, bounds, *, seed_suffix="
         terrain, heightmap, atmosphere=atmosphere, seed=seed, planet_id=region_id,
         parent_climate_model=parent_entity.get("water_cycle_model"),
     )
+    # Regional refinement previously stopped here: rivers were solved on a
+    # depression-filled DEM and then drawn over the unchanged relief.  Match
+    # the production planetary route with two bounded climate-landscape
+    # feedback passes so routed channels incise ravines and the final network
+    # is solved against the modified topography.
+    regional_planet_context = copy.deepcopy(root_planet) if isinstance(root_planet, dict) else {}
+    # Global crater coordinates are not local patch coordinates. Regional
+    # crater relief was already resolved explicitly above.
+    regional_planet_context.pop("crater_model", None)
+    feedback_iterations = []
+    surface_evolution = {}
+    for iteration in range(1, 3):
+        surface_evolution = derive_surface_evolution_model(
+            planet=regional_planet_context,
+            terrain=terrain,
+            heightmap=heightmap,
+            water_cycle=water_cycle,
+            atmosphere=atmosphere,
+        )
+        feedback_iterations.append({
+            "iteration": iteration,
+            "status": surface_evolution.get("status"),
+            "dominant_process": surface_evolution.get("dominant_process"),
+            "process_means": surface_evolution.get("process_means"),
+            "channel_incision": surface_evolution.get("channel_incision"),
+        })
+        evolved_heightmap = surface_evolution.get("heightmap") if isinstance(surface_evolution, dict) else None
+        if surface_evolution.get("status") != "surface_evolution_seeded" or not isinstance(evolved_heightmap, dict):
+            break
+        heightmap = evolved_heightmap
+        water_cycle = derive_water_cycle_model(
+            terrain, heightmap, atmosphere=atmosphere, seed=seed, planet_id=region_id,
+            parent_climate_model=parent_entity.get("water_cycle_model"),
+        )
+    if isinstance(surface_evolution, dict):
+        surface_evolution["feedback_iterations"] = feedback_iterations
+        surface_evolution["coupling"] = "two_bounded_regional_climate_landscape_feedback_iterations"
+    heightmap["regional_surface_evolution"] = {
+        "status": surface_evolution.get("status"),
+        "model_version": surface_evolution.get("model_version"),
+        "feedback_iteration_count": len(feedback_iterations),
+        "channel_incision": surface_evolution.get("channel_incision"),
+    }
+    root_material_model = (
+        root_planet.get("natural_material_model")
+        if isinstance(root_planet, dict)
+        and isinstance(root_planet.get("natural_material_model"), dict)
+        else {}
+    )
+    regional_material_model = derive_regional_material_model(
+        root_material_model,
+        heightmap,
+        water_cycle,
+        None,
+        map_seed=map_seed,
+        detail_level=level,
+    )
+    truth_lineage = {
+        "root_planet_id": _root_planet_id(world_model, parent_entity),
+        "parent_map_id": parent_entity["id"],
+        "parent_map_seed": str(parent_heightmap.get("map_seed") or ""),
+        "regional_map_seed": map_seed,
+        "source_uv_bounds": {
+            "min_u": source_u0, "max_u": source_u1,
+            "min_v": source_v0, "max_v": source_v1,
+        },
+        "regeneration_changes_truth": False,
+        "edge_detail_fades_to_parent": True,
+        "boundary_condition_contract": {
+            "stellar_environment": "inherited_from_root_planet",
+            "atmosphere": "inherited_from_parent",
+            "tectonic_provinces": "sampled_from_parent",
+            "sea_level": "inherited_from_parent",
+            "climate": "parent_conditioned_with_local_orographic_refinement",
+            "material_inventory": "inherited_from_root_with_local_affinity_selection",
+        },
+    }
+    heightmap["generated_truth_lineage"] = copy.deepcopy(truth_lineage)
+    water_cycle["generated_truth_lineage"] = copy.deepcopy(truth_lineage)
+    regional_material_model["generated_truth_lineage"] = copy.deepcopy(truth_lineage)
 
     spec = detail_level_spec(level)
     existing_entities = getattr(getattr(world_model, "loader", None), "entities", {}) or {}
@@ -591,7 +683,19 @@ def generate_refined_region(world_model, parent_entity, bounds, *, seed_suffix="
         "map_canvas_height_px": heightmap["height_px"],
         "heightmap_model": heightmap,
         "water_cycle_model": water_cycle,
+        "surface_evolution_model": surface_evolution,
         "terrain_seed_model": terrain,
+        "natural_material_model": copy.deepcopy(root_material_model),
+        "regional_material_model": regional_material_model,
+        "regional_material_occurrences": list(
+            regional_material_model.get("occurrences") or []
+        ),
+        "generated_truth_lineage": copy.deepcopy(truth_lineage),
+        "causal_provenance": copy.deepcopy(
+            (root_planet or {}).get("causal_provenance")
+            or (root_planet or {}).get("planetary_evolution_model", {}).get("causal_provenance")
+            or {}
+        ),
         "atmosphere_model": copy.deepcopy(atmosphere),
         "atmosphere_visual_model": copy.deepcopy(parent_entity.get("atmosphere_visual_model")),
         "surface_palette": copy.deepcopy(parent_entity.get("surface_palette")),

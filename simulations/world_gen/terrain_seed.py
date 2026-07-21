@@ -86,7 +86,7 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
     erosion_processes = list(surface.get("erosion_processes") or [])
 
     mobile_plates = tectonics in {"plate_tectonics", "mobile_lid"}
-    partial_resurfacing = tectonics in {"episodic_lid", "heat_pipe", "cryotectonic"}
+    partial_resurfacing = tectonics in {"episodic_lid", "plutonic_squishy_lid", "heat_pipe", "cryotectonic"}
     liquid_water = bool(surface.get("liquid_water_possible") or surface.get("alternate_surface_fluid_possible"))
     frozen_water = (water_fraction > 0.015 or icy_satellite) and surface_temp_k < 273.15
     # A frozen surface does not remove the planet's ocean basins.  Snowball
@@ -129,6 +129,32 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
     max_elevation_m *= relief_scale
     min_elevation_m *= relief_scale
     geologic_style = str(seed.get("geologic_style") or "").strip().lower()
+    geologic_style_source = "explicit" if geologic_style else "derived"
+    # Do not send every unconfigured solid planet through the same generic
+    # rocky scaffold.  These are observable regime families inferred from the
+    # existing thermal, volatile, atmospheric, and hydrologic inputs; a user
+    # can still select any named style explicitly.
+    if not geologic_style:
+        if surface_temp_k >= 1050.0:
+            geologic_style = "magma_seas"
+        elif icy_satellite and tectonics == "cryotectonic":
+            geologic_style = "active_ice_shell"
+        elif pressure_bar >= 20.0 and surface_temp_k >= 550.0 and elements.get("S", 0.0) >= 0.2:
+            geologic_style = "sulfur_heat_pipe"
+        elif tectonics == "heat_pipe":
+            geologic_style = "heat_pipe_volcanic"
+        elif tectonics == "plutonic_squishy_lid":
+            geologic_style = "plutonic_intrusive_uplands"
+        elif frozen_water and surface_temp_k < 190.0:
+            geologic_style = "volatile_frost_transport"
+        elif frozen_water:
+            geologic_style = "glaciated"
+        elif hydrology == "none" and pressure_bar >= 0.15 and surface_temp_k >= 225.0:
+            geologic_style = "evaporite_basins" if water_fraction >= 0.08 else "aeolian_dune_seas"
+        elif tectonics == "episodic_lid":
+            geologic_style = "episodic_rifting"
+        else:
+            geologic_style = "continental_oceanic" if mobile_plates else "stagnant_shields"
     if geologic_style == "plume_lid_volcanic":
         max_elevation_m = 11000.0
         min_elevation_m = -3000.0
@@ -146,6 +172,7 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
         "magma_seas": (0.82, 0.34, "magma_seas_lava_plains_and_solidification_fronts"),
         "hydrocarbon_dunes_and_lakes": (0.52, 0.42, "organic_dunes_dendritic_channels_and_hydrocarbon_basins"),
         "episodic_rifting": (1.05, 0.56, "rift_provinces_flood_lavas_and_old_cratons"),
+        "plutonic_intrusive_uplands": (0.96, 0.46, "intrusive_domes_batholith_uplands_and_local_fault_scarps"),
     }
     if geologic_style in style_relief:
         relief_factor, roughness, relief_driver = style_relief[geologic_style]
@@ -161,31 +188,37 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
         crater_retention = "high"
         roughness = _clamp(max(roughness, 0.82), 0.18, 0.96)
 
-    ocean_bias = seed_range(map_seed, "ocean_bias", -0.18, 0.18)
-    temp_ocean_factor = _clamp(1.0 - abs(surface_temp_k - 288.0) / 155.0, 0.12, 1.0)
-    pressure_ocean_factor = _clamp(0.55 + pressure_bar * 0.32, 0.35, 1.18)
-    volatile_ocean_bonus = _clamp(volatile_elements / 80.0, 0.0, 0.12)
+    # The first-screen water value is a volatile-inventory index, not a desired
+    # map color percentage.  Convert it to an equivalent global water depth;
+    # the generated hypsometry will determine how much surface is inundated.
+    # The nonlinear curve keeps modest inventories continental while allowing
+    # genuinely wet seeds to become ocean worlds.  At the Earth control value
+    # (0.71) it yields approximately Earth's 2.7 km global-equivalent layer.
+    inventory_variation = seed_range(map_seed, "water_inventory_variation", 0.94, 1.06)
+    equivalent_global_water_depth_m = 9000.0 * (water_fraction ** 3.4) * inventory_variation
     if liquid_water:
-        target_ocean_fraction = (
-            water_fraction
-            * seed_range(map_seed, "ocean_scale", 0.75, 1.18)
-            * temp_ocean_factor
-            * pressure_ocean_factor
-            + ocean_bias
-            + volatile_ocean_bonus
+        thermal_retention = _clamp(
+            1.0
+            - max(0.0, surface_temp_k - 305.0) / 120.0
+            - max(0.0, 245.0 - surface_temp_k) / 180.0,
+            0.04,
+            1.0,
         )
-    elif frozen_ocean:
-        # The exposed fraction is controlled mostly by stored water and basin
-        # hypsometry; low temperature affects its phase, not whether the basin
-        # exists.  Keep the stochastic term smaller than on an open-ocean world.
-        target_ocean_fraction = (
-            water_fraction * seed_range(map_seed, "frozen_ocean_scale", 0.82, 1.05)
-            + ocean_bias * 0.22
-            + volatile_ocean_bonus * 0.45
-        )
-    else:
-        target_ocean_fraction = 0.0
-    target_ocean_fraction = _clamp(target_ocean_fraction, 0.0, 0.92)
+        pressure_retention = _clamp(pressure_bar / 0.08, 0.08, 1.0)
+        equivalent_global_water_depth_m *= thermal_retention * pressure_retention
+    elif not frozen_ocean:
+        equivalent_global_water_depth_m = 0.0
+    planet_kind = str(
+        seed.get("planet_class")
+        or seed.get("planet_template")
+        or ""
+    ).strip().lower()
+    if planet_kind in {"desert_terrestrial", "desiccated_former_ocean"}:
+        equivalent_global_water_depth_m = min(equivalent_global_water_depth_m, 90.0)
+    # Legacy authored targets remain an explicit compatibility override only.
+    # Normal generation never writes this field and therefore always uses the
+    # inventory-volume route.
+    target_ocean_fraction = 0.0
     if seed.get("ocean_fraction_target") is not None and (liquid_water or frozen_ocean):
         target_ocean_fraction = _clamp(seed.get("ocean_fraction_target"), 0.0, 0.92)
     cold_ice_factor = _clamp((273.15 - surface_temp_k) / 95.0, 0.0, 1.0)
@@ -243,7 +276,7 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
         layers.append({"id": "tectonic_boundaries", "kind": "vector", "source": "plate_solver_seed"})
     if crater_density > 0.12:
         layers.append({"id": "crater_population", "kind": "feature_set", "source": "impact_seed"})
-    if target_ocean_fraction > 0:
+    if equivalent_global_water_depth_m > 0.0 or target_ocean_fraction > 0.0:
         layers.append({"id": "water_mask", "kind": "raster_mask", "source": "sea_level"})
     if target_ice_fraction > 0:
         layers.append({"id": "ice_mask", "kind": "raster_mask", "source": "frozen_volatile_inventory"})
@@ -297,8 +330,10 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
             "resolution": "global_seed",
             "min_elevation_m": round(min_elevation_m, 1),
             "max_elevation_m": round(max_elevation_m, 1),
-            "sea_level_m": 0.0 if target_ocean_fraction > 0 else None,
+            "sea_level_m": None,
             "target_ocean_fraction": round(target_ocean_fraction, 3),
+            "equivalent_global_water_depth_m": round(equivalent_global_water_depth_m, 2),
+            "sea_level_resolution": "volume_balance_against_generated_hypsometry",
             "roughness": round(roughness, 3),
             "relief_driver": relief_driver,
             "primary_topography": topography,
@@ -335,12 +370,16 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
             "frozen_water_possible": frozen_water,
             "frozen_ocean_possible": frozen_ocean,
             "target_ocean_fraction": round(target_ocean_fraction, 3),
+            "water_inventory_index": round(water_fraction, 4),
+            "equivalent_global_water_depth_m": round(equivalent_global_water_depth_m, 2),
+            "coverage_mode": "derived_from_inventory_and_hypsometry",
             "target_ice_fraction": round(target_ice_fraction, 3),
             "drainage_enabled": hydrology in {"active", "limited"},
             "surface_fluid": seed.get("surface_fluid", "water"),
         },
         "specialized_surface_processes": {
-            "geologic_style": geologic_style or "generic_rocky",
+            "geologic_style": geologic_style,
+            "geologic_style_source": geologic_style_source,
             "features": specialized_features,
             "climate_mode": seed.get("climate_mode", "latitudinal_seasonal"),
             "seasonal_cycle": bool(seed.get("seasonal_cycle")),

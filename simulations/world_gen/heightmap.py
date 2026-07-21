@@ -124,22 +124,22 @@ def _fbm_noise(map_seed, key, nx, ny, base_cells=4, octaves=4, lacunarity=2.0, g
 def _continental_process_model(map_seed):
     """Build ancient crustal provinces once; sampling them stays inexpensive."""
     seed = str(map_seed or "")
-    assembly_count = int(round(seed_range(seed, "crust:assembly_count", 5.0, 7.0)))
-    cratons, sutures, rifts, basins = [], [], [], []
+    assembly_count = int(round(seed_range(seed, "crust:assembly_count", 6.0, 9.0)))
+    cratons, sutures, rifts, basins, embayments = [], [], [], [], []
     for assembly in range(assembly_count):
         key = f"crust:assembly_{assembly}"
         cx = seed_range(seed, f"{key}:x", 0.0, 1.0)
         cy = seed_range(seed, f"{key}:y", 0.14, 0.86)
         bearing = seed_range(seed, f"{key}:bearing", 0.0, math.tau)
-        craton_count = int(round(seed_range(seed, f"{key}:cratons", 3.0, 5.0)))
+        craton_count = int(round(seed_range(seed, f"{key}:cratons", 3.0, 6.0)))
         local = []
         for index in range(craton_count):
             along = (index - (craton_count - 1) * 0.5) * seed_range(seed, f"{key}:spacing", 0.045, 0.085)
             across = seed_range(seed, f"{key}:across_{index}", -0.045, 0.045)
             px = (cx + math.cos(bearing) * along - math.sin(bearing) * across) % 1.0
             py = _clamp(cy + math.sin(bearing) * along + math.cos(bearing) * across, 0.08, 0.92)
-            width = seed_range(seed, f"{key}:w_{index}", 0.045, 0.105)
-            height = seed_range(seed, f"{key}:h_{index}", 0.040, 0.095)
+            width = seed_range(seed, f"{key}:w_{index}", 0.035, 0.090)
+            height = seed_range(seed, f"{key}:h_{index}", 0.032, 0.082)
             angle = bearing + seed_range(seed, f"{key}:angle_{index}", -0.65, 0.65)
             item = (px, py, width, height, angle, seed_range(seed, f"{key}:strength_{index}", 0.78, 1.08))
             cratons.append(item)
@@ -151,6 +151,32 @@ def _continental_process_model(map_seed):
         rifts.append(((cx - math.cos(rift_angle) * rift_half) % 1.0, cy - math.sin(rift_angle) * rift_half,
                       (cx + math.cos(rift_angle) * rift_half) % 1.0, cy + math.sin(rift_angle) * rift_half,
                       seed_range(seed, f"{key}:rift_width", 0.008, 0.018)))
+        # Accreted terranes and rifted fragments keep continental margins from
+        # collapsing into a few smooth ellipses. Some remain connected as
+        # peninsulas while others become nearby microcontinents.
+        terrane_count = int(round(seed_range(seed, f"{key}:terranes", 2.0, 4.0)))
+        for index in range(terrane_count):
+            terrane_angle = bearing + seed_range(seed, f"{key}:terrane_angle_{index}", -1.9, 1.9)
+            terrane_offset = seed_range(seed, f"{key}:terrane_offset_{index}", 0.070, 0.145)
+            cratons.append((
+                (cx + math.cos(terrane_angle) * terrane_offset) % 1.0,
+                _clamp(cy + math.sin(terrane_angle) * terrane_offset, 0.07, 0.93),
+                seed_range(seed, f"{key}:terrane_w_{index}", 0.016, 0.043),
+                seed_range(seed, f"{key}:terrane_h_{index}", 0.014, 0.038),
+                terrane_angle + seed_range(seed, f"{key}:terrane_rotation_{index}", -0.8, 0.8),
+                seed_range(seed, f"{key}:terrane_strength_{index}", 0.62, 0.92),
+            ))
+        embayment_count = int(round(seed_range(seed, f"{key}:embayments", 1.0, 2.0)))
+        for index in range(embayment_count):
+            embayment_angle = bearing + seed_range(seed, f"{key}:embayment_angle_{index}", -2.4, 2.4)
+            embayment_offset = seed_range(seed, f"{key}:embayment_offset_{index}", 0.055, 0.105)
+            embayments.append((
+                (cx + math.cos(embayment_angle) * embayment_offset) % 1.0,
+                _clamp(cy + math.sin(embayment_angle) * embayment_offset, 0.07, 0.93),
+                seed_range(seed, f"{key}:embayment_w_{index}", 0.018, 0.052),
+                seed_range(seed, f"{key}:embayment_h_{index}", 0.014, 0.040),
+                seed_range(seed, f"{key}:embayment_depth_{index}", 0.12, 0.30),
+            ))
         for index in range(2):
             basin_angle = seed_range(seed, f"{key}:basin_angle_{index}", 0.0, math.tau)
             basin_radius = seed_range(seed, f"{key}:basin_offset_{index}", 0.025, 0.080)
@@ -177,10 +203,11 @@ def _continental_process_model(map_seed):
                                  seed_range(seed, f"{key}:radius_{index}", 0.005, 0.013), age_scale))
         island_chains.append(tuple(chain_points))
     return {"cratons": tuple(cratons), "sutures": tuple(sutures), "rifts": tuple(rifts),
-            "basins": tuple(basins), "island_chains": tuple(island_chains)}
+            "basins": tuple(basins), "embayments": tuple(embayments),
+            "island_chains": tuple(island_chains)}
 
 
-def _continent_signal(nx, ny, map_seed=""):
+def _continent_signal(nx, ny, map_seed="", tectonic_model=None):
     """Continental crust assembled from cratons, terranes, sutures and rifts."""
     model = _continental_process_model(str(map_seed or ""))
     warp_x = _fbm_noise(map_seed, "continental_warp_x", nx, ny, base_cells=4, octaves=3) * 0.035
@@ -193,6 +220,20 @@ def _continent_signal(nx, ny, map_seed=""):
         ry = dx * math.sin(angle) + dy * math.cos(angle)
         distance = (rx / width) ** 2 + (ry / height) ** 2
         lithosphere = max(lithosphere, math.exp(-(distance * 0.72)) * strength)
+    # Anchor old continental nuclei to present-day continental plates. The
+    # smaller procedural cratons above provide irregular detail; these broad
+    # plate-conditioned roots prevent continents from ignoring plate history.
+    if isinstance(tectonic_model, dict):
+        for plate in tectonic_model.get("plates") or []:
+            if not isinstance(plate, dict) or plate.get("plate_type") == "oceanic":
+                continue
+            continentality = float(plate.get("continentality", 0.5) or 0.5)
+            width = 0.075 + continentality * 0.10
+            height = 0.055 + continentality * 0.075
+            dx = _wrapped_delta(wx, float(plate.get("center_x", 0.0) or 0.0))
+            dy = wy - float(plate.get("center_y", 0.5) or 0.5)
+            root = math.exp(-(((dx / width) ** 2 + (dy / height) ** 2) * 0.72))
+            lithosphere = max(lithosphere, root * (0.90 + continentality * 0.45))
     signal = -0.56 + lithosphere * 0.92
     for x1, y1, x2, y2, width in model["sutures"]:
         distance = _wrapped_point_segment_distance(wx, wy, x1, y1, x2, y2)
@@ -200,11 +241,15 @@ def _continent_signal(nx, ny, map_seed=""):
     for x1, y1, x2, y2, width in model["rifts"]:
         distance = _wrapped_point_segment_distance(wx, wy, x1, y1, x2, y2)
         signal -= 0.22 * math.exp(-((distance / width) ** 2)) * _smoothstep(lithosphere)
+    for cx, cy, width, height, depth in model["embayments"]:
+        distance = (_wrapped_delta(wx, cx) / width) ** 2 + ((wy - cy) / height) ** 2
+        signal -= math.exp(-distance) * depth
 
     terrane = _fbm_noise(map_seed, "continental_terrane_texture", wx, wy, base_cells=10, octaves=4)
     shore = _fbm_noise(map_seed, "continental_eroded_margins", wx, wy, base_cells=28, octaves=3, gain=0.48)
+    coast_detail = _fbm_noise(map_seed, "continental_coast_detail", wx, wy, base_cells=52, octaves=2, gain=0.42)
     shore_band = math.exp(-(((signal + 0.08) / 0.24) ** 2))
-    signal += terrane * 0.09 + shore * (0.06 + shore_band * 0.19)
+    signal += terrane * 0.09 + shore * (0.06 + shore_band * 0.19) + coast_detail * shore_band * 0.10
     latitude_taper = 1.0 - max(0.0, abs(wy - 0.5) * 2.0 - 0.84) * 1.15
     return _clamp(signal * max(0.42, latitude_taper), -0.9, 1.0)
 
@@ -255,14 +300,34 @@ def _crater_signal(nx, ny, map_seed=""):
     return _clamp(value, -0.8, 0.8)
 
 
+def _plate_distance(nx, ny, plate):
+    dx = _wrapped_delta(nx, float(plate.get("center_x", 0.0) or 0.0))
+    dy = float(ny) - float(plate.get("center_y", 0.5) or 0.5)
+    shape = plate.get("boundary_shape") if isinstance(plate.get("boundary_shape"), dict) else {}
+    orientation = float(shape.get("orientation_rad", 0.0) or 0.0)
+    axis_ratio = _clamp(shape.get("axis_ratio", 1.0), 0.72, 1.38)
+    cos_angle = math.cos(orientation)
+    sin_angle = math.sin(orientation)
+    rx = (dx * cos_angle - dy * sin_angle) / axis_ratio
+    ry = (dx * sin_angle + dy * cos_angle) * axis_ratio
+    angle = math.atan2(ry, rx)
+    lobe_scale = 1.0
+    lobe_scale += float(shape.get("lobe_a_amplitude", 0.0) or 0.0) * math.sin(
+        angle * int(shape.get("lobe_a_frequency", 3) or 3)
+        + float(shape.get("lobe_a_phase", 0.0) or 0.0)
+    )
+    lobe_scale += float(shape.get("lobe_b_amplitude", 0.0) or 0.0) * math.sin(
+        angle * int(shape.get("lobe_b_frequency", 5) or 5)
+        + float(shape.get("lobe_b_phase", 0.0) or 0.0)
+    )
+    return math.hypot(rx, ry) / max(0.68, lobe_scale)
+
+
 def _nearest_plate(nx, ny, plates):
     best = None
     best_distance = 999.0
     for plate in plates:
-        distance = math.hypot(
-            _wrapped_delta(nx, float(plate.get("center_x", 0.0) or 0.0)),
-            ny - float(plate.get("center_y", 0.0) or 0.0),
-        )
+        distance = _plate_distance(nx, ny, plate)
         if distance < best_distance:
             best_distance = distance
             best = plate
@@ -281,16 +346,45 @@ def _plate_base_height_m(plate):
     return -4100.0 + continentality * 850.0
 
 
+def _sample_lithosphere(tectonic_model, nx, ny):
+    grid = tectonic_model.get("lithosphere_grid") if isinstance(tectonic_model.get("lithosphere_grid"), dict) else {}
+    crust_rows = grid.get("crust_type_rows") or []
+    age_rows = grid.get("ocean_floor_age_rows_myr") or []
+    fraction_rows = grid.get("continental_fraction_rows") or []
+    if not crust_rows or not crust_rows[0]:
+        return {"crust_type": "unknown", "age_myr": 0.0, "continental_fraction": 0.5}
+    height = len(crust_rows)
+    width = min(len(row) for row in crust_rows)
+    x = int(round(float(nx) * max(1, width - 1))) % width
+    y = max(0, min(height - 1, int(round(float(ny) * max(1, height - 1)))))
+    age = float(age_rows[y][x]) if y < len(age_rows) and x < len(age_rows[y]) else 0.0
+    if fraction_rows and fraction_rows[0]:
+        # Bilinear sampling keeps the low-resolution causal lithosphere grid
+        # from imprinting cell edges on the rendered global heightfield.
+        fx = float(nx) * max(1, width - 1)
+        fy = float(ny) * max(1, height - 1)
+        x0, y0 = int(math.floor(fx)) % width, max(0, min(height - 1, int(math.floor(fy))))
+        x1, y1 = (x0 + 1) % width, min(height - 1, y0 + 1)
+        tx, ty = fx - math.floor(fx), fy - math.floor(fy)
+        top = float(fraction_rows[y0][x0]) * (1.0 - tx) + float(fraction_rows[y0][x1]) * tx
+        bottom = float(fraction_rows[y1][x0]) * (1.0 - tx) + float(fraction_rows[y1][x1]) * tx
+        continental_fraction = top * (1.0 - ty) + bottom * ty
+        if age_rows and y1 < len(age_rows):
+            age_top = float(age_rows[y0][x0]) * (1.0 - tx) + float(age_rows[y0][x1]) * tx
+            age_bottom = float(age_rows[y1][x0]) * (1.0 - tx) + float(age_rows[y1][x1]) * tx
+            age = age_top * (1.0 - ty) + age_bottom * ty
+    else:
+        continental_fraction = 1.0 if crust_rows[y][x] in {"continental", "continental_fragment"} else 0.0
+    return {"crust_type": crust_rows[y][x], "age_myr": age, "continental_fraction": continental_fraction}
+
+
 def _blended_plate_base_height_m(nx, ny, plates):
     weighted_height = 0.0
     total_weight = 0.0
     nearest = None
     nearest_distance = 999.0
     for plate in plates:
-        distance = math.hypot(
-            _wrapped_delta(nx, float(plate.get("center_x", 0.0) or 0.0)),
-            ny - float(plate.get("center_y", 0.0) or 0.0),
-        )
+        distance = _plate_distance(nx, ny, plate)
         if distance < nearest_distance:
             nearest_distance = distance
             nearest = plate
@@ -299,7 +393,12 @@ def _blended_plate_base_height_m(nx, ny, plates):
         total_weight += weight
     if total_weight <= 0:
         return 0.0, nearest
-    return weighted_height / total_weight, nearest
+    weighted_average = weighted_height / total_weight
+    # Preserve isostatic plate identity in interiors while retaining a small
+    # boundary blend. Global averaging flattened both continental freeboard
+    # and ocean-basin depth, drowning continents at realistic water volumes.
+    nearest_height = _plate_base_height_m(nearest)
+    return nearest_height * 0.76 + weighted_average * 0.24, nearest
 
 
 def _point_segment_distance(px, py, x1, y1, x2, y2):
@@ -344,7 +443,7 @@ def _boundary_kind_lookup(tectonic_model):
     return lookup
 
 
-def _representative_boundary_segments(tectonic_model, max_segments=96):
+def _representative_boundary_segments(tectonic_model, max_segments=180):
     segments = [
         segment
         for segment in (tectonic_model.get("boundary_segments") or [])
@@ -405,12 +504,55 @@ def _tectonic_height_m(nx, ny, terrain, tectonic_model):
     base, plate = _blended_plate_base_height_m(nx, ny, plates)
     plate_type = plate.get("plate_type") if isinstance(plate, dict) else "mixed"
     plate_continentality = float(plate.get("continentality", 0.5) or 0.5) if isinstance(plate, dict) else 0.5
+    lithosphere = _sample_lithosphere(tectonic_model, nx, ny)
+    crust_type = lithosphere["crust_type"]
+    crust_fraction = float(lithosphere.get("continental_fraction", 0.5) or 0.0)
+    ocean_floor_age_myr = lithosphere["age_myr"] if crust_type == "oceanic" else 0.0
 
     longitude = nx * math.tau
     latitude = (ny - 0.5) * math.pi
     map_seed = str(tectonic_model.get("map_seed") or terrain.get("map_seed") or "")
-    continent_signal = _continent_signal(nx, ny, map_seed=map_seed)
-    continent_mask = _continental_mask(continent_signal + (plate_continentality - 0.5) * 0.48)
+    continent_signal = _continent_signal(
+        nx,
+        ny,
+        map_seed=map_seed,
+        tectonic_model=tectonic_model,
+    )
+    # A continental plate must carry broad buoyant crust, not merely a small
+    # circular root at its centre. Rifts, embayments and terrane noise still
+    # cut into this support, producing irregular margins and internal seas.
+    # Oceanic plates receive the opposite bias; mixed plates can host arcs and
+    # microcontinents without turning the whole plate into exposed land.
+    lithosphere_bias = {
+        "continental": 0.0,
+        "mixed": 0.18,
+        "oceanic": -0.20,
+    }.get(plate_type, 0.0)
+    continent_mask = _continental_mask(
+        continent_signal
+        + lithosphere_bias
+        + (plate_continentality - 0.5) * 0.48
+    )
+    if plate_type == "continental":
+        crust_province = _fbm_noise(
+            map_seed, "continental_plate_provinces", nx, ny,
+            base_cells=5, octaves=4,
+        )
+        margin_detail = _fbm_noise(
+            map_seed, "continental_plate_margin_detail", nx, ny,
+            base_cells=17, octaves=3, gain=0.48,
+        )
+        province_mix = _smoothstep(
+            (crust_province + margin_detail * 0.22 + 0.35) / 0.55
+        )
+        plate_support = 0.42 + province_mix * 0.56
+        continent_mask = max(plate_support, continent_mask)
+    elif plate_type == "oceanic":
+        continent_mask = min(0.06, continent_mask)
+    if plate_type == "mixed":
+        # Continental fragments grade into stretched transitional crust rather
+        # than stepping abruptly from abyssal basin to high continent.
+        continent_mask = continent_mask * 0.18 + crust_fraction * 0.82
     rugged_noise = _fbm_noise(map_seed, "rugged_relief", nx, ny, base_cells=18, octaves=4)
     shield_noise = _fbm_noise(map_seed, "cratonic_shields", nx, ny, base_cells=8, octaves=3)
     basin_noise = _fbm_noise(map_seed, "sedimentary_basins", nx, ny, base_cells=11, octaves=3)
@@ -423,9 +565,36 @@ def _tectonic_height_m(nx, ny, terrain, tectonic_model):
     )
     height = base + broad_relief
     height += continent_mask * (780.0 + shield_noise * 360.0)
-    height += (1.0 - continent_mask) * (-660.0 + basin_noise * 220.0)
+    # Isostatic contrast is what lets a realistic water volume coexist with
+    # exposed continents: young dense oceanic lithosphere forms deep basins,
+    # while buoyant differentiated continental crust retains freeboard.
+    height += continent_mask * 360.0
+    height += (1.0 - continent_mask) * (-2850.0 + basin_noise * 360.0)
+    if crust_type == "oceanic":
+        # Young ridge crust is hot and buoyant; cooling lithosphere subsides
+        # approximately with the square root of age until subduction recycles it.
+        height -= min(1450.0, math.sqrt(max(0.0, ocean_floor_age_myr)) * 105.0)
     # Subsidence within stable crust creates sedimentary and endorheic basins.
     height -= intracontinental_basin * continent_mask * 1150.0
+    province_model = tectonic_model.get("continental_province_model") if isinstance(tectonic_model.get("continental_province_model"), dict) else {}
+    for craton in province_model.get("cratons") or []:
+        dx = _wrapped_delta(nx, float(craton.get("center_x", 0.0) or 0.0)) / max(0.01, float(craton.get("width", 0.08) or 0.08))
+        dy = (ny - float(craton.get("center_y", 0.5) or 0.5)) / max(0.01, float(craton.get("height", 0.06) or 0.06))
+        shield = math.exp(-((dx * dx + dy * dy) * 1.15))
+        height += shield * (420.0 if craton.get("state") == "exposed_shield" else 120.0)
+    for rift in province_model.get("failed_rifts") or []:
+        distance = _wrapped_point_segment_distance(
+            nx, ny,
+            float(rift.get("x1", 0.0) or 0.0), float(rift.get("y1", 0.5) or 0.5),
+            float(rift.get("x2", 0.0) or 0.0), float(rift.get("y2", 0.5) or 0.5),
+        )
+        height -= math.exp(-((distance / 0.014) ** 2)) * float(rift.get("subsidence_m", 0.0) or 0.0) * continent_mask
+    for basin in province_model.get("intracratonic_basins") or []:
+        distance = math.hypot(
+            _wrapped_delta(nx, float(basin.get("center_x", 0.0) or 0.0)),
+            ny - float(basin.get("center_y", 0.5) or 0.5),
+        ) / max(0.01, float(basin.get("radius", 0.05) or 0.05))
+        height -= math.exp(-(distance ** 2)) * min(1250.0, float(basin.get("sediment_capacity_m", 0.0) or 0.0) * 0.16) * continent_mask
     if plate_type == "oceanic":
         height -= 520.0
     elif plate_type == "continental":
@@ -435,7 +604,6 @@ def _tectonic_height_m(nx, ny, terrain, tectonic_model):
     uplift_gain = 0.7 + float(effects.get("orogenic_uplift", 0.0) or 0.0) * 0.9
     basin_gain = 0.65 + float(effects.get("ocean_basin_opening", 0.0) or 0.0) * 0.75
     erosion = float(effects.get("erosion_progress", 0.0) or 0.0)
-    boundary_lookup = _boundary_kind_lookup(tectonic_model)
     convergent_influence = 0.0
     divergent_influence = 0.0
     trench_influence = 0.0
@@ -450,22 +618,52 @@ def _tectonic_height_m(nx, ny, terrain, tectonic_model):
             float(segment.get("x2", 0.0) or 0.0),
             float(segment.get("y2", 0.0) or 0.0),
         )
-        if distance > 0.09:
+        influence_width = _clamp(segment.get("influence_width", 0.028), 0.012, 0.05)
+        if distance > influence_width * 2.5:
             continue
-        influence = math.exp(-((distance / 0.045) ** 2))
-        influence = influence ** 1.18
-        kind = boundary_lookup.get(tuple(sorted((segment.get("plate_a"), segment.get("plate_b")))), "passive")
+        influence = math.exp(-((distance / influence_width) ** 2))
+        influence = influence ** 1.18 * _clamp(segment.get("activity_scale", 1.0), 0.25, 1.35)
+        segmentation_phase = seed_range(map_seed, "orogen_segmentation_phase", 0.0, math.tau)
+        primary_segment = 0.5 + 0.5 * math.sin(
+            (nx * 11.0 + ny * 16.0) * math.tau + segmentation_phase
+        )
+        secondary_segment = 0.5 + 0.5 * math.sin(
+            (nx * 29.0 - ny * 19.0) * math.tau + segmentation_phase * 1.73
+        )
+        along_strike_texture = 0.20 + 0.80 * _smoothstep(
+            primary_segment * 0.72 + secondary_segment * 0.28
+        )
+        kind = segment.get("kind") or "passive"
+        normal_x = float(segment.get("normal_x", 0.0) or 0.0)
+        normal_y = float(segment.get("normal_y", 0.0) or 0.0)
+        midpoint_x = (float(segment.get("x1", 0.0) or 0.0) + float(segment.get("x2", 0.0) or 0.0)) * 0.5
+        midpoint_y = (float(segment.get("y1", 0.0) or 0.0) + float(segment.get("y2", 0.0) or 0.0)) * 0.5
+        signed_normal_distance = _wrapped_delta(nx, midpoint_x) * normal_x + (ny - midpoint_y) * normal_y
         if kind == "collision":
-            height += 4300.0 * uplift_gain * influence
+            height += 3700.0 * uplift_gain * influence * along_strike_texture
+            # Flexural loading depresses a foreland basin outside the central
+            # fold-and-thrust belt and raises a weak outer bulge farther out.
+            foreland = math.exp(-(((abs(signed_normal_distance) - 0.040) / 0.014) ** 2))
+            outer_bulge = math.exp(-(((abs(signed_normal_distance) - 0.068) / 0.016) ** 2))
+            height -= 920.0 * foreland * along_strike_texture
+            height += 260.0 * outer_bulge
             convergent_influence = max(convergent_influence, influence)
         elif kind == "subduction":
-            height += 3300.0 * uplift_gain * influence
-            height -= 1800.0 * influence * (1.0 if plate_type == "oceanic" else 0.3)
-            # Discrete volcanoes make island arcs instead of continuous walls.
+            overriding_side = 1.0 if segment.get("overriding_plate") == segment.get("plate_b") else -1.0
+            trench_band = math.exp(-(((signed_normal_distance + overriding_side * 0.012) / 0.009) ** 2))
+            arc_band = math.exp(-(((signed_normal_distance - overriding_side * 0.024) / 0.013) ** 2))
+            forearc_band = math.exp(-(((signed_normal_distance - overriding_side * 0.010) / 0.010) ** 2))
+            backarc_band = math.exp(-(((signed_normal_distance - overriding_side * 0.045) / 0.018) ** 2))
+            height += 2700.0 * uplift_gain * arc_band * along_strike_texture
+            height -= 2300.0 * trench_band
+            height -= 320.0 * forearc_band
+            height -= 520.0 * backarc_band * (0.35 + along_strike_texture * 0.65)
+            # Discrete volcanoes sit on the overriding arc rather than forming
+            # a continuous ridge exactly on the trench.
             arc_beads = max(0.0, math.sin((nx * 71.0 + ny * 43.0) * math.tau)) ** 5
-            height += 2600.0 * influence * arc_beads * (1.0 if plate_type == "oceanic" else 0.32)
+            height += 2300.0 * arc_band * arc_beads
             convergent_influence = max(convergent_influence, influence)
-            trench_influence = max(trench_influence, influence)
+            trench_influence = max(trench_influence, trench_band)
         elif kind == "divergent":
             height -= 2100.0 * basin_gain * influence
             divergent_influence = max(divergent_influence, influence)
@@ -483,6 +681,16 @@ def _tectonic_height_m(nx, ny, terrain, tectonic_model):
     height += rugged_noise * (180.0 + continent_mask * 380.0 + convergent_influence * 950.0)
     # Mantle plumes leave volcanic chains primarily on oceanic lithosphere.
     height += island_signal * (1.0 - continent_mask) * (4100.0 if plate_type == "oceanic" else 2300.0)
+    hotspot_model = tectonic_model.get("hotspot_model") if isinstance(tectonic_model.get("hotspot_model"), dict) else {}
+    for hotspot in hotspot_model.get("hotspots") or []:
+        for point in hotspot.get("track") or []:
+            distance = math.hypot(
+                _wrapped_delta(nx, float(point.get("x", 0.0) or 0.0)),
+                ny - float(point.get("y", 0.5) or 0.5),
+            )
+            radius = 0.008 + float(point.get("relative_volume", 0.0) or 0.0) * 0.010
+            if distance < radius * 2.5:
+                height += math.exp(-((distance / radius) ** 2)) * 2600.0 * float(point.get("relative_volume", 0.0) or 0.0) * (1.0 - continent_mask * 0.55)
 
     if height > 1000.0:
         height *= 1.0 - min(0.34, erosion * 0.24)
@@ -625,6 +833,8 @@ def _wave_height(nx, ny, terrain, tectonic_model=None, crater_model=None, crater
     tectonics = terrain.get("tectonics") if isinstance(terrain.get("tectonics"), dict) else {}
     cratering = terrain.get("cratering") if isinstance(terrain.get("cratering"), dict) else {}
     hydrology = terrain.get("hydrology") if isinstance(terrain.get("hydrology"), dict) else {}
+    specialized = terrain.get("specialized_surface_processes") if isinstance(terrain.get("specialized_surface_processes"), dict) else {}
+    geologic_style = str(specialized.get("geologic_style") or "").lower()
 
     roughness = float(heightfield.get("roughness", 0.5) or 0.5)
     crater_gain = float(cratering.get("density", 0.0) or 0.0)
@@ -662,6 +872,47 @@ def _wave_height(nx, ny, terrain, tectonic_model=None, crater_model=None, crater
         value -= _intracontinental_basin_signal(nx, ny, map_seed=map_seed) * _continental_mask(continents) * 0.11
         value += _oceanic_island_signal(nx, ny, map_seed=map_seed) * (1.0 - _continental_mask(continents)) * 0.34
 
+    # Regime-specific morphology is added before tectonic/crater features. It
+    # gives dry, volatile, volcanic, and rifted worlds recognisably different
+    # landforms while retaining the same heightfield contract for map tools.
+    if geologic_style in {"heat_pipe_volcanic", "sulfur_heat_pipe"}:
+        plume_noise = _fbm_noise(map_seed, "heat_pipe_provinces", nx, ny, base_cells=7, octaves=4)
+        volcanic_belts = max(
+            _ridge_belt(nx, ny, seed_range(map_seed, "heat_pipe_a", 0.0, 1.0), 0.34, 0.10, 0.070),
+            _ridge_belt(nx, ny, seed_range(map_seed, "heat_pipe_b", 0.0, 1.0), 0.66, 0.085, 0.060),
+        )
+        value = value * 0.48 + plume_noise * 0.18 + volcanic_belts * 0.34
+    elif geologic_style == "episodic_rifting":
+        rift_a = _ridge_belt(nx, ny, seed_range(map_seed, "episodic_rift_a", 0.0, 1.0), 0.38, 0.050, 0.115)
+        rift_b = _ridge_belt(nx, ny, seed_range(map_seed, "episodic_rift_b", 0.0, 1.0), 0.63, 0.042, 0.090)
+        flood_plain = _fbm_noise(map_seed, "episodic_flood_lava", nx, ny, base_cells=11, octaves=3)
+        value += max(rift_a, rift_b * 0.82) * 0.36 + flood_plain * 0.08
+    elif geologic_style == "plutonic_intrusive_uplands":
+        batholiths = _fbm_noise(map_seed, "plutonic_batholiths", nx, ny, base_cells=5, octaves=3)
+        dome_a = _ridge_belt(nx, ny, seed_range(map_seed, "plutonic_dome_a", 0.0, 1.0), 0.34, 0.13, 0.12)
+        dome_b = _ridge_belt(nx, ny, seed_range(map_seed, "plutonic_dome_b", 0.0, 1.0), 0.68, 0.11, 0.10)
+        value = value * 0.66 + batholiths * 0.13 + max(dome_a, dome_b * 0.88) * 0.18
+    elif geologic_style == "aeolian_dune_seas":
+        dune_wavelength = seed_range(map_seed, "dune_wavelength", 13.0, 22.0)
+        dunes = math.sin(longitude * dune_wavelength + latitude * 2.8 + phase_a) * 0.028
+        yardang_belts = _ridge_belt(nx, ny, seed_range(map_seed, "yardang_belt", 0.0, 1.0), 0.52, 0.12, 0.035)
+        value = value * 0.58 + dunes + yardang_belts * 0.08
+    elif geologic_style == "evaporite_basins":
+        terminal_basins = _intracontinental_basin_signal(nx, ny, map_seed=map_seed)
+        playa_texture = _fbm_noise(map_seed, "playa_relief", nx, ny, base_cells=14, octaves=2)
+        value = value * 0.54 - terminal_basins * 0.19 + playa_texture * 0.035
+    elif geologic_style == "volatile_frost_transport":
+        frost_plains = _fbm_noise(map_seed, "volatile_frost_plains", nx, ny, base_cells=8, octaves=3)
+        sublimation_belts = _ridge_belt(nx, ny, seed_range(map_seed, "sublimation_belt", 0.0, 1.0), 0.50, 0.10, 0.032)
+        value = value * 0.42 + frost_plains * 0.10 + sublimation_belts * 0.06
+    elif geologic_style == "glaciated":
+        glacial_texture = _fbm_noise(map_seed, "glacial_scour", nx, ny, base_cells=12, octaves=3)
+        value = value * 0.76 + glacial_texture * 0.055
+    elif geologic_style == "magma_seas":
+        lava_plains = _fbm_noise(map_seed, "magma_convection", nx, ny, base_cells=14, octaves=2)
+        solidification_front = _ridge_belt(nx, ny, seed_range(map_seed, "magma_front", 0.0, 1.0), 0.50, 0.13, 0.025)
+        value = value * 0.30 + lava_plains * 0.055 + solidification_front * 0.045
+
     tectonic_height = None
     if isinstance(tectonic_model, dict) and tectonic_model.get("status") == "tectonics_advanced":
         tectonic_height = _tectonic_height_m(nx, ny, terrain, tectonic_model)
@@ -671,7 +922,10 @@ def _wave_height(nx, ny, terrain, tectonic_model=None, crater_model=None, crater
         max_elevation = float(heightfield.get("max_elevation_m", 6000.0) or 6000.0)
         span = max(1.0, max_elevation - min_elevation)
         tectonic_value = ((tectonic_height - min_elevation) / span) * 2.0 - 1.0
-        value = tectonic_value * 0.78 + value * 0.22
+        # Mature tectonics owns large-scale hypsometry. The legacy wave field
+        # contributes fine irregularity only; a stronger blend here drowned
+        # buoyant plate interiors and partially refilled ocean basins.
+        value = tectonic_value * 0.88 + value * 0.12
     elif tectonics.get("enabled"):
         ridge_a = _ridge_belt(nx, ny, phase=seed_range(map_seed, "ridge_a_phase", 0.0, 1.0), latitude_center=seed_range(map_seed, "ridge_a_lat", 0.28, 0.48), amplitude=seed_range(map_seed, "ridge_a_amp", 0.05, 0.095), width=0.034)
         ridge_b = _ridge_belt(nx, ny, phase=seed_range(map_seed, "ridge_b_phase", 0.0, 1.0), latitude_center=seed_range(map_seed, "ridge_b_lat", 0.55, 0.75), amplitude=seed_range(map_seed, "ridge_b_amp", 0.045, 0.085), width=0.028)
@@ -733,6 +987,89 @@ def _ice_score(nx, ny, elevation, min_elevation, max_elevation, map_seed=""):
         + math.cos((nx + ny) * math.tau * seed_range(map_seed, "ice_freq_b", 0.8, 1.9) + seed_range(map_seed, "ice_phase_b", 0.0, math.tau))
     ) * 0.08
     return latitude_polarity * 0.68 + elevation_norm * 0.22 + ridge_noise
+
+
+def sea_level_for_equivalent_water_depth(rows, equivalent_depth_m, wrap_x=True):
+    """Solve sea level from water volume on a spherical sampled surface."""
+    if not rows or not rows[0] or float(equivalent_depth_m or 0.0) <= 0.0:
+        return None
+    height = len(rows)
+    width = min(len(row) for row in rows)
+    unique_width = max(1, width - 1) if wrap_x and width > 1 else width
+    weighted_cells = []
+    total_weight = 0.0
+    for y, row in enumerate(rows):
+        latitude = (0.5 - y / max(1, height - 1)) * math.pi
+        area_weight = max(1e-6, math.cos(latitude))
+        for x in range(unique_width):
+            weighted_cells.append((float(row[x]), area_weight))
+            total_weight += area_weight
+    if not weighted_cells or total_weight <= 0.0:
+        return None
+    target_depth = float(equivalent_depth_m)
+    low = min(value for value, _weight in weighted_cells)
+    high = max(value for value, _weight in weighted_cells) + target_depth
+    for _iteration in range(52):
+        candidate = (low + high) * 0.5
+        stored_depth = sum(
+            max(0.0, candidate - elevation) * weight
+            for elevation, weight in weighted_cells
+        ) / total_weight
+        if stored_depth < target_depth:
+            low = candidate
+        else:
+            high = candidate
+    return (low + high) * 0.5
+
+
+def _shelf_and_sediment_model(rows, sea_level, tectonic_model=None):
+    if sea_level is None or not rows or not rows[0]:
+        return {"shelf_rows": [], "sediment_thickness_rows_m": [], "shelf_fraction": 0.0}
+    height, width = len(rows), len(rows[0])
+    distance = [[999 for _x in range(width)] for _y in range(height)]
+    frontier = []
+    for y in range(height):
+        for x in range(width):
+            if float(rows[y][x]) >= float(sea_level):
+                distance[y][x] = 0
+                frontier.append((x, y))
+    cursor = 0
+    while cursor < len(frontier):
+        x, y = frontier[cursor]
+        cursor += 1
+        next_distance = distance[y][x] + 1
+        for nx, ny in (((x - 1) % width, y), ((x + 1) % width, y), (x, y - 1), (x, y + 1)):
+            if ny < 0 or ny >= height or next_distance >= distance[ny][nx]:
+                continue
+            distance[ny][nx] = next_distance
+            frontier.append((nx, ny))
+    shelf_rows, sediment_rows = [], []
+    shelf_count = 0
+    for y, row in enumerate(rows):
+        shelf_row, sediment_row = [], []
+        for x, elevation in enumerate(row):
+            depth = max(0.0, float(sea_level) - float(elevation))
+            lithosphere = _sample_lithosphere(tectonic_model or {}, x / max(1, width - 1), y / max(1, height - 1))
+            passive_margin_distance = distance[y][x]
+            shelf = depth > 0.0 and depth <= 420.0 and passive_margin_distance <= 7
+            if shelf:
+                shelf_count += 1
+            age_myr = lithosphere["age_myr"] if lithosphere["crust_type"] == "oceanic" else 800.0
+            margin_wedge = 3600.0 * math.exp(-passive_margin_distance / 3.2) if depth > 0.0 else 0.0
+            pelagic = min(1600.0, max(0.0, age_myr) * 7.0) if depth > 0.0 else 0.0
+            sediment = min(7200.0, margin_wedge + pelagic)
+            shelf_row.append(bool(shelf))
+            sediment_row.append(round(sediment, 1))
+        shelf_rows.append(shelf_row)
+        sediment_rows.append(sediment_row)
+    return {
+        "model": "passive_margin_shelf_and_sediment_wedge_v1",
+        "shelf_rows": shelf_rows,
+        "sediment_thickness_rows_m": sediment_rows,
+        "shelf_fraction": round(shelf_count / max(1, width * height), 4),
+        "shelf_depth_limit_m": 420.0,
+        "sediment_loading_causes_subsidence": True,
+    }
 
 
 def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tectonic_model=None, crater_model=None):
@@ -824,7 +1161,24 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         ]
 
     sample_count = max(1, len(sample_values))
-    if target_ocean_fraction > 0.0 and sample_values and not bool(heightfield.get("sea_level_locked")):
+    equivalent_global_water_depth_m = max(
+        0.0,
+        float(
+            hydrology.get(
+                "equivalent_global_water_depth_m",
+                heightfield.get("equivalent_global_water_depth_m", 0.0),
+            )
+            or 0.0
+        ),
+    )
+    if equivalent_global_water_depth_m > 0.0 and sample_values and not bool(heightfield.get("sea_level_locked")):
+        sea_level = sea_level_for_equivalent_water_depth(
+            rows,
+            equivalent_global_water_depth_m,
+            wrap_x=True,
+        )
+    elif target_ocean_fraction > 0.0 and sample_values and not bool(heightfield.get("sea_level_locked")):
+        # Compatibility for explicitly authored legacy ocean-coverage targets.
         sorted_values = sorted(sample_values)
         index = max(0, min(len(sorted_values) - 1, int(round(target_ocean_fraction * (len(sorted_values) - 1)))))
         sea_level = sorted_values[index]
@@ -852,6 +1206,7 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
             ice_rows[row][-1] = ice_rows[row][0]
     ice_count = sum(1 for row in ice_rows for value in row if value)
     ice_fraction = ice_count / sample_count
+    shelf_model = _shelf_and_sediment_model(rows, sea_level_value, sampled_tectonic_model)
 
     return {
         "status": "heightmap_seeded",
@@ -873,6 +1228,12 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         "min_elevation_m": round(min_elevation, 1),
         "max_elevation_m": round(max_elevation, 1),
         "sea_level_m": None if sea_level is None else round(float(sea_level), 1),
+        "equivalent_global_water_depth_m": round(equivalent_global_water_depth_m, 2),
+        "sea_level_resolution": (
+            "volume_balance_against_generated_hypsometry"
+            if equivalent_global_water_depth_m > 0.0
+            else ("authored_coverage_compatibility" if target_ocean_fraction > 0.0 else "dry_surface")
+        ),
         "simulated_age_myr": round(simulated_age_myr, 1),
         "sample_grid": {
             "width": sample_width,
@@ -885,6 +1246,7 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         },
         "surface_masks": {
             "ice_rows": ice_rows,
+            "continental_shelf_rows": shelf_model["shelf_rows"],
             "ice_source": "frozen_water_inventory" if target_ice_fraction > 0.0 else None,
             "target_ice_fraction": round(target_ice_fraction, 3),
         },
@@ -895,7 +1257,9 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
             "land_fraction": round(land_fraction, 3),
             "ocean_fraction": round(ocean_fraction, 3),
             "ice_fraction": round(ice_fraction, 3),
+            "continental_shelf_fraction": shelf_model["shelf_fraction"],
         },
+        "shelf_sediment_model": shelf_model,
         "geology_model": {
             "model_version": "physiographic-heightmap-v3",
             "surface_regime": terrain.get("surface_regime", "rocky_surface"),

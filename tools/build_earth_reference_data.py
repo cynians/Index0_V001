@@ -7,13 +7,19 @@ Natural Earth 1:50m physical layers.
 
 import gzip
 import json
+import sys
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import numpy as np
 import shapefile
 
+from simulations.world_gen.water_cycle import derive_water_cycle_model
 
-ROOT = Path(__file__).resolve().parents[1]
+
 CACHE = ROOT / ".cache"
 OUTPUT = ROOT / "world" / "reference_data" / "earth_worldgen_reference.json.gz"
 GRID_WIDTH = 257
@@ -173,7 +179,6 @@ def _climate(relief):
 
 def build():
     relief = _read_relief()
-    zones, climate_rows, temperatures, precipitation = _climate(relief)
     ice_rows = [
         [abs(90.0 - iy / (GRID_HEIGHT - 1) * 180.0) >= 70.0 or elevation >= 5000 for elevation in row]
         for iy, row in enumerate(relief)
@@ -183,6 +188,58 @@ def build():
     land_fraction = land_cells / total_cells
     rivers = _rivers()
     lakes = _lakes()
+    heightmap_model = {
+        "status": "heightmap_authored_reference",
+        "model_version": "earth-reference-v1",
+        "projection": "equirectangular",
+        "coverage": "full_planet",
+        "wrap_x": True,
+        "wrap_y": False,
+        "edge_policy": "longitude_wrap_latitude_clamp",
+        "vertical_datum": "mean_sea_level",
+        "elevation_unit": "meters",
+        "min_elevation_m": min(map(min, relief)),
+        "max_elevation_m": max(map(max, relief)),
+        "sea_level_m": 0.0,
+        "land_fraction": round(land_fraction, 4),
+        "ocean_fraction": round(1.0 - land_fraction, 4),
+        "sample_grid": {"width": GRID_WIDTH, "height": GRID_HEIGHT, "rows": relief},
+        "surface_masks": {"ice_rows": ice_rows},
+        "source": "NOAA/NCEI ETOPO5",
+        "storage": {"kind": "authored_global_reference_grid", "sample_format": "integer_meters"},
+    }
+    water_cycle = derive_water_cycle_model(
+        terrain={
+            "map_seed": "earth_reference_2026",
+            "hydrology": {
+                "target_ocean_fraction": 1.0 - land_fraction,
+                "liquid_water_possible": True,
+                # Natural Earth remains the visual river reference; this pass
+                # specifically evaluates the generated climate model.
+                "drainage_enabled": False,
+            },
+        },
+        heightmap=heightmap_model,
+        atmosphere={
+            "estimated_surface_temperature_k": 288.0,
+            "surface_pressure_bar": 1.01325,
+        },
+        seed={
+            "map_seed": "earth_reference_2026",
+            "rotation_hours": 23.934,
+            "axial_tilt_deg": 23.44,
+            "climate_mode": "latitudinal_seasonal",
+        },
+        planet_id="planet_earth",
+    )
+    water_cycle.update({
+        "status": "earth_reference_simulated_climate",
+        "source": "Index0 coupled climate model driven by NOAA/NCEI ETOPO5 relief; Natural Earth supplies reference hydrography.",
+        "rivers": rivers,
+        "river_count": len(rivers),
+        "reference_lakes": lakes,
+        "lake_count": len(lakes),
+    })
     payload = {
         "schema_version": 1,
         "generated_utc": "2026-07-14",
@@ -200,26 +257,7 @@ def build():
                 "license": "public domain",
             },
         ],
-        "heightmap_model": {
-            "status": "heightmap_authored_reference",
-            "model_version": "earth-reference-v1",
-            "projection": "equirectangular",
-            "coverage": "full_planet",
-            "wrap_x": True,
-            "wrap_y": False,
-            "edge_policy": "longitude_wrap_latitude_clamp",
-            "vertical_datum": "mean_sea_level",
-            "elevation_unit": "meters",
-            "min_elevation_m": min(map(min, relief)),
-            "max_elevation_m": max(map(max, relief)),
-            "sea_level_m": 0.0,
-            "land_fraction": round(land_fraction, 4),
-            "ocean_fraction": round(1.0 - land_fraction, 4),
-            "sample_grid": {"width": GRID_WIDTH, "height": GRID_HEIGHT, "rows": relief},
-            "surface_masks": {"ice_rows": ice_rows},
-            "source": "NOAA/NCEI ETOPO5",
-            "storage": {"kind": "authored_global_reference_grid", "sample_format": "integer_meters"},
-        },
+        "heightmap_model": heightmap_model,
         "reference_land_polygons": {
             "source": "Natural Earth 1:50m land polygons, public domain",
             "source_url": "https://www.naturalearthdata.com/downloads/50m-physical-vectors/50m-land/",
@@ -231,22 +269,7 @@ def build():
             "coordinate_space": "map_world", "projection": "equirectangular",
             "y_axis": "negative_latitude", "polygons": _glacier_polygons(),
         },
-        "water_cycle_model": {
-            "status": "water_cycle_authored_reference",
-            "model_version": "earth-reference-v1",
-            "projection": "equirectangular", "wrap_x": True, "wrap_y": False,
-            "cycle": "active", "ocean_fraction": round(1.0 - land_fraction, 4),
-            "mean_precipitation_mm_yr": 990.0,
-            "climate_grid": {
-                "width": GRID_WIDTH, "height": GRID_HEIGHT, "rows": climate_rows,
-                "elevation_rows": relief, "temperature_rows_k": temperatures,
-                "annual_precipitation_rows_mm": precipitation,
-                "source_uv_bounds": {"min_u": 0.0, "max_u": 1.0, "min_v": 0.0, "max_v": 1.0},
-            },
-            "climate_zones": zones, "rivers": rivers, "river_count": len(rivers),
-            "reference_lakes": lakes, "lake_count": len(lakes),
-            "source": "NOAA relief with Natural Earth hydrography; climate is an authored broad classification",
-        },
+        "water_cycle_model": water_cycle,
         "cryosphere_model": {
             "status": "cryosphere_authored_reference",
             "reference_glacier_polygons_key": "reference_glacier_polygons",

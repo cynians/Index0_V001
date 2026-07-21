@@ -328,6 +328,7 @@ class UIManager:
         selector_y = y
         entries = []
         atmosphere_entry = None
+        contours_entry = None
         if "locations" in available_layers:
             entries.append({
                 "label": "Map",
@@ -377,6 +378,15 @@ class UIManager:
                 "active": atmosphere_on,
                 "color": (202, 166, 82),
             }
+        if bool(getattr(active_sim, "has_height_contours", lambda: False)()):
+            contours_on = bool(getattr(active_sim, "is_height_contours_visible", lambda: False)())
+            contours_entry = {
+                "label": "Contours On" if contours_on else "Contours Off",
+                "detail": "Elevation contours",
+                "action_id": "toggle_map_height_contours",
+                "active": contours_on,
+                "color": (206, 214, 220),
+            }
 
         columns = 2 if len(entries) <= 2 else 3
         chip_w = max(66, (width - chip_gap * (columns - 1)) // columns)
@@ -398,6 +408,13 @@ class UIManager:
             self.map_layer_selector_items.append({
                 **atmosphere_entry,
                 "rect": pygame.Rect(x, atmosphere_y, width, chip_h),
+            })
+            total_h += chip_gap + chip_h
+        if contours_entry is not None:
+            contours_y = selector_y + total_h + chip_gap
+            self.map_layer_selector_items.append({
+                **contours_entry,
+                "rect": pygame.Rect(x, contours_y, width, chip_h),
             })
             total_h += chip_gap + chip_h
         self.map_layer_selector_rect = pygame.Rect(x, selector_y, width, max(title_h, total_h))

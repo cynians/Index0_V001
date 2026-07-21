@@ -10,6 +10,7 @@ from pathlib import Path
 
 from simulations.space.stellar import habitable_zone_for_luminosity
 from simulations.world_gen.atmosphere import derive_atmosphere_model
+from simulations.world_gen.climate_regulation import derive_climate_regulation_model
 from simulations.world_gen.crust import (
     MAJOR_CRUST_TARGET_PERCENT,
     PERIODIC_TABLE_ROWS,
@@ -31,6 +32,7 @@ from simulations.world_gen.formation_theory import (
     max_feasible_planets,
 )
 from simulations.world_gen.heightmap import derive_heightmap_model
+from simulations.world_gen.generation_contract import build_generation_input_contract
 from simulations.world_gen.interior_regime import derive_interior_regime_model
 from simulations.world_gen.map_seed import resolved_map_seed, seed_range
 from simulations.world_gen.material_catalog import element_symbols_by_rarity
@@ -43,8 +45,13 @@ from simulations.world_gen.natural_materials import (
     derive_planet_material_tags,
 )
 from simulations.world_gen.planetary_physics import derive_planet_physics
-from simulations.world_gen.planetary_evolution import derive_planetary_evolution_model
+from simulations.world_gen.planetary_evolution import (
+    derive_planetary_evolution_model,
+    update_causal_provenance,
+)
 from simulations.world_gen.plume_lid_features import derive_hot_surface_weathering_model, derive_plume_lid_feature_model
+from simulations.world_gen.surface_evolution import derive_surface_evolution_model
+from simulations.world_gen.regolith_soils import derive_regolith_soil_model
 from simulations.world_gen.terrain_seed import (
     PLANETARY_CANVAS_HEIGHT_PX,
     PLANETARY_CANVAS_WIDTH_PX,
@@ -57,6 +64,7 @@ from simulations.world_gen.tectonics import (
     mature_tectonics_model,
 )
 from simulations.world_gen.water_cycle import derive_water_cycle_model
+from simulations.world_gen.worldgen_realism import derive_worldgen_realism_metrics
 from simulations.world_gen.template_catalog import ADDITIONAL_PLANET_TEMPLATES
 from world.year_utils import parse_year
 from world.relation_mirror import mirror_location_sim_relations
@@ -130,7 +138,6 @@ class WorldGenSimulation:
             "impact_flux_factor": 0.65,
             "formation_delay_myr": 7.0,
             "biosphere_state": "oxygenic_mature",
-            "ocean_fraction_target": 0.708,
         },
         "ocean_world": {
             "label": "Ocean world",
@@ -165,7 +172,10 @@ class WorldGenSimulation:
             "volatile_options": ["dense"],
             "tectonics_options": ["stagnant_lid", "episodic_lid", "heat_pipe"],
             "atmosphere_regime": "runaway_co2",
-            "volatile_pressure_scale": 18.6,
+            # Calibrated so a Venus-sized body at 0.72 AU settles near the
+            # observed Venus pressure/temperature regime without hard-coding
+            # either output in the atmosphere solver.
+            "volatile_pressure_scale": 11.9,
             "bond_albedo": 0.75,
             "water_loss_fraction": 0.995,
             "geologic_style": "plume_lid_volcanic",
@@ -1405,7 +1415,9 @@ class WorldGenSimulation:
             "river_model",
             "climate_zone_model",
             "climate_summary",
+            "climate_regulation_model",
             "surface_process_model",
+            "surface_evolution_model",
             "hydrology_summary",
         ):
             planet.pop(key, None)
@@ -1670,7 +1682,17 @@ class WorldGenSimulation:
         return estimate_crust_density_kg_m3(self.crust_composition)
 
     def _derive_planet_physics(self, seed=None):
-        return derive_planet_physics(seed or self._current_seed_values(), self._estimate_crust_density())
+        seed = seed or self._current_seed_values()
+        # Physics must consume the same serialized first-screen composition
+        # stored in the replay contract. Using the higher-precision transient
+        # slider state here caused tiny mass/density drift after replay.
+        composition = seed.get("crust_composition") if isinstance(seed, dict) else None
+        crust_density = (
+            estimate_crust_density_kg_m3(composition)
+            if isinstance(composition, dict)
+            else self._estimate_crust_density()
+        )
+        return derive_planet_physics(seed, crust_density)
 
     def _apply_orbital_body_seed_context(self, seed, body, template):
         body = body if isinstance(body, dict) else {}
@@ -1686,7 +1708,6 @@ class WorldGenSimulation:
             "geologic_style", "hypsometry_compression", "formation_delay_myr",
             "max_crater_diameter_km",
             "axial_tilt_deg", "greenhouse_efficiency", "biosphere_state",
-            "ocean_fraction_target",
             "climate_mode", "seasonal_cycle", "synchronous_rotation",
             "substellar_longitude_deg", "surface_fluid", "high_pressure_ice",
             "aeolian_landforms", "target_ice_fraction",
@@ -1701,6 +1722,22 @@ class WorldGenSimulation:
             if isinstance(source, dict) and source.get("system_age_gyr", source.get("age_gyr")) is not None:
                 seed["system_age_gyr"] = float(source.get("system_age_gyr", source.get("age_gyr")))
                 break
+        if isinstance(star, dict):
+            stellar_fields = {
+                "stellar_luminosity_solar": star.get("luminosity_solar", star.get("luminosity_l_sun")),
+                "stellar_mass_solar": star.get("mass_solar"),
+                "stellar_radius_solar": star.get("radius_solar"),
+                "stellar_effective_temperature_k": star.get("effective_temperature_k"),
+                "stellar_metallicity_feh": star.get("metallicity_feh", (system or {}).get("metallicity_feh") if isinstance(system, dict) else None),
+                "stellar_rotation_period_days": star.get("rotation_period_days"),
+                "stellar_spectral_class": star.get("spectral_class", star.get("star_class")),
+                "stellar_multiplicity": star.get("multiplicity", (system or {}).get("multiplicity") if isinstance(system, dict) else None),
+            }
+            if stellar_fields["stellar_mass_solar"] is None and star.get("mass_kg") is not None:
+                stellar_fields["stellar_mass_solar"] = float(star["mass_kg"]) / 1.98847e30
+            if stellar_fields["stellar_radius_solar"] is None and star.get("radius_m") is not None:
+                stellar_fields["stellar_radius_solar"] = float(star["radius_m"]) / 695_700_000.0
+            seed.update({key: value for key, value in stellar_fields.items() if value is not None})
         seed_key = f"{seed.get('map_seed')}:{body.get('id') or seed.get('planet_id') or self.active_planet_template}"
         for field, range_key in (
             ("surface_age_myr", "surface_age_myr_range"),
@@ -1710,7 +1747,6 @@ class WorldGenSimulation:
             ("bulk_ice_fraction", "bulk_ice_fraction_range"),
             ("surface_ice_fraction", "surface_ice_fraction_range"),
             ("axial_tilt_deg", "axial_tilt_deg_range"),
-            ("ocean_fraction_target", "ocean_fraction_target_range"),
             ("target_ice_fraction", "target_ice_fraction_range"),
         ):
             limits = template.get(range_key)
@@ -1718,6 +1754,20 @@ class WorldGenSimulation:
                 seed[field] = seed_range(seed_key, field, float(limits[0]), float(limits[1]))
 
         if class_key != "moon":
+            # The orbital editor owns the actual eccentricity.  Preserve it in
+            # the world-gen seed so atmosphere and climate models respond to
+            # the selected orbit instead of silently using a circular mean.
+            eccentricity = body.get("eccentricity")
+            if eccentricity is None:
+                periapsis = self._parse_float(body.get("periapsis_au"))
+                apoapsis = self._parse_float(body.get("apoapsis_au"))
+                if periapsis is not None and apoapsis is not None and periapsis + apoapsis > 0.0:
+                    eccentricity = (apoapsis - periapsis) / (apoapsis + periapsis)
+            try:
+                if eccentricity is not None:
+                    seed["orbital_eccentricity"] = max(0.0, min(0.85, float(eccentricity)))
+            except (TypeError, ValueError):
+                pass
             return seed
 
         seed["parent_body_id"] = self._resolve_entity_id(body.get("parent_body") or body.get("parent_location") or self.orbit_parent_body_id)
@@ -1921,6 +1971,8 @@ class WorldGenSimulation:
             natural_material_model=natural_material_model,
             terrain=terrain,
             heightmap=heightmap,
+            atmosphere=planet.get("atmosphere_model"),
+            water_cycle=planet.get("water_cycle_model"),
             output_root=output_root,
             storage_root=storage_root,
         )
@@ -1948,6 +2000,9 @@ class WorldGenSimulation:
             "river_model",
             "climate_zone_model",
             "climate_summary",
+            "climate_regulation_model",
+            "cryosphere_model",
+            "regolith_soil_model",
         ):
             planet.pop(key, None)
 
@@ -2175,11 +2230,19 @@ class WorldGenSimulation:
         if mode == "eccentric" and template_id not in {"gas_giant", "ice_giant"}:
             extra_pool = ["Ti", "Mn", "P", "S", "C", "Ni", "Cr"]
             for symbol in rng.sample(extra_pool, k=2):
-                elements.append({
-                    "symbol": symbol,
-                    "name": element_name(symbol),
-                    "abundance_percent": self._random_float(rng, 0.25, 4.5),
-                })
+                abundance = self._random_float(rng, 0.25, 4.5)
+                existing = next(
+                    (element for element in elements if element["symbol"] == symbol),
+                    None,
+                )
+                if existing is not None:
+                    existing["abundance_percent"] += abundance
+                else:
+                    elements.append({
+                        "symbol": symbol,
+                        "name": element_name(symbol),
+                        "abundance_percent": abundance,
+                    })
 
         return crust_composition_from_seed({"crust_composition": {"major_elements": elements}})["major_elements"]
 
@@ -2296,7 +2359,7 @@ class WorldGenSimulation:
                 "water_fraction": template.get("water_range", (0.0, 1.0)),
             }
             volatile_options = template.get("volatile_options", ["none", "thin", "dry", "wet", "earthlike", "dense"])
-            tectonics_options = template.get("tectonics_options", ["inactive", "stagnant_lid", "mobile_lid", "episodic_lid", "heat_pipe", "unknown"])
+            tectonics_options = template.get("tectonics_options", ["inactive", "stagnant_lid", "mobile_lid", "episodic_lid", "plutonic_squishy_lid", "heat_pipe", "unknown"])
             status = f"Generated eccentric {template.get('label', 'planet').lower()} seed"
         else:
             numeric_ranges = {
@@ -2377,6 +2440,14 @@ class WorldGenSimulation:
         planet["mass_kg"] = seed["derived_planet_physics"]["mass_kg"]
         planet["radius_m"] = seed["derived_planet_physics"]["radius_m"]
         planet["rotation_period_hours"] = seed["derived_planet_physics"]["rotation_period_hours"]
+        parent_system = self.world_model.get_entity(self.parent_system_id) if self.world_model and self.parent_system_id else None
+        planet["world_gen_input_contract"] = build_generation_input_contract(
+            planet=planet,
+            seed=seed,
+            system=parent_system,
+            star=self.star_entity,
+            year=self.year,
+        )
         self._apply_elemental_seed_palette(planet, seed)
 
         self._set_world_gen_progress(planet, "atmosphere", complete=False)
@@ -2795,7 +2866,110 @@ class WorldGenSimulation:
             seed=seed or planet.get("world_gen_seed") or {},
             planet_id=planet.get("id", ""),
         )
+        # A climate-only map leaves mountains, basins, and material provinces
+        # untouched by the water cycle that it just calculated.  Feed the
+        # resolved climate/drainage fields through a deliberately conservative
+        # landscape-evolution pass, then classify climate once more against the
+        # evolved terrain.  This is a bounded feedback iteration, not an
+        # expensive or opaque black-box simulation.
+        evolution = derive_surface_evolution_model(
+            planet=planet,
+            terrain=terrain,
+            heightmap=heightmap,
+            water_cycle=model,
+            atmosphere=atmosphere,
+        )
+        evolved_heightmap = evolution.get("heightmap") if isinstance(evolution, dict) else None
+        feedback_iterations = []
+        if isinstance(evolution, dict):
+            feedback_iterations.append({
+                "iteration": 1,
+                "status": evolution.get("status"),
+                "dominant_process": evolution.get("dominant_process"),
+                "process_means": evolution.get("process_means"),
+            })
+        if evolution.get("status") == "surface_evolution_seeded" and isinstance(evolved_heightmap, dict):
+            heightmap = evolved_heightmap
+            planet["heightmap_model"] = heightmap
+            model = derive_water_cycle_model(
+                terrain=terrain,
+                heightmap=heightmap,
+                atmosphere=atmosphere,
+                seed=seed or planet.get("world_gen_seed") or {},
+                planet_id=planet.get("id", ""),
+            )
+            second_evolution = derive_surface_evolution_model(
+                planet=planet,
+                terrain=terrain,
+                heightmap=heightmap,
+                water_cycle=model,
+                atmosphere=atmosphere,
+            )
+            feedback_iterations.append({
+                "iteration": 2,
+                "status": second_evolution.get("status"),
+                "dominant_process": second_evolution.get("dominant_process"),
+                "process_means": second_evolution.get("process_means"),
+            })
+            second_heightmap = second_evolution.get("heightmap") if isinstance(second_evolution, dict) else None
+            if second_evolution.get("status") == "surface_evolution_seeded" and isinstance(second_heightmap, dict):
+                heightmap = second_heightmap
+                planet["heightmap_model"] = heightmap
+                evolution = second_evolution
+                model = derive_water_cycle_model(
+                    terrain=terrain,
+                    heightmap=heightmap,
+                    atmosphere=atmosphere,
+                    seed=seed or planet.get("world_gen_seed") or {},
+                    planet_id=planet.get("id", ""),
+                )
+        evolution["feedback_iterations"] = feedback_iterations
+        evolution["coupling"] = "two_bounded_climate_landscape_feedback_iterations"
+        planet["surface_evolution_model"] = evolution
+        planet["worldgen_realism_metrics"] = derive_worldgen_realism_metrics(
+            planet.get("tectonic_model"),
+            heightmap,
+            model,
+            evolution,
+        )
+        climate_regulation = derive_climate_regulation_model(
+            planet=planet,
+            atmosphere=atmosphere,
+            regime=planet.get("interior_regime_model"),
+            water_cycle=model,
+            surface_evolution=evolution,
+        )
+        planet["climate_regulation_model"] = climate_regulation
+        prior_surface_processes = planet.get("surface_process_model") if isinstance(planet.get("surface_process_model"), dict) else {}
+        planet["surface_process_model"] = {
+            **prior_surface_processes,
+            "evolution_status": evolution.get("status"),
+            "evolution_model_version": evolution.get("model_version"),
+            "dominant_surface_process": evolution.get("dominant_process"),
+            "surface_process_means": evolution.get("process_means"),
+            "carbon_balance_tendency": climate_regulation.get("carbon_balance_tendency"),
+        }
         planet["water_cycle_model"] = model
+        planet["cryosphere_model"] = {
+            "status": "resolved_from_climate_and_heightfield",
+            "model_version": "cryosphere-summary-v1",
+            "target_ice_fraction": ((heightmap.get("hypsometry") or {}).get("ice_fraction")),
+            "seasonal_snow_fraction_rows": (model.get("climate_grid") or {}).get("seasonal_snow_fraction_rows"),
+            "glacial_erosion_rows": ((evolution.get("process_grid") or {}).get("glacial_erosion_rows")),
+            "feedbacks": ["ice_albedo", "seasonal_snowmelt_runoff", "glacial_erosion"],
+        }
+        planet["regolith_soil_model"] = derive_regolith_soil_model(
+            planet,
+            heightmap,
+            model,
+            evolution,
+            planet.get("natural_material_model"),
+        )
+        update_causal_provenance(planet)
+        # Temperature rows are now available, so refresh material provinces
+        # against the actual simulated local climate rather than the
+        # pre-climate latitude/elevation proxy.
+        self._apply_material_heatmaps(planet, terrain=terrain, heightmap=heightmap)
         planet["ocean_circulation_model"] = model.get("ocean_circulation_model")
         planet["river_model"] = {
             "status": model.get("status"),
@@ -2859,6 +3033,8 @@ class WorldGenSimulation:
         self.editor_stage = "water_cycle"
         river_count = int(model.get("river_count", 0) or 0)
         status = f"Water cycle ready: {len(model.get('climate_zones') or [])} climates, {river_count} rivers"
+        if evolution.get("status") == "surface_evolution_seeded":
+            status += f"; {evolution.get('dominant_process', 'surface')} evolution coupled"
         self.commit_status = status if persisted else f"{status} in memory"
         return True
 
@@ -2950,7 +3126,10 @@ class WorldGenSimulation:
                 "atmospheric_materials",
                 "atmosphere_bands",
                 "interior_regime_model",
+                "planetary_evolution_model",
+                "causal_provenance",
                 "surface_process_model",
+                "surface_evolution_model",
                 "terrain_seed_model",
                 "natural_material_model",
                 "natural_materials",
@@ -2966,6 +3145,9 @@ class WorldGenSimulation:
                 "river_model",
                 "climate_zone_model",
                 "climate_summary",
+                "climate_regulation_model",
+                "cryosphere_model",
+                "regolith_soil_model",
                 "map_generation_recipe",
                 "map_layers",
                 "hydrology_summary",
@@ -2975,7 +3157,10 @@ class WorldGenSimulation:
         elif target == "atmosphere":
             for key in (
                 "interior_regime_model",
+                "planetary_evolution_model",
+                "causal_provenance",
                 "surface_process_model",
+                "surface_evolution_model",
                 "terrain_seed_model",
                 "natural_material_model",
                 "natural_materials",
@@ -2991,6 +3176,9 @@ class WorldGenSimulation:
                 "river_model",
                 "climate_zone_model",
                 "climate_summary",
+                "climate_regulation_model",
+                "cryosphere_model",
+                "regolith_soil_model",
                 "map_generation_recipe",
                 "map_layers",
                 "hydrology_summary",
@@ -2999,6 +3187,8 @@ class WorldGenSimulation:
                 planet.pop(key, None)
         elif target == "regime":
             for key in (
+                "planetary_evolution_model",
+                "causal_provenance",
                 "terrain_seed_model",
                 "natural_material_model",
                 "natural_materials",
@@ -3014,6 +3204,9 @@ class WorldGenSimulation:
                 "river_model",
                 "climate_zone_model",
                 "climate_summary",
+                "climate_regulation_model",
+                "cryosphere_model",
+                "regolith_soil_model",
                 "map_generation_recipe",
                 "map_layers",
                 "hydrology_summary",
@@ -3034,6 +3227,9 @@ class WorldGenSimulation:
                 "river_model",
                 "climate_zone_model",
                 "climate_summary",
+                "climate_regulation_model",
+                "cryosphere_model",
+                "regolith_soil_model",
             ):
                 planet.pop(key, None)
             planet["map_status"] = "terrain_seeded"
@@ -3440,6 +3636,16 @@ class WorldGenSimulation:
             ),
             "heightmap_model": heightmap_model,
             "water_cycle_model": water_cycle_model,
+            "surface_evolution_model": (
+                selected_planet.get("surface_evolution_model")
+                if isinstance(selected_planet, dict) and isinstance(selected_planet.get("surface_evolution_model"), dict)
+                else None
+            ),
+            "climate_regulation_model": (
+                selected_planet.get("climate_regulation_model")
+                if isinstance(selected_planet, dict) and isinstance(selected_planet.get("climate_regulation_model"), dict)
+                else None
+            ),
             "tectonic_model": tectonic_model,
             "crater_model": (
                 selected_planet.get("crater_model")

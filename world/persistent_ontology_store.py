@@ -3,6 +3,8 @@ import json
 import logging
 import os
 import shutil
+import sqlite3
+import threading
 import time
 import types
 import uuid
@@ -24,6 +26,10 @@ class PersistentOntologyStore:
 
     SPECIAL_OBJECT_PROPERTIES = dict(OntologyRepository.SPECIAL_OBJECT_PROPERTIES)
     DERIVED_FIELDS = set(OntologyRepository.DERIVED_FIELDS)
+    _DATABASE_LOCKS = {}
+    _DATABASE_LOCKS_GUARD = threading.Lock()
+    LOCK_RETRY_ATTEMPTS = 5
+    SQLITE_BUSY_TIMEOUT_MS = 1_500
 
     def __init__(self, ontology_path, database_path=None):
         self.ontology_path = Path(ontology_path).resolve()
@@ -37,45 +43,86 @@ class PersistentOntologyStore:
             )
         self.database_path = Path(database_path).resolve()
         self.manifest_path = self.database_path.with_suffix(".manifest.json")
+        database_key = str(self.database_path).casefold()
+        with self._DATABASE_LOCKS_GUARD:
+            self._operation_lock = self._DATABASE_LOCKS.setdefault(
+                database_key, threading.RLock(),
+            )
         self._ensure_initialized()
 
     def _import_owlready2(self):
         return OntologyRepository({})._import_owlready2()
 
-    def _open_world(self):
+    @staticmethod
+    def _is_locked_database_error(exc):
+        message = str(exc or "").casefold()
+        return isinstance(exc, sqlite3.OperationalError) and (
+            "database is locked" in message or "database is busy" in message
+        )
+
+    def _open_world(self, *, read_only=False):
         owlready2 = self._import_owlready2()
-        return owlready2.World(filename=str(self.database_path), exclusive=False)
+        last_error = None
+        for attempt in range(self.LOCK_RETRY_ATTEMPTS):
+            connection = None
+            try:
+                uri = f"file:{self.database_path}"
+                if read_only:
+                    uri += "?mode=ro"
+                connection = sqlite3.connect(
+                    uri,
+                    isolation_level="DEFERRED",
+                    check_same_thread=False,
+                    uri=True,
+                    timeout=self.SQLITE_BUSY_TIMEOUT_MS / 1000.0,
+                )
+                connection.execute(f"PRAGMA busy_timeout = {self.SQLITE_BUSY_TIMEOUT_MS}")
+                return owlready2.World(
+                    filename=str(self.database_path),
+                    exclusive=False,
+                    read_only=bool(read_only),
+                    connection=connection,
+                )
+            except sqlite3.OperationalError as exc:
+                if connection is not None:
+                    connection.close()
+                if not self._is_locked_database_error(exc):
+                    raise
+                last_error = exc
+                time.sleep(min(0.8, 0.06 * (2 ** attempt)))
+        raise last_error or sqlite3.OperationalError("ontology database remained locked")
 
     def _ensure_initialized(self):
-        if self.database_path.exists() and self.manifest_path.exists():
-            return
-        if not self.ontology_path.exists():
-            raise FileNotFoundError(self.ontology_path)
-        self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        self.database_path.unlink(missing_ok=True)
-        self.manifest_path.unlink(missing_ok=True)
-        world = self._open_world()
-        try:
-            ontology = world.get_ontology(BASE_IRI)
-            with self.ontology_path.open("rb") as source:
-                ontology.load(fileobj=source)
-            world.save()
-        except Exception:
-            world.close()
+        with self._operation_lock:
+            if self.database_path.exists() and self.manifest_path.exists():
+                return
+            if not self.ontology_path.exists():
+                raise FileNotFoundError(self.ontology_path)
+            self.database_path.parent.mkdir(parents=True, exist_ok=True)
             self.database_path.unlink(missing_ok=True)
-            raise
-        else:
-            world.close()
-        stat = self.ontology_path.stat()
-        self._write_manifest(
-            {
-                "version": 1,
-                "source_path": str(self.ontology_path),
-                "source_size": int(stat.st_size),
-                "source_mtime_ns": int(stat.st_mtime_ns),
-                "database_authoritative": True,
-            }
-        )
+            self.manifest_path.unlink(missing_ok=True)
+            world = self._open_world()
+            try:
+                ontology = world.get_ontology(BASE_IRI)
+                with self.ontology_path.open("rb") as source:
+                    ontology.load(fileobj=source)
+                world.save()
+            except Exception:
+                world.close()
+                self.database_path.unlink(missing_ok=True)
+                raise
+            else:
+                world.close()
+            stat = self.ontology_path.stat()
+            self._write_manifest(
+                {
+                    "version": 1,
+                    "source_path": str(self.ontology_path),
+                    "source_size": int(stat.st_size),
+                    "source_mtime_ns": int(stat.st_mtime_ns),
+                    "database_authoritative": True,
+                }
+            )
 
     def _write_manifest(self, payload):
         temp_path = self.manifest_path.with_name(f".{self.manifest_path.name}.{uuid.uuid4().hex}.tmp")
@@ -86,12 +133,13 @@ class PersistentOntologyStore:
         temp_path.replace(self.manifest_path)
 
     def load_datasets(self):
-        world = self._open_world()
-        try:
-            ontology = world.get_ontology(BASE_IRI)
-            return OntologyRepository({})._datasets_from_ontology(ontology)
-        finally:
-            world.close()
+        with self._operation_lock:
+            world = self._open_world(read_only=True)
+            try:
+                ontology = world.get_ontology(BASE_IRI)
+                return OntologyRepository({})._datasets_from_ontology(ontology)
+            finally:
+                world.close()
 
     def persist_entity(self, entity, previous_entity_id=None):
         return self.persist_entities([entity], previous_entity_ids={str(entity.get("id") or ""): previous_entity_id})
@@ -109,70 +157,74 @@ class PersistentOntologyStore:
         if not entity_id or not field_names:
             return False
 
-        world = self._open_world()
-        try:
-            ontology = world.get_ontology(BASE_IRI)
-            individual = world[f"{ENTITY_IRI}{quote(entity_id, safe='')}"]
-            if individual is None:
-                self._replace_entity(world, entity)
-            else:
-                list_fields = set(self._property_values(individual, "listFieldName"))
-                json_fields = set(self._property_values(individual, "jsonFieldName"))
-                for field_name in field_names:
-                    value = entity.get(field_name)
-                    property_name = self._owl_name(f"field_{field_name}")
-                    self._ensure_data_property(world, ontology, property_name)[individual] = self._data_values(value)
-                    self._set_metadata_membership(list_fields, field_name, isinstance(value, list))
-                    self._set_metadata_membership(json_fields, field_name, self._field_uses_json(value))
-                self._ensure_data_property(world, ontology, "listFieldName")[individual] = sorted(list_fields)
-                self._ensure_data_property(world, ontology, "jsonFieldName")[individual] = sorted(json_fields)
-            world.save()
-            return True
-        finally:
-            world.close()
+        with self._operation_lock:
+            world = self._open_world()
+            try:
+                ontology = world.get_ontology(BASE_IRI)
+                individual = world[f"{ENTITY_IRI}{quote(entity_id, safe='')}"]
+                if individual is None:
+                    self._replace_entity(world, entity)
+                else:
+                    list_fields = set(self._property_values(individual, "listFieldName"))
+                    json_fields = set(self._property_values(individual, "jsonFieldName"))
+                    for field_name in field_names:
+                        value = entity.get(field_name)
+                        property_name = self._owl_name(f"field_{field_name}")
+                        self._ensure_data_property(world, ontology, property_name)[individual] = self._data_values(value)
+                        self._set_metadata_membership(list_fields, field_name, isinstance(value, list))
+                        self._set_metadata_membership(json_fields, field_name, self._field_uses_json(value))
+                    self._ensure_data_property(world, ontology, "listFieldName")[individual] = sorted(list_fields)
+                    self._ensure_data_property(world, ontology, "jsonFieldName")[individual] = sorted(json_fields)
+                world.save()
+                return True
+            finally:
+                world.close()
 
     def persist_entities(self, entities, previous_entity_ids=None):
         entities = [entity for entity in entities or [] if isinstance(entity, dict) and entity.get("id")]
         if not entities:
             return False
         previous_entity_ids = previous_entity_ids or {}
-        world = self._open_world()
-        try:
-            for entity in entities:
-                entity_id = str(entity.get("id") or "").strip()
-                previous_id = previous_entity_ids.get(entity_id)
-                self._replace_entity(world, entity, previous_entity_id=previous_id)
-            world.save()
-            return True
-        finally:
-            world.close()
+        with self._operation_lock:
+            world = self._open_world()
+            try:
+                for entity in entities:
+                    entity_id = str(entity.get("id") or "").strip()
+                    previous_id = previous_entity_ids.get(entity_id)
+                    self._replace_entity(world, entity, previous_entity_id=previous_id)
+                world.save()
+                return True
+            finally:
+                world.close()
 
     def remove_entity(self, entity_id):
         entity_id = str(entity_id or "").strip()
         if not entity_id:
             return False
-        owlready2 = self._import_owlready2()
-        world = self._open_world()
-        try:
-            individual = world[f"{ENTITY_IRI}{quote(entity_id, safe='')}"]
-            if individual is None:
-                return False
-            owlready2.destroy_entity(individual)
-            world.save()
-            return True
-        finally:
-            world.close()
+        with self._operation_lock:
+            owlready2 = self._import_owlready2()
+            world = self._open_world()
+            try:
+                individual = world[f"{ENTITY_IRI}{quote(entity_id, safe='')}"]
+                if individual is None:
+                    return False
+                owlready2.destroy_entity(individual)
+                world.save()
+                return True
+            finally:
+                world.close()
 
     def export_rdfxml(self, output_path=None):
         output_path = Path(output_path or self.ontology_path).resolve()
         output_path.parent.mkdir(parents=True, exist_ok=True)
         temp_path = output_path.with_name(f".{output_path.name}.{uuid.uuid4().hex}.tmp")
-        world = self._open_world()
-        try:
-            ontology = world.get_ontology(BASE_IRI)
-            ontology.save(file=str(temp_path), format="rdfxml")
-        finally:
-            world.close()
+        with self._operation_lock:
+            world = self._open_world(read_only=True)
+            try:
+                ontology = world.get_ontology(BASE_IRI)
+                ontology.save(file=str(temp_path), format="rdfxml")
+            finally:
+                world.close()
         replace_error = None
         for attempt in range(24):
             try:
@@ -198,9 +250,10 @@ class PersistentOntologyStore:
 
     def reimport_rdfxml(self):
         """Deliberately replace the working quadstore from the RDF/XML checkpoint."""
-        self.database_path.unlink(missing_ok=True)
-        self.manifest_path.unlink(missing_ok=True)
-        self._ensure_initialized()
+        with self._operation_lock:
+            self.database_path.unlink(missing_ok=True)
+            self.manifest_path.unlink(missing_ok=True)
+            self._ensure_initialized()
         return True
 
     def _replace_entity(self, world, entity, previous_entity_id=None):

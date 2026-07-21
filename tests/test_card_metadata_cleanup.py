@@ -2,6 +2,7 @@ import unittest
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pygame
 
@@ -463,6 +464,79 @@ class CardMetadataCleanupTests(unittest.TestCase):
         }
 
         self.assertEqual("Draft [[loc_northern_spain]] note.", card_view._timeline_snapshot_text(card))
+
+    def test_no_working_year_displays_all_snapshots_in_one_card(self):
+        entity = {
+            "id": "fac_test",
+            "_dataset": "factions",
+            "type": "faction",
+            "pretty_name": "Geigengeist Group",
+            "timeline_snapshots": [
+                {"start_year": 8445, "end_year": 8445, "wiki_entry": "Second entry."},
+                {"start_year": 8440, "end_year": 8440, "wiki_entry": "First entry."},
+            ],
+        }
+        card_view = EntityCard(entity, dataset_name="factions")
+        card = {"title": "Geigengeist Group", "selected_year": 8440}
+
+        entries = card_view._timeline_snapshot_display_entries(card)
+
+        self.assertEqual([8440, 8445], [entry["start_year"] for entry in entries])
+        self.assertEqual(["First entry.", "Second entry."], [entry["wiki_entry"] for entry in entries])
+        self.assertIsNone(card_view._timeline_snapshot_range(card))
+
+    def test_working_year_displays_only_matching_snapshot(self):
+        entity = {
+            "id": "fac_test",
+            "timeline_snapshots": [
+                {"start_year": 8440, "end_year": 8440, "wiki_entry": "First entry."},
+                {"start_year": 8445, "end_year": 8445, "wiki_entry": "Second entry."},
+            ],
+        }
+        card_view = EntityCard(entity, dataset_name="factions")
+        card = {"title": "Geigengeist Group", "working_year_range": (8445, 8445)}
+
+        entries = card_view._timeline_snapshot_display_entries(card)
+
+        self.assertEqual(1, len(entries))
+        self.assertEqual(8445, entries[0]["start_year"])
+        self.assertEqual("Second entry.", entries[0]["wiki_entry"])
+
+    def test_aggregate_snapshot_view_draws_one_chip_per_entry(self):
+        pygame.font.init()
+        font = pygame.font.SysFont("consolas", 14)
+        entity = {
+            "id": "fac_test",
+            "_dataset": "factions",
+            "type": "faction",
+            "pretty_name": "Geigengeist Group",
+            "timeline_snapshots": [
+                {"start_year": 8440, "end_year": 8440, "wiki_entry": "First entry."},
+                {"start_year": 8445, "end_year": 8445, "wiki_entry": "Second entry."},
+            ],
+        }
+        card_view = EntityCard(entity, dataset_name="factions")
+        card = {
+            "entity_id": "fac_test",
+            "title": "Geigengeist Group",
+            "subtitle": "factions | faction",
+            "is_edit_mode": False,
+            "layout_font": font,
+            "years": [8435, 8694],
+            "selected_year": 8435,
+            "scroll_y": 0,
+        }
+
+        card_view.layout_card(card, pygame.Rect(0, 0, 500, 700))
+        with patch("pygame.mouse.get_pos", return_value=(-1, -1)):
+            card_view.draw_card(pygame.Surface((500, 700)), font, card)
+
+        chips = card["timeline_snapshot_chip_hitboxes"]
+        self.assertEqual([8440, 8445], [chip["start_year"] for chip in chips])
+        self.assertLess(chips[0]["rect"].y, chips[1]["rect"].y)
+        timeline_chips = card["timeline_snapshot_timeline_hitboxes"]
+        self.assertEqual([8440, 8445], [chip["start_year"] for chip in timeline_chips])
+        self.assertTrue(all(chip["rect"].bottom < card["timeline_y"] + 10 for chip in timeline_chips))
 
     def test_timeline_snapshot_drafts_are_scoped_to_year_range(self):
         entity = {
