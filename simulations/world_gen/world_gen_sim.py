@@ -31,7 +31,13 @@ from simulations.world_gen.formation_theory import (
     formation_model_for_orbit,
     max_feasible_planets,
 )
-from simulations.world_gen.heightmap import derive_heightmap_model
+from simulations.world_gen.heightmap import derive_heightmap_model, refresh_heightmap_derivatives
+from simulations.world_gen.coastal_geomorphology import (
+    coastal_summary,
+    derive_coastal_geomorphology_model,
+    enrich_coastal_hydrology,
+    ensure_coastal_model_current,
+)
 from simulations.world_gen.generation_contract import build_generation_input_contract
 from simulations.world_gen.interior_regime import derive_interior_regime_model
 from simulations.world_gen.map_seed import resolved_map_seed, seed_range
@@ -1284,6 +1290,17 @@ class WorldGenSimulation:
         class_key = str(entity.get("location_class") or entity.get("body_class") or "").strip().lower()
         return entity if class_key in {"planet", "moon"} else None
 
+    def _satellite_entities_for(self, planet):
+        if not isinstance(planet, dict):
+            return []
+        entities = getattr(getattr(self.world_model, "loader", None), "entities", {}) or {}
+        return [
+            entity for entity in entities.values()
+            if isinstance(entity, dict)
+            and entity.get("location_class") == "moon"
+            and entity.get("parent_body") == planet.get("id")
+        ]
+
     def _load_seed_buffers_from_planet(self, planet):
         seed = planet.get("world_gen_seed") if isinstance(planet.get("world_gen_seed"), dict) else {}
         using_formation_seed = False
@@ -1412,6 +1429,8 @@ class WorldGenSimulation:
             "material_heatmap_status",
             "material_heatmap_layer_count",
             "water_cycle_model",
+            "coastal_geomorphology_model",
+            "coastal_summary",
             "river_model",
             "climate_zone_model",
             "climate_summary",
@@ -1557,6 +1576,14 @@ class WorldGenSimulation:
         self._load_seed_buffers_from_planet(planet)
         repaired_surface = self._repair_solid_surface_route_if_needed(planet)
         repaired_gas = False if repaired_surface else self._repair_gas_giant_route_if_needed(planet)
+        upgraded_coast = False if repaired_gas else ensure_coastal_model_current(
+            planet,
+            star=self.star_entity,
+            satellites=self._satellite_entities_for(planet),
+        )
+        if upgraded_coast:
+            update_causal_provenance(planet)
+            self._mirror_and_persist_planet(planet)
         self.editor_stage = self._resume_stage_for_planet(planet)
         name = planet.get("name", entity_id)
         self.pending_orbit_radius_au = None
@@ -1565,7 +1592,10 @@ class WorldGenSimulation:
             f"Repaired airless surface route for {name}; stage {self.editor_stage}"
             if repaired_surface else (
                 f"Repaired gas giant envelope for {name}; stage {self.editor_stage}"
-                if repaired_gas else f"Selected {name}; stage {self.editor_stage}"
+                if repaired_gas else (
+                    f"Upgraded coastal derivatives for {name}; stage {self.editor_stage}"
+                    if upgraded_coast else f"Selected {name}; stage {self.editor_stage}"
+                )
             )
         )
         return True
@@ -1997,6 +2027,8 @@ class WorldGenSimulation:
     def _clear_planet_water_cycle_fields(self, planet):
         for key in (
             "water_cycle_model",
+            "coastal_geomorphology_model",
+            "coastal_summary",
             "river_model",
             "climate_zone_model",
             "climate_summary",
@@ -2923,6 +2955,21 @@ class WorldGenSimulation:
                     seed=seed or planet.get("world_gen_seed") or {},
                     planet_id=planet.get("id", ""),
                 )
+        # Surface evolution changed the terrain twice.  Re-solve conserved
+        # water volume and rebuild all sea-level-dependent fields before the
+        # final hydrology and coastal analyses consume them.
+        heightmap = refresh_heightmap_derivatives(
+            heightmap,
+            tectonic_model=planet.get("tectonic_model"),
+        )
+        planet["heightmap_model"] = heightmap
+        model = derive_water_cycle_model(
+            terrain=terrain,
+            heightmap=heightmap,
+            atmosphere=atmosphere,
+            seed=seed or planet.get("world_gen_seed") or {},
+            planet_id=planet.get("id", ""),
+        )
         evolution["feedback_iterations"] = feedback_iterations
         evolution["coupling"] = "two_bounded_climate_landscape_feedback_iterations"
         planet["surface_evolution_model"] = evolution
@@ -2950,6 +2997,18 @@ class WorldGenSimulation:
             "carbon_balance_tendency": climate_regulation.get("carbon_balance_tendency"),
         }
         planet["water_cycle_model"] = model
+        coastal_context = {**planet, "satellites": self._satellite_entities_for(planet)}
+        coastal_model = derive_coastal_geomorphology_model(
+            planet=coastal_context,
+            heightmap=heightmap,
+            water_cycle=model,
+            tectonic_model=planet.get("tectonic_model"),
+            surface_evolution=evolution,
+            star=self.star_entity,
+        )
+        planet["coastal_geomorphology_model"] = coastal_model
+        planet["coastal_summary"] = coastal_summary(coastal_model)
+        enrich_coastal_hydrology(model, coastal_model)
         planet["cryosphere_model"] = {
             "status": "resolved_from_climate_and_heightfield",
             "model_version": "cryosphere-summary-v1",
@@ -3142,6 +3201,8 @@ class WorldGenSimulation:
                 "material_heatmap_status",
                 "material_heatmap_layer_count",
                 "water_cycle_model",
+                "coastal_geomorphology_model",
+                "coastal_summary",
                 "river_model",
                 "climate_zone_model",
                 "climate_summary",
@@ -3173,6 +3234,8 @@ class WorldGenSimulation:
                 "material_heatmap_status",
                 "material_heatmap_layer_count",
                 "water_cycle_model",
+                "coastal_geomorphology_model",
+                "coastal_summary",
                 "river_model",
                 "climate_zone_model",
                 "climate_summary",
@@ -3201,6 +3264,8 @@ class WorldGenSimulation:
                 "material_heatmap_status",
                 "material_heatmap_layer_count",
                 "water_cycle_model",
+                "coastal_geomorphology_model",
+                "coastal_summary",
                 "river_model",
                 "climate_zone_model",
                 "climate_summary",
@@ -3224,6 +3289,8 @@ class WorldGenSimulation:
                 "material_heatmap_status",
                 "material_heatmap_layer_count",
                 "water_cycle_model",
+                "coastal_geomorphology_model",
+                "coastal_summary",
                 "river_model",
                 "climate_zone_model",
                 "climate_summary",
@@ -3636,6 +3703,11 @@ class WorldGenSimulation:
             ),
             "heightmap_model": heightmap_model,
             "water_cycle_model": water_cycle_model,
+            "coastal_geomorphology_model": (
+                selected_planet.get("coastal_geomorphology_model")
+                if isinstance(selected_planet, dict) and isinstance(selected_planet.get("coastal_geomorphology_model"), dict)
+                else None
+            ),
             "surface_evolution_model": (
                 selected_planet.get("surface_evolution_model")
                 if isinstance(selected_planet, dict) and isinstance(selected_planet.get("surface_evolution_model"), dict)

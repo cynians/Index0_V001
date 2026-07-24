@@ -525,6 +525,17 @@ class NavigationController:
 
         self.open_region_map_tab(parent_entity_id)
 
+    def _refresh_generated_map_views(self):
+        """Reload generated entities and invalidate open parent/child map caches."""
+        if hasattr(self.app.world_model, "refresh"):
+            self.app.world_model.refresh()
+        for tab in getattr(self.app.tab_manager, "tabs", []):
+            sim_instance = getattr(tab, "sim_instance", None)
+            simulation = getattr(sim_instance, "simulation", None)
+            refresh_layers = getattr(simulation, "refresh_generated_map_layers", None)
+            if callable(refresh_layers):
+                refresh_layers()
+
     def open_location_parent_placement_tab(self, location_entity_id):
         if not location_entity_id:
             return False
@@ -1061,6 +1072,18 @@ class NavigationController:
             self.open_region_map_tab(selected_entity_id)
             return True
 
+        if action_id == "regenerate_current_region" and active_sim is not None:
+            loading = getattr(self.app, "_draw_startup_loading_screen", None)
+            if callable(loading):
+                loading(0.22, "Regenerating this region from parent boundary conditions")
+            region = getattr(active_sim, "regenerate_current_region", lambda: None)()
+            if not isinstance(region, dict) or not region.get("id"):
+                return False
+            if callable(loading):
+                loading(0.84, "Feeding refreshed detail into the parent map")
+            self._refresh_generated_map_views()
+            return True
+
         if action_id == "regenerate_visible_region" and active_sim is not None:
             loading = getattr(self.app, "_draw_startup_loading_screen", None)
             if callable(loading):
@@ -1077,8 +1100,7 @@ class NavigationController:
                 return False
             if callable(loading):
                 loading(0.86, "Persisting hierarchical map detail")
-            if hasattr(self.app.world_model, "refresh"):
-                self.app.world_model.refresh()
+            self._refresh_generated_map_views()
             return bool(self.open_region_map_tab(region.get("id")))
 
         if action_id == "reset_planet_map_view" and active_sim is not None:

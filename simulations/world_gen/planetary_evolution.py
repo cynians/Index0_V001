@@ -250,6 +250,7 @@ def update_causal_provenance(planet):
         {"id": "heightfield", "kind": "spatial_state", "depends_on": ["tectonic_provinces", "impact_record", "isostasy"], "causes": ["ocean_basin_fill", "drainage"]},
         {"id": "climate", "kind": "spatial_state", "depends_on": ["stellar_forcing", "atmosphere", "rotation", "heightfield", "ocean_state"], "causes": ["precipitation", "cryosphere", "weathering"]},
         {"id": "hydrology", "kind": "spatial_state", "depends_on": ["heightfield", "climate", "volatile_budget"], "causes": ["rivers", "lakes", "sediment_transport"]},
+        {"id": "coastal_geomorphology", "kind": "spatial_state", "depends_on": ["heightfield", "ocean_state", "climate", "hydrology", "tectonic_provinces", "sediment_transport"], "causes": ["coastal_landforms", "estuarine_accommodation", "biogenic_coast_potential"]},
         {"id": "surface_material_provinces", "kind": "spatial_state", "depends_on": ["core_mantle_crust_partition", "tectonic_provinces", "climate", "hydrology"], "causes": ["regional_deposit_candidates", "regolith"]},
     ]
     for node in additions:
@@ -261,6 +262,7 @@ def update_causal_provenance(planet):
         "tectonic_model": bool(planet.get("tectonic_model")),
         "heightmap_model": bool(planet.get("heightmap_model")),
         "water_cycle_model": bool(planet.get("water_cycle_model")),
+        "coastal_geomorphology_model": bool(planet.get("coastal_geomorphology_model")),
         "surface_evolution_model": bool(planet.get("surface_evolution_model")),
         "natural_material_model": bool(planet.get("natural_material_model")),
     }

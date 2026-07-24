@@ -1,3 +1,13 @@
+from world.periods import (
+    TOP_LEVEL_PERIOD_IDS,
+    century_entity_id,
+    century_number_for_year,
+    event_anchor_year,
+    top_level_period_for_year,
+    year_entity_id,
+)
+
+
 class KnowledgeBrowserModel:
     def __init__(self, host):
         object.__setattr__(self, "host", host)
@@ -871,12 +881,148 @@ class KnowledgeBrowserModel:
             return entity.get("species_class", entity.get("type", "entity"))
         if dataset_name == "materials":
             return entity.get("material_subclass", entity.get("type", "material"))
+        if dataset_name == "periods":
+            return entity.get("period_class", entity.get("type", "period"))
         if dataset_name == "systems":
             if entity.get("system_role") == "star_system":
                 return entity.get("system_class", entity.get("type", "entity"))
             if entity.get("system_role") == "orbital_body":
                 return entity.get("body_class", entity.get("type", "entity"))
         return entity.get("type", "entity")
+
+    def _event_tree_item(self, entity, depth, *, expandable=False, expanded=False, meta_label=None):
+        dataset_name = entity.get("_dataset", "events")
+        label = self._entity_display_label(entity, fallback=entity.get("id", "unknown"))
+        entity_class = meta_label or self._entity_class_label(dataset_name, entity)
+        missing_count = 0
+        if dataset_name == "events":
+            missing_count = self._entity_missing_scalar_count(entity, "events")
+        return {
+            "kind": "tree_entity",
+            "entity_id": entity.get("id"),
+            "dataset_name": dataset_name,
+            "text": label,
+            "meta_text": f"[{entity_class}]",
+            "missing_count": missing_count,
+            "is_incomplete": missing_count > 0,
+            "depth": depth,
+            "expandable": bool(expandable),
+            "expanded": bool(expanded),
+        }
+
+    def _build_event_browser_items(self, world_model):
+        """Build major period -> century -> year -> event repository rows."""
+        events = [
+            entity
+            for entity in world_model.get_entities_by_dataset("events")
+            if self._matches_browser_filters(entity, "events")
+        ]
+        events.sort(
+            key=lambda entity: (
+                event_anchor_year(entity) is None,
+                event_anchor_year(entity) if event_anchor_year(entity) is not None else 0,
+                self._entity_display_label(entity, fallback=entity.get("id", "")).lower(),
+            )
+        )
+
+        scheduled = {}
+        unscheduled = []
+        for event in events:
+            year = event_anchor_year(event)
+            if year is None:
+                unscheduled.append(event)
+                continue
+            period = top_level_period_for_year(year, world_model.MAJOR_PERIODS)
+            period_id = str(period["entity_id"]) if period is not None else None
+            century_number = century_number_for_year(year)
+            scheduled.setdefault(period_id, {}).setdefault(century_number, {}).setdefault(year, []).append(event)
+
+        state = self.browser_tree_state.setdefault("periods", {})
+        auto_reveal = bool(self.browser_search_query.strip() or self.browser_period_filter)
+        items = []
+
+        def period_matches(entity):
+            query = self.browser_search_query.strip()
+            return not query or self._query_matches_text(
+                query,
+                " ".join(
+                    (
+                        self._entity_display_label(entity, fallback=entity.get("id", "")),
+                        str(entity.get("period_class", "")),
+                        str(entity.get("start_year", "")),
+                        str(entity.get("end_year", "")),
+                    )
+                ),
+            )
+
+        def add_year_branch(period_id, century_number, years, depth):
+            century = world_model.get_entity(century_entity_id(century_number))
+            if not isinstance(century, dict):
+                return
+            century_children_match = bool(years)
+            if not century_children_match and not period_matches(century):
+                return
+            century_id = str(century["id"])
+            century_expanded = state.get(century_id, True)
+            items.append(
+                self._event_tree_item(
+                    century,
+                    depth,
+                    expandable=bool(years),
+                    expanded=century_expanded,
+                    meta_label="Century",
+                )
+            )
+            if not years or not (century_expanded or auto_reveal):
+                return
+
+            for year in sorted(years):
+                year_period = world_model.get_entity(year_entity_id(year))
+                if not isinstance(year_period, dict):
+                    continue
+                year_events = years[year]
+                year_id = str(year_period["id"])
+                year_expanded = state.get(year_id, True)
+                items.append(
+                    self._event_tree_item(
+                        year_period,
+                        depth + 1,
+                        expandable=bool(year_events),
+                        expanded=year_expanded,
+                        meta_label="Year",
+                    )
+                )
+                if year_events and (year_expanded or auto_reveal):
+                    for event in year_events:
+                        items.append(self._event_tree_item(event, depth + 2, meta_label="Event"))
+
+        for period_id in TOP_LEVEL_PERIOD_IDS:
+            period = world_model.get_entity(period_id)
+            if not isinstance(period, dict):
+                continue
+            century_groups = scheduled.get(period_id, {})
+            if (self.browser_search_query.strip() or self.browser_period_filter) and not century_groups and not period_matches(period):
+                continue
+            period_expanded = state.get(period_id, True)
+            items.append(
+                self._event_tree_item(
+                    period,
+                    0,
+                    expandable=bool(century_groups),
+                    expanded=period_expanded,
+                    meta_label="Major Period",
+                )
+            )
+            if century_groups and (period_expanded or auto_reveal):
+                for century_number in sorted(century_groups):
+                    add_year_branch(period_id, century_number, century_groups[century_number], 1)
+
+        for century_number in sorted(scheduled.get(None, {})):
+            add_year_branch(None, century_number, scheduled[None][century_number], 0)
+
+        for event in unscheduled:
+            items.append(self._event_tree_item(event, 0, meta_label="Unscheduled Event"))
+        return items
 
     def _build_browser_items(self, world_model):
         items = [
@@ -932,14 +1078,41 @@ class KnowledgeBrowserModel:
                 items.append({"kind": "spacer"})
                 continue
 
+            if dataset_name == "events":
+                if self.browser_filter_dataset not in {"all", "events"}:
+                    continue
+                dataset_items = self._build_event_browser_items(world_model)
+                if hide_empty_sections and not dataset_items:
+                    continue
+                items.append({"kind": "section", "text": "Events"})
+                items.extend(dataset_items)
+                items.append({"kind": "spacer"})
+                continue
+
+            # Periods are already the clickable hierarchy nodes in Events.
+            # Keep a dedicated Periods filter for direct browsing without
+            # duplicating every generated year in the default "All" view.
+            if dataset_name == "periods" and self.browser_filter_dataset == "all":
+                continue
+
             if self.browser_filter_dataset != "all" and dataset_name != self.browser_filter_dataset:
                 continue
 
             dataset_items = []
-            entities = sorted(
-                world_model.get_entities_by_dataset(dataset_name),
-                key=lambda entity: self._entity_display_label(entity, fallback=entity.get("id", "")).lower()
-            )
+            if dataset_name == "periods":
+                entities = sorted(
+                    world_model.get_entities_by_dataset(dataset_name),
+                    key=lambda entity: (
+                        self._coerce_card_year(entity.get("start_year")) is None,
+                        self._coerce_card_year(entity.get("start_year")) or 0,
+                        self._entity_display_label(entity, fallback=entity.get("id", "")).lower(),
+                    ),
+                )
+            else:
+                entities = sorted(
+                    world_model.get_entities_by_dataset(dataset_name),
+                    key=lambda entity: self._entity_display_label(entity, fallback=entity.get("id", "")).lower()
+                )
 
             for entity in entities:
                 if not self._matches_browser_filters(entity, dataset_name):

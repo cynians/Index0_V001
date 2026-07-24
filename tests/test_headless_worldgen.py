@@ -124,7 +124,7 @@ class HeadlessWorldGenRuntimeTests(unittest.TestCase):
             )
             self.assertEqual("world.world_model.WorldModel", result.runtime_classes["world_model"])
             self.assertEqual(7, len(result.stage_screenshots))
-            self.assertEqual(6, len(result.layer_images))
+            self.assertEqual(7, len(result.layer_images))
             for path in [
                 *result.stage_screenshots,
                 *(item["path"] for item in result.layer_images),
@@ -143,6 +143,8 @@ class HeadlessWorldGenRuntimeTests(unittest.TestCase):
             self.assertIsInstance(planet.get("heightmap_model"), dict)
             self.assertIsInstance(planet.get("water_cycle_model"), dict)
             self.assertIsInstance(planet.get("material_heatmap_model"), dict)
+            self.assertIsInstance(planet.get("coastal_geomorphology_model"), dict)
+            self.assertIsInstance(planet.get("coastal_summary"), dict)
             self.assertGreater(
                 float((planet.get("surface_evolution_model") or {}).get("surface_pressure_bar", 0.0)),
                 0.0,

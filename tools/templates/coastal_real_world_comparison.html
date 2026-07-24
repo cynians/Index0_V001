@@ -1,0 +1,73 @@
+<section id="coast-equal-scale-7f4b" aria-label="Equal-scale generated and real rocky coast comparison">
+  <style>
+    #coast-equal-scale-7f4b{color:var(--foreground);font-size:var(--font-size-base);padding:8px 0}
+    #coast-equal-scale-7f4b *{box-sizing:border-box}
+    #coast-equal-scale-7f4b .comparison-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+    #coast-equal-scale-7f4b figure{margin:0;min-width:0}
+    #coast-equal-scale-7f4b img{display:block;width:100%;aspect-ratio:5/4;object-fit:contain;background:var(--muted)}
+    #coast-equal-scale-7f4b figcaption{margin-top:6px;color:var(--muted-foreground)}
+    #coast-equal-scale-7f4b .metrics{margin-top:12px}
+    #coast-equal-scale-7f4b .legend-line{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted-foreground);margin-top:8px}
+    #coast-equal-scale-7f4b .swatch{display:inline-block;width:14px;height:3px;margin-right:5px;vertical-align:middle;background:var(--viz-series-1)}
+    #coast-equal-scale-7f4b .swatch.reference{background:var(--viz-series-2)}
+    @media(max-width:640px){#coast-equal-scale-7f4b .comparison-grid{grid-template-columns:1fr}}
+  </style>
+  <div class="viz-controls" id="coast-scale-controls" aria-label="Footprint scale"></div>
+  <div class="legend-line text-small" aria-hidden="true">
+    <span><span class="swatch"></span>Generated</span>
+    <span><span class="swatch reference"></span>NOAA/USACE reference</span>
+  </div>
+  <div class="comparison-grid">
+    <figure>
+      <img id="coast-generated-image" alt="Generated rocky coast at the selected physical footprint">
+      <figcaption id="coast-generated-caption"></figcaption>
+    </figure>
+    <figure>
+      <img id="coast-reference-image" alt="Kaʻena Point rocky coast lidar map at the selected physical footprint">
+      <figcaption id="coast-reference-caption"></figcaption>
+    </figure>
+  </div>
+  <div class="table-responsive metrics">
+    <table class="table table-sm" aria-label="Selected-scale morphology comparison">
+      <thead><tr><th>Measure</th><th>Generated</th><th>Kaʻena reference</th></tr></thead>
+      <tbody id="coast-metrics-body"></tbody>
+    </table>
+  </div>
+  <div class="text-small text-muted" id="coast-limit"></div>
+  <script>
+    (() => {
+      const root = document.getElementById('coast-equal-scale-7f4b');
+      const data = __PAYLOAD__;
+      const controls = root.querySelector('#coast-scale-controls');
+      const generatedImage = root.querySelector('#coast-generated-image');
+      const referenceImage = root.querySelector('#coast-reference-image');
+      const generatedCaption = root.querySelector('#coast-generated-caption');
+      const referenceCaption = root.querySelector('#coast-reference-caption');
+      const metricsBody = root.querySelector('#coast-metrics-body');
+      const limit = root.querySelector('#coast-limit');
+      const render = (index) => {
+        const item = data[index];
+        [...controls.children].forEach((button, buttonIndex) => button.setAttribute('aria-pressed', buttonIndex === index ? 'true' : 'false'));
+        generatedImage.src = item.generatedImage;
+        referenceImage.src = item.referenceImage;
+        generatedCaption.textContent = `Generated L${item.level}: ${item.footprint} m footprint, ${item.generatedSpacing} sampling`;
+        referenceCaption.textContent = `Kaʻena Point: same ${item.footprint} m footprint, 1 m lidar surface`;
+        metricsBody.innerHTML = [
+          ['Vertical relief', `${item.generatedRelief} m full range`, `${item.referenceRelief} m p05–p95`],
+          ['Shore topology', `${item.generatedSegments} stored coast segments`, item.referenceTopology],
+          ['Observed structure', item.generatedStructure, item.referenceStructure]
+        ].map(row => `<tr><th>${row[0]}</th><td>${row[1]}</td><td>${row[2]}</td></tr>`).join('');
+        limit.textContent = item.limit;
+      };
+      data.forEach((item, index) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn';
+        button.textContent = `L${item.level} · ${item.footprint} m`;
+        button.addEventListener('click', () => render(index));
+        controls.appendChild(button);
+      });
+      render(0);
+    })();
+  </script>
+</section>

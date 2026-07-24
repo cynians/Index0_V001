@@ -2575,3 +2575,149 @@ This includes:
 - supporting entities with open-ended or missing end dates
 - keeping timeline edits consistent with existing entity loading and canvas behavior
 - preparing the feature so later edits can be saved back into repository-backed entries
+
+
+TASK-250
+Status: DONE
+Difficulty: 4
+Requires: TASK-038
+Description: Introduce a shared world-generation storage policy that separates durable world truth, reproducible derived assets, and disposable diagnostics, including:
+- Explicit storage roots and retention classes (`temporary`, `retained`, and `pinned`)
+- Temporary or ignored-cache output as the default for headless and batch generation
+- An explicit retain/output action before diagnostic files persist
+- Path-scope validation before replacement, pruning, cleanup, or garbage collection
+- Sol as the first pinned benchmark exempt from ordinary retention
+- Tests proving that ordinary validation no longer writes permanent run trees into the source checkout
+
+
+TASK-251
+Status: DONE
+Difficulty: 5
+Requires: TASK-250
+Description: Replace headless world-generation output directories with a single versioned `.i0wg` run bundle, including:
+- Reuse of the existing ZIP-manifest approach established by `.i0r` raster bundles
+- Storage of manifest, input contract, summary, planet snapshot, fingerprints, optional regional snapshot, and optional images inside one file
+- Generation through an isolated temporary repository followed by atomic bundle finalization and temporary-tree cleanup
+- Summary/fingerprint-only output by default, with rendering and debug retention opt-in
+- Reader support in report and replay tools
+- Migration of the retained Solar System benchmark to one pinned bundle after compatibility is verified
+
+
+TASK-252
+Status: DONE
+Difficulty: 5
+Requires: TASK-250, TASK-251
+Description: Add lifecycle management for canonical worldgen-derived raster and regional assets, including:
+- One deterministic active `.i0r` bundle path per canonical planet or region family
+- Temporary write, manifest validation, and atomic replacement on regeneration
+- Owner entity, input fingerprint, model version, layer hashes, and creation time in manifests
+- Reference-aware deletion of superseded bundles after planet deletion, ID changes, or invalidation
+- Repository maintenance reporting for orphan bundles, stale temporary files, and expired unpinned diagnostics
+- Regression tests proving repeated generation does not increase canonical derived-file count
+
+
+TASK-253
+Status: DONE
+Difficulty: 5
+Requires: TASK-225, TASK-232, TASK-250
+Description: Add a shared post-evolution heightmap derivative refresh required by coastal generation, including:
+- Re-solving planetary sea level from conserved equivalent global water depth
+- Rebuilding land/ocean/coastal masks after surface evolution
+- Recalculating spherical area-weighted hypsometry and ocean fraction
+- Recalculating shelf width, depth, gradient, and sediment-wedge fields
+- Avoiding duplicate longitude-seam accounting
+- Preserving inherited planetary sea level while recomputing local regional morphology
+- Backward-compatible rebuilding of missing or stale derived fields on older saved worlds
+
+
+TASK-254
+Status: DONE
+Difficulty: 6
+Requires: TASK-253
+Description: Implement a deterministic spherical shoreline graph as the persistent scaffold for coastal geomorphology, including:
+- Ordered connected sea-level contour chains
+- Longitude-seam continuity and spherical length calculation
+- Consistent landward/seaward normals
+- Segmentation at meaningful changes in tectonics, relief, exposure, substrate, river influence, or curvature
+- Stable segment IDs and parent/child segment lineage across regional refinement
+- Measurements for relief, inland and nearshore slope, shelf width, embayment, enclosure, archipelago context, ocean basin, and river-mouth adjacency
+
+
+TASK-255
+Status: DONE
+Difficulty: 7
+Requires: TASK-226, TASK-230, TASK-231, TASK-254
+Description: Derive reduced-physics coastal forcing and sediment-budget fields for every shoreline segment, including:
+- Wind/fetch-derived wave exposure, significant-wave class, peak-period class, breaker incidence, and longshore-transport direction/capacity
+- Astronomical tidal potential from available stellar and satellite facts plus reduced basin/shelf amplification
+- Tidal-range estimate, micro/meso/macro classification, and confidence
+- Relative sea-level tendency from tectonic uplift/subsidence, sediment loading, ice/isostatic influence, and bounded eustatic history
+- River, cliff, glacial, aeolian, volcaniclastic, and carbonate sediment sources
+- Mud, sand, gravel, bioclastic, and volcaniclastic fractions plus alongshore transfer and accommodation
+- Numerical material/substrate inputs independent of renderer raster files
+
+
+TASK-256
+Status: DONE
+Difficulty: 6
+Requires: TASK-255
+Description: Implement multiaxial coastal classification and enrich river-mouth systems, including:
+- Tectonic setting, relative sea-level state, shoreline trajectory, substrate, dominant forcing, wave exposure, tidal class, and confidence
+- Rocky cliff/headland-bay, beach, barrier-lagoon, deltaic, estuarine, tidal-flat/wetland-accommodation, glacial, volcanic, carbonate/karst, permafrost, and emergent-terrace assemblages
+- River/wave/tide-dominance classification for deltas
+- Recognition of drowned river valleys, fjord/fjard candidates, skerry fields, estuaries, and lagoonal basins
+- Reflective/intermediate/dissipative classification only for suitable wave-dominated sandy beaches
+- Rule traces and scientific impossibility guards for barriers, fjords, reefs, terraces, and other conditional landforms
+
+
+TASK-257
+Status: DONE
+Difficulty: 8
+Requires: TASK-232, TASK-253, TASK-254, TASK-256
+Description: Materialize parent-conditioned coastal landforms during regional refinement, replacing generic near-sea-level noise, including:
+- Scale-gated generation of cliffs, shore platforms, headlands, embayments, beaches, barriers, lagoons, spits, tombolos, inlets, tidal flats, delta lobes, fjord walls/sills, skerries, dunes, washover fans, and marine terraces
+- Parent segment identity and forcing inherited into child patches
+- Edge fading and sediment-budget conservation across patch boundaries
+- Substrate-appropriate beach and cliff morphology
+- One bounded local drainage reconciliation after barriers, lagoons, inlets, or delta lobes change terrain
+- Biological occupation deferred while preserving reef/marsh/mangrove accommodation potential
+
+
+TASK-258
+Status: DONE
+Difficulty: 5
+Requires: TASK-251, TASK-256
+Description: Persist and expose coastal geomorphology in worldgen, maps, and retained reports, including:
+- `coastal_geomorphology_model` and `coastal_summary` on planets and generated regions
+- Coastal causal-provenance and invalidation dependencies
+- Reset/rollback cleanup of coastal descendants
+- A Coastal Geomorphology map layer with segment categories, wave/tide overlays, transport arrows, landform symbols, and confidence-aware legend
+- Compact worldgen summaries for coast assemblages, coastline length, estuaries, deltas, and wave/tidal distribution
+- Coastal report content inside retained `.i0wg` bundles without default loose image output
+
+
+TASK-259
+Status: DONE
+Difficulty: 6
+Requires: TASK-252, TASK-253, TASK-256, TASK-257, TASK-258
+Description: Add coastal scientific validation, storage invariants, and benchmark calibration, including:
+- Synthetic archetypes for cliffed, barrier, glacial, deltaic, tidal-flat, volcanic, karst/carbonate, and permafrost coasts
+- Deterministic segment-ID and classification tests
+- Longitude-seam, spherical-length, parent/child inheritance, and regional-edge tests
+- Impossibility guards preventing biologically occupied reefs without Biosphere support, barriers without sediment, and fjords without glacial inundation
+- Persistent-file-count tests for repeated generation and failure cleanup
+- Pinned Sol benchmark replay and refreshed coastal reference output
+- Performance limits for planetary classification and regional landform generation
+
+
+TASK-260
+Status: DONE
+Difficulty: 5
+Requires: TASK-254, TASK-259
+Description: Profile and reduce production planetary-generation time without lowering final fidelity, including:
+- Per-stage timing in the production headless replay route
+- Exact spatial indexing of tectonic boundary segments during heightfield sampling
+- Caching of immutable deterministic seed constants reused at every heightfield sample
+- An isolated before/after heightfield fingerprint comparison
+- A complete same-seed before/after generation comparison covering elevation, land/ocean/ice fractions, hydrology, precipitation, and coastal outputs
+- Retained benchmark metadata without retaining temporary full-generation file trees

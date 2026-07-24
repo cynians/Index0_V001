@@ -162,6 +162,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         "temporal": "Temporal",
         "location": "Location",
         "relations": "Relations",
+        "extant": "Extant",
         "phylogeny": "Phylogeny",
         "simulation": "Simulation",
         "operational": "Operational",
@@ -209,6 +210,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         "temporal": ["Temporal"],
         "location": [],
         "relations": ["Relations", "Class Relations", "Biosphere Species Roster"],
+        "extant": [],
         "operational": ["Operational"],
         "simulation": [],
         "media": ["Media"],
@@ -448,6 +450,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
     def _is_person_card(self):
         return self.dataset_name in {"people", "persons"} or self.entity.get("type") == "person"
 
+    def _is_period_card(self):
+        return self.dataset_name == "periods" or self.entity.get("type") == "period"
+
     def _title_edit_field(self):
         return "common_name" if self._is_species_card() else "name"
 
@@ -593,6 +598,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             order = self.DATASET_TAB_ORDER["components"]
         else:
             order = self.DATASET_TAB_ORDER.get(self.dataset_name, self.TAB_ORDER)
+        if self._is_period_card() and "extant" not in order:
+            insert_index = order.index("relations") if "relations" in order else len(order)
+            order = list(order[:insert_index]) + ["extant"] + list(order[insert_index:])
         if self._is_site_card() and "site" not in order:
             insert_index = order.index("overview") + 1 if "overview" in order else 1
             order = list(order[:insert_index]) + ["site"] + list(order[insert_index:])
@@ -630,6 +638,135 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
     def _is_general_mode(self):
         return self.active_tab == "general"
+
+    def _is_extant_mode(self):
+        return self.active_tab == "extant" and self._is_period_card()
+
+    def _period_extant_range(self):
+        start_year = self._coerce_timeline_year(self.entity.get("start_year"))
+        end_year = self._coerce_timeline_year(self.entity.get("end_year"))
+        point_year = self._coerce_timeline_year(self.entity.get("year"))
+        if start_year is None:
+            start_year = point_year
+        if end_year is None and point_year is not None:
+            end_year = point_year
+        if start_year is None:
+            return None
+        if end_year is None:
+            end_year = start_year
+        return min(start_year, end_year), max(start_year, end_year)
+
+    def _period_scope_parent_ids(self):
+        parent_ids = self._relation_entity_ids(self.entity.get("scope_parent"))
+        for parent_id in self._relation_entity_ids(self.entity.get("parents")):
+            parent = self.world_model.get_entity(parent_id) if self.world_model is not None else None
+            if isinstance(parent, dict) and parent.get("type") != "period" and parent.get("_dataset") != "periods":
+                if parent_id not in parent_ids:
+                    parent_ids.append(parent_id)
+        return parent_ids
+
+    def _period_scope_entity_ids(self):
+        if self.world_model is None:
+            return set()
+        scope_ids = set(self._period_scope_parent_ids())
+        if not scope_ids:
+            return set()
+
+        entities = getattr(getattr(self.world_model, "loader", None), "entities", {}) or {}
+        allowed_ids = set()
+
+        visited_offspring = set()
+
+        def add_offspring(nodes):
+            for node in nodes or []:
+                if isinstance(node, str):
+                    entity_id = node
+                    children = []
+                elif isinstance(node, dict):
+                    entity_id = str(node.get("id") or node.get("entity_id") or "").strip()
+                    children = node.get("offspring") or []
+                else:
+                    continue
+                if not entity_id or entity_id in visited_offspring:
+                    continue
+                visited_offspring.add(entity_id)
+                if entity_id and entity_id not in scope_ids:
+                    allowed_ids.add(entity_id)
+                add_offspring(children)
+
+        for scope_id in scope_ids:
+            scope = entities.get(scope_id)
+            if isinstance(scope, dict):
+                add_offspring(scope.get("offspring") or [])
+            get_neighbors = getattr(self.world_model, "get_neighbors", None)
+            if callable(get_neighbors):
+                allowed_ids.update(
+                    entity_id
+                    for entity_id in get_neighbors(scope_id)
+                    if entity_id not in scope_ids
+                )
+
+        # Keep scoped cards useful even when offspring has not yet been
+        # materialized after an edit.
+        for entity_id, candidate in entities.items():
+            if not isinstance(candidate, dict) or entity_id in scope_ids:
+                continue
+            if scope_ids.intersection(self._relation_entity_ids(candidate.get("parents"))):
+                allowed_ids.add(entity_id)
+        return allowed_ids
+
+    def _entity_is_extant_in_period(self, entity, period_range):
+        if not isinstance(entity, dict) or period_range is None:
+            return False
+        period_start, period_end = period_range
+        start_year = self._coerce_timeline_year(entity.get("start_year"))
+        end_year = self._coerce_timeline_year(entity.get("end_year"))
+        point_year = self._coerce_timeline_year(entity.get("year"))
+        if point_year is None:
+            point_year = self._coerce_timeline_year(entity.get("year_number"))
+        if point_year is None:
+            point_year = self._coerce_timeline_year(entity.get("effective_year"))
+
+        if start_year is not None and end_year is not None:
+            entity_start, entity_end = min(start_year, end_year), max(start_year, end_year)
+            return entity_start <= period_end and entity_end >= period_start
+        if start_year is not None:
+            return start_year <= period_end
+        if end_year is not None:
+            return end_year >= period_start
+        if point_year is not None:
+            return period_start <= point_year <= period_end
+        return False
+
+    def _extant_entries(self):
+        if self.world_model is None:
+            return []
+        period_range = self._period_extant_range()
+        if period_range is None:
+            return []
+        entities = getattr(getattr(self.world_model, "loader", None), "entities", {}) or {}
+        scoped_ids = self._period_scope_entity_ids()
+        is_scoped = bool(self._period_scope_parent_ids())
+        rows = []
+        for entity_id, entity in entities.items():
+            if not isinstance(entity, dict) or entity_id == self.entity.get("id"):
+                continue
+            dataset_name = str(entity.get("_dataset") or entity.get("type") or "entries")
+            if dataset_name in {"schemas", "periods"} or entity.get("type") in {"schema", "period"}:
+                continue
+            if is_scoped and entity_id not in scoped_ids:
+                continue
+            if not self._entity_is_extant_in_period(entity, period_range):
+                continue
+            rows.append(entity)
+        rows.sort(
+            key=lambda entity: (
+                str(entity.get("_dataset") or entity.get("type") or "entries").lower(),
+                self._entity_display_label(entity).lower(),
+                str(entity.get("id") or ""),
+            )
+        )
+        return rows
 
     def _uses_image_block(self):
         return self._is_media_mode() or self._is_temporal_mode()
@@ -3949,6 +4086,119 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
         return False
 
+    def _layout_extant_content(self, card, content_left, current_y, content_width):
+        rows = []
+        scope_labels = [
+            self._entity_label_for_id(entity_id)
+            for entity_id in self._period_scope_parent_ids()
+        ]
+        scope_text = (
+            "Scope: " + ", ".join(scope_labels)
+            if scope_labels
+            else "Scope: all repository entries with overlapping dates"
+        )
+        summary_rect = pygame.Rect(content_left, current_y, content_width, 30)
+        rows.append({"kind": "summary", "text": scope_text, "rect": summary_rect})
+        current_y = summary_rect.bottom + 8
+
+        grouped = {}
+        for entity in self._extant_entries():
+            dataset_name = str(entity.get("_dataset") or entity.get("type") or "entries")
+            grouped.setdefault(dataset_name, []).append(entity)
+
+        for dataset_name in sorted(grouped, key=lambda value: value.lower()):
+            entries = grouped[dataset_name]
+            header_rect = pygame.Rect(content_left, current_y, content_width, 24)
+            rows.append({
+                "kind": "header",
+                "text": f"{dataset_name.replace('_', ' ').title()} ({len(entries)})",
+                "rect": header_rect,
+            })
+            current_y = header_rect.bottom + 3
+            for entity in entries:
+                entity_id = str(entity.get("id") or "")
+                row_rect = pygame.Rect(content_left, current_y, content_width, 28)
+                entity_range = self._entity_timeline_range(entity)
+                if entity_range is None:
+                    temporal_label = ""
+                elif entity_range[0] == entity_range[1]:
+                    temporal_label = str(entity_range[0])
+                else:
+                    temporal_label = f"{entity_range[0]}–{entity_range[1]}"
+                rows.append({
+                    "kind": "entity",
+                    "entity": entity,
+                    "entity_id": entity_id,
+                    "text": self._entity_display_label(entity),
+                    "temporal_label": temporal_label,
+                    "rect": row_rect,
+                    "relation_info": {
+                        "kind": "existing",
+                        "entity_id": entity_id,
+                        "field_key": "extant",
+                    },
+                })
+                current_y = row_rect.bottom + 3
+            current_y += 6
+
+        if not grouped:
+            empty_rect = pygame.Rect(content_left, current_y, content_width, 34)
+            rows.append({
+                "kind": "empty",
+                "text": "No temporally defined entries are extant in this period.",
+                "rect": empty_rect,
+            })
+            current_y = empty_rect.bottom + 6
+        card["extant_rows"] = rows
+        return current_y
+
+    def _draw_extant_content(self, screen, font, card):
+        line_h = self._table_line_height(font)
+        for index, row in enumerate(card.get("extant_rows", [])):
+            rect = row.get("rect")
+            if rect is None or rect.width <= 0 or rect.height <= 0:
+                continue
+            kind = row.get("kind")
+            if kind == "summary":
+                pygame.draw.rect(screen, (28, 38, 50), rect)
+                pygame.draw.rect(screen, (92, 126, 158), rect, 1)
+                color = (190, 212, 232)
+                text_x = rect.x + 8
+            elif kind == "header":
+                pygame.draw.rect(screen, (36, 40, 50), rect)
+                pygame.draw.rect(screen, (90, 96, 112), rect, 1)
+                color = (224, 228, 238)
+                text_x = rect.x + 8
+            elif kind == "entity":
+                fill = (34, 38, 48) if index % 2 == 0 else (29, 33, 43)
+                pygame.draw.rect(screen, fill, rect)
+                pygame.draw.rect(screen, (72, 82, 102), rect, 1)
+                color = (216, 226, 242)
+                text_x = rect.x + 10
+                temporal_label = row.get("temporal_label", "")
+                if temporal_label:
+                    temporal_surface = font.render(temporal_label, True, (154, 172, 198))
+                    screen.blit(
+                        temporal_surface,
+                        (
+                            rect.right - temporal_surface.get_width() - 8,
+                            rect.y + max(2, (rect.height - line_h) // 2),
+                        ),
+                    )
+                    text_right = rect.right - temporal_surface.get_width() - 16
+                else:
+                    text_right = rect.right - 8
+                label = self._ellipsize_text(row.get("text", ""), font, max(20, text_right - text_x))
+                screen.blit(font.render(label, True, color), (text_x, rect.y + max(2, (rect.height - line_h) // 2)))
+                continue
+            else:
+                pygame.draw.rect(screen, (28, 31, 40), rect)
+                pygame.draw.rect(screen, (68, 72, 86), rect, 1)
+                color = (154, 164, 182)
+                text_x = rect.x + 8
+            label = self._ellipsize_text(row.get("text", ""), font, max(20, rect.width - 16))
+            screen.blit(font.render(label, True, color), (text_x, rect.y + max(2, (rect.height - line_h) // 2)))
+
     def layout_card(self, card, rect):
         section_hitboxes = []
         tab_hitboxes = []
@@ -3982,6 +4232,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         person_quote_add_rect = None
         person_quote_rows = []
         person_quote_empty_rect = None
+        card["extant_rows"] = []
         schema_field_specs = self._get_schema_field_specs()
 
         tab_y = rect.y + self.HEADER_H + 6
@@ -3995,6 +4246,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             "temporal": 82,
             "location": 82,
             "relations": 76,
+            "extant": 68,
             "phylogeny": 86,
             "simulation": 92,
             "operational": 92,
@@ -4260,6 +4512,14 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                     task_checklist_rect.width - 36,
                     22,
                 )
+        elif self._is_extant_mode():
+            image_rect = None
+            content_end_y = self._layout_extant_content(
+                card,
+                content_left,
+                current_y,
+                text_width,
+            )
         elif self._is_person_quotes_mode():
             image_rect = None
             for key, value in (
@@ -4450,7 +4710,19 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 for illustration_id, title_rect in media_illustration_link_hitboxes
                 if title_rect.move(0, -scroll_y).colliderect(content_viewport_rect)
             ]
-            if self._is_phylogeny_mode():
+            if self._is_extant_mode():
+                visible_rows = []
+                for row in card.get("extant_rows", []):
+                    row_rect = row.get("rect")
+                    if row_rect is None:
+                        continue
+                    shifted_rect = row_rect.move(0, -scroll_y)
+                    if not shifted_rect.colliderect(content_viewport_rect):
+                        continue
+                    row["rect"] = shifted_rect.clip(content_viewport_rect)
+                    visible_rows.append(row)
+                card["extant_rows"] = visible_rows
+            elif self._is_phylogeny_mode():
                 for rect_key in (
                     "phylogeny_parent_section_rect",
                     "phylogeny_parent_panel_rect",
@@ -4957,7 +5229,14 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 if clipped_rect.height > 0:
                     editable_field_hitboxes.append((field_key, clipped_rect))
 
-        if not self._is_general_mode():
+        if self._is_extant_mode():
+            for row in card.get("extant_rows", []):
+                relation_info = row.get("relation_info")
+                row_rect = row.get("rect")
+                if relation_info is None or row_rect is None or not row_rect.colliderect(content_viewport_rect):
+                    continue
+                relation_hitboxes.append((relation_info, row_rect.clip(content_viewport_rect)))
+        elif not self._is_general_mode():
             for row in field_rows:
                 for chip in row.get("relation_chips", []):
                     chip_rect = chip.get("rect")
@@ -5174,6 +5453,25 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             launch_top = center_y + self.TIMELINE_TO_LAUNCH_GAP
             resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
             return max(320, resize_bottom + 8)
+
+        if self._is_extant_mode():
+            entries = self._extant_entries()
+            visible_entry_count = min(10, len(entries))
+            group_count = min(
+                6,
+                len({
+                    str(entity.get("_dataset") or entity.get("type") or "entries")
+                    for entity in entries
+                }),
+            )
+            tabs_bottom_y = self.HEADER_H + 6 + self.TAB_H
+            current_y = tabs_bottom_y + 10 + 38 + group_count * 33 + visible_entry_count * 31
+            timeline_label_y = current_y + 12
+            timeline_y = timeline_label_y + 18 + timeline_chip_h
+            center_y = timeline_y + 10
+            launch_top = center_y + self.TIMELINE_TO_LAUNCH_GAP
+            resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
+            return max(380, min(620, resize_bottom + 8))
 
         if self._is_phylogeny_mode():
             tabs_bottom_y = self.HEADER_H + 6 + self.TAB_H
@@ -5505,6 +5803,15 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         self._draw_subtabs(screen, font, card)
         if self._is_general_mode():
             self._draw_general_content(screen, font, card)
+        elif self._is_extant_mode():
+            content_clip = card.get("content_viewport_rect")
+            previous_clip = screen.get_clip()
+            if content_clip is not None:
+                screen.set_clip(previous_clip.clip(content_clip))
+            try:
+                self._draw_extant_content(screen, font, card)
+            finally:
+                screen.set_clip(previous_clip)
         elif self._is_person_quotes_mode():
             content_clip = card.get("content_viewport_rect")
             previous_clip = screen.get_clip()

@@ -1030,8 +1030,10 @@ class MapRenderer:
             color_lut = {}
             min_elevation = float(color_context.get("min_elevation", -4000.0))
             elevation_span = max(1.0, float(color_context.get("max_elevation", 4000.0)) - min_elevation)
-            spacing_x = max(1.0, float(heightmap.get("sample_spacing_x_m") or heightmap.get("equator_resolution_m_per_px") or 1.0))
-            spacing_y = max(1.0, float(heightmap.get("sample_spacing_y_m") or spacing_x))
+            spacing_x = max(0.001, float(heightmap.get("sample_spacing_x_m") or heightmap.get("equator_resolution_m_per_px") or 1.0))
+            spacing_y = max(0.001, float(heightmap.get("sample_spacing_y_m") or spacing_x))
+            detail_level = int(heightmap.get("map_detail_level", 0) or 0)
+            vertical_exaggeration = max(1.0, 5.0 - detail_level * 0.62)
             lut_steps = 511
             for row_index in range(cell_rows):
                 row_a = rows[row_index]
@@ -1071,8 +1073,8 @@ class MapRenderer:
                     lower_row = rows[min(len(rows) - 1, row_index + 1)]
                     up = float(upper_row[min(col_index, len(upper_row) - 1)] or 0.0)
                     down = float(lower_row[min(col_index, len(lower_row) - 1)] or 0.0)
-                    dzdx = (right - left) / (2.0 * spacing_x) * 5.0
-                    dzdy = (down - up) / (2.0 * spacing_y) * 5.0
+                    dzdx = (right - left) / (2.0 * spacing_x) * vertical_exaggeration
+                    dzdy = (down - up) / (2.0 * spacing_y) * vertical_exaggeration
                     normal_length = math.sqrt(dzdx * dzdx + dzdy * dzdy + 1.0)
                     illumination = max(0.0, min(1.0, (dzdx * 0.48 + dzdy * 0.48 + 0.735) / normal_length))
                     shade = 0.78 + illumination * 0.34
@@ -1716,6 +1718,16 @@ class MapRenderer:
         pygame.draw.lines(screen, color, False, screen_points, line_width)
         if line_width > 1:
             pygame.draw.aalines(screen, color, False, screen_points)
+        if layer.get("arrow_end") and len(screen_points) >= 2:
+            start, end = screen_points[-2], screen_points[-1]
+            angle = math.atan2(end[1] - start[1], end[0] - start[0])
+            arrow_length = max(5, line_width * 4)
+            arrow_points = [
+                (int(end[0] - math.cos(angle - 0.55) * arrow_length), int(end[1] - math.sin(angle - 0.55) * arrow_length)),
+                end,
+                (int(end[0] - math.cos(angle + 0.55) * arrow_length), int(end[1] - math.sin(angle + 0.55) * arrow_length)),
+            ]
+            pygame.draw.lines(screen, color, False, arrow_points, line_width)
         if is_hovered and not is_selected:
             pygame.draw.lines(screen, (120, 220, 255), False, screen_points, line_width + 2)
         if is_selected:
@@ -2006,6 +2018,12 @@ class MapRenderer:
                 continue
 
             if shape == "polyline":
+                if not self._polygon_layer_visible_in_world(
+                    layer,
+                    camera,
+                    visible_world_bounds=visible_world_bounds,
+                ):
+                    continue
                 self._draw_polyline_layer(
                     screen=screen,
                     layer=layer,

@@ -4,6 +4,7 @@ from world.entity_loader import EntityLoader
 from world.dione_reference_models import apply_dione_reference_models
 from world.earth_reference_models import apply_earth_reference_models
 from world.material_reference_models import apply_material_reference_models
+from world.periods import apply_period_reference_models
 from world.relationship_graph import TouchDegrees
 from world.schema_loader import SchemaLoader
 from world.yearer import Yearer
@@ -217,6 +218,7 @@ class WorldModel:
         apply_earth_reference_models(self.loader)
         apply_dione_reference_models(self.loader)
         apply_material_reference_models(self.loader)
+        apply_period_reference_models(self.loader, self.MAJOR_PERIODS)
         # Reuse schemas already decoded by EntityLoader. Parsing the complete
         # ontology a second time is especially costly once generated maps are
         # persisted in the repository.
@@ -259,11 +261,14 @@ class WorldModel:
     def _refresh_after_repository_mutation(self, changed_entity_ids):
         if not changed_entity_ids:
             return
+        apply_period_reference_models(self.loader, self.MAJOR_PERIODS)
         if hasattr(self.touch_degrees, "refresh"):
             self.touch_degrees.refresh()
+        self.yearer = Yearer(self.loader)
         self.repository_revision += 1
 
     def mark_repository_changed(self):
+        apply_period_reference_models(self.loader, self.MAJOR_PERIODS)
         if hasattr(self.touch_degrees, "refresh"):
             self.touch_degrees.refresh()
         self.yearer = Yearer(self.loader)
@@ -409,6 +414,8 @@ class WorldModel:
             start_year = self.yearer.normalize_year(entity.get("start_year"))
             end_year = self.yearer.normalize_year(entity.get("end_year"))
             dataset_name = entity.get("_dataset", entity.get("type", "entity"))
+            if entity.get("period_reference_generated"):
+                continue
             if dataset_name == "species" or entity.get("type") == "species":
                 common_name = str(entity.get("common_name") or "").strip()
                 binomial_name = str(entity.get("binomial_name") or "").strip()
@@ -506,6 +513,7 @@ class WorldModel:
         apply_earth_reference_models(self.loader)
         apply_dione_reference_models(self.loader)
         apply_material_reference_models(self.loader)
+        apply_period_reference_models(self.loader, self.MAJOR_PERIODS)
         self.schemas = SchemaLoader(schema_entities=self.loader.get_dataset("schemas"))
         self.touch_degrees.schemas = self.schemas
         self.touch_degrees.refresh()

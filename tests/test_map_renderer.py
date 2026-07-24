@@ -54,6 +54,18 @@ class MapRendererTests(unittest.TestCase):
 
         self.assertTrue(renderer._polygon_layer_visible_in_world(layer, camera))
 
+    def test_polyline_bounds_are_prepared_for_viewport_culling(self):
+        from simulations.map.map_simulation import MapSimulation
+
+        prepared = MapSimulation._prepare_layer_cache(
+            SimpleNamespace(_render_layer_sort_key=lambda _layer: (0, 0, 0)),
+            [{"shape": "polyline", "points": [(500.0, 500.0), (600.0, 600.0)]}],
+        )
+
+        renderer = self._renderer()
+        self.assertEqual((500.0, 600.0, 500.0, 600.0), prepared[0]["_world_bounds"])
+        self.assertFalse(renderer._polygon_layer_visible_in_world(prepared[0], FakeCamera()))
+
     def test_large_scaled_layer_reuses_overscan_during_small_pan(self):
         renderer = self._renderer()
         screen = pygame.Surface((100, 100))

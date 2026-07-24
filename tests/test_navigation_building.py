@@ -70,6 +70,44 @@ class NavigationBuildingTests(unittest.TestCase):
         self.assertEqual(("building", "loc_test_building"), tab.tab_key)
         self.assertEqual("Building: Test Building", tab.name)
 
+    def test_regenerating_current_region_refreshes_parent_and_child_map_views(self):
+        controller = self._controller([])
+        refreshed = []
+        invalidated = []
+        controller.app.world_model.refresh = lambda: refreshed.append("repository")
+        controller.app._draw_startup_loading_screen = lambda *_args: None
+        controller.app.tab_manager.tabs = [
+            SimpleNamespace(
+                sim_instance=SimpleNamespace(
+                    simulation=SimpleNamespace(
+                        refresh_generated_map_layers=lambda: invalidated.append("parent")
+                    )
+                )
+            ),
+            SimpleNamespace(
+                sim_instance=SimpleNamespace(
+                    simulation=SimpleNamespace(
+                        refresh_generated_map_layers=lambda: invalidated.append("region")
+                    )
+                )
+            ),
+        ]
+        active_sim = SimpleNamespace(
+            regenerate_current_region=lambda: {
+                "id": "refined_earth_lod1_test",
+                "refinement_revision": 2,
+            }
+        )
+
+        handled = controller.handle_ui_action(
+            "regenerate_current_region",
+            active_sim,
+        )
+
+        self.assertTrue(handled)
+        self.assertEqual(["repository"], refreshed)
+        self.assertEqual(["parent", "region"], invalidated)
+
     def test_knowledge_launch_routes_locations_without_dataset_marker(self):
         controller = self._controller([
             {

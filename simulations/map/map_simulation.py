@@ -1,3 +1,4 @@
+import copy
 import math
 import re
 import shutil
@@ -7,6 +8,7 @@ from pathlib import Path
 from engine.logger import logger
 from world.year_utils import parse_year
 from simulations.world_gen.natural_materials import derive_planet_surface_palette
+from simulations.world_gen.coastal_geomorphology import ensure_coastal_model_current
 from simulations.map.projection import (
     project_map_world_point,
     project_map_world_line,
@@ -58,6 +60,7 @@ class MapSimulation:
     REGION_LAYER_KIND = "regions"
     HEIGHTMAP_LAYER_KIND = "heightmap"
     HYDROLOGY_LAYER_KIND = "hydrology"
+    COASTAL_LAYER_KIND = "coastal_geomorphology"
     GROUND_MATERIALS_LAYER_KIND = "ground_materials"
     MATERIAL_HEATMAP_LAYER_KIND = "material_heatmaps"
     BIOSPHERE_PATCH_LOCATION_CLASS = "biosphere_patch"
@@ -87,6 +90,7 @@ class MapSimulation:
         "regions": "Regions",
         "heightmap": "Heightmap",
         "hydrology": "Hydrology + Climate",
+        "coastal_geomorphology": "Coastal Geomorphology",
         "ground_materials": "Regions",
         "material_heatmaps": "Material Distribution",
     }
@@ -118,12 +122,14 @@ class MapSimulation:
         "map_image_path",
         "heightmap_model",
         "water_cycle_model",
+        "coastal_geomorphology_model",
         "material_heatmap_model",
     )
     VISUAL_SURFACE_FIELDS = (
         "map_image_path",
         "heightmap_model",
         "water_cycle_model",
+        "coastal_geomorphology_model",
         "material_heatmap_model",
         "map_layers",
     )
@@ -219,6 +225,7 @@ class MapSimulation:
         self.map_projection_drag_start = None
         self._layer_projection_focus_key = None
         self._inherited_surface_context_cache = None
+        self._surface_model_validation_cache_key = None
         self._map_focus_last_click_time = None
         self._map_focus_last_click_screen_pos = None
         self.last_saved_spatial_feature_id = None
@@ -410,6 +417,125 @@ class MapSimulation:
         if width_m > 0.0 and height_m > 0.0:
             return not refinement_floor_reached(root)
         return int(root.get("map_detail_level", 0) or 0) < MAX_DETAIL_LEVEL
+
+    def can_regenerate_current_region(self):
+        root = self.get_root_entity()
+        if not isinstance(root, dict) or self.is_map_editor_active():
+            return False
+        return self._current_region_regeneration_request() is not None
+
+    def get_current_region_regeneration_label(self):
+        root = self.get_root_entity() or {}
+        profile = root.get("map_detail_profile") or {}
+        detail_label = profile.get("label")
+        return f"Regenerate This Region - {detail_label}" if detail_label else "Regenerate This Region"
+
+    def _surface_models_for_generation(self, entity):
+        if not isinstance(entity, dict):
+            return None
+        if entity.get("id") == getattr(self.context, "root_entity_id", None):
+            return self._root_surface_context()
+        if self._grid_rows(entity.get("heightmap_model")):
+            return {
+                "source": entity,
+                "heightmap_model": entity.get("heightmap_model"),
+                "water_cycle_model": entity.get("water_cycle_model"),
+                "coastal_geomorphology_model": entity.get("coastal_geomorphology_model"),
+            }
+        return self._inherited_surface_context(entity)
+
+    def _current_region_regeneration_request(self):
+        root = self.get_root_entity()
+        if not isinstance(root, dict):
+            return None
+        is_generated = (
+            root.get("location_class") == "generated_region"
+            and root.get("location_role") == "map_refinement_region"
+        )
+        if is_generated:
+            parent_id = root.get("refinement_parent_map_id") or self._structural_parent_location_id(root)
+            generation_root = self.world_model.get_entity(parent_id) if parent_id else None
+            requested_bounds = root.get("bounds") or {}
+        else:
+            # Authored regions opened through "Open Region Map" inherit their
+            # terrain from a higher map. Generate a full-footprint refinement
+            # beneath that authored region so it remains the semantic parent.
+            if not self._structural_parent_location_id(root):
+                return None
+            generation_root = root
+            requested_bounds = self._entity_map_bounds(root) or {}
+
+        parent_bounds = self._entity_map_bounds(generation_root)
+        surface_context = self._surface_models_for_generation(generation_root)
+        if (
+            not isinstance(generation_root, dict)
+            or not isinstance(parent_bounds, dict)
+            or not isinstance(surface_context, dict)
+            or not self._grid_rows(surface_context.get("heightmap_model"))
+            or requested_bounds.get("type", "bbox") != "bbox"
+        ):
+            return None
+
+        generation_parent = dict(generation_root)
+        generation_parent["bounds"] = {"type": "bbox", **{
+            key: float(parent_bounds[key])
+            for key in ("min_x", "max_x", "min_y", "max_y")
+        }}
+        for field_name in (
+            "heightmap_model",
+            "water_cycle_model",
+            "coastal_geomorphology_model",
+        ):
+            model = surface_context.get(field_name)
+            if isinstance(model, dict):
+                generation_parent[field_name] = model
+        source = surface_context.get("source")
+        if isinstance(source, dict):
+            for field_name in (
+                "atmosphere_model",
+                "atmosphere_visual_model",
+                "surface_palette",
+                "surface_weathering_model",
+                "natural_material_model",
+                "terrain_seed_model",
+                "display_color",
+            ):
+                if generation_parent.get(field_name) is None and source.get(field_name) is not None:
+                    generation_parent[field_name] = source[field_name]
+
+        bounds = {
+            key: float(requested_bounds[key])
+            for key in ("min_x", "max_x", "min_y", "max_y")
+        }
+        return (
+            generation_parent,
+            bounds,
+            str(root.get("refinement_seed_suffix") or "regional-refinement"),
+        )
+
+    def regenerate_current_region(self):
+        """Re-run the open refinement from its parent using the same footprint."""
+        if self.is_map_editor_active():
+            return None
+        from simulations.world_gen.regional_refinement import generate_refined_region
+
+        request = self._current_region_regeneration_request()
+        if request is None:
+            return None
+        generation_parent, bounds, seed_suffix = request
+        regenerated = generate_refined_region(
+            self.world_model,
+            generation_parent,
+            bounds,
+            seed_suffix=seed_suffix,
+        )
+        self._invalidate_layer_cache()
+        return regenerated
+
+    def refresh_generated_map_layers(self):
+        """Discard cached map layers after a refinement changes repository truth."""
+        self._invalidate_layer_cache()
+        return True
 
     def can_reset_planet_view(self):
         root = self.get_root_entity()
@@ -631,7 +757,10 @@ class MapSimulation:
         def descends_from(candidate):
             current, visited = candidate, set()
             while isinstance(current, dict):
-                parent_id = current.get("refinement_parent_map_id")
+                parent_id = (
+                    current.get("refinement_parent_map_id")
+                    or self._structural_parent_location_id(current)
+                )
                 if parent_id == root_id:
                     return True
                 if not parent_id or parent_id in visited:
@@ -657,6 +786,8 @@ class MapSimulation:
             # Older builds could create one while fully zoomed out; applying it
             # replaced the authored planet and made the map appear duplicated.
             if (
+                root.get("location_class") in {"planet", "moon"}
+                and
                 uv_bounds["max_u"] - uv_bounds["min_u"] >= 0.98
                 and uv_bounds["max_v"] - uv_bounds["min_v"] >= 0.98
             ):
@@ -1148,10 +1279,10 @@ class MapSimulation:
     def _prepare_layer_cache(self, layers):
         layers = sorted(layers, key=self._render_layer_sort_key)
         for layer in layers:
-            if not isinstance(layer, dict) or layer.get("shape") != "polygon":
+            if not isinstance(layer, dict) or layer.get("shape") not in {"polygon", "polyline"}:
                 continue
             points = layer.get("points") or []
-            if len(points) < 3:
+            if len(points) < 2:
                 continue
             xs = [point[0] for point in points]
             ys = [point[1] for point in points]
@@ -1456,6 +1587,9 @@ class MapSimulation:
         if source is None:
             return None
 
+        source_star = self.world_model.get_entity(source.get("parent_body")) if source.get("parent_body") else None
+        ensure_coastal_model_current(source, star=source_star)
+
         source_bounds = self._entity_map_bounds(source)
         source_heightmap = source.get("heightmap_model")
         source_rows = self._grid_rows(source_heightmap)
@@ -1505,6 +1639,13 @@ class MapSimulation:
         values = [float(value or 0.0) for row in inherited_rows for value in row]
         source_masks = source_heightmap.get("surface_masks") or {}
         inherited_ice_rows = resample_rows(source_masks.get("ice_rows") or [], categorical=True)
+        from simulations.world_gen.regional_refinement import map_physical_dimensions_m
+        source_width_m, source_height_m = map_physical_dimensions_m(source)
+        source_uv = source_heightmap.get("source_uv_bounds") or {}
+        source_u0 = float(source_uv.get("min_u", 0.0) or 0.0)
+        source_u1 = float(source_uv.get("max_u", 1.0) or 1.0)
+        source_v0 = float(source_uv.get("min_v", 0.0) or 0.0)
+        source_v1 = float(source_uv.get("max_v", 1.0) or 1.0)
         heightmap = {
             "status": "parent_surface_inherited",
             "model_version": "region-parent-surface-v1",
@@ -1514,6 +1655,14 @@ class MapSimulation:
             "wrap_y": False,
             "source_location_id": source.get("id"),
             "source_bounds": dict(source_bounds),
+            "source_uv_bounds": {
+                "min_u": source_u0 + (source_u1 - source_u0) * u0,
+                "max_u": source_u0 + (source_u1 - source_u0) * u1,
+                "min_v": source_v0 + (source_v1 - source_v0) * v0,
+                "max_v": source_v0 + (source_v1 - source_v0) * v1,
+            },
+            "region_width_m": source_width_m * abs(u1 - u0),
+            "region_height_m": source_height_m * abs(v1 - v0),
             "sea_level_m": source_heightmap.get("sea_level_m"),
             "min_elevation_m": min(values),
             "max_elevation_m": max(values),
@@ -1552,18 +1701,102 @@ class MapSimulation:
                 "lakes": [],
             }
 
+        source_coastal = source.get("coastal_geomorphology_model")
+        coastal_model = None
+        if isinstance(source_coastal, dict):
+            cropped_segments = []
+            for source_segment in source_coastal.get("segments") or []:
+                centroid = ((source_segment.get("measurements") or {}).get("centroid_uv") or [])
+                if len(centroid) < 2 or not (u0 <= float(centroid[0]) <= u1 and v0 <= float(centroid[1]) <= v1):
+                    continue
+                segment = copy.deepcopy(source_segment)
+                geometry = segment.get("geometry") or {}
+                geometry["points"] = [
+                    [(float(point[0]) - u0) / max(1e-9, u1 - u0), (float(point[1]) - v0) / max(1e-9, v1 - v0)]
+                    for point in geometry.get("points") or []
+                    if u0 <= float(point[0]) <= u1 and v0 <= float(point[1]) <= v1
+                ]
+                local_centroid = [(float(centroid[0]) - u0) / max(1e-9, u1 - u0), (float(centroid[1]) - v0) / max(1e-9, v1 - v0)]
+                segment.setdefault("measurements", {})["centroid_uv"] = local_centroid
+                if len(geometry["points"]) >= 2:
+                    cropped_segments.append(segment)
+            coastal_model = {
+                **source_coastal,
+                "status": "parent_coastal_model_inherited",
+                "segments": cropped_segments,
+                "source_location_id": source.get("id"),
+            }
+
         return {
             "root": root,
             "source": source,
             "heightmap_model": heightmap,
             "water_cycle_model": water_cycle,
+            "coastal_geomorphology_model": coastal_model,
             "map_rect": self._surface_rect_from_bounds(root_bounds, target_columns, target_rows),
         }
+
+    def _surface_model_validation_key(self, entity):
+        """Cheaply identify surface inputs that require derivative validation."""
+        if not isinstance(entity, dict):
+            return None
+        heightmap = entity.get("heightmap_model")
+        if not isinstance(heightmap, dict):
+            return None
+        grid = heightmap.get("sample_grid") if isinstance(heightmap.get("sample_grid"), dict) else {}
+        rows = grid.get("rows") if isinstance(grid.get("rows"), list) else []
+        derivatives = heightmap.get("derivatives") if isinstance(heightmap.get("derivatives"), dict) else {}
+        coastal = (
+            entity.get("coastal_geomorphology_model")
+            if isinstance(entity.get("coastal_geomorphology_model"), dict)
+            else {}
+        )
+        water_cycle = entity.get("water_cycle_model")
+        return (
+            id(entity),
+            id(heightmap),
+            id(rows),
+            len(rows),
+            grid.get("width", len(rows[0]) if rows else 0),
+            grid.get("height", len(rows)),
+            heightmap.get("sea_level_m"),
+            heightmap.get("source_heightfield_fingerprint"),
+            derivatives.get("model_version"),
+            derivatives.get("source_heightfield_fingerprint"),
+            id(water_cycle),
+            water_cycle.get("model_version") if isinstance(water_cycle, dict) else None,
+            id(coastal),
+            coastal.get("model_version"),
+            coastal.get("source_heightfield_fingerprint"),
+        )
+
+    def _ensure_surface_models_current(self, entity, **kwargs):
+        cache_key = self._surface_model_validation_key(entity)
+        if cache_key is None or cache_key == self._surface_model_validation_cache_key:
+            return False
+        changed = ensure_coastal_model_current(entity, **kwargs)
+        # Validation may replace the heightmap and coastal models, so retain
+        # the post-validation identity rather than forcing a second full hash.
+        self._surface_model_validation_cache_key = self._surface_model_validation_key(entity)
+        return changed
 
     def _root_surface_context(self):
         root = self.get_root_entity()
         if not isinstance(root, dict):
             return None
+        if isinstance(root.get("heightmap_model"), dict):
+            star = self.world_model.get_entity(root.get("parent_body")) if root.get("parent_body") else None
+            entities = getattr(getattr(self.world_model, "loader", None), "entities", {}) or {}
+            satellites = [
+                entity for entity in entities.values()
+                if isinstance(entity, dict) and entity.get("location_class") == "moon" and entity.get("parent_body") == root.get("id")
+            ]
+            self._ensure_surface_models_current(
+                root,
+                star=star,
+                satellites=satellites,
+                inherited_sea_level_m=(root.get("heightmap_model") or {}).get("sea_level_m") if root.get("location_class") == "generated_region" else None,
+            )
         heightmap = root.get("heightmap_model")
         if self._grid_rows(heightmap):
             bounds = self._entity_map_bounds(root)
@@ -1575,6 +1808,7 @@ class MapSimulation:
                 "source": root,
                 "heightmap_model": heightmap,
                 "water_cycle_model": root.get("water_cycle_model"),
+                "coastal_geomorphology_model": root.get("coastal_geomorphology_model"),
                 "map_rect": self._surface_rect_from_bounds(
                     bounds,
                     root.get("map_canvas_width_px") or grid.get("width") or 2,
@@ -1654,6 +1888,22 @@ class MapSimulation:
                 {"label": "Warm ocean current", "color": [242, 170, 94]},
                 {"label": "Cool ocean current", "color": [104, 210, 232]},
             ])
+        elif layer_kind == self.COASTAL_LAYER_KIND:
+            coastal = surface_context.get("coastal_geomorphology_model") or {}
+            colors = {
+                (segment.get("morphology_assemblage") or segment.get("primary_assemblage")): segment.get("display_color")
+                for segment in coastal.get("segments") or []
+                if isinstance(segment, dict) and (segment.get("morphology_assemblage") or segment.get("primary_assemblage"))
+            }
+            for row in (coastal.get("summary") or {}).get("dominant_assemblages") or []:
+                assemblage = row.get("id")
+                label = str(assemblage or "coast").replace("_", " ").title()
+                items.append({"label": f"{label}  {float(row.get('length_km', 0.0) or 0.0):,.0f} km", "color": list(colors.get(assemblage) or [180, 180, 180])})
+            items.extend([
+                {"label": "Wave exposure", "color": [82, 188, 236]},
+                {"label": "Tidal range", "color": [112, 232, 218]},
+                {"label": "Longshore transport", "color": [244, 174, 76]},
+            ])
         elif layer_kind == self.HEIGHTMAP_LAYER_KIND:
             heightmap = surface_heightmap or {}
             sea = heightmap.get("sea_level_m")
@@ -1710,6 +1960,9 @@ class MapSimulation:
         climate_grid = water_cycle_model.get("climate_grid") if isinstance(water_cycle_model, dict) else None
         if isinstance(climate_grid, dict) and climate_grid.get("rows"):
             layers.append(self.HYDROLOGY_LAYER_KIND)
+        coastal_model = surface_context.get("coastal_geomorphology_model") if isinstance(surface_context, dict) else None
+        if isinstance(coastal_model, dict) and coastal_model.get("segments"):
+            layers.append(self.COASTAL_LAYER_KIND)
         heatmap_model = root.get("material_heatmap_model") if isinstance(root, dict) else None
         if isinstance(heatmap_model, dict) and (
             isinstance(heatmap_model.get("composite_layer"), dict)
@@ -5441,6 +5694,91 @@ class MapSimulation:
             "refined_region_models": self._refined_region_models(),
         }]
 
+    def _build_coastal_layers(self):
+        root_entity = self.get_root_entity()
+        surface_context = self._root_surface_context()
+        if not isinstance(root_entity, dict) or not isinstance(surface_context, dict):
+            return []
+        model = surface_context.get("coastal_geomorphology_model")
+        if not isinstance(model, dict):
+            return []
+        rect = surface_context["map_rect"]
+        layers = []
+        for index, segment in enumerate(model.get("segments") or []):
+            uv_points = ((segment.get("geometry") or {}).get("points") or [])
+            if len(uv_points) < 2:
+                continue
+            # Split at the longitude seam so the renderer does not draw a
+            # false trans-planet line between adjacent wrapped points.
+            runs, run = [], []
+            for point in uv_points:
+                if run and abs(float(point[0]) - float(run[-1][0])) > 0.5:
+                    if len(run) >= 2:
+                        runs.append(run)
+                    run = []
+                run.append(point)
+            if len(run) >= 2:
+                runs.append(run)
+            centroid = (segment.get("measurements") or {}).get("centroid_uv") or uv_points[len(uv_points) // 2]
+            for run_index, points in enumerate(runs):
+                world_points = [
+                    [rect["x"] + float(point[0]) * rect["width_world"], rect["y"] + float(point[1]) * rect["height_world"]]
+                    for point in points
+                ]
+                layers.append({
+                    "shape": "polyline",
+                    "points": world_points,
+                    "x": rect["x"] + float(centroid[0]) * rect["width_world"],
+                    "y": rect["y"] + float(centroid[1]) * rect["height_world"],
+                    "color": list(segment.get("display_color") or [220, 196, 116]),
+                    "line_width": 3 if float(segment.get("confidence", 0.0) or 0.0) >= 0.6 else 2,
+                    "name": str(segment.get("morphology_assemblage") or segment.get("primary_assemblage") or "coast").replace("_", " ").title(),
+                    "entity_id": segment.get("id"),
+                    "draw_order": -940 + index * 0.001 + run_index * 0.0001,
+                    "pickable": True,
+                    "coastal_segment": segment,
+                })
+            center = [rect["x"] + float(centroid[0]) * rect["width_world"], rect["y"] + float(centroid[1]) * rect["height_world"]]
+            measurements = segment.get("measurements") or {}
+            normal = measurements.get("seaward_normal_uv") or [0.0, 1.0]
+            normal_length = max(1e-9, math.hypot(float(normal[0]), float(normal[1])))
+            exposure = float((segment.get("wave_climate") or {}).get("exposure_index", 0.0) or 0.0)
+            wave_scale = 0.006 * (0.35 + exposure * 0.65)
+            wave_end = [
+                center[0] + float(normal[0]) / normal_length * rect["width_world"] * wave_scale,
+                center[1] + float(normal[1]) / normal_length * rect["height_world"] * wave_scale,
+            ]
+            layers.append({
+                "shape": "polyline", "points": [center, wave_end], "x": center[0], "y": center[1],
+                "color": [82, 188, 236], "line_width": 1, "draw_order": -939 + index * 0.001,
+                "pickable": False, "name": "Wave exposure",
+            })
+            tidal_range = float((segment.get("tidal_regime") or {}).get("estimated_range_m", 0.0) or 0.0)
+            if tidal_range > 0.0:
+                tide_scale = 0.003 * (0.35 + max(0.0, min(1.0, tidal_range / 5.0)) * 0.65)
+                tide_end = [
+                    center[0] - float(normal[0]) / normal_length * rect["width_world"] * tide_scale,
+                    center[1] - float(normal[1]) / normal_length * rect["height_world"] * tide_scale,
+                ]
+                layers.append({
+                    "shape": "polyline", "points": [center, tide_end], "x": center[0], "y": center[1],
+                    "color": [112, 232, 218], "line_width": 1, "draw_order": -938.5 + index * 0.001,
+                    "pickable": False, "name": "Tidal range",
+                })
+            orientation = float(measurements.get("orientation_rad", 0.0) or 0.0)
+            direction = -1.0 if (segment.get("wave_climate") or {}).get("longshore_transport_direction") == "chain_reverse" else 1.0
+            transport_scale = 0.008 * (0.4 + float((segment.get("wave_climate") or {}).get("transport_capacity_index", 0.0) or 0.0) * 0.6)
+            transport_end = [
+                center[0] + math.cos(orientation) * direction * rect["width_world"] * transport_scale,
+                center[1] + math.sin(orientation) * direction * rect["height_world"] * transport_scale,
+            ]
+            layers.append({
+                "shape": "polyline", "points": [center, transport_end], "x": center[0], "y": center[1],
+                "color": [244, 174, 76], "line_width": 1, "arrow_end": True,
+                "draw_order": -938 + index * 0.001, "pickable": False, "name": "Longshore transport",
+            })
+        return layers
+
     def _build_reference_land_layers(self, root_entity, draw_order=-2600):
         land_payload = root_entity.get("reference_land_polygons") if isinstance(root_entity, dict) else None
         polygons = land_payload.get("polygons") if isinstance(land_payload, dict) else None
@@ -5613,6 +5951,8 @@ class MapSimulation:
             return [base_layer] if base_layer is not None else []
         if self.active_layer_kind == self.HYDROLOGY_LAYER_KIND:
             return self._build_hydrology_layers()
+        if self.active_layer_kind == self.COASTAL_LAYER_KIND:
+            return self._build_coastal_layers()
         if self.active_layer_kind != self.LOCATION_LAYER_KIND:
             return self._build_spatial_feature_layers(year, self.active_layer_kind)
 

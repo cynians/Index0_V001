@@ -237,6 +237,44 @@ class MapUIWorkspaceTests(unittest.TestCase):
 
         self.assertEqual({"id": "set_map_layer", "layer_kind": "ground_materials"}, action)
 
+    def test_generated_region_map_offers_current_region_regeneration(self):
+        ui = UIManager()
+        sim = FakeMapSimulation({
+            "id": "refined_earth_lod1_test",
+            "name": "Earth — Macroregion Patch",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "generated_region",
+            "location_role": "map_refinement_region",
+            "bounds": {
+                "type": "bbox",
+                "min_x": -20,
+                "max_x": 20,
+                "min_y": -10,
+                "max_y": 10,
+            },
+            "heightmap_model": {
+                "sample_grid": {
+                    "width": 2,
+                    "height": 2,
+                    "rows": [[0, 1], [1, 0]],
+                },
+            },
+        })
+        sim.can_regenerate_current_region = lambda: True
+        sim.get_current_region_regeneration_label = (
+            lambda: "Regenerate This Region - Macroregion"
+        )
+
+        ui.rebuild_for_state(sim, 1600, 900, camera=None)
+
+        button = next(
+            button
+            for button in ui.buttons
+            if button.id == "regenerate_current_region"
+        )
+        self.assertEqual("Regenerate This Region - Macroregion", button.label)
+
 
 if __name__ == "__main__":
     unittest.main()

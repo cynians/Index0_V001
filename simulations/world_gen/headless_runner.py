@@ -14,6 +14,7 @@ import random
 import re
 import secrets
 import copy
+import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -79,6 +80,15 @@ class HeadlessWorldGenResult:
     regional_layer_images: list
     regional_contact_sheet: str
     input_contract_path: str
+
+
+@dataclass
+class IsolatedHeadlessWorldGenResult:
+    retention: str
+    planet_id: str
+    summary: dict
+    stage_fingerprints: list
+    bundle_path: str = ""
 
 
 class HeadlessWorldGenRunner:
@@ -342,6 +352,134 @@ class HeadlessWorldGenRunner:
         )
         return surface
 
+    def _render_coastal_layer(self, planet, size, show_legend=True):
+        width, height = int(size[0]), int(size[1])
+        surface = self._render_height_layer(
+            planet,
+            (width, height),
+            include_materials=False,
+        )
+        shade = pygame.Surface((width, height), pygame.SRCALPHA)
+        shade.fill((7, 15, 24, 82))
+        surface.blit(shade, (0, 0))
+        model = planet.get("coastal_geomorphology_model") or {}
+        segments = model.get("segments") or []
+
+        def uv_to_pixel(point):
+            return (
+                int(round(float(point[0]) * (width - 1))),
+                int(round(float(point[1]) * (height - 1))),
+            )
+
+        def draw_arrow(start, end, color, line_width=2):
+            pygame.draw.aaline(surface, color, start, end)
+            dx = float(end[0] - start[0])
+            dy = float(end[1] - start[1])
+            length = math.hypot(dx, dy)
+            if length < 2.0:
+                return
+            ux, uy = dx / length, dy / length
+            head = max(4.0, min(8.0, length * 0.55))
+            left = (
+                int(round(end[0] - ux * head - uy * head * 0.55)),
+                int(round(end[1] - uy * head + ux * head * 0.55)),
+            )
+            right = (
+                int(round(end[0] - ux * head + uy * head * 0.55)),
+                int(round(end[1] - uy * head - ux * head * 0.55)),
+            )
+            pygame.draw.polygon(surface, color, [end, left, right])
+
+        counts = {}
+        colors = {}
+        for segment in segments:
+            assemblage = str(segment.get("morphology_assemblage") or segment.get("primary_assemblage") or "unclassified")
+            counts[assemblage] = counts.get(assemblage, 0) + 1
+            colors[assemblage] = tuple(segment.get("display_color") or [220, 196, 116])
+
+        for segment in segments:
+            color = tuple(segment.get("display_color") or [220, 196, 116])
+            run = []
+            for point in ((segment.get("geometry") or {}).get("points") or []):
+                candidate = uv_to_pixel(point)
+                if run and abs(candidate[0] - run[-1][0]) > width * 0.5:
+                    if len(run) >= 2:
+                        pygame.draw.lines(surface, (8, 12, 18), False, run, 5)
+                        pygame.draw.lines(surface, color, False, run, 3)
+                        pygame.draw.aalines(surface, color, False, run)
+                    run = []
+                run.append(candidate)
+            if len(run) >= 2:
+                pygame.draw.lines(surface, (8, 12, 18), False, run, 5)
+                pygame.draw.lines(surface, color, False, run, 3)
+                pygame.draw.aalines(surface, color, False, run)
+
+            points = ((segment.get("geometry") or {}).get("points") or [])
+            if not points:
+                continue
+            measurements = segment.get("measurements") or {}
+            centroid = measurements.get("centroid_uv") or points[len(points) // 2]
+            center = uv_to_pixel(centroid)
+            normal = measurements.get("seaward_normal_uv") or [0.0, 1.0]
+            normal_length = max(1e-9, math.hypot(float(normal[0]), float(normal[1])))
+            nx = float(normal[0]) / normal_length
+            ny = float(normal[1]) / normal_length
+
+            exposure = float((segment.get("wave_climate") or {}).get("exposure_index", 0.0) or 0.0)
+            wave_length = max(5.0, width * 0.008 * (0.35 + exposure * 0.65))
+            wave_end = (
+                int(round(center[0] + nx * wave_length)),
+                int(round(center[1] + ny * wave_length)),
+            )
+            pygame.draw.aaline(surface, (82, 188, 236), center, wave_end)
+
+            tidal_range = float((segment.get("tidal_regime") or {}).get("estimated_range_m", 0.0) or 0.0)
+            tide_length = max(3.0, width * 0.004 * (0.35 + min(1.0, tidal_range / 5.0) * 0.65))
+            tide_end = (
+                int(round(center[0] - nx * tide_length)),
+                int(round(center[1] - ny * tide_length)),
+            )
+            pygame.draw.aaline(surface, (112, 232, 218), center, tide_end)
+
+            orientation = float(measurements.get("orientation_rad", 0.0) or 0.0)
+            direction = -1.0 if (segment.get("wave_climate") or {}).get("longshore_transport_direction") == "chain_reverse" else 1.0
+            transport = float((segment.get("wave_climate") or {}).get("transport_capacity_index", 0.0) or 0.0)
+            transport_length = max(6.0, width * 0.010 * (0.4 + transport * 0.6))
+            transport_end = (
+                int(round(center[0] + math.cos(orientation) * direction * transport_length)),
+                int(round(center[1] + math.sin(orientation) * direction * transport_length)),
+            )
+            draw_arrow(center, transport_end, (244, 174, 76))
+
+        if segments and show_legend:
+            font_size = max(12, int(round(min(width / 85.0, height / 28.0))))
+            font = pygame.font.SysFont("consolas", font_size)
+            legend_rows = sorted(counts, key=lambda key: (-counts[key], key))[:6]
+            line_height = font.get_linesize() + 3
+            panel_width = min(width - 24, max(280, int(width * 0.28)))
+            panel_height = 16 + line_height * (len(legend_rows) + 4)
+            panel = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
+            panel.fill((8, 14, 22, 218))
+            title = font.render("COASTAL GEOMORPHOLOGY", True, (240, 244, 248))
+            panel.blit(title, (12, 8))
+            y = 8 + line_height
+            for assemblage in legend_rows:
+                color = colors.get(assemblage, (220, 196, 116))
+                pygame.draw.line(panel, color, (12, y + font_size // 2), (36, y + font_size // 2), 4)
+                label = f"{assemblage.replace('_', ' ')} ({counts[assemblage]})"
+                panel.blit(font.render(label, True, (222, 228, 236)), (44, y))
+                y += line_height
+            for color, label in (
+                ((82, 188, 236), "wave exposure"),
+                ((112, 232, 218), "tidal range"),
+                ((244, 174, 76), "longshore transport"),
+            ):
+                pygame.draw.line(panel, color, (12, y + font_size // 2), (36, y + font_size // 2), 2)
+                panel.blit(font.render(label, True, (200, 210, 222)), (44, y))
+                y += line_height
+            surface.blit(panel, (12, 12))
+        return surface
+
     def _save_layer(self, label, surface, prefix=""):
         filename = f"{self._slug(prefix)}_{self._slug(label)}.png" if prefix else f"{self._slug(label)}.png"
         path = self.layers_root / filename
@@ -358,6 +496,7 @@ class HeadlessWorldGenRunner:
             self._save_layer("Elevation", self._render_height_layer(planet, size, include_materials=False), prefix),
             self._save_layer("Surface Materials", self._render_material_layer(planet, size), prefix),
             self._save_layer("Climate and Rivers", self._render_climate_layer(planet, size), prefix),
+            self._save_layer("Coastal Geomorphology", self._render_coastal_layer(planet, size), prefix),
             self._save_layer(
                 "Surface Temperature",
                 self._render_scalar_layer(
@@ -425,6 +564,7 @@ class HeadlessWorldGenRunner:
         thermal = regime.get("thermal_evolution") or {}
         heightmap = planet.get("heightmap_model") or {}
         water = planet.get("water_cycle_model") or {}
+        coastal = planet.get("coastal_geomorphology_model") or {}
         hypsometry = heightmap.get("hypsometry_summary") or {}
         seed = planet.get("world_gen_seed") or {}
         physics = seed.get("derived_planet_physics") or {}
@@ -480,6 +620,7 @@ class HeadlessWorldGenRunner:
             "ocean_fraction": hypsometry.get("ocean_fraction"),
             "ice_fraction": hypsometry.get("ice_fraction"),
             "river_count": water.get("river_count"),
+            "coastal_geomorphology": copy.deepcopy(coastal.get("summary") or {}),
             "mean_land_precipitation_mm": (water.get("runoff_summary") or {}).get("mean_land_precipitation_mm"),
             "material_layers": [
                 {
@@ -493,6 +634,7 @@ class HeadlessWorldGenRunner:
         }
 
     def run(self, config=None):
+        run_started_at = time.perf_counter()
         config = config or HeadlessWorldGenConfig()
         if config.render_outputs:
             self._initialize_rendering(config)
@@ -500,6 +642,7 @@ class HeadlessWorldGenRunner:
         stage_history = []
         stage_fingerprints = []
         stage_screenshots = []
+        action_timings = []
 
         def capture(label):
             stage_history.append(sim.editor_stage)
@@ -519,7 +662,14 @@ class HeadlessWorldGenRunner:
                 stage_screenshots.append(self._render_stage(sim, len(stage_screenshots) + 1, label))
 
         def advance(action, expected_stage):
-            if not action():
+            started_at = time.perf_counter()
+            succeeded = action()
+            action_timings.append({
+                "action": getattr(action, "__name__", action.__class__.__name__),
+                "expected_stage": expected_stage,
+                "seconds": round(time.perf_counter() - started_at, 6),
+            })
+            if not succeeded:
                 raise RuntimeError(sim.commit_status)
             if sim.editor_stage != expected_stage:
                 raise RuntimeError(f"Expected stage {expected_stage}, got {sim.editor_stage}: {sim.commit_status}")
@@ -527,7 +677,14 @@ class HeadlessWorldGenRunner:
         capture("crust")
         advance(sim._save_selected_planet_seed, "atmosphere")
         capture("atmosphere")
-        if not sim._save_atmosphere_model():
+        atmosphere_started_at = time.perf_counter()
+        atmosphere_succeeded = sim._save_atmosphere_model()
+        action_timings.append({
+            "action": "_save_atmosphere_model",
+            "expected_stage": "regime_or_gas_giant_terminal",
+            "seconds": round(time.perf_counter() - atmosphere_started_at, 6),
+        })
+        if not atmosphere_succeeded:
             raise RuntimeError(sim.commit_status)
         atmosphere_planet = sim._selected_planet_entity()
         gas_giant_terminal = (
@@ -646,6 +803,10 @@ class HeadlessWorldGenRunner:
                     filename="regional_map_layers_contact_sheet.png",
                 )
         summary = self._summary(planet, config, stage_history)
+        summary["timings"] = {
+            "actions": action_timings,
+            "generation_and_render_seconds": round(time.perf_counter() - run_started_at, 6),
+        }
         summary["parity"] = {
             "mode": "player_contract_replay" if self._replay_contract else "headless_authored_inputs",
             "input_contract_fingerprint": contract_fingerprint(self._replay_contract) if self._replay_contract else (planet.get("world_gen_input_contract") or {}).get("fingerprint_sha256"),
@@ -703,3 +864,41 @@ class HeadlessWorldGenRunner:
             encoding="utf-8",
         )
         return result
+
+
+def run_isolated_headless_worldgen(config=None, *, bundle_path=None, retention="temporary", include_images=False, project_root=None):
+    """Run in disposable storage and optionally publish one validated bundle."""
+    from simulations.world_gen.storage_policy import (
+        RETENTION_PINNED,
+        RETENTION_RETAINED,
+        WorldGenStoragePolicy,
+    )
+    from simulations.world_gen.worldgen_bundle import write_worldgen_bundle
+
+    config = config or HeadlessWorldGenConfig()
+    policy = WorldGenStoragePolicy.for_project(project_root)
+    run_root = policy.temporary_run_directory(prefix=config.map_seed or "run")
+    try:
+        result = HeadlessWorldGenRunner(run_root).run(config)
+        summary = json.loads(Path(result.summary_path).read_text(encoding="utf-8"))
+        destination = ""
+        if retention in {RETENTION_RETAINED, RETENTION_PINNED}:
+            destination_path = Path(bundle_path).resolve() if bundle_path else policy.retained_bundle(
+                f"{result.planet_id}-{config.map_seed}",
+                pinned=retention == RETENTION_PINNED,
+            )
+            destination = str(write_worldgen_bundle(
+                destination_path,
+                result=result,
+                retention=retention,
+                include_images=include_images,
+            ))
+        return IsolatedHeadlessWorldGenResult(
+            retention=retention,
+            planet_id=result.planet_id,
+            summary=summary,
+            stage_fingerprints=list((summary.get("parity") or {}).get("stage_fingerprints") or []),
+            bundle_path=destination,
+        )
+    finally:
+        policy.remove_temporary_tree(run_root)

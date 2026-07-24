@@ -4,7 +4,6 @@ import argparse
 import json
 import sys
 from dataclasses import asdict
-from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -13,7 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from simulations.world_gen.headless_runner import (
     HeadlessWorldGenConfig,
-    HeadlessWorldGenRunner,
+    run_isolated_headless_worldgen,
 )
 
 
@@ -59,20 +58,23 @@ def _parser():
     parser.add_argument("--region-center-y", type=float, default=0.5)
     parser.add_argument("--finish", action="store_true")
     parser.add_argument(
+        "--render",
+        action="store_true",
+        help="Include stage and map-layer renders (disabled by default).",
+    )
+    parser.add_argument(
         "--no-render",
         action="store_true",
-        help="Run production generation stages but skip screenshots and map-layer assets.",
+        help="Deprecated compatibility alias; rendering is disabled by default.",
     )
+    parser.add_argument("--retain", action="store_true", help="Persist one validated .i0wg run bundle.")
+    parser.add_argument("--pinned", action="store_true", help="Persist a pinned benchmark .i0wg bundle.")
+    parser.add_argument("--retain-debug", action="store_true", help="Include rendered diagnostics inside a retained bundle.")
     return parser
 
 
 def main(argv=None):
     args = _parser().parse_args(argv)
-    if args.output:
-        output_root = Path(args.output)
-    else:
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        output_root = Path(__file__).resolve().parents[1] / "artifacts" / "headless_worldgen" / f"{timestamp}-{args.seed}"
     config = HeadlessWorldGenConfig(
         name=args.name,
         template_id=args.template,
@@ -92,10 +94,17 @@ def main(argv=None):
         regional_center_x=max(0.0, min(1.0, args.region_center_x)),
         regional_center_y=max(0.0, min(1.0, args.region_center_y)),
         finish_worldgen=args.finish,
-        render_outputs=not args.no_render,
+        render_outputs=bool(args.render or args.retain_debug) and not args.no_render,
         replay_contract_path=args.replay_contract,
     )
-    result = HeadlessWorldGenRunner(output_root).run(config)
+    retention = "pinned" if args.pinned else ("retained" if args.retain or args.output else "temporary")
+    result = run_isolated_headless_worldgen(
+        config,
+        bundle_path=Path(args.output) if args.output else None,
+        retention=retention,
+        include_images=bool(args.retain_debug),
+        project_root=PROJECT_ROOT,
+    )
     print(json.dumps(asdict(result), indent=2))
     return 0
 

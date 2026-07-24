@@ -1,7 +1,10 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from simulations.map.map_simulation import MapSimulation
+from simulations.world_gen.coastal_geomorphology import COASTAL_MODEL_VERSION
+from simulations.world_gen.heightmap import refresh_heightmap_derivatives
 from world.simulation_context import SimulationContext
 
 
@@ -86,7 +89,207 @@ def _planet():
     }
 
 
+def _add_coast(planet):
+    planet["heightmap_model"]["wrap_x"] = False
+    planet["heightmap_model"]["coverage"] = "regional_patch"
+    planet["heightmap_model"]["sample_grid"]["wrap_x"] = False
+    planet["heightmap_model"] = refresh_heightmap_derivatives(
+        planet["heightmap_model"], inherited_sea_level_m=0.0,
+    )
+    planet["coastal_geomorphology_model"] = {
+        "status": "coastal_geomorphology_resolved",
+        "model_version": COASTAL_MODEL_VERSION,
+        "source_heightfield_fingerprint": planet["heightmap_model"]["source_heightfield_fingerprint"],
+        "summary": {"dominant_assemblages": [{"id": "clastic_beach", "length_km": 42.0}]},
+        "segments": [{
+            "id": "coast_fixture",
+            "primary_assemblage": "clastic_beach",
+            "display_color": [230, 204, 126],
+            "confidence": 0.8,
+            "measurements": {"centroid_uv": [0.5, 0.5]},
+            "geometry": {"points": [[0.46, 0.48], [0.50, 0.50], [0.54, 0.52]]},
+        }],
+    }
+    return planet
+
+
 class MapRegionContextTests(unittest.TestCase):
+    def test_authored_region_map_can_generate_its_inherited_full_footprint(self):
+        earth = _planet()
+        region = {
+            "id": "authored_region",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "region",
+            "parent_location": "earth",
+            "parents": ["earth"],
+            "bounds": {
+                "type": "polygon",
+                "points": [(-20, -10), (20, -10), (20, 10), (-20, 10)],
+            },
+        }
+        world = _World([earth, region])
+        sim = MapSimulation(SimulationContext(2400, region["id"], world))
+        generated = {
+            "id": "refined_authored_region_lod1_test",
+            "refinement_parent_map_id": region["id"],
+        }
+
+        with patch(
+            "simulations.world_gen.regional_refinement.generate_refined_region",
+            return_value=generated,
+        ) as generate:
+            self.assertTrue(sim.can_regenerate_current_region())
+            result = sim.regenerate_current_region()
+
+        self.assertIs(generated, result)
+        generation_parent = generate.call_args.args[1]
+        self.assertEqual(region["id"], generation_parent["id"])
+        self.assertEqual(
+            "parent_surface_inherited",
+            generation_parent["heightmap_model"]["status"],
+        )
+        self.assertEqual(
+            {"min_x": -20.0, "max_x": 20.0, "min_y": -10.0, "max_y": 10.0},
+            generate.call_args.args[2],
+        )
+
+    def test_authored_region_refinement_is_composited_into_region_and_planet_maps(self):
+        earth = _planet()
+        region = {
+            "id": "authored_region",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "region",
+            "parent_location": "earth",
+            "parents": ["earth"],
+            "bounds": {
+                "type": "bbox",
+                "min_x": -20,
+                "max_x": 20,
+                "min_y": -10,
+                "max_y": 10,
+            },
+        }
+        refinement = {
+            "id": "refined_authored_region_lod1_test",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "generated_region",
+            "location_role": "map_refinement_region",
+            "refinement_parent_map_id": region["id"],
+            "refinement_root_planet_id": "earth",
+            "map_detail_level": 1,
+            "refinement_revision": 3,
+            "bounds": {
+                "type": "bbox",
+                "min_x": -20,
+                "max_x": 20,
+                "min_y": -10,
+                "max_y": 10,
+            },
+            "heightmap_model": {
+                "sample_grid": {
+                    "width": 2,
+                    "height": 2,
+                    "rows": [[0, 1], [1, 0]],
+                },
+            },
+            "water_cycle_model": {},
+        }
+        world = _World([earth, region, refinement])
+
+        region_models = MapSimulation(
+            SimulationContext(2400, region["id"], world)
+        )._refined_region_models()
+        planet_models = MapSimulation(
+            SimulationContext(2400, earth["id"], world)
+        )._refined_region_models()
+
+        self.assertEqual([refinement["id"]], [row["entity_id"] for row in region_models])
+        self.assertEqual([refinement["id"]], [row["entity_id"] for row in planet_models])
+
+    def test_generated_region_can_regenerate_itself_from_its_parent_footprint(self):
+        earth = _planet()
+        region = {
+            "id": "refined_earth_lod1_test",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "generated_region",
+            "location_role": "map_refinement_region",
+            "refinement_parent_map_id": "earth",
+            "parent_location": "earth",
+            "refinement_seed_suffix": "original-region-seed",
+            "map_detail_level": 1,
+            "map_detail_profile": {"label": "Macroregion"},
+            "bounds": {
+                "type": "bbox",
+                "min_x": -20,
+                "max_x": 20,
+                "min_y": -10,
+                "max_y": 10,
+            },
+            "heightmap_model": {
+                "sample_grid": {
+                    "width": 2,
+                    "height": 2,
+                    "rows": [[0, 1], [1, 0]],
+                },
+            },
+        }
+        world = _World([earth, region])
+        sim = MapSimulation(SimulationContext(2400, region["id"], world))
+        regenerated = {**region, "refinement_revision": 2}
+
+        with patch(
+            "simulations.world_gen.regional_refinement.generate_refined_region",
+            return_value=regenerated,
+        ) as generate:
+            self.assertTrue(sim.can_regenerate_current_region())
+            result = sim.regenerate_current_region()
+
+        self.assertIs(regenerated, result)
+        parent_arg = generate.call_args.args[1]
+        self.assertEqual("earth", parent_arg["id"])
+        self.assertEqual(region["bounds"], {"type": "bbox", **generate.call_args.args[2]})
+        self.assertEqual(
+            "original-region-seed",
+            generate.call_args.kwargs["seed_suffix"],
+        )
+
+    def test_surface_derivative_validation_is_reused_between_frames(self):
+        earth = _add_coast(_planet())
+        world = _World([earth])
+
+        with patch(
+            "simulations.map.map_simulation.ensure_coastal_model_current",
+            return_value=False,
+        ) as ensure_current:
+            sim = MapSimulation(SimulationContext(2400, "earth", world))
+            sim.get_heightmap_base_layer()
+            sim.get_heightmap_base_layer()
+
+        self.assertEqual(1, ensure_current.call_count)
+
+    def test_coastal_layer_uses_persisted_segments_and_crops_for_child_regions(self):
+        earth = _add_coast(_planet())
+        region = {
+            "id": "region", "type": "location", "_dataset": "locations",
+            "location_class": "region", "parent_location": "earth", "parents": ["earth"],
+            "map_context_parent": "earth",
+            "bounds": {"type": "polygon", "points": [(-20, -10), (20, -10), (20, 10), (-20, 10)]},
+        }
+        world = _World([earth, region])
+        root_sim = MapSimulation(SimulationContext(2400, "earth", world))
+        child_sim = MapSimulation(SimulationContext(2400, "region", world))
+
+        self.assertIn(root_sim.COASTAL_LAYER_KIND, root_sim.get_available_layer_kinds())
+        root_sim.set_active_layer_kind(root_sim.COASTAL_LAYER_KIND)
+        self.assertTrue(root_sim._build_coastal_layers()[0]["entity_id"].startswith("coast_"))
+        self.assertIn(child_sim.COASTAL_LAYER_KIND, child_sim.get_available_layer_kinds())
+        child_layer = child_sim._build_coastal_layers()[0]
+        self.assertTrue(all(0.0 <= point[0] <= 40.0 for point in child_layer["points"]))
+
     def test_heightmap_base_carries_material_probabilities_into_normal_map_rendering(self):
         earth = _planet()
         earth["material_heatmap_model"] = {

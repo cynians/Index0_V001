@@ -1,7 +1,9 @@
 """Build galleries and a durable report for the 20 edge and 10 Earthlike runs."""
 
 import json
+import io
 import os
+import zipfile
 from pathlib import Path
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
@@ -10,9 +12,10 @@ import pygame
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ARTIFACTS = ROOT / "artifacts" / "headless_worldgen"
+ARTIFACTS = ROOT / "artifacts" / "worldgen" / "retained"
 EDGE = ARTIFACTS / "edge-stress-series"
 EARTH = ARTIFACTS / "earth-visual-series"
+REPORT_ROOT = ROOT / ".cache" / "worldgen" / "extended-generation-report"
 
 EDGE_FINDINGS = {
     4: "Reserved primary/foundational bedrock in the planetary palette.",
@@ -27,13 +30,14 @@ EARTH_REFINEMENTS = {
 }
 
 
-def _load_run(directory, index, mode):
-    summary = json.loads((directory / "summary.json").read_text(encoding="utf-8"))
+def _load_run(bundle_path, index, mode):
+    with zipfile.ZipFile(bundle_path, "r") as bundle:
+        summary = json.loads(bundle.read("summary.json").decode("utf-8"))
     return {
         "index": index,
         "mode": mode,
-        "directory": str(directory),
-        "contact_sheet": str(directory / "images" / "map_layers_contact_sheet.png"),
+        "bundle": str(bundle_path),
+        "contact_sheet_entry": "images/map_layers_contact_sheet.png",
         "template": (summary.get("generated_seed") or {}).get("planet_template"),
         "atmosphere_class": summary.get("atmosphere_class"),
         "surface_pressure_bar": summary.get("surface_pressure_bar"),
@@ -69,7 +73,8 @@ def _draw_gallery(runs, title, path, columns, tile_size):
             font.render(f'{run["index"]:02d}  {run["mode"].title()}', True, (225, 232, 244)),
             (x + 8, y + 6),
         )
-        thumbnail = pygame.image.load(run["contact_sheet"])
+        with zipfile.ZipFile(run["bundle"], "r") as bundle:
+            thumbnail = pygame.image.load(io.BytesIO(bundle.read(run["contact_sheet_entry"])), "map_layers_contact_sheet.png")
         image_height = tile_height - 76
         thumbnail = pygame.transform.smoothscale(thumbnail, (tile_width - 12, image_height))
         sheet.blit(thumbnail, (x + 6, y + 29))
@@ -92,19 +97,20 @@ def _range(values):
 
 
 def main():
+    REPORT_ROOT.mkdir(parents=True, exist_ok=True)
     edge_runs = [
-        _load_run(EDGE / f'{index:02d}-{"eccentric" if index % 2 else "generic"}',
+        _load_run(EDGE / f'{index:02d}-{"eccentric" if index % 2 else "generic"}.i0wg',
                   index, "eccentric" if index % 2 else "generic")
         for index in range(1, 21)
     ]
     earth_runs = [
-        _load_run(EARTH / f'{index:02d}-{"eccentric" if index % 2 == 0 else "generic"}',
+        _load_run(EARTH / f'{index:02d}-{"eccentric" if index % 2 == 0 else "generic"}.i0wg',
                   index, "eccentric" if index % 2 == 0 else "generic")
         for index in range(1, 11)
     ]
 
-    edge_gallery = EDGE / "series_gallery.png"
-    earth_gallery = EARTH / "series_gallery.png"
+    edge_gallery = REPORT_ROOT / "edge_series_gallery.png"
+    earth_gallery = REPORT_ROOT / "earth_series_gallery.png"
     _draw_gallery(edge_runs, "20-Planet Edge Stress Series", edge_gallery, 4, (300, 220))
     _draw_gallery(earth_runs, "10-Planet Earthlike Visual Series", earth_gallery, 2, (510, 300))
 
@@ -150,12 +156,12 @@ def main():
             "gallery": str(earth_gallery),
         },
     }
-    report_path = ARTIFACTS / "extended_generation_report.json"
+    report_path = REPORT_ROOT / "extended_generation_report.json"
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     edge_stats = report["edge_stress"]
     earth_stats = report["earth_visual"]
-    summary_path = ARTIFACTS / "extended_generation_summary.md"
+    summary_path = REPORT_ROOT / "extended_generation_summary.md"
     summary_path.write_text(
         "\n".join([
             "# Extended Planet Generation Refinement",

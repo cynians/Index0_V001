@@ -1,5 +1,7 @@
+import hashlib
 import json
 import math
+import os
 import re
 import zipfile
 from pathlib import Path
@@ -16,6 +18,7 @@ from simulations.world_gen.natural_materials import (
     material_surface_phase_profile,
     material_surface_phase_stability,
 )
+from simulations.world_gen.storage_policy import utc_timestamp
 
 
 MATERIAL_HEATMAP_MODEL_VERSION = "material-heatmaps-v8"
@@ -67,35 +70,58 @@ def _write_raster_bundle(bundle_path, width, height, layers, metadata=None):
     bundle_path = Path(bundle_path)
     bundle_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_layers = []
-    with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
-        for layer in layers:
-            layer_id = _safe_slug(layer.get("id") or layer.get("material_id") or layer.get("name") or "layer")
-            entry_name = f"layers/{layer_id}.rgba"
-            surface = layer.get("surface")
-            if surface is None:
-                continue
-            bundle.writestr(entry_name, _surface_to_rgba_bytes(surface))
-            layer_meta = {
-                key: value
-                for key, value in layer.items()
-                if key not in {"surface", "pixels"}
-            }
-            layer_meta["id"] = layer_id
-            layer_meta["rgba_path"] = entry_name
-            layer_meta["width_px"] = width
-            layer_meta["height_px"] = height
-            manifest_layers.append(layer_meta)
-
-        manifest = {
-            "format": RASTER_BUNDLE_FORMAT,
-            "format_version": RASTER_BUNDLE_VERSION,
+    temporary = bundle_path.with_name(f".{bundle_path.name}.tmp-{os.getpid()}")
+    layer_payloads = []
+    for layer in layers:
+        layer_id = _safe_slug(layer.get("id") or layer.get("material_id") or layer.get("name") or "layer")
+        entry_name = f"layers/{layer_id}.rgba"
+        surface = layer.get("surface")
+        if surface is None:
+            continue
+        rgba = _surface_to_rgba_bytes(surface)
+        layer_meta = {
+            key: value
+            for key, value in layer.items()
+            if key not in {"surface", "pixels"}
+        }
+        layer_meta.update({
+            "id": layer_id,
+            "rgba_path": entry_name,
             "width_px": width,
             "height_px": height,
-            "encoding": "rgba8888",
-            "layers": manifest_layers,
-            "metadata": metadata or {},
-        }
-        bundle.writestr("manifest.json", json.dumps(manifest, indent=2, sort_keys=True))
+            "sha256": hashlib.sha256(rgba).hexdigest(),
+        })
+        manifest_layers.append(layer_meta)
+        layer_payloads.append((entry_name, rgba))
+
+    manifest_metadata = dict(metadata or {})
+    manifest_metadata.setdefault("created_at_utc", utc_timestamp())
+    manifest = {
+        "format": RASTER_BUNDLE_FORMAT,
+        "format_version": RASTER_BUNDLE_VERSION,
+        "width_px": width,
+        "height_px": height,
+        "encoding": "rgba8888",
+        "layers": manifest_layers,
+        "metadata": manifest_metadata,
+    }
+    try:
+        with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+            for entry_name, rgba in layer_payloads:
+                bundle.writestr(entry_name, rgba)
+            bundle.writestr("manifest.json", json.dumps(manifest, indent=2, sort_keys=True))
+        with zipfile.ZipFile(temporary, "r") as bundle:
+            written = json.loads(bundle.read("manifest.json").decode("utf-8"))
+            if written.get("format") != RASTER_BUNDLE_FORMAT:
+                raise ValueError("Raster bundle manifest validation failed")
+            for layer in written.get("layers") or []:
+                rgba = bundle.read(layer["rgba_path"])
+                if hashlib.sha256(rgba).hexdigest() != layer.get("sha256"):
+                    raise ValueError(f"Raster bundle layer validation failed: {layer.get('id')}")
+        os.replace(temporary, bundle_path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
     return manifest
 
 
@@ -790,8 +816,17 @@ def generate_material_heatmap_model(
         metadata={
             "kind": "material_heatmap",
             "planet_id": planet_id,
+            "owner_entity_id": planet_id,
             "map_seed": map_seed,
             "projection": heightmap.get("projection", "equirectangular"),
+            "generator_version": MATERIAL_HEATMAP_MODEL_VERSION,
+            "source_heightfield_fingerprint": heightmap.get("source_heightfield_fingerprint"),
+            "input_fingerprint": hashlib.sha256(json.dumps({
+                "planet_id": planet_id,
+                "map_seed": map_seed,
+                "heightfield": heightmap.get("source_heightfield_fingerprint"),
+                "materials": sorted(str(item.get("material_id") or "") for item in materials if isinstance(item, dict)),
+            }, sort_keys=True).encode("utf-8")).hexdigest(),
         },
     )
     composite_layer = {
@@ -810,6 +845,7 @@ def generate_material_heatmap_model(
         "projection": heightmap.get("projection", "equirectangular"),
         "map_seed": map_seed,
         "planet_id": planet_id,
+        "source_heightfield_fingerprint": heightmap.get("source_heightfield_fingerprint"),
         "storage_format": RASTER_BUNDLE_FORMAT,
         "bundle_format_version": RASTER_BUNDLE_VERSION,
         "bundle_path": _relative_or_absolute(bundle_path, storage_root=storage_root),

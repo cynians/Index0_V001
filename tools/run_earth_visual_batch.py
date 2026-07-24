@@ -11,7 +11,7 @@ if str(ROOT) not in sys.path:
 
 from simulations.world_gen.headless_runner import (
     HeadlessWorldGenConfig,
-    HeadlessWorldGenRunner,
+    run_isolated_headless_worldgen,
 )
 
 
@@ -21,11 +21,11 @@ def main():
     parser.add_argument("end", type=int)
     args = parser.parse_args()
 
-    series = ROOT / "artifacts" / "headless_worldgen" / "earth-visual-series"
+    series = ROOT / "artifacts" / "worldgen" / "retained" / "earth-visual-series"
     for index in range(args.start, args.end + 1):
         eccentric = index % 2 == 0
         mode = "eccentric" if eccentric else "generic"
-        result = HeadlessWorldGenRunner(series / f"{index:02d}-{mode}").run(
+        result = run_isolated_headless_worldgen(
             HeadlessWorldGenConfig(
                 name=f"Earth Visual {index:02d} {mode.title()}",
                 template_id="oxygenated_ocean_plate_world",
@@ -39,9 +39,14 @@ def main():
                 water_fraction=0.71,
                 volatile_inventory="earthlike",
                 tectonics_mode="mobile_lid",
-            )
+                render_outputs=True,
+            ),
+            bundle_path=series / f"{index:02d}-{mode}.i0wg",
+            retention="retained",
+            include_images=True,
+            project_root=ROOT,
         )
-        summary = json.loads(Path(result.summary_path).read_text(encoding="utf-8"))
+        summary = result.summary
         print(
             json.dumps(
                 {
@@ -51,7 +56,7 @@ def main():
                     "pressure_bar": summary.get("surface_pressure_bar"),
                     "ocean_fraction": summary.get("ocean_fraction"),
                     "river_count": summary.get("river_count"),
-                    "contact_sheet": result.contact_sheet,
+                    "bundle": result.bundle_path,
                 },
                 sort_keys=True,
             ),

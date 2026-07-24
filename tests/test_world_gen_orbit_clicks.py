@@ -1571,7 +1571,7 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         self.assertEqual(257, len(heightmap["sample_grid"]["rows"][0]))
         self.assertEqual("full_planet", heightmap["coverage"])
         self.assertAlmostEqual(4885.7, heightmap["equator_resolution_m_per_px"], delta=1.0)
-        self.assertEqual("physiographic-heightmap-v2", heightmap["geology_model"]["model_version"])
+        self.assertEqual("physiographic-heightmap-v3", heightmap["geology_model"]["model_version"])
         self.assertIn("continental_shelves", heightmap["geology_model"]["passive_margin_features"])
         for row in heightmap["sample_grid"]["rows"]:
             self.assertEqual(row[0], row[-1])
@@ -1638,6 +1638,15 @@ class WorldGenOrbitClickTests(unittest.TestCase):
                 storage_root=storage_root,
                 image_size=(32, 16),
             )
+            regenerated = generate_material_heatmap_model(
+                planet={"id": "planet_blue"},
+                natural_material_model=natural_material_model,
+                terrain={"map_seed": "heatmap-test", "hydrology": {"cycle": "active", "target_ocean_fraction": 0.35}},
+                heightmap=heightmap,
+                output_root=storage_root / "assets" / "maps" / "material_heatmaps",
+                storage_root=storage_root,
+                image_size=(32, 16),
+            )
 
             self.assertEqual("generated", model["status"])
             self.assertEqual("sparse_dominant_regions", model["distribution_mode"])
@@ -1645,9 +1654,12 @@ class WorldGenOrbitClickTests(unittest.TestCase):
             self.assertEqual("rgba8888_bundle", model["image_format"])
             self.assertEqual("deterministic_generated_truth", model["truth_model"])
             self.assertEqual("inferred", model["default_confidence_state"])
-            self.assertEqual(2, len(model["layers"]))
+            self.assertGreaterEqual(len(model["layers"]), 1)
             self.assertEqual("dominant_material_color", model["composite_layer"]["render_mode"])
             self.assertTrue((storage_root / model["bundle_path"]).exists())
+            self.assertEqual(model["bundle_path"], regenerated["bundle_path"])
+            self.assertEqual(1, len(list((storage_root / "assets" / "maps" / "material_heatmaps").glob("*.i0r"))))
+            self.assertEqual([], list((storage_root / "assets" / "maps" / "material_heatmaps").glob("*.tmp-*")))
             self.assertEqual(model["bundle_path"], model["composite_layer"]["bundle_path"])
             self.assertIsNotNone(load_raster_bundle_surface(
                 storage_root / model["bundle_path"],

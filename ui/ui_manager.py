@@ -1228,8 +1228,27 @@ class UIManager:
                 enabled=can_author_locations,
             )
 
-            if bool(getattr(active_sim, "can_regenerate_region", lambda: False)()):
+            can_regenerate_current_region = bool(
+                getattr(active_sim, "can_regenerate_current_region", lambda: False)()
+            )
+            can_regenerate_visible_region = bool(
+                getattr(active_sim, "can_regenerate_region", lambda: False)()
+            )
+            if can_regenerate_current_region or can_regenerate_visible_region:
                 next_button_y = self._append_map_sidebar_section("DETAIL GENERATION", map_control_x, next_button_y, map_control_w)
+            if can_regenerate_current_region:
+                current_region_label = getattr(
+                    active_sim,
+                    "get_current_region_regeneration_label",
+                    lambda: "Regenerate This Region",
+                )()
+                self.buttons.append(UIButton(
+                    "regenerate_current_region",
+                    current_region_label,
+                    pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
+                ))
+                next_button_y += 40
+            if can_regenerate_visible_region:
                 detail_label = getattr(active_sim, "get_next_detail_level_label", lambda: "Regenerate Region")()
                 self.buttons.append(UIButton(
                     "regenerate_visible_region",

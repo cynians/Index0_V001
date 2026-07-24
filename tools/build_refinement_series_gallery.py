@@ -1,7 +1,9 @@
 """Build a compact visual and machine-readable report for the 15-run series."""
 
 import json
+import io
 import os
+import zipfile
 from pathlib import Path
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
@@ -10,7 +12,8 @@ import pygame
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SERIES = ROOT / "artifacts" / "headless_worldgen" / "refinement-series"
+SERIES = ROOT / "artifacts" / "worldgen" / "retained" / "refinement-series"
+REPORT_ROOT = ROOT / ".cache" / "worldgen" / "refinement-series-report"
 
 ISSUES = {
     1: "High-CO2 greenhouse response was too weak",
@@ -33,10 +36,11 @@ ISSUES = {
 
 def _series_directory(index):
     mode = "eccentric" if index % 2 else "generic"
-    return SERIES / f"{index:02d}-{mode}", mode
+    return SERIES / f"{index:02d}-{mode}.i0wg", mode
 
 
 def main():
+    REPORT_ROOT.mkdir(parents=True, exist_ok=True)
     pygame.init()
     font = pygame.font.SysFont("consolas", 16)
     small = pygame.font.SysFont("consolas", 13)
@@ -62,10 +66,10 @@ def main():
 
     report = []
     for index in range(1, 16):
-        directory, mode = _series_directory(index)
-        summary = json.loads((directory / "summary.json").read_text(encoding="utf-8"))
-        contact_path = directory / "images" / "map_layers_contact_sheet.png"
-        thumbnail = pygame.image.load(str(contact_path))
+        bundle_path, mode = _series_directory(index)
+        with zipfile.ZipFile(bundle_path, "r") as bundle:
+            summary = json.loads(bundle.read("summary.json").decode("utf-8"))
+            thumbnail = pygame.image.load(io.BytesIO(bundle.read("images/map_layers_contact_sheet.png")), "map_layers_contact_sheet.png")
         image_height = 164
         thumbnail = pygame.transform.smoothscale(
             thumbnail,
@@ -115,7 +119,7 @@ def main():
             {
                 "index": index,
                 "mode": mode,
-                "directory": str(directory),
+                "bundle": str(bundle_path),
                 "template": template,
                 "atmosphere_class": summary.get("atmosphere_class"),
                 "surface_pressure_bar": pressure,
@@ -124,13 +128,13 @@ def main():
                 "ocean_fraction": summary.get("ocean_fraction"),
                 "river_count": summary.get("river_count"),
                 "issue_found": ISSUES[index],
-                "contact_sheet": str(contact_path),
+                "contact_sheet_entry": "images/map_layers_contact_sheet.png",
             }
         )
 
-    gallery_path = SERIES / "series_gallery.png"
+    gallery_path = REPORT_ROOT / "series_gallery.png"
     pygame.image.save(sheet, str(gallery_path))
-    report_path = SERIES / "series_report.json"
+    report_path = REPORT_ROOT / "series_report.json"
     report_path.write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

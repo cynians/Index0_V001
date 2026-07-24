@@ -1799,6 +1799,8 @@ class WorldGenRenderer:
         water_cycle = payload.get("water_cycle_model") or {}
         surface_evolution = payload.get("surface_evolution_model") or {}
         climate_regulation = payload.get("climate_regulation_model") or {}
+        coastal = payload.get("coastal_geomorphology_model") or {}
+        coastal_summary = coastal.get("summary") or {}
         title = (
             f"{self._worldgen_stage_badge(payload)} | World Generation: "
             f"{selected_planet.get('name', selected_planet.get('id', 'Planet'))} Water Cycle"
@@ -1824,6 +1826,8 @@ class WorldGenRenderer:
             ("Pressure", f"{float(runoff.get('surface_pressure_bar', 0.0)):.3f} bar"),
             ("Mean temp", f"{float(runoff.get('mean_temperature_k', 0.0)):.1f} K"),
             ("Rivers", str(int(water_cycle.get("river_count", 0) or 0))),
+            ("Coastline", f"{float(coastal_summary.get('coastline_length_km', 0.0) or 0.0):,.0f} km"),
+            ("Estuaries / deltas", f"{int(coastal_summary.get('estuary_count', 0) or 0)} / {int(coastal_summary.get('delta_count', 0) or 0)}"),
         ]
         for label, value in rows:
             row_rect = pygame.Rect(sidebar.x + 12, y, sidebar.width - 24, 24)

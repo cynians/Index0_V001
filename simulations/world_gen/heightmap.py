@@ -1,13 +1,22 @@
+import copy
+import hashlib
+import json
 import math
 from functools import lru_cache
 
-from simulations.world_gen.map_seed import resolved_map_seed, seed_range
+from simulations.world_gen.map_seed import resolved_map_seed, seed_range as _uncached_seed_range
 from simulations.world_gen.terrain_seed import (
     PLANETARY_CANVAS_HEIGHT_PX,
     PLANETARY_CANVAS_WIDTH_PX,
 )
 
 _NOISE_CORNER_CACHE = {}
+
+
+@lru_cache(maxsize=4096)
+def seed_range(seed_text, salt, low, high):
+    """Cache immutable seed constants reused at every heightfield sample."""
+    return _uncached_seed_range(seed_text, salt, low, high)
 
 
 def _clamp(value, low, high):
@@ -494,7 +503,51 @@ def _heightmap_tectonic_model(tectonic_model):
     sampled["boundary_segments"] = segments
     sampled["heightmap_boundary_segment_count"] = len(segments)
     sampled["original_boundary_segment_count"] = len(tectonic_model.get("boundary_segments") or [])
+    sampled["_heightmap_boundary_spatial_index"] = _boundary_spatial_index(segments)
     return sampled
+
+
+def _boundary_spatial_index(segments, bins_x=32, bins_y=16):
+    """Bucket boundary segments without changing the exact distance test."""
+    bins = {}
+    for segment in segments:
+        x1 = float(segment.get("x1", 0.0) or 0.0)
+        x2 = float(segment.get("x2", 0.0) or 0.0)
+        if x2 - x1 > 0.5:
+            x2 -= 1.0
+        elif x2 - x1 < -0.5:
+            x2 += 1.0
+        y1 = float(segment.get("y1", 0.0) or 0.0)
+        y2 = float(segment.get("y2", 0.0) or 0.0)
+        margin = _clamp(segment.get("influence_width", 0.028), 0.012, 0.05) * 2.5
+        y_min = max(0.0, min(y1, y2) - margin)
+        y_max = min(1.0, max(y1, y2) + margin)
+        first_y = max(0, min(bins_y - 1, int(math.floor(y_min * bins_y))))
+        last_y = max(0, min(bins_y - 1, int(math.floor(y_max * bins_y))))
+        for shift in (-1.0, 0.0, 1.0):
+            x_min = min(x1, x2) + shift - margin
+            x_max = max(x1, x2) + shift + margin
+            first_x = max(0, int(math.floor(x_min * bins_x)))
+            last_x = min(bins_x - 1, int(math.floor(x_max * bins_x)))
+            if first_x > last_x:
+                continue
+            for by in range(first_y, last_y + 1):
+                for bx in range(first_x, last_x + 1):
+                    bucket = bins.setdefault((bx, by), [])
+                    if segment not in bucket:
+                        bucket.append(segment)
+    return {"bins": bins, "bins_x": bins_x, "bins_y": bins_y}
+
+
+def _nearby_boundary_segments(tectonic_model, nx, ny):
+    spatial_index = tectonic_model.get("_heightmap_boundary_spatial_index")
+    if not isinstance(spatial_index, dict):
+        return tectonic_model.get("boundary_segments") or []
+    bins_x = int(spatial_index["bins_x"])
+    bins_y = int(spatial_index["bins_y"])
+    bx = int(float(nx) * bins_x) % bins_x
+    by = max(0, min(bins_y - 1, int(float(ny) * bins_y)))
+    return spatial_index["bins"].get((bx, by), [])
 
 
 def _tectonic_height_m(nx, ny, terrain, tectonic_model):
@@ -609,7 +662,7 @@ def _tectonic_height_m(nx, ny, terrain, tectonic_model):
     trench_influence = 0.0
     transform_influence = 0.0
 
-    for segment in (tectonic_model.get("boundary_segments") or []):
+    for segment in _nearby_boundary_segments(tectonic_model, nx, ny):
         distance = _wrapped_point_segment_distance(
             nx,
             ny,
@@ -1072,6 +1125,192 @@ def _shelf_and_sediment_model(rows, sea_level, tectonic_model=None):
     }
 
 
+HEIGHTMAP_DERIVATIVE_MODEL_VERSION = "heightmap-derivatives-v1"
+
+
+def _heightfield_fingerprint(rows, sea_level):
+    payload = json.dumps(
+        {"rows": rows, "sea_level_m": sea_level},
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def refresh_heightmap_derivatives(heightmap, *, tectonic_model=None, inherited_sea_level_m=None):
+    """Rebuild every derivative that depends on the evolved heightfield.
+
+    Full planets conserve their equivalent global water depth and solve a new
+    sea level.  Regional products inherit the planetary datum and only rebuild
+    local masks and morphology.  The duplicate longitude seam is excluded
+    from all area-weighted statistics.
+    """
+    if not isinstance(heightmap, dict):
+        return {}
+    refreshed = copy.deepcopy(heightmap)
+    grid = refreshed.get("sample_grid") if isinstance(refreshed.get("sample_grid"), dict) else {}
+    rows = grid.get("rows") if isinstance(grid.get("rows"), list) else []
+    if not rows or not rows[0]:
+        return refreshed
+    height = len(rows)
+    width = min(len(row) for row in rows)
+    wrap_x = bool(grid.get("wrap_x", refreshed.get("wrap_x", True)))
+    unique_width = width - 1 if wrap_x and width > 1 else width
+    regional = str(refreshed.get("coverage") or "full_planet") != "full_planet" or not wrap_x
+    equivalent_depth = max(0.0, float(refreshed.get("equivalent_global_water_depth_m", 0.0) or 0.0))
+    if regional and inherited_sea_level_m is not None:
+        sea_level = float(inherited_sea_level_m)
+        sea_level_resolution = "inherited_planetary_datum"
+    elif not regional and equivalent_depth > 0.0 and not bool(refreshed.get("sea_level_locked")):
+        sea_level = sea_level_for_equivalent_water_depth(rows, equivalent_depth, wrap_x=wrap_x)
+        sea_level_resolution = "volume_balance_against_evolved_hypsometry"
+    else:
+        sea_level = refreshed.get("sea_level_m")
+        sea_level = None if sea_level is None else float(sea_level)
+        sea_level_resolution = refreshed.get("sea_level_resolution") or ("dry_surface" if sea_level is None else "preserved_datum")
+
+    land_rows = [[False] * width for _ in range(height)]
+    ocean_rows = [[False] * width for _ in range(height)]
+    coastal_rows = [[False] * width for _ in range(height)]
+    weighted_land = weighted_ocean = total_weight = 0.0
+    values = []
+    for y in range(height):
+        latitude = (0.5 - y / max(1, height - 1)) * math.pi
+        area_weight = max(1e-6, math.cos(latitude)) if not regional else 1.0
+        for x in range(unique_width):
+            elevation = float(rows[y][x])
+            values.append(elevation)
+            land = sea_level is None or elevation >= sea_level
+            land_rows[y][x] = land
+            ocean_rows[y][x] = not land
+            weighted_land += area_weight * int(land)
+            weighted_ocean += area_weight * int(not land)
+            total_weight += area_weight
+        if wrap_x and width > unique_width:
+            land_rows[y][-1] = land_rows[y][0]
+            ocean_rows[y][-1] = ocean_rows[y][0]
+
+    if sea_level is not None:
+        for y in range(height):
+            for x in range(unique_width):
+                land = land_rows[y][x]
+                neighbors = [((x - 1) % unique_width, y), ((x + 1) % unique_width, y)] if wrap_x else []
+                if not wrap_x:
+                    neighbors.extend([(max(0, x - 1), y), (min(unique_width - 1, x + 1), y)])
+                neighbors.extend([(x, max(0, y - 1)), (x, min(height - 1, y + 1))])
+                coastal_rows[y][x] = any(land_rows[ny][nx] != land for nx, ny in neighbors)
+            if wrap_x and width > unique_width:
+                coastal_rows[y][-1] = coastal_rows[y][0]
+
+    prior_masks = refreshed.get("surface_masks") if isinstance(refreshed.get("surface_masks"), dict) else {}
+    ice_rows = copy.deepcopy(prior_masks.get("ice_rows") or [[False] * width for _ in range(height)])
+    if len(ice_rows) != height or any(len(row) < width for row in ice_rows):
+        ice_rows = [[False] * width for _ in range(height)]
+    ice_adjacency_rows = [[False] * width for _ in range(height)]
+    for y in range(height):
+        for x in range(unique_width):
+            neighbors = [((x - 1) % unique_width, y), ((x + 1) % unique_width, y)] if wrap_x else [(max(0, x - 1), y), (min(unique_width - 1, x + 1), y)]
+            neighbors.extend([(x, max(0, y - 1)), (x, min(height - 1, y + 1))])
+            ice_adjacency_rows[y][x] = bool(ice_rows[y][x]) or any(bool(ice_rows[ny][nx]) for nx, ny in neighbors)
+        if wrap_x and width > unique_width:
+            ice_adjacency_rows[y][-1] = ice_adjacency_rows[y][0]
+
+    shelf_model = _shelf_and_sediment_model(rows, sea_level, tectonic_model)
+    shelf_rows = shelf_model.get("shelf_rows") or []
+    if wrap_x:
+        for row in shelf_rows:
+            if len(row) > unique_width:
+                row[-1] = row[0]
+        for row in shelf_model.get("sediment_thickness_rows_m") or []:
+            if len(row) > unique_width:
+                row[-1] = row[0]
+    cell_spacing_m = float(
+        refreshed.get("sample_spacing_x_m")
+        or refreshed.get("equator_resolution_m_per_px")
+        or ((refreshed.get("circumference_m") or 0.0) / max(1, unique_width))
+        or 1.0
+    )
+    coastal_gradients = []
+    shelf_cell_count = 0
+    for y in range(height):
+        for x in range(unique_width):
+            if shelf_rows and shelf_rows[y][x]:
+                shelf_cell_count += 1
+            if not coastal_rows[y][x]:
+                continue
+            left = float(rows[y][(x - 1) % unique_width if wrap_x else max(0, x - 1)])
+            right = float(rows[y][(x + 1) % unique_width if wrap_x else min(unique_width - 1, x + 1)])
+            up = float(rows[max(0, y - 1)][x])
+            down = float(rows[min(height - 1, y + 1)][x])
+            coastal_gradients.append(math.hypot(right - left, down - up) / max(1.0, 2.0 * cell_spacing_m))
+
+    land_fraction = weighted_land / max(1e-9, total_weight)
+    ocean_fraction = weighted_ocean / max(1e-9, total_weight)
+    ice_weight = 0.0
+    for y in range(height):
+        weight = max(1e-6, math.cos((0.5 - y / max(1, height - 1)) * math.pi)) if not regional else 1.0
+        ice_weight += sum(bool(ice_rows[y][x]) for x in range(unique_width)) * weight
+    ice_fraction = ice_weight / max(1e-9, total_weight)
+    sample_count = max(1, len(values))
+    hypsometry = dict(refreshed.get("hypsometry_summary") or {})
+    hypsometry.update({
+        "broad_plain_fraction": round(sum(-2000.0 <= value <= 1000.0 for value in values) / sample_count, 3),
+        "mountain_fraction_above_2000m": round(sum(value > 2000.0 for value in values) / sample_count, 3),
+        "deep_basin_fraction_below_minus_2000m": round(sum(value < -2000.0 for value in values) / sample_count, 3),
+        "land_fraction": round(land_fraction, 4),
+        "ocean_fraction": round(ocean_fraction, 4),
+        "ice_fraction": round(ice_fraction, 4),
+        "continental_shelf_fraction": round(shelf_cell_count / max(1, unique_width * height), 4),
+        "area_weighting": "spherical_cosine_latitude" if not regional else "local_equal_area_approximation",
+        "duplicate_longitude_seam_excluded": bool(wrap_x and width > unique_width),
+    })
+    shelf_model["morphology_summary"] = {
+        "mean_coastal_gradient": round(sum(coastal_gradients) / max(1, len(coastal_gradients)), 6),
+        "mean_resolved_shelf_width_km": round(shelf_cell_count * cell_spacing_m / max(1, sum(sum(bool(v) for v in row[:unique_width]) for row in coastal_rows)) / 1000.0, 2),
+        "coastal_sample_count": len(coastal_gradients),
+    }
+    refreshed.update({
+        "min_elevation_m": round(min(values), 1),
+        "max_elevation_m": round(max(values), 1),
+        "sea_level_m": None if sea_level is None else round(sea_level, 2),
+        "sea_level_resolution": sea_level_resolution,
+        "surface_masks": {
+            **prior_masks,
+            "land_rows": land_rows,
+            "ocean_rows": ocean_rows,
+            "coastal_rows": coastal_rows,
+            "ice_rows": ice_rows,
+            "ice_adjacency_rows": ice_adjacency_rows,
+            "continental_shelf_rows": shelf_rows,
+        },
+        "hypsometry_summary": hypsometry,
+        "shelf_sediment_model": shelf_model,
+        "derivative_model_version": HEIGHTMAP_DERIVATIVE_MODEL_VERSION,
+    })
+    refreshed["source_heightfield_fingerprint"] = _heightfield_fingerprint(rows, refreshed.get("sea_level_m"))
+    refreshed["derivatives"] = {
+        "model_version": HEIGHTMAP_DERIVATIVE_MODEL_VERSION,
+        "source_heightfield_fingerprint": refreshed["source_heightfield_fingerprint"],
+        "status": "current",
+    }
+    return refreshed
+
+
+def heightmap_derivatives_are_current(heightmap):
+    if not isinstance(heightmap, dict):
+        return False
+    grid = heightmap.get("sample_grid") if isinstance(heightmap.get("sample_grid"), dict) else {}
+    rows = grid.get("rows") if isinstance(grid.get("rows"), list) else []
+    if not rows:
+        return False
+    derivatives = heightmap.get("derivatives") if isinstance(heightmap.get("derivatives"), dict) else {}
+    return (
+        derivatives.get("model_version") == HEIGHTMAP_DERIVATIVE_MODEL_VERSION
+        and derivatives.get("source_heightfield_fingerprint") == _heightfield_fingerprint(rows, heightmap.get("sea_level_m"))
+    )
+
+
 def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tectonic_model=None, crater_model=None):
     terrain = terrain if isinstance(terrain, dict) else {}
     heightfield = terrain.get("heightfield") if isinstance(terrain.get("heightfield"), dict) else {}
@@ -1208,7 +1447,7 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
     ice_fraction = ice_count / sample_count
     shelf_model = _shelf_and_sediment_model(rows, sea_level_value, sampled_tectonic_model)
 
-    return {
+    model = {
         "status": "heightmap_seeded",
         "planet_id": planet_id,
         "map_seed": map_seed,
@@ -1294,6 +1533,7 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
             ),
         },
     }
+    return refresh_heightmap_derivatives(model, tectonic_model=sampled_tectonic_model)
 
 
 def contour_levels_for_heightmap(heightmap, interval_m, max_levels=24):

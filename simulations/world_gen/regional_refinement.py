@@ -6,6 +6,15 @@ import math
 
 from simulations.world_gen.heightmap import (
     _clamp, _crater_height_adjustment_m, _crater_spatial_index, _fbm_noise,
+    refresh_heightmap_derivatives,
+)
+from simulations.world_gen.coastal_geomorphology import (
+    coastal_summary,
+    derive_coastal_geomorphology_model,
+    enrich_coastal_hydrology,
+    inherit_parent_coastal_context,
+    materialize_regional_coastal_landforms,
+    stabilize_regional_coastal_topology,
 )
 from simulations.world_gen.map_seed import seed_range
 from simulations.world_gen.regional_materials import derive_regional_material_model
@@ -14,6 +23,9 @@ from simulations.world_gen.water_cycle import derive_water_cycle_model
 
 
 MIN_REFINED_EXTENT_M = 10.0
+MIN_TERRAIN_SAMPLE_SPACING_M = 0.10
+MIN_TERRAIN_PROCESS_WAVELENGTH_M = 0.50
+SURFACE_DETAIL_CONTRACT_VERSION = "surface-detail-contract-v1"
 
 
 DETAIL_LEVELS = {
@@ -45,7 +57,7 @@ DETAIL_LEVELS = {
         "id": "site",
         "label": "Site",
         "nominal_resolution": "0.5–10 m",
-        "features": ["channels", "banks", "boulders", "microrelief", "vegetation_patches"],
+        "features": ["channels", "banks", "bedrock_outcrops", "microrelief", "vegetation_zones"],
     },
     5: {
         "id": "parcel",
@@ -56,14 +68,14 @@ DETAIL_LEVELS = {
     6: {
         "id": "plot",
         "label": "Plot",
-        "nominal_resolution": "4-10 cm",
-        "features": ["erosion_rills", "hummocks", "minor_channels", "bank_detail", "surface_roughness"],
+        "nominal_resolution": "10 cm terrain grid",
+        "features": ["erosion_rills", "hummocks", "minor_channels", "bank_microtopography", "bedrock_ledges"],
     },
     7: {
         "id": "survey",
         "label": "Survey",
-        "nominal_resolution": "about 4 cm at minimum extent",
-        "features": ["microdrainage", "shallow_hollows", "stones", "rills", "fine_microrelief"],
+        "nominal_resolution": "10 cm terrain grid",
+        "features": ["microdrainage", "shallow_hollows", "rills", "bedrock_steps", "tide_pool_basins"],
     },
 }
 
@@ -73,6 +85,81 @@ _CRATER_GRID_CACHE = {}
 
 def detail_level_spec(level):
     return copy.deepcopy(DETAIL_LEVELS[max(0, min(MAX_DETAIL_LEVEL, int(level or 0)))])
+
+
+def refinement_sample_dimensions(level, width_m, height_m):
+    """Choose grid support without crossing the 10 cm terrain-data floor."""
+    level = max(0, min(MAX_DETAIL_LEVEL, int(level or 0)))
+    width_m = max(MIN_TERRAIN_SAMPLE_SPACING_M, float(width_m or 0.0))
+    height_m = max(MIN_TERRAIN_SAMPLE_SPACING_M, float(height_m or 0.0))
+    aspect = max(0.5, min(3.0, width_m / max(MIN_TERRAIN_SAMPLE_SPACING_M, height_m)))
+    if level <= 2:
+        sample_width = 513
+        sample_height = max(
+            257,
+            min(sample_width, int(round((sample_width - 1) / aspect)) + 1),
+        )
+    elif level <= 5:
+        sample_width = 385
+        sample_height = max(
+            193,
+            min(sample_width, int(round((sample_width - 1) / aspect)) + 1),
+        )
+    else:
+        sample_width = max(
+            3,
+            min(385, int(math.floor(width_m / MIN_TERRAIN_SAMPLE_SPACING_M)) + 1),
+        )
+        sample_height = max(
+            3,
+            min(385, int(math.floor(height_m / MIN_TERRAIN_SAMPLE_SPACING_M)) + 1),
+        )
+    if level <= 5 and sample_height % 2 == 0 and sample_height < 385:
+        sample_height += 1
+    return sample_width, sample_height
+
+
+def surface_detail_contract(heightmap):
+    """Describe how later object and biosphere detail attaches to terrain truth."""
+    level = int(heightmap.get("map_detail_level", 0) or 0)
+    return {
+        "status": "terrain_basis_ready",
+        "model_version": SURFACE_DETAIL_CONTRACT_VERSION,
+        "terrain_representation": "continuous_heightfield",
+        "minimum_terrain_sample_spacing_m": MIN_TERRAIN_SAMPLE_SPACING_M,
+        "minimum_terrain_process_wavelength_m": MIN_TERRAIN_PROCESS_WAVELENGTH_M,
+        "terrain_grid_spacing_m": {
+            "x": round(float(heightmap.get("sample_spacing_x_m", 0.0) or 0.0), 6),
+            "y": round(float(heightmap.get("sample_spacing_y_m", 0.0) or 0.0), 6),
+        },
+        "object_detail_layer": {
+            "status": "deferred_sparse_deterministic_placement",
+            "activates_from_detail_level": 6,
+            "active_for_this_region": level >= 6,
+            "terrain_cell_reference": "heightmap_model.sample_grid",
+            "material_reference": "regional_material_model",
+            "hydrology_reference": "water_cycle_model",
+            "placement_seed_reference": "heightmap_model.map_seed",
+            "future_object_families": [
+                "loose_rocks",
+                "boulders",
+                "debris_and_wrack",
+                "individual_plants",
+                "deadwood",
+                "burrows_and_nests",
+                "organism_scale_microhabitats",
+            ],
+        },
+        "heightfield_exclusions": [
+            "individual_loose_rocks",
+            "debris",
+            "individual_organisms",
+            "vegetation_stems",
+            "burrows_smaller_than_terrain_support",
+            "cosmetic_surface_granularity",
+        ],
+        "storage_policy": "store_compact_contract_and_seed; materialize_sparse_objects_lazily",
+    }
 
 
 def map_physical_dimensions_m(entity):
@@ -88,6 +175,96 @@ def map_physical_dimensions_m(entity):
     width_m = float(heightmap.get("region_width_m") or heightmap.get("circumference_m") or circumference or 0.0)
     height_m = float(heightmap.get("region_height_m") or (circumference * 0.5 if circumference else 0.0))
     return max(0.0, width_m), max(0.0, height_m)
+
+
+def _parent_coastal_context(parent_entity, center_uv):
+    segments = ((parent_entity.get("coastal_geomorphology_model") or {}).get("segments") or [])
+    if not segments:
+        return {"coastal_system": None, "morphology_assemblage": None}
+
+    def distance(segment):
+        points = ((segment.get("geometry") or {}).get("points") or [])
+        if not points:
+            points = [(segment.get("measurements") or {}).get("centroid_uv") or [0.5, 0.5]]
+        return min(math.hypot(float(point[0]) - center_uv[0], float(point[1]) - center_uv[1]) for point in points)
+
+    segment = min(segments, key=distance)
+    morphology = str(
+        segment.get("morphology_assemblage")
+        or segment.get("primary_assemblage")
+        or "headland_bay"
+    )
+    return {
+        "parent_segment_id": segment.get("id"),
+        "coastal_system": str(segment.get("coastal_system") or morphology),
+        "morphology_assemblage": morphology,
+    }
+
+
+def _scale_appropriate_relief(rows, sea_level, width_m, height_m, coastal_context):
+    """Bound inherited relief by footprint and the parent coastal system."""
+    if not rows or not rows[0]:
+        return rows, {"applied": False}
+    morphology = str(
+        coastal_context.get("coastal_system")
+        or coastal_context.get("morphology_assemblage")
+        or ""
+    )
+    maximum_relief_ratio = {
+        "deltaic": 0.12,
+        "tidal_flat_accommodation": 0.055,
+        "clastic_beach": 0.24,
+        "barrier_lagoon": 0.18,
+        "estuarine_drowned_valley": 0.34,
+        "rocky_cliff": 0.38,
+        "headland_bay": 0.55,
+        "glacial_fjord_fjard_skerry": 1.35,
+        "emergent_marine_terrace": 0.50,
+    }.get(morphology, 1.25)
+    minimum_range_m = 0.20 if morphology in {"deltaic", "tidal_flat_accommodation"} else 0.50
+    maximum_range_m = max(minimum_range_m, min(width_m, height_m) * maximum_relief_ratio)
+    minimum = min(min(row) for row in rows)
+    maximum = max(max(row) for row in rows)
+    original_range = max(0.0, maximum - minimum)
+    if original_range <= maximum_range_m or original_range <= 1e-9:
+        return rows, {
+            "applied": False,
+            "coastal_system": morphology or None,
+            "maximum_relief_ratio": maximum_relief_ratio,
+            "original_range_m": round(original_range, 4),
+            "resolved_range_m": round(original_range, 4),
+        }
+    datum = float(sea_level) if sea_level is not None else (minimum + maximum) * 0.5
+    scale = maximum_range_m / original_range
+    limited = [[datum + (float(value) - datum) * scale for value in row] for row in rows]
+    return limited, {
+        "applied": True,
+        "coastal_system": morphology or None,
+        "maximum_relief_ratio": maximum_relief_ratio,
+        "original_range_m": round(original_range, 4),
+        "resolved_range_m": round(maximum_range_m, 4),
+        "scale_factor": round(scale, 8),
+        "datum": "inherited_sea_level" if sea_level is not None else "midrange",
+    }
+
+
+def _limit_heightmap_relief(heightmap, coastal_context):
+    grid = heightmap.get("sample_grid") or {}
+    rows = grid.get("rows") or []
+    limited, audit = _scale_appropriate_relief(
+        rows,
+        heightmap.get("sea_level_m"),
+        float(heightmap.get("region_width_m") or 0.0),
+        float(heightmap.get("region_height_m") or 0.0),
+        coastal_context,
+    )
+    if audit.get("applied"):
+        heightmap = dict(heightmap)
+        heightmap["sample_grid"] = {**grid, "rows": [[round(value, 3) for value in row] for row in limited]}
+        heightmap["min_elevation_m"] = round(min(min(row) for row in limited), 3)
+        heightmap["max_elevation_m"] = round(max(max(row) for row in limited), 3)
+    heightmap["scale_appropriate_relief"] = audit
+    return heightmap
 
 
 def refinement_floor_reached(entity, tolerance=0.01):
@@ -366,32 +543,38 @@ def generate_refined_region(world_model, parent_entity, bounds, *, seed_suffix="
     region_id = _stable_region_id(parent_entity["id"], level, bounds)
     map_seed = f"{parent_heightmap.get('map_seed') or parent_entity.get('id')}:{seed_suffix}:{region_id}"
 
-    aspect = max(0.5, min(3.0, (float(bounds["max_x"]) - float(bounds["min_x"])) / max(1e-9, float(bounds["max_y"]) - float(bounds["min_y"]))))
+    parent_physical_width_m, parent_physical_height_m = map_physical_dimensions_m(parent_entity)
+    estimated_width_m = max(
+        MIN_REFINED_EXTENT_M,
+        parent_physical_width_m * abs(u1 - u0),
+    )
+    estimated_height_m = max(
+        MIN_REFINED_EXTENT_M,
+        parent_physical_height_m * abs(v1 - v0),
+    )
     # Macroregions and regions are commonly displayed across most of a
     # 1600-1920 px viewport.  A 257-column source exposes 6-8 px cells and
     # forces both contours and tributaries into visibly blocky geometry.
     # Resolve the scientifically meaningful first two regional levels more
     # densely; deeper footprints are physically smaller and remain adequately
-    # sampled at 385 columns.
-    sample_width = 513 if level <= 2 else 385
-    minimum_sample_height = 257 if level <= 2 else 193
-    sample_height = max(
-        minimum_sample_height,
-        min(sample_width, int(round((sample_width - 1) / aspect)) + 1),
+    # sampled at 385 columns. Plot and Survey levels instead stop at the
+    # physical 10 cm terrain-data floor. Smaller loose detail is a sparse
+    # object/biosphere concern rather than denser elevation storage.
+    sample_width, sample_height = refinement_sample_dimensions(
+        level,
+        estimated_width_m,
+        estimated_height_m,
     )
-    if sample_height % 2 == 0:
-        sample_height += 1
     sea_level = parent_heightmap.get("sea_level_m")
     min_parent = float(parent_heightmap.get("min_elevation_m", -5000.0) or -5000.0)
     max_parent = float(parent_heightmap.get("max_elevation_m", 5000.0) or 5000.0)
     relief_span = max(1.0, max_parent - min_parent)
-    parent_physical_width_m, parent_physical_height_m = map_physical_dimensions_m(parent_entity)
     estimated_extent_m = max(
         parent_physical_width_m * abs(u1 - u0),
         parent_physical_height_m * abs(v1 - v0),
         MIN_REFINED_EXTENT_M,
     )
-    nominal_amplitude = {1: 620.0, 2: 240.0, 3: 65.0, 4: 12.0, 5: 2.5, 6: 0.55, 7: 0.14}[level]
+    nominal_amplitude = {1: 620.0, 2: 240.0, 3: 65.0, 4: 12.0, 5: 2.5, 6: 0.24, 7: 0.07}[level]
     amplitude = min(nominal_amplitude, max(0.03, estimated_extent_m * 0.025))
     root_planet = world_model.get_entity(_root_planet_id(world_model, parent_entity))
     root_heightmap = root_planet.get("heightmap_model") if isinstance(root_planet, dict) else {}
@@ -411,6 +594,29 @@ def generate_refined_region(world_model, parent_entity, bounds, *, seed_suffix="
         parent_physical_height_m * abs(v1 - v0)
         if parent_physical_height_m > 0.0
         else planet_circumference * 0.5 * abs(source_v1 - source_v0)
+    )
+    region_aspect = max(0.5, min(3.0, region_width_m / max(1e-9, region_height_m)))
+    maximum_process_cells = max(
+        2,
+        int(math.floor(min(region_width_m, region_height_m) / MIN_TERRAIN_PROCESS_WAVELENGTH_M)),
+    )
+    broad_cells = min(5 + level * 2, maximum_process_cells)
+    fine_cells = min(18 + level * 8, maximum_process_cells)
+    ridge_cells = min(9 + level * 3, maximum_process_cells)
+
+    def bounded_octaves(base_cells, requested):
+        if base_cells <= 0:
+            return 1
+        return max(
+            1,
+            min(
+                int(requested),
+                int(math.floor(math.log(max(1.0, maximum_process_cells / base_cells), 2.0))) + 1,
+            ),
+        )
+    parent_coastal_context = _parent_coastal_context(
+        parent_entity,
+        ((u0 + u1) * 0.5, (v0 + v1) * 0.5),
     )
     # Basins much larger than the selected footprint belong to the inherited
     # relief field.  Reconstruct only impacts whose curved form can be read at
@@ -453,14 +659,24 @@ def generate_refined_region(world_model, parent_entity, bounds, *, seed_suffix="
                 parent_rows, source_u, source_v,
                 wrap_x=bool(parent_heightmap.get("wrap_x", True)),
             )
-            broad = _fbm_noise(map_seed, "regional_hills", local_u, local_v, base_cells=5 + level * 2, octaves=5, gain=0.50)
-            fine = _fbm_noise(map_seed, "regional_microrelief", local_u, local_v, base_cells=18 + level * 8, octaves=3, gain=0.44)
-            ridges = abs(_fbm_noise(map_seed, "regional_ridges", local_u, local_v, base_cells=9 + level * 3, octaves=4)) ** 2
+            broad = _fbm_noise(
+                map_seed, "regional_hills", local_u, local_v,
+                base_cells=broad_cells, octaves=bounded_octaves(broad_cells, 5), gain=0.50,
+            )
+            fine = _fbm_noise(
+                map_seed, "regional_microrelief", local_u, local_v,
+                base_cells=fine_cells, octaves=bounded_octaves(fine_cells, 3), gain=0.44,
+            )
+            ridges = abs(_fbm_noise(
+                map_seed, "regional_ridges", local_u, local_v,
+                base_cells=ridge_cells, octaves=bounded_octaves(ridge_cells, 4),
+            )) ** 2
             detail = broad * amplitude * 0.62 + fine * amplitude * 0.24 + ridges * amplitude * 0.28
-            if sea_level is not None:
-                coast_band = math.exp(-((inherited - float(sea_level)) / max(35.0, amplitude * 1.6)) ** 2)
-                coast = _fbm_noise(map_seed, "regional_coast", local_u, local_v, base_cells=30 + level * 12, octaves=3)
-                detail += coast * amplitude * coast_band * 0.72
+            if sea_level is not None and inherited < float(sea_level) and level >= 4:
+                detail *= 0.22
+            # Coastal detail is added later by a parent-conditioned landform
+            # generator.  Generic near-datum noise creates implausible cliffs,
+            # barriers and tidal flats without sediment or forcing controls.
             if global_crater_grid is not None:
                 global_u = source_u0 + (source_u1 - source_u0) * local_u
                 global_v = source_v0 + (source_v1 - source_v0) * local_v
@@ -486,6 +702,13 @@ def generate_refined_region(world_model, parent_entity, bounds, *, seed_suffix="
             row.append(round(inherited + detail, 2))
         rows.append(row)
 
+    rows, relief_limiter = _scale_appropriate_relief(
+        rows,
+        sea_level,
+        region_width_m,
+        region_height_m,
+        parent_coastal_context,
+    )
     min_elevation = min(min(row) for row in rows)
     max_elevation = max(max(row) for row in rows)
     ice_parent = ((parent_heightmap.get("surface_masks") or {}).get("ice_rows") or [])
@@ -528,7 +751,7 @@ def generate_refined_region(world_model, parent_entity, bounds, *, seed_suffix="
         "wrap_x": False,
         "wrap_y": False,
         "width_px": 4096,
-        "height_px": max(2048, int(round(4096 / aspect))),
+        "height_px": max(2048, int(round(4096 / region_aspect))),
         "radius_m": parent_heightmap.get("radius_m"),
         "circumference_m": region_width_m,
         "planet_circumference_m": planet_circumference,
@@ -537,6 +760,8 @@ def generate_refined_region(world_model, parent_entity, bounds, *, seed_suffix="
         "equator_resolution_m_per_px": region_width_m / max(1, sample_width - 1),
         "sample_spacing_x_m": region_width_m / max(1, sample_width - 1),
         "sample_spacing_y_m": region_height_m / max(1, sample_height - 1),
+        "minimum_terrain_sample_spacing_m": MIN_TERRAIN_SAMPLE_SPACING_M,
+        "minimum_terrain_process_wavelength_m": MIN_TERRAIN_PROCESS_WAVELENGTH_M,
         "minimum_refinement_extent_m": MIN_REFINED_EXTENT_M,
         "sea_level_m": sea_level,
         "min_elevation_m": round(min_elevation, 1),
@@ -545,6 +770,7 @@ def generate_refined_region(world_model, parent_entity, bounds, *, seed_suffix="
         "sample_grid": {"width": sample_width, "height": sample_height, "wrap_x": False, "wrap_y": False, "rows": rows},
         "surface_masks": {"ice_rows": ice_rows},
         "regional_crater_model": regional_crater_model,
+        "scale_appropriate_relief": relief_limiter,
         "refinement": {
             "parent_map_id": parent_entity["id"],
             "root_planet_id": _root_planet_id(world_model, parent_entity),
@@ -552,10 +778,17 @@ def generate_refined_region(world_model, parent_entity, bounds, *, seed_suffix="
             "method": "parent_conditioned_multiscale_process_generation",
             "physical_footprint_m": {"width": region_width_m, "height": region_height_m},
             "minimum_extent_m": MIN_REFINED_EXTENT_M,
+            "terrain_resolution_floor_m": MIN_TERRAIN_SAMPLE_SPACING_M,
+            "terrain_process_wavelength_floor_m": MIN_TERRAIN_PROCESS_WAVELENGTH_M,
             "inherited_crater_morphology": bool(global_crater_grid is not None or parent_crater_grid is not None),
             "new_crater_count": len((new_crater_model or {}).get("craters") or []),
         },
     }
+    heightmap = refresh_heightmap_derivatives(
+        heightmap,
+        tectonic_model=(root_planet or {}).get("tectonic_model"),
+        inherited_sea_level_m=sea_level,
+    )
     terrain = copy.deepcopy(parent_entity.get("terrain_seed_model") or {})
     hydrology = terrain.setdefault("hydrology", {})
     liquid_water_possible = bool(hydrology.get("liquid_water_possible", sea_level is not None))
@@ -578,7 +811,8 @@ def generate_refined_region(world_model, parent_entity, bounds, *, seed_suffix="
     regional_planet_context.pop("crater_model", None)
     feedback_iterations = []
     surface_evolution = {}
-    for iteration in range(1, 3):
+    feedback_pass_count = 2 if level <= 3 else (1 if level <= 5 else 0)
+    for iteration in range(1, feedback_pass_count + 1):
         surface_evolution = derive_surface_evolution_model(
             planet=regional_planet_context,
             terrain=terrain,
@@ -603,7 +837,120 @@ def generate_refined_region(world_model, parent_entity, bounds, *, seed_suffix="
         )
     if isinstance(surface_evolution, dict):
         surface_evolution["feedback_iterations"] = feedback_iterations
-        surface_evolution["coupling"] = "two_bounded_regional_climate_landscape_feedback_iterations"
+        surface_evolution["coupling"] = "scale_appropriate_bounded_regional_climate_landscape_feedback"
+        surface_evolution["requested_feedback_iteration_count"] = feedback_pass_count
+    heightmap = _limit_heightmap_relief(heightmap, parent_coastal_context)
+    heightmap = refresh_heightmap_derivatives(
+        heightmap,
+        tectonic_model=(root_planet or {}).get("tectonic_model"),
+        inherited_sea_level_m=sea_level,
+    )
+    water_cycle = derive_water_cycle_model(
+        terrain, heightmap, atmosphere=atmosphere, seed=seed, planet_id=region_id,
+        parent_climate_model=parent_entity.get("water_cycle_model"),
+    )
+    stellar_parent = world_model.get_entity((root_planet or {}).get("parent_body")) if isinstance(root_planet, dict) else None
+    all_entities = getattr(getattr(world_model, "loader", None), "entities", {}) or {}
+    satellites = [
+        entity for entity in all_entities.values()
+        if isinstance(entity, dict) and entity.get("location_class") == "moon" and entity.get("parent_body") == (root_planet or {}).get("id")
+    ]
+    heightmap, pre_coastal_topology = stabilize_regional_coastal_topology(
+        heightmap,
+        detail_level=level,
+    )
+    if pre_coastal_topology.get("flipped_cell_count", 0):
+        heightmap = refresh_heightmap_derivatives(
+            heightmap,
+            tectonic_model=(root_planet or {}).get("tectonic_model"),
+            inherited_sea_level_m=sea_level,
+        )
+        water_cycle = derive_water_cycle_model(
+            terrain, heightmap, atmosphere=atmosphere, seed=seed, planet_id=region_id,
+            parent_climate_model=parent_entity.get("water_cycle_model"),
+        )
+    regional_context = {**(root_planet or {}), "id": region_id, "heightmap_model": heightmap, "satellites": satellites}
+    coastal_model = derive_coastal_geomorphology_model(
+        planet=regional_context,
+        heightmap=heightmap,
+        water_cycle=water_cycle,
+        tectonic_model=(root_planet or {}).get("tectonic_model"),
+        surface_evolution=surface_evolution,
+        star=stellar_parent,
+    )
+    inherit_parent_coastal_context(
+        coastal_model,
+        parent_entity.get("coastal_geomorphology_model") or {},
+    )
+    heightmap, coastal_refinement = materialize_regional_coastal_landforms(
+        heightmap,
+        coastal_model,
+        detail_level=level,
+    )
+    heightmap, topology_stabilization = stabilize_regional_coastal_topology(
+        heightmap,
+        detail_level=level,
+    )
+    heightmap = _limit_heightmap_relief(heightmap, parent_coastal_context)
+    coastal_refinement["pre_materialization_topology_stabilization"] = pre_coastal_topology
+    coastal_refinement["topology_stabilization"] = topology_stabilization
+    coastal_refinement["post_materialization_relief_limiter"] = dict(
+        heightmap.get("scale_appropriate_relief") or {}
+    )
+    if (
+        pre_coastal_topology.get("flipped_cell_count", 0)
+        or topology_stabilization.get("flipped_cell_count", 0)
+    ):
+        coastal_refinement["drainage_reconciliation_required"] = True
+    if coastal_refinement.get("drainage_reconciliation_required"):
+        heightmap = refresh_heightmap_derivatives(
+            heightmap,
+            tectonic_model=(root_planet or {}).get("tectonic_model"),
+            inherited_sea_level_m=sea_level,
+        )
+        # Exactly one local solve reconciles channels, lagoons and marine
+        # connectivity after coastal terrain modification.
+        water_cycle = derive_water_cycle_model(
+            terrain, heightmap, atmosphere=atmosphere, seed=seed, planet_id=region_id,
+            parent_climate_model=parent_entity.get("water_cycle_model"),
+        )
+        coastal_refinement["drainage_reconciliation_count"] = 1
+        coastal_model = derive_coastal_geomorphology_model(
+            planet={**regional_context, "heightmap_model": heightmap},
+            heightmap=heightmap,
+            water_cycle=water_cycle,
+            tectonic_model=(root_planet or {}).get("tectonic_model"),
+            surface_evolution=surface_evolution,
+            star=stellar_parent,
+        )
+        inherit_parent_coastal_context(
+            coastal_model,
+            parent_entity.get("coastal_geomorphology_model") or {},
+        )
+    parent_coast = parent_entity.get("coastal_geomorphology_model") or {}
+    inherited_segments = []
+    for segment in parent_coast.get("segments") or []:
+        geometry = segment.get("geometry") or {}
+        bbox = geometry.get("bbox_uv") or []
+        intersects = False
+        if len(bbox) >= 4:
+            intersects = not (
+                float(bbox[2]) < u0
+                or float(bbox[0]) > u1
+                or float(bbox[3]) < v0
+                or float(bbox[1]) > v1
+            )
+        if not intersects:
+            intersects = any(
+                u0 <= float(point[0]) <= u1 and v0 <= float(point[1]) <= v1
+                for point in geometry.get("points") or []
+                if isinstance(point, (list, tuple)) and len(point) >= 2
+            )
+        if intersects:
+            inherited_segments.append(segment.get("id"))
+    coastal_model["parent_segment_ids"] = [segment_id for segment_id in inherited_segments if segment_id]
+    coastal_model["regional_landform_materialization"] = coastal_refinement
+    enrich_coastal_hydrology(water_cycle, coastal_model)
     heightmap["regional_surface_evolution"] = {
         "status": surface_evolution.get("status"),
         "model_version": surface_evolution.get("model_version"),
@@ -624,6 +971,14 @@ def generate_refined_region(world_model, parent_entity, bounds, *, seed_suffix="
         map_seed=map_seed,
         detail_level=level,
     )
+    persisted_surface_evolution = dict(surface_evolution)
+    embedded_heightmap_removed = persisted_surface_evolution.pop("heightmap", None) is not None
+    if embedded_heightmap_removed:
+        persisted_surface_evolution["heightmap_reference"] = "heightmap_model"
+    persisted_surface_evolution["persistence_compaction"] = {
+        "embedded_heightmap_removed": embedded_heightmap_removed,
+        "reason": "avoid_duplicate_regional_heightfield_storage",
+    }
     truth_lineage = {
         "root_planet_id": _root_planet_id(world_model, parent_entity),
         "parent_map_id": parent_entity["id"],
@@ -647,6 +1002,7 @@ def generate_refined_region(world_model, parent_entity, bounds, *, seed_suffix="
     heightmap["generated_truth_lineage"] = copy.deepcopy(truth_lineage)
     water_cycle["generated_truth_lineage"] = copy.deepcopy(truth_lineage)
     regional_material_model["generated_truth_lineage"] = copy.deepcopy(truth_lineage)
+    detail_contract = surface_detail_contract(heightmap)
 
     spec = detail_level_spec(level)
     existing_entities = getattr(getattr(world_model, "loader", None), "entities", {}) or {}
@@ -674,6 +1030,7 @@ def generate_refined_region(world_model, parent_entity, bounds, *, seed_suffix="
         "refinement_parent_map_id": parent_entity["id"],
         "refinement_root_planet_id": _root_planet_id(world_model, parent_entity),
         "refinement_revision": refinement_revision,
+        "refinement_seed_suffix": str(seed_suffix),
         "map_detail_level": level,
         "map_detail_profile": spec,
         "map_status": "regional_refinement_generated",
@@ -683,13 +1040,16 @@ def generate_refined_region(world_model, parent_entity, bounds, *, seed_suffix="
         "map_canvas_height_px": heightmap["height_px"],
         "heightmap_model": heightmap,
         "water_cycle_model": water_cycle,
-        "surface_evolution_model": surface_evolution,
+        "coastal_geomorphology_model": coastal_model,
+        "coastal_summary": coastal_summary(coastal_model),
+        "surface_evolution_model": persisted_surface_evolution,
         "terrain_seed_model": terrain,
         "natural_material_model": copy.deepcopy(root_material_model),
         "regional_material_model": regional_material_model,
         "regional_material_occurrences": list(
             regional_material_model.get("occurrences") or []
         ),
+        "surface_detail_model": detail_contract,
         "generated_truth_lineage": copy.deepcopy(truth_lineage),
         "causal_provenance": copy.deepcopy(
             (root_planet or {}).get("causal_provenance")
