@@ -70,6 +70,30 @@ class PixelArtEditorLayerTests(unittest.TestCase):
         self.assertTrue(controller.redo())
         self.assertEqual((10, 200, 120), controller.composite_color_at(4, 4))
 
+    def test_shape_tools_draw_filled_and_outline_primitives(self):
+        controller, host, _ = self.make_editor()
+        host.pixel_art_editor["color"] = (10, 200, 120)
+
+        for tool in ("rectangle", "triangle", "trapezoid", "line", "circle"):
+            self.assertTrue(controller.set_tool(tool))
+            self.assertTrue(controller.handle_click((10, 10)))
+            self.assertTrue(controller.handle_motion((60, 60)))
+            self.assertTrue(controller.finish_stroke())
+            self.assertTrue(any(pixel == (10, 200, 120) for row in host.pixel_art_editor["pixels"] for pixel in row))
+            controller.clear_canvas()
+
+        self.assertTrue(controller.set_tool("rectangle"))
+        self.assertTrue(controller.handle_click((10, 10)))
+        self.assertTrue(controller.handle_motion((60, 60)))
+        self.assertTrue(controller.finish_stroke())
+        self.assertIsNone(host.pixel_art_editor["pixels"][3][3])  # Outline leaves the interior transparent.
+
+        host.pixel_art_editor["shape_filled"] = True
+        self.assertTrue(controller.handle_click((10, 10)))
+        self.assertTrue(controller.handle_motion((60, 60)))
+        self.assertTrue(controller.finish_stroke())
+        self.assertEqual((10, 200, 120), host.pixel_art_editor["pixels"][3][3])
+
     def test_save_and_reopen_restores_editable_layers(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             controller, host, illustration = self.make_editor(temp_dir)

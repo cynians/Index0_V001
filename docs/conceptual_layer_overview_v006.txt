@@ -1,6 +1,6 @@
 Index0 Conceptual Layer Overview
 Version: v006
-Date: 2026-07-11
+Date: 2026-07-25
 Purpose: Compact conceptual handoff document for discussing and evolving the program model outside the code editor.
 
 INSTRUCTIONS FOR THE NON-EDITING GPT
@@ -59,6 +59,9 @@ The old `entries/*.yaml`, `schemas/*.yaml`, YAML repository, and YAML export too
 `PersistentOntologyStore` performs point edits, batched entity updates, renames, and removals without rebuilding the graph. `OntologyRepository` remains the RDF/XML projection/interchange layer, preserves arbitrary object relation fields, and projects `offspring` from `parents`.
 `systems` and `spatial_features` are still projected into `locations` for active repository use.
 There is still compatibility import logic for structured non-ontology data, but it is not the normal source of truth.
+The running application is organized around a repository browser, zoomable card canvas, shared timeline, and modal/full-screen specialist workspaces. `InputRouter`, `UIManager`, and the knowledge-browser controllers keep modal input, card interaction, simulation navigation, and cached layout behavior coordinated.
+Current specialist workspaces include Map/Building, Space, World Generation, Pixel Studio, person/quote editing, phylogeny, production/site, and the card-launched simulation routes exposed by applicable entities.
+The Escape-menu settings expose a two-step Save Ontology checkpoint control. It exports the authoritative SQLite store to the LFS-tracked RDF/XML checkpoint; it does not clear, replace, or re-import the active store.
 
 Should-Be State:
 New durable facts should be modeled in the ontology first, with projections used only to serve UI and simulation ergonomics.
@@ -130,12 +133,16 @@ The Production tab handles producer and production-line workflows.
 The Site tab appears for sites and site-like locations.
 The Simulation tab uses subtabs for Orbital, Map Sim, World Gen, and Data fields.
 The Media tab holds image and media fields.
+Illustration entries can open the Pixel Studio editor from the Media tab. Pixel Studio supports single-image and orthographic front/side/top documents, editable drawing layers, visibility and ordering controls, undo/redo, zoom/pan, grid and horizontal mirroring, color selection, reference-image sampling, and locked low-opacity reference-trace layers that are excluded from exported PNGs.
+Pixel Studio saves editable layered documents alongside rendered PNG assets and records the active editor mode, pixel dimensions, layer counts, view paths, and depicted dimensions on the illustration entry.
+Its drawing tools currently include brush, eraser, eyedropper, flood fill, and drag-to-draw rectangle, triangle, trapezoid, line, and circle primitives. Primitives preview during the drag, commit as one undoable action, and can be drawn as either filled shapes or contours.
 The obsolete State tab has been removed; surviving state-like fields belong in simulation, temporal, overview, location, or relation views.
 Simulation screens share a top tab strip, time panel, scope/breadcrumb labels, hover tooltips, mode-specific action buttons, and an optional selection inspector.
 Map screens expose layer controls, repository return, map-image upload, selection creation/finish/cancel actions, parent-scope navigation, hover details, and a history timeline when the active simulation supports it.
 Vehicle design mode uses a resizable lower simulation panel with panel tabs, component-catalog cards, selection/layout summaries, requirement lines, and catalog drag initiation.
 General click handling is centralized through `InputRouter` and `UIManager`: shared UI is rebuilt before hit-testing, modal overlays consume input before simulations, the knowledge layer blocks simulation input, tab-strip clicks activate tabs, and remaining pointer events are forwarded to the active simulation.
 Some simulations also consume input before camera handling or global shortcuts, such as world-generation prompts and fullscreen editors.
+Cards also support schema/type conversion, color editing, relation and wiki-link pickers, location topology editing, timeline-period authoring, task checklists, and person quote/conversation capture where the entity class exposes them.
 
 Should-Be State:
 Cards should make entities editable where the user naturally notices the missing fact.
@@ -319,8 +326,8 @@ Present-day relief includes differentiated trench, forearc, volcanic arc, backar
 Drainage and landscape evolution now include branching flow, lake outlets, deltas and distributaries, sediment budgets, and two climate-landscape feedback passes. A quantitative realism audit records topology, boundary diversity, polarity, ocean-age span, relief, coastline, shelves, drainage, deltas, and coupling checks on every completed solid-world run.
 Lake generation distinguishes a depression's maximum topographic storage from its actual water-covered area. Actual lake level is constrained by catchment runoff, direct precipitation, potential open-water evaporation, seepage, and spillway incision; water-limited basins become endorheic rather than being filled automatically to their sill. Global drainage accumulation and lake area use spherical cell-area weighting so polar map cells do not count like equatorial cells.
 Runoff generation separates snowfall storage and seasonal melt, quickflow, infiltration, groundwater recharge, and a baseflow return. River discharge is derived from area-weighted runoff accumulation, while lake records expose physical area, capacity, water-balance state, overflow state, and outlet status.
-Coastlines currently emerge from the intersection of sea level and the heightfield. The heightmap includes a coarse shelf/sediment-wedge estimate, drainage produces simple delta records, and regional refinement adds generic detail near sea level, but there is no durable shoreline graph, wave/tidal forcing model, longshore sediment routing, estuary recognition, or multiaxial coastal classification.
-Headless validation currently writes an isolated repository, stage screenshots, map-layer images, summaries, and result files into a per-run directory. Material generation already uses single-file `.i0r` raster bundles, but canonical ownership, replacement, retention, and orphan cleanup are not yet enforced. A July 2026 cleanup removed obsolete non-Sol worldgen runs and material outputs while retaining the Solar System benchmark and Faux-Sol bundles.
+Coastal generation now persists deterministic shoreline components and segments with reduced-physics wave-fetch and tidal-range proxies, sediment budget, tectonic/relative-sea-level/substrate context, causal landform gates, and multiaxial classifications. Regional refinement crops and honors the parent coastal system rather than inventing incompatible local coast types. Full spectral waves, harmonic tides, event-resolved hazards, and long-term shoreline migration remain deferred.
+Headless validation writes isolated, cleaned temporary repositories and can retain a single validated compressed `.i0wg` bundle. Canonical raster and bundle replacement uses deterministic owner paths and atomic replacement, while cleanup policy rejects targets outside generated roots. Material rasters use compact `.i0r` bundles and map layers can consume the persisted height, hydrology, material, and coastal outputs.
 
 Should-Be State:
 Generated world models stored on a planet should be durable summaries, seeds, scaffolds, and relation facts rather than raw transient editor state.
@@ -373,7 +380,7 @@ Worldgen now distinguishes elemental crust abundance from natural material forma
 Natural materials are inferred from crust composition, planet tags, surface regime, temperature, water/volatile state, and worldgen context.
 Atmospheric materials are inferred from atmosphere composition and are mirrored into material relation fields.
 Gas materials such as molecular hydrogen, helium, methane, ammonia, water vapor/ice, carbon dioxide, carbon monoxide, nitrogen, oxygen, argon, neon, sulfur dioxide, and hydrogen sulfide can participate in atmosphere and gas giant visuals.
-First-pass material heatmaps are generated as deterministic PNG assets when a solid world has both inferred natural materials and a heightmap. The planet or moon location stores a `material_heatmap_model` manifest with the composite PNG path, per-material PNG paths, material IDs, generated-truth status, inferred confidence state, dimensions, and provenance fields. Heatmap layers should not become standalone entities unless they gain independent authored, surveyed, legal, historical, or narrative identity.
+First-pass material heatmaps are generated as deterministic compact raster bundles when a solid world has both inferred natural materials and a heightmap. The planet or moon location stores a `material_heatmap_model` manifest with material IDs, generated-truth status, inferred confidence state, dimensions, bundle/render paths, and provenance fields. Heatmap layers should not become standalone entities unless they gain independent authored, surveyed, legal, historical, or narrative identity.
 
 Should-Be State:
 The crust should not be treated as only a bag of elements.
@@ -396,9 +403,8 @@ Soil profiles should derive primarily from worldgen natural materials, then be m
 
 20. BIOSPHERES AND BIOSIM
 Is-State:
-BioSim does not yet have a dedicated mature implementation section in the current document.
-The current conceptual foundations are spread across locations, map/worldgen, ecology summaries, materials, phylogeny/species, person simulation, logistics, and entity-launched simulations.
-Worldgen already persists environment, hydrology, and ecology summaries on generated planets, and species/cladistics can launch to Phylogeny Simulation.
+BioSim is not yet a mature standalone simulation, but the current map and location workflows support biosphere patches as location polygons, inherited regional/planetary context, localized species collections and roster buckets, worldgen suitability information, and parent-footprint sampling.
+The current foundations remain distributed across locations, map/worldgen, ecology summaries, materials, phylogeny/species, person simulation, logistics, and entity-launched simulations. Worldgen persists environment, hydrology, ecology, material, and surface context on generated planets, and species/cladistics can launch to Phylogeny Simulation.
 
 Should-Be State:
 BioSim should be modeled as a bioregion-first simulation layer with scale-dependent biological resolution. The main simulation object is a bioregion or biosphere context, while species, populations, colonies, nests, individuals, trails, and visitor events are resolved differently depending on the current simulation extent and grain.
@@ -479,6 +485,7 @@ WorldModel has hard-coded major periods for timeline display.
 Timeline snapshots are stored separately from general wiki text.
 Period filtering exists in repository browser/timeline contexts.
 When a year is selected in the timeline, the UI also includes context for things that happened, began, or ended within 100 years of the selected year.
+The shared timeline supports filtering, relationship-oriented and offspring-oriented grouping, horizontal and vertical panning, zoom-sensitive labels/commentary, map-history timelines, and direct opening of linked entity cards. Card timelines expose endpoint commentary, temporal-period bands, related in-range events/periods, snapshot chips, and two-click temporal-period authoring in edit mode.
 
 Should-Be State:
 Production lines, logistics demands, routes, journeys, deployment histories, events, and worldgen histories should become time-bounded where meaningful.
@@ -506,6 +513,7 @@ Link colors can use referenced entity colors.
 Unnumbered lists start with "-".
 Tasks start with "()".
 Task schema currently includes `checklist` and `entry_status`.
+Wiki-link editing supports resolving an existing entity, selecting a match, or retaining an unresolved target. Person cards also support structured quote and conversation-message capture in their dedicated interface.
 
 Should-Be State:
 Tasks created through wiki "() Task name" should become lightweight task references.
@@ -519,6 +527,7 @@ Directive compliance should depend on the receiving actor's role, knowledge fiel
 Is-State:
 Cladistic/species entries can launch to Phylogeny Simulation.
 Phylogeny rows and nodes can use `card_color`, `card_header_color`, and `wiki_field_colors` from referenced entities.
+Cladistic cards can display local parents, children, and member/descendant layouts. When a cladistic entry has no custom color, the current card workflow can derive a palette from descendant custom colors.
 
 Should-Be State:
 If a cladistic entry has no custom color, it should be able to average colors from all last-tier descendants that have custom colors.
@@ -530,7 +539,7 @@ The cladistics view should help users understand behaviour inheritance and repla
 26. CURRENT ANCHORS AND KNOWN GAPS
 Is-State:
 Useful current anchors include `system_sol`, `system_ross_system`, restored stellar-neighbour entries, many orbital body entries, worldgen planet examples, `prod_steel_plate_rolling`, `prod_pump_module_assembly`, `mkt_market_of_the_gold_sector`, `mkt_planetary_period_markets`, `log_new_001`, vehicle/component examples, collection schema entries, and the ontology-backed material catalog.
-Known gaps include an unpopulated tag-entry dataset, skeletal logistics and markets, non-normalized production requirement vocabulary, conceptual-only spacecraft/maneuver planning, runtime orbital motion that is still effectively 2D, thin collection UX/content, early natural-material inference, early coarse material heatmap generation without refinement or survey tooling, no Material Affordance Resolver, basic gas-giant band visuals, early formation-theory generation, incomplete volatile-history modeling, absent terraforming logistics workflows, missing vehicle journey planning, no vehicle legacy/resurgence phase model, no mature BioSim/Biosphere implementation, no sandbox person-control mode beyond the thin Person Simulation dossier, no person-layer mode for most simulations, no successor-allocation workflow for factions/institutions/countries, no Semantic Greyscale Mask Editor, no material-tinted component illustration workflow, no formal hardcoded `simulation_matrix.py`, no card-launched simulation-mode matrix, no behaviour-module inheritance/overlay system for cladistics/species, no plant-soil feedback model, and an unresolved internal distinction between folded locations versus distinct systems/spatial-feature ontology classes.
+Known gaps include an unpopulated tag-entry dataset, skeletal logistics and markets, non-normalized production requirement vocabulary, conceptual-only spacecraft/maneuver planning, runtime orbital motion that is still effectively 2D, thin collection UX/content, early natural-material inference and material refinement without survey tooling, no Material Affordance Resolver, basic gas-giant band visuals, early formation-theory generation, incomplete volatile-history modeling, absent terraforming logistics workflows, missing vehicle journey planning, no vehicle legacy/resurgence phase model, no mature BioSim/Biosphere implementation, no sandbox person-control mode beyond the thin Person Simulation dossier, no person-layer mode for most simulations, no successor-allocation workflow for factions/institutions/countries, no Semantic Greyscale Mask Editor, no material-tinted component illustration workflow, no formal hardcoded `simulation_matrix.py`, no card-launched simulation-mode matrix, no behaviour-module inheritance/overlay system for cladistics/species, no plant-soil feedback model, and an unresolved internal distinction between folded locations versus distinct systems/spatial-feature ontology classes.
 Current launch behavior exists for major entity classes, but situated launch modes such as soldier-from-formation, convoy-from-logistics, tank-from-formation, or warden-from-biosphere remain conceptual.
 
 Should-Be State:

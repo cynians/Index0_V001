@@ -1045,6 +1045,12 @@ class NavigationController:
             )
             return True
 
+        if action_id == "system_save_ontology":
+            knowledge_ui = getattr(self.app.ui_manager, "knowledge_ui", None)
+            if knowledge_ui is None:
+                return False
+            return bool(knowledge_ui._handle_ontology_checkpoint_request())
+
         if action_id in {
             "phylogeny_clade_members_dec",
             "phylogeny_clade_members_inc",

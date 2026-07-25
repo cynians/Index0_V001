@@ -212,6 +212,21 @@ class EntityIdUpdateTests(unittest.TestCase):
             )
             self.assertGreaterEqual(button.rect.x, ui.layout["right_rect"].x + 10)
 
+    def test_ontology_checkpoint_requires_confirmation_then_exports_active_store(self):
+        ui = KnowledgeBrowserHarness()
+        calls = []
+        ui.world_model.loader.export_ontology_checkpoint = lambda: calls.append("export") or True
+        ui._build_header_button = lambda: None
+
+        self.assertTrue(ui._handle_ontology_checkpoint_request())
+        self.assertTrue(ui.ontology_checkpoint_confirm)
+        self.assertEqual([], calls)
+
+        self.assertTrue(ui._handle_ontology_checkpoint_request())
+        self.assertFalse(ui.ontology_checkpoint_confirm)
+        self.assertEqual(["export"], calls)
+        self.assertEqual("Ontology checkpoint saved", ui.ontology_checkpoint_status)
+
     def test_performance_debug_setting_is_persisted_and_applied(self):
         ui = KnowledgeBrowserUI.__new__(KnowledgeBrowserUI)
         ui.performance_debug_enabled = False

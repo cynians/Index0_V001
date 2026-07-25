@@ -177,6 +177,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.random_entry_button = None
         self.random_task_button = None
         self.new_entry_button = None
+        self.ontology_checkpoint_confirm = False
+        self.ontology_checkpoint_status = ""
         self.clear_canvas_button = None
         self.keep_card_open_button = None
         self.contemporary_spawn_decrease_button = None
@@ -319,6 +321,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.random_entry_button = None
         self.random_task_button = None
         self.new_entry_button = None
+        self.ontology_checkpoint_confirm = False
+        self.ontology_checkpoint_status = ""
         self.clear_canvas_button = None
         self.keep_card_open_button = None
         self.contemporary_spawn_decrease_button = None
@@ -1074,6 +1078,30 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.relation_tree_touch_degree = degree
         self._build_header_button()
         return True
+
+    def _export_ontology_checkpoint(self):
+        """Write the active SQLite ontology store to its RDF/XML checkpoint."""
+        loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
+        export = getattr(loader, "export_ontology_checkpoint", None)
+        if not callable(export):
+            self.ontology_checkpoint_status = "Ontology checkpoint is unavailable"
+            return False
+        try:
+            saved = bool(export())
+        except (OSError, ValueError) as exc:
+            self.ontology_checkpoint_status = f"Ontology save failed: {exc}"
+            return False
+        self.ontology_checkpoint_status = "Ontology checkpoint saved" if saved else "Ontology save failed"
+        return saved
+
+    def _handle_ontology_checkpoint_request(self):
+        if not getattr(self, "ontology_checkpoint_confirm", False):
+            self.ontology_checkpoint_confirm = True
+            self.ontology_checkpoint_status = "Click Confirm Save to write the active ontology to index0.owl"
+            return True
+        self.ontology_checkpoint_confirm = False
+        saved = self._export_ontology_checkpoint()
+        return saved
 
     def _font_line_height(self, font=None):
         font = font or self.font_for_layout

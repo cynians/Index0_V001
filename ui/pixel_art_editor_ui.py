@@ -90,6 +90,9 @@ class PixelArtEditorUI:
             "canvas_width": 0,
             "canvas_height": 0,
             "tool": "brush",
+            "shape_filled": False,
+            "shape_start": None,
+            "shape_end": None,
             "brush_size": 1,
             "pressure_size": True,
             "pressure": 1.0,
@@ -511,10 +514,16 @@ class PixelArtEditorUI:
 
     def set_tool(self, tool):
         editor = self.state
-        if not isinstance(editor, dict) or tool not in {"brush", "eraser", "eyedropper", "fill"}:
+        tool_labels = {
+            "brush": "Brush selected", "eraser": "Eraser selected", "eyedropper": "Color picker selected", "fill": "Fill selected",
+            "rectangle": "Rectangle: drag on the canvas", "triangle": "Triangle: drag on the canvas",
+            "trapezoid": "Trapezoid: drag on the canvas", "line": "Line: drag on the canvas",
+            "circle": "Circle: drag on the canvas",
+        }
+        if not isinstance(editor, dict) or tool not in tool_labels:
             return False
         editor["tool"] = tool
-        editor["status"] = {"brush": "Brush selected", "eraser": "Eraser selected", "eyedropper": "Color picker selected", "fill": "Fill selected"}[tool]
+        editor["status"] = tool_labels[tool]
         return True
 
     def set_brush_size(self, brush_size):
@@ -695,21 +704,132 @@ class PixelArtEditorUI:
         editor["status"] = f"Reference {placement} as a 35% trace layer (excluded from export)"
         return True
 
+    @staticmethod
+    def _shape_tool_names():
+        return {"rectangle", "triangle", "trapezoid", "line", "circle"}
+
+    def _canvas_pixel_at(self, mouse_pos):
+        editor = self.state
+        canvas_rect = editor.get("canvas_rect") if isinstance(editor, dict) else None
+        if canvas_rect is None or not canvas_rect.collidepoint(mouse_pos):
+            return None
+        width = int(editor.get("canvas_width") or 0)
+        height = int(editor.get("canvas_height") or 0)
+        if width <= 0 or height <= 0:
+            return None
+        pixel_x = max(0, min(width - 1, int((mouse_pos[0] - canvas_rect.x) * width / max(1, canvas_rect.width))))
+        pixel_y = max(0, min(height - 1, int((mouse_pos[1] - canvas_rect.y) * height / max(1, canvas_rect.height))))
+        return pixel_x, pixel_y
+
+    @staticmethod
+    def _line_cells(start, end):
+        x0, y0 = start
+        x1, y1 = end
+        cells = set()
+        dx, dy = abs(x1 - x0), -abs(y1 - y0)
+        step_x, step_y = (1 if x0 < x1 else -1), (1 if y0 < y1 else -1)
+        error = dx + dy
+        while True:
+            cells.add((x0, y0))
+            if (x0, y0) == (x1, y1):
+                return cells
+            twice_error = 2 * error
+            if twice_error >= dy:
+                error += dy
+                x0 += step_x
+            if twice_error <= dx:
+                error += dx
+                y0 += step_y
+
+    @staticmethod
+    def _polygon_contains(point, vertices):
+        x, y = point[0] + 0.5, point[1] + 0.5
+        inside = False
+        previous_x, previous_y = vertices[-1]
+        for current_x, current_y in vertices:
+            if (current_y > y) != (previous_y > y):
+                crossing_x = (previous_x - current_x) * (y - current_y) / (previous_y - current_y) + current_x
+                if x < crossing_x:
+                    inside = not inside
+            previous_x, previous_y = current_x, current_y
+        return inside
+
+    def _shape_cells(self, tool, start, end, filled):
+        x1, x2 = sorted((int(start[0]), int(end[0])))
+        y1, y2 = sorted((int(start[1]), int(end[1])))
+        if tool == "line":
+            return self._line_cells(start, end)
+        if tool == "rectangle":
+            if filled:
+                return {(x, y) for y in range(y1, y2 + 1) for x in range(x1, x2 + 1)}
+            return (
+                {(x, y1) for x in range(x1, x2 + 1)}
+                | {(x, y2) for x in range(x1, x2 + 1)}
+                | {(x1, y) for y in range(y1, y2 + 1)}
+                | {(x2, y) for y in range(y1, y2 + 1)}
+            )
+        if tool == "circle":
+            center_x, center_y = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+            radius_x, radius_y = max(0.5, (x2 - x1 + 1) / 2.0), max(0.5, (y2 - y1 + 1) / 2.0)
+            inside = set()
+            for y in range(y1, y2 + 1):
+                for x in range(x1, x2 + 1):
+                    if ((x + 0.5 - center_x) / radius_x) ** 2 + ((y + 0.5 - center_y) / radius_y) ** 2 <= 1.0:
+                        inside.add((x, y))
+            if filled:
+                return inside
+            return {
+                (x, y) for x, y in inside
+                if any((x + dx, y + dy) not in inside for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)))
+            }
+
+        midpoint = (x1 + x2) / 2.0
+        if tool == "triangle":
+            vertices = [(midpoint, y1), (x2, y2), (x1, y2)]
+        else:  # trapezoid
+            inset = (x2 - x1) * 0.25
+            vertices = [(x1 + inset, y1), (x2 - inset, y1), (x2, y2), (x1, y2)]
+        if not filled:
+            cells = set()
+            for index, vertex in enumerate(vertices):
+                following = vertices[(index + 1) % len(vertices)]
+                cells.update(self._line_cells((round(vertex[0]), round(vertex[1])), (round(following[0]), round(following[1]))))
+            return cells
+        return {
+            (x, y) for y in range(y1, y2 + 1) for x in range(x1, x2 + 1)
+            if self._polygon_contains((x, y), vertices)
+        }
+
+    def _apply_shape(self, start, end):
+        editor = self.state
+        layer = self._active_layer()
+        if not isinstance(editor, dict) or not isinstance(layer, dict) or layer.get("locked"):
+            return False
+        pixels = layer.get("pixels") or []
+        width, height = int(editor.get("canvas_width") or 0), int(editor.get("canvas_height") or 0)
+        cells = self._shape_cells(editor.get("tool"), start, end, bool(editor.get("shape_filled")))
+        color = tuple(editor.get("color", (236, 240, 246)))
+        changed = False
+        for x, y in cells:
+            if 0 <= x < width and 0 <= y < height and y < len(pixels) and x < len(pixels[y]):
+                pixels[y][x] = color
+                if editor.get("mirror_x"):
+                    pixels[y][width - 1 - x] = color
+                changed = True
+        if changed:
+            self._mark_dirty()
+        return changed
+
     def paint_at(self, mouse_pos):
         editor = self.state
         if not isinstance(editor, dict) or editor.get("stage") != "canvas":
             return False
-        canvas_rect = editor.get("canvas_rect")
-        if canvas_rect is None or not canvas_rect.collidepoint(mouse_pos):
+        pixel = self._canvas_pixel_at(mouse_pos)
+        if pixel is None:
             return False
+        pixel_x, pixel_y = pixel
         width = int(editor.get("canvas_width") or 0)
         height = int(editor.get("canvas_height") or 0)
-        if width <= 0 or height <= 0:
-            return False
-        pixel_x = int((mouse_pos[0] - canvas_rect.x) * width / max(1, canvas_rect.width))
-        pixel_y = int((mouse_pos[1] - canvas_rect.y) * height / max(1, canvas_rect.height))
-        pixel_x = max(0, min(width - 1, pixel_x))
-        pixel_y = max(0, min(height - 1, pixel_y))
         layer = self._active_layer()
         pixels = layer.get("pixels") if isinstance(layer, dict) else None
         if not isinstance(pixels, list) or pixel_y >= len(pixels):
@@ -837,6 +957,11 @@ class PixelArtEditorUI:
         editor = self.state
         if not isinstance(editor, dict):
             return False
+        shape_start, shape_end = editor.get("shape_start"), editor.get("shape_end")
+        if shape_start is not None and shape_end is not None:
+            editor["stroke_changed"] = self._apply_shape(shape_start, shape_end) or editor.get("stroke_changed", False)
+        editor["shape_start"] = None
+        editor["shape_end"] = None
         before = editor.get("stroke_before")
         if before is not None and editor.get("stroke_changed"):
             self._push_undo(before)
@@ -1104,6 +1229,7 @@ class PixelArtEditorUI:
                     "reference_to_trace": self.paste_reference_as_trace_layer,
                     "toggle_grid": lambda: editor.__setitem__("show_grid", not editor.get("show_grid", True)) or True,
                     "toggle_mirror": lambda: editor.__setitem__("mirror_x", not editor.get("mirror_x", False)) or True,
+                    "toggle_shape_fill": lambda: editor.__setitem__("shape_filled", not editor.get("shape_filled", False)) or True,
                 }
                 return actions.get(action, lambda: False)()
             for index, rect in (editor.get("layer_hitboxes") or {}).items():
@@ -1130,6 +1256,11 @@ class PixelArtEditorUI:
             if editor.get("canvas_rect") is not None and editor["canvas_rect"].collidepoint(mouse_pos):
                 editor["stroke_before"] = self._snapshot()
                 editor["stroke_changed"] = False
+                if editor.get("tool") in self._shape_tool_names():
+                    editor["shape_start"] = self._canvas_pixel_at(mouse_pos)
+                    editor["shape_end"] = editor["shape_start"]
+                    self.painting = editor["shape_start"] is not None
+                    return True
             if self.paint_at(mouse_pos):
                 self.painting = True
         return True
@@ -1151,6 +1282,11 @@ class PixelArtEditorUI:
         if active_slider is not None:
             return self.set_slider_from_mouse(active_slider, mouse_pos[0])
         if self.painting:
+            if editor.get("shape_start") is not None:
+                pixel = self._canvas_pixel_at(mouse_pos)
+                if pixel is not None:
+                    editor["shape_end"] = pixel
+                return True
             return self.paint_at(mouse_pos)
         return True
 
@@ -1421,6 +1557,16 @@ class PixelArtEditorUI:
                         color = composite.get_at((x, y))
                         if color.a:
                             pygame.draw.rect(screen, color, (canvas_rect.x + round(x * scale), canvas_rect.y + round(y * scale), max(1, round(scale)), max(1, round(scale))))
+        shape_start, shape_end = editor.get("shape_start"), editor.get("shape_end")
+        if shape_start is not None and shape_end is not None:
+            preview_color = tuple(editor.get("color", (236, 240, 246)))
+            for x, y in self._shape_cells(editor.get("tool"), shape_start, shape_end, bool(editor.get("shape_filled"))):
+                if 0 <= x < width and 0 <= y < height:
+                    pygame.draw.rect(
+                        screen,
+                        preview_color,
+                        (canvas_rect.x + round(x * scale), canvas_rect.y + round(y * scale), max(1, round(scale)), max(1, round(scale))),
+                    )
         if editor.get("show_grid", True) and scale >= 7:
             grid = (53, 63, 77)
             for x in range(width + 1):
@@ -1499,16 +1645,24 @@ class PixelArtEditorUI:
         editor["close_rect"] = cancel
         editor["primary_rect"] = save
 
-        tool_items = (("brush", "B", "Brush"), ("eraser", "E", "Erase"), ("eyedropper", "I", "Pick"), ("fill", "F", "Fill"))
-        y = tools.y + 18
+        tool_items = (
+            ("brush", "B", "Brush"), ("eraser", "E", "Erase"), ("eyedropper", "I", "Pick"), ("fill", "F", "Fill"),
+            ("rectangle", "R", "Rect"), ("triangle", "T", "Tri"), ("trapezoid", "Z", "Trap"),
+            ("line", "L", "Line"), ("circle", "O", "Circle"),
+        )
+        y = tools.y + 10
         for tool_name, label, hint in tool_items:
             rect = pygame.Rect(tools.x + 10, y, 52, 44)
             self._button(screen, font, rect, label, active=editor.get("tool") == tool_name)
             editor["tool_hitboxes"][tool_name] = rect
             hint_surface = pygame.font.Font(None, 14).render(hint, True, (132, 145, 165))
             screen.blit(hint_surface, hint_surface.get_rect(center=(rect.centerx, rect.bottom + 9)))
-            y += 68
-        y += 4
+            y += 52
+        y += 2
+        shape_mode = pygame.Rect(tools.x + 8, y, 56, 26)
+        self._button(screen, font, shape_mode, "Fill" if editor.get("shape_filled") else "Line", active=editor.get("shape_filled"))
+        editor["action_hitboxes"]["toggle_shape_fill"] = shape_mode
+        y += 34
         dec = pygame.Rect(10, y, 24, 28)
         inc = pygame.Rect(38, y, 24, 28)
         self._button(screen, font, dec, "-")

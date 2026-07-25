@@ -1586,7 +1586,7 @@ class UIManager:
             return
 
         panel_w = 320
-        panel_h = 428 if self.system_settings_active else 236
+        panel_h = 476 if self.system_settings_active else 236
         panel_x = (app_width - panel_w) // 2
         panel_y = (app_height - panel_h) // 2
         self.system_menu_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
@@ -1601,6 +1601,7 @@ class UIManager:
             clade_count = getattr(self.knowledge_ui, "phylogeny_clade_member_count", 3)
             species_count = getattr(self.knowledge_ui, "phylogeny_species_relative_count", 4)
             debug_enabled = bool(getattr(self.knowledge_ui, "performance_debug_enabled", False))
+            checkpoint_confirm = bool(getattr(self.knowledge_ui, "ontology_checkpoint_confirm", False))
             half_w = (button_w - gap) // 2
             self.system_menu_buttons.extend([
                 UIButton("system_toggle_grid", "Toggle Grid", pygame.Rect(button_x, button_y, button_w, button_h)),
@@ -1610,7 +1611,8 @@ class UIManager:
                 UIButton("phylogeny_species_relatives_dec", f"Species - ({species_count})", pygame.Rect(button_x, button_y + (button_h + gap) * 3, half_w, button_h)),
                 UIButton("phylogeny_species_relatives_inc", "Species +", pygame.Rect(button_x + half_w + gap, button_y + (button_h + gap) * 3, half_w, button_h)),
                 UIButton("system_toggle_debug", f"Performance Debug: {'On' if debug_enabled else 'Off'}", pygame.Rect(button_x, button_y + (button_h + gap) * 4, button_w, button_h)),
-                UIButton("system_menu_back", "Back", pygame.Rect(button_x, button_y + (button_h + gap) * 5, button_w, button_h)),
+                UIButton("system_save_ontology", "Confirm Save Ontology" if checkpoint_confirm else "Save Ontology", pygame.Rect(button_x, button_y + (button_h + gap) * 5, button_w, button_h)),
+                UIButton("system_menu_back", "Back", pygame.Rect(button_x, button_y + (button_h + gap) * 6, button_w, button_h)),
             ])
             return
 
@@ -2338,7 +2340,10 @@ class UIManager:
         pygame.draw.rect(screen, (210, 210, 210), self.system_menu_rect, 1)
 
         title = "Settings" if self.system_settings_active else "Menu"
-        subtitle = "Display / phylogeny options" if self.system_settings_active else "Simulation paused"
+        if self.system_settings_active:
+            subtitle = getattr(self.knowledge_ui, "ontology_checkpoint_status", "") or "Display / phylogeny / ontology options"
+        else:
+            subtitle = "Simulation paused"
         title_surface = self._render_text(font, title, (245, 245, 245))
         subtitle_surface = self._render_text(font, subtitle, (175, 175, 180))
         screen.blit(title_surface, (self.system_menu_rect.x + 22, self.system_menu_rect.y + 20))
