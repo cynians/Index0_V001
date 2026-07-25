@@ -631,6 +631,13 @@ class KnowledgeCanvasController:
         for key in self.CARD_DRAG_LAYOUT_COLLECTION_KEYS:
             if key in card:
                 card[key] = self._move_rect_value(card.get(key), dx, dy)
+        # The card timeline is positioned from these stored vertical anchors
+        # rather than a Rect.  Keep them in step with the cached layout while
+        # dragging so the timeline (including its related-period strip) cannot
+        # remain at the card's former screen position for a frame.
+        for key in ("timeline_y", "timeline_label_y"):
+            if isinstance(card.get(key), (int, float)):
+                card[key] += dy
         self._layout_canvas_relation_controls()
 
     def _card_visual_rect(self, card):

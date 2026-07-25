@@ -152,6 +152,37 @@ class CardTimelineTests(unittest.TestCase):
             card_view._temporal_period_timeline_entries(card),
         )
 
+    def test_related_period_timeline_is_visible_without_dragging(self):
+        pygame.font.init()
+        font = pygame.font.Font(None, 18)
+        card_view = EntityCard(
+            {
+                "id": "veh_test",
+                "type": "vehicle",
+                "start_year": 2010,
+                "end_year": 2030,
+                "temporal_periods": [
+                    {"label": "Production", "start_year": 2010, "end_year": 2020},
+                ],
+            },
+            dataset_name="vehicles",
+        )
+        card = {
+            "entity_id": "veh_test",
+            "title": "Vehicle",
+            "subtitle": "vehicles | vehicle",
+            "years": [2010, 2030],
+            "is_edit_mode": False,
+            "layout_font": font,
+        }
+
+        card_view.layout_card(card, pygame.Rect(10, 10, 420, 380))
+        with patch("pygame.mouse.get_pos", return_value=(-1, -1)):
+            card_view.draw_card(pygame.Surface((460, 420)), font, card)
+
+        self.assertIsNotNone(card["temporal_period_click_rect"])
+        self.assertLess(card["temporal_period_click_rect"].bottom, card["launch_rect"].y)
+
     def test_temporal_period_click_adds_two_click_period(self):
         card_view = EntityCard(
             {

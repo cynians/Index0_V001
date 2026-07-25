@@ -43,7 +43,11 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
     IMAGE_H = 110
     MEDIA_IMAGE_H = 244
     LAUNCH_H = 24
-    TIMELINE_TO_LAUNCH_GAP = 58
+    # Reserve a full line for the related-period timeline below the main
+    # timeline.  The previous 58px gap was shorter than a normal font line,
+    # so this row was hidden until dragging temporarily separated it from the
+    # launch controls.
+    TIMELINE_TO_LAUNCH_GAP = 72
     RELATED_TIMELINE_OFFSET_Y = 34
     RELATED_TIMELINE_LABEL_LIMIT = 5
     TOOLBELT_W = 148

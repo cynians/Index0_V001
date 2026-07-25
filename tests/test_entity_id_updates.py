@@ -401,6 +401,9 @@ class EntityIdUpdateTests(unittest.TestCase):
                 "rect": pygame.Rect(324, 164, 420, 520),
                 "header_drag_rect": pygame.Rect(324, 164, 420, 66),
                 "canvas_relation_add_rect": pygame.Rect(700, 390, 28, 28),
+                "timeline_label_y": 596,
+                "timeline_y": 614,
+                "launch_rect": pygame.Rect(336, 672, 396, 24),
             }
         ]
         before_relayout_count = ui.relayout_count
@@ -410,6 +413,9 @@ class EntityIdUpdateTests(unittest.TestCase):
         self.assertEqual("__ui_consumed__", result)
         self.assertEqual(before_relayout_count, ui.relayout_count)
         self.assertEqual(pygame.Rect(344, 189, 420, 520), ui.cards[0]["rect"])
+        self.assertEqual(621, ui.cards[0]["timeline_label_y"])
+        self.assertEqual(639, ui.cards[0]["timeline_y"])
+        self.assertEqual(pygame.Rect(356, 697, 396, 24), ui.cards[0]["launch_rect"])
         self.assertEqual((360, 205), ui.card_drag_last_mouse_pos)
 
     def test_generated_id_uses_entry_name_slug(self):
