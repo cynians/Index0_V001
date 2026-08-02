@@ -5,8 +5,12 @@ from simulations.world_gen.drainage import (
     _include_downstream_connectors,
     _smoothed_channel_points,
     _spatially_diverse_segments,
+    _terrain_flow_directions,
     derive_drainage_network,
+    inherit_parent_drainage,
 )
+from simulations.world_gen.surface_evolution import _apply_channel_incision
+from simulations.world_gen.water_cycle import _classify_channel_regime
 
 
 def _synthetic_closed_basin():
@@ -19,6 +23,112 @@ def _synthetic_closed_basin():
 
 
 class DrainageRealismTests(unittest.TestCase):
+    def test_arid_channel_candidates_become_wadis_not_active_rivers(self):
+        classification = _classify_channel_regime({
+            "catchment_mean_runoff_mm": 4.0,
+            "estimated_discharge_m3_s": 18.0,
+            "catchment_climate": {
+                "mean_precipitation_mm": 70.0,
+                "mean_potential_evaporation_mm": 1900.0,
+                "mean_groundwater_recharge_mm": 0.1,
+                "mean_snowmelt_runoff_mm": 0.0,
+                "mean_driest_month_precipitation_mm": 0.0,
+                "mean_wettest_month_precipitation_mm": 8.0,
+            },
+        })
+
+        self.assertEqual("ephemeral", classification["flow_regime"])
+        self.assertEqual("wadi_or_arroyo", classification["geomorphic_expression"])
+        self.assertLess(classification["flow_months_per_year"], 2.0)
+
+    def test_large_dry_basin_discharge_does_not_imply_perennial_water(self):
+        classification = _classify_channel_regime({
+            "catchment_mean_runoff_mm": 9.0,
+            "estimated_discharge_m3_s": 80.0,
+            "catchment_climate": {
+                "mean_precipitation_mm": 110.0,
+                "mean_potential_evaporation_mm": 2200.0,
+                "mean_groundwater_recharge_mm": 0.2,
+                "mean_driest_month_precipitation_mm": 0.0,
+                "mean_wettest_month_precipitation_mm": 12.0,
+            },
+        })
+
+        self.assertEqual("ephemeral", classification["flow_regime"])
+
+    def test_wet_catchment_can_keep_river_perennial_across_dry_reach(self):
+        classification = _classify_channel_regime({
+            "catchment_mean_runoff_mm": 130.0,
+            "estimated_discharge_m3_s": 35.0,
+            "catchment_climate": {
+                "mean_precipitation_mm": 740.0,
+                "mean_potential_evaporation_mm": 1050.0,
+                "mean_groundwater_recharge_mm": 18.0,
+                "mean_driest_month_precipitation_mm": 11.0,
+                "mean_wettest_month_precipitation_mm": 98.0,
+            },
+        })
+
+        self.assertEqual("perennial", classification["flow_regime"])
+        self.assertEqual(12.0, classification["flow_months_per_year"])
+
+    def test_ephemeral_wadi_incises_terrain_without_becoming_surface_water(self):
+        rows = [
+            [120.0, 116.0, 112.0, 108.0],
+            [118.0, 114.0, 110.0, 106.0],
+            [116.0, 112.0, 108.0, 104.0],
+            [114.0, 110.0, 106.0, 102.0],
+        ]
+        drainage = {
+            "rivers": [],
+            "ephemeral_channels": [{
+                "id": "wadi_1",
+                "flow_regime": "ephemeral",
+                "flow": 0.7,
+                "stream_order": 2,
+                "points": [
+                    {"x": 0.0, "y": 0.0},
+                    {"x": 0.33, "y": 0.33},
+                    {"x": 0.67, "y": 0.67},
+                    {"x": 1.0, "y": 1.0},
+                ],
+            }],
+        }
+        carved, incision = _apply_channel_incision(
+            rows,
+            drainage,
+            {
+                "sample_spacing_x_m": 1000.0,
+                "sample_spacing_y_m": 1000.0,
+            },
+            active_water=True,
+            declared_strength=1.0,
+            wrap_x=False,
+        )
+
+        self.assertLess(carved[1][1], rows[1][1])
+        self.assertGreater(incision[1][1], 0.0)
+
+    def test_filled_dem_routes_broad_slope_into_valley_not_flood_visit_fan(self):
+        rows = [
+            [100.0 - y * 10.0 + abs(x - 3) * 8.0 for x in range(7)]
+            for y in range(7)
+        ]
+        ocean = [[y == 6 for _x in range(7)] for y in range(7)]
+        flood_parent = {
+            (x, y): (max(0, x - 1), min(6, y + 1))
+            for y in range(6)
+            for x in range(7)
+        }
+
+        downstream = _terrain_flow_directions(
+            rows, rows, flood_parent, ocean, wrap_x=False,
+        )
+
+        self.assertEqual((2, 2), downstream[(1, 1)])
+        self.assertEqual((4, 2), downstream[(5, 1)])
+        self.assertEqual((3, 2), downstream[(3, 1)])
+
     def test_thinned_river_retains_downstream_connector_chain(self):
         upstream = (90.0, 2, [(10, 10), (11, 11)], 9)
         middle = (100.0, 3, [(11, 11), (12, 12)], 15)
@@ -131,6 +241,128 @@ class DrainageRealismTests(unittest.TestCase):
             sum(lake["area_fraction"] for lake in model["lakes"]),
             places=5,
         )
+
+    def test_regional_boundary_outlets_are_not_called_endorheic(self):
+        rows = [
+            [1000.0 - x * 80.0 - y * 20.0 for x in range(11)]
+            for y in range(9)
+        ]
+        ocean = [[False] * 11 for _y in range(9)]
+        runoff = [[900.0] * 11 for _y in range(9)]
+        model = derive_drainage_network(
+            rows,
+            ocean,
+            runoff,
+            wrap_x=False,
+            detail_level=4,
+            precipitation_rows=[[1500.0] * 11 for _y in range(9)],
+            potential_evaporation_rows=[[650.0] * 11 for _y in range(9)],
+        )
+        self.assertGreater(model["external_boundary_outlet_count"], 0)
+        self.assertTrue(
+            any(river["mouth"] == "external_boundary" for river in model["rivers"])
+        )
+
+    def test_parent_trunk_is_projected_into_child_lod(self):
+        parent = {
+            "rivers": [{
+                "id": "river_main",
+                "stream_order": 3,
+                "flow": 0.8,
+                "mouth": "ocean",
+                "points": [
+                    {"x": 0.1, "y": 0.5},
+                    {"x": 0.9, "y": 0.5},
+                ],
+            }]
+        }
+        child = {"rivers": []}
+        inherited = inherit_parent_drainage(
+            parent,
+            child,
+            {"min_u": 0.4, "max_u": 0.6, "min_v": 0.4, "max_v": 0.6},
+            {"min_u": 0.0, "max_u": 1.0, "min_v": 0.0, "max_v": 1.0},
+        )
+        self.assertEqual(1, inherited["inherited_parent_trunk_count"])
+        trunk = inherited["rivers"][0]
+        self.assertEqual("inherited_parent_trunk", trunk["network_role"])
+        self.assertAlmostEqual(0.0, trunk["points"][0]["x"])
+        self.assertAlmostEqual(1.0, trunk["points"][-1]["x"])
+
+    def test_inherited_trunk_keeps_one_stable_origin_across_nested_lods(self):
+        parent = {
+            "detail_level": 0,
+            "rivers": [{
+                "id": "river_main",
+                "stream_order": 3,
+                "flow": 0.8,
+                "mouth": "ocean",
+                "points": [
+                    {"x": 0.1, "y": 0.5},
+                    {"x": 0.9, "y": 0.5},
+                ],
+            }],
+        }
+        child_bounds = {
+            "min_u": 0.2, "max_u": 0.8, "min_v": 0.2, "max_v": 0.8,
+        }
+        child = inherit_parent_drainage(
+            parent,
+            {"detail_level": 1, "rivers": []},
+            child_bounds,
+            {"min_u": 0.0, "max_u": 1.0, "min_v": 0.0, "max_v": 1.0},
+        )
+        grandchild = inherit_parent_drainage(
+            child,
+            {"detail_level": 2, "rivers": []},
+            {"min_u": 0.35, "max_u": 0.65, "min_v": 0.35, "max_v": 0.65},
+            child_bounds,
+        )
+
+        self.assertEqual(1, grandchild["inherited_parent_trunk_count"])
+        self.assertEqual(
+            "generated_lod_0:river_main",
+            grandchild["rivers"][0]["origin_river_id"],
+        )
+        self.assertNotIn(
+            "parent_trunk_parent_trunk",
+            grandchild["rivers"][0]["id"],
+        )
+
+    def test_local_retrace_of_inherited_trunk_is_suppressed(self):
+        parent = {
+            "detail_level": 0,
+            "rivers": [{
+                "id": "river_main",
+                "stream_order": 3,
+                "flow": 0.8,
+                "points": [
+                    {"x": 0.1, "y": 0.5},
+                    {"x": 0.9, "y": 0.5},
+                ],
+            }],
+        }
+        child = {
+            "detail_level": 1,
+            "rivers": [{
+                "id": "river_local",
+                "stream_order": 2,
+                "flow": 0.6,
+                "points": [
+                    {"x": 0.0, "y": 0.505},
+                    {"x": 1.0, "y": 0.505},
+                ],
+            }],
+        }
+        inherited = inherit_parent_drainage(
+            parent,
+            child,
+            {"min_u": 0.4, "max_u": 0.6, "min_v": 0.4, "max_v": 0.6},
+            {"min_u": 0.0, "max_u": 1.0, "min_v": 0.0, "max_v": 1.0},
+        )
+
+        self.assertEqual(1, inherited["river_segment_count"])
+        self.assertEqual(1, inherited["suppressed_duplicate_local_reach_count"])
 
 
 if __name__ == "__main__":

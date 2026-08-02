@@ -15,6 +15,85 @@ class FakeWorldModel:
 
 
 class SimulationSelectionInspectorTests(unittest.TestCase):
+    def test_map_inspector_text_save_uses_partial_persistence(self):
+        entity = {
+            "id": "loc_test_region",
+            "pretty_name": "Old name",
+            "name": "Old name",
+            "wiki_entry": "Old notes",
+            "type": "location",
+            "location_class": "region",
+        }
+        partial_writes = []
+
+        class Loader:
+            entities = {entity["id"]: entity}
+
+            @staticmethod
+            def persist_entity_fields(candidate, field_names):
+                partial_writes.append((candidate["id"], set(field_names)))
+                return True
+
+            @staticmethod
+            def persist_entity(*_args, **_kwargs):
+                raise AssertionError("Inspector text edits must not replace the full entity")
+
+        sim = MapSimulation.__new__(MapSimulation)
+        sim.world_model = SimpleNamespace(loader=Loader())
+
+        self.assertTrue(sim._update_repository_entity_fields(
+            entity["id"],
+            {
+                "pretty_name": "New name",
+                "name": "New name",
+                "wiki_entry": "New notes",
+            },
+        ))
+
+        self.assertEqual(
+            [(entity["id"], {"pretty_name", "name", "wiki_entry"})],
+            partial_writes,
+        )
+        self.assertEqual("New name", entity["name"])
+        self.assertEqual("New notes", entity["wiki_entry"])
+
+    def test_map_inspector_save_does_not_reload_world_model(self):
+        sim = MapSimulation.__new__(MapSimulation)
+        notifications = []
+        invalidations = []
+        sim.world_model = SimpleNamespace(
+            refresh=lambda: (_ for _ in ()).throw(
+                AssertionError("Inspector text save must not reload the world model")
+            ),
+        )
+        sim._can_open_location_inspector = lambda _target_id: True
+        sim._update_location_text_fields = (
+            lambda target_id, name, notes: notifications.append(
+                ("write", target_id, name, notes)
+            ) or True
+        )
+        sim._notify_incremental_repository_change = (
+            lambda **kwargs: notifications.append(
+                ("notify", kwargs.get("rebuild_relations"))
+            )
+        )
+        sim._invalidate_layer_cache = lambda: invalidations.append(True)
+
+        self.assertTrue(sim.save_selection_inspector_updates(
+            "location",
+            "loc_test_region",
+            {"name": "New name", "wiki_entry": "New notes"},
+        ))
+
+        self.assertEqual(
+            [
+                ("write", "loc_test_region", "New name", "New notes"),
+                ("notify", False),
+            ],
+            notifications,
+        )
+        self.assertEqual([True], invalidations)
+
     def test_map_selection_exposes_repository_backed_payload(self):
         entity = {
             "id": "loc_test_region",

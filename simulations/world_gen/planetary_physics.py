@@ -1,5 +1,7 @@
 import math
 
+from simulations.world_gen.world_classification import infer_world_class
+
 
 EARTH_RADIUS_M = 6_371_000.0
 EARTH_MASS_KG = 5.9722e24
@@ -42,7 +44,7 @@ def derive_planet_physics(seed, crust_density_kg_m3):
     core_radius_fraction = max(0.0, min(0.95, float(seed.get("core_radius_fraction", 0.55))))
     crust_thickness_km = max(0.1, float(seed.get("crust_thickness_km", 35.0)))
     crust_thickness_m = min(crust_thickness_km * 1000.0, radius_m * 0.45)
-    kind = str(seed.get("planet_class") or seed.get("planet_template") or "").strip().lower()
+    kind = infer_world_class(seed)
 
     core_radius_m = radius_m * core_radius_fraction
     crust_inner_radius_m = max(core_radius_m, radius_m - crust_thickness_m)

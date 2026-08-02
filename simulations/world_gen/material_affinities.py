@@ -8,6 +8,10 @@ quietly inherit a generic planetary paint rule.
 
 import math
 
+from simulations.world_gen.geological_material_expansion import (
+    GEOLOGICAL_PROFILE_TYPES,
+)
+from simulations.world_gen.material_formation import formation_contract
 
 def _profile(*, weights, temperature_k=None, precipitation_mm=None,
              substrate="land", abundance=1.0, regionality=0.35,
@@ -77,6 +81,10 @@ AFFINITY_ARCHETYPES = {
         weights={"land": 0.14, "lowland": 0.21, "drainage": 0.27, "deposition": 0.24, "shoreline": 0.06, "regional": 0.08},
         precipitation_mm=(120.0, 450.0, 2600.0, 5000.0), abundance=0.88, regionality=0.25,
         requires_active_hydrology=True,
+    ),
+    "colluvial_sediment": _profile(
+        weights={"land": 0.12, "slope": 0.20, "erosion": 0.12, "colluvial_cover": 0.42, "regional": 0.14},
+        abundance=0.72, regionality=0.22,
     ),
     "fine_basin_sediment": _profile(
         weights={"land": 0.12, "lowland": 0.25, "deposition": 0.30, "drainage": 0.14, "shoreline": 0.10, "regional": 0.09},
@@ -258,6 +266,7 @@ MATERIAL_PROFILE_TYPES = {
     "mat_blueschist": "metamorphic_uplift",
     "mat_eclogite": "metamorphic_uplift",
 }
+MATERIAL_PROFILE_TYPES.update(GEOLOGICAL_PROFILE_TYPES)
 
 
 PROFILE_MINIMUM_DETAIL_LEVEL = {
@@ -285,6 +294,10 @@ PROFILE_MINIMUM_DETAIL_LEVEL = {
 MATERIAL_MINIMUM_DETAIL_OVERRIDES = {
     "mat_banded_iron_formation": 2,
     "mat_gabbro": 1,
+    # Kimberlite occurs in narrow pipes/diatremes.  Treating its broad
+    # ultramafic chemistry profile as planetary bedrock lets it erase the
+    # actual peridotite/dunite substrate on Mg-rich worlds.
+    "mat_kimberlite": 2,
     "mat_obsidian": 2,
     "mat_diamond": 3,
     "mat_zircon": 2,
@@ -316,6 +329,10 @@ for _material_id, _profile_id in MATERIAL_PROFILE_TYPES.items():
         "profile_id": _profile_id,
         "minimum_map_detail_level": _minimum_level,
         "distribution_scale": _distribution_scale(_minimum_level),
+        "formation_contract": formation_contract(
+            _material_id,
+            profile_id=_profile_id,
+        ),
     }
 
 
@@ -340,6 +357,65 @@ def _range_suitability(value, bounds):
 
 def material_affinity_profile(material_id):
     return MATERIAL_AFFINITY_PROFILES.get(str(material_id or ""))
+
+
+BEDROCK_PROFILE_IDS = {
+    "felsic_bedrock",
+    "mafic_bedrock",
+    "ultramafic_bedrock",
+    "intermediate_volcanic",
+    "felsic_volcanic",
+}
+
+SPARSE_DEPOSIT_PROFILE_IDS = {
+    "bauxite",
+    "heavy_mineral",
+    "hydrothermal",
+    "nickel_laterite",
+    "spring_carbonate",
+    "sulfide_ore",
+}
+
+
+def material_distribution_role(
+    material_id,
+    material_subclass=None,
+    minimum_detail_level=None,
+):
+    """Classify how a material occupies space without duplicating the catalog.
+
+    The same ontology material can participate in production recipes and world
+    generation.  This role describes only its natural spatial expression:
+    continuous substrate, overlying cover, local rock body, constituent
+    mineral, or sparse concentrated deposit.
+    """
+    profile = material_affinity_profile(material_id) or {}
+    profile_id = str(profile.get("profile_id") or "")
+    subclass = str(material_subclass or "").lower()
+    if minimum_detail_level is None:
+        minimum_detail_level = profile.get("minimum_map_detail_level", 0)
+    try:
+        minimum_detail_level = int(minimum_detail_level or 0)
+    except (TypeError, ValueError):
+        minimum_detail_level = 0
+
+    formation = formation_contract(
+        material_id,
+        material_subclass,
+        profile_id,
+    )
+    representation = formation.get("spatial_representation")
+    if representation == "bounded_deposit":
+        return "sparse_deposit"
+    if representation == "constituent_abundance" or subclass == "mineral":
+        return "mineral_constituent"
+    if representation == "bedrock_unit" or subclass == "rock":
+        return "bedrock" if minimum_detail_level <= 0 else "local_lithology"
+    if representation == "surface_cover" or subclass in {"ice", "regolith", "sediment"}:
+        return "surface_cover"
+    if profile_id in BEDROCK_PROFILE_IDS:
+        return "bedrock" if minimum_detail_level <= 0 else "local_lithology"
+    return "surface_cover" if minimum_detail_level <= 0 else "local_material_unit"
 
 
 def material_affinity_score(material_id, context):

@@ -90,11 +90,11 @@ class SurfaceEvolutionTests(unittest.TestCase):
     def test_routed_river_incises_ravine_and_enforces_downstream_gradient(self):
         heightmap = {
             "radius_m": 6_371_000.0,
-            "circumference_m": 500_000.0,
-            "region_width_m": 500_000.0,
-            "region_height_m": 500_000.0,
-            "sample_spacing_x_m": 125_000.0,
-            "sample_spacing_y_m": 125_000.0,
+            "circumference_m": 4_000.0,
+            "region_width_m": 4_000.0,
+            "region_height_m": 4_000.0,
+            "sample_spacing_x_m": 1_000.0,
+            "sample_spacing_y_m": 1_000.0,
             "sea_level_m": 0.0,
             "wrap_x": False,
             "sample_grid": {"rows": [

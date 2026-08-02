@@ -500,6 +500,20 @@ class EntityLoader:
     def load_ontology_datasets(self):
         self._persistent_store = PersistentOntologyStore(self.ontology_path)
         self.datasets = self._persistent_store.load_datasets()
+        # RDF multi-value properties do not preserve insertion order. Stellar
+        # neighbourhoods are a set semantically, but the UI and repository
+        # snapshots need a stable presentation order after migrations.
+        for entity in self.datasets.get("locations", []):
+            rows = entity.get("stellar_neighbours") if isinstance(entity, dict) else None
+            if isinstance(rows, list) and all(isinstance(row, dict) for row in rows):
+                entity["stellar_neighbours"] = sorted(
+                    rows,
+                    key=lambda row: (
+                        str(row.get("system") or ""),
+                        float(row.get("distance_ly", 0.0) or 0.0),
+                    ),
+                )
+        self._reconcile_deletion_overrides()
         self._apply_palette_overrides()
         palette_overrides = self._load_palette_overrides()
         if palette_overrides:
@@ -668,10 +682,17 @@ class EntityLoader:
             try:
                 if self._persistent_store is None:
                     self._persistent_store = PersistentOntologyStore(self.ontology_path)
-                self._persistent_store.persist_entity(entity, previous_entity_id=previous_entity_id)
+                persisted = self._persistent_store.persist_entity(
+                    entity,
+                    previous_entity_id=previous_entity_id,
+                )
             except (OSError, sqlite3.Error) as exc:
                 logger.error("Could not persist entity %s to ontology: %s", entity_id, exc)
                 return False
+            if persisted:
+                self._clear_entity_deletion(entity_id)
+                if previous_entity_id:
+                    self._clear_entity_deletion(previous_entity_id)
         return True
 
     def persist_entity_palette(self, entity):
@@ -717,6 +738,42 @@ class EntityLoader:
             return False
         return True
 
+    def persist_entity_fields(self, entity, field_names):
+        """Persist only changed fields when the backing store supports point edits."""
+        if not isinstance(entity, dict):
+            return False
+        entity_id = str(entity.get("id") or "").strip()
+        field_names = {
+            str(field_name)
+            for field_name in (field_names or [])
+            if str(field_name) and not str(field_name).startswith("_")
+        }
+        if not entity_id or not field_names:
+            return False
+
+        if not self.use_ontology:
+            self.save_changed_dataset_files({entity_id})
+            return True
+
+        try:
+            if self._persistent_store is None:
+                self._persistent_store = PersistentOntologyStore(self.ontology_path)
+            persisted = self._persistent_store.persist_entity_fields(
+                entity,
+                field_names,
+            )
+        except (OSError, sqlite3.Error) as exc:
+            logger.error(
+                "Could not persist fields %s for entity %s: %s",
+                sorted(field_names),
+                entity_id,
+                exc,
+            )
+            return False
+        if persisted:
+            self._clear_entity_deletion(entity_id)
+        return persisted
+
     def _palette_overrides_path(self):
         ontology_path = Path(self.ontology_path).resolve()
         return ontology_path.parent.parent / ".cache" / "ontology" / f"{ontology_path.name}.palette-overrides.json"
@@ -755,6 +812,120 @@ class EntityLoader:
             self._palette_overrides_path().unlink(missing_ok=True)
         except OSError:
             pass
+
+    def _deletion_overrides_path(self):
+        ontology_path = Path(self.ontology_path).resolve()
+        return (
+            ontology_path.parent.parent
+            / ".cache"
+            / "ontology"
+            / f"{ontology_path.name}.deleted-entities.json"
+        )
+
+    def _load_deletion_overrides(self):
+        try:
+            payload = json.loads(
+                self._deletion_overrides_path().read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError):
+            return set()
+        if isinstance(payload, dict):
+            payload = payload.get("entity_ids") or []
+        if not isinstance(payload, list):
+            return set()
+        return {
+            str(entity_id).strip()
+            for entity_id in payload
+            if str(entity_id).strip()
+        }
+
+    def _write_deletion_overrides(self, entity_ids):
+        entity_ids = sorted({
+            str(entity_id).strip()
+            for entity_id in (entity_ids or [])
+            if str(entity_id).strip()
+        })
+        path = self._deletion_overrides_path()
+        if not entity_ids:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                return False
+            return True
+        temp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path.write_text(
+                json.dumps(
+                    {"version": 1, "entity_ids": entity_ids},
+                    indent=2,
+                    sort_keys=True,
+                ) + "\n",
+                encoding="utf-8",
+            )
+            temp_path.replace(path)
+        except OSError:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return False
+        return True
+
+    def _journal_entity_deletion(self, entity_id):
+        entity_ids = self._load_deletion_overrides()
+        entity_ids.add(str(entity_id))
+        return self._write_deletion_overrides(entity_ids)
+
+    def _clear_entity_deletion(self, entity_id):
+        entity_ids = self._load_deletion_overrides()
+        entity_ids.discard(str(entity_id))
+        return self._write_deletion_overrides(entity_ids)
+
+    def _apply_deletion_overrides(self, entity_ids=None):
+        entity_ids = set(entity_ids or self._load_deletion_overrides())
+        if not entity_ids:
+            return
+        for dataset in self.datasets.values():
+            if not isinstance(dataset, list):
+                continue
+            dataset[:] = [
+                entity
+                for entity in dataset
+                if not (
+                    isinstance(entity, dict)
+                    and str(entity.get("id") or "") in entity_ids
+                )
+            ]
+
+    def _reconcile_deletion_overrides(self):
+        entity_ids = self._load_deletion_overrides()
+        if not entity_ids:
+            return
+        loaded_ids = {
+            str(entity.get("id") or "")
+            for dataset in self.datasets.values()
+            for entity in (dataset or [])
+            if isinstance(entity, dict)
+        }
+        reconciled = set()
+        for entity_id in entity_ids:
+            if entity_id not in loaded_ids:
+                reconciled.add(entity_id)
+                continue
+            try:
+                self._persistent_store.remove_entity(entity_id)
+            except (OSError, sqlite3.Error) as exc:
+                logger.warning(
+                    "Ontology remains busy while reconciling deletion for %s: %s",
+                    entity_id,
+                    exc,
+                )
+            else:
+                reconciled.add(entity_id)
+        self._apply_deletion_overrides(entity_ids)
+        if reconciled:
+            self._write_deletion_overrides(entity_ids - reconciled)
 
     def set_literal(self, entity_id, field_name, value, persist=True):
         # Point edits must share the live projection. Deep-copying the full
@@ -801,12 +972,45 @@ class EntityLoader:
         if not entity_id:
             return False
 
-        removed = self.entities.pop(entity_id, None) is not None
         target_datasets = (
             [dataset_name]
             if dataset_name
             else list(self.datasets.keys())
         )
+        removed = entity_id in self.entities
+        for candidate_name in target_datasets:
+            dataset = self.datasets.get(candidate_name)
+            if isinstance(dataset, list) and any(
+                isinstance(item, dict) and item.get("id") == entity_id
+                for item in dataset
+            ):
+                removed = True
+                break
+        if not removed:
+            return False
+
+        if self.use_ontology:
+            if self._persistent_store is None:
+                self._persistent_store = PersistentOntologyStore(self.ontology_path)
+            try:
+                self._persistent_store.remove_entity(entity_id)
+            except (OSError, sqlite3.Error) as exc:
+                if not self._journal_entity_deletion(entity_id):
+                    logger.error(
+                        "Could not delete entity %s or journal its deletion: %s",
+                        entity_id,
+                        exc,
+                    )
+                    return False
+                logger.warning(
+                    "Ontology busy while deleting %s; using deletion journal: %s",
+                    entity_id,
+                    exc,
+                )
+            else:
+                self._clear_entity_deletion(entity_id)
+
+        self.entities.pop(entity_id, None)
         for candidate_name in target_datasets:
             dataset = self.datasets.get(candidate_name)
             if not isinstance(dataset, list):
@@ -819,10 +1023,6 @@ class EntityLoader:
             ]
             removed = removed or len(dataset) != before_count
 
-        if removed and self.use_ontology:
-            if self._persistent_store is None:
-                self._persistent_store = PersistentOntologyStore(self.ontology_path)
-            self._persistent_store.remove_entity(entity_id)
         return removed
 
     # --------------------------------------------------

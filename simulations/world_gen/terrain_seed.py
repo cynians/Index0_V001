@@ -1,4 +1,5 @@
 from simulations.world_gen.map_seed import resolved_map_seed, seed_range
+from simulations.world_gen.world_classification import infer_world_class
 
 
 PLANETARY_CANVAS_WIDTH_PX = 8192
@@ -73,15 +74,22 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
     circumference_m = 2.0 * 3.141592653589793 * radius_m
     gravity_g = max(0.05, float(physics.get("surface_gravity_g", 1.0) or 1.0))
     water_fraction = _clamp(seed.get("water_fraction", 0.0), 0.0, 1.0)
-    planet_class = str(seed.get("planet_class") or seed.get("planet_template") or "").strip().lower()
+    planet_class = infer_world_class(seed, physics)
     icy_satellite = planet_class == "icy_satellite"
-    snowball_world = planet_class == "snowball_terrestrial" or str(seed.get("climate_mode") or "").lower() == "snowball"
     pressure_bar = _surface_pressure_bar(atmosphere)
     surface_temp_k = max(0.0, float(atmosphere.get("estimated_surface_temperature_k", 0.0) or 0.0))
     internal_heat = max(0.0, float(interior.get("internal_heat_w_m2", 0.0) or 0.0))
     tectonics = str(interior.get("tectonic_regime") or "unknown")
     hydrology = str(surface.get("hydrologic_cycle") or "none")
     crater_retention = str(surface.get("crater_retention") or "moderate")
+    resurfacing_fraction = _clamp(
+        max(
+            float(seed.get("resurfacing_fraction", 0.0) or 0.0),
+            float(surface.get("resurfacing_fraction", 0.0) or 0.0),
+        ),
+        0.0,
+        1.0,
+    )
     topography = str(surface.get("primary_topography") or "unknown")
     erosion_processes = list(surface.get("erosion_processes") or [])
 
@@ -92,7 +100,7 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
     # A frozen surface does not remove the planet's ocean basins.  Snowball
     # worlds retain their water inventory beneath sea ice even when open
     # liquid water and the ordinary surface hydrologic cycle are unavailable.
-    frozen_ocean = bool(snowball_world and frozen_water and water_fraction > 0.12)
+    frozen_ocean = bool(frozen_water and water_fraction > 0.12)
     erosion = _erosion_strength(surface, pressure_bar)
     elements = _element_profile(seed)
     silica = elements.get("Si", 0.0)
@@ -180,9 +188,9 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
         min_elevation_m *= relief_factor
     roughness = _clamp(roughness + mafic_roughness_bonus - erosion * 0.08, 0.18, 0.9)
     airless_or_near_airless = pressure_bar < 0.01
-    if pressure_bar < 0.02 and crater_retention == "low":
-        crater_retention = "moderate" if mobile_plates or partial_resurfacing else "high"
-    elif pressure_bar < 0.15 and crater_retention == "low":
+    if pressure_bar < 0.02 and crater_retention == "low" and not (mobile_plates or partial_resurfacing):
+        crater_retention = "high"
+    elif pressure_bar < 0.15 and crater_retention == "low" and not (mobile_plates or partial_resurfacing):
         crater_retention = "moderate"
     if airless_or_near_airless and not liquid_water and not mobile_plates:
         crater_retention = "high"
@@ -208,13 +216,6 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
         equivalent_global_water_depth_m *= thermal_retention * pressure_retention
     elif not frozen_ocean:
         equivalent_global_water_depth_m = 0.0
-    planet_kind = str(
-        seed.get("planet_class")
-        or seed.get("planet_template")
-        or ""
-    ).strip().lower()
-    if planet_kind in {"desert_terrestrial", "desiccated_former_ocean"}:
-        equivalent_global_water_depth_m = min(equivalent_global_water_depth_m, 90.0)
     # Legacy authored targets remain an explicit compatibility override only.
     # Normal generation never writes this field and therefore always uses the
     # inventory-volume route.
@@ -247,6 +248,7 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
     crater_density *= 1.0 - erosion * 0.35
     crater_density *= 1.0 - _clamp(pressure_bar / 8.0, 0.0, 0.22)
     crater_density *= 1.0 - _clamp(internal_heat / 0.35, 0.0, 0.18)
+    crater_density *= 1.0 - resurfacing_fraction * 0.72
     if "glacial" in erosion_processes:
         # Moving ice and repeated freeze/thaw burial strongly degrade the
         # visible impact population, especially the small-crater saturation
@@ -355,7 +357,7 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
             "max_crater_diameter_km": round(max_crater_diameter_km, 1),
             "surface_age_myr": round(max(0.0, float(seed.get("surface_age_myr", 4500.0) or 0.0)), 1),
             "impact_flux_factor": round(max(0.05, float(seed.get("impact_flux_factor", 1.0) or 1.0)), 3),
-            "resurfacing_fraction": round(_clamp(seed.get("resurfacing_fraction", 0.0), 0.0, 1.0), 3),
+            "resurfacing_fraction": round(resurfacing_fraction, 3),
             "target_material": "water_ice_regolith" if icy_satellite else "rock_regolith",
             "atmospheric_entry_cutoff_km": round(max(0.0, float(seed.get("atmospheric_crater_cutoff_km", 0.4 * pressure_bar ** 0.5) or 0.0)), 3),
         },

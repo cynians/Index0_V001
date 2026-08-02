@@ -1,8 +1,10 @@
-"""Curated world-gen presets.
+"""Curated first-screen presets.
 
-Templates constrain defining characteristics while leaving ordinary seed variation
-inside physically meaningful ranges.  The downstream solvers remain responsible
-for deriving the actual atmosphere, interior, terrain and climate.
+Every value used by a template must populate an editable first-screen control.
+The extra keyword arguments on older catalog entries are accepted while legacy
+worlds migrate, but are intentionally not returned as active preset data.
+Atmosphere, interior, terrain, and climate are derived after the preset has
+finished populating the screen.
 """
 
 
@@ -14,7 +16,7 @@ GAS = [("H", 72.5), ("He", 24.5), ("O", 1.15), ("C", 0.78), ("N", 0.34), ("S", 0
 def _template(label, planet_class, *, category="Terrestrial", elements=ROCK,
               radius=(0.75, 1.35), core=(0.42, 0.68), crust=(18.0, 55.0),
               spin=(9.0, 24.0), water=(0.15, 0.78), volatiles=("earthlike",),
-              tectonics=("unknown",), description="", **traits):
+              tectonics=("unknown",), description="", **_legacy_hidden_traits):
     return {
         "label": label,
         "category": category,
@@ -31,7 +33,6 @@ def _template(label, planet_class, *, category="Terrestrial", elements=ROCK,
         "water_range": water,
         "volatile_options": list(volatiles),
         "tectonics_options": list(tectonics),
-        **traits,
     }
 
 

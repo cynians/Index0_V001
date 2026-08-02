@@ -202,6 +202,41 @@ class TouchDegrees:
 
     # --------------------------------------------------
 
+    def remove_entity(self, entity_id):
+        """Remove one entity and its incident edges without rebuilding the graph."""
+        entity_id = str(entity_id or "").strip()
+        if not entity_id:
+            return False
+
+        outgoing = list(self.touches.pop(entity_id, []) or [])
+        incoming = list(self.reverse_touches.pop(entity_id, []) or [])
+
+        for touch in outgoing:
+            target_id = touch.get("target")
+            if not target_id:
+                continue
+            self.reverse_touches[target_id] = [
+                candidate
+                for candidate in self.reverse_touches.get(target_id, [])
+                if candidate.get("source") != entity_id
+            ]
+            if not self.reverse_touches[target_id]:
+                self.reverse_touches.pop(target_id, None)
+
+        for touch in incoming:
+            source_id = touch.get("source")
+            if not source_id:
+                continue
+            self.touches[source_id] = [
+                candidate
+                for candidate in self.touches.get(source_id, [])
+                if candidate.get("target") != entity_id
+            ]
+
+        return bool(outgoing or incoming)
+
+    # --------------------------------------------------
+
     def print_entity_touches(self, entity_id):
 
         print(f"\nTouches for {entity_id}\n")

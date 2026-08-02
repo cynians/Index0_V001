@@ -5,7 +5,7 @@ import math
 from collections import defaultdict, deque
 
 
-MODEL_VERSION = "watershed-drainage-v5"
+MODEL_VERSION = "watershed-drainage-v8"
 
 
 def _clamp(value, low=0.0, high=1.0):
@@ -70,6 +70,52 @@ def _priority_flood(rows, ocean_mask, wrap_x):
             filled[ny][nx] = original_height if original_height > spill_height else spill_height + flat_epsilon
             heapq.heappush(heap, (filled[ny][nx], ny, nx))
     return filled, parent, visit_order
+
+
+def _terrain_flow_directions(rows, filled, flood_parent, ocean_mask, wrap_x):
+    """Resolve D8 flow from the filled DEM rather than the flood visit tree.
+
+    Priority-flood parent links are excellent depression/spillway constraints,
+    but using them directly as channels makes broad slopes follow heap tie
+    order, producing combs of parallel diagonal rivers.  The filled surface
+    supplies drainage-safe elevations; local steepest descent supplies the
+    actual direction, with the flood parent retained only as a flat fallback.
+    """
+    height = len(filled)
+    width = len(filled[0]) if height else 0
+    downstream = {}
+    for y in range(height):
+        for x in range(width):
+            if ocean_mask[y][x]:
+                downstream[(x, y)] = None
+                continue
+            current = float(filled[y][x])
+            best = None
+            best_score = -float("inf")
+            for nx, ny in _neighbors(width, height, x, y, wrap_x):
+                distance = math.sqrt(2.0) if nx != x and ny != y else 1.0
+                candidate = float(filled[ny][nx])
+                descent = (current - candidate) / distance
+                if ocean_mask[ny][nx]:
+                    descent += max(1.0, abs(current - candidate)) * 1e-6
+                if descent <= 0.0:
+                    continue
+                # Prefer actual terrain valleys when filled elevations are
+                # almost tied. The final term is deterministic and too small
+                # to override a real elevation difference.
+                raw_descent = (
+                    float(rows[y][x]) - float(rows[ny][nx])
+                ) / distance
+                tie_break = (
+                    ((nx * 73856093) ^ (ny * 19349663) ^ (x * 83492791))
+                    & 0xFFFF
+                ) * 1e-16
+                score = descent + max(0.0, raw_descent) * 1e-8 + tie_break
+                if score > best_score:
+                    best_score = score
+                    best = (nx, ny)
+            downstream[(x, y)] = best or flood_parent.get((x, y))
+    return downstream
 
 
 def _channel_morphology(path, rows, width, height, cell_spacing_m, flow, stream_order):
@@ -272,6 +318,186 @@ def _include_downstream_connectors(selected, candidates):
     return connected
 
 
+def _clip_segment_to_bounds(first, second, bounds):
+    """Liang-Barsky clip in global UV coordinates."""
+    x0, y0 = float(first["x"]), float(first["y"])
+    x1, y1 = float(second["x"]), float(second["y"])
+    dx, dy = x1 - x0, y1 - y0
+    t0, t1 = 0.0, 1.0
+    for p, q in (
+        (-dx, x0 - bounds["min_u"]),
+        (dx, bounds["max_u"] - x0),
+        (-dy, y0 - bounds["min_v"]),
+        (dy, bounds["max_v"] - y0),
+    ):
+        if abs(p) <= 1e-12:
+            if q < 0.0:
+                return None
+            continue
+        ratio = q / p
+        if p < 0.0:
+            t0 = max(t0, ratio)
+        else:
+            t1 = min(t1, ratio)
+        if t0 > t1:
+            return None
+    return (
+        {"x": x0 + dx * t0, "y": y0 + dy * t0},
+        {"x": x0 + dx * t1, "y": y0 + dy * t1},
+    )
+
+
+def _point_to_polyline_distance(point, polyline):
+    px, py = float(point.get("x", 0.0)), float(point.get("y", 0.0))
+    best = float("inf")
+    for first, second in zip(polyline, polyline[1:]):
+        ax, ay = float(first.get("x", 0.0)), float(first.get("y", 0.0))
+        bx, by = float(second.get("x", 0.0)), float(second.get("y", 0.0))
+        dx, dy = bx - ax, by - ay
+        length_squared = dx * dx + dy * dy
+        amount = 0.0 if length_squared <= 1e-15 else _clamp(
+            ((px - ax) * dx + (py - ay) * dy) / length_squared
+        )
+        best = min(best, math.hypot(px - (ax + dx * amount), py - (ay + dy * amount)))
+    return best
+
+
+def _polyline_follows_trunk(candidate, trunk, tolerance=0.014):
+    """Return True when a locally regenerated reach merely redraws a trunk."""
+    if len(candidate) < 2 or len(trunk) < 2:
+        return False
+    stride = max(1, len(candidate) // 16)
+    samples = list(candidate[::stride])
+    if candidate[-1] is not samples[-1]:
+        samples.append(candidate[-1])
+    close = sum(
+        _point_to_polyline_distance(point, trunk) <= float(tolerance)
+        for point in samples
+    )
+    return close / max(1, len(samples)) >= 0.82
+
+
+def inherit_parent_drainage(parent_drainage, child_drainage, child_bounds, parent_bounds):
+    """Project major parent reaches into a refined map as continuity anchors.
+
+    Local drainage still resolves tributaries against the refined DEM.  These
+    inherited trunk reaches preserve the already-established downstream route
+    until a future mesh solver can enforce exact cross-LOD boundary fluxes.
+    """
+    parent_drainage = parent_drainage if isinstance(parent_drainage, dict) else {}
+    child_drainage = child_drainage if isinstance(child_drainage, dict) else {}
+    child_bounds = child_bounds if isinstance(child_bounds, dict) else {}
+    parent_bounds = parent_bounds if isinstance(parent_bounds, dict) else {}
+    required = ("min_u", "max_u", "min_v", "max_v")
+    if not all(key in child_bounds and key in parent_bounds for key in required):
+        return child_drainage
+    child_u_span = max(1e-12, float(child_bounds["max_u"]) - float(child_bounds["min_u"]))
+    child_v_span = max(1e-12, float(child_bounds["max_v"]) - float(child_bounds["min_v"]))
+    parent_u_span = max(1e-12, float(parent_bounds["max_u"]) - float(parent_bounds["min_u"]))
+    parent_v_span = max(1e-12, float(parent_bounds["max_v"]) - float(parent_bounds["min_v"]))
+    # A parent refinement contains both its own network and trunks inherited
+    # from its parent. Collapse those records by their original river before
+    # clipping again; otherwise every level duplicates the same trunk.
+    parent_detail = int(parent_drainage.get("detail_level", 0) or 0)
+    candidates_by_origin = {}
+    for river in parent_drainage.get("rivers") or []:
+        if not isinstance(river, dict):
+            continue
+        stream_order = int(river.get("stream_order", 1) or 1)
+        flow = float(river.get("flow", 0.0) or 0.0)
+        already_inherited = bool(river.get("inherited_from_parent"))
+        if not (
+            already_inherited
+            or stream_order >= 3
+            or (stream_order >= 2 and flow >= 0.40)
+            or flow >= 0.55
+        ):
+            continue
+        origin_id = str(
+            river.get("origin_river_id")
+            or f"generated_lod_{parent_detail}:{river.get('id', 'river')}"
+        )
+        score = (
+            stream_order,
+            flow,
+            len(river.get("display_points") or river.get("points") or []),
+            already_inherited,
+        )
+        previous = candidates_by_origin.get(origin_id)
+        if previous is None or score > previous[0]:
+            candidates_by_origin[origin_id] = (score, river)
+
+    inherited = []
+    ordered_candidates = sorted(
+        candidates_by_origin.items(),
+        key=lambda item: item[1][0],
+        reverse=True,
+    )[:16]
+    for origin_id, (_score, river) in ordered_candidates:
+        parent_points = river.get("display_points") or river.get("points") or []
+        global_points = [
+            {
+                "x": float(parent_bounds["min_u"]) + float(point.get("x", 0.0)) * parent_u_span,
+                "y": float(parent_bounds["min_v"]) + float(point.get("y", 0.0)) * parent_v_span,
+            }
+            for point in parent_points
+            if isinstance(point, dict)
+        ]
+        clipped_points = []
+        for first, second in zip(global_points, global_points[1:]):
+            clipped = _clip_segment_to_bounds(first, second, child_bounds)
+            if clipped is None:
+                continue
+            for point in clipped:
+                local = {
+                    "x": round((point["x"] - float(child_bounds["min_u"])) / child_u_span, 6),
+                    "y": round((point["y"] - float(child_bounds["min_v"])) / child_v_span, 6),
+                }
+                if not clipped_points or local != clipped_points[-1]:
+                    clipped_points.append(local)
+        if len(clipped_points) < 2:
+            continue
+        inherited.append({
+            **river,
+            "id": f"parent_trunk_{origin_id}",
+            "points": clipped_points,
+            "display_points": clipped_points,
+            "network_role": "inherited_parent_trunk",
+            "inherited_from_parent": True,
+            "origin_river_id": origin_id,
+            "parent_river_id": river.get("id"),
+            "mouth": (
+                river.get("mouth")
+                if river.get("mouth") in {"ocean", "lake"}
+                else "external_boundary"
+            ),
+        })
+    local_rivers = []
+    suppressed_local_duplicates = 0
+    inherited_paths = [
+        river.get("display_points") or river.get("points") or []
+        for river in inherited
+    ]
+    for river in child_drainage.get("rivers") or []:
+        if not isinstance(river, dict):
+            continue
+        points = river.get("display_points") or river.get("points") or []
+        if any(_polyline_follows_trunk(points, trunk) for trunk in inherited_paths):
+            suppressed_local_duplicates += 1
+            continue
+        local_rivers.append(river)
+    child_drainage["rivers"] = [*inherited, *local_rivers]
+    child_drainage["inherited_parent_trunk_count"] = len(inherited)
+    child_drainage["suppressed_duplicate_local_reach_count"] = suppressed_local_duplicates
+    child_drainage["river_segment_count"] = len(child_drainage["rivers"])
+    child_drainage["cross_lod_continuity"] = (
+        "parent_trunks_projected_and_local_tributaries_resolved"
+        if inherited
+        else "no_parent_trunk_intersected_refinement"
+    )
+    return child_drainage
+
+
 def _lake_components(
     rows, filled, ocean_mask, downstream, wrap_x, detail_level,
     accumulation, area_weights, precipitation_rows, potential_evaporation_rows,
@@ -411,7 +637,9 @@ def _lake_components(
 def derive_drainage_network(
     rows, ocean_mask, runoff_rows, *, wrap_x=True, detail_level=0,
     max_segments=None, precipitation_rows=None, potential_evaporation_rows=None,
-    represented_area_m2=None,
+    groundwater_recharge_rows=None, snowmelt_runoff_rows=None,
+    driest_month_precipitation_rows=None,
+    wettest_month_precipitation_rows=None, represented_area_m2=None,
 ):
     if not rows or not rows[0]:
         return {"status": "unavailable", "model_version": MODEL_VERSION}
@@ -419,14 +647,48 @@ def derive_drainage_network(
     width = min(len(row) for row in rows)
     rows = [list(map(float, row[:width])) for row in rows]
     ocean_mask = [list(row[:width]) for row in ocean_mask]
-    filled, downstream, visit_order = _priority_flood(rows, ocean_mask, bool(wrap_x))
+    filled, flood_parent, visit_order = _priority_flood(rows, ocean_mask, bool(wrap_x))
+    downstream = _terrain_flow_directions(
+        rows, filled, flood_parent, ocean_mask, bool(wrap_x),
+    )
+    # Steepest descent on the filled DEM is acyclic. Elevation order is the
+    # correct accumulation order even when the chosen valley neighbor was not
+    # the cell's original priority-flood parent.
+    flow_order = sorted(
+        ((x, y) for y in range(height) for x in range(width)),
+        key=lambda cell: filled[cell[1]][cell[0]],
+        reverse=True,
+    )
 
     area_weights = _cell_area_weights(width, height, spherical=bool(wrap_x))
     accumulation = [[max(0.0, float(runoff_rows[y][x] or 0.0)) * area_weights[y][x] for x in range(width)] for y in range(height)]
     contributing_cells = [[0 if ocean_mask[y][x] else 1 for x in range(width)] for y in range(height)]
     contributing_area = [[0.0 if ocean_mask[y][x] else area_weights[y][x] for x in range(width)] for y in range(height)]
+    catchment_fields = {}
+    for name, field_rows in (
+        ("precipitation", precipitation_rows),
+        ("potential_evaporation", potential_evaporation_rows),
+        ("groundwater_recharge", groundwater_recharge_rows),
+        ("snowmelt_runoff", snowmelt_runoff_rows),
+        ("driest_month_precipitation", driest_month_precipitation_rows),
+        ("wettest_month_precipitation", wettest_month_precipitation_rows),
+    ):
+        if not isinstance(field_rows, list) or len(field_rows) < height:
+            continue
+        catchment_fields[name] = [
+            [
+                (
+                    max(0.0, float(field_rows[y][x] or 0.0))
+                    * area_weights[y][x]
+                    if not ocean_mask[y][x]
+                    else 0.0
+                )
+                for x in range(width)
+            ]
+            for y in range(height)
+        ]
     upstream = defaultdict(list)
-    for x, y in reversed(visit_order):
+    for x, y in flow_order:
         target = downstream.get((x, y))
         if target is None:
             continue
@@ -434,6 +696,8 @@ def derive_drainage_network(
         accumulation[ty][tx] += accumulation[y][x]
         contributing_cells[ty][tx] += contributing_cells[y][x]
         contributing_area[ty][tx] += contributing_area[y][x]
+        for field in catchment_fields.values():
+            field[ty][tx] += field[y][x]
         upstream[target].append((x, y))
 
     lake_mask, lakes = _lake_components(
@@ -465,7 +729,7 @@ def derive_drainage_network(
     }
 
     orders = {}
-    for x, y in reversed(visit_order):
+    for x, y in flow_order:
         child_orders = [orders[child] for child in upstream.get((x, y), ()) if child in stream_cells and child in orders]
         if not child_orders:
             orders[(x, y)] = 1
@@ -525,13 +789,24 @@ def derive_drainage_network(
             + _spatially_diverse_segments(feeders, 6, width, 13, bool(wrap_x))
         )
     elif detail_level == 2:
-        selected = mainstems[:36] + tributaries[:54] + feeders[:28]
+        # A regional map resolves more tributaries than a macroregion, but
+        # adjacent D8 source cells still collapse into implausible parallel
+        # hatching at this scale. Keep the strongest reach in each source
+        # neighbourhood and restore its downstream connector chain below.
+        selected = (
+            _spatially_diverse_segments(mainstems, 36, width, 3, bool(wrap_x))
+            + _spatially_diverse_segments(tributaries, 42, width, 5, bool(wrap_x))
+            + _spatially_diverse_segments(feeders, 12, width, 7, bool(wrap_x))
+        )
     else:
-        selected = mainstems[:48] + tributaries[:56] + feeders[:36]
-    if detail_level <= 1:
-        selected = _include_downstream_connectors(selected[:segment_limit], raw_segments)
+        selected = (
+            _spatially_diverse_segments(mainstems, 48, width, 2, bool(wrap_x))
+            + _spatially_diverse_segments(tributaries, 48, width, 3, bool(wrap_x))
+            + _spatially_diverse_segments(feeders, 16, width, 5, bool(wrap_x))
+        )
+    selected = _include_downstream_connectors(selected[:segment_limit], raw_segments)
     raw_segments = sorted(
-        selected if detail_level <= 1 else selected[:segment_limit],
+        selected,
         key=lambda item: (item[1], item[0], len(item[2])),
         reverse=True,
     )
@@ -549,7 +824,14 @@ def derive_drainage_network(
         elif lake_mask[path[-1][1]][path[-1][0]]:
             mouth = "lake"
         elif end_target is None:
-            mouth = "endorheic_basin"
+            on_external_boundary = (
+                not wrap_x
+                and (
+                    path[-1][0] in {0, width - 1}
+                    or path[-1][1] in {0, height - 1}
+                )
+            )
+            mouth = "external_boundary" if on_external_boundary else "endorheic_basin"
         elif ocean_mask[end_target[1]][end_target[0]]:
             mouth = "ocean"
         elif lake_mask[path[-1][1]][path[-1][0]] or lake_mask[end_target[1]][end_target[0]]:
@@ -558,6 +840,16 @@ def derive_drainage_network(
         morphology = _channel_morphology(
             path, rows, width, height, cell_spacing_m, normalized_flow, stream_order,
         )
+        weighted_area = max(
+            1e-9, float(contributing_area[path[-1][1]][path[-1][0]])
+        )
+        catchment_climate = {
+            f"mean_{name}_mm": round(
+                float(field[path[-1][1]][path[-1][0]]) / weighted_area,
+                3,
+            )
+            for name, field in catchment_fields.items()
+        }
         rivers.append({
             "id": river_id,
             "points": points,
@@ -571,6 +863,10 @@ def derive_drainage_network(
             "flow": round(normalized_flow, 4),
             "channel_morphology": morphology,
             "runoff_accumulation_mm_cells": round(float(mouth_flow), 3),
+            "catchment_mean_runoff_mm": round(
+                float(mouth_flow) / weighted_area, 3
+            ),
+            "catchment_climate": catchment_climate,
             "mouth": mouth,
             "source_elevation_m": round(rows[path[0][1]][path[0][0]], 1),
             "catchment_cell_count": int(catchment_cells),
@@ -582,30 +878,6 @@ def derive_drainage_network(
         joined = node_to_segment.get(path[-1])
         if joined and joined != river["id"]:
             river["joins_river_id"] = joined
-
-    deltas = []
-    for river in rivers:
-        if river.get("mouth") != "ocean" or float(river.get("flow", 0.0) or 0.0) < 0.18:
-            continue
-        points = river.get("display_points") or river.get("points") or []
-        if not points:
-            continue
-        mouth = points[-1]
-        catchment = max(1, int(river.get("catchment_cell_count", 1) or 1))
-        fan_radius_cells = max(1.0, min(7.0, math.sqrt(catchment) * 0.42))
-        deltas.append({
-            "id": f"delta_{len(deltas) + 1:03d}",
-            "river_id": river["id"],
-            "center": {"x": mouth["x"], "y": mouth["y"]},
-            "fan_radius_cells": round(fan_radius_cells, 2),
-            "distributary_count": max(2, min(9, int(round(2 + float(river.get("flow", 0.0) or 0.0) * 7)))),
-            "progradation_index": round(min(1.0, float(river.get("flow", 0.0) or 0.0) * math.log1p(catchment) / 5.0), 3),
-            "sediment_source": "catchment_erosion_and_river_transport",
-        })
-        morphology = river.get("channel_morphology")
-        if isinstance(morphology, dict):
-            morphology["divergence_allowed"] = True
-            morphology["divergence_context"] = "ocean_delta"
 
     terminal_cache = {}
     def terminal(cell):
@@ -652,11 +924,22 @@ def derive_drainage_network(
         "largest_lake_area_fraction": round(max((float(lake.get("area_fraction", 0.0) or 0.0) for lake in lakes), default=0.0), 6),
         "endorheic_lake_fraction": round(sum(bool(lake.get("endorheic")) for lake in lakes) / max(1, len(lakes)), 3),
         "lake_outlet_fraction": round(sum(not lake.get("endorheic") for lake in lakes) / max(1, len(lakes)), 3),
-        "deltas": deltas,
-        "delta_count": len(deltas),
+        # Delta formation is resolved later against sediment supply, shelf
+        # accommodation, waves, tides and relative water-level change. A
+        # drainage path reaching water is only a candidate mouth, not a delta.
+        "deltas": [],
+        "delta_count": 0,
+        "delta_candidate_river_ids": [
+            river["id"]
+            for river in rivers
+            if river.get("mouth") in {"ocean", "lake"}
+        ],
         "rivers": rivers,
         "river_segment_count": len(rivers),
         "feeder_count": sum(river["network_role"] == "feeder" for river in rivers),
         "maximum_stream_order": max((river["stream_order"] for river in rivers), default=0),
+        "external_boundary_outlet_count": sum(
+            river["mouth"] == "external_boundary" for river in rivers
+        ),
         "stream_threshold": round(stream_threshold, 3),
     }

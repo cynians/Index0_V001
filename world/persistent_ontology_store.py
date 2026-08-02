@@ -92,6 +92,23 @@ class PersistentOntologyStore:
                 time.sleep(min(0.8, 0.06 * (2 ** attempt)))
         raise last_error or sqlite3.OperationalError("ontology database remained locked")
 
+    def _save_world(self, world):
+        """Commit an Owlready2 world, retrying transient SQLite writer locks."""
+        last_error = None
+        for attempt in range(self.LOCK_RETRY_ATTEMPTS):
+            try:
+                world.save()
+                return True
+            except sqlite3.OperationalError as exc:
+                if not self._is_locked_database_error(exc):
+                    raise
+                last_error = exc
+                if attempt + 1 < self.LOCK_RETRY_ATTEMPTS:
+                    time.sleep(min(0.8, 0.06 * (2 ** attempt)))
+        raise last_error or sqlite3.OperationalError(
+            "ontology database remained locked during commit"
+        )
+
     def _ensure_initialized(self):
         with self._operation_lock:
             if self.database_path.exists() and self.manifest_path.exists():
@@ -106,7 +123,7 @@ class PersistentOntologyStore:
                 ontology = world.get_ontology(BASE_IRI)
                 with self.ontology_path.open("rb") as source:
                     ontology.load(fileobj=source)
-                world.save()
+                self._save_world(world)
             except Exception:
                 world.close()
                 self.database_path.unlink(missing_ok=True)
@@ -145,7 +162,7 @@ class PersistentOntologyStore:
         return self.persist_entities([entity], previous_entity_ids={str(entity.get("id") or ""): previous_entity_id})
 
     def persist_entity_fields(self, entity, field_names):
-        """Replace selected literals on one individual without touching its other triples."""
+        """Replace selected fields on one individual without rebuilding the entity."""
         if not isinstance(entity, dict):
             return False
         entity_id = str(entity.get("id") or "").strip()
@@ -169,13 +186,35 @@ class PersistentOntologyStore:
                     json_fields = set(self._property_values(individual, "jsonFieldName"))
                     for field_name in field_names:
                         value = entity.get(field_name)
-                        property_name = self._owl_name(f"field_{field_name}")
-                        self._ensure_data_property(world, ontology, property_name)[individual] = self._data_values(value)
                         self._set_metadata_membership(list_fields, field_name, isinstance(value, list))
                         self._set_metadata_membership(json_fields, field_name, self._field_uses_json(value))
+
+                        relation_property = self._relation_property(
+                            world,
+                            ontology,
+                            field_name,
+                            value,
+                        )
+                        if relation_property is not None:
+                            targets = []
+                            for target_id in self._relation_ids(value):
+                                target = world[
+                                    f"{ENTITY_IRI}{quote(target_id, safe='')}"
+                                ]
+                                if target is not None and target not in targets:
+                                    targets.append(target)
+                            relation_property[individual] = targets
+                            continue
+
+                        property_name = self._owl_name(f"field_{field_name}")
+                        self._ensure_data_property(
+                            world,
+                            ontology,
+                            property_name,
+                        )[individual] = self._data_values(value)
                     self._ensure_data_property(world, ontology, "listFieldName")[individual] = sorted(list_fields)
                     self._ensure_data_property(world, ontology, "jsonFieldName")[individual] = sorted(json_fields)
-                world.save()
+                self._save_world(world)
                 return True
             finally:
                 world.close()
@@ -192,8 +231,47 @@ class PersistentOntologyStore:
                     entity_id = str(entity.get("id") or "").strip()
                     previous_id = previous_entity_ids.get(entity_id)
                     self._replace_entity(world, entity, previous_entity_id=previous_id)
-                world.save()
+                self._save_world(world)
                 return True
+            finally:
+                world.close()
+
+    def apply_changes(self, entities=None, remove_entity_ids=None):
+        """Apply a mixed upsert/delete set in one quadstore transaction.
+
+        Cleanup and migration jobs often need to remove a graph branch while
+        repairing references on surviving entities.  Committing each change
+        separately is both slow and exposes partially migrated repository
+        states, so keep the whole operation under one world commit.
+        """
+        entities = [
+            entity
+            for entity in (entities or [])
+            if isinstance(entity, dict) and entity.get("id")
+        ]
+        remove_entity_ids = list(dict.fromkeys(
+            str(entity_id or "").strip()
+            for entity_id in (remove_entity_ids or [])
+            if str(entity_id or "").strip()
+        ))
+        if not entities and not remove_entity_ids:
+            return {"upserted": 0, "removed": 0}
+
+        with self._operation_lock:
+            owlready2 = self._import_owlready2()
+            world = self._open_world()
+            try:
+                removed = 0
+                for entity_id in remove_entity_ids:
+                    individual = world[f"{ENTITY_IRI}{quote(entity_id, safe='')}"]
+                    if individual is None:
+                        continue
+                    owlready2.destroy_entity(individual)
+                    removed += 1
+                for entity in entities:
+                    self._replace_entity(world, entity)
+                self._save_world(world)
+                return {"upserted": len(entities), "removed": removed}
             finally:
                 world.close()
 
@@ -209,7 +287,7 @@ class PersistentOntologyStore:
                 if individual is None:
                     return False
                 owlready2.destroy_entity(individual)
-                world.save()
+                self._save_world(world)
                 return True
             finally:
                 world.close()
@@ -247,6 +325,24 @@ class PersistentOntologyStore:
             }
         )
         return True
+
+    def compact_database(self):
+        """Reclaim pages left behind by large ontology cleanup transactions."""
+        with self._operation_lock:
+            connection = sqlite3.connect(
+                str(self.database_path),
+                isolation_level=None,
+                check_same_thread=False,
+                timeout=self.SQLITE_BUSY_TIMEOUT_MS / 1000.0,
+            )
+            try:
+                connection.execute(
+                    f"PRAGMA busy_timeout = {self.SQLITE_BUSY_TIMEOUT_MS}"
+                )
+                connection.execute("VACUUM")
+            finally:
+                connection.close()
+        return self.database_path
 
     def reimport_rdfxml(self):
         """Deliberately replace the working quadstore from the RDF/XML checkpoint."""

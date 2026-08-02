@@ -50,6 +50,51 @@ class OntologyRepositoryTests(unittest.TestCase):
             exported = OntologyRepository.from_owl(ontology_path).entities["idea_one"]
             self.assertEqual("#abcdef", exported["card_color"])
 
+    def test_persistent_store_point_edit_updates_object_relation(self):
+        ontology = OntologyRepository({
+            "locations": [
+                {
+                    "id": "loc_parent",
+                    "type": "location",
+                    "pretty_name": "Parent",
+                },
+                {
+                    "id": "loc_child",
+                    "type": "location",
+                    "pretty_name": "Child",
+                    "parents": [],
+                },
+            ],
+        })
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            ontology_path = temp_path / "ontology" / "index0.owl"
+            database_path = temp_path / "store.sqlite3"
+            ontology.save_owl(ontology_path)
+
+            store = PersistentOntologyStore(
+                ontology_path,
+                database_path=database_path,
+            )
+            datasets = store.load_datasets()
+            child = next(
+                entity
+                for entity in datasets["locations"]
+                if entity["id"] == "loc_child"
+            )
+            child["parents"] = ["loc_parent"]
+            self.assertTrue(store.persist_entity_fields(child, {"parents"}))
+
+            restarted = PersistentOntologyStore(
+                ontology_path,
+                database_path=database_path,
+            )
+            reloaded = {
+                entity["id"]: entity
+                for entity in restarted.load_datasets()["locations"]
+            }
+            self.assertEqual(["loc_parent"], reloaded["loc_child"]["parents"])
+
     def test_palette_persistence_uses_small_restart_safe_override_journal(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             ontology_path = Path(temp_dir) / "ontology" / "index0.owl"
@@ -152,6 +197,114 @@ class OntologyRepositoryTests(unittest.TestCase):
         self.assertTrue(connections[0].closed)
         self.assertTrue(connections[1].closed)
         self.assertFalse(connections[2].closed)
+
+    def test_persistent_store_retries_locked_world_commit(self):
+        save_calls = []
+
+        def save():
+            save_calls.append(True)
+            if len(save_calls) < 3:
+                raise sqlite3.OperationalError("database is locked")
+
+        store = PersistentOntologyStore.__new__(PersistentOntologyStore)
+        store.LOCK_RETRY_ATTEMPTS = 3
+        world = SimpleNamespace(save=save)
+
+        with patch(
+            "world.persistent_ontology_store.time.sleep",
+            return_value=None,
+        ):
+            self.assertTrue(store._save_world(world))
+
+        self.assertEqual(3, len(save_calls))
+
+    def test_entity_deletion_uses_restart_safe_journal_when_store_is_locked(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ontology_path = Path(temp_dir) / "ontology" / "index0.owl"
+            ontology_path.parent.mkdir(parents=True)
+            ontology_path.write_text("unchanged ontology", encoding="utf-8")
+            entity = {"id": "component_locked", "type": "component", "_dataset": "components"}
+            loader = EntityLoader.__new__(EntityLoader)
+            loader.use_ontology = True
+            loader.ontology_path = ontology_path
+            loader.entities = {entity["id"]: entity}
+            loader.datasets = {"components": [entity]}
+            loader._persistent_store = SimpleNamespace(
+                remove_entity=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                    sqlite3.OperationalError("database is locked")
+                )
+            )
+
+            self.assertTrue(
+                loader.remove_entity("component_locked", dataset_name="components")
+            )
+            self.assertNotIn("component_locked", loader.entities)
+            self.assertEqual([], loader.datasets["components"])
+            self.assertEqual(
+                {"component_locked"},
+                loader._load_deletion_overrides(),
+            )
+
+            loader.datasets = {"components": [dict(entity)]}
+            loader._reconcile_deletion_overrides()
+            self.assertEqual([], loader.datasets["components"])
+            self.assertEqual(
+                {"component_locked"},
+                loader._load_deletion_overrides(),
+            )
+
+            loader.datasets = {"components": [dict(entity)]}
+            loader._persistent_store = SimpleNamespace(remove_entity=lambda *_args: True)
+            loader._reconcile_deletion_overrides()
+            self.assertEqual([], loader.datasets["components"])
+            self.assertEqual(set(), loader._load_deletion_overrides())
+
+    def test_deleting_linked_planet_removes_parent_object_reference(self):
+        ontology = OntologyRepository({
+            "locations": [
+                {
+                    "id": "system_tau_ceti",
+                    "type": "location",
+                    "name": "Tau Ceti",
+                    "constituents": ["planet_tau_ceti_b"],
+                },
+                {
+                    "id": "planet_tau_ceti_b",
+                    "type": "location",
+                    "name": "Tau Ceti b",
+                    "parents": ["system_tau_ceti"],
+                },
+            ],
+        })
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            entries_dir = temp_path / "entries"
+            entries_dir.mkdir()
+            ontology_path = temp_path / "ontology" / "index0.owl"
+            try:
+                ontology.save_owl(ontology_path)
+                loader = EntityLoader(
+                    entries_directory=entries_dir,
+                    ontology_path=ontology_path,
+                    use_ontology=True,
+                )
+                self.assertTrue(loader.remove_entity(
+                    "planet_tau_ceti_b",
+                    dataset_name="locations",
+                ))
+                reloaded = EntityLoader(
+                    entries_directory=entries_dir,
+                    ontology_path=ontology_path,
+                    use_ontology=True,
+                )
+            except OntologyDependencyError as exc:
+                self.skipTest(str(exc))
+
+            self.assertNotIn("planet_tau_ceti_b", reloaded.entities)
+            self.assertNotIn(
+                "planet_tau_ceti_b",
+                reloaded.entities["system_tau_ceti"].get("constituents", []),
+            )
 
     def test_parent_relation_materializes_offspring_projection(self):
         ontology = OntologyRepository({
@@ -709,6 +862,57 @@ class OntologyRepositoryTests(unittest.TestCase):
 
             self.assertIn("idea_keep", reloaded.entities)
             self.assertNotIn("idea_remove", reloaded.entities)
+
+    def test_persistent_store_applies_mixed_changes_in_one_commit(self):
+        ontology = OntologyRepository({
+            "ideas": [
+                {"id": "idea_keep", "type": "idea", "pretty_name": "Keep"},
+                {"id": "idea_remove", "type": "idea", "pretty_name": "Remove"},
+            ],
+        })
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            ontology_path = temp_path / "ontology" / "index0.owl"
+            database_path = temp_path / "cache" / "index0.sqlite3"
+            try:
+                ontology.save_owl(ontology_path)
+                store = PersistentOntologyStore(
+                    ontology_path,
+                    database_path=database_path,
+                )
+                result = store.apply_changes(
+                    entities=[
+                        {
+                            "id": "idea_keep",
+                            "_dataset": "ideas",
+                            "type": "idea",
+                            "pretty_name": "Updated",
+                        },
+                        {
+                            "id": "idea_new",
+                            "_dataset": "ideas",
+                            "type": "idea",
+                            "pretty_name": "New",
+                        },
+                    ],
+                    remove_entity_ids=["idea_remove", "idea_missing"],
+                )
+                datasets = store.load_datasets()
+            except OntologyDependencyError as exc:
+                self.skipTest(str(exc))
+
+            ideas = {
+                entity["id"]: entity
+                for entity in datasets.get("ideas", [])
+            }
+            self.assertEqual(
+                {"upserted": 2, "removed": 1},
+                result,
+            )
+            self.assertEqual("Updated", ideas["idea_keep"]["pretty_name"])
+            self.assertIn("idea_new", ideas)
+            self.assertNotIn("idea_remove", ideas)
 
     def test_map_simulation_ontology_location_save_uses_parent_relation(self):
         ontology = OntologyRepository({

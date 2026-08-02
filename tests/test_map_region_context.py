@@ -257,6 +257,64 @@ class MapRegionContextTests(unittest.TestCase):
             generate.call_args.kwargs["seed_suffix"],
         )
 
+    def test_selected_material_occurrence_anchors_the_next_refinement(self):
+        earth = _planet()
+        occurrence = {
+            "id": "occurrence_fayalite_focus",
+            "material_id": "mat_fayalite",
+            "name": "Fayalite",
+            "center": {"x": 0.75, "y": 0.25},
+            "estimated_radius_m": 1200.0,
+            "deposit_body": {
+                "geometry": {
+                    "bounding_radius_m": 1200.0,
+                    "footprint_vertices": [[1, 0], [0, 1], [-1, 0], [0, -1]],
+                },
+            },
+        }
+        earth["regional_material_model"] = {
+            "occurrences": [occurrence],
+        }
+        world = _World([earth])
+        sim = MapSimulation(SimulationContext(2400, earth["id"], world))
+        sim.selected_material_occurrence_id = occurrence["id"]
+        generated = {"id": "focused_child"}
+
+        with (
+            patch.object(
+                sim,
+                "_visible_refinement_bounds",
+                return_value={
+                    "min_x": -50.0,
+                    "max_x": 50.0,
+                    "min_y": -25.0,
+                    "max_y": 25.0,
+                },
+            ),
+            patch(
+                "simulations.world_gen.regional_refinement.generate_refined_region",
+                return_value=generated,
+            ) as generate,
+        ):
+            result = sim.regenerate_visible_region(
+                SimpleNamespace(), 1920, 1080,
+            )
+
+        self.assertIs(generated, result)
+        self.assertEqual(
+            {
+                "min_x": 40.0,
+                "max_x": 140.0,
+                "min_y": -70.0,
+                "max_y": -20.0,
+            },
+            generate.call_args.args[2],
+        )
+        self.assertEqual(
+            occurrence["id"],
+            generate.call_args.kwargs["focus_occurrence_id"],
+        )
+
     def test_surface_derivative_validation_is_reused_between_frames(self):
         earth = _add_coast(_planet())
         world = _World([earth])
@@ -322,7 +380,14 @@ class MapRegionContextTests(unittest.TestCase):
         sim = MapSimulation(SimulationContext(2400, "region", world))
 
         self.assertIn(sim.HEIGHTMAP_LAYER_KIND, sim.get_available_layer_kinds())
+        self.assertIn(sim.TRUE_COLOR_LAYER_KIND, sim.get_available_layer_kinds())
         self.assertIn(sim.HYDROLOGY_LAYER_KIND, sim.get_available_layer_kinds())
+        true_color_layer = sim.get_heightmap_base_layer(render_mode="true_color")
+        self.assertEqual("true_color", true_color_layer["render_mode"])
+        self.assertEqual(
+            "planet-true-color-v4",
+            true_color_layer["true_color_model"]["model_version"],
+        )
         base_layer = sim.get_heightmap_base_layer()
         hydro_layer = sim._build_hydrology_layers()[0]
 

@@ -666,7 +666,11 @@ class NavigationController:
         if not location_id:
             return
 
-        self.app.world_model.refresh()
+        # ``ensure_location_anchor_for_body_entity`` persists into the active
+        # loader and updates its in-memory entity index synchronously.  A full
+        # WorldModel.refresh() here used to reopen the large ontology, rebuild
+        # every repository index, and reapply all reference models on every
+        # Space -> Map click—even when the anchor already existed.
         self.open_region_map_tab(location_id)
 
     def _infer_repository_scope_entity_id(self, active_sim):
@@ -864,6 +868,15 @@ class NavigationController:
                 getattr(active_sim, "set_active_material_distribution_item", lambda _item_id: False)(
                     action.get("material_id")
                 )
+            )
+
+        if action_id == "set_map_climate_display_item" and active_sim is not None:
+            return bool(
+                getattr(
+                    active_sim,
+                    "set_active_climate_display_item",
+                    lambda _item_id: False,
+                )(action.get("climate_id"))
             )
 
         if action_id == "select_map_location" and active_sim is not None:

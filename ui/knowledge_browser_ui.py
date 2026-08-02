@@ -2296,12 +2296,14 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             "working_year_editing",
             "working_year_cancelled",
             "random_working_year_changed",
+            "working_year_reset",
             "location_focus_changed",
             "location_focus_focus",
             "location_focus_editing",
             "location_focus_cancelled",
             "location_focus_invalid",
             "random_location_focus_changed",
+            "location_focus_reset",
         }:
             if action_kind.startswith("working_year_") or action_kind == "random_working_year_changed":
                 self._sync_cards_working_year_context()

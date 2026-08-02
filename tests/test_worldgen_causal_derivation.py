@@ -48,6 +48,32 @@ class WorldgenCausalDerivationTests(unittest.TestCase):
         self.assertGreater(hydrology["equivalent_global_water_depth_m"], 1800.0)
         self.assertLess(hydrology["equivalent_global_water_depth_m"], 3800.0)
 
+    def test_mobile_lid_resurfacing_keeps_crater_retention_low_under_thin_air(self):
+        regime = {
+            "interior": {
+                "internal_heat_w_m2": 0.07,
+                "tectonic_regime": "mobile_lid",
+            },
+            "surface_processes": {
+                "hydrologic_cycle": "limited",
+                "liquid_water_possible": True,
+                "crater_retention": "low",
+                "resurfacing_fraction": 0.24,
+                "primary_topography": "plate_boundaries_mountain_belts_and_trenches",
+                "erosion_processes": ["episodic_fluvial", "aeolian"],
+            },
+        }
+        terrain = derive_terrain_seed_model(
+            {"map_seed": "thin-air-mobile-lid", "water_fraction": 0.08},
+            {"radius_earth": 1.0, "radius_m": 6_371_000.0, "surface_gravity_g": 1.0},
+            {"surface_pressure_bar": 0.04, "estimated_surface_temperature_k": 270.0},
+            regime,
+        )
+
+        self.assertEqual("low", terrain["cratering"]["retention"])
+        self.assertLess(terrain["cratering"]["density"], 0.1)
+        self.assertEqual(0.24, terrain["cratering"]["resurfacing_fraction"])
+
     def test_geologic_history_is_seeded_prehistory_not_registry_time(self):
         terrain = {
             "map_seed": "causal-history",

@@ -337,6 +337,14 @@ class UIManager:
                 "active": active_layer in {"locations", "visual_map"},
                 "color": (82, 108, 92),
             })
+        if "true_color" in available_layers:
+            entries.append({
+                "label": "True Color",
+                "detail": "Orbital surface",
+                "layer_kind": "true_color",
+                "active": active_layer == "true_color",
+                "color": (151, 128, 101),
+            })
         if "heightmap" in available_layers:
             entries.append({
                 "label": "Height",
@@ -423,13 +431,20 @@ class UIManager:
         if active_layer == "material_heatmaps" and has_materials:
             self.map_layer_menu_mode = "materials"
             y = self._append_map_layer_button("map_layer_menu_root", "Material Choices", x, y, width, button_h, enabled=False)
-            for item in getattr(active_sim, "get_material_distribution_items", lambda: [])():
+            material_items = list(
+                getattr(active_sim, "get_material_distribution_items", lambda: [])()
+            )
+            composite_items = [
+                item for item in material_items
+                if str(item.get("id") or "") == "composite"
+            ]
+            distribution_items = [
+                item for item in material_items
+                if str(item.get("id") or "") != "composite"
+            ]
+            for item in composite_items:
                 item_id = str(item.get("id") or "")
-                if not item_id:
-                    continue
                 label = item.get("label") or item_id
-                if item.get("confidence") not in (None, ""):
-                    label = f"{label} ({float(item.get('confidence')):.2f})"
                 y = self._append_map_layer_button(
                     f"map_select_material:{item_id}",
                     label,
@@ -439,6 +454,66 @@ class UIManager:
                     button_h,
                     active=bool(item.get("active")),
                 )
+            grid_gap = 6
+            grid_columns = 2
+            grid_width = max(80, (width - grid_gap) // grid_columns)
+            grid_start_y = y
+            for index, item in enumerate(distribution_items):
+                item_id = str(item.get("id") or "")
+                if not item_id:
+                    continue
+                label = item.get("label") or item_id
+                if item.get("confidence") not in (None, ""):
+                    label = f"{label} ({float(item.get('confidence')):.2f})"
+                column = index % grid_columns
+                row = index // grid_columns
+                rect = pygame.Rect(
+                    x + column * (grid_width + grid_gap),
+                    grid_start_y + row * (button_h + grid_gap),
+                    grid_width,
+                    button_h,
+                )
+                button = UIButton(
+                    f"map_select_material:{item_id}",
+                    self._short_button_label(label, max_chars=16),
+                    rect,
+                )
+                button.map_layer_active = bool(item.get("active"))
+                button.map_layer_depth = 0
+                self.buttons.append(button)
+            if distribution_items:
+                grid_rows = (
+                    len(distribution_items) + grid_columns - 1
+                ) // grid_columns
+                y = grid_start_y + grid_rows * (button_h + grid_gap)
+        elif active_layer == "hydrology":
+            self.map_layer_menu_mode = "root"
+            climate_items = list(
+                getattr(active_sim, "get_climate_display_items", lambda: [])()
+            )
+            if climate_items:
+                y = self._append_map_layer_button(
+                    "map_climate_display_header",
+                    "Climate Display",
+                    x,
+                    y,
+                    width,
+                    button_h,
+                    enabled=False,
+                )
+                for item in climate_items:
+                    item_id = str(item.get("id") or "")
+                    if not item_id:
+                        continue
+                    y = self._append_map_layer_button(
+                        f"map_select_climate:{item_id}",
+                        item.get("label") or item_id,
+                        x,
+                        y,
+                        width,
+                        button_h,
+                        active=bool(item.get("active")),
+                    )
         else:
             self.map_layer_menu_mode = "root"
         return y
@@ -1236,7 +1311,11 @@ class UIManager:
             )
             if can_regenerate_current_region or can_regenerate_visible_region:
                 next_button_y = self._append_map_sidebar_section("DETAIL GENERATION", map_control_x, next_button_y, map_control_w)
-            if can_regenerate_current_region:
+            # When both actions are available they target the same visible
+            # scope, but only the lower action advances to the next detail
+            # level. Keep the fixed-footprint rerun as a fallback at the
+            # refinement floor instead of presenting two regenerate buttons.
+            if can_regenerate_current_region and not can_regenerate_visible_region:
                 current_region_label = getattr(
                     active_sim,
                     "get_current_region_regeneration_label",
@@ -2649,6 +2728,13 @@ class UIManager:
             return {
                 "id": "set_map_material_distribution_item",
                 "material_id": material_id,
+            }
+        if button_id.startswith("map_select_climate:"):
+            climate_id = button_id.split(":", 1)[1]
+            self.map_layer_menu_mode = "root"
+            return {
+                "id": "set_map_climate_display_item",
+                "climate_id": climate_id,
             }
         if button_id.startswith("map_select_location:"):
             location_id = button_id.split(":", 1)[1]

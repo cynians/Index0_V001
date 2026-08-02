@@ -3,6 +3,7 @@ import unittest
 
 from simulations.world_gen.coastal_geomorphology import (
     _ordered_chains,
+    _resolve_delta_systems,
     _shoreline_euclidean_distance_field,
     _squared_distance_transform_1d,
     derive_coastal_geomorphology_model,
@@ -65,6 +66,147 @@ def _water(heightmap):
 
 
 class CoastalGeomorphologyTests(unittest.TestCase):
+    @staticmethod
+    def _delta_segment(*, wave=0.15, tide_m=0.6, gradient=0.002):
+        return {
+            "id": "coast_delta_test",
+            "measurements": {
+                "centroid_uv": [0.5, 0.5],
+                "seaward_normal_uv": [1.0, 0.0],
+                "nearshore_gradient": gradient,
+                "embayment_index": 0.45,
+                "shelf_width_km": 80.0,
+            },
+            "wave_climate": {
+                "transport_capacity_index": wave,
+            },
+            "tidal_regime": {
+                "estimated_range_m": tide_m,
+            },
+            "sediment_budget": {
+                "river_supply": 0.75,
+                "accommodation_index": 0.7,
+            },
+            "relative_sea_level_state": "stable",
+            "substrate": "mud",
+            "influences": {"material_erodibility_proxy": 0.8},
+            "primary_assemblage": "clastic_beach",
+            "morphology_assemblage": "clastic_beach",
+            "coastal_system": "clastic_beach",
+            "rule_trace": {},
+        }
+
+    @staticmethod
+    def _delta_river(**overrides):
+        river = {
+            "id": "river_delta_test",
+            "mouth": "ocean",
+            "flow_regime": "perennial",
+            "estimated_discharge_m3_s": 4200.0,
+            "catchment_area_km2": 420_000.0,
+            "catchment_mean_runoff_mm": 480.0,
+            "source_elevation_m": 1800.0,
+            "channel_morphology": {"gradient_m_per_m": 0.004},
+            "points": [
+                {"x": 0.45, "y": 0.5},
+                {"x": 0.5, "y": 0.5},
+            ],
+        }
+        river.update(overrides)
+        return river
+
+    def test_sediment_rich_river_builds_planform_and_distributaries(self):
+        segment = self._delta_segment()
+        assessments, deltas = _resolve_delta_systems(
+            {"rivers": [self._delta_river()]},
+            [segment],
+            width=129,
+            height=65,
+            wrap_x=False,
+        )
+
+        self.assertEqual(1, len(deltas))
+        self.assertEqual("formed_delta", assessments[0]["formation_state"])
+        self.assertEqual("deltaic", segment["coastal_system"])
+        self.assertGreaterEqual(len(deltas[0]["footprint_points"]), 5)
+        self.assertEqual(
+            deltas[0]["distributary_count"],
+            len(deltas[0]["distributaries"]),
+        )
+        self.assertEqual("prograding", deltas[0]["trajectory"])
+
+    def test_sediment_starved_steep_mouth_does_not_become_delta(self):
+        segment = self._delta_segment(
+            wave=0.9,
+            tide_m=4.5,
+            gradient=0.025,
+        )
+        segment["sediment_budget"]["river_supply"] = 0.02
+        segment["influences"]["material_erodibility_proxy"] = 0.08
+        river = self._delta_river(
+            estimated_discharge_m3_s=0.4,
+            catchment_area_km2=45.0,
+            catchment_mean_runoff_mm=8.0,
+            source_elevation_m=90.0,
+            flow_regime="intermittent",
+            channel_morphology={"gradient_m_per_m": 0.0002},
+        )
+
+        assessments, deltas = _resolve_delta_systems(
+            {"rivers": [river]},
+            [segment],
+            width=129,
+            height=65,
+            wrap_x=False,
+        )
+
+        self.assertEqual([], deltas)
+        self.assertEqual("no_delta", assessments[0]["formation_state"])
+        self.assertNotEqual("deltaic", segment["coastal_system"])
+
+    def test_strong_tidal_work_shapes_but_does_not_forbid_supplied_delta(self):
+        segment = self._delta_segment(wave=0.18, tide_m=5.0)
+        assessments, deltas = _resolve_delta_systems(
+            {"rivers": [self._delta_river()]},
+            [segment],
+            width=129,
+            height=65,
+            wrap_x=False,
+        )
+
+        self.assertTrue(deltas)
+        self.assertEqual("tide_dominated", deltas[0]["morphodynamic_dominance"])
+        self.assertGreater(
+            assessments[0]["sediment_supply_index"],
+            assessments[0]["reworking_index"] * 0.5,
+        )
+
+    def test_lake_receives_a_lacustrine_delta_without_marine_forcing(self):
+        river = self._delta_river(
+            mouth="lake",
+            points=[[48, 28], [64, 32]],
+        )
+        assessments, deltas = _resolve_delta_systems(
+            {
+                "rivers": [river],
+                "lakes": [{
+                    "id": "lake_delta_test",
+                    "center": {"x": 0.5, "y": 0.5},
+                    "area_fraction": 0.04,
+                    "water_balance_limited": False,
+                }],
+            },
+            [],
+            width=129,
+            height=65,
+            wrap_x=False,
+        )
+
+        self.assertEqual("formed_delta", assessments[0]["formation_state"])
+        self.assertEqual("lacustrine", deltas[0]["morphodynamic_dominance"])
+        self.assertEqual({"x": 0.5, "y": 0.5}, deltas[0]["center"])
+        self.assertGreaterEqual(len(deltas[0]["distributaries"]), 3)
+
     def test_physical_distance_transform_is_euclidean_and_anisotropic(self):
         distances, nearest = _squared_distance_transform_1d(
             [math.inf, 0.0, math.inf, math.inf], 2.0,
@@ -320,6 +462,37 @@ class CoastalGeomorphologyTests(unittest.TestCase):
         self.assertEqual("deltaic", segment["morphology_assemblage"])
         self.assertEqual("rocky_cliff", segment["local_morphology_assemblage"])
         self.assertEqual(["volcanic"], segment["geologic_characters"])
+
+    def test_locally_resolved_delta_survives_coarser_parent_coast_label(self):
+        parent = {
+            "segments": [{
+                "id": "parent_rocky",
+                "primary_assemblage": "rocky_cliff",
+                "morphology_assemblage": "rocky_cliff",
+                "coastal_system": "rocky_cliff",
+                "measurements": {"planetary_centroid_uv": [0.4, 0.6]},
+            }],
+        }
+        child = {
+            "segments": [{
+                "id": "child_delta",
+                "delta_id": "delta_001",
+                "primary_assemblage": "deltaic",
+                "morphology_assemblage": "deltaic",
+                "coastal_system": "deltaic",
+                "measurements": {"planetary_centroid_uv": [0.401, 0.599]},
+            }],
+        }
+
+        inherit_parent_coastal_context(child, parent)
+
+        segment = child["segments"][0]
+        self.assertEqual("deltaic", segment["coastal_system"])
+        self.assertEqual("deltaic", segment["morphology_assemblage"])
+        self.assertEqual(
+            "locally_resolved_delta_retained_from_sediment_budget",
+            segment["scale_consistency"],
+        )
 
     def test_delta_relief_is_bounded_by_physical_footprint(self):
         rows = [[-110.0, 0.0, 110.0], [-90.0, 0.0, 90.0], [-70.0, 0.0, 70.0]]

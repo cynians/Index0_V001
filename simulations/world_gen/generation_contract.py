@@ -48,7 +48,8 @@ def build_generation_input_contract(*, planet, seed, system=None, star=None, yea
     contract = {
         "contract_version": CONTRACT_VERSION,
         "contract_kind": "worldgen_player_first_screen",
-        "derivation_policy": "all_later_stages_derive_from_this_contract_and_seeded_hidden_history",
+        "derivation_policy": "all_later_stages_derive_from_first_screen_and_astronomical_context",
+        "template_policy": "planet_template_is_noncausal_preset_provenance_only",
         "registry_year": year,
         "planet_identity": _snapshot(planet, PLANET_IDENTITY_FIELDS),
         "system_context": _snapshot(system, SYSTEM_CONTEXT_FIELDS),

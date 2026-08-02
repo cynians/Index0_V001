@@ -56,6 +56,12 @@ def _parser():
     )
     parser.add_argument("--region-center-x", type=float, default=0.5)
     parser.add_argument("--region-center-y", type=float, default=0.5)
+    parser.add_argument(
+        "--region-target",
+        choices=("manual", "mountain"),
+        default="manual",
+        help="Choose manual coordinates or automatically follow high-relief land.",
+    )
     parser.add_argument("--finish", action="store_true")
     parser.add_argument(
         "--render",
@@ -93,6 +99,7 @@ def main(argv=None):
         regional_refinement_depth=max(0, args.region_depth),
         regional_center_x=max(0.0, min(1.0, args.region_center_x)),
         regional_center_y=max(0.0, min(1.0, args.region_center_y)),
+        regional_target_mode=args.region_target,
         finish_worldgen=args.finish,
         render_outputs=bool(args.render or args.retain_debug) and not args.no_render,
         replay_contract_path=args.replay_contract,

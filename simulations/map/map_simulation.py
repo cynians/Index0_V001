@@ -7,8 +7,16 @@ from pathlib import Path
 
 from engine.logger import logger
 from world.year_utils import parse_year
-from simulations.world_gen.natural_materials import derive_planet_surface_palette
+from simulations.world_gen.natural_materials import (
+    derive_planet_surface_palette,
+    material_display_color,
+)
 from simulations.world_gen.coastal_geomorphology import ensure_coastal_model_current
+from simulations.world_gen.surface_exposure import derive_surface_exposure_model
+from simulations.world_gen.true_color import (
+    TRUE_COLOR_MODEL_VERSION,
+    derive_true_color_model,
+)
 from simulations.map.projection import (
     project_map_world_point,
     project_map_world_line,
@@ -59,6 +67,7 @@ class MapSimulation:
     LOCATION_LAYER_KIND = "locations"
     REGION_LAYER_KIND = "regions"
     HEIGHTMAP_LAYER_KIND = "heightmap"
+    TRUE_COLOR_LAYER_KIND = "true_color"
     HYDROLOGY_LAYER_KIND = "hydrology"
     COASTAL_LAYER_KIND = "coastal_geomorphology"
     GROUND_MATERIALS_LAYER_KIND = "ground_materials"
@@ -89,6 +98,7 @@ class MapSimulation:
         "locations": "Map + Locations",
         "regions": "Regions",
         "heightmap": "Heightmap",
+        "true_color": "True Color",
         "hydrology": "Hydrology + Climate",
         "coastal_geomorphology": "Coastal Geomorphology",
         "ground_materials": "Regions",
@@ -124,6 +134,8 @@ class MapSimulation:
         "water_cycle_model",
         "coastal_geomorphology_model",
         "material_heatmap_model",
+        "surface_exposure_model",
+        "true_color_model",
     )
     VISUAL_SURFACE_FIELDS = (
         "map_image_path",
@@ -131,6 +143,8 @@ class MapSimulation:
         "water_cycle_model",
         "coastal_geomorphology_model",
         "material_heatmap_model",
+        "surface_exposure_model",
+        "true_color_model",
         "map_layers",
     )
 
@@ -166,10 +180,12 @@ class MapSimulation:
 
         self.active_layer_kind = self.LOCATION_LAYER_KIND
         self.active_material_heatmap_layer_id = "composite"
+        self.active_climate_layer_id = "zones"
         self.atmosphere_visible = True
         self.height_contours_visible = True
 
         self.selected_entity_id = None
+        self.selected_material_occurrence_id = None
         self.hover_entity_id = None
         self.selected_spatial_feature_id = None
         self.hover_spatial_feature_id = None
@@ -231,8 +247,23 @@ class MapSimulation:
         self.last_saved_spatial_feature_id = None
 
         self.bounds = self._resolve_root_bounds()
+        self.max_zoom = self._maximum_camera_zoom()
         if not self._root_has_visual_surface():
             self.active_layer_kind = self.LOCATION_LAYER_KIND
+
+    def _maximum_camera_zoom(self):
+        """Allow each refinement map to frame the next physical detail scale."""
+        root = self.get_root_entity() or {}
+        try:
+            detail_level = max(0, int(root.get("map_detail_level", 0) or 0))
+        except (TypeError, ValueError):
+            detail_level = 0
+        return {
+            0: 2_048.0,
+            1: 16_384.0,
+            2: 131_072.0,
+            3: 1_000_000.0,
+        }.get(detail_level, 1_000_000.0)
 
     @property
     def year(self):
@@ -281,12 +312,41 @@ class MapSimulation:
             entity["type"] = "location"
         return loader.persist_entity(entity)
 
+    def _notify_incremental_repository_change(self, *, rebuild_relations=True):
+        """Update in-memory consumers after a local map write.
+
+        Polygon finishing already updates ``loader.entities`` and persists the
+        changed records.  Calling ``WorldModel.refresh`` here used to reopen
+        the complete ontology, reconstruct every index, and reapply reference
+        models just to display the newly created card.  Refresh the lightweight
+        relation graph instead; a full reload remains available at normal
+        repository-boundary operations.
+        """
+        world_model = self.world_model
+        if rebuild_relations:
+            touch_degrees = getattr(world_model, "touch_degrees", None)
+            if touch_degrees is not None and hasattr(touch_degrees, "refresh"):
+                touch_degrees.refresh()
+        if hasattr(world_model, "repository_revision"):
+            world_model.repository_revision += 1
+
     def _update_repository_entity_fields(self, entity_id, updates):
         loader = self._repository_loader()
         entity = getattr(loader, "entities", {}).get(entity_id) if loader is not None else None
         if not isinstance(entity, dict):
             return False
-        entity.update(updates)
+        changed_updates = {
+            field_name: value
+            for field_name, value in dict(updates or {}).items()
+            if entity.get(field_name) != value
+        }
+        if not changed_updates:
+            return True
+
+        entity.update(changed_updates)
+        persist_fields = getattr(loader, "persist_entity_fields", None)
+        if callable(persist_fields):
+            return bool(persist_fields(entity, changed_updates.keys()))
         return loader.persist_entity(entity) if hasattr(loader, "persist_entity") else False
 
     def _remove_repository_entity(self, entity_id, dataset_name=None):
@@ -511,6 +571,14 @@ class MapSimulation:
             generation_parent,
             bounds,
             str(root.get("refinement_seed_suffix") or "regional-refinement"),
+            (
+                (root.get("generated_truth_lineage") or {}).get(
+                    "focus_occurrence_id"
+                )
+                or (root.get("regional_material_model") or {}).get(
+                    "focus_occurrence_id"
+                )
+            ),
         )
 
     def regenerate_current_region(self):
@@ -522,12 +590,13 @@ class MapSimulation:
         request = self._current_region_regeneration_request()
         if request is None:
             return None
-        generation_parent, bounds, seed_suffix = request
+        generation_parent, bounds, seed_suffix, focus_occurrence_id = request
         regenerated = generate_refined_region(
             self.world_model,
             generation_parent,
             bounds,
             seed_suffix=seed_suffix,
+            focus_occurrence_id=focus_occurrence_id,
         )
         self._invalidate_layer_cache()
         return regenerated
@@ -589,6 +658,59 @@ class MapSimulation:
         self.hover_spatial_feature_id = None
         self.hover_screen_pos = None
         return True
+
+    def _focus_material_occurrence(self, camera, layer):
+        if (
+            camera is None
+            or not isinstance(layer, dict)
+            or not isinstance(layer.get("material_occurrence"), dict)
+        ):
+            return False
+        try:
+            focus_zoom = float(layer.get("material_focus_zoom") or 0.0)
+            center_x = float(layer.get("x"))
+            center_y = float(layer.get("y"))
+        except (TypeError, ValueError):
+            return False
+        if focus_zoom <= 0.0:
+            return False
+        occurrence = layer["material_occurrence"]
+        occurrence_id = str(occurrence.get("id") or "")
+        if occurrence_id:
+            self.selected_material_occurrence_id = occurrence_id
+            self.active_material_heatmap_layer_id = occurrence_id
+        camera.x = center_x
+        camera.y = center_y
+        camera.zoom = min(
+            float(self.max_zoom),
+            max(float(getattr(camera, "zoom", 1.0) or 1.0), focus_zoom),
+        )
+        self.hover_entity_id = None
+        self.hover_spatial_feature_id = None
+        self.hover_screen_pos = None
+        return True
+
+    def _selected_material_occurrence(self, root_entity=None):
+        occurrence_id = str(self.selected_material_occurrence_id or "")
+        if not occurrence_id:
+            return None
+        root_entity = root_entity or self.get_root_entity()
+        regional_model = (
+            root_entity.get("regional_material_model")
+            if isinstance(root_entity, dict)
+            else None
+        )
+        if not isinstance(regional_model, dict):
+            return None
+        return next(
+            (
+                occurrence
+                for occurrence in regional_model.get("occurrences") or []
+                if isinstance(occurrence, dict)
+                and str(occurrence.get("id") or "") == occurrence_id
+            ),
+            None,
+        )
 
     def get_next_detail_level_label(self):
         from simulations.world_gen.regional_refinement import MAX_DETAIL_LEVEL, detail_level_spec
@@ -664,13 +786,22 @@ class MapSimulation:
             return None
         center_x = (visible_bounds["min_x"] + visible_bounds["max_x"]) * 0.5
         center_y = (visible_bounds["min_y"] + visible_bounds["max_y"]) * 0.5
+        focused_occurrence = self._selected_material_occurrence(root)
+        if isinstance(focused_occurrence, dict):
+            occurrence_center = focused_occurrence.get("center") or {}
+            center_x = parent_bounds["min_x"] + float(
+                occurrence_center.get("x", 0.5) or 0.5
+            ) * parent_width
+            center_y = parent_bounds["min_y"] + float(
+                occurrence_center.get("y", 0.5) or 0.5
+            ) * parent_height
         min_x = max(parent_bounds["min_x"], min(parent_bounds["max_x"] - region_width, center_x - region_width * 0.5))
         min_y = max(parent_bounds["min_y"], min(parent_bounds["max_y"] - region_height, center_y - region_height * 0.5))
         generation_parent = dict(root)
         generation_parent["bounds"] = parent_bounds
         region = generate_refined_region(self.world_model, generation_parent, {
             "min_x": min_x, "max_x": min_x + region_width, "min_y": min_y, "max_y": min_y + region_height,
-        })
+        }, focus_occurrence_id=self.selected_material_occurrence_id)
         self._invalidate_layer_cache()
         return region
 
@@ -792,10 +923,21 @@ class MapSimulation:
                 and uv_bounds["max_v"] - uv_bounds["min_v"] >= 0.98
             ):
                 continue
-            models.append({"entity_id": candidate.get("id"), "detail_level": int(candidate.get("map_detail_level", 0) or 0),
-                           "refinement_revision": int(candidate.get("refinement_revision", 0) or 0),
-                           "heightmap_model": candidate.get("heightmap_model"), "water_cycle_model": candidate.get("water_cycle_model"),
-                           "uv_bounds": uv_bounds})
+            models.append({
+                "entity_id": candidate.get("id"),
+                "detail_level": int(candidate.get("map_detail_level", 0) or 0),
+                "refinement_revision": int(candidate.get("refinement_revision", 0) or 0),
+                "heightmap_model": candidate.get("heightmap_model"),
+                "water_cycle_model": candidate.get("water_cycle_model"),
+                "material_heatmap_model": candidate.get("material_heatmap_model"),
+                "surface_exposure_model": candidate.get("surface_exposure_model"),
+                "natural_material_model": candidate.get("natural_material_model"),
+                "surface_evolution_model": candidate.get("surface_evolution_model"),
+                "atmosphere_model": candidate.get("atmosphere_model"),
+                "surface_palette": candidate.get("surface_palette"),
+                "true_color_model": candidate.get("true_color_model"),
+                "uv_bounds": uv_bounds,
+            })
         return sorted(models, key=lambda item: (item["detail_level"], item.get("refinement_revision", 0)))
 
     def _relation_entity_ids(self, value):
@@ -1687,14 +1829,31 @@ class MapSimulation:
                 "status": "parent_climate_inherited",
                 "source_location_id": source.get("id"),
                 "climate_zones": list(source_water.get("climate_zones") or []),
+                "koppen_classes": list(source_water.get("koppen_classes") or []),
                 "climate_grid": {
                     "width": target_columns,
                     "height": target_rows,
                     "rows": cropped_climate,
+                    "koppen_rows": resample_rows(
+                        climate_grid.get("koppen_rows") or [],
+                        categorical=True,
+                    ),
                     "elevation_rows": (
                         resample_rows(source_elevation_rows)
                         if isinstance(source_elevation_rows, list) and source_elevation_rows
                         else inherited_rows
+                    ),
+                    "temperature_rows_k": resample_rows(
+                        climate_grid.get("temperature_rows_k") or []
+                    ),
+                    "annual_precipitation_rows_mm": resample_rows(
+                        climate_grid.get("annual_precipitation_rows_mm") or []
+                    ),
+                    "temperature_seasonality_rows_k": resample_rows(
+                        climate_grid.get("temperature_seasonality_rows_k") or []
+                    ),
+                    "source_uv_bounds": dict(
+                        heightmap.get("source_uv_bounds") or {}
                     ),
                 },
                 "rivers": [],
@@ -1872,17 +2031,65 @@ class MapSimulation:
         items = []
         if layer_kind == self.HYDROLOGY_LAYER_KIND:
             water = surface_water_cycle or {}
-            zones = sorted(
-                [zone for zone in (water.get("climate_zones") or []) if isinstance(zone, dict)],
-                key=lambda zone: float(zone.get("fraction", 0.0) or 0.0),
-                reverse=True,
-            )
-            for zone in zones[:max(1, int(max_items) - 3)]:
-                fraction = float(zone.get("fraction", 0.0) or 0.0)
-                items.append({
-                    "label": f"{zone.get('label') or zone.get('id')}  {fraction * 100:.0f}%",
-                    "color": list(zone.get("color") or [140, 145, 140]),
-                })
+            climate_mode = str(self.active_climate_layer_id or "zones")
+            climate_grid = water.get("climate_grid") or {}
+            if climate_mode == "annual_temperature":
+                rows = climate_grid.get("temperature_rows_k") or []
+                values = [
+                    float(value)
+                    for row in rows
+                    for value in row
+                    if value is not None
+                ]
+                low = min(values) if values else 220.0
+                high = max(values) if values else 340.0
+                midpoint = (low + high) * 0.5
+                items.extend([
+                    {"label": f"Warmest annual mean  {high - 273.15:.1f} °C", "color": [212, 74, 54]},
+                    {"label": f"Midpoint  {midpoint - 273.15:.1f} °C", "color": [202, 192, 112]},
+                    {"label": f"Coldest annual mean  {low - 273.15:.1f} °C", "color": [72, 118, 180]},
+                ])
+            elif climate_mode == "annual_precipitation":
+                rows = climate_grid.get("annual_precipitation_rows_mm") or []
+                values = sorted(
+                    float(value)
+                    for row in rows
+                    for value in row
+                    if value is not None
+                )
+                low = values[0] if values else 0.0
+                median = values[len(values) // 2] if values else 0.0
+                high = values[-1] if values else 0.0
+                items.extend([
+                    {"label": f"Wettest  {high:,.0f} mm/yr", "color": [44, 104, 168]},
+                    {"label": f"Median  {median:,.0f} mm/yr", "color": [74, 146, 102]},
+                    {"label": f"Driest  {low:,.0f} mm/yr", "color": [206, 178, 108]},
+                ])
+            else:
+                zones = sorted(
+                    [
+                        zone
+                        for zone in (
+                            water.get("koppen_classes")
+                            or water.get("climate_zones")
+                            or []
+                        )
+                        if isinstance(zone, dict)
+                    ],
+                    key=lambda zone: float(zone.get("fraction", 0.0) or 0.0),
+                    reverse=True,
+                )
+                for zone in zones[:max(1, int(max_items) - 3)]:
+                    fraction = float(zone.get("fraction", 0.0) or 0.0)
+                    code = (
+                        f"{zone.get('id')} · "
+                        if water.get("koppen_classes")
+                        else ""
+                    )
+                    items.append({
+                        "label": f"{code}{zone.get('label') or zone.get('id')}  {fraction * 100:.0f}%",
+                        "color": list(zone.get("color") or [140, 145, 140]),
+                    })
             items.extend([
                 {"label": "Rivers / streams", "color": [48, 136, 220]},
                 {"label": "Warm ocean current", "color": [242, 170, 94]},
@@ -1904,14 +2111,26 @@ class MapSimulation:
                 {"label": "Tidal range", "color": [112, 232, 218]},
                 {"label": "Longshore transport", "color": [244, 174, 76]},
             ])
+        elif layer_kind == self.TRUE_COLOR_LAYER_KIND:
+            true_color = root.get("true_color_model") or {}
+            items = [
+                {
+                    "label": "Mineral / regolith reflectance",
+                    "color": list(true_color.get("base_reflectance_rgb") or [116, 108, 96]),
+                },
+                {"label": "Terrain illumination", "color": [206, 210, 210]},
+            ]
+            if float(true_color.get("ocean_fraction", 0.0) or 0.0) > 0.0:
+                items.append({"label": "Liquid surface", "color": [18, 52, 76]})
+            if float(true_color.get("ice_fraction", 0.0) or 0.0) > 0.0:
+                items.append({"label": "Surface ice", "color": [220, 232, 235]})
         elif layer_kind == self.HEIGHTMAP_LAYER_KIND:
             heightmap = surface_heightmap or {}
             sea = heightmap.get("sea_level_m")
             minimum = float(heightmap.get("min_elevation_m", 0.0) or 0.0)
             maximum = float(heightmap.get("max_elevation_m", 0.0) or 0.0)
             midpoint = (minimum + maximum) * 0.5
-            hydrology = (root.get("terrain_seed_model") or {}).get("hydrology") or {}
-            datum_label = "Sea level" if hydrology.get("liquid_water_possible") and float(hydrology.get("target_ocean_fraction", 0.0) or 0.0) > 0.0 else "Elevation datum"
+            datum_label = "Sea level" if sea is not None else "Elevation datum"
             items = [
                 {"label": f"Local maximum  {maximum:,.0f} m", "color": [214, 212, 196]},
                 {"label": f"Local midpoint  {midpoint:,.0f} m", "color": [116, 134, 112]},
@@ -1955,6 +2174,7 @@ class MapSimulation:
         surface_context = self._root_surface_context()
         heightmap_model = surface_context.get("heightmap_model") if isinstance(surface_context, dict) else None
         if isinstance(heightmap_model, dict):
+            layers.append(self.TRUE_COLOR_LAYER_KIND)
             layers.append(self.HEIGHTMAP_LAYER_KIND)
         water_cycle_model = surface_context.get("water_cycle_model") if isinstance(surface_context, dict) else None
         climate_grid = water_cycle_model.get("climate_grid") if isinstance(water_cycle_model, dict) else None
@@ -1963,7 +2183,7 @@ class MapSimulation:
         coastal_model = surface_context.get("coastal_geomorphology_model") if isinstance(surface_context, dict) else None
         if isinstance(coastal_model, dict) and coastal_model.get("segments"):
             layers.append(self.COASTAL_LAYER_KIND)
-        heatmap_model = root.get("material_heatmap_model") if isinstance(root, dict) else None
+        heatmap_model, _source_uv_bounds = self._material_heatmap_context(root)
         if isinstance(heatmap_model, dict) and (
             isinstance(heatmap_model.get("composite_layer"), dict)
             or heatmap_model.get("layers")
@@ -2024,6 +2244,8 @@ class MapSimulation:
 
         self.active_layer_kind = layer_kind
         self.selected_entity_id = None
+        if layer_kind != self.MATERIAL_HEATMAP_LAYER_KIND:
+            self.selected_material_occurrence_id = None
         self.hover_entity_id = None
         self.selected_spatial_feature_id = None
         self.hover_spatial_feature_id = None
@@ -2076,14 +2298,95 @@ class MapSimulation:
                 or layer.get("bundle_layer_id")
                 or layer.get("image_path")
             )
+            display_semantics = str(
+                layer.get("display_semantics")
+                or {
+                    "mineral_constituent": "constituent_abundance",
+                    "sparse_deposit": "deposit_prospectivity",
+                }.get(str(layer.get("distribution_role") or ""), "")
+            )
+            label = layer.get("name") or item_id
+            if display_semantics == "deposit_prospectivity":
+                label = f"{label} potential"
+            elif display_semantics == "constituent_abundance":
+                label = f"{label} abundance"
             items.append({
                 "id": item_id,
-                "label": layer.get("name") or item_id,
+                "label": label,
                 "active": item_id == self.active_material_heatmap_layer_id,
                 "confidence": layer.get("confidence"),
+                "display_semantics": display_semantics,
             })
 
+        existing_ids = {str(item.get("id") or "") for item in items}
+        regional_model = root_entity.get("regional_material_model")
+        for occurrence in (
+            regional_model.get("occurrences") or []
+            if isinstance(regional_model, dict)
+            else []
+        ):
+            if not isinstance(occurrence, dict):
+                continue
+            occurrence_id = str(occurrence.get("id") or "")
+            if not occurrence_id or occurrence_id in existing_ids:
+                continue
+            items.append({
+                "id": occurrence_id,
+                "label": f"{occurrence.get('name') or occurrence.get('material_id') or 'Material'} deposit",
+                "active": occurrence_id == self.active_material_heatmap_layer_id,
+                "confidence": occurrence.get("confidence"),
+                "occurrence": True,
+            })
+            existing_ids.add(occurrence_id)
+
         return items
+
+    def get_climate_display_items(self):
+        surface_context = self._root_surface_context()
+        water_cycle = (
+            surface_context.get("water_cycle_model")
+            if isinstance(surface_context, dict)
+            else None
+        )
+        climate_grid = (
+            water_cycle.get("climate_grid")
+            if isinstance(water_cycle, dict)
+            else None
+        )
+        if not isinstance(climate_grid, dict) or not climate_grid.get("rows"):
+            return []
+        choices = [
+            ("zones", "Köppen Climate Zones", "koppen_rows"),
+            ("annual_temperature", "Mean Annual Temperature", "temperature_rows_k"),
+            (
+                "annual_precipitation",
+                "Annual Precipitation",
+                "annual_precipitation_rows_mm",
+            ),
+        ]
+        return [
+            {
+                "id": item_id,
+                "label": label,
+                "active": item_id == self.active_climate_layer_id,
+            }
+            for item_id, label, field in choices
+            if item_id == "zones" or climate_grid.get(field)
+        ]
+
+    def set_active_climate_display_item(self, item_id):
+        item_id = str(item_id or "zones")
+        valid_ids = {
+            str(item.get("id")) for item in self.get_climate_display_items()
+        }
+        if item_id not in valid_ids:
+            item_id = "zones"
+        changed = item_id != self.active_climate_layer_id
+        self.active_climate_layer_id = item_id
+        layer_changed = self.set_active_layer_kind(self.HYDROLOGY_LAYER_KIND)
+        if changed and not layer_changed:
+            self._invalidate_layer_cache()
+        return changed or layer_changed
 
     def _material_heatmap_layer_has_raster(self, layer):
         return bool(
@@ -2104,6 +2407,9 @@ class MapSimulation:
 
         changed = item_id != self.active_material_heatmap_layer_id
         self.active_material_heatmap_layer_id = item_id
+        self.selected_material_occurrence_id = (
+            item_id if item_id.startswith("occurrence_") else None
+        )
         layer_changed = self.set_active_layer_kind(self.MATERIAL_HEATMAP_LAYER_KIND)
         if changed and not layer_changed:
             self._invalidate_layer_cache()
@@ -3191,8 +3497,7 @@ class MapSimulation:
         self.hover_spatial_feature_id = None
         self.hover_screen_pos = None
 
-        if hasattr(self.world_model, "refresh"):
-            self.world_model.refresh()
+        self._notify_incremental_repository_change(rebuild_relations=False)
 
         self._invalidate_layer_cache()
         logger.info(f"[MapSimulation] Saved rectangle edit {target_id}")
@@ -3658,8 +3963,7 @@ class MapSimulation:
             "id": region["id"],
         }
 
-        if hasattr(self.world_model, "refresh"):
-            self.world_model.refresh()
+        self._notify_incremental_repository_change()
 
         self._invalidate_layer_cache()
 
@@ -4553,8 +4857,7 @@ class MapSimulation:
         if not updated:
             return False
 
-        if hasattr(self.world_model, "refresh"):
-            self.world_model.refresh()
+        self._notify_incremental_repository_change(rebuild_relations=False)
 
         self._invalidate_layer_cache()
         logger.info(f"[MapSimulation] Updated inspector fields {target_kind}:{target_id}")
@@ -5591,6 +5894,7 @@ class MapSimulation:
 
     def _selected_material_heatmap_layer(self, heatmap_model):
         selected_id = str(self.active_material_heatmap_layer_id or "composite")
+        occurrence_selected = selected_id.startswith("occurrence_")
         if selected_id == "composite":
             composite = heatmap_model.get("composite_layer")
             if self._material_heatmap_layer_has_raster(composite):
@@ -5610,7 +5914,8 @@ class MapSimulation:
 
         composite = heatmap_model.get("composite_layer")
         if self._material_heatmap_layer_has_raster(composite):
-            self.active_material_heatmap_layer_id = "composite"
+            if not occurrence_selected:
+                self.active_material_heatmap_layer_id = "composite"
             return composite
 
         return next(
@@ -5622,18 +5927,51 @@ class MapSimulation:
             {},
         )
 
+    def _material_heatmap_context(self, root_entity=None):
+        root_entity = root_entity or self.get_root_entity()
+        if not isinstance(root_entity, dict):
+            return None, None
+        heatmap_model = root_entity.get("material_heatmap_model")
+        source_uv_bounds = None
+        if (
+            not isinstance(heatmap_model, dict)
+            and root_entity.get("location_class") == "generated_region"
+        ):
+            lineage = root_entity.get("generated_truth_lineage") or {}
+            root_planet_id = lineage.get("root_planet_id")
+            root_planet = (
+                self.world_model.get_entity(root_planet_id)
+                if root_planet_id
+                else None
+            )
+            if isinstance(root_planet, dict):
+                heatmap_model = root_planet.get("material_heatmap_model")
+                source_uv_bounds = (
+                    (root_entity.get("heightmap_model") or {}).get(
+                        "source_uv_bounds"
+                    )
+                    or lineage.get("source_uv_bounds")
+                )
+        return heatmap_model, source_uv_bounds
+
     def _build_material_heatmap_layers(self):
+        from simulations.world_gen.regional_refinement import map_physical_dimensions_m
+
         root_entity = self.get_root_entity()
         if not isinstance(root_entity, dict):
             return []
         if root_entity.get("location_class") not in {"planet", "moon", "generated_region"}:
             return []
 
-        heatmap_model = root_entity.get("material_heatmap_model")
+        heatmap_model, source_uv_bounds = self._material_heatmap_context(
+            root_entity
+        )
         if not isinstance(heatmap_model, dict):
             return []
 
-        selected_layer = self._selected_material_heatmap_layer(heatmap_model)
+        selected_layer = dict(
+            self._selected_material_heatmap_layer(heatmap_model)
+        )
         image_path = selected_layer.get("image_path")
         bundle_path = selected_layer.get("bundle_path")
         bundle_layer_id = selected_layer.get("bundle_layer_id")
@@ -5641,7 +5979,7 @@ class MapSimulation:
             return []
 
         rect = self._planet_rect_from_entity(root_entity)
-        return [{
+        layers = [{
             "shape": "image_rect",
             "x": rect["x"],
             "y": rect["y"],
@@ -5658,6 +5996,185 @@ class MapSimulation:
             "pickable": False,
             "material_heatmap_model": heatmap_model,
         }]
+        if isinstance(source_uv_bounds, dict):
+            layers[0]["source_uv_bounds"] = dict(source_uv_bounds)
+
+        regional_model = root_entity.get("regional_material_model")
+        occurrences = (
+            regional_model.get("occurrences") or []
+            if isinstance(regional_model, dict)
+            else []
+        )
+        if self.selected_material_occurrence_id:
+            selected_occurrences = [
+                occurrence
+                for occurrence in occurrences
+                if isinstance(occurrence, dict)
+                and str(occurrence.get("id") or "")
+                == self.selected_material_occurrence_id
+            ]
+            if selected_occurrences:
+                occurrences = selected_occurrences
+        left = rect["x"] - rect["width_world"] * 0.5
+        top = rect["y"] - rect["height_world"] * 0.5
+        physical_width_m, physical_height_m = map_physical_dimensions_m(root_entity)
+        for index, occurrence in enumerate(occurrences):
+            if not isinstance(occurrence, dict):
+                continue
+            center = occurrence.get("center") or {}
+            material_id = str(occurrence.get("material_id") or "")
+            color = material_display_color(material_id)
+            center_x = float(center.get("x", 0.5) or 0.5)
+            center_y = float(center.get("y", 0.5) or 0.5)
+            world_x = left + center_x * rect["width_world"]
+            world_y = top + center_y * rect["height_world"]
+            marker_layer = {
+                "shape": "marker",
+                "x": world_x,
+                "y": world_y,
+                "min_screen_size": 8,
+                "name": occurrence.get("name") or material_id,
+                "entity_id": occurrence.get("id"),
+                "color": tuple(color[:3]),
+                "draw_order": -900 + index * 0.001,
+                "pickable": True,
+                "material_occurrence": occurrence,
+            }
+
+            spatial_representation = str(
+                occurrence.get("spatial_representation") or ""
+            )
+            if not spatial_representation and isinstance(
+                occurrence.get("deposit_body"), dict
+            ):
+                # Backward compatibility for saved v4 occurrence records.
+                spatial_representation = "bounded_deposit"
+            if spatial_representation == "bounded_deposit":
+                mapped_body = occurrence.get("deposit_body") or {}
+            elif spatial_representation in {"bedrock_unit", "surface_cover"}:
+                mapped_body = occurrence.get("material_unit") or {}
+            else:
+                # Rock-forming minerals are modal-abundance fields inside a
+                # host lithology.  A marker may identify the observation, but
+                # drawing a closed polygon would falsely imply a pure deposit.
+                layers.append(marker_layer)
+                continue
+            deposit_geometry = mapped_body.get("geometry") or {}
+            try:
+                radius_m = float(
+                    deposit_geometry.get("bounding_radius_m")
+                    or 0.0
+                )
+            except (TypeError, ValueError):
+                radius_m = 0.0
+            if (
+                radius_m <= 0.0
+                or physical_width_m <= 0.0
+                or physical_height_m <= 0.0
+            ):
+                layers.append(marker_layer)
+                continue
+
+            form = str(
+                deposit_geometry.get("form")
+                or (
+                    "irregular_exposure"
+                    if spatial_representation == "bounded_deposit"
+                    else "irregular_lithologic_contact"
+                )
+            )
+            if "vein" in form:
+                aspect_ratio = 4.2
+            elif "paleochannel" in form or "lens" in form:
+                aspect_ratio = 3.0
+            elif "layer" in form or "stratiform" in form:
+                aspect_ratio = 3.4
+            elif "blanket" in form or "profile" in form:
+                aspect_ratio = 1.8
+            elif "stockwork" in form:
+                aspect_ratio = 2.2
+            else:
+                aspect_ratio = 1.45
+            try:
+                orientation_deg = float(
+                    deposit_geometry.get("orientation_deg") or 0.0
+                )
+            except (TypeError, ValueError):
+                orientation_deg = 0.0
+            orientation_radians = math.radians(orientation_deg)
+            cosine = math.cos(orientation_radians)
+            sine = math.sin(orientation_radians)
+            minor_radius_m = radius_m / aspect_ratio
+            points = []
+            maximum_world_radius = 0.0
+            footprint_vertices = deposit_geometry.get("footprint_vertices")
+            if not (
+                isinstance(footprint_vertices, list)
+                and len(footprint_vertices) >= 8
+            ):
+                footprint_vertices = [
+                    [
+                        math.cos(math.tau * point_index / 32.0),
+                        math.sin(math.tau * point_index / 32.0),
+                    ]
+                    for point_index in range(32)
+                ]
+            for footprint_point in footprint_vertices:
+                if not (
+                    isinstance(footprint_point, (list, tuple))
+                    and len(footprint_point) >= 2
+                ):
+                    continue
+                local_x_m = radius_m * float(footprint_point[0])
+                local_y_m = minor_radius_m * float(footprint_point[1])
+                rotated_x_m = local_x_m * cosine - local_y_m * sine
+                rotated_y_m = local_x_m * sine + local_y_m * cosine
+                offset_x = rotated_x_m * rect["width_world"] / physical_width_m
+                offset_y = rotated_y_m * rect["height_world"] / physical_height_m
+                points.append((world_x + offset_x, world_y + offset_y))
+                maximum_world_radius = max(
+                    maximum_world_radius,
+                    math.hypot(offset_x, offset_y),
+                )
+
+            if maximum_world_radius <= 0.0:
+                layers.append(marker_layer)
+                continue
+
+            transition_zoom = 9.0 / maximum_world_radius
+            focus_zoom = min(
+                float(self.max_zoom),
+                max(transition_zoom, 96.0 / maximum_world_radius),
+            )
+            marker_layer.update({
+                "max_zoom": transition_zoom,
+                "strict_zoom_visibility": True,
+                "material_focus_zoom": focus_zoom,
+            })
+            layers.append(marker_layer)
+            layers.append({
+                "shape": "polygon",
+                "x": world_x,
+                "y": world_y,
+                "points": points,
+                "name": occurrence.get("name") or material_id,
+                "entity_id": occurrence.get("id"),
+                "color": tuple(color[:3]),
+                "border_color": tuple(min(255, int(channel * 1.35)) for channel in color[:3]),
+                "alpha": 68,
+                "border_alpha": 230,
+                "border_width": 2,
+                "draw_order": -899.999 + index * 0.001,
+                "pickable": True,
+                "min_zoom": transition_zoom,
+                "strict_zoom_visibility": True,
+                "label_min_screen_span": 12,
+                "material_focus_zoom": focus_zoom,
+                "material_occurrence": occurrence,
+                "deposit_geometry": dict(deposit_geometry),
+                "spatial_representation": spatial_representation,
+            })
+        return layers
 
     def _build_hydrology_layers(self):
         root_entity = self.get_root_entity()
@@ -5686,6 +6203,7 @@ class MapSimulation:
             "canvas_width_px": rect["canvas_width_px"],
             "canvas_height_px": rect["canvas_height_px"],
             "water_cycle_model": water_cycle,
+            "climate_display_mode": self.active_climate_layer_id,
             "heightmap_model": surface_context.get("heightmap_model"),
             "name": root_entity.get("name") or "Hydrology",
             "entity_id": root_entity.get("id"),
@@ -5946,6 +6464,9 @@ class MapSimulation:
             return self._build_visual_map_layers()
         if self.active_layer_kind == self.MATERIAL_HEATMAP_LAYER_KIND:
             return self._build_material_heatmap_layers()
+        if self.active_layer_kind == self.TRUE_COLOR_LAYER_KIND:
+            base_layer = self.get_heightmap_base_layer(render_mode="true_color")
+            return [base_layer] if base_layer is not None else []
         if self.active_layer_kind == self.HEIGHTMAP_LAYER_KIND:
             base_layer = self.get_heightmap_base_layer()
             return [base_layer] if base_layer is not None else []
@@ -5960,7 +6481,7 @@ class MapSimulation:
         # Location authoring is an overlay workflow. Keep the generated
         # terrain visible beneath boundaries and draft points so users do not
         # have to draw on a black canvas or switch layers mid-edit.
-        heightmap_base = self.get_heightmap_base_layer()
+        heightmap_base = self.get_heightmap_base_layer(render_mode="true_color")
         if heightmap_base is not None:
             heightmap_base = dict(heightmap_base)
             heightmap_base["pickable"] = False
@@ -6103,7 +6624,7 @@ class MapSimulation:
 
         return layers
 
-    def get_heightmap_base_layer(self):
+    def get_heightmap_base_layer(self, render_mode="scientific"):
         root_entity = self.get_root_entity()
         if not isinstance(root_entity, dict) or self._entity_is_gas_giant(root_entity):
             return None
@@ -6138,9 +6659,13 @@ class MapSimulation:
                 atmosphere=source_entity.get("atmosphere_model"),
                 terrain=source_entity.get("terrain_seed_model"),
             )
-        material_heatmap_model = root_entity.get("material_heatmap_model")
+        material_heatmap_model, material_source_uv_bounds = (
+            self._material_heatmap_context(root_entity)
+        )
         if not isinstance(material_heatmap_model, dict):
             material_heatmap_model = source_entity.get("material_heatmap_model")
+        if not isinstance(material_source_uv_bounds, dict):
+            material_source_uv_bounds = heightmap.get("source_uv_bounds")
         material_layer = (
             material_heatmap_model.get("composite_layer")
             if isinstance(material_heatmap_model, dict)
@@ -6148,8 +6673,66 @@ class MapSimulation:
         )
         if not self._material_heatmap_layer_has_raster(material_layer):
             material_layer = None
+        elif isinstance(material_source_uv_bounds, dict):
+            material_layer = dict(material_layer)
+            material_layer["source_uv_bounds"] = dict(material_source_uv_bounds)
+        material_layers = []
+        if isinstance(material_heatmap_model, dict):
+            for candidate_layer in material_heatmap_model.get("layers") or []:
+                if not self._material_heatmap_layer_has_raster(candidate_layer):
+                    continue
+                candidate_layer = dict(candidate_layer)
+                if isinstance(material_source_uv_bounds, dict):
+                    candidate_layer["source_uv_bounds"] = dict(
+                        material_source_uv_bounds
+                    )
+                material_layers.append(candidate_layer)
         atmosphere_visual = root_entity.get("atmosphere_visual_model") or source_entity.get("atmosphere_visual_model") or (source_entity.get("atmosphere_model") or {}).get("visual_model") or {}
         atmosphere_enabled = self.is_atmosphere_visible()
+        surface_exposure_model = (
+            root_entity.get("surface_exposure_model")
+            or source_entity.get("surface_exposure_model")
+        )
+        if (
+            render_mode == "true_color"
+            and not isinstance(surface_exposure_model, dict)
+            and isinstance(material_heatmap_model, dict)
+        ):
+            surface_exposure_model = derive_surface_exposure_model(
+                source_entity,
+                heightmap=heightmap,
+                material_heatmap_model=material_heatmap_model,
+                water_cycle=surface_context.get("water_cycle_model"),
+                surface_evolution=(
+                    root_entity.get("surface_evolution_model")
+                    or source_entity.get("surface_evolution_model")
+                ),
+                surface_geomorphology=(
+                    root_entity.get("surface_geomorphology_model")
+                    or source_entity.get("surface_geomorphology_model")
+                ),
+            )
+        true_color_model = root_entity.get("true_color_model") or source_entity.get("true_color_model")
+        if (
+            render_mode == "true_color"
+            and (
+                not isinstance(true_color_model, dict)
+                or true_color_model.get("model_version") != TRUE_COLOR_MODEL_VERSION
+            )
+        ):
+            true_color_model = derive_true_color_model(
+                source_entity,
+                heightmap=heightmap,
+                natural_material_model=natural_material_model,
+                atmosphere=source_entity.get("atmosphere_model"),
+                water_cycle=surface_context.get("water_cycle_model"),
+                surface_evolution=source_entity.get("surface_evolution_model"),
+                surface_exposure=surface_exposure_model,
+                surface_geomorphology=(
+                    source_entity.get("surface_geomorphology_model")
+                    or root_entity.get("surface_geomorphology_model")
+                ),
+            )
         return {
             "shape": "heightmap_base",
             "x": rect["x"],
@@ -6159,17 +6742,40 @@ class MapSimulation:
             "canvas_width_px": rect["canvas_width_px"],
             "canvas_height_px": rect["canvas_height_px"],
             "heightmap_model": heightmap,
+            "render_mode": render_mode,
+            "true_color_model": true_color_model,
+            "natural_material_model": natural_material_model,
+            "water_cycle_model": surface_context.get("water_cycle_model"),
+            "surface_evolution_model": (
+                root_entity.get("surface_evolution_model")
+                or source_entity.get("surface_evolution_model")
+            ),
+            "surface_exposure_model": surface_exposure_model,
+            "surface_geomorphology_model": (
+                source_entity.get("surface_geomorphology_model")
+                or root_entity.get("surface_geomorphology_model")
+            ),
+            "atmosphere_model": (
+                (source_entity.get("atmosphere_model") or {})
+                if atmosphere_enabled
+                else {}
+            ),
             "surface_palette": surface_palette,
             # The global palette establishes the broad surface phase; this
             # low-opacity composite then places individual materials where
             # their generated geological affinities make them probable.
             "surface_material_layer": material_layer,
+            "surface_material_layers": material_layers,
             "surface_material_opacity": 92,
             "color": root_entity.get("display_color") or root_entity.get("color") or source_entity.get("display_color"),
             "display_color": root_entity.get("display_color") or source_entity.get("display_color"),
             "surface_weathering_model": root_entity.get("surface_weathering_model") or source_entity.get("surface_weathering_model"),
             "atmosphere_tint": list(atmosphere_visual.get("tint_color") or []),
-            "atmosphere_opacity": float(atmosphere_visual.get("opacity", 0.0) or 0.0) if atmosphere_enabled else 0.0,
+            "atmosphere_opacity": (
+                float(atmosphere_visual.get("opacity", 0.0) or 0.0)
+                if atmosphere_enabled and render_mode != "true_color"
+                else 0.0
+            ),
             "name": root_entity.get("name"),
             "entity_id": root_entity.get("id"),
             "refined_region_models": self._refined_region_models(),
@@ -6453,6 +7059,13 @@ class MapSimulation:
                         continue
                 except (TypeError, ValueError):
                     pass
+            max_zoom = layer.get("pickable_max_zoom", layer.get("max_zoom"))
+            if max_zoom is not None and camera is not None:
+                try:
+                    if float(getattr(camera, "zoom", 1.0) or 1.0) >= float(max_zoom):
+                        continue
+                except (TypeError, ValueError):
+                    pass
 
             shape = layer.get("shape", "marker")
 
@@ -6500,11 +7113,20 @@ class MapSimulation:
 
         if picked_layer is None:
             self.selected_entity_id = None
+            self.selected_material_occurrence_id = None
             self.selected_spatial_feature_id = None
             return
 
         self.selected_entity_id = picked_layer.get("entity_id")
         self.selected_spatial_feature_id = picked_layer.get("spatial_feature_id")
+        occurrence = picked_layer.get("material_occurrence")
+        if isinstance(occurrence, dict):
+            occurrence_id = str(occurrence.get("id") or "")
+            self.selected_material_occurrence_id = occurrence_id or None
+            if occurrence_id:
+                self.active_material_heatmap_layer_id = occurrence_id
+        else:
+            self.selected_material_occurrence_id = None
 
         if record_click:
             target = None
@@ -7009,7 +7631,8 @@ class MapSimulation:
             if self._is_map_refocus_double_click(screen_pos):
                 self._map_focus_last_click_time = None
                 self._map_focus_last_click_screen_pos = None
-                self._refocus_map_at_screen_point(camera, screen_pos)
+                if not self._focus_material_occurrence(camera, picked_layer):
+                    self._refocus_map_at_screen_point(camera, screen_pos)
                 return
 
             self._record_map_focus_click(screen_pos)

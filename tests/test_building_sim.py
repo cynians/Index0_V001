@@ -437,6 +437,21 @@ class BuildingSimulationTests(unittest.TestCase):
                         ["temperate_dry", "highland", "temperate_dry"],
                         ["arid", "arid", "arid"],
                     ],
+                    "koppen_rows": [
+                        ["BWh", "BWh", "BWh"],
+                        ["BSk", "ET", "BSk"],
+                        ["BWh", "BWh", "BWh"],
+                    ],
+                    "temperature_rows_k": [
+                        [302.0, 301.0, 302.0],
+                        [292.0, 275.0, 292.0],
+                        [300.0, 299.0, 300.0],
+                    ],
+                    "annual_precipitation_rows_mm": [
+                        [40.0, 45.0, 40.0],
+                        [180.0, 600.0, 180.0],
+                        [55.0, 60.0, 55.0],
+                    ],
                     "elevation_rows": [
                         [0.0, 100.0, 0.0],
                         [-500.0, 1200.0, -500.0],
@@ -446,6 +461,10 @@ class BuildingSimulationTests(unittest.TestCase):
                 "climate_zones": [
                     {"id": "arid", "label": "Arid", "color": [196, 176, 118], "fraction": 0.66},
                     {"id": "highland", "label": "Highland", "color": [138, 128, 118], "fraction": 0.11},
+                ],
+                "koppen_classes": [
+                    {"id": "BWh", "label": "Hot Desert", "color": [222, 184, 102], "fraction": 0.66},
+                    {"id": "ET", "label": "Tundra", "color": [166, 180, 168], "fraction": 0.11},
                 ],
                 "rivers": [
                     {"id": "river_01", "points": [{"x": 0.5, "y": 0.4}, {"x": 0.6, "y": 0.7}], "flow": 0.4},
@@ -470,6 +489,17 @@ class BuildingSimulationTests(unittest.TestCase):
         self.assertEqual("hydrology_climate", layers[0]["shape"])
         self.assertEqual("loc_planet_blue", layers[0]["entity_id"])
         self.assertEqual("water_cycle_seeded", layers[0]["water_cycle_model"]["status"])
+        self.assertEqual(
+            ["zones", "annual_temperature", "annual_precipitation"],
+            [item["id"] for item in sim.get_climate_display_items()],
+        )
+        self.assertTrue(
+            sim.set_active_climate_display_item("annual_precipitation")
+        )
+        self.assertEqual(
+            "annual_precipitation",
+            sim.get_layers()[0]["climate_display_mode"],
+        )
 
     def test_map_sim_exposes_material_heatmap_layer_for_planet_root(self):
         planet = {
@@ -590,6 +620,171 @@ class BuildingSimulationTests(unittest.TestCase):
         self.assertEqual(["composite", "mat_basalt"], [item["id"] for item in items])
         self.assertTrue(sim.set_active_material_distribution_item("mat_basalt"))
         self.assertEqual("heatmap_mat_basalt", sim.get_layers()[0]["bundle_layer_id"])
+
+    def test_generated_region_crops_planet_material_truth_and_adds_prospects(self):
+        planet = {
+            "id": "loc_planet_blue",
+            "name": "Blue Planet",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "bounds": {
+                "type": "bbox",
+                "min_x": -180,
+                "max_x": 180,
+                "min_y": -90,
+                "max_y": 90,
+            },
+            "material_heatmap_model": {
+                "status": "generated",
+                "composite_layer": {
+                    "name": "Composite Material Heatmap",
+                    "bundle_path": "assets/maps/material_heatmaps/loc_planet_blue.i0r",
+                    "bundle_layer_id": "composite",
+                },
+                "layers": [],
+            },
+        }
+        region = {
+            "id": "generated_region_material_test",
+            "name": "Refined Patch",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "generated_region",
+            "bounds": {
+                "type": "bbox",
+                "min_x": -20,
+                "max_x": 20,
+                "min_y": -10,
+                "max_y": 10,
+            },
+            "heightmap_model": {
+                "source_uv_bounds": {
+                    "min_u": 0.25,
+                    "max_u": 0.50,
+                    "min_v": 0.40,
+                    "max_v": 0.60,
+                },
+                "sample_grid": {
+                    "width": 2,
+                    "height": 2,
+                    "rows": [[10.0, 20.0], [15.0, 25.0]],
+                },
+            },
+            "generated_truth_lineage": {
+                "root_planet_id": "loc_planet_blue",
+            },
+            "regional_material_model": {
+                "occurrences": [{
+                    "id": "occurrence_bauxite_stable",
+                    "material_id": "mat_bauxite",
+                    "name": "Bauxite",
+                    "center": {"x": 0.75, "y": 0.25},
+                }],
+            },
+        }
+        world_model = FakeWorldModel([planet, region])
+        sim = MapSimulation(SimulationContext(
+            year=2400,
+            root_entity_id=region["id"],
+            world_model=world_model,
+        ))
+
+        self.assertIn(
+            sim.MATERIAL_HEATMAP_LAYER_KIND,
+            sim.get_available_layer_kinds(),
+        )
+        self.assertTrue(
+            sim.set_active_layer_kind(sim.MATERIAL_HEATMAP_LAYER_KIND)
+        )
+        layers = sim.get_layers()
+
+        self.assertEqual("image_rect", layers[0]["shape"])
+        self.assertEqual(
+            region["heightmap_model"]["source_uv_bounds"],
+            layers[0]["source_uv_bounds"],
+        )
+        self.assertEqual("marker", layers[1]["shape"])
+        self.assertEqual(
+            "occurrence_bauxite_stable",
+            layers[1]["entity_id"],
+        )
+
+    def test_generated_material_occurrence_transitions_from_marker_to_deposit_body(self):
+        region = {
+            "id": "generated_region_deposit_test",
+            "name": "Deposit Patch",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "generated_region",
+            "map_detail_level": 2,
+            "bounds": {
+                "type": "bbox",
+                "min_x": -20,
+                "max_x": 20,
+                "min_y": -10,
+                "max_y": 10,
+            },
+            "heightmap_model": {
+                "region_width_m": 40_000.0,
+                "region_height_m": 20_000.0,
+                "sample_grid": {
+                    "width": 2,
+                    "height": 2,
+                    "rows": [[10.0, 20.0], [15.0, 25.0]],
+                },
+            },
+            "material_heatmap_model": {
+                "status": "generated",
+                "composite_layer": {
+                    "name": "Composite Material Heatmap",
+                    "bundle_path": "assets/maps/material_heatmaps/deposit_test.i0r",
+                    "bundle_layer_id": "composite",
+                },
+                "layers": [],
+            },
+            "regional_material_model": {
+                "occurrences": [{
+                    "id": "occurrence_chromite_body",
+                    "material_id": "mat_chromite",
+                    "name": "Chromite",
+                    "center": {"x": 0.75, "y": 0.25},
+                    "estimated_radius_m": 600.0,
+                    "deposit_body": {
+                        "geometry": {
+                            "form": "vein",
+                            "bounding_radius_m": 600.0,
+                            "orientation_deg": 35.0,
+                        },
+                    },
+                }],
+            },
+        }
+        sim = MapSimulation(SimulationContext(
+            year=2400,
+            root_entity_id=region["id"],
+            world_model=FakeWorldModel([region]),
+        ))
+        self.assertTrue(
+            sim.set_active_layer_kind(sim.MATERIAL_HEATMAP_LAYER_KIND)
+        )
+
+        occurrence_layers = [
+            layer for layer in sim.get_layers()
+            if layer.get("entity_id") == "occurrence_chromite_body"
+        ]
+        marker = next(layer for layer in occurrence_layers if layer["shape"] == "marker")
+        deposit = next(layer for layer in occurrence_layers if layer["shape"] == "polygon")
+
+        self.assertEqual(32, len(deposit["points"]))
+        self.assertEqual(marker["max_zoom"], deposit["min_zoom"])
+        self.assertEqual("vein", deposit["deposit_geometry"]["form"])
+        self.assertGreater(sim.max_zoom, 80.0)
+
+        camera = SimpleNamespace(x=0.0, y=0.0, zoom=1.0)
+        self.assertTrue(sim._focus_material_occurrence(camera, marker))
+        self.assertEqual((marker["x"], marker["y"]), (camera.x, camera.y))
+        self.assertGreaterEqual(camera.zoom, deposit["min_zoom"])
 
     def test_map_sim_defaults_to_combined_map_layer(self):
         planet = {
@@ -733,6 +928,11 @@ class BuildingSimulationTests(unittest.TestCase):
             region = world_model.get_entity("loc_draft_loc_region_root_001")
             self.assertEqual("location", region["type"])
             self.assertEqual("region", region["location_class"])
+            self.assertEqual(
+                0,
+                world_model.refresh_count,
+                "finishing one polygon must not reload the whole repository",
+            )
 
     def test_planet_map_can_draft_country_and_point_site_locations(self):
         with tempfile.TemporaryDirectory() as temp_dir:

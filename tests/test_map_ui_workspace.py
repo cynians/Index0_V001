@@ -237,6 +237,32 @@ class MapUIWorkspaceTests(unittest.TestCase):
 
         self.assertEqual({"id": "set_map_layer", "layer_kind": "ground_materials"}, action)
 
+    def test_true_color_has_its_own_map_layer_button(self):
+        ui = UIManager()
+        sim = FakeMapSimulation({
+            "id": "rendered_planet",
+            "name": "Rendered Planet",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+        })
+        sim.get_available_layer_kinds = lambda: [
+            "locations",
+            "true_color",
+            "heightmap",
+        ]
+        sim.get_active_layer_kind = lambda: "true_color"
+
+        ui.rebuild_for_state(sim, 1600, 900, camera=None)
+
+        selector = next(
+            item
+            for item in ui.map_layer_selector_items
+            if item.get("layer_kind") == "true_color"
+        )
+        self.assertEqual("True Color", selector["label"])
+        self.assertTrue(selector["active"])
+
     def test_generated_region_map_offers_current_region_regeneration(self):
         ui = UIManager()
         sim = FakeMapSimulation({
@@ -274,6 +300,94 @@ class MapUIWorkspaceTests(unittest.TestCase):
             if button.id == "regenerate_current_region"
         )
         self.assertEqual("Regenerate This Region - Macroregion", button.label)
+
+    def test_visible_region_regeneration_replaces_duplicate_current_region_action(self):
+        ui = UIManager()
+        sim = FakeMapSimulation({
+            "id": "refined_region_test",
+            "name": "Refined Region",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "generated_region",
+        })
+        sim.can_regenerate_current_region = lambda: True
+        sim.can_regenerate_region = lambda: True
+        sim.get_next_detail_level_label = lambda: "Regenerate Region - Local"
+
+        ui.rebuild_for_state(sim, 1600, 900, camera=None)
+
+        ids = [button.id for button in ui.buttons]
+        self.assertIn("regenerate_visible_region", ids)
+        self.assertNotIn("regenerate_current_region", ids)
+
+    def test_material_selector_uses_two_columns_for_more_than_four_materials(self):
+        ui = UIManager()
+        sim = FakeMapSimulation({
+            "id": "material_planet",
+            "name": "Material Planet",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+        })
+        sim.get_active_layer_kind = lambda: "material_heatmaps"
+        sim.get_available_layer_kinds = lambda: ["locations", "material_heatmaps"]
+        sim.get_material_distribution_items = lambda: [
+            {"id": "composite", "label": "Composite Material Heatmap", "active": True},
+            *[
+                {
+                    "id": f"material_{index}",
+                    "label": f"Material {index}",
+                    "confidence": 0.8,
+                    "active": False,
+                }
+                for index in range(8)
+            ],
+        ]
+
+        ui.rebuild_for_state(sim, 1920, 1080, camera=None)
+
+        buttons = [
+            button for button in ui.buttons
+            if button.id.startswith("map_select_material:")
+        ]
+        distribution_buttons = [
+            button for button in buttons
+            if button.id != "map_select_material:composite"
+        ]
+        self.assertEqual(9, len(buttons))
+        self.assertEqual(2, len({button.rect.x for button in distribution_buttons}))
+        self.assertEqual(4, len({button.rect.y for button in distribution_buttons}))
+
+    def test_climate_layer_exposes_zones_temperature_and_precipitation(self):
+        ui = UIManager()
+        sim = FakeMapSimulation({
+            "id": "climate_planet",
+            "name": "Climate Planet",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+        })
+        sim.get_active_layer_kind = lambda: "hydrology"
+        sim.get_available_layer_kinds = lambda: ["locations", "hydrology"]
+        sim.get_climate_display_items = lambda: [
+            {"id": "zones", "label": "Koppen Climate Zones", "active": True},
+            {"id": "annual_temperature", "label": "Mean Annual Temperature", "active": False},
+            {"id": "annual_precipitation", "label": "Annual Precipitation", "active": False},
+        ]
+
+        ui.rebuild_for_state(sim, 1600, 900, camera=None)
+
+        self.assertEqual(
+            [
+                "map_select_climate:zones",
+                "map_select_climate:annual_temperature",
+                "map_select_climate:annual_precipitation",
+            ],
+            [
+                button.id for button in ui.buttons
+                if button.id.startswith("map_select_climate:")
+            ],
+        )
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
 import math
 
+from simulations.world_gen.world_classification import infer_world_class, is_envelope_world
+
 from simulations.world_gen.planetary_physics import GRAVITATIONAL_CONSTANT
 from simulations.world_gen.formation_theory import volatile_history_from_seed
 
@@ -224,46 +226,13 @@ def _element_availability(symbol, profile):
 
 
 def _is_gas_giant(seed, physics):
-    radius_earth = max(0.0, float(physics.get("radius_earth", seed.get("radius_earth", 0.0)) or 0.0))
-    mass_earth = max(0.0, float(physics.get("mass_earth", 0.0) or 0.0))
-    explicit_kind = str(
-        seed.get("planet_class")
-        or seed.get("planet_template")
-        or seed.get("body_class")
-        or seed.get("world_kind")
-        or seed.get("planet_type")
-        or ""
-    ).strip().lower()
-    if explicit_kind in EXPLICIT_AIRLESS_SURFACE_CLASSES or explicit_kind in {"hycean", "water_rich_super_earth"}:
-        return False
-    if explicit_kind in {"gas_giant", "ice_giant", "jovian", "neptune", "sub_neptune"}:
-        return True
-    if explicit_kind and any(
-        marker in explicit_kind
-        for marker in (
-            "terrestrial",
-            "rocky",
-            "airless",
-            "ocean_world",
-            "icy_satellite",
-            "dwarf_planet",
-        )
-    ):
-        return False
-    return radius_earth >= 3.0 or mass_earth >= 12.0
+    return is_envelope_world(seed, physics)
 
 
 def _gas_giant_class(seed, physics, equilibrium_temp):
     radius_earth = max(0.0, float(physics.get("radius_earth", seed.get("radius_earth", 0.0)) or 0.0))
     mass_earth = max(0.0, float(physics.get("mass_earth", 0.0) or 0.0))
-    explicit_kind = str(
-        seed.get("planet_class")
-        or seed.get("planet_template")
-        or seed.get("body_class")
-        or seed.get("world_kind")
-        or seed.get("planet_type")
-        or ""
-    ).strip().lower()
+    explicit_kind = infer_world_class(seed, physics)
     requested = str(seed.get("atmosphere_regime") or "").strip().lower()
     if requested in {"hot_gas_giant", "hot_ice_giant"}:
         return requested
@@ -317,11 +286,7 @@ def _rocky_atmosphere_class(seed, equilibrium_temp, gravity_g):
     inventory = str(seed.get("volatile_inventory") or "earthlike").strip().lower()
     pressure = _volatile_pressure(seed)
     radius_earth = max(0.01, float(seed.get("radius_earth", 1.0) or 1.0))
-    explicit_kind = str(
-        seed.get("planet_class")
-        or seed.get("planet_template")
-        or ""
-    ).strip().lower()
+    explicit_kind = infer_world_class(seed)
 
     if explicit_kind in EXPLICIT_AIRLESS_SURFACE_CLASSES:
         return "exosphere"

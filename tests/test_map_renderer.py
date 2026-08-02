@@ -33,6 +33,195 @@ class MapRendererTests(unittest.TestCase):
 
         self.assertFalse(renderer._polygon_layer_visible_in_world(layer, camera))
 
+    def test_contour_fragments_join_into_one_continuous_path(self):
+        heightmap = {
+            "sample_grid": {
+                "width": 3,
+                "height": 4,
+                "rows": [
+                    [0.0, 1.0, 2.0],
+                    [0.0, 1.0, 2.0],
+                    [0.0, 1.0, 2.0],
+                    [0.0, 1.0, 2.0],
+                ],
+            },
+        }
+
+        segments = MapRenderer._heightmap_contour_segments(heightmap, 0.5)
+        polylines = MapRenderer._contour_polylines(segments)
+
+        self.assertEqual(3, len(segments))
+        self.assertEqual(1, len(polylines))
+        self.assertEqual(4, len(polylines[0]))
+
+    def test_contour_smoothing_preserves_open_path_endpoints(self):
+        points = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)]
+
+        smoothed = MapRenderer._smooth_contour_polyline(points)
+
+        self.assertEqual(points[0], smoothed[0])
+        self.assertEqual(points[-1], smoothed[-1])
+        self.assertGreater(len(smoothed), len(points))
+
+    def test_contour_overlay_uses_display_resolution_for_regional_maps(self):
+        renderer = self._renderer()
+        heightmap = {
+            "min_elevation_m": 0.0,
+            "max_elevation_m": 1000.0,
+            "sea_level_m": 0.0,
+            "sample_grid": {
+                "width": 3,
+                "height": 3,
+                "rows": [
+                    [0.0, 200.0, 400.0],
+                    [200.0, 500.0, 700.0],
+                    [400.0, 700.0, 1000.0],
+                ],
+            },
+        }
+
+        surface, _interval = renderer._height_contour_surface_for_layer(
+            {"heightmap_model": heightmap},
+            pixels_per_map_pixel=1.0,
+            target_size=(900, 450),
+        )
+
+        self.assertEqual((900, 450), surface.get_size())
+        self.assertIs(
+            surface,
+            renderer._projected_spherical_surface(surface, {}),
+        )
+
+    def test_blue_shoreline_comes_from_ocean_mask_not_zero_metre_datum(self):
+        renderer = self._renderer()
+        heightmap = {
+            "min_elevation_m": -10.0,
+            "max_elevation_m": 10.0,
+            "sea_level_m": None,
+            "sample_grid": {
+                "width": 4,
+                "height": 3,
+                "rows": [
+                    [-10.0, 10.0, 10.0, 10.0],
+                    [-10.0, 10.0, 10.0, 10.0],
+                    [-10.0, 10.0, 10.0, 10.0],
+                ],
+            },
+            "surface_masks": {
+                "ocean_rows": [
+                    [False, False, False, True],
+                    [False, False, False, True],
+                    [False, False, False, True],
+                ],
+            },
+        }
+
+        _levels, shoreline_paths = renderer._height_contour_geometry(
+            heightmap, interval=5,
+        )
+
+        self.assertTrue(shoreline_paths)
+        self.assertTrue(
+            all(abs(point[0] - 2.5) < 1e-6 for path in shoreline_paths for point in path)
+        )
+
+    def test_drainage_basin_boundaries_are_not_painted_as_riverbeds(self):
+        renderer = self._renderer()
+        water_cycle = {
+            "climate_grid": {
+                "rows": [["hot_desert"] * 4 for _row in range(4)],
+                "koppen_rows": [["BWh"] * 4 for _row in range(4)],
+                "elevation_rows": [[100.0] * 4 for _row in range(4)],
+            },
+            "koppen_classes": [{
+                "id": "BWh",
+                "color": [220, 180, 100],
+            }],
+            "drainage_network_model": {
+                "drainage_basin_rows": [
+                    [0, 0, 1, 1],
+                    [0, 0, 1, 1],
+                    [2, 2, 3, 3],
+                    [2, 2, 3, 3],
+                ],
+            },
+            "lakes": [],
+        }
+
+        surface = renderer._hydrology_surface_for_layer(
+            {"climate_display_mode": "zones"},
+            water_cycle,
+        )
+
+        self.assertIsNotNone(surface)
+        self.assertEqual(surface.get_at((0, 0)), surface.get_at((1, 1)))
+        self.assertEqual(surface.get_at((1, 1)), surface.get_at((2, 1)))
+        self.assertEqual(surface.get_at((1, 1)), surface.get_at((2, 2)))
+
+    def test_refined_contour_patch_clears_stale_parent_contours(self):
+        renderer = self._renderer()
+        base = pygame.Surface((100, 50), pygame.SRCALPHA)
+        base.fill((255, 255, 255, 255))
+        child_heightmap = {
+            "min_elevation_m": 100.0,
+            "max_elevation_m": 100.0,
+            "sea_level_m": None,
+            "sample_grid": {
+                "width": 3,
+                "height": 3,
+                "rows": [[100.0, 100.0, 100.0]] * 3,
+            },
+        }
+        layer = {
+            "refined_region_models": [{
+                "entity_id": "child",
+                "detail_level": 2,
+                "refinement_revision": 1,
+                "heightmap_model": child_heightmap,
+                "uv_bounds": {
+                    "min_u": 0.25,
+                    "max_u": 0.75,
+                    "min_v": 0.2,
+                    "max_v": 0.8,
+                },
+            }],
+        }
+
+        composite = renderer._composite_refined_contours(
+            base, layer, pixels_per_map_pixel=1.0, regions_only=False,
+        )
+
+        self.assertEqual(255, composite.get_at((10, 10)).a)
+        self.assertEqual(0, composite.get_at((50, 25)).a)
+
+    def test_contour_geometry_is_reused_across_display_sizes(self):
+        renderer = self._renderer()
+        heightmap = {
+            "min_elevation_m": -100.0,
+            "max_elevation_m": 100.0,
+            "sea_level_m": 20.0,
+            "sample_grid": {
+                "width": 4,
+                "height": 3,
+                "rows": [
+                    [-100.0, -20.0, 40.0, 100.0],
+                    [-100.0, -20.0, 40.0, 100.0],
+                    [-100.0, -20.0, 40.0, 100.0],
+                ],
+            },
+        }
+        layer = {"heightmap_model": heightmap}
+
+        renderer._height_contour_surface_for_layer(
+            layer, 1.0, target_size=(700, 350),
+        )
+        geometry_count = len(renderer._height_contour_geometry_cache)
+        renderer._height_contour_surface_for_layer(
+            layer, 1.0, target_size=(1100, 550),
+        )
+
+        self.assertEqual(geometry_count, len(renderer._height_contour_geometry_cache))
+
     def test_polygon_bounds_keep_visible_layers(self):
         renderer = self._renderer()
         camera = FakeCamera()

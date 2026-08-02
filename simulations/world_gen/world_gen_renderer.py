@@ -14,6 +14,10 @@ from simulations.world_gen.terrain_seed import (
 )
 from simulations.world_gen.natural_materials import derive_planet_surface_palette
 from simulations.world_gen.material_heatmaps import load_raster_bundle_surface
+from simulations.world_gen.true_color import (
+    derive_true_color_model,
+    render_true_color_surface,
+)
 
 
 class WorldGenRenderer:
@@ -28,6 +32,7 @@ class WorldGenRenderer:
         self._orbit_path_cache = {}
         self._water_cycle_preview_cache = {}
         self._material_preview_surface_cache = {}
+        self._true_color_preview_cache = {}
 
     def _coerce_rgb(self, value, fallback=(122, 176, 232)):
         if isinstance(value, (list, tuple)) and len(value) >= 3:
@@ -70,6 +75,39 @@ class WorldGenRenderer:
         self._material_preview_surface_cache[cache_key] = surface
         return surface
 
+    def _material_preview_components(self, material_heatmap_model):
+        model = (
+            material_heatmap_model
+            if isinstance(material_heatmap_model, dict)
+            else {}
+        )
+        components = []
+        for layer in model.get("layers") or []:
+            if not isinstance(layer, dict):
+                continue
+            bundle_path = layer.get("bundle_path")
+            layer_id = layer.get("bundle_layer_id")
+            if not bundle_path or not layer_id:
+                continue
+            cache_key = (id(model), str(bundle_path), str(layer_id))
+            surface = self._material_preview_surface_cache.get(cache_key)
+            if surface is None:
+                path = Path(bundle_path)
+                if not path.is_absolute():
+                    storage_root = getattr(self.app_view, "storage_root", None)
+                    path = (
+                        Path(storage_root).resolve() / path
+                        if storage_root
+                        else Path(__file__).resolve().parents[2] / path
+                    )
+                surface = load_raster_bundle_surface(path, layer_id)
+                self._material_preview_surface_cache[cache_key] = surface
+            if surface is not None:
+                component = dict(layer)
+                component["surface"] = surface
+                components.append(component)
+        return components
+
     def _surface_palette_colors(self, entity=None, material_model=None):
         palette = entity.get("surface_palette") if isinstance(entity, dict) else None
         if not isinstance(palette, dict) and isinstance(material_model, dict):
@@ -101,6 +139,60 @@ class WorldGenRenderer:
             self._mix_rgb(base, (218, 214, 198), 0.34),
             self._mix_rgb(base, (46, 48, 44), 0.18),
         ]
+
+    def _true_color_preview_surface(
+        self,
+        heightmap,
+        selected_planet,
+        material_model,
+        material_heatmap_model,
+    ):
+        selected_planet = selected_planet if isinstance(selected_planet, dict) else {}
+        model = selected_planet.get("true_color_model")
+        if not isinstance(model, dict):
+            model = derive_true_color_model(
+                selected_planet,
+                heightmap=heightmap,
+                natural_material_model=material_model,
+                atmosphere=selected_planet.get("atmosphere_model"),
+                water_cycle=selected_planet.get("water_cycle_model"),
+                surface_evolution=selected_planet.get("surface_evolution_model"),
+                surface_exposure=selected_planet.get("surface_exposure_model"),
+                surface_geomorphology=selected_planet.get("surface_geomorphology_model"),
+            )
+        material_surface = self._material_preview_surface(material_heatmap_model)
+        material_components = self._material_preview_components(
+            material_heatmap_model
+        )
+        cache_key = (
+            id(heightmap),
+            id((heightmap.get("sample_grid") or {}).get("rows")),
+            repr(model),
+            id(material_surface),
+            tuple(id(item.get("surface")) for item in material_components),
+            id(selected_planet.get("water_cycle_model")),
+            id(selected_planet.get("surface_evolution_model")),
+            id(selected_planet.get("surface_exposure_model")),
+            id(selected_planet.get("surface_geomorphology_model")),
+        )
+        cached = self._true_color_preview_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        surface = render_true_color_surface(
+            heightmap,
+            model,
+            material_surface=material_surface,
+            material_components=material_components,
+            water_cycle=selected_planet.get("water_cycle_model"),
+            surface_evolution=selected_planet.get("surface_evolution_model"),
+            surface_exposure=selected_planet.get("surface_exposure_model"),
+            surface_geomorphology=selected_planet.get("surface_geomorphology_model"),
+            atmosphere=selected_planet.get("atmosphere_model"),
+        )
+        if len(self._true_color_preview_cache) >= 8:
+            self._true_color_preview_cache.clear()
+        self._true_color_preview_cache[cache_key] = surface
+        return surface
 
     def _world_point_for_au(self, au_x, au_y):
         return au_x * self.AU_M, au_y * self.AU_M
@@ -1549,22 +1641,40 @@ class WorldGenRenderer:
         if sample_w < 2 or sample_h < 2:
             return
 
-        levels = contour_levels_for_heightmap(heightmap, interval_m, max_levels=18)
+        levels = list(
+            contour_levels_for_heightmap(heightmap, interval_m, max_levels=18)
+        )
+        sea_level = heightmap.get("sea_level_m")
+        if (
+            sea_level is not None
+            and float(heightmap.get("min_elevation_m", sea_level) or sea_level)
+            <= float(sea_level)
+            <= float(heightmap.get("max_elevation_m", sea_level) or sea_level)
+            and not any(
+                abs(float(level) - float(sea_level)) < 1e-6
+                for level in levels
+            )
+        ):
+            levels.append(float(sea_level))
+            levels.sort()
         scale_x = map_rect.width / max(1, sample_w - 1)
         scale_y = map_rect.height / max(1, sample_h - 1)
         previous_clip = screen.get_clip()
         screen.set_clip(clip_rect)
         try:
             for level in levels:
-                is_zero = abs(level) < interval_m * 0.45
+                is_waterline = (
+                    sea_level is not None
+                    and abs(float(level) - float(sea_level)) < 1e-6
+                )
                 is_major = level % max(interval_m * 5, 1) == 0
-                if is_zero:
+                if is_waterline:
                     color = (128, 190, 240)
                     width = 2
                 elif is_major:
                     color = (178, 190, 206)
                     width = 1
-                elif level < 0:
+                elif sea_level is not None and level < float(sea_level):
                     color = (72, 92, 116)
                     width = 1
                 else:
@@ -1588,6 +1698,24 @@ class WorldGenRenderer:
         sample_h = int(grid.get("height", len(rows)) or len(rows))
         sample_w = int(grid.get("width", len(rows[0]) if rows else 0) or 0)
         if sample_w < 2 or sample_h < 2:
+            return
+        true_color_surface = self._true_color_preview_surface(
+            heightmap,
+            selected_planet,
+            material_model,
+            material_heatmap_model,
+        )
+        if true_color_surface is not None:
+            previous_clip = screen.get_clip()
+            screen.set_clip(clip_rect)
+            try:
+                scaled_surface = pygame.transform.smoothscale(
+                    true_color_surface,
+                    (max(1, map_rect.width), max(1, map_rect.height)),
+                )
+                screen.blit(scaled_surface, map_rect.topleft)
+            finally:
+                screen.set_clip(previous_clip)
             return
         masks = heightmap.get("surface_masks") if isinstance(heightmap.get("surface_masks"), dict) else {}
         ice_rows = masks.get("ice_rows") if isinstance(masks.get("ice_rows"), list) else []
@@ -1681,11 +1809,23 @@ class WorldGenRenderer:
                     zone.get("color"),
                     fallback=colors.get(str(zone["id"]), (150, 150, 150)),
                 )
+        for zone in water_cycle.get("koppen_classes") or []:
+            if isinstance(zone, dict) and zone.get("id"):
+                colors[str(zone["id"])] = self._coerce_rgb(
+                    zone.get("color"),
+                    fallback=(150, 150, 150),
+                )
         return colors
 
     def _draw_water_cycle_preview(self, screen, rect, water_cycle):
         climate_grid = water_cycle.get("climate_grid") if isinstance(water_cycle, dict) else {}
-        rows = climate_grid.get("rows") if isinstance(climate_grid.get("rows"), list) else []
+        rows = (
+            climate_grid.get("koppen_rows")
+            if isinstance(climate_grid.get("koppen_rows"), list)
+            else climate_grid.get("rows")
+            if isinstance(climate_grid.get("rows"), list)
+            else []
+        )
         pygame.draw.rect(screen, (8, 10, 14), rect)
         if not rows:
             pygame.draw.rect(screen, (96, 108, 132), rect, 1)
@@ -1723,7 +1863,7 @@ class WorldGenRenderer:
                         except (TypeError, ValueError):
                             elevation = 0.0
                         elevation_norm = max(0.0, min(1.0, (elevation - min_elevation) / elevation_span))
-                        if str(zone_id) == "ocean":
+                        if str(zone_id) in {"ocean", "Ocean"}:
                             shade = 0.78 + (1.0 - elevation_norm) * 0.18
                         else:
                             shade = 0.78 + elevation_norm * 0.28
@@ -1806,7 +1946,7 @@ class WorldGenRenderer:
             f"{selected_planet.get('name', selected_planet.get('id', 'Planet'))} Water Cycle"
         )
         screen.blit(font.render(title, True, (244, 244, 244)), (panel.x + 16, panel.y + 12))
-        subtitle = "Climate zones and rivers are derived from heightmap, sea level, pressure, temperature, and map seed."
+        subtitle = "Annual heat and moisture are iterated from terrain, water, evaporation, winds, and orbital forcing; zones use Köppen-Geiger normals."
         screen.blit(font.render(subtitle, True, (158, 170, 190)), (panel.x + 16, panel.y + 34))
 
         sidebar_w = 360
@@ -1825,6 +1965,8 @@ class WorldGenRenderer:
             ("Liquid water", "possible" if water_cycle.get("liquid_water_possible") else "not stable"),
             ("Pressure", f"{float(runoff.get('surface_pressure_bar', 0.0)):.3f} bar"),
             ("Mean temp", f"{float(runoff.get('mean_temperature_k', 0.0)):.1f} K"),
+            ("Mean precipitation", f"{float(runoff.get('mean_annual_precipitation_mm', 0.0)):.0f} mm/yr"),
+            ("Climate iterations", str(int((water_cycle.get("climate_solver") or {}).get("iterations", 0) or 0))),
             ("Rivers", str(int(water_cycle.get("river_count", 0) or 0))),
             ("Coastline", f"{float(coastal_summary.get('coastline_length_km', 0.0) or 0.0):,.0f} km"),
             ("Estuaries / deltas", f"{int(coastal_summary.get('estuary_count', 0) or 0)} / {int(coastal_summary.get('delta_count', 0) or 0)}"),
@@ -1834,9 +1976,13 @@ class WorldGenRenderer:
             y = self._draw_status_row(screen, font, row_rect, label, value)
 
         y += 10
-        screen.blit(font.render("Climate Coverage", True, (232, 238, 246)), (sidebar.x + 12, y))
+        screen.blit(font.render("Köppen-Geiger Coverage", True, (232, 238, 246)), (sidebar.x + 12, y))
         y += 28
-        for zone in (water_cycle.get("climate_zones") or [])[:8]:
+        for zone in (
+            water_cycle.get("koppen_classes")
+            or water_cycle.get("climate_zones")
+            or []
+        )[:8]:
             if not isinstance(zone, dict):
                 continue
             color = self._coerce_rgb(zone.get("color"), fallback=(154, 166, 188))
@@ -1847,7 +1993,8 @@ class WorldGenRenderer:
             bar_w = max(1, row.width - 172)
             pygame.draw.rect(screen, (42, 48, 60), pygame.Rect(bar_x, row.y + 5, bar_w, 10))
             pygame.draw.rect(screen, color, pygame.Rect(bar_x, row.y + 5, int(bar_w * fraction), 10))
-            label = str(zone.get("label") or zone.get("id") or "Climate")
+            code = str(zone.get("id") or "")
+            label = f"{code} {zone.get('label') or 'Climate'}".strip()
             screen.blit(font.render(label[:16], True, (196, 210, 228)), (row.x + 22, row.y))
             screen.blit(font.render(f"{fraction * 100.0:.0f}%", True, (154, 166, 188)), (row.right - 42, row.y))
             y += 24

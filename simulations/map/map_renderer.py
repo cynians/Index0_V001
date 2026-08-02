@@ -9,6 +9,7 @@ except ImportError:  # Keep a functional, slower path for minimal installations.
     np = None
 
 from simulations.world_gen.material_heatmaps import load_raster_bundle_surface
+from simulations.world_gen.true_color import render_true_color_surface
 from simulations.world_gen.heightmap import (
     contour_levels_for_heightmap,
     display_contour_interval_m,
@@ -27,8 +28,10 @@ class MapRenderer:
         self._image_cache = {}
         self._scaled_image_cache = {}
         self._heightmap_surface_cache = {}
+        self._true_color_surface_cache = {}
         self._scaled_heightmap_cache = {}
         self._height_contour_surface_cache = {}
+        self._height_contour_geometry_cache = {}
         self._scaled_height_contour_cache = {}
         self._large_scaled_layer_cache = {}
         self._hydrology_surface_cache = {}
@@ -39,6 +42,7 @@ class MapRenderer:
         self._projection_coordinate_cache = {}
         self._projection_source_cache = {}
         self._material_composite_cache = {}
+        self._cropped_surface_cache = {}
         self._reference_land_surface_cache = {}
         self._static_outline_surface_cache = {}
         self._text_surface_cache = {}
@@ -73,32 +77,277 @@ class MapRenderer:
                 return col + amount, row + 1
             return col, row + amount
 
+        def append_cell(segments, col, row, v00, v10, v01, v11):
+            points = {}
+            for edge, value_a, value_b in (
+                ("top", v00, v10),
+                ("right", v10, v11),
+                ("bottom", v01, v11),
+                ("left", v00, v01),
+            ):
+                if (
+                    (value_a < level <= value_b)
+                    or (value_b < level <= value_a)
+                ):
+                    points[edge] = edge_point(edge, col, row, value_a, value_b)
+            if len(points) == 2:
+                segments.append(tuple(points.values()))
+            elif len(points) == 4:
+                center_high = (v00 + v10 + v01 + v11) * 0.25 >= level
+                if (v00 >= level) == center_high:
+                    segments.extend((
+                        (points["top"], points["right"]),
+                        (points["bottom"], points["left"]),
+                    ))
+                else:
+                    segments.extend((
+                        (points["top"], points["left"]),
+                        (points["right"], points["bottom"]),
+                    ))
+
         segments = []
+        if np is not None:
+            try:
+                values = np.asarray(
+                    [row[:sample_w] for row in rows[:sample_h]],
+                    dtype=np.float64,
+                )
+                v00 = values[:-1, :-1]
+                v10 = values[:-1, 1:]
+                v01 = values[1:, :-1]
+                v11 = values[1:, 1:]
+                crossing_count = (
+                    ((v00 < level) & (level <= v10))
+                    | ((v10 < level) & (level <= v00))
+                ).astype(np.uint8)
+                crossing_count += (
+                    ((v10 < level) & (level <= v11))
+                    | ((v11 < level) & (level <= v10))
+                )
+                crossing_count += (
+                    ((v01 < level) & (level <= v11))
+                    | ((v11 < level) & (level <= v01))
+                )
+                crossing_count += (
+                    ((v00 < level) & (level <= v01))
+                    | ((v01 < level) & (level <= v00))
+                )
+                active_rows, active_cols = np.nonzero(
+                    (crossing_count == 2) | (crossing_count == 4)
+                )
+                for row, col in zip(active_rows.tolist(), active_cols.tolist()):
+                    append_cell(
+                        segments, col, row,
+                        float(values[row, col]),
+                        float(values[row, col + 1]),
+                        float(values[row + 1, col]),
+                        float(values[row + 1, col + 1]),
+                    )
+                return segments
+            except (TypeError, ValueError):
+                pass
+
         for row in range(sample_h - 1):
             for col in range(sample_w - 1):
                 try:
-                    v00 = float(rows[row][col])
-                    v10 = float(rows[row][col + 1])
-                    v01 = float(rows[row + 1][col])
-                    v11 = float(rows[row + 1][col + 1])
+                    append_cell(
+                        segments, col, row,
+                        float(rows[row][col]),
+                        float(rows[row][col + 1]),
+                        float(rows[row + 1][col]),
+                        float(rows[row + 1][col + 1]),
+                    )
                 except (IndexError, TypeError, ValueError):
                     continue
-                points = []
-                for edge, value_a, value_b in (
-                    ("top", v00, v10),
-                    ("right", v10, v11),
-                    ("bottom", v01, v11),
-                    ("left", v00, v01),
-                ):
-                    if value_a != value_b and min(value_a, value_b) <= level <= max(value_a, value_b):
-                        points.append(edge_point(edge, col, row, value_a, value_b))
-                if len(points) == 2:
-                    segments.append((points[0], points[1]))
-                elif len(points) == 4:
-                    segments.extend(((points[0], points[1]), (points[2], points[3])))
         return segments
 
-    def _height_contour_surface_for_layer(self, layer, pixels_per_map_pixel, regions_only=False):
+    @staticmethod
+    def _contour_polylines(segments):
+        """Join marching-squares fragments into continuous contour paths."""
+        if not segments:
+            return []
+
+        def key(point):
+            return round(float(point[0]), 6), round(float(point[1]), 6)
+
+        adjacency = {}
+        for index, (first, second) in enumerate(segments):
+            adjacency.setdefault(key(first), []).append((index, 0))
+            adjacency.setdefault(key(second), []).append((index, 1))
+        unused = set(range(len(segments)))
+        open_indices = [
+            index
+            for index, (first, second) in enumerate(segments)
+            if len(adjacency.get(key(first), ())) == 1
+            or len(adjacency.get(key(second), ())) == 1
+        ]
+        open_cursor = 0
+        polylines = []
+        while unused:
+            while (
+                open_cursor < len(open_indices)
+                and open_indices[open_cursor] not in unused
+            ):
+                open_cursor += 1
+            if open_cursor < len(open_indices):
+                initial = open_indices[open_cursor]
+                open_cursor += 1
+            else:
+                initial = next(iter(unused))
+            first, second = segments[initial]
+            if len(adjacency.get(key(second), ())) == 1 and len(adjacency.get(key(first), ())) != 1:
+                first, second = second, first
+            unused.remove(initial)
+            polyline = [first, second]
+            while True:
+                endpoint_key = key(polyline[-1])
+                continuation = next(
+                    (
+                        (index, side)
+                        for index, side in adjacency.get(endpoint_key, ())
+                        if index in unused
+                    ),
+                    None,
+                )
+                if continuation is None:
+                    break
+                index, side = continuation
+                unused.remove(index)
+                segment = segments[index]
+                polyline.append(segment[1 - side])
+                if key(polyline[-1]) == key(polyline[0]):
+                    break
+            if len(polyline) >= 2:
+                polylines.append(polyline)
+        return polylines
+
+    @staticmethod
+    def _smooth_contour_polyline(points, passes=1):
+        """Apply restrained display smoothing without changing contour levels."""
+        if len(points) < 3:
+            return list(points)
+        closed = (
+            math.hypot(
+                float(points[0][0]) - float(points[-1][0]),
+                float(points[0][1]) - float(points[-1][1]),
+            )
+            <= 1e-5
+        )
+        smoothed = list(points)
+        for _pass in range(max(0, int(passes))):
+            if closed:
+                ring = smoothed[:-1]
+                refined = []
+                for index, point in enumerate(ring):
+                    following = ring[(index + 1) % len(ring)]
+                    refined.extend((
+                        (
+                            point[0] * 0.75 + following[0] * 0.25,
+                            point[1] * 0.75 + following[1] * 0.25,
+                        ),
+                        (
+                            point[0] * 0.25 + following[0] * 0.75,
+                            point[1] * 0.25 + following[1] * 0.75,
+                        ),
+                    ))
+                smoothed = [*refined, refined[0]]
+            else:
+                refined = [smoothed[0]]
+                for first, second in zip(smoothed, smoothed[1:]):
+                    refined.extend((
+                        (
+                            first[0] * 0.75 + second[0] * 0.25,
+                            first[1] * 0.75 + second[1] * 0.25,
+                        ),
+                        (
+                            first[0] * 0.25 + second[0] * 0.75,
+                            first[1] * 0.25 + second[1] * 0.75,
+                        ),
+                    ))
+                smoothed = [*refined, smoothed[-1]]
+        return smoothed
+
+    def _height_contour_geometry(self, heightmap, interval):
+        grid = heightmap.get("sample_grid") if isinstance(heightmap, dict) else {}
+        rows = grid.get("rows") if isinstance(grid.get("rows"), list) else []
+        masks = heightmap.get("surface_masks") if isinstance(heightmap.get("surface_masks"), dict) else {}
+        ocean_rows = masks.get("ocean_rows") if isinstance(masks.get("ocean_rows"), list) else []
+        cache_key = (
+            id(heightmap),
+            id(rows),
+            id(ocean_rows) if ocean_rows else None,
+            int(interval),
+            heightmap.get("source_heightfield_fingerprint"),
+            heightmap.get("sea_level_m"),
+        )
+        cached = self._height_contour_geometry_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        sea_level = heightmap.get("sea_level_m")
+        level_paths = []
+        for level in contour_levels_for_heightmap(heightmap, interval, max_levels=18):
+            # The shoreline is rendered independently from the water mask.
+            # Do not also render a nearby elevation isoline underneath it.
+            if (
+                sea_level is not None
+                and abs(float(level) - float(sea_level)) < float(interval) * 0.45
+            ):
+                continue
+            segments = self._heightmap_contour_segments(heightmap, level)
+            level_paths.append((
+                float(level),
+                [
+                    self._smooth_contour_polyline(polyline, passes=1)
+                    for polyline in self._contour_polylines(segments)
+                ],
+            ))
+
+        shoreline_paths = []
+        if ocean_rows and len(ocean_rows) >= 2:
+            mask_width = min(
+                min(
+                    (len(row) for row in ocean_rows if isinstance(row, list)),
+                    default=0,
+                ),
+                int(grid.get("width", len(ocean_rows[0]) if ocean_rows else 0) or 0),
+            )
+            if mask_width >= 2:
+                mask_heightmap = {
+                    "sample_grid": {
+                        "width": mask_width,
+                        "height": min(len(ocean_rows), int(grid.get("height", len(ocean_rows)) or len(ocean_rows))),
+                        "rows": [
+                            [1.0 if value else 0.0 for value in row[:mask_width]]
+                            for row in ocean_rows
+                        ],
+                    },
+                }
+                shoreline_paths = [
+                    self._smooth_contour_polyline(polyline, passes=1)
+                    for polyline in self._contour_polylines(
+                        self._heightmap_contour_segments(mask_heightmap, 0.5)
+                    )
+                ]
+        elif sea_level is not None:
+            shoreline_paths = [
+                self._smooth_contour_polyline(polyline, passes=1)
+                for polyline in self._contour_polylines(
+                    self._heightmap_contour_segments(heightmap, float(sea_level))
+                )
+            ]
+
+        geometry = (level_paths, shoreline_paths)
+        return self._cache_put(
+            self._height_contour_geometry_cache,
+            cache_key,
+            geometry,
+            limit=16,
+        )
+
+    def _height_contour_surface_for_layer(
+        self, layer, pixels_per_map_pixel, regions_only=False, target_size=None,
+    ):
         heightmap = layer.get("heightmap_model") if isinstance(layer, dict) else None
         grid = heightmap.get("sample_grid") if isinstance(heightmap, dict) else None
         rows = grid.get("rows") if isinstance(grid, dict) else None
@@ -115,8 +364,17 @@ class MapRenderer:
 
         requested_interval = height_marker_interval_m(pixels_per_map_pixel)
         interval = display_contour_interval_m(heightmap, requested_interval, max_levels=18)
+        target_w = max(2, int((target_size or (512, 256))[0]))
+        target_h = max(2, int((target_size or (512, 256))[1]))
+        # Contours are vector-derived and then smoothly scaled with the map.
+        # A 1280x720 cache is visually indistinguishable at normal line widths
+        # but avoids multi-megapixel antialiasing stalls on activation.
+        render_scale = min(1.0, 1280.0 / target_w, 720.0 / target_h)
+        source_w = max(2, int(round(target_w * render_scale)))
+        source_h = max(2, int(round(target_h * render_scale)))
         cache_key = (
             id(heightmap), id(rows), sample_w, sample_h, int(interval), bool(regions_only),
+            source_w, source_h,
             float(heightmap.get("min_elevation_m", 0.0) or 0.0),
             float(heightmap.get("max_elevation_m", 0.0) or 0.0),
             heightmap.get("sea_level_m"),
@@ -127,41 +385,127 @@ class MapRenderer:
 
         cell_w = sample_w - 1
         cell_h = sample_h - 1
-        source_scale = min(4.0, 512.0 / cell_w, 256.0 / cell_h)
-        source_w = max(2, int(round(cell_w * source_scale)))
-        source_h = max(2, int(round(cell_h * source_scale)))
         scale_x = (source_w - 1) / max(1, cell_w)
         scale_y = (source_h - 1) / max(1, cell_h)
         surface = pygame.Surface((source_w, source_h), pygame.SRCALPHA)
         sea_level = heightmap.get("sea_level_m")
-        datum = float(sea_level) if sea_level is not None else 0.0
         major_step = max(float(interval) * 5.0, 1.0)
+        level_paths, shoreline_paths = self._height_contour_geometry(
+            heightmap, interval,
+        )
 
-        for level in contour_levels_for_heightmap(heightmap, interval, max_levels=18):
-            is_datum = abs(float(level) - datum) < float(interval) * 0.45
+        def screen_path(polyline):
+            return [
+                (point[0] * scale_x, point[1] * scale_y)
+                for point in polyline
+            ]
+
+        for level, polylines in level_paths:
             is_major = abs(float(level) / major_step - round(float(level) / major_step)) < 1e-6
-            if is_datum:
-                color = (116, 202, 246, 224 if regions_only else 188)
-                line_width = 2
-            elif is_major:
+            if is_major:
                 color = (224, 232, 238, 174 if regions_only else 116)
                 line_width = 1
-            elif float(level) < datum:
+            elif sea_level is not None and float(level) < float(sea_level):
                 color = (108, 162, 204, 138 if regions_only else 84)
                 line_width = 1
             else:
                 color = (206, 214, 220, 148 if regions_only else 92)
                 line_width = 1
-            for point_a, point_b in self._heightmap_contour_segments(heightmap, level):
-                pygame.draw.line(
-                    surface,
-                    color,
-                    (round(point_a[0] * scale_x), round(point_a[1] * scale_y)),
-                    (round(point_b[0] * scale_x), round(point_b[1] * scale_y)),
-                    line_width,
-                )
+            for polyline in polylines:
+                screen_points = screen_path(polyline)
+                if len(screen_points) < 2:
+                    continue
+                closed = math.hypot(
+                    screen_points[0][0] - screen_points[-1][0],
+                    screen_points[0][1] - screen_points[-1][1],
+                ) <= 1.0
+                if line_width > 1:
+                    pygame.draw.lines(
+                        surface, color, closed, screen_points, line_width,
+                    )
+                pygame.draw.aalines(surface, color, closed, screen_points)
+
+        shoreline_color = (116, 202, 246, 232 if regions_only else 198)
+        for polyline in shoreline_paths:
+            screen_points = screen_path(polyline)
+            if len(screen_points) < 2:
+                continue
+            closed = math.hypot(
+                screen_points[0][0] - screen_points[-1][0],
+                screen_points[0][1] - screen_points[-1][1],
+            ) <= 1.0
+            pygame.draw.lines(surface, shoreline_color, closed, screen_points, 2)
+            pygame.draw.aalines(surface, shoreline_color, closed, screen_points)
         self._cache_put(self._height_contour_surface_cache, cache_key, surface, limit=18)
         return surface, interval
+
+    def _composite_refined_contours(
+        self, base_surface, layer, pixels_per_map_pixel, regions_only,
+    ):
+        models = [
+            model
+            for model in (layer.get("refined_region_models") or [])
+            if isinstance(model, dict)
+            and isinstance(model.get("heightmap_model"), dict)
+        ]
+        if not models:
+            return base_surface
+        cache_key = (
+            "refined_contours",
+            id(base_surface),
+            bool(regions_only),
+            round(float(pixels_per_map_pixel), 5),
+            tuple(
+                (
+                    model.get("entity_id"),
+                    model.get("detail_level"),
+                    model.get("refinement_revision", 0),
+                    (model.get("heightmap_model") or {}).get(
+                        "source_heightfield_fingerprint"
+                    ),
+                )
+                for model in models
+            ),
+        )
+        cached = self._height_contour_surface_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        composite = base_surface.copy()
+        for model in models:
+            uv = model.get("uv_bounds") or {}
+            left = int(round(float(uv.get("min_u", 0.0)) * composite.get_width()))
+            right = int(round(float(uv.get("max_u", 0.0)) * composite.get_width()))
+            top = int(round(float(uv.get("min_v", 0.0)) * composite.get_height()))
+            bottom = int(round(float(uv.get("max_v", 0.0)) * composite.get_height()))
+            destination = pygame.Rect(
+                left, top, max(1, right - left), max(1, bottom - top),
+            ).clip(composite.get_rect())
+            if destination.width <= 0 or destination.height <= 0:
+                continue
+            child_surface, _interval = self._height_contour_surface_for_layer(
+                {"heightmap_model": model["heightmap_model"]},
+                pixels_per_map_pixel,
+                regions_only=regions_only,
+                target_size=destination.size,
+            )
+            if child_surface is None:
+                continue
+            if child_surface.get_size() != destination.size:
+                child_surface = pygame.transform.smoothscale(
+                    child_surface, destination.size,
+                )
+            # Refined terrain replaces the parent heightfield in this patch.
+            # Clear parent isolines first so a parent 0 m contour cannot float
+            # over a child shoreline or locally evolved relief.
+            composite.fill((0, 0, 0, 0), destination)
+            composite.blit(child_surface, destination.topleft)
+        return self._cache_put(
+            self._height_contour_surface_cache,
+            cache_key,
+            composite,
+            limit=18,
+        )
 
     def _draw_height_contours(self, screen, layer, camera, regions_only=False):
         center = camera.world_to_screen((layer.get("x", 0.0), layer.get("y", 0.0)))
@@ -175,9 +519,16 @@ class MapRenderer:
         canvas_w = max(1, int(layer.get("canvas_width_px", pixel_w) or pixel_w))
         source, _interval = self._height_contour_surface_for_layer(
             layer, pixel_w / canvas_w, regions_only=regions_only,
+            target_size=rect.size,
         )
         if source is None:
             return
+        source = self._composite_refined_contours(
+            source,
+            layer,
+            pixel_w / canvas_w,
+            regions_only,
+        )
         source = self._projected_spherical_surface(source, layer)
         previous_clip = screen.get_clip()
         screen.set_clip(rect.clip(screen.get_rect()))
@@ -202,6 +553,10 @@ class MapRenderer:
         focus_x = float(layer.get("projection_focus_x", 0.0) or 0.0) % 1.0
         focus_y = max(-0.5, min(0.5, float(layer.get("projection_focus_y", 0.0) or 0.0)))
         width, height = source.get_size()
+        focus_key_x = round(focus_x, 9)
+        focus_key_y = round(focus_y, 9)
+        if focus_key_x == 0.0 and focus_key_y == 0.0:
+            return source
         if width * height > 512 * 256:
             source_key = (id(source), width, height, 512, 256)
             projected_source = self._projection_source_cache.get(source_key)
@@ -214,10 +569,6 @@ class MapRenderer:
         # Rotation must be identical for every map layer.  Quantizing by the
         # source dimensions made a 256px heightmap and a 512px land mask use
         # different globe centres even when they shared the same focus values.
-        focus_key_x = round(focus_x, 9)
-        focus_key_y = round(focus_y, 9)
-        if focus_key_x == 0.0 and focus_key_y == 0.0:
-            return source
         cache_key = (id(source), focus_key_x, focus_key_y, width, height, "oblique_equirectangular_v3")
         cached = self._projection_surface_cache.get(cache_key)
         if cached is not None:
@@ -655,6 +1006,10 @@ class MapRenderer:
             image_surface = self._load_image_surface(layer.get("image_path"))
         if image_surface is None:
             return
+        image_surface = self._crop_surface_to_uv(
+            image_surface,
+            layer.get("source_uv_bounds"),
+        )
         if "projection_focus_x" in layer or "projection_focus_y" in layer:
             image_surface = self._projected_spherical_surface(image_surface, layer)
 
@@ -697,6 +1052,43 @@ class MapRenderer:
                 (210, 218, 230),
             )
             screen.blit(text, (rect.x + 6, rect.y + 6))
+
+    def _crop_surface_to_uv(self, surface, source_uv_bounds):
+        if surface is None or not isinstance(source_uv_bounds, dict):
+            return surface
+        try:
+            min_u = max(0.0, min(1.0, float(source_uv_bounds["min_u"])))
+            max_u = max(0.0, min(1.0, float(source_uv_bounds["max_u"])))
+            min_v = max(0.0, min(1.0, float(source_uv_bounds["min_v"])))
+            max_v = max(0.0, min(1.0, float(source_uv_bounds["max_v"])))
+        except (KeyError, TypeError, ValueError):
+            return surface
+        if max_u <= min_u or max_v <= min_v:
+            return surface
+        cache_key = (
+            id(surface),
+            round(min_u, 9),
+            round(max_u, 9),
+            round(min_v, 9),
+            round(max_v, 9),
+        )
+        cached = self._cropped_surface_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        width, height = surface.get_size()
+        left = max(0, min(width - 1, int(math.floor(min_u * width))))
+        top = max(0, min(height - 1, int(math.floor(min_v * height))))
+        right = max(left + 1, min(width, int(math.ceil(max_u * width))))
+        bottom = max(top + 1, min(height, int(math.ceil(max_v * height))))
+        cropped = surface.subsurface(
+            pygame.Rect(left, top, right - left, bottom - top)
+        )
+        return self._cache_put(
+            self._cropped_surface_cache,
+            cache_key,
+            cropped,
+            limit=16,
+        )
 
     def _reference_land_surface_for_layer(self, layer):
         polygons = layer.get("polygons") if isinstance(layer.get("polygons"), list) else []
@@ -834,13 +1226,26 @@ class MapRenderer:
             material_surface = self._load_image_surface(material_layer.get("image_path"))
         if material_surface is None:
             return terrain_surface
+        source_uv_bounds = material_layer.get("source_uv_bounds")
+        material_surface = self._crop_surface_to_uv(
+            material_surface,
+            source_uv_bounds,
+        )
         alpha = max(0, min(255, int(opacity or 0)))
-        cache_key = (id(terrain_surface), id(material_surface), alpha)
+        bounds_key = (
+            tuple(sorted(source_uv_bounds.items()))
+            if isinstance(source_uv_bounds, dict)
+            else None
+        )
+        cache_key = (id(terrain_surface), id(material_surface), alpha, bounds_key)
         cached = self._material_composite_cache.get(cache_key)
         if cached is not None:
             return cached
         if material_surface.get_size() != terrain_surface.get_size():
-            material_surface = pygame.transform.scale(material_surface, terrain_surface.get_size())
+            material_surface = pygame.transform.smoothscale(
+                material_surface,
+                terrain_surface.get_size(),
+            )
         else:
             material_surface = material_surface.copy()
         material_surface.set_alpha(alpha)
@@ -941,7 +1346,11 @@ class MapRenderer:
         cell_cols = max(1, min(len(row) for row in rows) - 1)
         cell_rows = max(1, len(rows) - 1)
         has_projection_focus = abs(float(layer.get("projection_focus_x", 0.0) or 0.0)) > 1e-9 or abs(float(layer.get("projection_focus_y", 0.0) or 0.0)) > 1e-9
-        if cell_cols * cell_rows <= 4096 and not has_projection_focus:
+        if (
+            layer.get("render_mode") != "true_color"
+            and cell_cols * cell_rows <= 4096
+            and not has_projection_focus
+        ):
             self._draw_heightmap_grid_cells(screen, rect, layer, heightmap, rows, cell_cols, cell_rows)
         else:
             heightmap_surface = self._heightmap_surface_for_layer(layer, heightmap, rows)
@@ -1003,7 +1412,83 @@ class MapRenderer:
                     pygame.Rect(left, top, max(1, right - left), max(1, bottom - top)),
                 )
 
+    def _true_color_surface_for_layer(self, layer, heightmap):
+        material_layer = layer.get("surface_material_layer")
+        material_surface = None
+        if isinstance(material_layer, dict):
+            if material_layer.get("bundle_path"):
+                material_surface = self._load_raster_bundle_surface(
+                    material_layer.get("bundle_path"),
+                    material_layer.get("bundle_layer_id"),
+                )
+            else:
+                material_surface = self._load_image_surface(
+                    material_layer.get("image_path")
+                )
+            material_surface = self._crop_surface_to_uv(
+                material_surface,
+                material_layer.get("source_uv_bounds"),
+            )
+        material_components = []
+        for material_component in layer.get("surface_material_layers") or []:
+            if not isinstance(material_component, dict):
+                continue
+            if material_component.get("bundle_path"):
+                component_surface = self._load_raster_bundle_surface(
+                    material_component.get("bundle_path"),
+                    material_component.get("bundle_layer_id"),
+                )
+            else:
+                component_surface = self._load_image_surface(
+                    material_component.get("image_path")
+                )
+            component_surface = self._crop_surface_to_uv(
+                component_surface,
+                material_component.get("source_uv_bounds"),
+            )
+            if component_surface is not None:
+                component = dict(material_component)
+                component["surface"] = component_surface
+                material_components.append(component)
+        model = layer.get("true_color_model") or {}
+        cache_key = (
+            id(heightmap),
+            id((heightmap.get("sample_grid") or {}).get("rows")),
+            repr(model),
+            id(material_surface),
+            tuple(id(item.get("surface")) for item in material_components),
+            id(layer.get("water_cycle_model")),
+            id(layer.get("surface_evolution_model")),
+            id(layer.get("surface_exposure_model")),
+            id(layer.get("surface_geomorphology_model")),
+            id(layer.get("atmosphere_model")),
+        )
+        cached = self._true_color_surface_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        surface = render_true_color_surface(
+            heightmap,
+            model,
+            material_surface=material_surface,
+            material_components=material_components,
+            water_cycle=layer.get("water_cycle_model"),
+            surface_evolution=layer.get("surface_evolution_model"),
+            surface_exposure=layer.get("surface_exposure_model"),
+            surface_geomorphology=layer.get("surface_geomorphology_model"),
+            atmosphere=layer.get("atmosphere_model"),
+        )
+        if surface is not None:
+            self._cache_put(
+                self._true_color_surface_cache,
+                cache_key,
+                surface,
+                limit=12,
+            )
+        return surface
+
     def _heightmap_surface_for_layer(self, layer, heightmap, rows):
+        if layer.get("render_mode") == "true_color":
+            return self._true_color_surface_for_layer(layer, heightmap)
         cell_cols = max(1, min(len(row) for row in rows) - 1)
         cell_rows = max(1, len(rows) - 1)
         masks = heightmap.get("surface_masks") if isinstance(heightmap.get("surface_masks"), dict) else {}
@@ -1138,6 +1623,37 @@ class MapRenderer:
                 child_layer = dict(layer)
                 child_layer.pop("refined_region_models", None)
                 child_layer["heightmap_model"] = child_model
+                for field in (
+                    "water_cycle_model",
+                    "surface_evolution_model",
+                    "surface_exposure_model",
+                    "surface_geomorphology_model",
+                    "atmosphere_model",
+                    "surface_palette",
+                    "true_color_model",
+                ):
+                    if model.get(field) is not None:
+                        child_layer[field] = model.get(field)
+                child_heatmaps = model.get("material_heatmap_model")
+                if isinstance(child_heatmaps, dict):
+                    child_material = child_heatmaps.get("composite_layer")
+                    if isinstance(child_material, dict):
+                        child_layer["surface_material_layer"] = child_material
+                    child_layer["surface_material_layers"] = [
+                        dict(material_layer)
+                        for material_layer in child_heatmaps.get("layers") or []
+                        if isinstance(material_layer, dict)
+                    ]
+                if child_layer.get("render_mode") == "true_color":
+                    child_recipe = dict(child_layer.get("true_color_model") or {})
+                    child_recipe["seed"] = str(
+                        child_model.get("map_seed")
+                        or child_model.get("material_distribution_seed")
+                        or model.get("entity_id")
+                        or child_recipe.get("seed")
+                        or "region"
+                    )
+                    child_layer["true_color_model"] = child_recipe
                 # All nested patches use the root map's absolute elevation
                 # palette.  Normalizing each child to its own local min/max
                 # turned ordinary refinement footprints into pale polygons.
@@ -1146,7 +1662,14 @@ class MapRenderer:
                 )
                 child_surface = self._heightmap_surface_for_layer(child_layer, child_model, child_rows) if child_rows else None
             else:
-                child_surface = self._hydrology_surface_for_layer({}, model["water_cycle_model"])
+                child_surface = self._hydrology_surface_for_layer(
+                    {
+                        "climate_display_mode": layer.get(
+                            "climate_display_mode", "zones"
+                        )
+                    },
+                    model["water_cycle_model"],
+                )
             if child_surface is None:
                 continue
             patch = pygame.transform.scale(child_surface, destination.size).convert_alpha()
@@ -1187,11 +1710,32 @@ class MapRenderer:
                     zone.get("color"),
                     fallback=colors.get(str(zone["id"]), (150, 150, 150)),
                 )
+        for zone in water_cycle.get("koppen_classes") or []:
+            if isinstance(zone, dict) and zone.get("id"):
+                colors[str(zone["id"])] = self._coerce_rgb(
+                    zone.get("color"),
+                    fallback=(150, 150, 150),
+                )
         return colors
 
     def _hydrology_surface_for_layer(self, layer, water_cycle):
         climate_grid = water_cycle.get("climate_grid") if isinstance(water_cycle, dict) else {}
-        rows = climate_grid.get("rows") if isinstance(climate_grid.get("rows"), list) else []
+        display_mode = str(layer.get("climate_display_mode") or "zones")
+        if display_mode == "annual_temperature":
+            field_name = "temperature_rows_k"
+        elif display_mode == "annual_precipitation":
+            field_name = "annual_precipitation_rows_mm"
+        else:
+            field_name = (
+                "koppen_rows"
+                if isinstance(climate_grid.get("koppen_rows"), list)
+                else "rows"
+            )
+        rows = (
+            climate_grid.get(field_name)
+            if isinstance(climate_grid.get(field_name), list)
+            else []
+        )
         if not rows:
             return None
         row_count = len(rows)
@@ -1201,14 +1745,12 @@ class MapRenderer:
 
         elevation_rows = climate_grid.get("elevation_rows") if isinstance(climate_grid.get("elevation_rows"), list) else []
         lakes = water_cycle.get("lakes") if isinstance(water_cycle.get("lakes"), list) else []
-        drainage = water_cycle.get("drainage_network_model") if isinstance(water_cycle.get("drainage_network_model"), dict) else {}
-        basin_rows = drainage.get("drainage_basin_rows") if isinstance(drainage.get("drainage_basin_rows"), list) else []
         cache_key = (
             id(water_cycle),
+            display_mode,
             id(rows),
             id(elevation_rows),
             id(lakes),
-            id(basin_rows),
             col_count,
             row_count,
         )
@@ -1226,22 +1768,78 @@ class MapRenderer:
         elevation_span = max(1.0, max_elevation - min_elevation)
 
         colors = self._climate_zone_colors(water_cycle)
+        numeric_values = [
+            float(value)
+            for row in rows
+            for value in row[:col_count]
+            if isinstance(value, (int, float))
+        ]
+        numeric_min = min(numeric_values) if numeric_values else 0.0
+        numeric_max = max(numeric_values) if numeric_values else 1.0
+        numeric_span = max(1e-9, numeric_max - numeric_min)
         surface = pygame.Surface((col_count, row_count))
         for row_index, row in enumerate(rows):
-            for col_index, zone_id in enumerate(row[:col_count]):
-                color = colors.get(str(zone_id), (126, 128, 126))
+            for col_index, field_value in enumerate(row[:col_count]):
+                if display_mode == "annual_temperature":
+                    value = float(field_value)
+                    normalized = max(
+                        0.0, min(1.0, (value - numeric_min) / numeric_span)
+                    )
+                    if normalized < 0.5:
+                        color = self._mix_rgb(
+                            (54, 94, 164),
+                            (202, 202, 130),
+                            normalized * 2.0,
+                        )
+                    else:
+                        color = self._mix_rgb(
+                            (202, 202, 130),
+                            (210, 66, 48),
+                            (normalized - 0.5) * 2.0,
+                        )
+                elif display_mode == "annual_precipitation":
+                    value = max(0.0, float(field_value))
+                    normalized = max(
+                        0.0,
+                        min(1.0, math.log1p(value) / math.log1p(5000.0)),
+                    )
+                    if normalized < 0.5:
+                        color = self._mix_rgb(
+                            (212, 180, 108),
+                            (72, 150, 96),
+                            normalized * 2.0,
+                        )
+                    else:
+                        color = self._mix_rgb(
+                            (72, 150, 96),
+                            (42, 92, 168),
+                            (normalized - 0.5) * 2.0,
+                        )
+                else:
+                    color = colors.get(str(field_value), (126, 128, 126))
                 if elevation_rows and row_index < len(elevation_rows) and col_index < len(elevation_rows[row_index]):
                     try:
                         elevation = float(elevation_rows[row_index][col_index] or 0.0)
                     except (TypeError, ValueError):
                         elevation = 0.0
                     elevation_norm = max(0.0, min(1.0, (elevation - min_elevation) / elevation_span))
-                    shade = 0.76 + (1.0 - elevation_norm) * 0.14 if str(zone_id) == "ocean" else 0.78 + elevation_norm * 0.24
+                    ocean_value = (
+                        str(field_value) in {"ocean", "Ocean"}
+                        if display_mode == "zones"
+                        else False
+                    )
+                    shade = 0.76 + (1.0 - elevation_norm) * 0.14 if ocean_value else 0.78 + elevation_norm * 0.24
                     color = tuple(max(0, min(255, int(channel * shade))) for channel in color)
-                    surface.set_at((col_index, row_index), color)
+                surface.set_at((col_index, row_index), color)
 
         for lake in lakes:
             if not isinstance(lake, dict):
+                continue
+            # Single-cell depressions remain part of hydrologic truth, but at
+            # this raster scale they read as isolated square pixels rather
+            # than bounded ponds. Their object-scale outlines belong to a
+            # deeper map level.
+            if int(lake.get("cell_count", 0) or 0) < 2:
                 continue
             depth = float(lake.get("maximum_depth_m", 0.0) or 0.0)
             lake_color = self._mix_rgb((62, 132, 178), (24, 76, 132), min(1.0, depth / 900.0))
@@ -1250,20 +1848,6 @@ class MapRenderer:
                     x, y = int(cell[0]), int(cell[1])
                     if 0 <= x < col_count and 0 <= y < row_count:
                         surface.set_at((x, y), lake_color)
-
-        if basin_rows:
-            boundary_color = (104, 142, 154)
-            basin_height = min(row_count, len(basin_rows))
-            for y in range(basin_height):
-                basin_width = min(col_count, len(basin_rows[y]))
-                for x in range(basin_width):
-                    basin_id = basin_rows[y][x]
-                    if basin_id < 0:
-                        continue
-                    right = basin_rows[y][(x + 1) % basin_width]
-                    down = basin_rows[y + 1][x] if y + 1 < basin_height and x < len(basin_rows[y + 1]) else basin_id
-                    if right != basin_id or down != basin_id:
-                        surface.set_at((x, y), self._mix_rgb(surface.get_at((x, y))[:3], boundary_color, 0.18))
 
         return self._cache_put(
             self._hydrology_surface_cache,
@@ -1434,12 +2018,49 @@ class MapRenderer:
             self._reference_hydrology_overlay(water_cycle, layer, rect, maximum_reference_river_rank),
             rect.topleft,
         )
-        river_sets = [(water_cycle.get("rivers") or [], None)]
-        for refined in layer.get("refined_region_models") or []:
+        root_detail_level = int(
+            ((layer.get("heightmap_model") or {}).get("map_detail_level", 0))
+            or 0
+        )
+        refined_models = [
+            refined
+            for refined in layer.get("refined_region_models") or []
+            if isinstance(refined, dict)
+        ]
+        river_sets = [
+            (water_cycle.get("rivers") or [], None, root_detail_level)
+        ]
+        for refined in refined_models:
             child_water = refined.get("water_cycle_model") if isinstance(refined, dict) else None
             if isinstance(child_water, dict):
-                river_sets.append((child_water.get("rivers") or [], refined.get("uv_bounds") or {}))
-        for river, river_uv in ((river, uv) for rivers, uv in river_sets for river in rivers):
+                river_sets.append((
+                    child_water.get("rivers") or [],
+                    refined.get("uv_bounds") or {},
+                    int(refined.get("detail_level", root_detail_level) or root_detail_level),
+                ))
+        ownership_regions = [
+            (
+                refined.get("uv_bounds") or {},
+                int(refined.get("detail_level", root_detail_level) or root_detail_level),
+            )
+            for refined in refined_models
+        ]
+
+        def owned_by_finer_level(source_x, source_y, source_level):
+            return any(
+                level > source_level
+                and float(bounds.get("min_u", 0.0)) <= source_x
+                <= float(bounds.get("max_u", 0.0))
+                and float(bounds.get("min_v", 0.0)) <= source_y
+                <= float(bounds.get("max_v", 0.0))
+                for bounds, level in ownership_regions
+            )
+
+        for river, river_uv, river_level in (
+            (river, uv, level)
+            for rivers, uv, level in river_sets
+            for river in rivers
+        ):
             if not isinstance(river, dict):
                 continue
             authored_rank = river.get("scalerank") if river_uv is None else None
@@ -1473,13 +2094,17 @@ class MapRenderer:
                 if river_uv is not None:
                     source_x = float(river_uv.get("min_u", 0.0)) + source_x * (float(river_uv.get("max_u", 1.0)) - float(river_uv.get("min_u", 0.0)))
                     source_y = float(river_uv.get("min_v", 0.0)) + source_y * (float(river_uv.get("max_v", 1.0)) - float(river_uv.get("min_v", 0.0)))
+                if owned_by_finer_level(source_x, source_y, river_level):
+                    points.append(None)
+                    continue
                 projected = self._projected_normalized_point(source_x, source_y, layer)
                 if projected is None:
+                    points.append(None)
                     continue
                 px = rect.x + projected[0] * rect.width
                 py = rect.y + projected[1] * rect.height
                 points.append((int(px), int(py)))
-            if len(points) >= 2:
+            if len([point for point in points if point is not None]) >= 2:
                 stream_order = max(1, int(river.get("stream_order", 1) or 1))
                 morphology = river.get("channel_morphology") if isinstance(river.get("channel_morphology"), dict) else {}
                 line_width = max(1, min(3, int(morphology.get("render_width_px", 1) or 1)))
@@ -1487,6 +2112,13 @@ class MapRenderer:
                 river_color = (112, 198, 244) if role == "feeder" else ((72, 164, 232) if role == "tributary" else (48, 136, 220))
                 visible_segment = []
                 for point in points:
+                    if point is None:
+                        if len(visible_segment) >= 2:
+                            if line_width > 1:
+                                pygame.draw.lines(screen, river_color, False, visible_segment, line_width)
+                            pygame.draw.aalines(screen, river_color, False, visible_segment)
+                        visible_segment = []
+                        continue
                     if visible_segment and (
                         abs(point[0] - visible_segment[-1][0]) > rect.width * 0.5
                         or abs(point[1] - visible_segment[-1][1]) > rect.height * 0.55
@@ -1501,6 +2133,133 @@ class MapRenderer:
                     if line_width > 1:
                         pygame.draw.lines(screen, river_color, False, visible_segment, line_width)
                     pygame.draw.aalines(screen, river_color, False, visible_segment)
+
+        delta_sets = [
+            (water_cycle.get("deltas") or [], None, root_detail_level)
+        ]
+        for refined in refined_models:
+            child_water = (
+                refined.get("water_cycle_model")
+                if isinstance(refined, dict)
+                else None
+            )
+            if isinstance(child_water, dict):
+                delta_sets.append((
+                    child_water.get("deltas") or [],
+                    refined.get("uv_bounds") or {},
+                    int(
+                        refined.get("detail_level", root_detail_level)
+                        or root_detail_level
+                    ),
+                ))
+
+        def project_delta_point(point, delta_uv):
+            if not isinstance(point, dict):
+                return None
+            source_x = float(point.get("x", 0.0) or 0.0)
+            source_y = float(point.get("y", 0.0) or 0.0)
+            if delta_uv is not None:
+                source_x = (
+                    float(delta_uv.get("min_u", 0.0))
+                    + source_x
+                    * (
+                        float(delta_uv.get("max_u", 1.0))
+                        - float(delta_uv.get("min_u", 0.0))
+                    )
+                )
+                source_y = (
+                    float(delta_uv.get("min_v", 0.0))
+                    + source_y
+                    * (
+                        float(delta_uv.get("max_v", 1.0))
+                        - float(delta_uv.get("min_v", 0.0))
+                    )
+                )
+            projected = self._projected_normalized_point(
+                source_x, source_y, layer
+            )
+            if projected is None:
+                return None
+            return (
+                int(rect.x + projected[0] * rect.width),
+                int(rect.y + projected[1] * rect.height),
+            )
+
+        for deltas, delta_uv, delta_level in delta_sets:
+            for delta in deltas:
+                if not isinstance(delta, dict):
+                    continue
+                center = delta.get("center") or {}
+                center_x = float(center.get("x", 0.0) or 0.0)
+                center_y = float(center.get("y", 0.0) or 0.0)
+                global_center_x, global_center_y = center_x, center_y
+                if delta_uv is not None:
+                    global_center_x = (
+                        float(delta_uv.get("min_u", 0.0))
+                        + center_x
+                        * (
+                            float(delta_uv.get("max_u", 1.0))
+                            - float(delta_uv.get("min_u", 0.0))
+                        )
+                    )
+                    global_center_y = (
+                        float(delta_uv.get("min_v", 0.0))
+                        + center_y
+                        * (
+                            float(delta_uv.get("max_v", 1.0))
+                            - float(delta_uv.get("min_v", 0.0))
+                        )
+                    )
+                if owned_by_finer_level(
+                    global_center_x, global_center_y, delta_level
+                ):
+                    continue
+                dominance = str(
+                    delta.get("morphodynamic_dominance")
+                    or delta.get("marine_reworking_end_member")
+                    or "river_dominated"
+                )
+                outline_color = {
+                    "river_dominated": (112, 184, 112),
+                    "wave_dominated": (164, 190, 112),
+                    "tide_dominated": (98, 174, 148),
+                    "lacustrine": (126, 184, 126),
+                }.get(dominance, (116, 180, 116))
+                footprint = [
+                    projected
+                    for projected in (
+                        project_delta_point(point, delta_uv)
+                        for point in delta.get("footprint_points") or []
+                    )
+                    if projected is not None
+                ]
+                if (
+                    len(footprint) >= 3
+                    and max(point[0] for point in footprint)
+                    - min(point[0] for point in footprint)
+                    < rect.width * 0.45
+                ):
+                    pygame.draw.polygon(
+                        screen, outline_color, footprint, width=1
+                    )
+                for distributary in delta.get("distributaries") or []:
+                    branch = [
+                        projected
+                        for projected in (
+                            project_delta_point(point, delta_uv)
+                            for point in distributary
+                        )
+                        if projected is not None
+                    ]
+                    if (
+                        len(branch) >= 2
+                        and max(point[0] for point in branch)
+                        - min(point[0] for point in branch)
+                        < rect.width * 0.45
+                    ):
+                        pygame.draw.aalines(
+                            screen, (70, 158, 220), False, branch
+                        )
         screen.set_clip(clip)
         self._draw_planet_equator(screen, rect, layer)
         pygame.draw.rect(screen, (118, 132, 158), rect, 1)
@@ -1592,7 +2351,8 @@ class MapRenderer:
         if layer.get("render_when_interacting_only") and not (is_selected or is_hovered):
             return
         min_zoom = layer.get("min_zoom")
-        if min_zoom is not None and not (is_selected or is_hovered):
+        strict_zoom = bool(layer.get("strict_zoom_visibility"))
+        if min_zoom is not None and (strict_zoom or not (is_selected or is_hovered)):
             try:
                 if float(getattr(camera, "zoom", 1.0) or 1.0) < float(min_zoom):
                     return
@@ -1667,7 +2427,13 @@ class MapRenderer:
         if is_selected:
             pygame.draw.polygon(screen, (255, 230, 120), screen_points, 4)
 
-        should_draw_label = (max_x - min_x) >= 90 and (max_y - min_y) >= 32
+        label_min_screen_span = layer.get("label_min_screen_span")
+        if label_min_screen_span is not None:
+            should_draw_label = max(max_x - min_x, max_y - min_y) >= float(
+                label_min_screen_span
+            )
+        else:
+            should_draw_label = (max_x - min_x) >= 90 and (max_y - min_y) >= 32
         if layer.get("suppress_label"):
             should_draw_label = False
         if layer.get("is_placement_ancestor"):
@@ -1964,9 +2730,17 @@ class MapRenderer:
             )
 
             min_zoom = layer.get("min_zoom")
-            if min_zoom is not None and not (is_selected or is_hovered):
+            strict_zoom = bool(layer.get("strict_zoom_visibility"))
+            if min_zoom is not None and (strict_zoom or not (is_selected or is_hovered)):
                 try:
                     if float(getattr(camera, "zoom", 1.0) or 1.0) < float(min_zoom):
+                        continue
+                except (TypeError, ValueError):
+                    pass
+            max_zoom = layer.get("max_zoom")
+            if max_zoom is not None:
+                try:
+                    if float(getattr(camera, "zoom", 1.0) or 1.0) >= float(max_zoom):
                         continue
                 except (TypeError, ValueError):
                     pass
@@ -2145,6 +2919,7 @@ class MapRenderer:
         if (
             heightmap_base_layer is not None
             and active_layer_kind != "hydrology"
+            and active_layer_kind != "true_color"
             and bool(getattr(sim, "is_height_contours_visible", lambda: True)())
         ):
             self._draw_height_contours(

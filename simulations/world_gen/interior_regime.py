@@ -123,7 +123,7 @@ def derive_interior_regime_model(seed, physics, atmosphere, crust_type="unknown"
     crust_thickness_km = max(0.0, float(physics.get("crust_thickness_km", seed.get("crust_thickness_km", 0.0)) or 0.0))
     gravity_g = max(0.0, float(physics.get("surface_gravity_g", 0.0) or 0.0))
     water_fraction = _clamp(seed.get("water_fraction", 0.0), 0.0, 1.0)
-    icy_satellite = str(seed.get("planet_class") or seed.get("planet_template") or "").strip().lower() == "icy_satellite"
+    icy_satellite = infer_world_class(seed, physics) == "icy_satellite"
 
     mantle_present = mantle_fraction >= 0.03
     differentiated = core_fraction >= 0.08 or mantle_fraction >= 0.12
@@ -360,3 +360,4 @@ def derive_interior_regime_model(seed, physics, atmosphere, crust_type="unknown"
             "Crater preservation rises when atmosphere, hydrology, tectonics, and volcanism cannot erase impacts.",
         ],
     }
+from simulations.world_gen.world_classification import infer_world_class

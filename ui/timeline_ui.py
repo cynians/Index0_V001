@@ -116,6 +116,7 @@ class TimelineUI:
         self.working_year_active = False
         self.working_year_rect = pygame.Rect(0, 0, 0, 0)
         self.random_working_year_rect = pygame.Rect(0, 0, 0, 0)
+        self.reset_working_year_rect = pygame.Rect(0, 0, 0, 0)
         self.location_focus_enabled = False
         self.location_focus_id = None
         self.location_focus_label = None
@@ -124,6 +125,7 @@ class TimelineUI:
         self.location_focus_invalid = False
         self.location_focus_rect = pygame.Rect(0, 0, 0, 0)
         self.random_location_focus_rect = pygame.Rect(0, 0, 0, 0)
+        self.reset_location_focus_rect = pygame.Rect(0, 0, 0, 0)
         self.location_focus_matches = []
         self.location_focus_selected_index = 0
         self.location_focus_keyboard_active = False
@@ -308,6 +310,7 @@ class TimelineUI:
             self.working_year_active = False
             self.working_year_rect = pygame.Rect(0, 0, 0, 0)
             self.random_working_year_rect = pygame.Rect(0, 0, 0, 0)
+            self.reset_working_year_rect = pygame.Rect(0, 0, 0, 0)
 
     def set_location_focus_enabled(self, enabled):
         self.location_focus_enabled = bool(enabled)
@@ -1124,6 +1127,16 @@ class TimelineUI:
             "changed": changed,
         }
 
+    def reset_working_year(self):
+        changed = self.set_working_year(None)
+        return {
+            "kind": "working_year_reset",
+            "year": None,
+            "start_year": None,
+            "end_year": None,
+            "changed": changed,
+        }
+
     def _random_extant_location_ids(self):
         filter_range = self.working_year_range
         if filter_range is None:
@@ -1157,6 +1170,15 @@ class TimelineUI:
             "kind": "random_location_focus_changed",
             "location_id": self.location_focus_id,
             "label": self.location_focus_label,
+            "changed": changed,
+        }
+
+    def reset_location_focus(self):
+        changed = self.set_location_focus(None)
+        return {
+            "kind": "location_focus_reset",
+            "location_id": None,
+            "label": None,
             "changed": changed,
         }
 
@@ -2167,6 +2189,8 @@ class TimelineUI:
         self._layout_location_focus_rect(self.layout_font)
         self._layout_random_working_year_rect(self.layout_font)
         self._layout_random_location_focus_rect(self.layout_font)
+        self._layout_reset_working_year_rect(self.layout_font)
+        self._layout_reset_location_focus_rect(self.layout_font)
         self._layout_sort_mode_hitboxes(self.layout_font)
         self._layout_selected_year_filter_hitboxes(self.layout_font)
         x = self.rect.x + 180
@@ -2291,11 +2315,40 @@ class TimelineUI:
     def _layout_random_location_focus_rect(self, font):
         if not self.location_focus_enabled:
             self.random_location_focus_rect = pygame.Rect(0, 0, 0, 0)
+            self.reset_location_focus_rect = pygame.Rect(0, 0, 0, 0)
             return
         self.random_location_focus_rect = self._layout_button_next_to_rect(
             self.location_focus_rect,
             "Random Loc",
             font,
+        )
+
+    def _layout_reset_next_to_random(self, anchor_rect, random_rect, font):
+        if (
+            anchor_rect is None or random_rect is None
+            or anchor_rect.width <= 0 or random_rect.width <= 0 or font is None
+        ):
+            return pygame.Rect(0, 0, 0, 0)
+        width = max(48, font.size("Reset")[0] + 14)
+        gap = 6
+        if random_rect.x >= anchor_rect.right:
+            x = random_rect.right + gap
+            if x + width <= self.rect.right - 12:
+                return pygame.Rect(x, anchor_rect.y, width, anchor_rect.height)
+        else:
+            x = random_rect.x - gap - width
+            if x >= self.rect.x + 12:
+                return pygame.Rect(x, anchor_rect.y, width, anchor_rect.height)
+        return pygame.Rect(0, 0, 0, 0)
+
+    def _layout_reset_working_year_rect(self, font):
+        self.reset_working_year_rect = self._layout_reset_next_to_random(
+            self.working_year_rect, self.random_working_year_rect, font,
+        )
+
+    def _layout_reset_location_focus_rect(self, font):
+        self.reset_location_focus_rect = self._layout_reset_next_to_random(
+            self.location_focus_rect, self.random_location_focus_rect, font,
         )
 
     def _draw_working_year_input(self, screen, font, layout=True):
@@ -2305,6 +2358,7 @@ class TimelineUI:
         if layout:
             self._layout_working_year_rect(font)
             self._layout_random_working_year_rect(font)
+            self._layout_reset_working_year_rect(font)
         if self.working_year_rect.width <= 0:
             return
 
@@ -2345,6 +2399,7 @@ class TimelineUI:
             )
 
         self._draw_small_button(screen, font, self.random_working_year_rect, "Random Year")
+        self._draw_small_button(screen, font, self.reset_working_year_rect, "Reset")
 
     def _draw_location_focus_input(self, screen, font, layout=True):
         if not self.location_focus_enabled:
@@ -2353,6 +2408,7 @@ class TimelineUI:
         if layout:
             self._layout_location_focus_rect(font)
             self._layout_random_location_focus_rect(font)
+            self._layout_reset_location_focus_rect(font)
         if self.location_focus_rect.width <= 0:
             return
 
@@ -2398,6 +2454,7 @@ class TimelineUI:
             )
 
         self._draw_small_button(screen, font, self.random_location_focus_rect, "Random Loc")
+        self._draw_small_button(screen, font, self.reset_location_focus_rect, "Reset")
 
     def _draw_small_button(self, screen, font, rect, label):
         if rect is None or rect.width <= 0 or rect.height <= 0:
@@ -2895,6 +2952,18 @@ class TimelineUI:
         return None
 
     def handle_random_button_click(self, mouse_pos):
+        if self.working_year_enabled and self.reset_working_year_rect.collidepoint(mouse_pos):
+            self.working_year_active = False
+            self.location_focus_active = False
+            self.location_focus_invalid = False
+            return self.reset_working_year()
+
+        if self.location_focus_enabled and self.reset_location_focus_rect.collidepoint(mouse_pos):
+            self.working_year_active = False
+            self.location_focus_active = False
+            self.location_focus_invalid = False
+            return self.reset_location_focus()
+
         if self.working_year_enabled and self.random_working_year_rect.collidepoint(mouse_pos):
             self.working_year_active = False
             self.location_focus_active = False

@@ -56,6 +56,7 @@ class HeadlessWorldGenConfig:
     regional_refinement_depth: int = 0
     regional_center_x: float = 0.5
     regional_center_y: float = 0.5
+    regional_target_mode: str = "manual"
     render_outputs: bool = True
     trace_elements: list = field(default_factory=list)
     replay_contract_path: str = ""
@@ -112,6 +113,95 @@ class HeadlessWorldGenRunner:
     def _slug(value):
         text = re.sub(r"[^0-9A-Za-z]+", "_", str(value or "planet")).strip("_").lower()
         return text or "planet"
+
+    @staticmethod
+    def _mountain_center_fraction(entity):
+        """Locate a high-relief land window using the saved heightfield."""
+        heightmap = entity.get("heightmap_model") if isinstance(entity, dict) else {}
+        rows = ((heightmap or {}).get("sample_grid") or {}).get("rows") or []
+        if len(rows) < 5 or not isinstance(rows[0], list):
+            return 0.5, 0.5
+        height = len(rows)
+        width = min(len(row) for row in rows if isinstance(row, list))
+        sea = heightmap.get("sea_level_m")
+        minimum = float(heightmap.get("min_elevation_m", min(min(row[:width]) for row in rows)) or 0.0)
+        maximum = float(heightmap.get("max_elevation_m", max(max(row[:width]) for row in rows)) or 0.0)
+        land_floor = float(sea) if sea is not None else minimum
+        span = max(1.0, maximum - land_floor)
+        radius = max(2, min(8, width // 32))
+        regional_craters = ((heightmap.get("regional_crater_model") or {}).get("craters") or [])
+        global_crater_model = entity.get("crater_model") or {}
+        global_craters = global_crater_model.get("craters") or []
+        planet_radius_m = max(
+            1.0,
+            float(global_crater_model.get("radius_m", entity.get("radius_m", 1.0)) or 1.0),
+        )
+        tectonic_segments = [
+            segment
+            for segment in ((entity.get("tectonic_model") or {}).get("boundary_segments") or [])
+            if str(segment.get("kind") or "") in {"collision", "subduction"}
+        ]
+        candidate_pixels = [
+            (x, y)
+            for y in range(max(radius, int(height * 0.16)), min(height - radius, int(height * 0.84) + 1))
+            for x in range(max(radius, int(width * 0.12)), min(width - radius, int(width * 0.88) + 1))
+        ]
+        best = (float("-inf"), width // 2, height // 2)
+        for x, y in candidate_pixels:
+            u, v = x / max(1, width - 1), y / max(1, height - 1)
+            tectonic_bonus = 0.0
+            for segment in tectonic_segments:
+                su = (float(segment.get("x1", 0.5)) + float(segment.get("x2", 0.5))) * 0.5
+                sv = (float(segment.get("y1", 0.5)) + float(segment.get("y2", 0.5))) * 0.5
+                du = abs(u - su)
+                du = min(du, 1.0 - du)
+                distance = math.hypot(du * 2.0, v - sv)
+                tectonic_bonus = max(tectonic_bonus, 0.12 * max(0.0, 1.0 - distance / 0.10))
+            inside_crater = False
+            for crater in regional_craters:
+                cu, cv = float(crater.get("center_u", -10.0)), float(crater.get("center_v", -10.0))
+                ru = max(1e-6, float(crater.get("radius_fraction_u", 0.0) or 0.0))
+                rv = max(1e-6, float(crater.get("radius_fraction_v", 0.0) or 0.0))
+                if ((u - cu) / (ru * 1.7)) ** 2 + ((v - cv) / (rv * 1.7)) ** 2 <= 1.0:
+                    inside_crater = True
+                    break
+            if not inside_crater:
+                for crater in global_craters:
+                    cu = float(crater.get("x", -10.0) or -10.0)
+                    cv = float(crater.get("y", -10.0) or -10.0)
+                    angular_radius = (
+                        max(0.0, float(crater.get("diameter_km", 0.0) or 0.0))
+                        * 500.0
+                        / planet_radius_m
+                    )
+                    radius_u = max(1e-6, angular_radius / math.tau)
+                    radius_v = max(1e-6, angular_radius / math.pi)
+                    wrapped_u = abs(u - cu)
+                    wrapped_u = min(wrapped_u, 1.0 - wrapped_u)
+                    if (
+                        (wrapped_u / (radius_u * 4.0)) ** 2
+                        + ((v - cv) / (radius_v * 4.0)) ** 2
+                        <= 1.0
+                    ):
+                        inside_crater = True
+                        break
+            if inside_crater:
+                continue
+            center = float(rows[y][x])
+            if sea is not None and center <= float(sea) + span * 0.015:
+                continue
+            samples = [
+                float(rows[y - radius][x]), float(rows[y + radius][x]),
+                float(rows[y][x - radius]), float(rows[y][x + radius]),
+                float(rows[y - radius][x - radius]), float(rows[y + radius][x + radius]),
+            ]
+            local_relief = max([center, *samples]) - min([center, *samples])
+            prominence = max(0.0, center - sum(samples) / len(samples))
+            altitude = max(0.0, center - land_floor)
+            score = local_relief / span * 0.64 + prominence / span * 0.16 + altitude / span * 0.14 + tectonic_bonus
+            if score > best[0]:
+                best = (score, x, y)
+        return best[1] / max(1, width - 1), best[2] / max(1, height - 1)
 
     def _resolve_replay_contract(self, config):
         contract = config.replay_contract
@@ -493,7 +583,7 @@ class HeadlessWorldGenRunner:
         evolution = planet.get("surface_evolution_model") or {}
         process = evolution.get("process_grid") or {}
         layers = [
-            self._save_layer("Elevation", self._render_height_layer(planet, size, include_materials=False), prefix),
+            self._save_layer("True Color", self._render_height_layer(planet, size, include_materials=True), prefix),
             self._save_layer("Surface Materials", self._render_material_layer(planet, size), prefix),
             self._save_layer("Climate and Rivers", self._render_climate_layer(planet, size), prefix),
             self._save_layer("Coastal Geomorphology", self._render_coastal_layer(planet, size), prefix),
@@ -731,14 +821,19 @@ class HeadlessWorldGenRunner:
                 break
             width = float(parent_bounds["max_x"]) - float(parent_bounds["min_x"])
             height = float(parent_bounds["max_y"]) - float(parent_bounds["min_y"])
-            center_x_fraction = (
-                max(0.2, min(0.8, float(config.regional_center_x)))
-                if refinement_index == 0 else 0.5
-            )
-            center_y_fraction = (
-                max(0.2, min(0.8, float(config.regional_center_y)))
-                if refinement_index == 0 else 0.5
-            )
+            if str(config.regional_target_mode or "manual") == "mountain":
+                center_x_fraction, center_y_fraction = self._mountain_center_fraction(refinement_parent)
+                center_x_fraction = max(0.2, min(0.8, center_x_fraction))
+                center_y_fraction = max(0.2, min(0.8, center_y_fraction))
+            else:
+                center_x_fraction = (
+                    max(0.2, min(0.8, float(config.regional_center_x)))
+                    if refinement_index == 0 else 0.5
+                )
+                center_y_fraction = (
+                    max(0.2, min(0.8, float(config.regional_center_y)))
+                    if refinement_index == 0 else 0.5
+                )
             center_x = float(parent_bounds["min_x"]) + width * center_x_fraction
             center_y = float(parent_bounds["min_y"]) + height * center_y_fraction
             bounds = {

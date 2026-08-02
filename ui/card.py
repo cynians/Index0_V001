@@ -318,6 +318,15 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         "secondary_materials",
         "primary_atmospheric_material",
         "secondary_atmospheric_materials",
+        "natural_distribution_role",
+        "worldgen_participation",
+        "minimum_map_detail_level",
+        "distribution_scale",
+        "formation_category",
+        "formation_process",
+        "spatial_representation",
+        "formation_requirements",
+        "formation_contract_status",
     }
     PLANT_ECOLOGY_SIM_FIELDS = {
         "plant_growth_form",
@@ -3356,7 +3365,12 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 measure = f"{occurrence} {float(item.get('confidence', 0.0)) * 100:.0f}%"
             except (TypeError, ValueError):
                 measure = occurrence
-        parts = [part for part in (name, measure, formula) if part]
+        representation = str(item.get("spatial_representation") or "").strip()
+        if representation:
+            representation = representation.replace("_", " ")
+        parts = [
+            part for part in (name, measure, representation, formula) if part
+        ]
         return " | ".join(parts)
 
     def _format_table_value(self, key, value):

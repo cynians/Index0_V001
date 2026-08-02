@@ -38,7 +38,12 @@ def derive_climate_regulation_model(planet, atmosphere, regime, water_cycle, sur
     summary = water_cycle.get("runoff_summary") if isinstance(water_cycle.get("runoff_summary"), dict) else {}
     means = surface_evolution.get("process_means") if isinstance(surface_evolution.get("process_means"), dict) else {}
 
-    ocean_fraction = _clamp(summary.get("target_ocean_fraction", 0.0))
+    ocean_fraction = _clamp(
+        summary.get(
+            "realized_ocean_fraction",
+            summary.get("target_ocean_fraction", 0.0),
+        )
+    )
     land_fraction = 1.0 - ocean_fraction
     liquid_water = bool(water_cycle.get("liquid_water_possible"))
     pressure = max(0.0, float(atmosphere.get("surface_pressure_bar", 0.0) or 0.0))
@@ -112,4 +117,3 @@ def derive_climate_regulation_model(planet, atmosphere, regime, water_cycle, sur
         "carbonate_province_favorable": bool(liquid_water and carbonate_burial_index >= 0.12),
         "climate_stabilizing_feedback": bool(weathering_regime == "kinetically_coupled" and liquid_water),
     }
-

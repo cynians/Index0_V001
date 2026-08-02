@@ -367,24 +367,56 @@ def _sample_lithosphere(tectonic_model, nx, ny):
     x = int(round(float(nx) * max(1, width - 1))) % width
     y = max(0, min(height - 1, int(round(float(ny) * max(1, height - 1)))))
     age = float(age_rows[y][x]) if y < len(age_rows) and x < len(age_rows[y]) else 0.0
+
+    def sample_continuous(rows, default=0.0):
+        if not rows or len(rows) < 2 or not rows[0]:
+            return float(default)
+        grid_height = len(rows)
+        grid_width = min(len(row) for row in rows)
+        fx = (float(nx) % 1.0) * max(1, grid_width - 1)
+        fy = _clamp(ny, 0.0, 1.0) * max(1, grid_height - 1)
+        x1, y1 = int(math.floor(fx)), int(math.floor(fy))
+        tx, ty = fx - x1, fy - y1
+
+        def cubic(p0, p1, p2, p3, t):
+            return 0.5 * (
+                2.0 * p1
+                + (-p0 + p2) * t
+                + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t * t
+                + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t * t * t
+            )
+
+        support, interpolated_rows = [], []
+        for source_y in range(y1 - 1, y1 + 3):
+            yy = max(0, min(grid_height - 1, source_y))
+            values = [
+                float(rows[yy][source_x % grid_width])
+                for source_x in range(x1 - 1, x1 + 3)
+            ]
+            support.extend(values)
+            interpolated_rows.append(cubic(*values, tx))
+        value = cubic(*interpolated_rows, ty)
+        return _clamp(value, min(support), max(support))
+
     if fraction_rows and fraction_rows[0]:
-        # Bilinear sampling keeps the low-resolution causal lithosphere grid
-        # from imprinting cell edges on the rendered global heightfield.
-        fx = float(nx) * max(1, width - 1)
-        fy = float(ny) * max(1, height - 1)
-        x0, y0 = int(math.floor(fx)) % width, max(0, min(height - 1, int(math.floor(fy))))
-        x1, y1 = (x0 + 1) % width, min(height - 1, y0 + 1)
-        tx, ty = fx - math.floor(fx), fy - math.floor(fy)
-        top = float(fraction_rows[y0][x0]) * (1.0 - tx) + float(fraction_rows[y0][x1]) * tx
-        bottom = float(fraction_rows[y1][x0]) * (1.0 - tx) + float(fraction_rows[y1][x1]) * tx
-        continental_fraction = top * (1.0 - ty) + bottom * ty
-        if age_rows and y1 < len(age_rows):
-            age_top = float(age_rows[y0][x0]) * (1.0 - tx) + float(age_rows[y0][x1]) * tx
-            age_bottom = float(age_rows[y1][x0]) * (1.0 - tx) + float(age_rows[y1][x1]) * tx
-            age = age_top * (1.0 - ty) + age_bottom * ty
+        # Bicubic reconstruction gives the low-resolution causal lithosphere
+        # fields continuous first derivatives.  Bilinear interpolation hid
+        # value jumps but left every source-cell edge visible after hillshade.
+        continental_fraction = _clamp(sample_continuous(fraction_rows, 0.5), 0.0, 1.0)
+        age = max(0.0, sample_continuous(age_rows, age)) if age_rows else age
     else:
         continental_fraction = 1.0 if crust_rows[y][x] in {"continental", "continental_fragment"} else 0.0
-    return {"crust_type": crust_rows[y][x], "age_myr": age, "continental_fraction": continental_fraction}
+    crust_type = (
+        "continental" if continental_fraction >= 0.67
+        else "oceanic" if continental_fraction <= 0.33
+        else "continental_fragment"
+    )
+    return {
+        "crust_type": crust_type,
+        "age_myr": age,
+        "continental_fraction": continental_fraction,
+        "oceanic_fraction": 1.0 - continental_fraction,
+    }
 
 
 def _blended_plate_base_height_m(nx, ny, plates):
@@ -560,7 +592,8 @@ def _tectonic_height_m(nx, ny, terrain, tectonic_model):
     lithosphere = _sample_lithosphere(tectonic_model, nx, ny)
     crust_type = lithosphere["crust_type"]
     crust_fraction = float(lithosphere.get("continental_fraction", 0.5) or 0.0)
-    ocean_floor_age_myr = lithosphere["age_myr"] if crust_type == "oceanic" else 0.0
+    oceanic_fraction = _clamp(lithosphere.get("oceanic_fraction", 1.0 - crust_fraction), 0.0, 1.0)
+    ocean_floor_age_myr = lithosphere["age_myr"] * oceanic_fraction
 
     longitude = nx * math.tau
     latitude = (ny - 0.5) * math.pi
@@ -623,10 +656,10 @@ def _tectonic_height_m(nx, ny, terrain, tectonic_model):
     # while buoyant differentiated continental crust retains freeboard.
     height += continent_mask * 360.0
     height += (1.0 - continent_mask) * (-2850.0 + basin_noise * 360.0)
-    if crust_type == "oceanic":
+    if oceanic_fraction > 0.0:
         # Young ridge crust is hot and buoyant; cooling lithosphere subsides
         # approximately with the square root of age until subduction recycles it.
-        height -= min(1450.0, math.sqrt(max(0.0, ocean_floor_age_myr)) * 105.0)
+        height -= min(1450.0, math.sqrt(max(0.0, ocean_floor_age_myr)) * 105.0) * oceanic_fraction
     # Subsidence within stable crust creates sedimentary and endorheic basins.
     height -= intracontinental_basin * continent_mask * 1150.0
     province_model = tectonic_model.get("continental_province_model") if isinstance(tectonic_model.get("continental_province_model"), dict) else {}
@@ -808,8 +841,11 @@ def _crater_height_adjustment_m(nx, ny, crater_model, spatial_index=None):
         normalized_distance = angular_distance / angular_radius
         if normalized_distance > 1.8:
             continue
-        depth_m = float(crater.get("depth_m", 0.0) or 0.0)
-        rim_height_m = float(crater.get("rim_height_m", 0.0) or 0.0)
+        preservation = _clamp(
+            crater.get("morphology_preservation", 1.0), 0.0, 1.0
+        )
+        depth_m = float(crater.get("depth_m", 0.0) or 0.0) * preservation
+        rim_height_m = float(crater.get("rim_height_m", 0.0) or 0.0) * preservation
         morphology = str(crater.get("morphology") or "simple")
         if normalized_distance < 1.0:
             if morphology == "complex_or_basin":
@@ -835,6 +871,120 @@ def _crater_height_adjustment_m(nx, ny, crater_model, spatial_index=None):
             ejecta = math.exp(-(normalized_distance - 1.0) / 0.31) * ray_modulation
             adjustment += rim_height_m * 0.22 * ejecta
     return adjustment
+
+
+def _sample_height_rows(rows, u, v, *, wrap_x=True):
+    if not rows or not rows[0]:
+        return 0.0
+    height, width = len(rows), len(rows[0])
+    px = (float(u) % 1.0 if wrap_x else _clamp(u, 0.0, 1.0)) * max(1, width - 1)
+    py = _clamp(v, 0.0, 1.0) * max(1, height - 1)
+    x0, y0 = int(math.floor(px)), int(math.floor(py))
+    x1 = (x0 + 1) % width if wrap_x else min(width - 1, x0 + 1)
+    y1 = min(height - 1, y0 + 1)
+    tx, ty = px - x0, py - y0
+    top = float(rows[y0][x0]) * (1.0 - tx) + float(rows[y0][x1]) * tx
+    bottom = float(rows[y1][x0]) * (1.0 - tx) + float(rows[y1][x1]) * tx
+    return top * (1.0 - ty) + bottom * ty
+
+
+def condition_crater_model_to_surface(crater_model, terrain, base_rows, sea_level):
+    """Resolve long-term and marine preservation before carving relief.
+
+    A marine impact only excavates a strong seafloor crater when its projectile
+    is large compared with the water column.  Atmosphere, water, ice and
+    erosion then reduce the retained topographic expression over geologic
+    time.  The impact catalogue remains intact; each event records how much of
+    its morphology is visible in the present-day heightfield.
+    """
+    if not isinstance(crater_model, dict):
+        return crater_model, {"status": "not_applicable"}
+    terrain = terrain if isinstance(terrain, dict) else {}
+    erosion = terrain.get("erosion") if isinstance(terrain.get("erosion"), dict) else {}
+    hydrology = terrain.get("hydrology") if isinstance(terrain.get("hydrology"), dict) else {}
+    cratering = terrain.get("cratering") if isinstance(terrain.get("cratering"), dict) else {}
+    pressure_bar = max(0.0, float(erosion.get("atmospheric_pressure_bar", 0.0) or 0.0))
+    erosion_strength = _clamp(erosion.get("strength", 0.0), 0.0, 1.0)
+    resurfacing = _clamp(
+        cratering.get(
+            "resurfacing_fraction",
+            crater_model.get("resurfacing_fraction", 0.0),
+        ),
+        0.0,
+        1.0,
+    )
+    ice_fraction = _clamp(hydrology.get("target_ice_fraction", 0.0), 0.0, 1.0)
+    atmosphere_degradation = _clamp(
+        math.log1p(pressure_bar * 3.0) / math.log(31.0), 0.0, 1.0
+    )
+    global_preservation = _clamp(
+        1.0
+        - erosion_strength * 0.58
+        - atmosphere_degradation * 0.24
+        - resurfacing * 0.52
+        - ice_fraction * 0.36,
+        0.06,
+        1.0,
+    )
+    # Near-airless inactive surfaces should retain their original morphology.
+    if pressure_bar < 0.01 and erosion_strength < 0.08 and resurfacing < 0.05:
+        global_preservation = max(global_preservation, 0.94)
+
+    conditioned = []
+    marine_count = 0
+    suppressed_count = 0
+    for source in crater_model.get("craters") or []:
+        crater = dict(source)
+        center_elevation = _sample_height_rows(
+            base_rows,
+            float(crater.get("x", 0.0) or 0.0),
+            float(crater.get("y", 0.5) or 0.5),
+            wrap_x=True,
+        )
+        water_depth_m = (
+            max(0.0, float(sea_level) - center_elevation)
+            if sea_level is not None
+            else 0.0
+        )
+        marine_transmission = 1.0
+        if water_depth_m > 0.0:
+            marine_count += 1
+            crater_diameter_m = max(
+                1.0, float(crater.get("diameter_km", 0.0) or 0.0) * 1000.0
+            )
+            # Final crater diameters are commonly an order of magnitude or
+            # more larger than the projectile.  This proxy makes shallow-water
+            # giant impacts survive while deep-water small impacts do not
+            # stamp lunar bowls into the seabed.
+            projectile_diameter_m = crater_diameter_m / 16.0
+            depth_ratio = water_depth_m / max(1.0, projectile_diameter_m)
+            marine_transmission = _clamp(
+                math.exp(-1.18 * max(0.0, depth_ratio - 0.12)),
+                0.015,
+                1.0,
+            )
+            if marine_transmission < 0.20:
+                suppressed_count += 1
+        preservation = _clamp(
+            global_preservation * marine_transmission, 0.0, 1.0
+        )
+        crater["target_environment"] = "marine" if water_depth_m > 0.0 else "subaerial"
+        crater["target_water_depth_m"] = round(water_depth_m, 1)
+        crater["marine_crater_transmission"] = round(marine_transmission, 4)
+        crater["morphology_preservation"] = round(preservation, 4)
+        conditioned.append(crater)
+    crater_model["craters"] = conditioned
+    crater_model["surface_morphology_preservation"] = round(global_preservation, 4)
+    crater_model["marine_target_model"] = "water_depth_to_projectile_scale_v1"
+    audit = {
+        "status": "resolved",
+        "global_preservation": round(global_preservation, 4),
+        "marine_crater_count": marine_count,
+        "strongly_suppressed_marine_crater_count": suppressed_count,
+        "pressure_bar": round(pressure_bar, 5),
+        "erosion_strength": round(erosion_strength, 4),
+    }
+    return crater_model, audit
 
 
 def _plume_lid_feature_signal(nx, ny, terrain):
@@ -1107,7 +1257,8 @@ def _shelf_and_sediment_model(rows, sea_level, tectonic_model=None):
             shelf = depth > 0.0 and depth <= 420.0 and passive_margin_distance <= 7
             if shelf:
                 shelf_count += 1
-            age_myr = lithosphere["age_myr"] if lithosphere["crust_type"] == "oceanic" else 800.0
+            oceanic_fraction = _clamp(lithosphere.get("oceanic_fraction", 0.0), 0.0, 1.0)
+            age_myr = lithosphere["age_myr"] * oceanic_fraction + 800.0 * (1.0 - oceanic_fraction)
             margin_wedge = 3600.0 * math.exp(-passive_margin_distance / 3.2) if depth > 0.0 else 0.0
             pelagic = min(1600.0, max(0.0, age_myr) * 7.0) if depth > 0.0 else 0.0
             sediment = min(7200.0, margin_wedge + pelagic)
@@ -1125,7 +1276,73 @@ def _shelf_and_sediment_model(rows, sea_level, tectonic_model=None):
     }
 
 
-HEIGHTMAP_DERIVATIVE_MODEL_VERSION = "heightmap-derivatives-v1"
+HEIGHTMAP_DERIVATIVE_MODEL_VERSION = "heightmap-derivatives-v2"
+
+
+def _mountain_morphology_mask(rows, land_rows, cell_spacing_m, *, wrap_x=False):
+    """Classify resolved mountain terrain from relief, not latitude or noise.
+
+    The returned field is deliberately continuous.  Regional refinement can
+    taper ridge-scale relief across the real edge of an inherited mountain
+    belt instead of applying a mountain texture to an entire requested tile.
+    Ocean depths are excluded from the neighbourhood range so coastlines do
+    not masquerade as mountain fronts.
+    """
+    height = len(rows)
+    width = min(len(row) for row in rows)
+    unique_width = width - 1 if wrap_x and width > 1 else width
+    radius = 2 if min(height, unique_width) >= 9 else 1
+    relief_threshold_m = _clamp(float(cell_spacing_m) * 0.006, 140.0, 900.0)
+    raw = [[0.0] * width for _ in range(height)]
+    for y in range(height):
+        for x in range(unique_width):
+            if not land_rows[y][x]:
+                continue
+            local_land = []
+            for oy in range(-radius, radius + 1):
+                sy = max(0, min(height - 1, y + oy))
+                for ox in range(-radius, radius + 1):
+                    sx = (x + ox) % unique_width if wrap_x else max(0, min(unique_width - 1, x + ox))
+                    if land_rows[sy][sx]:
+                        local_land.append(float(rows[sy][sx]))
+            if len(local_land) < 4:
+                continue
+            relief = max(local_land) - min(local_land)
+            relief_score = _smoothstep(
+                (relief - relief_threshold_m) / max(1.0, relief_threshold_m * 1.35)
+            )
+            # High-standing parts of a relief complex are likelier to be the
+            # range itself; low foreland and basin cells retain only the
+            # relief evidence and therefore fade out naturally.
+            relative_height = float(rows[y][x]) - min(local_land)
+            position_score = _smoothstep(
+                (relative_height - relief_threshold_m * 0.12)
+                / max(1.0, relief_threshold_m * 0.72)
+            )
+            raw[y][x] = relief_score * (0.42 + 0.58 * position_score)
+        if wrap_x and width > unique_width:
+            raw[y][-1] = raw[y][0]
+
+    # Two compact diffusion passes produce a coherent belt mask while
+    # preserving broad non-mountain interiors as exact zeroes.
+    smoothed = raw
+    for _pass in range(2):
+        next_rows = [[0.0] * width for _ in range(height)]
+        for y in range(height):
+            for x in range(unique_width):
+                if not land_rows[y][x]:
+                    continue
+                neighbours = [smoothed[y][x] * 4.0]
+                for ox, oy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                    sx = (x + ox) % unique_width if wrap_x else max(0, min(unique_width - 1, x + ox))
+                    sy = max(0, min(height - 1, y + oy))
+                    neighbours.append(smoothed[sy][sx])
+                value = sum(neighbours) / 8.0
+                next_rows[y][x] = 0.0 if value < 0.035 else round(_clamp(value, 0.0, 1.0), 4)
+            if wrap_x and width > unique_width:
+                next_rows[y][-1] = next_rows[y][0]
+        smoothed = next_rows
+    return smoothed, relief_threshold_m
 
 
 def _heightfield_fingerprint(rows, sea_level):
@@ -1225,11 +1442,28 @@ def refresh_heightmap_derivatives(heightmap, *, tectonic_model=None, inherited_s
         for row in shelf_model.get("sediment_thickness_rows_m") or []:
             if len(row) > unique_width:
                 row[-1] = row[0]
+    # The stored render-pixel resolution is not the spacing of the compact
+    # scientific sample grid.  Using it here made a 257-column planet appear
+    # roughly thirty times more finely sampled and classified ordinary rolling
+    # terrain as mountains. Derive from the grid's physical footprint unless
+    # an explicit sample spacing is available.
+    sampled_extent_m = float(
+        refreshed.get("region_width_m")
+        or refreshed.get("circumference_m")
+        or 0.0
+    )
+    derived_grid_spacing_m = sampled_extent_m / max(1, unique_width - 1)
     cell_spacing_m = float(
         refreshed.get("sample_spacing_x_m")
+        or derived_grid_spacing_m
         or refreshed.get("equator_resolution_m_per_px")
-        or ((refreshed.get("circumference_m") or 0.0) / max(1, unique_width))
         or 1.0
+    )
+    mountain_rows, mountain_relief_threshold_m = _mountain_morphology_mask(
+        rows,
+        land_rows,
+        cell_spacing_m,
+        wrap_x=wrap_x,
     )
     coastal_gradients = []
     shelf_cell_count = 0
@@ -1283,10 +1517,21 @@ def refresh_heightmap_derivatives(heightmap, *, tectonic_model=None, inherited_s
             "ice_rows": ice_rows,
             "ice_adjacency_rows": ice_adjacency_rows,
             "continental_shelf_rows": shelf_rows,
+            "mountain_rows": mountain_rows,
         },
         "hypsometry_summary": hypsometry,
         "shelf_sediment_model": shelf_model,
         "derivative_model_version": HEIGHTMAP_DERIVATIVE_MODEL_VERSION,
+        "mountain_morphology": {
+            "model": "resolved_local_relief_v1",
+            "relief_threshold_m": round(mountain_relief_threshold_m, 2),
+            "mountain_cell_fraction": round(
+                sum(mountain_rows[y][x] >= 0.35 for y in range(height) for x in range(unique_width))
+                / max(1, height * unique_width),
+                4,
+            ),
+            "purpose": "localize_subgrid_orogenic_relief_to_resolved_mountain_terrain",
+        },
     })
     refreshed["source_heightfield_fingerprint"] = _heightfield_fingerprint(rows, refreshed.get("sea_level_m"))
     refreshed["derivatives"] = {
@@ -1342,7 +1587,7 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         midpoint = float(datum_center)
     half_range = max(1.0, (max_elevation - min_elevation) * 0.5)
     sampled_tectonic_model = _heightmap_tectonic_model(tectonic_model)
-    crater_spatial_index = _crater_spatial_index(crater_model) if isinstance(crater_model, dict) else None
+    explicit_crater_model = isinstance(crater_model, dict)
 
     sample_width = max(129, min(257, int(width_px // 32) + 1))
     if sample_width % 2 == 0:
@@ -1356,7 +1601,12 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         row_values = []
         for col in range(sample_width):
             nx = 0.0 if col == sample_width - 1 else col / max(1, sample_width - 1)
-            normalized = _wave_height(nx, ny, terrain, tectonic_model=sampled_tectonic_model, crater_model=crater_model, crater_spatial_index=crater_spatial_index, map_seed=map_seed)
+            # Explicit impacts are applied in a second pass after the
+            # pre-impact sea level is known.  Passing an empty catalogue here
+            # also disables the legacy generic crater stamp without changing
+            # dry worlds that do not use an explicit crater model.
+            wave_craters = {} if explicit_crater_model else crater_model
+            normalized = _wave_height(nx, ny, terrain, tectonic_model=sampled_tectonic_model, crater_model=wave_craters, crater_spatial_index=None, map_seed=map_seed)
             elevation = midpoint + normalized * half_range
             elevation = round(_clamp(elevation, min_elevation, max_elevation), 1)
             row_values.append(elevation)
@@ -1365,6 +1615,67 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
             row_values[-1] = row_values[0]
         sample_values.extend(row_values)
         rows.append(row_values)
+
+    equivalent_global_water_depth_m = max(
+        0.0,
+        float(
+            hydrology.get(
+                "equivalent_global_water_depth_m",
+                heightfield.get("equivalent_global_water_depth_m", 0.0),
+            )
+            or 0.0
+        ),
+    )
+    preliminary_sea_level = sea_level
+    if equivalent_global_water_depth_m > 0.0 and sample_values and not bool(heightfield.get("sea_level_locked")):
+        preliminary_sea_level = sea_level_for_equivalent_water_depth(
+            rows, equivalent_global_water_depth_m, wrap_x=True,
+        )
+    elif target_ocean_fraction > 0.0 and sample_values and not bool(heightfield.get("sea_level_locked")):
+        preliminary_sorted = sorted(sample_values)
+        preliminary_index = max(
+            0,
+            min(
+                len(preliminary_sorted) - 1,
+                int(round(target_ocean_fraction * (len(preliminary_sorted) - 1))),
+            ),
+        )
+        preliminary_sea_level = preliminary_sorted[preliminary_index]
+
+    crater_surface_audit = {"status": "not_applicable"}
+    if explicit_crater_model:
+        crater_model, crater_surface_audit = condition_crater_model_to_surface(
+            crater_model, terrain, rows, preliminary_sea_level,
+        )
+        crater_spatial_index = _crater_spatial_index(crater_model)
+        for row_index in range(sample_height):
+            ny = row_index / max(1, sample_height - 1)
+            for col_index in range(sample_width):
+                nx = 0.0 if col_index == sample_width - 1 else col_index / max(1, sample_width - 1)
+                rows[row_index][col_index] = round(
+                    _clamp(
+                        rows[row_index][col_index]
+                        + _crater_height_adjustment_m(
+                            nx, ny, crater_model, crater_spatial_index,
+                        ),
+                        min_elevation,
+                        max_elevation,
+                    ),
+                    1,
+                )
+            rows[row_index][-1] = rows[row_index][0]
+        sample_values = [value for row_values in rows for value in row_values]
+        sample_positions = [
+            (
+                col,
+                row,
+                0.0 if col == sample_width - 1 else col / max(1, sample_width - 1),
+                row / max(1, sample_height - 1),
+                rows[row][col],
+            )
+            for row in range(sample_height)
+            for col in range(sample_width)
+        ]
 
     if isinstance(sampled_tectonic_model, dict) and sampled_tectonic_model.get("status") == "tectonics_advanced":
         rows = _smooth_height_rows(rows, passes=1, blend=0.20)
@@ -1400,16 +1711,6 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         ]
 
     sample_count = max(1, len(sample_values))
-    equivalent_global_water_depth_m = max(
-        0.0,
-        float(
-            hydrology.get(
-                "equivalent_global_water_depth_m",
-                heightfield.get("equivalent_global_water_depth_m", 0.0),
-            )
-            or 0.0
-        ),
-    )
     if equivalent_global_water_depth_m > 0.0 and sample_values and not bool(heightfield.get("sea_level_locked")):
         sea_level = sea_level_for_equivalent_water_depth(
             rows,
@@ -1532,6 +1833,7 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
                 else None
             ),
         },
+        "crater_surface_resolution": crater_surface_audit,
     }
     return refresh_heightmap_derivatives(model, tectonic_model=sampled_tectonic_model)
 

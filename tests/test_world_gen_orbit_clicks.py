@@ -135,14 +135,88 @@ class WorldGenOrbitClickTests(unittest.TestCase):
     def test_natural_material_catalog_has_expanded_surface_coverage(self):
         material_ids = {material["id"] for material in NATURAL_MATERIAL_CATALOG}
 
-        self.assertEqual("natural-materials-v3", NATURAL_MATERIAL_CATALOG_VERSION)
-        self.assertEqual(78, len(NATURAL_MATERIAL_CATALOG))
+        self.assertEqual("natural-materials-v8", NATURAL_MATERIAL_CATALOG_VERSION)
+        self.assertEqual(200, len(NATURAL_MATERIAL_CATALOG))
         self.assertIn("mat_limestone", material_ids)
         self.assertIn("mat_chalcopyrite", material_ids)
         self.assertIn("mat_water_ice", material_ids)
         self.assertIn("mat_alluvium", material_ids)
         self.assertIn("mat_nickel_laterite", material_ids)
         self.assertIn("mat_eclogite", material_ids)
+        self.assertIn("mat_granodiorite", material_ids)
+        self.assertIn("mat_molybdenite", material_ids)
+        self.assertIn("mat_spodumene", material_ids)
+
+    def test_templates_contain_only_first_screen_preset_data(self):
+        allowed = {
+            "label", "category", "description", "planet_class",
+            "major_elements", "numeric_ranges", "water_range",
+            "volatile_options", "tectonics_options",
+        }
+        hidden_generation_controls = {
+            "atmosphere_regime", "bond_albedo", "greenhouse_efficiency",
+            "geologic_style", "climate_mode", "synchronous_rotation",
+            "surface_fluid", "target_ice_fraction", "tidal_heating_w_m2_range",
+        }
+
+        for template_id, template in WorldGenSimulation.PLANET_TEMPLATES.items():
+            self.assertLessEqual(set(template), allowed, template_id)
+            self.assertFalse(set(template) & hidden_generation_controls, template_id)
+
+    def test_template_identity_is_noncausal_after_first_screen_is_populated(self):
+        sim = self._sim()
+        planet = {
+            "id": "planet_template_contract",
+            "name": "Template Contract",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "semi_major_axis_m": sim.AU_M,
+            "eccentricity": 0.0,
+            "tags": ["world_gen_candidate"],
+        }
+        sim.world_model.loader.entities[planet["id"]] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+        sim.selected_world_gen_planet_id = planet["id"]
+        sim.seed_input_buffers.update({
+            "radius_earth": "1.0",
+            "core_radius_fraction": "0.55",
+            "crust_thickness_km": "35",
+            "angular_velocity_deg_per_hour": "15",
+            "water_fraction": "0.5",
+            "volatile_inventory": "earthlike",
+            "tectonics_mode": "mobile_lid",
+            "map_seed": "template-noncausal",
+        })
+
+        sim.active_planet_template = "silicate_terrestrial"
+        silicate_seed = sim._coerce_seed_payload()
+        sim.active_planet_template = "runaway_greenhouse_terrestrial"
+        runaway_seed = sim._coerce_seed_payload()
+
+        for seed in (silicate_seed, runaway_seed):
+            self.assertNotIn("atmosphere_regime", seed)
+            self.assertNotIn("bond_albedo", seed)
+            self.assertNotIn("greenhouse_efficiency", seed)
+            self.assertNotIn("geologic_style", seed)
+            self.assertNotIn("water_loss_fraction", seed)
+
+        noncausal = {"planet_template", "planet_template_label"}
+        self.assertEqual(
+            {key: value for key, value in silicate_seed.items() if key not in noncausal},
+            {key: value for key, value in runaway_seed.items() if key not in noncausal},
+        )
+        self.assertEqual(
+            sim._derive_atmosphere_model(
+                silicate_seed,
+                silicate_seed["derived_planet_physics"],
+            ),
+            sim._derive_atmosphere_model(
+                runaway_seed,
+                runaway_seed["derived_planet_physics"],
+            ),
+        )
 
     def test_orbit_draft_preview_skips_planet_surface_derivations(self):
         sim = self._sim()
@@ -404,9 +478,10 @@ class WorldGenOrbitClickTests(unittest.TestCase):
             sim.planet_name_buffer = "Icy Test Moon"
             self.assertTrue(sim._commit_named_planet())
             moon = world_model.get_entity("moon_icy_test_moon")
-            self.assertEqual("icy_satellite", moon["body_subclass"])
+            self.assertEqual("moon", moon["body_subclass"])
 
             self.assertTrue(sim._save_selected_planet_seed())
+            self.assertEqual("icy_satellite", moon["body_subclass"])
             self.assertTrue(sim._save_atmosphere_model())
             self.assertLess(moon["atmosphere_model"]["equilibrium_temperature_k"], 150.0)
             self.assertTrue(sim._save_interior_regime_model())
@@ -931,7 +1006,7 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         self.assertTrue(planet["world_gen_complete"])
         self.assertIn("world_gen_complete", planet["tags"])
 
-    def test_heightmap_primary_action_advances_when_tectonics_available(self):
+    def test_generated_heightmap_primary_action_builds_climate_without_redundant_tectonic_step(self):
         sim = self._sim()
         planet = {
             "id": "planet_blue",
@@ -952,11 +1027,12 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         sim._save_terrain_seed_model()
         sim.editor_stage = "heightmap"
 
-        self.assertTrue(sim._heightmap_can_advance_tectonics())
+        self.assertFalse(sim._heightmap_can_advance_tectonics())
         self.assertTrue(sim._handle_heightmap_primary_action())
 
-        self.assertEqual("tectonics_advanced", planet["map_status"])
-        self.assertIn("heightmap_model", planet)
+        self.assertEqual("water_cycle", sim.editor_stage)
+        self.assertIn("water_cycle_model", planet)
+        self.assertIn("climate_zone_model", planet)
 
     def test_selecting_existing_planet_resumes_next_unfinished_stage(self):
         sim = self._sim()
@@ -1249,7 +1325,25 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         self.assertTrue(symbols & {"Au", "Pt", "Os", "U", "Th", "Ir", "W", "Re"})
         self.assertLessEqual(sum(element["abundance_percent"] for element in sim.crust_composition["trace_elements"]), 1.0)
         self.assertAlmostEqual(MAJOR_CRUST_TARGET_PERCENT, sim._crust_major_total(), places=3)
-        self.assertEqual("Generated eccentric seed", sim.commit_status)
+        self.assertEqual("Generated eccentric ocean world seed", sim.commit_status)
+
+    def test_eccentric_desiccated_seed_stays_a_rocky_desert(self):
+        sim = self._sim()
+
+        for random_seed in range(8):
+            self.assertTrue(sim.randomize_seed(
+                "eccentric",
+                rng=random.Random(random_seed),
+                template_id="desiccated_former_ocean",
+            ))
+            seed = sim._coerce_seed_payload()
+            self.assertEqual("desert_terrestrial", seed["planet_class"])
+            self.assertLessEqual(seed["radius_earth"], 2.15)
+
+        self.assertEqual(
+            "Generated eccentric desiccated former ocean seed",
+            sim.commit_status,
+        )
 
     def test_eccentric_randomizer_does_not_duplicate_template_elements(self):
         sim = self._sim()
@@ -1489,7 +1583,11 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         self.assertGreaterEqual(terrain["tectonics"]["plate_count"], 3)
         self.assertEqual("active", terrain["hydrology"]["cycle"])
         self.assertTrue(terrain["hydrology"]["drainage_enabled"])
-        self.assertGreater(terrain["hydrology"]["target_ocean_fraction"], 0.0)
+        self.assertEqual(0.0, terrain["hydrology"]["target_ocean_fraction"])
+        self.assertGreater(
+            terrain["hydrology"]["equivalent_global_water_depth_m"],
+            0.0,
+        )
         self.assertIn("tectonic_boundaries", [layer["id"] for layer in terrain["map_layers"]])
         self.assertIn("water_mask", [layer["id"] for layer in terrain["map_layers"]])
 
@@ -1649,7 +1747,14 @@ class WorldGenOrbitClickTests(unittest.TestCase):
             )
 
             self.assertEqual("generated", model["status"])
-            self.assertEqual("sparse_dominant_regions", model["distribution_mode"])
+            self.assertEqual(
+                "topography_resolved_surface_materials",
+                model["distribution_mode"],
+            )
+            self.assertEqual(
+                ["bedrock", "surface_cover"],
+                model["distribution_roles"],
+            )
             self.assertEqual("index0_raster_bundle", model["storage_format"])
             self.assertEqual("rgba8888_bundle", model["image_format"])
             self.assertEqual("deterministic_generated_truth", model["truth_model"])

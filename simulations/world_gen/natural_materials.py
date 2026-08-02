@@ -1,11 +1,23 @@
 import math
 
 from simulations.world_gen.crust import crust_composition_from_seed
-from simulations.world_gen.material_affinities import material_affinity_profile
+from simulations.world_gen.geological_material_expansion import (
+    geological_material_expansion,
+)
+from simulations.world_gen.material_affinities import (
+    material_affinity_profile,
+    material_distribution_role,
+)
+from simulations.world_gen.material_formation import formation_contract
+from simulations.world_gen.material_optics import (
+    linear_reflectance_to_srgb,
+    material_optical_surface_profile,
+    reflectance_triplet,
+)
 from simulations.world_gen.material_catalog import ELEMENT_MATERIAL_CATALOG
 
 
-NATURAL_MATERIAL_CATALOG_VERSION = "natural-materials-v3"
+NATURAL_MATERIAL_CATALOG_VERSION = "natural-materials-v8"
 
 
 NATURAL_MATERIAL_CATALOG = [
@@ -763,6 +775,8 @@ NATURAL_MATERIAL_CATALOG.extend([
     },
 ])
 
+NATURAL_MATERIAL_CATALOG.extend(geological_material_expansion())
+
 
 ATMOSPHERIC_MATERIAL_CATALOG = [
     {
@@ -1126,11 +1140,28 @@ def _surface_phase_candidates(material_model, atmosphere=None):
         visual_weight *= float(phase_stability["stability"])
         if visual_weight <= 0.002:
             continue
+        formation_category = item.get("formation_category") or catalog_item.get(
+            "formation_category"
+        )
+        optical_profile = material_optical_surface_profile(
+            material_id,
+            formation_category=formation_category,
+            material_subclass=material_subclass,
+            display_color=item.get("display_color"),
+            explicit=(
+                item.get("optical_surface_profile")
+                or catalog_item.get("optical_surface_profile")
+            ),
+        )
         candidates.append({
             "material_id": material_id,
             "name": item.get("name") or catalog_item.get("name") or material_id,
             "material_subclass": material_subclass or "unknown",
             "display_color": material_display_color(material_id, item.get("display_color")),
+            "optical_surface_profile": optical_profile,
+            "optical_color": linear_reflectance_to_srgb(
+                reflectance_triplet(optical_profile)
+            ),
             "confidence": confidence,
             "visual_weight": visual_weight,
             "evidence_tags": sorted(evidence_tags),
@@ -1156,6 +1187,68 @@ def natural_material_entries():
         is_gas = material["material_subclass"] == "atmospheric_gas"
         is_element = material["material_subclass"] == "element"
         affinity_profile = material_affinity_profile(material["id"])
+        formation = formation_contract(
+            material["id"],
+            material["material_subclass"],
+            (affinity_profile or {}).get("profile_id"),
+            explicit_category=material.get("formation_category"),
+            explicit_representation=material.get("spatial_representation"),
+        )
+        minimum_detail_level = int(
+            (affinity_profile or {}).get("minimum_map_detail_level", 0) or 0
+        )
+        distribution_role = (
+            "atmospheric_constituent"
+            if is_gas
+            else "chemical_inventory"
+            if is_element
+            else material_distribution_role(
+                material["id"],
+                material["material_subclass"],
+                minimum_detail_level,
+            )
+        )
+        if is_element:
+            material_system_role = "chemical_element"
+            worldgen_participation = "chemical_inventory"
+            resource_origin = "elemental_inventory"
+            production_role_tags = ["chemical_feedstock"]
+            if material.get("element_group") in {
+                "alkali_metal", "alkaline_earth_metal", "transition_metal",
+                "post_transition_metal", "lanthanide", "actinide",
+            }:
+                production_role_tags.append("metal_feedstock")
+            recyclability_class = "recoverable_element"
+        elif is_gas:
+            material_system_role = "atmospheric_material"
+            worldgen_participation = "atmospheric_inventory"
+            resource_origin = "atmospheric_capture_or_volatile_processing"
+            production_role_tags = ["process_gas", "volatile_feedstock"]
+            recyclability_class = "dissipative_or_recapturable"
+        else:
+            material_system_role = "natural_geologic_material"
+            worldgen_participation = "surface_and_subsurface_distribution"
+            resource_origin = "geological_extraction"
+            production_role_tags = ["extractive_resource"]
+            if distribution_role in {"bedrock", "local_lithology"}:
+                production_role_tags.extend(
+                    ["construction_stone", "aggregate_feedstock"]
+                )
+            elif distribution_role == "surface_cover":
+                production_role_tags.extend(
+                    ["bulk_earth_material", "soil_or_ceramic_feedstock"]
+                )
+            elif distribution_role == "mineral_constituent":
+                production_role_tags.append("mineral_feedstock")
+            elif distribution_role == "sparse_deposit":
+                production_role_tags.extend(
+                    ["ore_feedstock", "concentrated_resource"]
+                )
+            recyclability_class = "recoverable_mineral_or_bulk_material"
+            production_role_tags.extend(
+                material.get("production_role_tags") or []
+            )
+            production_role_tags = list(dict.fromkeys(production_role_tags))
         entry = {
             "id": material["id"],
             "_dataset": "materials",
@@ -1166,6 +1259,45 @@ def natural_material_entries():
             "material_subclass": material["material_subclass"],
             "natural_material_subclass": material["material_subclass"],
             "material_form": "element" if is_element else ("atmospheric_gas" if is_gas else "natural_occurrence"),
+            "material_record_schema_version": 2,
+            "material_system_role": material_system_role,
+            "natural_distribution_role": distribution_role,
+            "worldgen_participation": worldgen_participation,
+            "production_role_tags": production_role_tags,
+            "resource_origin": resource_origin,
+            "recyclability_class": recyclability_class,
+            "minimum_map_detail_level": minimum_detail_level,
+            "distribution_scale": (
+                (affinity_profile or {}).get("distribution_scale")
+                if affinity_profile is not None
+                else (
+                    "atmospheric_inventory"
+                    if is_gas
+                    else "planetary_chemical_inventory"
+                )
+            ),
+            "formation_category": formation.get("category_id"),
+            "formation_process": formation.get("formation_process"),
+            "spatial_representation": formation.get("spatial_representation"),
+            "formation_requirements": {
+                "required_all_planet_tags": formation.get("required_all_planet_tags") or [],
+                "required_any_planet_tags": formation.get("required_any_planet_tags") or [],
+                "host_formation_categories": formation.get("host_formation_categories") or [],
+                "local_minimums": formation.get("local_minimums") or {},
+                "valid_scale_levels": formation.get("valid_scale_levels") or [],
+            },
+            "formation_contract_status": formation.get("status"),
+            "optical_surface_profile": (
+                material_optical_surface_profile(
+                    material["id"],
+                    formation_category=formation.get("category_id"),
+                    material_subclass=material["material_subclass"],
+                    display_color=material_display_color(material["id"]),
+                    explicit=material.get("optical_surface_profile"),
+                )
+                if not is_element and not is_gas
+                else None
+            ),
             "scientific_name": material["scientific_name"],
             "chemical_formula": material["chemical_formula"],
             "scientific_classification": material["scientific_classification"],
@@ -1191,6 +1323,7 @@ def natural_material_entries():
             "tags": [
                 material.get("material_class", "natural_material"),
                 material["material_subclass"],
+                distribution_role,
                 *list(material.get("favorable_planet_tags") or [])[:4],
             ],
             "wiki_entry": (
@@ -1432,6 +1565,39 @@ def derive_natural_material_model(crust_composition, planet_tags):
         else:
             occurrence = "possible"
         affinity_profile = material_affinity_profile(material["id"])
+        formation = formation_contract(
+            material["id"],
+            material.get("material_subclass"),
+            (affinity_profile or {}).get("profile_id"),
+            explicit_category=material.get("formation_category"),
+            explicit_representation=material.get("spatial_representation"),
+        )
+        relative_abundance = max(
+            0.0,
+            min(
+                1.0,
+                float((affinity_profile or {}).get("abundance", 0.35) or 0.0),
+            ),
+        )
+        profile_id = str((affinity_profile or {}).get("profile_id") or "")
+        # Fixed profile abundance describes the usual world, but strongly
+        # non-terrestrial bulk chemistry must be allowed to change which
+        # substrate wins the limited planetary layer budget.
+        if "ultramafic_tendency" in tag_set:
+            if profile_id == "ultramafic_bedrock":
+                relative_abundance = min(1.0, relative_abundance * 1.72)
+            elif (
+                profile_id == "mafic_bedrock"
+                and material.get("material_subclass") == "rock"
+            ):
+                relative_abundance *= 0.72
+        if "active_volcanism" in tag_set:
+            if material.get("id") == "mat_basalt":
+                relative_abundance = 1.0
+            elif material.get("id") == "mat_anorthosite":
+                # Anorthosite can form planetary provinces, but it should not
+                # out-rank fresh basalt on a currently resurfacing mafic world.
+                relative_abundance *= 0.42
         minimum_detail_level = int(
             (affinity_profile or {}).get("minimum_map_detail_level", 0) or 0
         )
@@ -1441,8 +1607,10 @@ def derive_natural_material_model(crust_composition, planet_tags):
         )
         if carbon_rich_foundation:
             minimum_detail_level = 0
+            relative_abundance = 1.0
         elif material.get("material_subclass") == "mineral":
             minimum_detail_level = max(1, minimum_detail_level)
+        prevalence_score = round(confidence * relative_abundance, 4)
         distribution_scale = {
             0: "planetary_province",
             1: "macroregional_occurrence",
@@ -1457,16 +1625,48 @@ def derive_natural_material_model(crust_composition, planet_tags):
             "scientific_classification": material["scientific_classification"],
             "chemical_formula": material["chemical_formula"],
             "display_color": material_display_color(material["id"]),
+            "optical_surface_profile": material_optical_surface_profile(
+                material["id"],
+                formation_category=formation.get("category_id"),
+                material_subclass=material["material_subclass"],
+                display_color=material_display_color(material["id"]),
+                explicit=material.get("optical_surface_profile"),
+            ),
             "confidence": confidence,
+            "relative_abundance": relative_abundance,
+            "prevalence_score": prevalence_score,
             "occurrence": occurrence,
             "minimum_map_detail_level": minimum_detail_level,
             "distribution_scale": distribution_scale,
+            "distribution_role": (
+                "bedrock"
+                if carbon_rich_foundation
+                else material_distribution_role(
+                    material["id"],
+                    material.get("material_subclass"),
+                    minimum_detail_level,
+                )
+            ),
             "evidence_tags": favorable,
             "surface_affinity_profile": affinity_profile,
+            "formation_category": formation.get("category_id"),
+            "formation_process": formation.get("formation_process"),
+            "spatial_representation": formation.get("spatial_representation"),
+            "formation_requirements": {
+                "required_all_planet_tags": formation.get("required_all_planet_tags") or [],
+                "required_any_planet_tags": formation.get("required_any_planet_tags") or [],
+                "host_formation_categories": formation.get("host_formation_categories") or [],
+                "local_minimums": formation.get("local_minimums") or {},
+                "valid_scale_levels": formation.get("valid_scale_levels") or [],
+            },
             "foundational_lithology": carbon_rich_foundation,
         })
 
-    candidates.sort(key=lambda item: (-item["confidence"], item["name"]))
+    candidates.sort(key=lambda item: (
+        -item["prevalence_score"],
+        -item["confidence"],
+        item["name"],
+    ))
     palette = derive_planet_surface_palette({
         "likely_materials": candidates,
         "element_profile": elements,
@@ -1500,7 +1700,7 @@ def derive_planet_surface_palette(material_model, atmosphere=None, terrain=None)
     terrain = terrain if isinstance(terrain, dict) else {}
     surface_phases = _surface_phase_candidates(material_model, atmosphere=atmosphere)
     weighted = [
-        (item["display_color"], item["visual_weight"])
+        (item.get("optical_color") or item["display_color"], item["visual_weight"])
         for item in surface_phases
     ]
     evidence = [
@@ -1511,6 +1711,8 @@ def derive_planet_surface_palette(material_model, atmosphere=None, terrain=None)
             "weight": round(item["visual_weight"], 4),
             "confidence": round(item["confidence"], 3),
             "display_color": item["display_color"],
+            "optical_color": item.get("optical_color"),
+            "optical_surface_profile": item.get("optical_surface_profile"),
             "phase": item["phase_stability"].get("phase"),
             "phase_transition_temperature_k": item["phase_stability"].get("transition_temperature_k"),
             "phase_stability": item["phase_stability"].get("stability"),

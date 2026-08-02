@@ -20,7 +20,7 @@ from simulations.world_gen.heightmap import (
 )
 
 
-COASTAL_MODEL_VERSION = "coastal-geomorphology-v6"
+COASTAL_MODEL_VERSION = "coastal-geomorphology-v7"
 MIN_COASTAL_TERRAIN_FEATURE_WIDTH_M = 0.50
 G = 6.67430e-11
 EARTH_SOLAR_TIDE_ACCELERATION = 5.04e-7
@@ -382,6 +382,483 @@ def _nearest_river_influence(water_cycle, centroid, width, height):
         return 0.0, None
     influence = _clamp((0.08 - best[0]) / 0.08) * _clamp(math.log1p(best[1]) / math.log(10001.0))
     return influence, best[2] if influence > 0.0 else None
+
+
+def _nearest_coastal_segment(segments, point, *, wrap_x=True):
+    if not segments or not isinstance(point, dict):
+        return None
+    u = float(point.get("x", 0.0) or 0.0)
+    v = float(point.get("y", 0.0) or 0.0)
+
+    def distance(segment):
+        centroid = (
+            (segment.get("measurements") or {}).get("centroid_uv")
+            or [0.0, 0.5]
+        )
+        du = abs(float(centroid[0]) - u)
+        if wrap_x:
+            du = min(du, 1.0 - du)
+        return math.hypot(du, float(centroid[1]) - v)
+
+    return min(segments, key=distance)
+
+
+def _normalized_hydrology_point(point, *, width, height):
+    """Normalize current and legacy hydrology point encodings to map UV."""
+    try:
+        if isinstance(point, dict):
+            raw_x = point.get("x", point.get("u"))
+            raw_y = point.get("y", point.get("v"))
+        elif isinstance(point, (list, tuple)) and len(point) >= 2:
+            raw_x, raw_y = point[0], point[1]
+        else:
+            return None
+        x, y = float(raw_x), float(raw_y)
+    except (TypeError, ValueError):
+        return None
+    if abs(x) > 1.0:
+        x /= max(1, int(width) - 1)
+    if abs(y) > 1.0:
+        y /= max(1, int(height) - 1)
+    return {"x": _clamp(x), "y": _clamp(y)}
+
+
+def _river_delta_sediment_index(river, segment=None):
+    """Estimate relative fluvial sediment delivery at a receiving basin.
+
+    This is a reduced-physics source term, not a claimed mass-flux estimate.
+    Discharge supplies transport capacity; catchment runoff, area, relief,
+    channel gradient and substrate erodibility supply and route sediment.
+    """
+    river = river if isinstance(river, dict) else {}
+    segment = segment if isinstance(segment, dict) else {}
+    discharge = _clamp(
+        math.log1p(
+            max(0.0, float(river.get("estimated_discharge_m3_s", 0.0) or 0.0))
+        )
+        / math.log(10_001.0)
+    )
+    catchment_area = _clamp(
+        math.log1p(max(0.0, float(river.get("catchment_area_km2", 0.0) or 0.0)))
+        / math.log(2_000_001.0)
+    )
+    runoff = _clamp(
+        float(river.get("catchment_mean_runoff_mm", 0.0) or 0.0) / 700.0
+    )
+    source_relief = _clamp(
+        max(0.0, float(river.get("source_elevation_m", 0.0) or 0.0))
+        / 3_500.0
+    )
+    morphology = (
+        river.get("channel_morphology")
+        if isinstance(river.get("channel_morphology"), dict)
+        else {}
+    )
+    gradient = _clamp(
+        float(morphology.get("gradient_m_per_m", 0.0) or 0.0) / 0.012
+    )
+    erodibility = _clamp(
+        float(
+            (segment.get("influences") or {}).get(
+                "material_erodibility_proxy", 0.55
+            )
+            or 0.55
+        )
+    )
+    persistence = (
+        1.0
+        if river.get("flow_regime") == "perennial"
+        else 0.76
+        if river.get("flow_regime") == "intermittent"
+        else 0.35
+    )
+    source = (
+        discharge * 0.28
+        + catchment_area * 0.18
+        + runoff * 0.22
+        + max(source_relief, gradient) * 0.17
+        + erodibility * 0.15
+    )
+    return _clamp(source * (0.58 + persistence * 0.42))
+
+
+def _delta_planform(
+    center,
+    direction,
+    *,
+    width,
+    height,
+    radius_cells,
+    dominance,
+    distributary_count,
+    wrap_x,
+):
+    """Create a compact scale-aware delta lobe and distributary geometry."""
+    center_u = float(center.get("x", 0.0) or 0.0)
+    center_v = float(center.get("y", 0.0) or 0.0)
+    dx, dy = float(direction[0]), float(direction[1])
+    length = max(1e-9, math.hypot(dx, dy))
+    dx, dy = dx / length, dy / length
+    tx, ty = -dy, dx
+    radius_u = float(radius_cells) / max(2, width - 1)
+    radius_v = float(radius_cells) / max(2, height - 1)
+    if dominance == "river_dominated":
+        forward_scale, lateral_scale, spread = 1.45, 0.72, math.radians(34.0)
+    elif dominance == "wave_dominated":
+        forward_scale, lateral_scale, spread = 0.82, 1.38, math.radians(68.0)
+    elif dominance == "tide_dominated":
+        forward_scale, lateral_scale, spread = 1.18, 0.82, math.radians(28.0)
+    else:
+        forward_scale, lateral_scale, spread = 1.0, 1.0, math.radians(48.0)
+
+    def point(forward, lateral):
+        u = center_u + dx * forward * radius_u + tx * lateral * radius_u
+        v = center_v + dy * forward * radius_v + ty * lateral * radius_v
+        if wrap_x:
+            u %= 1.0
+        return {
+            "x": round(_clamp(u) if not wrap_x else u, 6),
+            "y": round(_clamp(v), 6),
+        }
+
+    footprint = [
+        point(-0.28, -0.42 * lateral_scale),
+        point(0.18, -0.86 * lateral_scale),
+        point(0.72 * forward_scale, -0.74 * lateral_scale),
+        point(1.00 * forward_scale, 0.0),
+        point(0.72 * forward_scale, 0.74 * lateral_scale),
+        point(0.18, 0.86 * lateral_scale),
+        point(-0.28, 0.42 * lateral_scale),
+    ]
+    source = point(-0.42, 0.0)
+    split = point(0.04, 0.0)
+    distributaries = []
+    count = max(1, int(distributary_count or 1))
+    for index in range(count):
+        fraction = 0.5 if count == 1 else index / (count - 1)
+        angle = (fraction - 0.5) * spread * 2.0
+        branch_dx = dx * math.cos(angle) - dy * math.sin(angle)
+        branch_dy = dx * math.sin(angle) + dy * math.cos(angle)
+        bend = (fraction - 0.5) * lateral_scale * 0.24
+        mid = point(
+            0.48 * forward_scale,
+            bend,
+        )
+        end_u = center_u + branch_dx * radius_u * forward_scale
+        end_v = center_v + branch_dy * radius_v * forward_scale
+        if wrap_x:
+            end_u %= 1.0
+        end = {
+            "x": round(_clamp(end_u) if not wrap_x else end_u, 6),
+            "y": round(_clamp(end_v), 6),
+        }
+        distributaries.append([source, split, mid, end])
+    return footprint, distributaries
+
+
+def _resolve_delta_systems(water_cycle, segments, *, width, height, wrap_x):
+    """Resolve marine and lacustrine deltas from sediment-flux balance."""
+    water_cycle = water_cycle if isinstance(water_cycle, dict) else {}
+    segments = [segment for segment in segments if isinstance(segment, dict)]
+    rivers = [
+        river
+        for river in water_cycle.get("rivers") or []
+        if isinstance(river, dict)
+        and river.get("mouth") in {"ocean", "lake"}
+        and river.get("flow_regime", "perennial") in {
+            "perennial", "intermittent",
+        }
+    ]
+    lakes = [
+        lake
+        for lake in water_cycle.get("lakes") or []
+        if isinstance(lake, dict)
+    ]
+    assessments = []
+    deltas = []
+    for river in rivers:
+        points = river.get("display_points") or river.get("points") or []
+        if not points:
+            continue
+        normalized_points = [
+            normalized
+            for normalized in (
+                _normalized_hydrology_point(
+                    point,
+                    width=width,
+                    height=height,
+                )
+                for point in points
+            )
+            if normalized is not None
+        ]
+        if not normalized_points:
+            continue
+        center = normalized_points[-1]
+        receiving_basin = str(river.get("mouth"))
+        segment = (
+            _nearest_coastal_segment(segments, center, wrap_x=wrap_x)
+            if receiving_basin == "ocean"
+            else None
+        )
+        sediment_source = _river_delta_sediment_index(river, segment)
+        if segment is not None:
+            measurements = segment.get("measurements") or {}
+            wave = segment.get("wave_climate") or {}
+            tide = segment.get("tidal_regime") or {}
+            sediment = segment.get("sediment_budget") or {}
+            sediment_supply = max(
+                sediment_source,
+                _clamp(float(sediment.get("river_supply", 0.0) or 0.0) * 0.88),
+            )
+            shelf_retention = _clamp(
+                (1.0 - _clamp(float(measurements.get("nearshore_gradient", 0.0) or 0.0) / 0.015)) * 0.38
+                + _clamp(float(sediment.get("accommodation_index", 0.0) or 0.0)) * 0.24
+                + _clamp(float(measurements.get("embayment_index", 0.0) or 0.0)) * 0.14
+                + _clamp(float(measurements.get("shelf_width_km", 0.0) or 0.0) / 120.0) * 0.14
+                + (
+                    float(segment.get("substrate") in {"mud", "sand"})
+                    * 0.10
+                )
+            )
+            wave_strength = _clamp(
+                float(wave.get("transport_capacity_index", 0.0) or 0.0)
+            )
+            tide_strength = _clamp(
+                float(tide.get("estimated_range_m", 0.0) or 0.0) / 5.0
+            )
+            reworking = _clamp(
+                wave_strength * 0.62 + tide_strength * 0.38
+            )
+            relative_state = str(
+                segment.get("relative_sea_level_state") or "stable"
+            )
+            accommodation_demand = {
+                "emergent": 0.02,
+                "stable": 0.08,
+                "submergent": 0.24,
+            }.get(relative_state, 0.10)
+            steep_shelf = _clamp(
+                float(measurements.get("nearshore_gradient", 0.0) or 0.0)
+                / 0.020
+            )
+            direction = measurements.get("seaward_normal_uv") or [0.0, 1.0]
+            forcing = {
+                "river_dominated": sediment_supply,
+                "wave_dominated": wave_strength,
+                "tide_dominated": tide_strength,
+            }
+        else:
+            nearest_lake = None
+            if lakes:
+                nearest_lake = min(
+                    lakes,
+                    key=lambda lake: math.hypot(
+                        min(
+                            abs(
+                                float((lake.get("center") or {}).get("x", 0.0))
+                                - float(center.get("x", 0.0))
+                            ),
+                            1.0
+                            - abs(
+                                float((lake.get("center") or {}).get("x", 0.0))
+                                - float(center.get("x", 0.0))
+                            ),
+                        ),
+                        float((lake.get("center") or {}).get("y", 0.0))
+                        - float(center.get("y", 0.0)),
+                    ),
+                )
+            lake_area = float(
+                (nearest_lake or {}).get("area_fraction", 0.0) or 0.0
+            )
+            wave_strength = _clamp(math.sqrt(max(0.0, lake_area)) * 1.8)
+            tide_strength = 0.0
+            reworking = wave_strength * 0.45
+            shelf_retention = 0.86
+            accommodation_demand = (
+                0.18
+                if (nearest_lake or {}).get("water_balance_limited")
+                else 0.07
+            )
+            steep_shelf = 0.12
+            sediment_supply = sediment_source
+            relative_state = "lake_level_limited"
+            if len(normalized_points) >= 2:
+                direction = [
+                    float(normalized_points[-1].get("x", 0.0))
+                    - float(normalized_points[-2].get("x", 0.0)),
+                    float(normalized_points[-1].get("y", 0.0))
+                    - float(normalized_points[-2].get("y", 0.0)),
+                ]
+            else:
+                direction = [0.0, 1.0]
+            forcing = {
+                "river_dominated": sediment_supply,
+                "wave_dominated": wave_strength,
+                "tide_dominated": 0.0,
+            }
+
+        gross_deposition = sediment_supply * (0.55 + shelf_retention * 0.45)
+        removal_capacity = reworking * 0.55 + accommodation_demand * 0.22
+        net_sediment_balance = gross_deposition - removal_capacity
+        formation_index = _clamp(
+            gross_deposition
+            - reworking * 0.32
+            - accommodation_demand * 0.12
+            - steep_shelf * 0.12
+        )
+        formed = (
+            sediment_supply >= 0.16
+            and formation_index >= 0.18
+            and steep_shelf < 0.92
+        )
+        if not formed:
+            reason = (
+                "insufficient_fluvial_sediment"
+                if sediment_supply < 0.16
+                else "steep_deep_receiving_margin"
+                if steep_shelf >= 0.92
+                else "marine_or_lake_reworking_exceeds_deposition"
+            )
+            assessments.append({
+                "river_id": river.get("id"),
+                "receiving_basin": receiving_basin,
+                "formation_state": "no_delta",
+                "limiting_factor": reason,
+                "sediment_supply_index": round(sediment_supply, 3),
+                "retention_index": round(shelf_retention, 3),
+                "reworking_index": round(reworking, 3),
+                "net_sediment_balance_index": round(net_sediment_balance, 3),
+            })
+            continue
+
+        dominance = max(forcing, key=forcing.get)
+        if receiving_basin == "lake":
+            dominance = "lacustrine"
+        trajectory = (
+            "prograding"
+            if net_sediment_balance > 0.14
+            else "retrograding"
+            if net_sediment_balance < -0.06
+            else "approximately_stable"
+        )
+        area_scale = _clamp(
+            math.log1p(
+                max(0.0, float(river.get("catchment_area_km2", 0.0) or 0.0))
+            )
+            / math.log(1_000_001.0)
+        )
+        radius_cells = _clamp(
+            1.2 + formation_index * 5.0 + area_scale * 2.0,
+            1.0,
+            8.0,
+        )
+        if dominance == "wave_dominated":
+            distributary_count = max(
+                2, min(4, int(round(2 + formation_index * 3.0)))
+            )
+        elif dominance == "tide_dominated":
+            distributary_count = max(
+                3, min(7, int(round(3 + formation_index * 5.0)))
+            )
+        else:
+            distributary_count = max(
+                3, min(9, int(round(3 + formation_index * 7.0)))
+            )
+        planform_dominance = (
+            "river_dominated" if dominance == "lacustrine" else dominance
+        )
+        footprint, distributaries = _delta_planform(
+            center,
+            direction,
+            width=width,
+            height=height,
+            radius_cells=radius_cells,
+            dominance=planform_dominance,
+            distributary_count=distributary_count,
+            wrap_x=wrap_x,
+        )
+        delta_id = f"delta_{len(deltas) + 1:03d}"
+        delta = {
+            "id": delta_id,
+            "river_id": river.get("id"),
+            "center": center,
+            "receiving_basin": receiving_basin,
+            "coastal_segment_id": (segment or {}).get("id"),
+            "morphodynamic_dominance": dominance,
+            "marine_reworking_end_member": (
+                dominance if receiving_basin == "ocean" else "lacustrine"
+            ),
+            "formation_state": "formed_delta",
+            "trajectory": trajectory,
+            "sediment_supply_index": round(sediment_supply, 3),
+            "retention_index": round(shelf_retention, 3),
+            "reworking_index": round(reworking, 3),
+            "net_sediment_balance_index": round(net_sediment_balance, 3),
+            "formation_index": round(formation_index, 3),
+            "forcing_strengths": {
+                key: round(value, 3) for key, value in forcing.items()
+            },
+            "fan_radius_cells": round(radius_cells, 2),
+            "distributary_count": distributary_count,
+            "footprint_points": footprint,
+            "distributaries": distributaries,
+            "sediment_source": (
+                "catchment_erosion_river_transport_and_receiving_basin_retention"
+            ),
+            "relative_water_level_state": relative_state,
+            "rule_trace": {
+                "required": [
+                    "active_river_mouth",
+                    "sufficient_fluvial_sediment",
+                    "receiving_basin",
+                    "net_depositional_retention",
+                ],
+                "rejected_processes": [
+                    "wave_reworking",
+                    "tidal_reworking",
+                    "relative_water_level_accommodation",
+                    "steep_margin_bypass",
+                ],
+                "reduced_physics": True,
+            },
+        }
+        deltas.append(delta)
+        assessments.append({
+            **{
+                key: delta[key]
+                for key in (
+                    "river_id",
+                    "receiving_basin",
+                    "formation_state",
+                    "sediment_supply_index",
+                    "retention_index",
+                    "reworking_index",
+                    "net_sediment_balance_index",
+                    "formation_index",
+                )
+            },
+            "delta_id": delta_id,
+        })
+        if segment is not None:
+            previous = segment.get("morphology_assemblage")
+            segment["secondary_assemblage"] = (
+                previous if previous != "deltaic" else segment.get("secondary_assemblage")
+            )
+            segment["primary_assemblage"] = "deltaic"
+            segment["morphology_assemblage"] = "deltaic"
+            segment["coastal_system"] = "deltaic"
+            segment["display_color"] = ASSEMBLAGE_COLORS["deltaic"]
+            segment["delta_id"] = delta_id
+            segment["shoreline_trajectory"] = trajectory
+            trace = segment.setdefault("rule_trace", {})
+            trace["delta_formation"] = {
+                "formation_index": round(formation_index, 3),
+                "net_sediment_balance_index": round(net_sediment_balance, 3),
+                "morphodynamic_dominance": dominance,
+            }
+    return assessments, deltas
 
 
 def _tectonic_setting(tectonic_model, centroid):
@@ -839,6 +1316,13 @@ def derive_coastal_geomorphology_model(*, planet, heightmap, water_cycle=None, t
                     "reduced_physics": True,
                 },
             })
+    delta_assessments, deltas = _resolve_delta_systems(
+        water_cycle,
+        segments,
+        width=width,
+        height=height,
+        wrap_x=wrap_x,
+    )
     assemblages = Counter(segment.get("morphology_assemblage") or segment["primary_assemblage"] for segment in segments)
     geologic_characters = Counter(
         character
@@ -848,7 +1332,7 @@ def derive_coastal_geomorphology_model(*, planet, heightmap, water_cycle=None, t
     tidal_classes = Counter(segment["tidal_regime"]["class"] for segment in segments)
     wave_classes = Counter(segment["wave_climate"]["exposure_class"] for segment in segments)
     total_length = sum(segment["length_km"] for segment in segments)
-    delta_count = sum((segment.get("morphology_assemblage") or segment["primary_assemblage"]) == "deltaic" for segment in segments)
+    delta_count = len(deltas)
     estuary_count = sum((segment.get("morphology_assemblage") or segment["primary_assemblage"]) == "estuarine_drowned_valley" for segment in segments)
     source_fingerprint = hashlib.sha256(json.dumps({"heightfield": heightmap.get("source_heightfield_fingerprint"), "water": water_cycle.get("model_version"), "tectonics": tectonic_model.get("model_version"), "planet": planet.get("id")}, sort_keys=True).encode("utf-8")).hexdigest()
     return {
@@ -862,6 +1346,8 @@ def derive_coastal_geomorphology_model(*, planet, heightmap, water_cycle=None, t
         "chain_orientation": "landward_normal_on_consistent_positive_cross_side",
         "components": component_records,
         "segments": segments,
+        "delta_assessments": delta_assessments,
+        "deltas": deltas,
         "summary": {
             "segment_count": len(segments),
             "component_count": len(component_records),
@@ -876,8 +1362,8 @@ def derive_coastal_geomorphology_model(*, planet, heightmap, water_cycle=None, t
         },
         "fidelity": {
             "tier": 1,
-            "resolved": ["shoreline_topology", "directional_fetch", "wave_exposure_class", "equilibrium_tidal_potential", "relative_sea_level_class", "sediment_source_partition", "multiaxial_geomorphic_assemblage"],
-            "deferred": ["spectral_wave_transformation", "harmonic_tidal_constituents", "event_resolved_storms", "three_dimensional_sediment_transport"],
+            "resolved": ["shoreline_topology", "directional_fetch", "wave_exposure_class", "equilibrium_tidal_potential", "relative_sea_level_class", "sediment_source_partition", "river_delta_flux_balance", "delta_planform_end_members", "multiaxial_geomorphic_assemblage"],
+            "deferred": ["spectral_wave_transformation", "harmonic_tidal_constituents", "event_resolved_storms", "three_dimensional_sediment_transport", "event_resolved_delta_avulsion"],
         },
     }
 
@@ -889,21 +1375,27 @@ def coastal_summary(model):
 
 
 def enrich_coastal_hydrology(water_cycle, coastal_model):
-    """Attach marine forcing end members to deltas and persist estuaries."""
+    """Persist flux-balanced deltas and estuaries into the water-cycle model."""
     if not isinstance(water_cycle, dict) or not isinstance(coastal_model, dict):
         return water_cycle
     segments = [segment for segment in coastal_model.get("segments") or [] if isinstance(segment, dict)]
 
-    def nearest_segment(point):
-        if not segments or not isinstance(point, dict):
-            return None
-        u, v = float(point.get("x", 0.0) or 0.0), float(point.get("y", 0.0) or 0.0)
-        return min(segments, key=lambda segment: math.hypot(min(abs(float((segment.get("measurements") or {}).get("centroid_uv", [0.0, 0.5])[0]) - u), 1.0 - abs(float((segment.get("measurements") or {}).get("centroid_uv", [0.0, 0.5])[0]) - u)), float((segment.get("measurements") or {}).get("centroid_uv", [0.0, 0.5])[1]) - v))
-
     drainage = water_cycle.get("drainage_network_model") if isinstance(water_cycle.get("drainage_network_model"), dict) else {}
-    deltas = drainage.get("deltas") if isinstance(drainage.get("deltas"), list) else list(water_cycle.get("deltas") or [])
+    deltas = list(coastal_model.get("deltas") or [])
+    # Upgrade compatibility for saved fixtures from the former flow-only
+    # marker model. New generation always supplies coastal_model["deltas"].
+    if not deltas:
+        deltas = (
+            list(drainage.get("deltas") or [])
+            if isinstance(drainage.get("deltas"), list)
+            else list(water_cycle.get("deltas") or [])
+        )
     for delta in deltas:
-        segment = nearest_segment(delta.get("center"))
+        segment = _nearest_coastal_segment(
+            segments,
+            delta.get("center"),
+            wrap_x=bool(coastal_model.get("wrap_x", True)),
+        )
         if segment is None:
             continue
         strengths = {
@@ -913,9 +1405,16 @@ def enrich_coastal_hydrology(water_cycle, coastal_model):
         }
         dominance = max(strengths, key=strengths.get)
         delta.update({
-            "coastal_segment_id": segment.get("id"),
-            "marine_reworking_end_member": dominance,
-            "forcing_strengths": {key: round(value, 3) for key, value in strengths.items()},
+            "coastal_segment_id": (
+                delta.get("coastal_segment_id") or segment.get("id")
+            ),
+            "marine_reworking_end_member": (
+                delta.get("marine_reworking_end_member") or dominance
+            ),
+            "forcing_strengths": (
+                delta.get("forcing_strengths")
+                or {key: round(value, 3) for key, value in strengths.items()}
+            ),
             "shoreline_trajectory": segment.get("shoreline_trajectory"),
             "substrate": segment.get("substrate"),
             "classification_confidence": segment.get("confidence"),
@@ -937,12 +1436,26 @@ def enrich_coastal_hydrology(water_cycle, coastal_model):
     if drainage:
         drainage["deltas"] = deltas
         drainage["delta_count"] = len(deltas)
+        drainage["delta_assessments"] = list(
+            coastal_model.get("delta_assessments") or []
+        )
         drainage["estuaries"] = estuaries
         drainage["estuary_count"] = len(estuaries)
     water_cycle["deltas"] = deltas
     water_cycle["delta_count"] = len(deltas)
+    water_cycle["delta_assessments"] = list(
+        coastal_model.get("delta_assessments") or []
+    )
     water_cycle["estuaries"] = estuaries
     water_cycle["estuary_count"] = len(estuaries)
+    summary = (
+        coastal_model.get("summary")
+        if isinstance(coastal_model.get("summary"), dict)
+        else {}
+    )
+    summary["delta_count"] = len(deltas)
+    summary["estuary_count"] = len(estuaries)
+    coastal_model["summary"] = summary
     return water_cycle
 
 
@@ -1038,12 +1551,24 @@ def inherit_parent_coastal_context(coastal_model, parent_model):
             or parent_morphology
         )
         segment["local_morphology_assemblage"] = local_morphology
-        if family(local_morphology) != family(parent_morphology):
+        locally_resolved_delta = (
+            local_morphology == "deltaic"
+            and bool(segment.get("delta_id"))
+        )
+        if locally_resolved_delta:
+            segment["scale_consistency"] = (
+                "locally_resolved_delta_retained_from_sediment_budget"
+            )
+        elif family(local_morphology) != family(parent_morphology):
             segment["morphology_assemblage"] = parent_morphology
             segment["scale_consistency"] = "parent_morphology_retained_over_incompatible_local_class"
         else:
             segment["scale_consistency"] = "compatible_local_facies"
-        segment["coastal_system"] = str(parent.get("coastal_system") or parent_morphology)
+        segment["coastal_system"] = (
+            "deltaic"
+            if locally_resolved_delta
+            else str(parent.get("coastal_system") or parent_morphology)
+        )
         segment["parent_segment_id"] = parent.get("id")
         segment["display_color"] = ASSEMBLAGE_COLORS.get(
             segment.get("morphology_assemblage"),

@@ -508,6 +508,129 @@ class KnowledgeRepositoryService:
             return False
         return loader.remove_entity(entity_id, dataset_name=dataset_name)
 
+    @staticmethod
+    def _value_has_direct_entity_reference(value, entity_id):
+        if isinstance(value, str):
+            return value.strip() == entity_id
+        if isinstance(value, dict):
+            return any(
+                str(value.get(key) or "").strip() == entity_id
+                for key in ("id", "entity_id", "location_id", "target")
+            )
+        if isinstance(value, (list, tuple, set)):
+            return any(
+                KnowledgeRepositoryService._value_has_direct_entity_reference(
+                    item,
+                    entity_id,
+                )
+                for item in value
+            )
+        return False
+
+    @classmethod
+    def _without_direct_entity_reference(cls, value, entity_id):
+        if isinstance(value, str):
+            return ("", True) if value.strip() == entity_id else (value, False)
+        if isinstance(value, list):
+            filtered = [
+                item
+                for item in value
+                if not cls._value_has_direct_entity_reference(item, entity_id)
+            ]
+            return filtered, len(filtered) != len(value)
+        if isinstance(value, tuple):
+            filtered = tuple(
+                item
+                for item in value
+                if not cls._value_has_direct_entity_reference(item, entity_id)
+            )
+            return filtered, len(filtered) != len(value)
+        if isinstance(value, set):
+            filtered = {
+                item
+                for item in value
+                if not cls._value_has_direct_entity_reference(item, entity_id)
+            }
+            return filtered, len(filtered) != len(value)
+        if isinstance(value, dict) and cls._value_has_direct_entity_reference(
+            value,
+            entity_id,
+        ):
+            return {}, True
+        return value, False
+
+    def _capture_incoming_entity_references(self, entity_id):
+        references = {}
+        world_model = self.world_model
+        touch_degrees = getattr(world_model, "touch_degrees", None)
+        incoming = (
+            touch_degrees.get_incoming_touches(entity_id)
+            if touch_degrees is not None
+            and hasattr(touch_degrees, "get_incoming_touches")
+            else []
+        )
+        for touch in incoming or []:
+            source_id = str(touch.get("source") or "").strip()
+            field_name = str(touch.get("relation") or "").strip()
+            if source_id:
+                references.setdefault(source_id, set())
+                if field_name:
+                    references[source_id].add(field_name)
+
+        loader = getattr(world_model, "loader", None)
+        for source_id, targets in (getattr(loader, "edges", {}) or {}).items():
+            if entity_id in (targets or []):
+                references.setdefault(str(source_id), set())
+        return references
+
+    def _remove_incoming_entity_references(self, entity_id, references):
+        world_model = self.world_model
+        loader = getattr(world_model, "loader", None)
+        entities = getattr(loader, "entities", {}) if loader is not None else {}
+
+        for source_id, field_names in (references or {}).items():
+            source = entities.get(source_id)
+            if not isinstance(source, dict):
+                continue
+
+            candidate_fields = set(field_names or [])
+            if not candidate_fields:
+                candidate_fields.update(
+                    field_name
+                    for field_name, value in source.items()
+                    if self._value_has_direct_entity_reference(value, entity_id)
+                )
+            candidate_fields.add("offspring")
+
+            for field_name in candidate_fields:
+                if field_name not in source:
+                    continue
+                updated, changed = self._without_direct_entity_reference(
+                    source.get(field_name),
+                    entity_id,
+                )
+                if changed:
+                    source[field_name] = updated
+
+        if loader is not None and isinstance(getattr(loader, "edges", None), dict):
+            loader.edges.pop(entity_id, None)
+            for source_id in references or {}:
+                loader.edges[source_id] = [
+                    target_id
+                    for target_id in loader.edges.get(source_id, [])
+                    if target_id != entity_id
+                ]
+
+        touch_degrees = getattr(world_model, "touch_degrees", None)
+        remove_touch_entity = getattr(touch_degrees, "remove_entity", None)
+        if callable(remove_touch_entity):
+            remove_touch_entity(entity_id)
+        elif touch_degrees is not None and hasattr(touch_degrees, "refresh"):
+            touch_degrees.refresh()
+
+        if hasattr(world_model, "repository_revision"):
+            world_model.repository_revision += 1
+
     def _delete_card_entry(self, card):
         entity = self._entity_for_card(card)
         if not isinstance(entity, dict):
@@ -517,6 +640,7 @@ class KnowledgeRepositoryService:
         dataset_name = self._dataset_name_for_entity(entity)
         if not entity_id or not dataset_name:
             return False
+        incoming_references = self._capture_incoming_entity_references(entity_id)
 
         removed = False
         if card.get("is_draft_entity", False):
@@ -565,15 +689,10 @@ class KnowledgeRepositoryService:
             self.relation_link_status = ""
 
         if not card.get("is_draft_entity", False) and self.world_model is not None:
-            refresh = getattr(self.world_model, "refresh", None)
-            if callable(refresh):
-                refresh()
-            else:
-                touch_degrees = getattr(self.world_model, "touch_degrees", None)
-                if hasattr(touch_degrees, "refresh"):
-                    touch_degrees.refresh()
-                if loader is not None and hasattr(loader, "build_reference_graph"):
-                    loader.build_reference_graph()
+            self._remove_incoming_entity_references(
+                entity_id,
+                incoming_references,
+            )
 
         self.browser_items = self._build_browser_items(self.world_model)
         self._refresh_timeline_items()

@@ -395,6 +395,30 @@ class TimelineTickTests(unittest.TestCase):
         self.assertEqual("random_working_year_changed", action["kind"])
         self.assertEqual(2016, timeline.get_working_year())
 
+    def test_reset_buttons_clear_random_year_and_location(self):
+        pygame.font.init()
+        timeline = TimelineUI()
+        timeline.set_rect(pygame.Rect(0, 0, 720, 180))
+        timeline.layout_font = pygame.font.Font(None, 18)
+        timeline.set_working_year_enabled(True)
+        timeline.set_location_focus_enabled(True)
+        timeline.set_entity_lookup({
+            "loc_alpha": {"id": "loc_alpha", "_dataset": "locations", "name": "Alpha"},
+        })
+        timeline.set_working_year(2016)
+        timeline.set_location_focus("loc_alpha")
+        timeline._rebuild_filter_hitboxes()
+
+        self.assertGreater(timeline.reset_working_year_rect.width, 0)
+        self.assertGreater(timeline.reset_location_focus_rect.width, 0)
+        year_action = timeline.handle_click(timeline.reset_working_year_rect.center)
+        location_action = timeline.handle_click(timeline.reset_location_focus_rect.center)
+
+        self.assertEqual("working_year_reset", year_action["kind"])
+        self.assertEqual("location_focus_reset", location_action["kind"])
+        self.assertIsNone(timeline.get_working_year_range())
+        self.assertIsNone(timeline.get_location_focus())
+
     def test_location_focus_keeps_entities_in_location_subtree(self):
         timeline = self._timeline(2000, 2030, width=200)
         timeline.set_location_focus_enabled(True)

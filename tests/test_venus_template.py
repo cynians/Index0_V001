@@ -7,12 +7,10 @@ from simulations.world_gen.world_gen_sim import WorldGenSimulation
 
 
 class VenusTemplateTests(unittest.TestCase):
-    def test_runaway_greenhouse_template_reaches_venus_regime(self):
+    def test_runaway_label_does_not_override_identical_authored_conditions(self):
         template = WorldGenSimulation.PLANET_TEMPLATES["runaway_greenhouse_terrestrial"]
         seed = {
-            **template,
             "planet_template": "runaway_greenhouse_terrestrial",
-            "planet_class": template["planet_class"],
             "radius_earth": 0.949,
             "core_radius_fraction": 0.52,
             "crust_thickness_km": 30.0,
@@ -48,24 +46,22 @@ class VenusTemplateTests(unittest.TestCase):
             stellar_luminosity_solar=1.0,
             semi_major_axis_au=0.7233,
         )
-        composition = {
-            row["molecule"]: row["fraction"]
-            for row in atmosphere["composition"]
+        same_conditions = {
+            **seed,
+            "planet_template": "silicate_terrestrial",
         }
+        comparison = derive_atmosphere_model(
+            same_conditions,
+            physics,
+            stellar_luminosity_solar=1.0,
+            semi_major_axis_au=0.7233,
+        )
 
-        self.assertEqual("runaway_co2", atmosphere["atmosphere_class"])
-        self.assertGreater(composition.get("CO2", 0.0), 0.95)
-        self.assertGreater(atmosphere["surface_pressure_bar"], 70.0)
-        self.assertLess(atmosphere["surface_pressure_bar"], 105.0)
-        self.assertGreater(atmosphere["estimated_surface_temperature_k"], 700.0)
-        self.assertLess(atmosphere["estimated_surface_temperature_k"], 770.0)
-        self.assertEqual(
-            "sulfuric_acid_aerosol_deck",
-            atmosphere["cloud_model"]["cloud_class"],
-        )
-        self.assertFalse(
-            atmosphere["cloud_model"]["surface_precipitation_reaches_ground"]
-        )
+        self.assertNotIn("atmosphere_regime", template)
+        self.assertNotIn("volatile_pressure_scale", template)
+        self.assertNotIn("greenhouse_efficiency", template)
+        self.assertNotIn("bond_albedo", template)
+        self.assertEqual(atmosphere, comparison)
 
 
 if __name__ == "__main__":

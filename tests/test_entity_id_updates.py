@@ -566,7 +566,55 @@ class EntityIdUpdateTests(unittest.TestCase):
             self.assertNotIn("idea_delete_me", ui.card_drafts)
             self.assertEqual([], ui.cards)
             self.assertTrue(ui.world_model.touch_degrees.refreshed)
-            self.assertTrue(ui.world_model.loader.reference_graph_rebuilt)
+            self.assertFalse(ui.world_model.loader.reference_graph_rebuilt)
+
+    def test_delete_linked_planet_cleans_parent_without_world_reload(self):
+        system = {
+            "id": "system_tau_ceti",
+            "type": "location",
+            "_dataset": "locations",
+            "name": "Tau Ceti",
+            "constituents": ["planet_tau_ceti_b"],
+            "offspring": [{"id": "planet_tau_ceti_b"}],
+        }
+        planet = {
+            "id": "planet_tau_ceti_b",
+            "type": "location",
+            "_dataset": "locations",
+            "name": "Tau Ceti b",
+            "parents": ["system_tau_ceti"],
+        }
+        ui = KnowledgeBrowserHarness({
+            system["id"]: system,
+            planet["id"]: planet,
+        })
+        ui.world_model.loader.datasets = {
+            "locations": [system, planet],
+        }
+        ui.world_model.loader.edges = {
+            system["id"]: [planet["id"]],
+            planet["id"]: [system["id"]],
+        }
+        ui.world_model.refresh = lambda: (_ for _ in ()).throw(
+            AssertionError("Deleting a linked card must not reload the world")
+        )
+        card = {
+            "entity_id": planet["id"],
+            "card_view": SimpleNamespace(entity=planet),
+            "is_draft_entity": False,
+        }
+        ui.cards = [card]
+
+        self.assertTrue(ui._delete_card_entry(card))
+
+        self.assertEqual([], system["constituents"])
+        self.assertEqual([], system["offspring"])
+        self.assertNotIn(planet["id"], ui.world_model.loader.entities)
+        self.assertNotIn(planet["id"], ui.world_model.loader.edges)
+        self.assertNotIn(
+            planet["id"],
+            ui.world_model.loader.edges[system["id"]],
+        )
 
     def test_delete_draft_card_entry_does_not_require_repository_block(self):
         entity = {

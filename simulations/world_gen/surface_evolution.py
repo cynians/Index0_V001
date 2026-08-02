@@ -11,7 +11,7 @@ mass wasting, and deposition progressively redistribute it.
 import math
 
 
-SURFACE_EVOLUTION_MODEL_VERSION = "climate-coupled-surface-evolution-v2"
+SURFACE_EVOLUTION_MODEL_VERSION = "climate-coupled-surface-evolution-v3"
 
 
 def _clamp(value, low=0.0, high=1.0):
@@ -106,7 +106,24 @@ def _apply_channel_incision(rows, drainage, heightmap, active_water, declared_st
     incision = [[0.0 for _x in range(width)] for _y in range(height)]
     if not active_water or not isinstance(drainage, dict):
         return [[value for value in row] for row in rows], incision
-    rivers = [river for river in (drainage.get("rivers") or []) if isinstance(river, dict)]
+    # Permanent and seasonal rivers shape occupied channels. Ephemeral desert
+    # drainage is retained only as geomorphology: flash floods can incise a
+    # wadi or arroyo even though no blue surface-water line should be drawn on
+    # the normal map. Basin boundaries and inactive candidate paths never
+    # participate in incision.
+    rivers = []
+    seen_rivers = set()
+    for river in [
+        *(drainage.get("rivers") or []),
+        *(drainage.get("ephemeral_channels") or []),
+    ]:
+        if not isinstance(river, dict):
+            continue
+        identity = str(river.get("origin_river_id") or river.get("id") or id(river))
+        if identity in seen_rivers:
+            continue
+        seen_rivers.add(identity)
+        rivers.append(river)
     if not rivers:
         return [[value for value in row] for row in rows], incision
 
@@ -119,10 +136,22 @@ def _apply_channel_incision(rows, drainage, heightmap, active_water, declared_st
         radius_m = float(heightmap.get("radius_m") or 6_371_000.0)
         spacing_y = math.pi * radius_m / max(1, height - 1)
     cell_spacing_m = max(1.0, math.sqrt(spacing_x * spacing_y))
+    # A routed global/regional grid cell can represent tens or hundreds of
+    # kilometres.  Cutting its one-cell D8 centreline into the DEM creates a
+    # kilometre-wide rectilinear trench, not a resolved river valley.  Keep
+    # drainage connectivity and incision potential in the data model at those
+    # scales, but defer geometric channel cutting until the represented cell is
+    # fine enough to contain a valley cross-section.
+    if cell_spacing_m > 12_000.0:
+        return [[value for value in row] for row in rows], incision
     # Valley depth scales with represented cell size, but remains a small
     # fraction of total relief so a coarse planetary channel cannot excavate
     # a continent-scale trench in one feedback pass.
-    maximum_depth_m = min(relief_span * 0.030, max(0.25, cell_spacing_m * 0.011))
+    maximum_depth_m = min(
+        relief_span * 0.014,
+        180.0,
+        max(0.25, cell_spacing_m * 0.006),
+    )
     minimum_drop_m = min(maximum_depth_m * 0.08, max(0.02, cell_spacing_m * 0.000025))
     channel_floor = [[None for _x in range(width)] for _y in range(height)]
 
@@ -146,8 +175,19 @@ def _apply_channel_incision(rows, drainage, heightmap, active_water, declared_st
         confinement = _clamp(float(morphology.get("confinement_index", 0.0) or 0.0))
         slope_energy = _clamp(channel_gradient / 0.012)
         strength = _clamp((0.24 + 0.76 * math.sqrt(flow)) * (0.70 + min(4, order) * 0.09))
+        regime_factor = {
+            "perennial": 1.0,
+            "intermittent": 0.72,
+            "ephemeral": 0.42,
+        }.get(str(river.get("flow_regime") or "perennial"), 1.0)
         incision_regime = 0.24 + slope_energy * 0.56 + confinement * 0.20
-        target_depth = maximum_depth_m * declared_strength * strength * incision_regime
+        target_depth = (
+            maximum_depth_m
+            * declared_strength
+            * strength
+            * incision_regime
+            * regime_factor
+        )
         previous_bed = None
         for index, (x, y) in enumerate(path):
             downstream_fraction = index / max(1, len(path) - 1)

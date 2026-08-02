@@ -192,6 +192,41 @@ class NavigationBuildingTests(unittest.TestCase):
         self.assertTrue(handled)
         self.assertEqual(("map", "planet_alpha"), controller.app.tab_manager.tabs[0].tab_key)
 
+    def test_space_body_map_open_uses_live_index_without_full_repository_refresh(self):
+        planet = {
+            "id": "planet_alpha",
+            "name": "Alpha I",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "bounds": {
+                "type": "bbox",
+                "min_x": -180.0,
+                "max_x": 180.0,
+                "min_y": -90.0,
+                "max_y": 90.0,
+            },
+        }
+        controller = self._controller([planet])
+        refresh_calls = []
+        opened = []
+        controller.app.world_model.refresh = lambda: refresh_calls.append("full")
+        controller.open_region_map_tab = lambda entity_id: opened.append(entity_id)
+        space_sim = SimpleNamespace(
+            get_selected_body_entity=lambda: planet,
+            system=SimpleNamespace(
+                ensure_location_anchor_for_body_entity=lambda body, world: (
+                    body["id"],
+                    False,
+                ),
+            ),
+        )
+
+        controller.open_map_for_selected_space_body(space_sim)
+
+        self.assertEqual(["planet_alpha"], opened)
+        self.assertEqual([], refresh_calls)
+
     def test_undefined_child_location_launches_parent_placement(self):
         controller = self._controller([
             {

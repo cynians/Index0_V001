@@ -5,11 +5,14 @@ from pathlib import Path
 from simulations.world_gen.material_affinities import (
     MATERIAL_AFFINITY_PROFILES,
     material_affinity_score,
+    material_distribution_role,
 )
 from simulations.world_gen.material_heatmaps import (
+    _crater_material_fields,
     _select_material_layers,
     generate_material_heatmap_model,
 )
+from simulations.world_gen.material_formation import formation_contract
 from simulations.world_gen.natural_materials import (
     NATURAL_MATERIAL_CATALOG,
     derive_natural_material_model,
@@ -55,10 +58,25 @@ def _context(**overrides):
 
 
 class MaterialAffinityTests(unittest.TestCase):
+    def test_talus_and_colluvium_are_surface_covers_not_bedrock_units(self):
+        for material_id in ("mat_talus", "mat_colluvium"):
+            profile = MATERIAL_AFFINITY_PROFILES[material_id]
+            contract = formation_contract(
+                material_id,
+                "sediment",
+                profile["profile_id"],
+            )
+            self.assertEqual("colluvial_sediment", contract["category_id"])
+            self.assertEqual("surface_cover", contract["spatial_representation"])
+            self.assertEqual(
+                "surface_cover",
+                material_distribution_role(material_id, "sediment", 1),
+            )
+
     def test_every_natural_material_has_an_explicit_profile(self):
         catalog_ids = {material["id"] for material in NATURAL_MATERIAL_CATALOG}
 
-        self.assertEqual(78, len(catalog_ids))
+        self.assertEqual(200, len(catalog_ids))
         self.assertEqual(catalog_ids, set(MATERIAL_AFFINITY_PROFILES))
         for material_id, profile in MATERIAL_AFFINITY_PROFILES.items():
             self.assertTrue(profile.get("profile_id"), material_id)
@@ -80,6 +98,47 @@ class MaterialAffinityTests(unittest.TestCase):
             "fluvial_sediment",
             entries["mat_alluvium"]["surface_affinity_profile"]["profile_id"],
         )
+
+    def test_distribution_roles_separate_substrate_cover_and_deposits(self):
+        self.assertEqual(
+            "bedrock",
+            material_distribution_role("mat_basalt", "rock", 0),
+        )
+        self.assertEqual(
+            "surface_cover",
+            material_distribution_role("mat_clay_rich_regolith", "regolith", 1),
+        )
+        self.assertEqual(
+            "mineral_constituent",
+            material_distribution_role("mat_quartz", "mineral", 1),
+        )
+        self.assertEqual(
+            "sparse_deposit",
+            material_distribution_role("mat_bauxite", "regolith", 2),
+        )
+
+    def test_regional_craters_use_metre_scale_local_footprints(self):
+        fields = _crater_material_fields(
+            {
+                "region_width_m": 100_000.0,
+                "region_height_m": 50_000.0,
+                "craters": [{
+                    "x": 0.5,
+                    "y": 0.5,
+                    "diameter_m": 4_000.0,
+                }],
+            },
+            64,
+            32,
+        )
+
+        affected = sum(
+            value > 0.0
+            for row in fields["breccia"]
+            for value in row
+        )
+        self.assertGreater(affected, 0)
+        self.assertLess(affected, 64 * 32 // 3)
 
     def test_bauxite_requires_warm_wet_old_well_drained_weathering_surface(self):
         favorable = material_affinity_score(
@@ -225,6 +284,7 @@ class MaterialAffinityTests(unittest.TestCase):
             )
         )
         self.assertNotIn("mat_chalcopyrite", selected_ids)
+        self.assertNotIn("mat_gabbro", selected_ids)
 
     def test_wet_oxidizing_surface_suppresses_exposed_native_sulfur(self):
         dry = material_affinity_score(
@@ -324,6 +384,33 @@ class MaterialAffinityTests(unittest.TestCase):
         )
         self.assertTrue(occurrence["scale_stable"])
         self.assertLess(occurrence["estimated_radius_m"], 5000.0)
+        self.assertEqual("inferred", occurrence["knowledge_state"])
+        self.assertEqual(
+            "generated_hidden_deposit_body",
+            occurrence["deposit_body"]["truth_state"],
+        )
+        self.assertEqual(
+            "residual_laterite_blanket",
+            occurrence["deposit_body"]["deposit_type"],
+        )
+        estimate = occurrence["deposit_body"]["resource_estimate"]
+        self.assertLess(0, estimate["in_situ_tonnage_range_t"][0])
+        self.assertLess(
+            estimate["in_situ_tonnage_range_t"][0],
+            estimate["in_situ_tonnage_range_t"][1],
+        )
+        self.assertEqual(
+            "generated_geometry_density_and_process_range_not_a_reserve",
+            estimate["estimate_basis"],
+        )
+        self.assertGreaterEqual(
+            len(occurrence["deposit_body"]["geometry"]["footprint_vertices"]),
+            8,
+        )
+        self.assertEqual(
+            "process_conditioned_irregular_lobed_v1",
+            occurrence["deposit_body"]["geometry"]["boundary_model"],
+        )
         repeated = derive_regional_material_model(
             natural_model,
             heightmap,
@@ -346,6 +433,86 @@ class MaterialAffinityTests(unittest.TestCase):
             detail_level=2,
         )
         self.assertEqual(regional["occurrences"], repeated["occurrences"])
+
+        parent_occurrence = regional["occurrences"][0]
+        global_center = parent_occurrence["center_global_uv"]
+        child_half_span = 0.08
+        child_bounds = {
+            "min_u": max(0.0, global_center["u"] - child_half_span),
+            "max_u": min(1.0, global_center["u"] + child_half_span),
+            "min_v": max(0.0, global_center["v"] - child_half_span),
+            "max_v": min(1.0, global_center["v"] + child_half_span),
+        }
+        child = derive_regional_material_model(
+            natural_model,
+            heightmap,
+            {
+                "climate_grid": {
+                    "temperature_rows_k": climate_rows,
+                    "annual_precipitation_rows_mm": precipitation_rows,
+                    "annual_runoff_rows_mm": runoff_rows,
+                },
+            },
+            {
+                "process_grid": {
+                    "chemical_weathering_rows": process_rows,
+                    "sediment_deposition_rows": process_rows,
+                    "erosion_potential_rows": [[0.2] * 5 for _index in range(5)],
+                    "relative_surface_age_rows": [[0.9] * 5 for _index in range(5)],
+                },
+            },
+            map_seed="child-map-seed-is-allowed-to-differ",
+            root_map_seed="regional-bauxite-test",
+            source_uv_bounds=child_bounds,
+            parent_regional_material_model=regional,
+            detail_level=3,
+        )
+
+        self.assertEqual(1, child["inherited_occurrence_count"])
+        inherited = child["occurrences"][0]
+        self.assertEqual(parent_occurrence["id"], inherited["id"])
+        self.assertEqual(
+            parent_occurrence["center_global_uv"],
+            inherited["center_global_uv"],
+        )
+        self.assertEqual(
+            parent_occurrence["deposit_body"],
+            inherited["deposit_body"],
+        )
+        self.assertEqual(
+            parent_occurrence["estimated_radius_m"],
+            inherited["estimated_radius_m"],
+        )
+        self.assertTrue(inherited["inherited_from_parent"])
+
+        radius_m = float(parent_occurrence["estimated_radius_m"])
+        radius_u = radius_m / regional["region_width_m"]
+        direction = 1.0 if global_center["u"] <= 0.5 else -1.0
+        near_edge = global_center["u"] + direction * radius_u * 0.45
+        far_edge = global_center["u"] + direction * radius_u * 1.45
+        intersecting_bounds = {
+            "min_u": min(near_edge, far_edge),
+            "max_u": max(near_edge, far_edge),
+            "min_v": max(0.0, global_center["v"] - radius_u * 0.45),
+            "max_v": min(1.0, global_center["v"] + radius_u * 0.45),
+        }
+        intersecting_child = derive_regional_material_model(
+            natural_model,
+            heightmap,
+            {},
+            map_seed="intersecting-child",
+            root_map_seed="regional-bauxite-test",
+            source_uv_bounds=intersecting_bounds,
+            parent_regional_material_model=regional,
+            detail_level=3,
+        )
+        inherited_edge = intersecting_child["occurrences"][0]
+        self.assertFalse(inherited_edge["center_inside_child_bounds"])
+        self.assertTrue(inherited_edge["footprint_intersects_child_bounds"])
+        self.assertTrue(
+            inherited_edge["center"]["x"] < 0.0
+            or inherited_edge["center"]["x"] > 1.0
+        )
 
     def test_cold_earthlike_heightmap_does_not_paint_bauxite_continents(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -429,7 +596,10 @@ class MaterialAffinityTests(unittest.TestCase):
                     "hydrology": {"cycle": "active", "target_ocean_fraction": 0.5},
                 },
                 heightmap={**heightmap, "planet_id": "warm_affinity_test", "map_seed": "warm-affinity-test"},
-                atmosphere={"estimated_surface_temperature_k": 302.0},
+            atmosphere={
+                "estimated_surface_temperature_k": 302.0,
+                "surface_pressure_bar": 1.0,
+            },
                 water_cycle={
                     "climate_grid": {
                         "temperature_rows_k": warm_rows,
@@ -444,6 +614,63 @@ class MaterialAffinityTests(unittest.TestCase):
             warm_layers = {layer["material_id"]: layer for layer in warm_model["layers"]}
 
             self.assertNotIn("mat_bauxite", warm_layers)
+            self.assertEqual(
+                "surface_cover_over_bedrock",
+                warm_model["composite_layer"]["render_contract"],
+            )
+            self.assertEqual(
+                {"bedrock", "surface_cover"},
+                set(warm_model["distribution_roles"]),
+            )
+
+            regional_warm_model = generate_material_heatmap_model(
+                planet={
+                    "id": "regional_warm_affinity_test",
+                    "surface_evolution_model": {
+                        "process_grid": {
+                            "chemical_weathering_rows": weathering_rows,
+                            "relative_surface_age_rows": old_surface_rows,
+                        },
+                    },
+                },
+                natural_material_model={
+                    "planet_tags": ["active_hydrology", "weathered_surface", "basaltic_surface"],
+                    "likely_materials": candidates,
+                },
+                terrain={
+                    "map_seed": "regional-warm-affinity-test",
+                    "hydrology": {"cycle": "active", "target_ocean_fraction": 0.5},
+                },
+                heightmap={
+                    **heightmap,
+                    "planet_id": "regional_warm_affinity_test",
+                    "map_seed": "regional-warm-affinity-test",
+                    "map_detail_level": 2,
+                },
+                atmosphere={
+                    "estimated_surface_temperature_k": 302.0,
+                    "surface_pressure_bar": 1.0,
+                },
+                water_cycle={
+                    "climate_grid": {
+                        "temperature_rows_k": warm_rows,
+                        "annual_precipitation_rows_mm": wet_rows,
+                        "annual_runoff_rows_mm": runoff_rows,
+                    },
+                },
+                output_root=Path(temp_dir) / "regional_heatmaps",
+                storage_root=Path(temp_dir),
+                image_size=(32, 16),
+            )
+            regional_layers = {
+                layer["material_id"]: layer
+                for layer in regional_warm_model["layers"]
+            }
+            self.assertIn("mat_bauxite", regional_layers)
+            self.assertEqual(
+                "sparse_deposit",
+                regional_layers["mat_bauxite"]["distribution_role"],
+            )
 
 
 if __name__ == "__main__":
