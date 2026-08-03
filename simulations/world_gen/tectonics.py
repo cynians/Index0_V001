@@ -162,12 +162,30 @@ def _plate_area_fractions(plates, sample_width=96, sample_height=48):
     return [area / total for area in areas]
 
 
-def _take_ranked_area(candidates, target_fraction):
-    """Take ranked plates until their spherical area best matches a target."""
+def _take_ranked_area(candidates, target_fraction, min_separation=0.0):
+    """Take ranked plates until their spherical area best matches a target.
+
+    `_continentality_score` is a smooth, low-frequency noise field, so the
+    top-ranked ("most continental") plates tend to have adjacent centers and
+    their continental roots fuse into one supercontinent-shaped landmass.
+    When min_separation > 0, prefer spatially spread-out candidates among the
+    ranked list first, and only fall back to closely-spaced ones (in rank
+    order) if the separation constraint would leave the area target unmet --
+    real multi-continent worlds are a common outcome, not the exception.
+    """
     selected = []
     selected_area = 0.0
+    deferred = []
     for plate in candidates:
         if selected and selected_area >= target_fraction:
+            break
+        if min_separation > 0.0 and selected and not _plate_centers_separated(plate, selected, min_separation):
+            deferred.append(plate)
+            continue
+        selected.append(plate)
+        selected_area += float(plate.get("area_fraction", 0.0) or 0.0)
+    for plate in deferred:
+        if selected_area >= target_fraction:
             break
         selected.append(plate)
         selected_area += float(plate.get("area_fraction", 0.0) or 0.0)
@@ -177,6 +195,17 @@ def _take_ranked_area(candidates, target_fraction):
         if abs(without_last - target_fraction) < abs(selected_area - target_fraction):
             selected.pop()
     return selected
+
+
+def _plate_centers_separated(candidate, selected, min_separation):
+    cx = float(candidate.get("center_x", 0.0) or 0.0)
+    cy = float(candidate.get("center_y", 0.5) or 0.5)
+    for other in selected:
+        ox = float(other.get("center_x", 0.0) or 0.0)
+        oy = float(other.get("center_y", 0.5) or 0.5)
+        if math.hypot(_wrapped_delta(cx, ox), cy - oy) < min_separation:
+            return False
+    return True
 
 
 def _boundary_kind(plate_a, plate_b):
@@ -376,15 +405,32 @@ def _hotspot_model(plates, map_seed):
         x = seed_range(map_seed, f"hotspot:{index}:x", 0.0, 1.0)
         y = seed_range(map_seed, f"hotspot:{index}:y", 0.12, 0.88)
         plate = plates[_nearest_plate_index(x, y, plates)]
-        vx = float(plate.get("velocity_x_cm_year", 0.0) or 0.0)
-        vy = float(plate.get("velocity_y_cm_year", 0.0) or 0.0)
+        motion = plate.get("motion_model") if isinstance(plate.get("motion_model"), dict) else {}
+        euler_lon = float(motion.get("euler_pole_longitude_deg", 0.0) or 0.0)
+        euler_lat = float(motion.get("euler_pole_latitude_deg", 90.0) or 90.0)
+        angular_velocity_deg_myr = float(motion.get("angular_velocity_deg_myr", 0.0) or 0.0)
+        decay_myr = seed_range(map_seed, f"hotspot:{index}:decay", 55.0, 105.0)
         track = []
         for step, age_myr in enumerate((0.0, 12.0, 28.0, 50.0, 78.0, 110.0)):
+            # The mantle plume is fixed; the plate above it carries older
+            # volcanoes away as it rotates, trailing opposite the plate's
+            # instantaneous motion (same age-backward convention as
+            # _latent_geologic_history's plate-position rotation, and the
+            # same sign as the flat-map linear approximation this replaces
+            # -- but correct near poles/the date-line, where a flat-map
+            # linear velocity approximation is not).
+            track_x, track_y = _rotate_spherical_point(
+                x, y, euler_lon, euler_lat, -angular_velocity_deg_myr * age_myr,
+            )
             track.append({
                 "age_myr": age_myr,
-                "x": round((x - vx * age_myr * 0.00115) % 1.0, 4),
-                "y": round(_clamp(y - vy * age_myr * 0.00082, 0.04, 0.96), 4),
-                "relative_volume": round(math.exp(-age_myr / seed_range(map_seed, f"hotspot:{index}:decay", 55.0, 105.0)), 3),
+                "x": round(track_x, 4),
+                "y": round(_clamp(track_y, 0.04, 0.96), 4),
+                "relative_volume": round(math.exp(-age_myr / decay_myr), 3),
+                # Older seamounts have subsided/eroded longer: wider, softer
+                # relief, independent of the buoyancy-driven amplitude decay
+                # already captured by relative_volume.
+                "erosion_softening": round(_clamp(age_myr / 110.0, 0.0, 1.0), 3),
             })
         hotspots.append({
             "id": f"hotspot_{index + 1:02d}",
@@ -395,7 +441,7 @@ def _hotspot_model(plates, map_seed):
             "track": track,
         })
     return {
-        "model": "mantle_fixed_age_progressive_tracks_v1",
+        "model": "mantle_fixed_age_progressive_tracks_v2",
         "hotspots": hotspots,
         "large_igneous_province_possible": any(item["buoyancy_flux_class"] == "major" for item in hotspots),
     }
@@ -602,7 +648,14 @@ def derive_tectonic_model(terrain, seed=None, physics=None, planet_id=""):
     continental_area_target = _clamp(0.30 + continental_crust_potential * 0.16, 0.28, 0.47)
     oceanic_area_target = _clamp(0.43 + (1.0 - continental_crust_potential) * 0.12, 0.40, 0.56)
     descending = sorted(plates, key=lambda item: float(item.get("_continentality_score", 0.0)), reverse=True)
-    continental_plates = _take_ranked_area(descending, continental_area_target)
+    # Active plate tectonics (mobile_lid) should commonly produce several
+    # separated continents rather than one supercontinent-shaped blob;
+    # enforce a minimum angular spread among the highest-ranked continental
+    # candidates for that regime specifically, since other regimes (stagnant
+    # lid, etc.) are not expected to exhibit Earth-like multi-continent
+    # break-up behavior.
+    continental_min_separation = 0.30 if str(tectonics.get("regime") or "").lower() == "mobile_lid" else 0.0
+    continental_plates = _take_ranked_area(descending, continental_area_target, min_separation=continental_min_separation)
     continental_ids = {plate["id"] for plate in continental_plates}
     ascending_remaining = sorted(
         (plate for plate in plates if plate["id"] not in continental_ids),

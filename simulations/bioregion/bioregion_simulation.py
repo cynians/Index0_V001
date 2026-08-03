@@ -216,6 +216,7 @@ class BioregionSimulation:
             "hydrology_summary",
             "environment_summary",
             "water_cycle_model",
+            "koppen_climate_model",
             "climate_zone_model",
             "river_model",
             "climate_summary",
@@ -259,7 +260,13 @@ class BioregionSimulation:
                     "hydrology": entity.get("hydrology_summary") if isinstance(entity.get("hydrology_summary"), dict) else None,
                     "environment": entity.get("environment_summary") if isinstance(entity.get("environment_summary"), dict) else None,
                     "water_cycle": entity.get("water_cycle_model") if isinstance(entity.get("water_cycle_model"), dict) else None,
-                    "climate_zones": entity.get("climate_zone_model") if isinstance(entity.get("climate_zone_model"), dict) else None,
+                    "koppen_climate": (
+                        entity.get("koppen_climate_model")
+                        if isinstance(entity.get("koppen_climate_model"), dict)
+                        else entity.get("climate_zone_model")
+                        if isinstance(entity.get("climate_zone_model"), dict)
+                        else None
+                    ),
                     "rivers": entity.get("river_model") if isinstance(entity.get("river_model"), dict) else None,
                     "climate_summary": entity.get("climate_summary") if isinstance(entity.get("climate_summary"), dict) else None,
                     "materials": entity.get("natural_material_model") if isinstance(entity.get("natural_material_model"), dict) else None,
@@ -446,14 +453,16 @@ class BioregionSimulation:
         bottom = value_at(y1, x0) * (1.0 - fx) + value_at(y1, x1) * fx
         return top * (1.0 - fy) + bottom * fy
 
-    def _sample_climate_zone(self, nx, ny):
+    def _sample_koppen_class(self, nx, ny):
         context = self.worldgen_context or {}
-        climate_model = context.get("climate_zones") if isinstance(context.get("climate_zones"), dict) else {}
+        climate_model = context.get("koppen_climate") if isinstance(context.get("koppen_climate"), dict) else {}
         water_cycle = context.get("water_cycle") if isinstance(context.get("water_cycle"), dict) else {}
         grid = climate_model.get("climate_grid") if isinstance(climate_model.get("climate_grid"), dict) else None
         if grid is None:
             grid = water_cycle.get("climate_grid") if isinstance(water_cycle.get("climate_grid"), dict) else None
-        rows = grid.get("rows") if isinstance(grid, dict) and isinstance(grid.get("rows"), list) else []
+        rows = []
+        if isinstance(grid, dict):
+            rows = grid.get("koppen_rows") or grid.get("rows") or []
         if not rows:
             return None
         valid_rows = [row for row in rows if isinstance(row, list) and row]
@@ -556,16 +565,16 @@ class BioregionSimulation:
                 elevation_norm = self._clamp(cell.get("altitude", 0.5))
 
             is_under_water = elevation is not None and sea_level is not None and elevation < sea_level
-            climate_zone = self._sample_climate_zone(nx, ny)
-            if climate_zone:
-                cell["climate_zone"] = climate_zone
-                if climate_zone in {"arid", "tropical_dry", "temperate_dry", "cold_steppe"}:
+            koppen_class = self._sample_koppen_class(nx, ny)
+            if koppen_class:
+                cell["koppen_class"] = koppen_class
+                if koppen_class in {"BWh", "BWk", "BSh", "BSk"}:
                     cell["top_moisture"] = self._clamp(cell["top_moisture"] * 0.72)
                     cell["deep_moisture"] = self._clamp(cell["deep_moisture"] * 0.84)
-                elif climate_zone in {"temperate_wet", "tropical_wet"}:
+                elif koppen_class in {"Af", "Am", "Cfa", "Cfb", "Cfc", "Cwa", "Cwb", "Cwc", "Dfa", "Dfb", "Dwa", "Dwb"}:
                     cell["top_moisture"] = self._clamp(cell["top_moisture"] + 0.14)
                     cell["deep_moisture"] = self._clamp(cell["deep_moisture"] + 0.10)
-                elif climate_zone in {"polar_ice", "highland"}:
+                elif koppen_class in {"ET", "EF"}:
                     cell["top_temperature"] = self._clamp(cell.get("top_temperature", 0.5) * 0.82)
             if bedrock_type:
                 cell["bedrock_type"] = bedrock_type

@@ -709,15 +709,31 @@ def _tectonic_height_m(nx, ny, terrain, tectonic_model):
             continue
         influence = math.exp(-((distance / influence_width) ** 2))
         influence = influence ** 1.18 * _clamp(segment.get("activity_scale", 1.0), 0.25, 1.35)
+        # Fixed frequencies here (only the phase was seeded) gave every
+        # generated world's fold-and-thrust ridges the exact same along-
+        # strike wavelength -- a comb-regular pattern that reads as banding
+        # once rain shadow inherits it. Seeding the frequencies too, and
+        # adding a third, higher, lower-weight octave, breaks the pure
+        # 2-term periodicity into something closer to real ridge-and-valley
+        # terrain's irregular spacing.
         segmentation_phase = seed_range(map_seed, "orogen_segmentation_phase", 0.0, math.tau)
+        primary_freq_x = seed_range(map_seed, "orogen_segmentation_freq_primary_x", 7.0, 15.0)
+        primary_freq_y = seed_range(map_seed, "orogen_segmentation_freq_primary_y", 10.0, 20.0)
+        secondary_freq_x = seed_range(map_seed, "orogen_segmentation_freq_secondary_x", 21.0, 37.0)
+        secondary_freq_y = seed_range(map_seed, "orogen_segmentation_freq_secondary_y", 13.0, 25.0)
+        tertiary_freq_x = seed_range(map_seed, "orogen_segmentation_freq_tertiary_x", 43.0, 61.0)
+        tertiary_freq_y = seed_range(map_seed, "orogen_segmentation_freq_tertiary_y", 31.0, 47.0)
         primary_segment = 0.5 + 0.5 * math.sin(
-            (nx * 11.0 + ny * 16.0) * math.tau + segmentation_phase
+            (nx * primary_freq_x + ny * primary_freq_y) * math.tau + segmentation_phase
         )
         secondary_segment = 0.5 + 0.5 * math.sin(
-            (nx * 29.0 - ny * 19.0) * math.tau + segmentation_phase * 1.73
+            (nx * secondary_freq_x - ny * secondary_freq_y) * math.tau + segmentation_phase * 1.73
+        )
+        tertiary_segment = 0.5 + 0.5 * math.sin(
+            (nx * tertiary_freq_x + ny * tertiary_freq_y) * math.tau + segmentation_phase * 2.41
         )
         along_strike_texture = 0.20 + 0.80 * _smoothstep(
-            primary_segment * 0.72 + secondary_segment * 0.28
+            primary_segment * 0.56 + secondary_segment * 0.28 + tertiary_segment * 0.16
         )
         kind = segment.get("kind") or "passive"
         normal_x = float(segment.get("normal_x", 0.0) or 0.0)
@@ -774,9 +790,19 @@ def _tectonic_height_m(nx, ny, terrain, tectonic_model):
                 _wrapped_delta(nx, float(point.get("x", 0.0) or 0.0)),
                 ny - float(point.get("y", 0.5) or 0.5),
             )
-            radius = 0.008 + float(point.get("relative_volume", 0.0) or 0.0) * 0.010
+            # Older track points have subsided/eroded longer: wider and
+            # softer than just shorter, independent of the buoyancy-driven
+            # amplitude decay already carried by relative_volume.
+            erosion_softening = _clamp(float(point.get("erosion_softening", 0.0) or 0.0), 0.0, 1.0)
+            radius = (0.008 + float(point.get("relative_volume", 0.0) or 0.0) * 0.010) * (1.0 + erosion_softening * 0.9)
             if distance < radius * 2.5:
-                height += math.exp(-((distance / radius) ** 2)) * 2600.0 * float(point.get("relative_volume", 0.0) or 0.0) * (1.0 - continent_mask * 0.55)
+                height += (
+                    math.exp(-((distance / radius) ** 2))
+                    * 2600.0
+                    * float(point.get("relative_volume", 0.0) or 0.0)
+                    * (1.0 - continent_mask * 0.55)
+                    * (1.0 - erosion_softening * 0.35)
+                )
 
     if height > 1000.0:
         height *= 1.0 - min(0.34, erosion * 0.24)

@@ -180,7 +180,7 @@ class MapSimulation:
 
         self.active_layer_kind = self.LOCATION_LAYER_KIND
         self.active_material_heatmap_layer_id = "composite"
-        self.active_climate_layer_id = "zones"
+        self.active_climate_layer_id = "koppen"
         self.atmosphere_visible = True
         self.height_contours_visible = True
 
@@ -1821,21 +1821,23 @@ class MapSimulation:
         source_water = source.get("water_cycle_model")
         water_cycle = None
         climate_grid = source_water.get("climate_grid") if isinstance(source_water, dict) else None
-        climate_rows = climate_grid.get("rows") if isinstance(climate_grid, dict) else None
+        climate_rows = (
+            climate_grid.get("koppen_rows") or climate_grid.get("rows")
+            if isinstance(climate_grid, dict) else None
+        )
         if isinstance(climate_rows, list) and climate_rows:
             cropped_climate = resample_rows(climate_rows, categorical=True)
             source_elevation_rows = climate_grid.get("elevation_rows") if isinstance(climate_grid, dict) else None
             water_cycle = {
                 "status": "parent_climate_inherited",
                 "source_location_id": source.get("id"),
-                "climate_zones": list(source_water.get("climate_zones") or []),
                 "koppen_classes": list(source_water.get("koppen_classes") or []),
                 "climate_grid": {
                     "width": target_columns,
                     "height": target_rows,
                     "rows": cropped_climate,
                     "koppen_rows": resample_rows(
-                        climate_grid.get("koppen_rows") or [],
+                        climate_grid.get("koppen_rows") or climate_grid.get("rows") or [],
                         categorical=True,
                     ),
                     "elevation_rows": (
@@ -2031,7 +2033,7 @@ class MapSimulation:
         items = []
         if layer_kind == self.HYDROLOGY_LAYER_KIND:
             water = surface_water_cycle or {}
-            climate_mode = str(self.active_climate_layer_id or "zones")
+            climate_mode = str(self.active_climate_layer_id or "koppen")
             climate_grid = water.get("climate_grid") or {}
             if climate_mode == "annual_temperature":
                 rows = climate_grid.get("temperature_rows_k") or []
@@ -2066,29 +2068,28 @@ class MapSimulation:
                     {"label": f"Driest  {low:,.0f} mm/yr", "color": [206, 178, 108]},
                 ])
             else:
-                zones = sorted(
+                climate_classes = sorted(
                     [
-                        zone
-                        for zone in (
+                        climate_class
+                        for climate_class in (
                             water.get("koppen_classes")
-                            or water.get("climate_zones")
                             or []
                         )
-                        if isinstance(zone, dict)
+                        if isinstance(climate_class, dict)
                     ],
-                    key=lambda zone: float(zone.get("fraction", 0.0) or 0.0),
+                    key=lambda climate_class: float(climate_class.get("fraction", 0.0) or 0.0),
                     reverse=True,
                 )
-                for zone in zones[:max(1, int(max_items) - 3)]:
-                    fraction = float(zone.get("fraction", 0.0) or 0.0)
+                for climate_class in climate_classes[:max(1, int(max_items) - 3)]:
+                    fraction = float(climate_class.get("fraction", 0.0) or 0.0)
                     code = (
-                        f"{zone.get('id')} · "
+                        f"{climate_class.get('id')} · "
                         if water.get("koppen_classes")
                         else ""
                     )
                     items.append({
-                        "label": f"{code}{zone.get('label') or zone.get('id')}  {fraction * 100:.0f}%",
-                        "color": list(zone.get("color") or [140, 145, 140]),
+                        "label": f"{code}{climate_class.get('label') or climate_class.get('id')}  {fraction * 100:.0f}%",
+                        "color": list(climate_class.get("color") or [140, 145, 140]),
                     })
             items.extend([
                 {"label": "Rivers / streams", "color": [48, 136, 220]},
@@ -2356,7 +2357,7 @@ class MapSimulation:
         if not isinstance(climate_grid, dict) or not climate_grid.get("rows"):
             return []
         choices = [
-            ("zones", "Köppen Climate Zones", "koppen_rows"),
+            ("koppen", "Köppen-Geiger Classification", "koppen_rows"),
             ("annual_temperature", "Mean Annual Temperature", "temperature_rows_k"),
             (
                 "annual_precipitation",
@@ -2371,16 +2372,16 @@ class MapSimulation:
                 "active": item_id == self.active_climate_layer_id,
             }
             for item_id, label, field in choices
-            if item_id == "zones" or climate_grid.get(field)
+            if item_id == "koppen" or climate_grid.get(field)
         ]
 
     def set_active_climate_display_item(self, item_id):
-        item_id = str(item_id or "zones")
+        item_id = str(item_id or "koppen")
         valid_ids = {
             str(item.get("id")) for item in self.get_climate_display_items()
         }
         if item_id not in valid_ids:
-            item_id = "zones"
+            item_id = "koppen"
         changed = item_id != self.active_climate_layer_id
         self.active_climate_layer_id = item_id
         layer_changed = self.set_active_layer_kind(self.HYDROLOGY_LAYER_KIND)

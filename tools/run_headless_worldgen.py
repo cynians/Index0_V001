@@ -73,6 +73,13 @@ def _parser():
         action="store_true",
         help="Deprecated compatibility alias; rendering is disabled by default.",
     )
+    parser.add_argument(
+        "--attach-moon",
+        action="store_true",
+        help="Attach a moon to the generated planet so tidal resonance/mineralization have a real satellite to work with.",
+    )
+    parser.add_argument("--moon-semi-major-axis-km", type=float, default=384_400.0, help="Moon orbit distance around the planet, in km.")
+    parser.add_argument("--moon-radius-earth", type=float, default=0.27, help="Moon radius in Earth radii.")
     parser.add_argument("--retain", action="store_true", help="Persist one validated .i0wg run bundle.")
     parser.add_argument("--pinned", action="store_true", help="Persist a pinned benchmark .i0wg bundle.")
     parser.add_argument("--retain-debug", action="store_true", help="Include rendered diagnostics inside a retained bundle.")
@@ -103,6 +110,9 @@ def main(argv=None):
         finish_worldgen=args.finish,
         render_outputs=bool(args.render or args.retain_debug) and not args.no_render,
         replay_contract_path=args.replay_contract,
+        attach_moon=args.attach_moon,
+        moon_semi_major_axis_km=args.moon_semi_major_axis_km,
+        moon_radius_earth=args.moon_radius_earth,
     )
     retention = "pinned" if args.pinned else ("retained" if args.retain or args.output else "temporary")
     result = run_isolated_headless_worldgen(

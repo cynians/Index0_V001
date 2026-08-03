@@ -1,3 +1,4 @@
+import heapq
 import math
 from collections import deque
 
@@ -14,70 +15,123 @@ from simulations.world_gen.drainage import (
 )
 
 
-WATER_CYCLE_MODEL_VERSION = "annual-energy-moisture-balance-koppen-v9"
+WATER_CYCLE_MODEL_VERSION = "monthly-normals-koppen-geiger-v15"
 
-CLIMATE_ZONES = {
-    "polar_ice": {"label": "Polar Ice", "color": [202, 224, 232]},
-    "cold_steppe": {"label": "Cold Steppe", "color": [146, 158, 132]},
-    "temperate_wet": {"label": "Temperate Wet", "color": [82, 142, 104]},
-    "temperate_dry": {"label": "Temperate Dry", "color": [172, 156, 104]},
-    "tropical_wet": {"label": "Tropical Wet", "color": [48, 130, 88]},
-    "tropical_dry": {"label": "Tropical Dry", "color": [184, 146, 78]},
-    "arid": {"label": "Arid", "color": [196, 176, 118]},
-    "highland": {"label": "Highland", "color": [138, 128, 118]},
-    "ocean": {"label": "Ocean", "color": [50, 92, 132]},
-    "tropical_rainforest": {"label": "Tropical Rainforest", "color": [34, 122, 72]},
-    "tropical_monsoon": {"label": "Tropical Monsoon", "color": [58, 146, 82]},
-    "savanna": {"label": "Savanna", "color": [166, 162, 72]},
-    "hot_desert": {"label": "Hot Desert", "color": [218, 184, 108]},
-    "cold_desert": {"label": "Cold Desert", "color": [184, 164, 124]},
-    "steppe": {"label": "Steppe", "color": [164, 154, 104]},
-    "mediterranean": {"label": "Mediterranean", "color": [126, 158, 94]},
-    "humid_subtropical": {"label": "Humid Subtropical", "color": [70, 150, 96]},
-    "oceanic": {"label": "Oceanic", "color": [74, 138, 118]},
-    "humid_continental": {"label": "Humid Continental", "color": [92, 132, 104]},
-    "subarctic": {"label": "Subarctic", "color": [112, 138, 126]},
-    "tundra": {"label": "Tundra", "color": [164, 178, 166]},
-    "ice_cap": {"label": "Ice Cap", "color": [218, 232, 238]},
-}
+# Only a fraction of condensed moisture truly leaves the advecting air mass
+# each hop; the rest represents the same parcel producing rain repeatedly
+# over a long fetch (real frontal/monsoonal systems don't exhaust after one
+# grid cell). Splitting this from the local rain amount keeps a coastal cell
+# from starving everything downwind just by raining efficiently.
+MOISTURE_DEPLETION_FRACTION = 0.70
+# A small energy-driven (not precipitation-bootstrapped) floor on land
+# recycling, so a currently-dry cell isn't locked out of ever recovering --
+# bare/moist ground and rock still carry some baseline evaporative flux.
+BASELINE_LAND_RECYCLING_FRACTION = 0.05
+# A moisture FLOOR (caps how low a cell's moisture can fall each iteration)
+# rather than a flat additive supply -- an additive term compounds every
+# iteration on cells that are already adequately wet and proved explosively
+# sensitive over ~200 solver iterations. A floor only ever raises cells that
+# would otherwise fall below it, so it cannot runaway the same way. Weighted
+# toward the same ITCZ/storm-track bands real continental interiors (Amazon,
+# Congo, US Midwest) are sustained by, independent of direct coastal advection.
+BASELINE_LAND_MOISTURE_FLOOR = 0.09
+STORM_TRACK_MOISTURE_FLOOR_WEIGHT = 0.6
+# Characteristic recovery length (in grid cells) for orographic rain shadow:
+# strong immediately behind a ridge, tapering off with distance rather than
+# holding at full strength for the entire upwind scan window. Real rain
+# shadows (e.g. the Great Basin, Patagonia's steppe) persist for a
+# meaningful distance, not just a handful of cells.
+RAIN_SHADOW_RECOVERY_LENGTH_CELLS = 10.0
+# Half-width (in normalized latitude, 0-1 = pole to pole) over which the
+# meridional wind smoothly passes through zero at the equator instead of
+# hard-flipping sign between hemispheres -- real ITCZ convergence is
+# continuous, not a knife-edge discontinuity.
+EQUATOR_WIND_SMOOTHING_WIDTH = 0.035
+# Half-width (in normalized latitude) over which adjacent circulation cells
+# (trade winds / westerlies / polar easterlies) blend into each other
+# instead of the wind direction completely reversing across a single grid
+# row at the cell boundary.
+WIND_BAND_TRANSITION_WIDTH = 0.05
+# Warm ocean currents making landfall (Gulf-Stream-analog western boundary
+# currents) carry moisture-laden air onshore, sustaining lush coastlines
+# (British Isles, Pacific Northwest) beyond what the local latitude band
+# alone would produce. This is the warm-anomaly counterpart to the cold
+# upwelling-desert suppression already applied to coastal condensation.
+WARM_CURRENT_MOISTURE_BONUS = 0.35
+WARM_CURRENT_ANOMALY_SCALE_K = 5.0
+# Real orographic rainfall peaks in a mid-elevation cloud-forest/fog-capture
+# band and falls off both below it (less lift) and above it (past the cloud
+# deck, drier) rather than increasing monotonically with slope alone.
+CLOUD_FOREST_ELEVATION_NORM = 0.40
+CLOUD_FOREST_BAND_WIDTH = 0.18
+CLOUD_FOREST_BONUS_STRENGTH = 0.10
 
 KOPPEN_CLASSES = {
-    "Af": {"label": "Tropical Rainforest", "zone_id": "tropical_rainforest", "color": [24, 116, 68]},
-    "Am": {"label": "Tropical Monsoon", "zone_id": "tropical_monsoon", "color": [48, 142, 78]},
-    "Aw": {"label": "Tropical Savanna", "zone_id": "savanna", "color": [160, 164, 70]},
-    "BWh": {"label": "Hot Desert", "zone_id": "hot_desert", "color": [222, 184, 102]},
-    "BWk": {"label": "Cold Desert", "zone_id": "cold_desert", "color": [188, 166, 124]},
-    "BSh": {"label": "Hot Steppe", "zone_id": "steppe", "color": [178, 162, 94]},
-    "BSk": {"label": "Cold Steppe", "zone_id": "cold_steppe", "color": [148, 154, 112]},
-    "Csa": {"label": "Hot-summer Mediterranean", "zone_id": "mediterranean", "color": [142, 158, 86]},
-    "Csb": {"label": "Warm-summer Mediterranean", "zone_id": "mediterranean", "color": [126, 158, 94]},
-    "Csc": {"label": "Cool-summer Mediterranean", "zone_id": "mediterranean", "color": [112, 150, 104]},
-    "Cwa": {"label": "Dry-winter Humid Subtropical", "zone_id": "humid_subtropical", "color": [76, 148, 88]},
-    "Cwb": {"label": "Dry-winter Subtropical Highland", "zone_id": "temperate_wet", "color": [82, 142, 104]},
-    "Cwc": {"label": "Dry-winter Cool Highland", "zone_id": "temperate_wet", "color": [96, 140, 112]},
-    "Cfa": {"label": "Humid Subtropical", "zone_id": "humid_subtropical", "color": [66, 146, 92]},
-    "Cfb": {"label": "Oceanic", "zone_id": "oceanic", "color": [72, 136, 116]},
-    "Cfc": {"label": "Subpolar Oceanic", "zone_id": "subarctic", "color": [100, 136, 124]},
-    "Dsa": {"label": "Dry-summer Continental", "zone_id": "humid_continental", "color": [112, 136, 94]},
-    "Dsb": {"label": "Dry-summer Continental", "zone_id": "humid_continental", "color": [106, 134, 102]},
-    "Dsc": {"label": "Dry-summer Subarctic", "zone_id": "subarctic", "color": [118, 138, 116]},
-    "Dsd": {"label": "Severe Dry-summer Subarctic", "zone_id": "subarctic", "color": [126, 140, 124]},
-    "Dwa": {"label": "Dry-winter Continental", "zone_id": "humid_continental", "color": [96, 132, 96]},
-    "Dwb": {"label": "Dry-winter Continental", "zone_id": "humid_continental", "color": [100, 134, 102]},
-    "Dwc": {"label": "Dry-winter Subarctic", "zone_id": "subarctic", "color": [112, 136, 118]},
-    "Dwd": {"label": "Severe Dry-winter Subarctic", "zone_id": "subarctic", "color": [122, 138, 126]},
-    "Dfa": {"label": "Hot-summer Continental", "zone_id": "humid_continental", "color": [88, 130, 98]},
-    "Dfb": {"label": "Warm-summer Continental", "zone_id": "humid_continental", "color": [92, 132, 104]},
-    "Dfc": {"label": "Subarctic", "zone_id": "subarctic", "color": [108, 136, 122]},
-    "Dfd": {"label": "Severe Subarctic", "zone_id": "subarctic", "color": [118, 138, 128]},
-    "ET": {"label": "Tundra", "zone_id": "tundra", "color": [166, 180, 168]},
-    "EF": {"label": "Ice Cap", "zone_id": "ice_cap", "color": [218, 232, 238]},
-    "Ocean": {"label": "Ocean", "zone_id": "ocean", "color": [50, 92, 132]},
+    "Af": {"label": "Tropical Rainforest", "color": [24, 116, 68]},
+    "Am": {"label": "Tropical Monsoon", "color": [48, 142, 78]},
+    "Aw": {"label": "Tropical Savanna", "color": [160, 164, 70]},
+    "As": {"label": "Tropical Savanna, Dry Summer", "color": [174, 164, 76]},
+    "BWh": {"label": "Hot Desert", "color": [222, 184, 102]},
+    "BWk": {"label": "Cold Desert", "color": [188, 166, 124]},
+    "BSh": {"label": "Hot Steppe", "color": [178, 162, 94]},
+    "BSk": {"label": "Cold Steppe", "color": [148, 154, 112]},
+    "Csa": {"label": "Hot-summer Mediterranean", "color": [142, 158, 86]},
+    "Csb": {"label": "Warm-summer Mediterranean", "color": [126, 158, 94]},
+    "Csc": {"label": "Cool-summer Mediterranean", "color": [112, 150, 104]},
+    "Cwa": {"label": "Dry-winter Humid Subtropical", "color": [76, 148, 88]},
+    "Cwb": {"label": "Dry-winter Subtropical Highland", "color": [82, 142, 104]},
+    "Cwc": {"label": "Dry-winter Cool Highland", "color": [96, 140, 112]},
+    "Cfa": {"label": "Humid Subtropical", "color": [66, 146, 92]},
+    "Cfb": {"label": "Oceanic", "color": [72, 136, 116]},
+    "Cfc": {"label": "Subpolar Oceanic", "color": [100, 136, 124]},
+    "Dsa": {"label": "Dry-summer Continental", "color": [112, 136, 94]},
+    "Dsb": {"label": "Dry-summer Continental", "color": [106, 134, 102]},
+    "Dsc": {"label": "Dry-summer Subarctic", "color": [118, 138, 116]},
+    "Dsd": {"label": "Severe Dry-summer Subarctic", "color": [126, 140, 124]},
+    "Dwa": {"label": "Dry-winter Continental", "color": [96, 132, 96]},
+    "Dwb": {"label": "Dry-winter Continental", "color": [100, 134, 102]},
+    "Dwc": {"label": "Dry-winter Subarctic", "color": [112, 136, 118]},
+    "Dwd": {"label": "Severe Dry-winter Subarctic", "color": [122, 138, 126]},
+    "Dfa": {"label": "Hot-summer Continental", "color": [88, 130, 98]},
+    "Dfb": {"label": "Warm-summer Continental", "color": [92, 132, 104]},
+    "Dfc": {"label": "Subarctic", "color": [108, 136, 122]},
+    "Dfd": {"label": "Severe Subarctic", "color": [118, 138, 128]},
+    "ET": {"label": "Tundra", "color": [166, 180, 168]},
+    "EF": {"label": "Ice Cap", "color": [218, 232, 238]},
+    "Ocean": {"label": "Ocean", "color": [50, 92, 132]},
 }
 
 
 def _clamp(value, low=0.0, high=1.0):
     return max(low, min(high, float(value)))
+
+
+def _smoothstep(edge0, edge1, x):
+    t = _clamp((x - edge0) / max(1e-9, edge1 - edge0), 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
+
+
+def _local_latitude_fraction(y, height):
+    """Patch-local latitude fraction in [0, 1], ignorant of source_uv_bounds.
+
+    Used by the scalar climate solver so it mirrors the array solver's local
+    np.arange broadcast exactly; do not make this source-uv aware.
+    """
+    return abs(y / max(1, height - 1) - 0.5) * 2.0
+
+
+def _global_latitude_metrics(ny):
+    """Return (latitude_signed_deg, latitude_abs_fraction) from a global v coordinate.
+
+    latitude_signed_deg is hemisphere-aware (+north/-south); latitude_abs_fraction
+    is the old ignore-hemisphere magnitude in [0, 1]. Both must be recomputed per
+    row wherever latitude is needed -- a prior refactor left one call site reusing
+    a stale value from a previous loop, which silently broke hemisphere-aware
+    Koppen classification for nearly every row.
+    """
+    latitude_signed_deg = (0.5 - ny) * 180.0
+    latitude_abs_fraction = abs(latitude_signed_deg) / 90.0
+    return latitude_signed_deg, latitude_abs_fraction
 
 
 def _orbital_eccentricity(seed):
@@ -225,9 +279,28 @@ def _rows_from_heightmap(heightmap):
     stride = max(1, math.ceil(width / 257), math.ceil(len(rows) / max_height))
     if stride <= 1:
         return rows
-    sampled = [row[::stride] for row in rows[::stride]]
-    if (len(rows) - 1) % stride != 0:
-        sampled.append(rows[-1][::stride])
+    # Box-filter (average) each stride x stride block instead of picking
+    # every Nth sample. Naive decimation aliases the heightmap's fine-scale
+    # ridge/rugged texture (deliberately high-frequency, see heightmap.py's
+    # along-strike orogenic segmentation noise) into moire/blocky artifacts
+    # in the coarser climate-solve grid, which then propagate downstream
+    # into windward uplift, rain shadow, and precipitation.
+    height = len(rows)
+    sampled = []
+    for y0 in range(0, height, stride):
+        y1 = min(height, y0 + stride)
+        sampled_row = []
+        for x0 in range(0, width, stride):
+            x1 = min(width, x0 + stride)
+            total = 0.0
+            count = 0
+            for yy in range(y0, y1):
+                row = rows[yy]
+                for xx in range(x0, x1):
+                    total += row[xx]
+                    count += 1
+            sampled_row.append(total / max(1, count))
+        sampled.append(sampled_row)
     return sampled
 
 
@@ -271,26 +344,43 @@ def _shore_distance_rows(ocean_mask):
 
     max_steps = max(1.0, (width + height) * 0.32)
     distances = [[None for _x in range(width)] for _y in range(height)]
-    queue = deque()
+    heap = []
     for y, row in enumerate(ocean_mask):
         for x, is_ocean in enumerate(row[:width]):
             if is_ocean:
-                distances[y][x] = 0
-                queue.append((x, y))
+                distances[y][x] = 0.0
+                heap.append((0.0, x, y))
 
-    if not queue:
+    if not heap:
         return [[1.0 for _x in range(width)] for _y in range(height)]
 
-    while queue:
-        x, y = queue.popleft()
-        next_distance = distances[y][x] + 1
-        for nx, ny in (((x - 1) % width, y), ((x + 1) % width, y), (x, y - 1), (x, y + 1)):
+    # Eight-directional (octile) Dijkstra distance from the coast, not a
+    # four-directional BFS. A cardinal-only flood fill is a Manhattan/diamond
+    # distance metric; against a typically-diagonal coastline its integer
+    # rings alias into a dashed staircase texture tracing the shoreline,
+    # which then propagates through maritime_land_convergence into
+    # condensation_efficiency, precipitation, temperature and Koppen zones.
+    # See tectonics.py's ridge-distance flood fill for the same fix applied
+    # to seafloor-spreading age.
+    heapq.heapify(heap)
+    diagonal = math.sqrt(2.0)
+    neighbours = (
+        (-1, 0, 1.0), (1, 0, 1.0), (0, -1, 1.0), (0, 1, 1.0),
+        (-1, -1, diagonal), (1, -1, diagonal), (-1, 1, diagonal), (1, 1, diagonal),
+    )
+    while heap:
+        dist, x, y = heapq.heappop(heap)
+        if dist > distances[y][x]:
+            continue
+        for dx, dy, cost in neighbours:
+            ny = y + dy
             if not 0 <= ny < height:
                 continue
-            if distances[ny][nx] is not None and distances[ny][nx] <= next_distance:
-                continue
-            distances[ny][nx] = next_distance
-            queue.append((nx, ny))
+            nx = (x + dx) % width
+            candidate = dist + cost
+            if distances[ny][nx] is None or candidate < distances[ny][nx]:
+                distances[ny][nx] = candidate
+                heapq.heappush(heap, (candidate, nx, ny))
 
     return [
         [_clamp((cell if cell is not None else max_steps) / max_steps) for cell in row]
@@ -318,13 +408,49 @@ def _elevation_value(rows, x, y):
     return float(rows[max(0, min(height - 1, y))][x % width] or 0.0)
 
 
-def _terrain_metrics(rows, x, y, span):
+def _bilinear_elevation(rows, width, height, px, py):
+    x0 = int(math.floor(px)) % width
+    x1 = (x0 + 1) % width
+    y0 = max(0, min(height - 1, int(math.floor(py))))
+    y1 = max(0, min(height - 1, y0 + 1))
+    fx = px - math.floor(px)
+    fy = py - math.floor(py)
+    top = float(rows[y0][x0] or 0.0) * (1.0 - fx) + float(rows[y0][x1] or 0.0) * fx
+    bottom = float(rows[y1][x0] or 0.0) * (1.0 - fx) + float(rows[y1][x1] or 0.0) * fx
+    return top * (1.0 - fy) + bottom * fy
+
+
+def _terrain_metrics(rows, ocean_mask, x, y, span):
     span = max(1.0, float(span or 1.0))
+    height = len(rows)
+    width = len(rows[0]) if height else 0
     center = _elevation_value(rows, x, y)
-    left = _elevation_value(rows, x - 1, y)
-    right = _elevation_value(rows, x + 1, y)
-    up = _elevation_value(rows, x, y - 1)
-    down = _elevation_value(rows, x, y + 1)
+    center_is_ocean = bool(ocean_mask[y][x]) if ocean_mask and width else False
+
+    def neighbour_elevation(nx, ny):
+        if ocean_mask and width:
+            clamped_y = max(0, min(height - 1, ny))
+            wrapped_x = nx % width
+            if bool(ocean_mask[clamped_y][wrapped_x]) != center_is_ocean:
+                # The land/sea boundary is a genuine elevation cliff in the
+                # data (land freeboard vs. the adjacent cell's seafloor
+                # depth) but it is an artefact of where the coastline mask
+                # happens to fall, not real rugged relief. Counting it as an
+                # ordinary neighbour turned every coastline on the planet
+                # into a spuriously high "roughness" reading -- a chain-link
+                # lattice tracing every shoreline -- which then bled into
+                # wind_speed and maritime_land_convergence and from there
+                # into precipitation, temperature and Koppen zone edges.
+                # Mirroring the centre value across the boundary measures
+                # real terrain texture on each side without inventing a
+                # false cliff exactly on the coastline.
+                return center
+        return _elevation_value(rows, nx, ny)
+
+    left = neighbour_elevation(x - 1, y)
+    right = neighbour_elevation(x + 1, y)
+    up = neighbour_elevation(x, y - 1)
+    down = neighbour_elevation(x, y + 1)
     gradient_x = (right - left) / (2.0 * span)
     gradient_y = (down - up) / (2.0 * span)
     neighbor_values = [left, right, up, down]
@@ -341,17 +467,29 @@ def _terrain_metrics(rows, x, y, span):
 def _prevailing_wind_vector(ny, map_seed):
     latitude = (0.5 - float(ny)) * 2.0
     abs_lat = abs(latitude)
-    hemisphere = -1.0 if latitude < 0 else 1.0
     seasonal_tilt = seed_range(map_seed, "wind:seasonal_tilt", -0.16, 0.16)
-    if abs_lat < 0.28:
-        wind_x = -0.82
-        wind_y = -0.24 * hemisphere
-    elif abs_lat < 0.68:
-        wind_x = 0.92
-        wind_y = 0.12 * hemisphere
-    else:
-        wind_x = -0.66
-        wind_y = 0.18 * hemisphere
+    # A smooth odd function of latitude instead of a hard hemisphere flag:
+    # the meridional component passes through zero at the equator (the true
+    # ITCZ convergence centerline) and ramps to full strength within a
+    # narrow band, rather than jumping between +1 and -1 across one grid row.
+    meridional_sign = math.tanh(latitude / EQUATOR_WIND_SMOOTHING_WIDTH)
+    trade_x, trade_y = -0.82, -0.24 * meridional_sign
+    westerly_x, westerly_y = 0.92, 0.12 * meridional_sign
+    polar_x, polar_y = -0.66, 0.18 * meridional_sign
+    # Blend continuously across the Hadley/Ferrel and Ferrel/Polar cell
+    # boundaries instead of the wind direction completely reversing across a
+    # single grid row -- real circulation cells do not end at a knife-edge
+    # latitude, and a hard reversal there was producing a visible ribbon.
+    trade_to_westerly = _smoothstep(
+        0.28 - WIND_BAND_TRANSITION_WIDTH, 0.28 + WIND_BAND_TRANSITION_WIDTH, abs_lat
+    )
+    westerly_to_polar = _smoothstep(
+        0.68 - WIND_BAND_TRANSITION_WIDTH, 0.68 + WIND_BAND_TRANSITION_WIDTH, abs_lat
+    )
+    wind_x = trade_x + (westerly_x - trade_x) * trade_to_westerly
+    wind_y = trade_y + (westerly_y - trade_y) * trade_to_westerly
+    wind_x += (polar_x - wind_x) * westerly_to_polar
+    wind_y += (polar_y - wind_y) * westerly_to_polar
     wind_y += seasonal_tilt
     length = math.hypot(wind_x, wind_y) or 1.0
     return wind_x / length, wind_y / length
@@ -412,32 +550,120 @@ def _budyko_evapotranspiration_mm(precipitation_mm, potential_evaporation_mm, om
     return min(precipitation, potential, precipitation * _clamp(evaporation_ratio))
 
 
-def _koppen_geiger_class(
+def _season_half_months(northern_hemisphere):
+    """Return high-sun and low-sun half-years (January is month zero)."""
+    if northern_hemisphere:
+        return (3, 4, 5, 6, 7, 8), (9, 10, 11, 0, 1, 2)
+    return (9, 10, 11, 0, 1, 2), (3, 4, 5, 6, 7, 8)
+
+
+def _monthly_climate_normals(
     mean_temperature_k,
-    seasonality_k,
+    temperature_range_k,
     annual_precipitation_mm,
-    summer_precipitation_fraction,
-    precipitation_seasonality,
+    latitude_signed,
+    continentality,
+    shore_influence,
+    condensation_efficiency,
+    circulation_texture,
+):
+    """Downscale coupled annual fields into hemisphere-aware monthly normals."""
+    northern = float(latitude_signed) >= 0.0
+    summer_months, winter_months = _season_half_months(northern)
+    peak_warm_month = 6 if northern else 0
+    mean_c = float(mean_temperature_k) - 273.15
+    amplitude = max(0.0, float(temperature_range_k or 0.0)) * 0.5
+    monthly_temperature_c = [
+        mean_c
+        + amplitude * math.cos(math.tau * (month - peak_warm_month) / 12.0)
+        for month in range(12)
+    ]
+
+    annual_precipitation = max(0.0, float(annual_precipitation_mm or 0.0))
+    if annual_precipitation <= 1e-9:
+        return monthly_temperature_c, [0.0] * 12, summer_months, winter_months
+
+    latitude_fraction = _clamp(abs(float(latitude_signed)) / 90.0)
+    continentality = _clamp(continentality)
+    shore_influence = _clamp(shore_influence)
+    condensation_efficiency = _clamp(condensation_efficiency)
+    warmest_c = max(monthly_temperature_c)
+
+    # Convection and continental heating favour high-sun rainfall. Maritime
+    # mid-latitude storm tracks favour the low-sun half of the year.
+    tropical_convection = (
+        max(0.0, 1.0 - latitude_fraction / 0.38)
+        * _clamp((warmest_c - 12.0) / 18.0)
+        * (0.48 + 0.42 * condensation_efficiency)
+    )
+    continental_convection = (
+        continentality
+        * _clamp((warmest_c - 8.0) / 24.0)
+        * (0.18 + 0.38 * condensation_efficiency)
+    )
+    winter_storms = (
+        max(0.0, 1.0 - abs(latitude_fraction - 0.52) / 0.34)
+        * shore_influence
+        * (0.28 + 0.38 * condensation_efficiency)
+    )
+    summer_bias = _clamp(
+        tropical_convection + continental_convection - winter_storms,
+        -0.78,
+        0.88,
+    )
+    seasonal_strength = _clamp(
+        0.10
+        + abs(summer_bias) * 0.82
+        + continentality * 0.16
+        + abs(float(circulation_texture) - 0.5) * 0.16,
+        0.08,
+        0.92,
+    )
+    phase_shift = (float(circulation_texture) - 0.5) * 0.9
+    weights = []
+    for month in range(12):
+        warm_phase = math.cos(
+            math.tau * (month - peak_warm_month) / 12.0 + phase_shift
+        )
+        signed_phase = warm_phase if summer_bias >= 0.0 else -warm_phase
+        shoulder_variation = math.cos(
+            math.tau * 2.0 * (month - peak_warm_month) / 12.0
+            + phase_shift * 0.5
+        )
+        weights.append(
+            max(
+                0.025,
+                math.exp(seasonal_strength * 1.55 * signed_phase)
+                * (1.0 + shoulder_variation * 0.10 * condensation_efficiency),
+            )
+        )
+    weight_total = max(1e-9, sum(weights))
+    monthly_precipitation_mm = [
+        annual_precipitation * weight / weight_total for weight in weights
+    ]
+    return monthly_temperature_c, monthly_precipitation_mm, summer_months, winter_months
+
+
+def _koppen_geiger_class(
+    monthly_temperature_c,
+    monthly_precipitation_mm,
+    summer_months,
+    winter_months,
     *,
     is_ocean=False,
-    permanent_ice=False,
 ):
-    """Classify annual normals using the Beck et al. Köppen-Geiger thresholds."""
+    """Classify twelve monthly normals using Köppen-Geiger thresholds."""
     if is_ocean:
         return "Ocean"
 
-    mean_c = float(mean_temperature_k) - 273.15
-    temperature_range = max(0.0, float(seasonality_k or 0.0))
-    warmest_c = mean_c + temperature_range * 0.5
-    coldest_c = mean_c - temperature_range * 0.5
-    annual_precipitation = max(0.0, float(annual_precipitation_mm or 0.0))
-    summer_fraction = _clamp(summer_precipitation_fraction)
-    precipitation_seasonality = _clamp(precipitation_seasonality)
-    mean_monthly_precipitation = annual_precipitation / 12.0
-    wettest_month = mean_monthly_precipitation * (1.0 + precipitation_seasonality * 1.8)
-    driest_month = mean_monthly_precipitation * max(
-        0.02, 1.0 - precipitation_seasonality * 1.15
-    )
+    temperatures = [float(value) for value in monthly_temperature_c]
+    precipitation = [max(0.0, float(value)) for value in monthly_precipitation_mm]
+    mean_c = sum(temperatures) / 12.0
+    warmest_c = max(temperatures)
+    coldest_c = min(temperatures)
+    annual_precipitation = sum(precipitation)
+    summer_precipitation = sum(precipitation[index] for index in summer_months)
+    summer_fraction = summer_precipitation / max(1e-9, annual_precipitation)
 
     if summer_fraction >= 0.70:
         aridity_offset = 280.0
@@ -448,30 +674,22 @@ def _koppen_geiger_class(
     aridity_threshold = max(0.0, 20.0 * mean_c + aridity_offset)
     if annual_precipitation < aridity_threshold:
         desert = annual_precipitation < aridity_threshold * 0.5
-        hot = mean_c >= 18.0
-        return ("BW" if desert else "BS") + ("h" if hot else "k")
+        return ("BW" if desert else "BS") + ("h" if mean_c >= 18.0 else "k")
 
-    if permanent_ice or warmest_c < 10.0:
+    if warmest_c < 10.0:
         return "EF" if warmest_c < 0.0 else "ET"
 
     if coldest_c >= 18.0:
+        driest_month = min(precipitation)
         if driest_month >= 60.0:
             return "Af"
         if driest_month >= max(0.0, 100.0 - annual_precipitation / 25.0):
             return "Am"
-        return "Aw"
+        driest_index = min(range(12), key=lambda index: precipitation[index])
+        return "As" if driest_index in summer_months else "Aw"
 
-    phase = seed_range(
-        f"{mean_c:.3f}:{temperature_range:.3f}",
-        "koppen:temperature_phase",
-        0.0,
-        math.tau,
-    )
-    months_above_10c = sum(
-        mean_c + temperature_range * 0.5 * math.sin(phase + month * math.tau / 12.0) > 10.0
-        for month in range(12)
-    )
-    if warmest_c >= 22.0:
+    months_above_10c = sum(value > 10.0 for value in temperatures)
+    if warmest_c >= 22.0 and months_above_10c >= 4:
         thermal_suffix = "a"
     elif months_above_10c >= 4:
         thermal_suffix = "b"
@@ -480,15 +698,17 @@ def _koppen_geiger_class(
     else:
         thermal_suffix = "c"
 
-    strongly_summer_dry = summer_fraction < 0.35 and driest_month < 40.0 and wettest_month > driest_month * 3.0
-    strongly_winter_dry = summer_fraction > 0.65 and wettest_month > driest_month * 10.0
+    driest_summer = min(precipitation[index] for index in summer_months)
+    wettest_summer = max(precipitation[index] for index in summer_months)
+    driest_winter = min(precipitation[index] for index in winter_months)
+    wettest_winter = max(precipitation[index] for index in winter_months)
+    strongly_summer_dry = (
+        driest_summer < 40.0 and driest_summer < wettest_winter / 3.0
+    )
+    strongly_winter_dry = driest_winter < wettest_summer / 10.0
     moisture_suffix = "s" if strongly_summer_dry else ("w" if strongly_winter_dry else "f")
     major = "C" if coldest_c > 0.0 else "D"
     return major + moisture_suffix + thermal_suffix
-
-
-def _koppen_zone_id(code):
-    return (KOPPEN_CLASSES.get(str(code)) or {}).get("zone_id", "temperate_dry")
 
 
 def _solve_coupled_annual_climate_arrays(
@@ -584,23 +804,50 @@ def _solve_coupled_annual_climate_arrays(
         )
         * 2.0
     )[:, None]
+    # A moisture floor (caps how low a cell can fall each iteration, rather
+    # than adding on top of already-adequate cells) weighted toward the same
+    # ITCZ/storm-track bands real continental interiors (Amazon, Congo, US
+    # Midwest) are sustained by, independent of direct coastal advection.
+    # An earlier flat additive version of this compounded every iteration on
+    # cells that were already wet and proved explosively sensitive over the
+    # ~200-iteration solve; a floor only ever raises cells that would
+    # otherwise fall below it, so it cannot runaway the same way.
+    land_moisture_floor = (
+        BASELINE_LAND_MOISTURE_FLOOR * np.exp(-((latitude_abs / 0.19) ** 2))
+        + BASELINE_LAND_MOISTURE_FLOOR * STORM_TRACK_MOISTURE_FLOOR_WEIGHT
+        * np.exp(-(((latitude_abs - 0.58) / 0.20) ** 2))
+    )
     wind_x = winds[:, :, 0]
     wind_y = winds[:, :, 1]
     wind_speed = np.clip(winds[:, :, 2], 0.1, 18.0)
     grid_y, grid_x = np.indices((height, width))
-    upstream_x = np.rint(grid_x - wind_x).astype(np.int64) % width
-    upstream_y = np.clip(
-        np.rint(grid_y - wind_y).astype(np.int64),
-        0,
-        height - 1,
-    )
+    # Bilinear-sample the upstream source instead of rounding to the single
+    # nearest cell -- nearest-neighbour rounding quantizes the continuous
+    # wind angle into whole-cell steps, aliasing into a blocky texture on
+    # top of whatever the wind field itself contributes.
+    source_x = grid_x - wind_x
+    source_y = np.clip(grid_y - wind_y, 0.0, height - 1)
+    upstream_x0 = np.floor(source_x).astype(np.int64) % width
+    upstream_x1 = (upstream_x0 + 1) % width
+    upstream_y0 = np.clip(np.floor(source_y).astype(np.int64), 0, height - 1)
+    upstream_y1 = np.clip(upstream_y0 + 1, 0, height - 1)
+    upstream_fx = source_x - np.floor(source_x)
+    upstream_fy = source_y - np.floor(source_y)
     limited_factor = 0.32 if hydrology_cycle == "limited" else 1.0
+    # Condensation already removes precipitated water.  The former 6-24%
+    # additional loss on every grid hop was a second, unrecorded rain-out and
+    # exhausted air masses before they crossed large continents.
     transport_retention = _clamp(
-        0.78 + math.log1p(max(0.0, pressure_bar)) * 0.055,
-        0.76,
-        0.94,
+        0.955 + math.log1p(max(0.0, pressure_bar)) * 0.008,
+        0.95,
+        0.985,
     )
-    iterations = max(18, min(42, width // 4 + height // 5))
+    # A cold start must be able to advect moisture across at least a broad
+    # hemisphere; 42 one-cell iterations left continental interiors unsolved.
+    # The former 112 cap was already binding at typical planetary sample
+    # resolution (e.g. 257 wide), cutting the solve off before large
+    # landmasses reached a converged interior.
+    iterations = max(48, min(220, width // 2 + height // 3))
     converged_at = iterations
     previous_max_delta = 0.0
 
@@ -691,8 +938,14 @@ def _solve_coupled_annual_climate_arrays(
             + north
             + south
         ) * 0.25
+        upstream_moisture = (
+            moisture[upstream_y0, upstream_x0] * (1.0 - upstream_fx) * (1.0 - upstream_fy)
+            + moisture[upstream_y0, upstream_x1] * upstream_fx * (1.0 - upstream_fy)
+            + moisture[upstream_y1, upstream_x0] * (1.0 - upstream_fx) * upstream_fy
+            + moisture[upstream_y1, upstream_x1] * upstream_fx * upstream_fy
+        )
         incoming = (
-            moisture[upstream_y, upstream_x] * 0.72
+            upstream_moisture * 0.72
             + lateral * 0.20
             + moisture * 0.08
         )
@@ -713,18 +966,31 @@ def _solve_coupled_annual_climate_arrays(
             np.clip(potential_evaporation / 2600.0, 0.0, 0.22) * 0.12,
             0.0,
         )
+        # A floor tied to available energy (potential_evaporation), not to a
+        # cell's own prior evaporation, so a currently-dry cell isn't locked
+        # out of ever recovering -- bare/moist ground still carries some
+        # baseline evaporative flux even with zero precipitation so far.
         recycling_source = np.where(
             ~ocean,
-            actual_evaporation / 4200.0 * 0.24,
+            np.maximum(
+                actual_evaporation / 4200.0 * 0.62,
+                potential_evaporation / 4200.0 * BASELINE_LAND_RECYCLING_FRACTION,
+            ),
             0.0,
         )
         condensed = incoming * condensation
-        retained = incoming * (1.0 - condensation) * transport_retention
+        # Only a fraction of condensed moisture truly leaves the advecting
+        # air mass; the rest keeps moving so the same parcel can produce
+        # rain again further downwind instead of a coastal cell raining
+        # efficiently and starving everything behind it.
+        depleted = condensed * MOISTURE_DEPLETION_FRACTION
+        retained = (incoming - depleted) * transport_retention
         new_moisture = np.clip(
             ocean_source + ice_source + recycling_source + retained,
             0.0,
             2.8,
         )
+        new_moisture = np.where(~ocean, np.maximum(new_moisture, land_moisture_floor), new_moisture)
         precipitation_target = np.minimum(5200.0, condensed * 5900.0)
         previous_max_delta = float(
             np.max(np.abs(new_moisture - moisture))
@@ -925,11 +1191,11 @@ def _solve_coupled_annual_climate(
     )
     limited_factor = 0.32 if hydrology_cycle == "limited" else 1.0
     transport_retention = _clamp(
-        0.78 + math.log1p(max(0.0, pressure_bar)) * 0.055,
-        0.76,
-        0.94,
+        0.955 + math.log1p(max(0.0, pressure_bar)) * 0.008,
+        0.95,
+        0.985,
     )
-    iterations = max(18, min(42, width // 4 + height // 5))
+    iterations = max(48, min(220, width // 2 + height // 3))
     converged_at = iterations
     previous_max_delta = None
 
@@ -938,7 +1204,7 @@ def _solve_coupled_annual_climate(
     )
     if not liquid_water or not has_surface_reservoir:
         for y in range(height):
-            latitude_abs = abs(y / max(1, height - 1) - 0.5) * 2.0
+            latitude_abs = _local_latitude_fraction(y, height)
             for x in range(width):
                 wind = wind_vector_rows[y][x]
                 potential_evaporation[y][x] = _annual_reference_evaporation_mm(
@@ -965,11 +1231,36 @@ def _solve_coupled_annual_climate(
         precipitation_target = [[0.0 for _x in range(width)] for _y in range(height)]
         max_delta = 0.0
         for y in range(height):
-            latitude_abs = abs(y / max(1, height - 1) - 0.5) * 2.0
+            latitude_abs = _local_latitude_fraction(y, height)
+            # A moisture floor (caps how low a cell can fall, doesn't add on
+            # top of already-adequate cells) weighted toward the same
+            # ITCZ/storm-track bands real continental interiors are
+            # sustained by -- see the array solver's matching floor for the
+            # full rationale.
+            latitude_moisture_floor = (
+                BASELINE_LAND_MOISTURE_FLOOR * math.exp(-((latitude_abs / 0.19) ** 2))
+                + BASELINE_LAND_MOISTURE_FLOOR * STORM_TRACK_MOISTURE_FLOOR_WEIGHT
+                * math.exp(-(((latitude_abs - 0.58) / 0.20) ** 2))
+            )
             for x in range(width):
                 wind_x, wind_y, wind_speed = wind_vector_rows[y][x]
-                upstream_x = int(round(x - wind_x)) % width
-                upstream_y = max(0, min(height - 1, int(round(y - wind_y))))
+                # Bilinear-sample the upstream source instead of rounding to
+                # the single nearest cell -- see the array solver's matching
+                # sampling for the full rationale.
+                source_x = x - wind_x
+                source_y = max(0.0, min(height - 1, y - wind_y))
+                upstream_x0 = int(math.floor(source_x)) % width
+                upstream_x1 = (upstream_x0 + 1) % width
+                upstream_y0 = max(0, min(height - 1, int(math.floor(source_y))))
+                upstream_y1 = max(0, min(height - 1, upstream_y0 + 1))
+                upstream_fx = source_x - math.floor(source_x)
+                upstream_fy = source_y - math.floor(source_y)
+                upstream_moisture = (
+                    moisture[upstream_y0][upstream_x0] * (1.0 - upstream_fx) * (1.0 - upstream_fy)
+                    + moisture[upstream_y0][upstream_x1] * upstream_fx * (1.0 - upstream_fy)
+                    + moisture[upstream_y1][upstream_x0] * (1.0 - upstream_fx) * upstream_fy
+                    + moisture[upstream_y1][upstream_x1] * upstream_fx * upstream_fy
+                )
                 lateral = (
                     moisture[y][(x - 1) % width]
                     + moisture[y][(x + 1) % width]
@@ -977,7 +1268,7 @@ def _solve_coupled_annual_climate(
                     + moisture[min(height - 1, y + 1)][x]
                 ) * 0.25
                 incoming = (
-                    moisture[upstream_y][upstream_x] * 0.72
+                    upstream_moisture * 0.72
                     + lateral * 0.20
                     + moisture[y][x] * 0.08
                 )
@@ -1000,25 +1291,36 @@ def _solve_coupled_annual_climate(
                     if permanent_ice_rows[y][x] and not ocean_mask[y][x]
                     else 0.0
                 )
+                # A floor tied to available energy, not to a cell's own prior
+                # evaporation, so a currently-dry cell isn't locked out of
+                # ever recovering.
                 recycling_source = (
-                    actual_evaporation[y][x] / 4200.0 * 0.24
+                    max(
+                        actual_evaporation[y][x] / 4200.0 * 0.62,
+                        pet / 4200.0 * BASELINE_LAND_RECYCLING_FRACTION,
+                    )
                     if not ocean_mask[y][x]
                     else 0.0
                 )
                 condensation = _clamp(condensation_rows[y][x], 0.01, 0.62)
                 condensed = incoming * condensation
-                retained = incoming * (1.0 - condensation) * transport_retention
+                # Only a fraction of condensed moisture truly leaves the
+                # advecting air mass; see the array solver's matching split.
+                depleted = condensed * MOISTURE_DEPLETION_FRACTION
+                retained = (incoming - depleted) * transport_retention
                 next_moisture = _clamp(
                     ocean_source + ice_source + recycling_source + retained,
                     0.0,
                     2.8,
                 )
+                if not ocean_mask[y][x]:
+                    next_moisture = max(next_moisture, latitude_moisture_floor)
                 new_moisture[y][x] = next_moisture
                 precipitation_target[y][x] = min(5200.0, condensed * 5900.0)
                 max_delta = max(max_delta, abs(next_moisture - moisture[y][x]))
 
         for y in range(height):
-            latitude_abs = abs(y / max(1, height - 1) - 0.5) * 2.0
+            latitude_abs = _local_latitude_fraction(y, height)
             for x in range(width):
                 precipitation[y][x] = (
                     precipitation[y][x] * 0.62
@@ -1158,6 +1460,63 @@ def _nearest_ocean_temperature_rows(ocean_mask, sst_rows):
     return result
 
 
+def _nearest_ocean_upwelling_rows(ocean_mask, upwelling_rows):
+    """Diffuse coastal upwelling intensity onto adjacent land, nearest-source.
+
+    Cold upwelling water caps convection with a marine temperature inversion,
+    producing famously dry coastlines (Atacama, Namib) despite fog/high
+    humidity. This is independent of -- and in addition to -- the indirect
+    cooling upwelling already applies to sea-surface temperature.
+    """
+    height = len(ocean_mask)
+    width = len(ocean_mask[0]) if height else 0
+    result = [[None for _x in range(width)] for _y in range(height)]
+    distance = [[None for _x in range(width)] for _y in range(height)]
+    queue = deque()
+    for y in range(height):
+        for x in range(width):
+            if ocean_mask[y][x]:
+                value = (
+                    float(upwelling_rows[y][x])
+                    if upwelling_rows and y < len(upwelling_rows) and x < len(upwelling_rows[y])
+                    and upwelling_rows[y][x] is not None
+                    else 0.0
+                )
+                result[y][x] = value
+                distance[y][x] = 0
+                queue.append((x, y))
+    while queue:
+        x, y = queue.popleft()
+        for nx, ny in (((x - 1) % width, y), ((x + 1) % width, y), (x, y - 1), (x, y + 1)):
+            if not 0 <= ny < height or distance[ny][nx] is not None:
+                continue
+            distance[ny][nx] = distance[y][x] + 1
+            result[ny][nx] = result[y][x]
+            queue.append((nx, ny))
+    return result
+
+
+def _row_mean_ocean_temperature_k(ocean_mask, sst_rows):
+    """Per-row (zonal) mean sea-surface temperature, for anomaly comparison.
+
+    A coastline sitting on a warm ocean current (Gulf-Stream-analog western
+    boundary current) reads warmer than the surrounding latitude band's
+    typical SST -- that anomaly, not the absolute temperature, is what
+    should carry extra moisture onshore.
+    """
+    height = len(ocean_mask)
+    width = len(ocean_mask[0]) if height else 0
+    means = [None] * height
+    for y in range(height):
+        values = [
+            float(sst_rows[y][x])
+            for x in range(min(width, len(sst_rows[y]) if y < len(sst_rows) else 0))
+            if ocean_mask[y][x] and sst_rows[y][x] is not None
+        ]
+        means[y] = sum(values) / len(values) if values else None
+    return means
+
+
 def _climate_inheritance_weights(detail_level):
     """Preserve synoptic climate while allowing finer-scale terrain to matter."""
     level = max(0, int(detail_level or 0))
@@ -1189,6 +1548,7 @@ def _upwind_relief_context(rows, ocean_mask, x, y, wind_x, wind_y, span, steps=2
     previous = current
     cumulative_ascent = 0.0
     maximum_barrier = current
+    steps_since_peak = 0
     land_steps = 0
     for _step in range(1, steps + 1):
         px = (px - wind_x) % width
@@ -1199,15 +1559,32 @@ def _upwind_relief_context(rows, ocean_mask, x, y, wind_x, wind_y, span, steps=2
         ix = int(round(px)) % width
         if ocean_mask[iy][ix]:
             break
-        elevation = float(rows[iy][ix] or 0.0)
+        # Bilinear-sample the elevation instead of rounding to the nearest
+        # cell. The wind vector is rarely axis-aligned, so nearest-neighbour
+        # rounding along this ray quantized the walk into a Bresenham-style
+        # staircase -- a diagonal dashed/hatched texture baked straight into
+        # windward_uplift/barrier_shadow, and from there into
+        # condensation_efficiency, precipitation, temperature (via the
+        # moisture/cloud feedback) and Koppen zone edges. The ocean-mask
+        # break test above stays nearest-neighbour since a boolean land/sea
+        # lookup has no meaningful sub-cell value to interpolate.
+        elevation = _bilinear_elevation(rows, width, height, px, py)
         # Walking upwind, a drop means air approaching the target had to rise.
         cumulative_ascent += max(0.0, previous - elevation)
-        maximum_barrier = max(maximum_barrier, elevation)
+        if elevation > maximum_barrier:
+            maximum_barrier = elevation
+            steps_since_peak = _step
         previous = elevation
         land_steps += 1
+    # A rain shadow is strongest immediately behind the ridge that casts it
+    # and recovers with distance as air re-entrains moisture; without decay,
+    # any barrier found anywhere in the scan window shadows the target at
+    # full strength, flattening a broad swath behind every coastal range
+    # into desert regardless of how far past the peak the target actually is.
+    recovery = math.exp(-steps_since_peak / RAIN_SHADOW_RECOVERY_LENGTH_CELLS)
     return {
         "windward_uplift": _clamp(cumulative_ascent / max(1.0, span * 0.42)),
-        "barrier_shadow": _clamp((maximum_barrier - current) / max(1.0, span * 0.32)),
+        "barrier_shadow": _clamp((maximum_barrier - current) / max(1.0, span * 0.32)) * recovery,
         "land_fetch": _clamp(land_steps / max(1.0, steps)),
     }
 
@@ -1487,44 +1864,6 @@ def _trace_river(rows, ocean_mask, source, sea_level):
     }
 
 
-def _select_river_sources(rows, ocean_mask, climate_rows, sea_level, max_rivers, shore_distances=None):
-    height = len(rows)
-    width = len(rows[0])
-    elevations = [float(value or 0.0) for row in rows for value in row]
-    min_elevation = min(elevations)
-    max_elevation = max(elevations)
-    span = max(1.0, max_elevation - min_elevation)
-    candidates = []
-    for y in range(1, max(1, height - 1)):
-        for x in range(width):
-            elevation = float(rows[y][x] or 0.0)
-            if sea_level is not None and elevation <= sea_level:
-                continue
-            if ocean_mask[y][x]:
-                continue
-            climate = climate_rows[y][x]
-            wet_bonus = 0.28 if climate in {"temperate_wet", "tropical_wet", "highland"} else 0.0
-            shore_distance = (
-                shore_distances[y][x]
-                if shore_distances and y < len(shore_distances) and x < len(shore_distances[y])
-                else _nearest_ocean_distance(ocean_mask, x, y)
-            )
-            shore_bonus = 0.16 * (1.0 - shore_distance)
-            score = _clamp((elevation - min_elevation) / span) + wet_bonus + shore_bonus
-            if score >= 0.58:
-                candidates.append((score, x, y))
-    candidates.sort(reverse=True)
-    selected = []
-    min_spacing = max(2, min(width, height) // 6)
-    for score, x, y in candidates:
-        if any(min(abs(x - sx), width - abs(x - sx)) + abs(y - sy) < min_spacing for sx, sy in selected):
-            continue
-        selected.append((x, y))
-        if len(selected) >= max_rivers:
-            break
-    return selected
-
-
 def derive_water_cycle_model(
     terrain,
     heightmap,
@@ -1543,7 +1882,7 @@ def derive_water_cycle_model(
             "status": "unavailable",
             "model_version": WATER_CYCLE_MODEL_VERSION,
             "reason": "heightmap_missing",
-            "climate_zones": [],
+            "koppen_classes": [],
             "rivers": [],
         }
 
@@ -1601,6 +1940,9 @@ def derive_water_cycle_model(
         )
     sst_rows = ocean_circulation.get("sea_surface_temperature_rows_k") or [[None for _x in range(width)] for _y in range(height)]
     nearest_ocean_temperatures = _nearest_ocean_temperature_rows(ocean_mask, sst_rows)
+    upwelling_rows = ocean_circulation.get("upwelling_rows") or [[0.0 for _x in range(width)] for _y in range(height)]
+    nearest_ocean_upwelling = _nearest_ocean_upwelling_rows(ocean_mask, upwelling_rows)
+    row_mean_ocean_temperature_k = _row_mean_ocean_temperature_k(ocean_mask, sst_rows)
     axial_tilt_deg = abs(float((seed or {}).get("axial_tilt_deg", 23.4) or 23.4))
     orbital_eccentricity = _orbital_eccentricity(seed)
     climate_mode = str((seed or {}).get("climate_mode") or "latitudinal_seasonal")
@@ -1615,7 +1957,6 @@ def derive_water_cycle_model(
         95.0,
         surface_temp_k * orbital_eccentricity * 0.46 * (1.0 - ocean_thermal_buffer * 0.72),
     )
-    climate_rows = []
     temperature_rows = []
     precipitation_rows = []
     seasonality_rows = []
@@ -1631,7 +1972,6 @@ def derive_water_cycle_model(
     wind_vector_rows = []
     condensation_rows = []
     permanent_ice_rows = []
-    zone_counts = {zone_id: 0 for zone_id in CLIMATE_ZONES}
     source_uv = heightmap.get("source_uv_bounds") if isinstance(heightmap.get("source_uv_bounds"), dict) else {}
     source_u0 = float(source_uv.get("min_u", 0.0) or 0.0)
     source_u1 = float(source_uv.get("max_u", 1.0) or 1.0)
@@ -1645,8 +1985,7 @@ def derive_water_cycle_model(
     for y, row in enumerate(rows):
         local_ny = y / max(1, height - 1)
         ny = source_v0 + (source_v1 - source_v0) * local_ny
-        latitude_abs = abs(ny - 0.5) * 2.0
-        climate_row = []
+        latitude_signed, latitude_abs = _global_latitude_metrics(ny)
         temperature_row = []
         precipitation_row = []
         seasonality_row = []
@@ -1679,7 +2018,8 @@ def derive_water_cycle_model(
                 if shore_distances and y < len(shore_distances) and x < len(shore_distances[y])
                 else _nearest_ocean_distance(ocean_mask, x, y)
             )
-            terrain = _terrain_metrics(rows, x, y, span)
+            shore = _clamp(shore)
+            terrain = _terrain_metrics(rows, ocean_mask, x, y, span)
             wind_x, wind_y = _prevailing_wind_vector(ny, map_seed)
             wind_gradient = terrain["gradient_x"] * wind_x + terrain["gradient_y"] * wind_y
             relief_context = _upwind_relief_context(
@@ -1717,16 +2057,77 @@ def derive_water_cycle_model(
             storm_lift = math.exp(
                 -(((climate_band_latitude_abs - 0.58) / 0.20) ** 2)
             )
-            condensation_efficiency = _clamp(
-                0.018
-                + convective_lift * 0.13
-                + storm_lift * 0.06
-                + windward * 0.25
-                - rain_shadow * 0.11
-                + circulation_texture * 0.018,
-                0.01,
-                0.62,
+            # Oceanic islands and coastal land force moist marine air to
+            # converge through surface friction and, where relief exists,
+            # rise over the terrain.  Previously the solver only represented
+            # broad latitude belts and steep windward slopes, so most marine
+            # moisture rained back into the ocean before small landmasses
+            # could intercept it.
+            maritime_land_convergence = (
+                0.0
+                if is_ocean
+                else shore ** 1.35 * (0.026 + terrain["roughness"] * 0.060)
             )
+            # ITCZ convection and midlatitude storm tracks are independent,
+            # dominant drivers of precipitation over FLAT land -- real
+            # tropical rainforest belts and midlatitude wet climates do not
+            # require mountains. The previous weights (0.055 / 0.032) left
+            # convective/frontal lift a minor addition to orographic lift
+            # (0.16), so flat equatorial land topped out far below realistic
+            # tropical rainfall; raised to parity with the orographic term.
+            # Real orographic rainfall peaks in a mid-elevation cloud-forest/
+            # fog-capture band and falls off both below it (less lift) and
+            # above it (past the cloud deck, drier), rather than increasing
+            # monotonically with windward lift alone.
+            cloud_forest_band = math.exp(
+                -(((elevation_norm - CLOUD_FOREST_ELEVATION_NORM) / CLOUD_FOREST_BAND_WIDTH) ** 2)
+            )
+            orographic_cloud_bonus = (
+                cloud_forest_band * _clamp(windward) * CLOUD_FOREST_BONUS_STRENGTH
+                if not is_ocean
+                else 0.0
+            )
+            condensation_efficiency = _clamp(
+                0.010
+                + convective_lift * 0.17
+                + storm_lift * 0.10
+                + windward * 0.16
+                + orographic_cloud_bonus
+                + maritime_land_convergence
+                - rain_shadow * 0.070
+                + circulation_texture * 0.012,
+                0.006,
+                0.46,
+            )
+            if not is_ocean:
+                # A cold upwelling coast caps convection with a marine
+                # temperature inversion (Atacama/Namib-style fog deserts):
+                # dry despite proximity to the ocean, not just because it is
+                # cooler. This is independent of the SST-mediated cooling
+                # already applied to nearest_ocean_temperatures above.
+                upwelling_signal = float(nearest_ocean_upwelling[y][x] or 0.0)
+                if upwelling_signal > 0.0:
+                    upwelling_suppression = _clamp(upwelling_signal * 0.85)
+                    condensation_efficiency = max(
+                        0.006,
+                        condensation_efficiency * (1.0 - upwelling_suppression * (shore ** 1.2)),
+                    )
+                # Warm ocean currents making landfall (Gulf-Stream-analog
+                # western boundary currents) carry moisture-laden air onshore
+                # -- the warm-anomaly counterpart to the cold upwelling-
+                # desert suppression above. Anomaly is measured against this
+                # row's own zonal mean SST, not an absolute temperature, so a
+                # world that's simply warm overall doesn't trigger it
+                # everywhere.
+                row_mean_sst = row_mean_ocean_temperature_k[y] if y < len(row_mean_ocean_temperature_k) else None
+                nearest_sst = nearest_ocean_temperatures[y][x]
+                if row_mean_sst is not None and nearest_sst is not None:
+                    warm_anomaly = _clamp((float(nearest_sst) - row_mean_sst) / WARM_CURRENT_ANOMALY_SCALE_K)
+                    if warm_anomaly > 0.0:
+                        condensation_efficiency = min(
+                            0.46,
+                            condensation_efficiency * (1.0 + warm_anomaly * (shore ** 1.2) * WARM_CURRENT_MOISTURE_BONUS),
+                        )
             wind_vector_row.append([
                 round(float(wind_x), 4),
                 round(float(wind_y), 4),
@@ -1735,6 +2136,13 @@ def derive_water_cycle_model(
             condensation_row.append(round(condensation_efficiency, 5))
             permanent_ice_row.append(permanent_ice)
             temperature = surface_temp_k + 12.0 - latitude_abs * 48.0 - max(0.0, elevation) * 0.0062
+            if permanent_ice and not is_ocean:
+                # Ice-albedo feedback: snow/ice reflects far more shortwave
+                # than bare ground or open water, reinforcing local cold
+                # once a cell freezes. world_gen_sim.py's bounded ice-mask
+                # refresh pass (see _save_water_cycle_model) lets this
+                # propagate back into whether a cell counts as ice at all.
+                temperature -= 6.0
             if synchronous_rotation:
                 longitude_deg = nx * 360.0 - 180.0
                 longitude_delta = math.radians(((longitude_deg - substellar_longitude_deg + 180.0) % 360.0) - 180.0)
@@ -1779,7 +2187,6 @@ def derive_water_cycle_model(
             # Moisture and land-water fields are intentionally not classified
             # in this pass. They are solved iteratively after every cell's
             # energy, wind, topography, and reservoir state is available.
-            climate_row.append("ocean" if is_ocean else "temperate_dry")
             temperature_row.append(round(temperature, 1))
             precipitation_row.append(0.0)
             seasonality_row.append(round(seasonality, 1))
@@ -1796,7 +2203,6 @@ def derive_water_cycle_model(
             seasonal_max_temperature_row.append(
                 round(temperature + seasonality * 0.5, 1)
             )
-        climate_rows.append(climate_row)
         temperature_rows.append(temperature_row)
         precipitation_rows.append(precipitation_row)
         seasonality_rows.append(seasonality_row)
@@ -1850,7 +2256,6 @@ def derive_water_cycle_model(
     # Rebuild the land water balance and classifications from the converged
     # annual climate. The first pass only established energy, terrain, and
     # atmospheric-transport fields.
-    climate_rows = []
     koppen_rows = []
     runoff_rows = []
     evapotranspiration_rows = []
@@ -1863,14 +2268,12 @@ def derive_water_cycle_model(
     driest_month_precipitation_rows = []
     wettest_month_precipitation_rows = []
     summer_precipitation_fraction_rows = []
-    zone_counts = {zone_id: 0 for zone_id in CLIMATE_ZONES}
     koppen_counts = {code: 0 for code in KOPPEN_CLASSES}
 
     for y, elevation_row in enumerate(rows):
         local_ny = y / max(1, height - 1)
         ny = source_v0 + (source_v1 - source_v0) * local_ny
-        latitude_abs = abs(ny - 0.5) * 2.0
-        climate_row = []
+        latitude_signed, latitude_abs = _global_latitude_metrics(ny)
         koppen_row = []
         runoff_row = []
         evapotranspiration_row = []
@@ -1887,7 +2290,7 @@ def derive_water_cycle_model(
             local_nx = x / max(1, width - 1)
             nx = source_u0 + (source_u1 - source_u0) * local_nx
             is_ocean = ocean_mask[y][x]
-            terrain_metrics = _terrain_metrics(rows, x, y, span)
+            terrain_metrics = _terrain_metrics(rows, ocean_mask, x, y, span)
             shore = 1.0 - (
                 shore_distances[y][x]
                 if shore_distances
@@ -1946,38 +2349,6 @@ def derive_water_cycle_model(
             circulation_texture = _wave_noise(
                 map_seed, "precipitation_seasonality", nx, ny
             )
-            summer_fraction = _clamp(
-                0.50
-                + shore * max(0.0, mean_temperature - 285.0) / 110.0
-                + (circulation_texture - 0.5) * 0.16
-                - max(0.0, latitude_abs - 0.62) * 0.16,
-                0.14,
-                0.86,
-            )
-            precipitation_seasonality = _clamp(
-                0.12
-                + continentality * 0.34
-                + abs(summer_fraction - 0.5) * 0.82,
-                0.08,
-                0.92,
-            )
-            mean_monthly_precipitation = precipitation / 12.0
-            driest_month = mean_monthly_precipitation * max(
-                0.02, 1.0 - precipitation_seasonality * 1.15
-            )
-            wettest_month = mean_monthly_precipitation * (
-                1.0 + precipitation_seasonality * 1.8
-            )
-            koppen_code = _koppen_geiger_class(
-                mean_temperature,
-                seasonality,
-                precipitation,
-                summer_fraction,
-                precipitation_seasonality,
-                is_ocean=is_ocean,
-                permanent_ice=permanent_ice_rows[y][x],
-            )
-            zone_id = _koppen_zone_id(koppen_code)
 
             if isinstance(parent_climate_grid, dict):
                 parent_weight = _edge_locked_parent_weight(
@@ -1995,23 +2366,6 @@ def derive_water_cycle_model(
                         + precipitation * (1.0 - parent_weight)
                     )
                     precipitation_rows[y][x] = precipitation
-                    mean_monthly_precipitation = precipitation / 12.0
-                    driest_month = mean_monthly_precipitation * max(
-                        0.02, 1.0 - precipitation_seasonality * 1.15
-                    )
-                    wettest_month = mean_monthly_precipitation * (
-                        1.0 + precipitation_seasonality * 1.8
-                    )
-                    koppen_code = _koppen_geiger_class(
-                        mean_temperature,
-                        seasonality,
-                        precipitation,
-                        summer_fraction,
-                        precipitation_seasonality,
-                        is_ocean=is_ocean,
-                        permanent_ice=permanent_ice_rows[y][x],
-                    )
-                    zone_id = _koppen_zone_id(koppen_code)
                     actual_evapotranspiration = (
                         0.0
                         if is_ocean
@@ -2020,26 +2374,38 @@ def derive_water_cycle_model(
                             potential_evaporation,
                         )
                     )
-                if min(local_nx, 1.0 - local_nx, local_ny, 1.0 - local_ny) <= 1e-12:
-                    inherited_zone = _sample_inherited_category(
-                        parent_climate_grid.get("rows"),
-                        nx,
-                        ny,
-                        parent_source_uv,
-                    )
-                    inherited_koppen = _sample_inherited_category(
-                        parent_climate_grid.get("koppen_rows"),
-                        nx,
-                        ny,
-                        parent_source_uv,
-                    )
-                    if inherited_zone:
-                        zone_id = str(inherited_zone)
-                    if inherited_koppen:
-                        koppen_code = str(inherited_koppen)
 
-            seasonal_min_temperature = mean_temperature - seasonality * 0.5
-            seasonal_max_temperature = mean_temperature + seasonality * 0.5
+            (
+                monthly_temperature_c,
+                monthly_precipitation_mm,
+                summer_months,
+                winter_months,
+            ) = _monthly_climate_normals(
+                mean_temperature,
+                seasonality,
+                precipitation,
+                latitude_signed,
+                continentality,
+                shore,
+                condensation_rows[y][x],
+                circulation_texture,
+            )
+            annual_monthly_total = max(1e-9, sum(monthly_precipitation_mm))
+            summer_fraction = sum(
+                monthly_precipitation_mm[index] for index in summer_months
+            ) / annual_monthly_total
+            driest_month = min(monthly_precipitation_mm)
+            wettest_month = max(monthly_precipitation_mm)
+            koppen_code = _koppen_geiger_class(
+                monthly_temperature_c,
+                monthly_precipitation_mm,
+                summer_months,
+                winter_months,
+                is_ocean=is_ocean,
+            )
+
+            seasonal_min_temperature = min(monthly_temperature_c) + 273.15
+            seasonal_max_temperature = max(monthly_temperature_c) + 273.15
             snow_fraction = 0.0 if is_ocean else _clamp(
                 (273.15 - seasonal_min_temperature) / max(2.0, seasonality)
             )
@@ -2087,7 +2453,6 @@ def derive_water_cycle_model(
             groundwater_recharge = max(0.0, infiltration - baseflow)
             runoff = quickflow + baseflow
 
-            climate_row.append(zone_id)
             koppen_row.append(koppen_code)
             runoff_row.append(round(runoff, 1))
             evapotranspiration_row.append(round(actual_evapotranspiration, 1))
@@ -2104,9 +2469,7 @@ def derive_water_cycle_model(
             driest_month_row.append(round(driest_month, 1))
             wettest_month_row.append(round(wettest_month, 1))
             summer_fraction_row.append(round(summer_fraction, 3))
-            zone_counts[zone_id] = zone_counts.get(zone_id, 0) + 1
             koppen_counts[koppen_code] = koppen_counts.get(koppen_code, 0) + 1
-        climate_rows.append(climate_row)
         koppen_rows.append(koppen_row)
         runoff_rows.append(runoff_row)
         evapotranspiration_rows.append(evapotranspiration_row)
@@ -2121,17 +2484,6 @@ def derive_water_cycle_model(
         summer_precipitation_fraction_rows.append(summer_fraction_row)
 
     total_cells = max(1, width * height)
-    climate_zones = []
-    for zone_id, count in sorted(zone_counts.items(), key=lambda item: (-item[1], item[0])):
-        if count <= 0:
-            continue
-        spec = CLIMATE_ZONES.get(zone_id, CLIMATE_ZONES["temperate_dry"])
-        climate_zones.append({
-            "id": zone_id,
-            "label": spec["label"],
-            "color": list(spec["color"]),
-            "fraction": round(count / total_cells, 3),
-        })
     koppen_classes = []
     for code, count in sorted(
         koppen_counts.items(), key=lambda item: (-item[1], item[0])
@@ -2142,7 +2494,6 @@ def derive_water_cycle_model(
         koppen_classes.append({
             "id": code,
             "label": spec["label"],
-            "zone_id": spec["zone_id"],
             "color": list(spec["color"]),
             "fraction": round(count / total_cells, 3),
         })
@@ -2423,7 +2774,14 @@ def derive_water_cycle_model(
         "climate_grid": {
             "width": width,
             "height": height,
-            "rows": climate_rows,
+            "koppen_derivation": {
+                "method": "twelve_month_temperature_and_precipitation_normals",
+                "classification": "Koppen-Geiger",
+                "temperature_phase": "hemisphere_aware",
+                "precipitation_seasons": "high_sun_and_low_sun_half_years",
+                "aridity_threshold": "20T_plus_seasonal_precipitation_offset",
+            },
+            "rows": koppen_rows,
             "koppen_rows": koppen_rows,
             "elevation_rows": rows,
             "shore_distance_rows": shore_distances,
@@ -2464,7 +2822,6 @@ def derive_water_cycle_model(
         "lake_outlet_fraction": float(drainage_network.get("lake_outlet_fraction", 0.0) or 0.0),
         "deltas": drainage_network.get("deltas") or [],
         "delta_count": int(drainage_network.get("delta_count", 0) or 0),
-        "climate_zones": climate_zones,
         "koppen_classes": koppen_classes,
         "rivers": rivers,
         "river_count": len(rivers),
@@ -2497,7 +2854,7 @@ def derive_water_cycle_model(
                 / max(1, width * height),
                 1,
             ),
-            "dominant_climate": climate_zones[0]["id"] if climate_zones else None,
+            "dominant_koppen_class": koppen_classes[0]["id"] if koppen_classes else None,
             "drainage_enabled": drainage_enabled,
             "mean_land_precipitation_mm": round(sum(precipitation_rows[y][x] for y in range(height) for x in range(width) if not ocean_mask[y][x]) / max(1, sum(1 for y in range(height) for x in range(width) if not ocean_mask[y][x])), 1),
             "ocean_basin_count": int((ocean_circulation.get("summary") or {}).get("ocean_basin_count", 0) or 0),

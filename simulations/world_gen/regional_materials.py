@@ -14,10 +14,41 @@ from simulations.world_gen.material_formation import (
     formation_contract,
     formation_suitability,
 )
+from simulations.world_gen.mineralization_potential import derive_mineralization_potential_model
 
 
 def _clamp(value, low=0.0, high=1.0):
     return max(low, min(high, float(value)))
+
+
+_MINERALIZATION_PROFILE_KEYS = {
+    "sulfide_ore": ("vms_potential_rows", "porphyry_potential_rows"),
+    "hydrothermal": ("porphyry_potential_rows", "orogenic_gold_potential_rows"),
+}
+
+
+def _sample_mineralization_potential(mineralization_model, profile_id, global_u, global_v):
+    """Soft, additive-only bias toward planetary-scale-favorable ore zones.
+
+    Returns 0.0 (no effect) when the profile isn't ore-related or the
+    planetary mineralization model is unavailable, so regional generation
+    behaves exactly as before when this field is absent.
+    """
+    row_keys = _MINERALIZATION_PROFILE_KEYS.get(profile_id)
+    if not row_keys or not isinstance(mineralization_model, dict):
+        return 0.0
+    width = int(mineralization_model.get("width", 0) or 0)
+    height = int(mineralization_model.get("height", 0) or 0)
+    if not width or not height:
+        return 0.0
+    x = max(0, min(width - 1, int(round(global_u * (width - 1)))))
+    y = max(0, min(height - 1, int(round(global_v * (height - 1)))))
+    best = 0.0
+    for key in row_keys:
+        rows = mineralization_model.get(key) or []
+        if y < len(rows) and x < len(rows[y]):
+            best = max(best, float(rows[y][x] or 0.0))
+    return best
 
 
 def _sample(rows, x, y, default=0.0):
@@ -424,6 +455,9 @@ def derive_regional_material_model(
     source_bounds = _normalized_source_bounds(
         source_uv_bounds or heightmap.get("source_uv_bounds")
     )
+    mineralization_model = (
+        derive_mineralization_potential_model(tectonic_model) if tectonic_model else None
+    )
     if detail_level <= 0:
         return {
             "status": "deferred_until_regional_refinement",
@@ -630,6 +664,20 @@ def derive_regional_material_model(
             suitability = (
                 material_affinity_score(material_id, context) * formation_fit
             )
+            if mineralization_model is not None:
+                profile_id = str(
+                    (candidate.get("surface_affinity_profile") or {}).get("profile_id")
+                    or (material_affinity_profile(material_id) or {}).get("profile_id")
+                    or ""
+                )
+                mineral_signal = _sample_mineralization_potential(
+                    mineralization_model,
+                    profile_id,
+                    source_bounds["min_u"] + x * (source_bounds["max_u"] - source_bounds["min_u"]),
+                    source_bounds["min_v"] + y * (source_bounds["max_v"] - source_bounds["min_v"]),
+                )
+                if mineral_signal > 0.0:
+                    suitability *= 0.85 + mineral_signal * 0.6
             score = suitability * float(candidate.get("confidence", 0.0) or 0.0)
             if best is None or score > best["score"]:
                 best = {

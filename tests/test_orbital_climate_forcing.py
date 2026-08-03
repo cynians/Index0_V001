@@ -190,10 +190,17 @@ class OrbitalClimateForcingTests(unittest.TestCase):
             "annual_evapotranspiration_rows_mm",
             "relative_humidity_rows",
         ):
-            self.assertEqual(
-                scalar["climate_grid"][field],
-                vectorized["climate_grid"][field],
-            )
+            scalar_rows = scalar["climate_grid"][field]
+            vectorized_rows = vectorized["climate_grid"][field]
+            # numpy's exp() and Python's math.exp() are not required by
+            # IEEE754 to be bit-identical (only +,-,*,/ are); after enough
+            # solver iterations that can surface as a machine-epsilon-level
+            # difference in the last decimal place. Compare to a tolerance
+            # appropriate for two independently-vectorized numerical paths
+            # computing the same physics, not bit-for-bit equality.
+            for scalar_row, vectorized_row in zip(scalar_rows, vectorized_rows):
+                for scalar_value, vectorized_value in zip(scalar_row, vectorized_row):
+                    self.assertAlmostEqual(scalar_value, vectorized_value, places=6)
         self.assertEqual(
             scalar["climate_solver"],
             vectorized["climate_solver"],

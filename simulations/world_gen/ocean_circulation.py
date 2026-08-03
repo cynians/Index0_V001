@@ -11,17 +11,39 @@ def _clamp(value, low=0.0, high=1.0):
     return max(low, min(high, float(value)))
 
 
+def _smoothstep(edge0, edge1, x):
+    t = _clamp((x - edge0) / max(1e-9, edge1 - edge0), 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
+
+
 def _wind(latitude_fraction):
+    """Ocean-surface wind driving currents/upwelling/SST.
+
+    This mirrors water_cycle.py's _prevailing_wind_vector fix: a separate,
+    independently hard-banded wind model here (four latitude bands plus a
+    hard hemisphere flag) was still producing visible banding in
+    temperature/precipitation via ocean currents and SST, even after the
+    atmospheric wind field was smoothed, because the two models were never
+    the same function. Blended continuously across band boundaries and
+    given a smooth (tanh) meridional sign instead of a hard +/-1 flip.
+    """
     latitude = float(latitude_fraction)
-    absolute = abs(latitude)
-    hemisphere = 1.0 if latitude >= 0.0 else -1.0
-    if absolute < 0.10:
-        return -0.45, 0.0
-    if absolute < 0.34:
-        return -0.92, 0.16 * hemisphere
-    if absolute < 0.68:
-        return 0.92, -0.10 * hemisphere
-    return -0.68, 0.12 * hemisphere
+    abs_lat = abs(latitude)
+    meridional_sign = math.tanh(latitude / 0.035)
+    equatorial_x, equatorial_y = -0.45, 0.0
+    trade_x, trade_y = -0.92, 0.16 * meridional_sign
+    westerly_x, westerly_y = 0.92, -0.10 * meridional_sign
+    polar_x, polar_y = -0.68, 0.12 * meridional_sign
+    equatorial_to_trade = _smoothstep(0.05, 0.15, abs_lat)
+    trade_to_westerly = _smoothstep(0.29, 0.39, abs_lat)
+    westerly_to_polar = _smoothstep(0.63, 0.73, abs_lat)
+    wind_x = equatorial_x + (trade_x - equatorial_x) * equatorial_to_trade
+    wind_y = equatorial_y + (trade_y - equatorial_y) * equatorial_to_trade
+    wind_x += (westerly_x - wind_x) * trade_to_westerly
+    wind_y += (westerly_y - wind_y) * trade_to_westerly
+    wind_x += (polar_x - wind_x) * westerly_to_polar
+    wind_y += (polar_y - wind_y) * westerly_to_polar
+    return wind_x, wind_y
 
 
 def _neighbors(width, height, x, y, wrap_x=True):

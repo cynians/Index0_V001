@@ -1791,28 +1791,12 @@ class WorldGenRenderer:
         finally:
             screen.set_clip(previous_clip)
 
-    def _climate_zone_colors(self, water_cycle):
-        colors = {
-            "polar_ice": (202, 224, 232),
-            "cold_steppe": (146, 158, 132),
-            "temperate_wet": (82, 142, 104),
-            "temperate_dry": (172, 156, 104),
-            "tropical_wet": (48, 130, 88),
-            "tropical_dry": (184, 146, 78),
-            "arid": (196, 176, 118),
-            "highland": (138, 128, 118),
-            "ocean": (50, 92, 132),
-        }
-        for zone in water_cycle.get("climate_zones") or []:
-            if isinstance(zone, dict) and zone.get("id"):
-                colors[str(zone["id"])] = self._coerce_rgb(
-                    zone.get("color"),
-                    fallback=colors.get(str(zone["id"]), (150, 150, 150)),
-                )
-        for zone in water_cycle.get("koppen_classes") or []:
-            if isinstance(zone, dict) and zone.get("id"):
-                colors[str(zone["id"])] = self._coerce_rgb(
-                    zone.get("color"),
+    def _koppen_class_colors(self, water_cycle):
+        colors = {}
+        for climate_class in water_cycle.get("koppen_classes") or []:
+            if isinstance(climate_class, dict) and climate_class.get("id"):
+                colors[str(climate_class["id"])] = self._coerce_rgb(
+                    climate_class.get("color"),
                     fallback=(150, 150, 150),
                 )
         return colors
@@ -1831,7 +1815,7 @@ class WorldGenRenderer:
             pygame.draw.rect(screen, (96, 108, 132), rect, 1)
             return
 
-        colors = self._climate_zone_colors(water_cycle)
+        colors = self._koppen_class_colors(water_cycle)
         row_count = len(rows)
         col_count = min(len(row) for row in rows if row)
         elevation_rows = climate_grid.get("elevation_rows") if isinstance(climate_grid.get("elevation_rows"), list) else []
@@ -1855,15 +1839,15 @@ class WorldGenRenderer:
         if preview_surface is None:
             source = pygame.Surface((col_count, row_count))
             for row_index, row in enumerate(rows):
-                for col_index, zone_id in enumerate(row[:col_count]):
-                    color = colors.get(str(zone_id), (126, 128, 126))
+                for col_index, class_code in enumerate(row[:col_count]):
+                    color = colors.get(str(class_code), (126, 128, 126))
                     if elevation_rows and row_index < len(elevation_rows) and col_index < len(elevation_rows[row_index]):
                         try:
                             elevation = float(elevation_rows[row_index][col_index] or 0.0)
                         except (TypeError, ValueError):
                             elevation = 0.0
                         elevation_norm = max(0.0, min(1.0, (elevation - min_elevation) / elevation_span))
-                        if str(zone_id) in {"ocean", "Ocean"}:
+                        if str(class_code) == "Ocean":
                             shade = 0.78 + (1.0 - elevation_norm) * 0.18
                         else:
                             shade = 0.78 + elevation_norm * 0.28
@@ -1946,7 +1930,7 @@ class WorldGenRenderer:
             f"{selected_planet.get('name', selected_planet.get('id', 'Planet'))} Water Cycle"
         )
         screen.blit(font.render(title, True, (244, 244, 244)), (panel.x + 16, panel.y + 12))
-        subtitle = "Annual heat and moisture are iterated from terrain, water, evaporation, winds, and orbital forcing; zones use Köppen-Geiger normals."
+        subtitle = "Annual heat and moisture are iterated from terrain, water, evaporation, winds, and orbital forcing; classification uses Köppen-Geiger normals."
         screen.blit(font.render(subtitle, True, (158, 170, 190)), (panel.x + 16, panel.y + 34))
 
         sidebar_w = 360
@@ -1978,23 +1962,21 @@ class WorldGenRenderer:
         y += 10
         screen.blit(font.render("Köppen-Geiger Coverage", True, (232, 238, 246)), (sidebar.x + 12, y))
         y += 28
-        for zone in (
-            water_cycle.get("koppen_classes")
-            or water_cycle.get("climate_zones")
-            or []
+        for climate_class in (
+            water_cycle.get("koppen_classes") or []
         )[:8]:
-            if not isinstance(zone, dict):
+            if not isinstance(climate_class, dict):
                 continue
-            color = self._coerce_rgb(zone.get("color"), fallback=(154, 166, 188))
-            fraction = max(0.0, min(1.0, float(zone.get("fraction", 0.0) or 0.0)))
+            color = self._coerce_rgb(climate_class.get("color"), fallback=(154, 166, 188))
+            fraction = max(0.0, min(1.0, float(climate_class.get("fraction", 0.0) or 0.0)))
             row = pygame.Rect(sidebar.x + 12, y, sidebar.width - 24, 20)
             pygame.draw.rect(screen, color, pygame.Rect(row.x, row.y + 3, 14, 14))
             bar_x = row.x + 122
             bar_w = max(1, row.width - 172)
             pygame.draw.rect(screen, (42, 48, 60), pygame.Rect(bar_x, row.y + 5, bar_w, 10))
             pygame.draw.rect(screen, color, pygame.Rect(bar_x, row.y + 5, int(bar_w * fraction), 10))
-            code = str(zone.get("id") or "")
-            label = f"{code} {zone.get('label') or 'Climate'}".strip()
+            code = str(climate_class.get("id") or "")
+            label = f"{code} {climate_class.get('label') or 'Climate'}".strip()
             screen.blit(font.render(label[:16], True, (196, 210, 228)), (row.x + 22, row.y))
             screen.blit(font.render(f"{fraction * 100.0:.0f}%", True, (154, 166, 188)), (row.right - 42, row.y))
             y += 24
@@ -2218,7 +2200,7 @@ class WorldGenRenderer:
         elif can_complete:
             hint_text = "Advance Heightmap simulates 25 Myr. Complete Worldgen finalizes this planet. Esc exits selected planet."
         else:
-            hint_text = "Enter generates rivers and climate zones from this heightmap. Mouse wheel over preview zooms."
+            hint_text = "Enter generates rivers and Köppen-Geiger classes from this heightmap. Mouse wheel over preview zooms."
         hint = font.render(hint_text, True, (142, 152, 170))
         screen.blit(hint, (panel.x + 16, panel.bottom - 76))
 

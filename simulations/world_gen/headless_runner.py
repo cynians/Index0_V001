@@ -61,6 +61,9 @@ class HeadlessWorldGenConfig:
     trace_elements: list = field(default_factory=list)
     replay_contract_path: str = ""
     replay_contract: dict = None
+    attach_moon: bool = False
+    moon_semi_major_axis_km: float = 384_400.0
+    moon_radius_earth: float = 0.27
 
 
 @dataclass
@@ -269,6 +272,46 @@ class HeadlessWorldGenRunner:
             storage_root=self.repository_root,
         )
         self._renderer = WorldGenRenderer(self._app_view)
+
+    def _attach_moon(self, sim, config):
+        """Attach a moon to the just-committed primary planet.
+
+        Satellites are already a fully supported concept in the interactive
+        sim (WorldGenSimulation._begin_moon_orbit_draft /
+        _commit_named_planet already write a `location_class: "moon"` entity
+        with `parent_body` set) -- this reuses that exact path headlessly
+        rather than hand-building a satellite entity. Committing alone
+        leaves mass_kg/radius_m unset ("physical model pending"), so one
+        extra _save_selected_planet_seed() call is needed for the moon to
+        carry the mass/radius that _tidal_regime's satellite loop reads;
+        full crust/atmosphere/terrain generation is not needed for a body
+        that only needs to exist as a tidal contributor.
+        """
+        primary_planet_id = sim.selected_world_gen_planet_id
+        primary_planet_entity = sim.planet_entity
+        primary_stage = sim.editor_stage
+        primary_template = sim.active_planet_template
+        primary_seed_buffers = dict(sim.seed_input_buffers)
+        primary_crust_composition = copy.deepcopy(sim.crust_composition)
+
+        if not sim._begin_moon_orbit_draft(sim.planet_entity):
+            raise RuntimeError(sim.commit_status)
+        moon_au = max(1e-6, (float(config.moon_semi_major_axis_km) * 1000.0) / WorldGenSimulation.AU_M)
+        sim._set_orbit_distances(moon_au, moon_au)
+        if config.moon_radius_earth:
+            sim.seed_input_buffers["radius_earth"] = sim._format_seed_input(config.moon_radius_earth)
+        sim.planet_name_buffer = f"{config.name} Moon"
+        if not sim._commit_named_planet():
+            raise RuntimeError(sim.commit_status)
+        if not sim._save_selected_planet_seed():
+            raise RuntimeError(sim.commit_status)
+
+        sim.selected_world_gen_planet_id = primary_planet_id
+        sim.planet_entity = primary_planet_entity
+        sim.editor_stage = primary_stage
+        sim.active_planet_template = primary_template
+        sim.seed_input_buffers = primary_seed_buffers
+        sim.crust_composition = primary_crust_composition
 
     def _new_runtime(self, config):
         self._prepare_output(config)
@@ -721,6 +764,12 @@ class HeadlessWorldGenRunner:
                 }
                 for layer in (planet.get("material_heatmap_model") or {}).get("layers") or []
             ],
+            "mineralization_potential": (
+                (planet.get("mineralization_potential_model") or {}).get("summary")
+            ),
+            "desert_surface_morphology": (
+                (planet.get("desert_surface_morphology_model") or {}).get("summary")
+            ),
         }
 
     def run(self, config=None):
@@ -729,6 +778,8 @@ class HeadlessWorldGenRunner:
         if config.render_outputs:
             self._initialize_rendering(config)
         world, sim = self._new_runtime(config)
+        if config.attach_moon:
+            self._attach_moon(sim, config)
         stage_history = []
         stage_fingerprints = []
         stage_screenshots = []

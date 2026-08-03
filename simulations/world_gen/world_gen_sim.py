@@ -72,6 +72,8 @@ from simulations.world_gen.tectonics import (
     mature_tectonics_model,
 )
 from simulations.world_gen.water_cycle import derive_water_cycle_model
+from simulations.world_gen.mineralization_potential import derive_mineralization_potential_model
+from simulations.world_gen.desert_surface_morphology import derive_desert_surface_morphology_model
 from simulations.world_gen.worldgen_realism import derive_worldgen_realism_metrics
 from simulations.world_gen.template_catalog import ADDITIONAL_PLANET_TEMPLATES
 from simulations.world_gen.true_color import derive_true_color_model
@@ -1443,6 +1445,7 @@ class WorldGenSimulation:
             "coastal_geomorphology_model",
             "coastal_summary",
             "river_model",
+            "koppen_climate_model",
             "climate_zone_model",
             "climate_summary",
             "climate_regulation_model",
@@ -2018,6 +2021,7 @@ class WorldGenSimulation:
             "coastal_geomorphology_model",
             "coastal_summary",
             "river_model",
+            "koppen_climate_model",
             "climate_zone_model",
             "climate_summary",
             "climate_regulation_model",
@@ -2684,6 +2688,7 @@ class WorldGenSimulation:
             tectonic_model = self._derive_tectonic_model(terrain, seed, physics, planet)
             tectonic_model = mature_tectonics_model(tectonic_model, terrain, cycles=4, million_years_per_cycle=45.0)
             planet["tectonic_model"] = tectonic_model
+            planet["mineralization_potential_model"] = derive_mineralization_potential_model(tectonic_model)
             if terrain.get("cratering", {}).get("enabled") and float(terrain.get("cratering", {}).get("density", 0.0) or 0.0) > 0.12:
                 planet["crater_model"] = self._derive_crater_model(terrain, seed, physics, planet)
             else:
@@ -2987,6 +2992,47 @@ class WorldGenSimulation:
             seed=seed or planet.get("world_gen_seed") or {},
             planet_id=planet.get("id", ""),
         )
+        # Bounded ice-albedo feedback pass: the heightmap's initial ice mask
+        # is a pre-climate quota (terrain_seed's target_ice_fraction ranked
+        # by latitude/elevation), so a world can resolve an Earth-like mean
+        # temperature yet still show zero ice if that quota came out at 0.
+        # Grow the mask with cells whose actual simulated warmest-month
+        # temperature is at/below freezing, then re-solve once more so the
+        # newly-frozen cells' higher albedo (see the permanent_ice cooling
+        # term in water_cycle.py) can cool their own climate -- one extra
+        # bounded pass, matching the two-pass pattern above.
+        climate_grid = model.get("climate_grid") if isinstance(model, dict) else {}
+        seasonal_max_rows = climate_grid.get("seasonal_max_temperature_rows_k") or []
+        surface_masks = heightmap.get("surface_masks") if isinstance(heightmap.get("surface_masks"), dict) else {}
+        existing_ice_rows = surface_masks.get("ice_rows") or []
+        if seasonal_max_rows and existing_ice_rows:
+            updated_ice_rows = [list(row) for row in existing_ice_rows]
+            ice_added = False
+            for y, temp_row in enumerate(seasonal_max_rows):
+                if y >= len(updated_ice_rows):
+                    break
+                ice_row = updated_ice_rows[y]
+                for x, warmest_temp_k in enumerate(temp_row):
+                    if x >= len(ice_row):
+                        break
+                    if not ice_row[x] and warmest_temp_k is not None and float(warmest_temp_k) <= 273.15:
+                        ice_row[x] = True
+                        ice_added = True
+            if ice_added:
+                surface_masks["ice_rows"] = updated_ice_rows
+                heightmap["surface_masks"] = surface_masks
+                heightmap = refresh_heightmap_derivatives(
+                    heightmap,
+                    tectonic_model=planet.get("tectonic_model"),
+                )
+                planet["heightmap_model"] = heightmap
+                model = derive_water_cycle_model(
+                    terrain=terrain,
+                    heightmap=heightmap,
+                    atmosphere=atmosphere,
+                    seed=seed or planet.get("world_gen_seed") or {},
+                    planet_id=planet.get("id", ""),
+                )
         evolution["feedback_iterations"] = feedback_iterations
         evolution["coupling"] = "two_bounded_climate_landscape_feedback_iterations"
         planet["surface_evolution_model"] = evolution
@@ -3026,6 +3072,11 @@ class WorldGenSimulation:
         planet["coastal_geomorphology_model"] = coastal_model
         enrich_coastal_hydrology(model, coastal_model)
         planet["coastal_summary"] = coastal_summary(coastal_model)
+        planet["desert_surface_morphology_model"] = derive_desert_surface_morphology_model(
+            heightmap,
+            water_cycle=model,
+            surface_evolution=evolution,
+        )
         planet["cryosphere_model"] = {
             "status": "resolved_from_climate_and_heightfield",
             "model_version": "cryosphere-summary-v1",
@@ -3057,23 +3108,23 @@ class WorldGenSimulation:
             "rivers": list(model.get("rivers") or []),
             "river_count": int(model.get("river_count", 0) or 0),
         }
-        planet["climate_zone_model"] = {
+        planet["koppen_climate_model"] = {
             "status": model.get("status"),
             "model_version": model.get("model_version"),
             "projection": model.get("projection"),
             "wrap_x": model.get("wrap_x"),
             "wrap_y": model.get("wrap_y"),
             "climate_grid": model.get("climate_grid"),
-            "climate_zones": list(model.get("climate_zones") or []),
+            "koppen_classes": list(model.get("koppen_classes") or []),
         }
-        dominant_zones = [
-            zone.get("id")
-            for zone in (model.get("climate_zones") or [])[:3]
-            if isinstance(zone, dict) and zone.get("id")
+        dominant_koppen = [
+            climate_class.get("id")
+            for climate_class in (model.get("koppen_classes") or [])[:3]
+            if isinstance(climate_class, dict) and climate_class.get("id")
         ]
         planet["climate_summary"] = {
             "status": model.get("status"),
-            "dominant_climate_zones": dominant_zones,
+            "dominant_koppen_classes": dominant_koppen,
             "river_count": int(model.get("river_count", 0) or 0),
             "liquid_water_possible": bool(model.get("liquid_water_possible")),
             "hydrology_enabled": bool(model.get("hydrology_enabled")),
@@ -3086,18 +3137,18 @@ class WorldGenSimulation:
                 "status": model.get("status"),
                 "water_cycle_status": model.get("status"),
                 "river_count": int(model.get("river_count", 0) or 0),
-                "dominant_climate_zones": dominant_zones,
+                "dominant_koppen_classes": dominant_koppen,
             })
         if isinstance(planet.get("environment_summary"), dict):
             planet["environment_summary"].update({
                 "status": model.get("status"),
-                "climate_zone_count": len(model.get("climate_zones") or []),
+                "koppen_class_count": len(model.get("koppen_classes") or []),
                 "river_count": int(model.get("river_count", 0) or 0),
-                "dominant_climate_zones": dominant_zones,
+                "dominant_koppen_classes": dominant_koppen,
             })
 
         tags = list(planet.get("tags") or [])
-        for tag in ("water_cycle_seeded", "climate_zones_seeded"):
+        for tag in ("water_cycle_seeded", "koppen_climate_seeded"):
             if tag not in tags:
                 tags.append(tag)
         if int(model.get("river_count", 0) or 0) > 0 and "river_network_seeded" not in tags:
@@ -3108,7 +3159,7 @@ class WorldGenSimulation:
         persisted = self._mirror_and_persist_planet(planet)
         self.editor_stage = "water_cycle"
         river_count = int(model.get("river_count", 0) or 0)
-        status = f"Water cycle ready: {len(model.get('climate_zones') or [])} climates, {river_count} rivers"
+        status = f"Water cycle ready: {len(model.get('koppen_classes') or [])} Köppen classes, {river_count} rivers"
         if evolution.get("status") == "surface_evolution_seeded":
             status += f"; {evolution.get('dominant_process', 'surface')} evolution coupled"
         self.commit_status = status if persisted else f"{status} in memory"
@@ -3229,7 +3280,7 @@ class WorldGenSimulation:
                 "coastal_geomorphology_model",
                 "coastal_summary",
                 "river_model",
-                "climate_zone_model",
+                "koppen_climate_model",
                 "climate_summary",
                 "climate_regulation_model",
                 "cryosphere_model",
@@ -3264,7 +3315,7 @@ class WorldGenSimulation:
                 "coastal_geomorphology_model",
                 "coastal_summary",
                 "river_model",
-                "climate_zone_model",
+                "koppen_climate_model",
                 "climate_summary",
                 "climate_regulation_model",
                 "cryosphere_model",
@@ -3296,7 +3347,7 @@ class WorldGenSimulation:
                 "coastal_geomorphology_model",
                 "coastal_summary",
                 "river_model",
-                "climate_zone_model",
+                "koppen_climate_model",
                 "climate_summary",
                 "climate_regulation_model",
                 "cryosphere_model",
@@ -3323,7 +3374,7 @@ class WorldGenSimulation:
                 "coastal_geomorphology_model",
                 "coastal_summary",
                 "river_model",
-                "climate_zone_model",
+                "koppen_climate_model",
                 "climate_summary",
                 "climate_regulation_model",
                 "cryosphere_model",

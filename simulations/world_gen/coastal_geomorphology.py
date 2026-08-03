@@ -18,6 +18,7 @@ from simulations.world_gen.heightmap import (
     heightmap_derivatives_are_current,
     refresh_heightmap_derivatives,
 )
+from simulations.world_gen.map_seed import seed_range
 
 
 COASTAL_MODEL_VERSION = "coastal-geomorphology-v7"
@@ -530,34 +531,71 @@ def _delta_planform(
         point(0.18, 0.86 * lateral_scale),
         point(-0.28, 0.42 * lateral_scale),
     ]
-    source = point(-0.42, 0.0)
-    split = point(0.04, 0.0)
+    trunk = point(-0.42, 0.0)
+    first_split = point(0.03, 0.0)
     distributaries = []
     count = max(1, int(distributary_count or 1))
-    for index in range(count):
-        fraction = 0.5 if count == 1 else index / (count - 1)
-        angle = (fraction - 0.5) * spread * 2.0
-        branch_dx = dx * math.cos(angle) - dy * math.sin(angle)
-        branch_dy = dx * math.sin(angle) + dy * math.cos(angle)
-        bend = (fraction - 0.5) * lateral_scale * 0.24
-        mid = point(
-            0.48 * forward_scale,
-            bend,
-        )
-        end_u = center_u + branch_dx * radius_u * forward_scale
-        end_v = center_v + branch_dy * radius_v * forward_scale
+    # Real deltas bifurcate repeatedly at staggered points rather than every
+    # channel fanning from one shared split -- that produced a rigid star.
+    # Group branches into a small number of primary channels, each splitting
+    # again at its OWN secondary point further out, and give each branch a
+    # gentle sinusoidal undulation instead of a single straight midpoint.
+    primary_count = min(count, 3)
+    group_sizes = [count // primary_count] * primary_count
+    for extra in range(count % primary_count):
+        group_sizes[extra] += 1
+    branch_index = 0
+    for group_index, group_size in enumerate(group_sizes):
+        if group_size <= 0:
+            continue
+        primary_fraction = 0.5 if primary_count == 1 else group_index / (primary_count - 1)
+        primary_angle = (primary_fraction - 0.5) * spread * 1.3
+        primary_dx = dx * math.cos(primary_angle) - dy * math.sin(primary_angle)
+        primary_dy = dx * math.sin(primary_angle) + dy * math.cos(primary_angle)
+        secondary_forward = 0.30 * forward_scale
+        secondary_u = center_u + primary_dx * radius_u * secondary_forward
+        secondary_v = center_v + primary_dy * radius_v * secondary_forward
         if wrap_x:
-            end_u %= 1.0
-        end = {
-            "x": round(_clamp(end_u) if not wrap_x else end_u, 6),
-            "y": round(_clamp(end_v), 6),
+            secondary_u %= 1.0
+        secondary_split = {
+            "x": round(_clamp(secondary_u) if not wrap_x else secondary_u, 6),
+            "y": round(_clamp(secondary_v), 6),
         }
-        distributaries.append([source, split, mid, end])
+        for sub_index in range(group_size):
+            sub_fraction = 0.5 if group_size == 1 else sub_index / (group_size - 1)
+            angle = primary_angle + (sub_fraction - 0.5) * spread * 1.1
+            branch_dx = dx * math.cos(angle) - dy * math.sin(angle)
+            branch_dy = dx * math.sin(angle) + dy * math.cos(angle)
+            undulation = math.sin(branch_index * 2.4 + sub_fraction * math.pi) * lateral_scale * 0.09
+            mid_forward = 0.62 * forward_scale
+            mid_u = center_u + branch_dx * radius_u * mid_forward + tx * undulation * radius_u
+            mid_v = center_v + branch_dy * radius_v * mid_forward + ty * undulation * radius_v
+            if wrap_x:
+                mid_u %= 1.0
+            mid = {
+                "x": round(_clamp(mid_u) if not wrap_x else mid_u, 6),
+                "y": round(_clamp(mid_v), 6),
+            }
+            end_u = center_u + branch_dx * radius_u * forward_scale
+            end_v = center_v + branch_dy * radius_v * forward_scale
+            if wrap_x:
+                end_u %= 1.0
+            end = {
+                "x": round(_clamp(end_u) if not wrap_x else end_u, 6),
+                "y": round(_clamp(end_v), 6),
+            }
+            distributaries.append([trunk, first_split, secondary_split, mid, end])
+            branch_index += 1
     return footprint, distributaries
 
 
 def _resolve_delta_systems(water_cycle, segments, *, width, height, wrap_x):
     """Resolve marine and lacustrine deltas from sediment-flux balance."""
+    # Disabled for now: the delta footprint/distributary visualization is
+    # not yet worth showing (see conversation history for the geometry
+    # rework attempts). Returns no deltas until this is revisited, rather
+    # than deleting the underlying sediment-balance model.
+    return [], []
     water_cycle = water_cycle if isinstance(water_cycle, dict) else {}
     segments = [segment for segment in segments if isinstance(segment, dict)]
     rivers = [
@@ -708,17 +746,27 @@ def _resolve_delta_systems(water_cycle, segments, *, width, height, wrap_x):
             - accommodation_demand * 0.12
             - steep_shelf * 0.12
         )
+        # Most rivers reach the sea without building a delta -- an estuary,
+        # or a plain unremarkable river mouth, is the common case. A delta
+        # specifically needs high sediment supply that outpaces wave/tidal
+        # reworking and available accommodation, sustained long enough to
+        # prograde. A high-energy (wave/tide-dominated) coast needs
+        # proportionally MORE sediment to still build a delta rather than
+        # being smoothed into an open coast or estuary -- that scaling was
+        # previously missing, so nearly every river qualified.
+        sediment_required_for_energy = 0.34 + reworking * 0.42
         formed = (
-            sediment_supply >= 0.16
-            and formation_index >= 0.18
-            and steep_shelf < 0.92
+            sediment_supply >= 0.40
+            and formation_index >= 0.32
+            and steep_shelf < 0.75
+            and sediment_supply >= sediment_required_for_energy
         )
         if not formed:
             reason = (
                 "insufficient_fluvial_sediment"
-                if sediment_supply < 0.16
+                if sediment_supply < 0.40
                 else "steep_deep_receiving_margin"
-                if steep_shelf >= 0.92
+                if steep_shelf >= 0.75
                 else "marine_or_lake_reworking_exceeds_deposition"
             )
             assessments.append({
@@ -890,6 +938,65 @@ def _tectonic_setting(tectonic_model, centroid):
     return "uncertain", nearest_kind, 0.38
 
 
+def _seiche_resonance_factor(embayment_index, nearshore_gradient, shelf_width_km):
+    """Approximate quarter-wave seiche resonance for a semi-enclosed basin.
+
+    The existing shelf/enclosure amplification above is purely geometric
+    funnelling. Real macrotidal extremes (Bay of Fundy ~16m, Bristol Channel,
+    Ungava Bay) come from a basin's natural oscillation period resonating
+    with the semidiurnal tidal forcing period -- a fundamentally different
+    and much larger amplification mechanism than geometric funnelling alone.
+    This module deliberately does not solve real bathymetry. Basin length is
+    driven by embayment_index (curvature-based enclosure, which has real
+    spread) rather than shelf_width_km, which is typically only a few
+    hundred metres to a few km in this codebase's shoreline measurements --
+    far too short for anything to resonate with a ~12.4h tidal period, which
+    made an earlier version of this function silently return ~1.0 (no
+    effect) for essentially every coastline. Real resonant bays span a few
+    km (small coves, negligible effect) to several hundred km (Fundy-scale).
+    """
+    embayment_index = _clamp(embayment_index)
+    basin_length_m = 3_000.0 + (embayment_index ** 2) * 300_000.0
+    basin_depth_m = _clamp(70.0 - float(nearshore_gradient or 0.0) * 120.0, 8.0, 70.0)
+    wave_speed_m_s = math.sqrt(9.81 * basin_depth_m)
+    natural_period_h = (4.0 * basin_length_m / wave_speed_m_s) / 3600.0
+    forcing_period_h = 12.42
+    mismatch = (natural_period_h - forcing_period_h) / forcing_period_h
+    resonance = math.exp(-((mismatch / 0.45) ** 2))
+    return min(2.5, 1.0 + resonance * embayment_index * 1.5)
+
+
+def _paleoclimate_sea_level_signal(map_seed, eccentricity, axial_tilt_deg, planetary_centroid):
+    """Bounded, seed-reproducible multi-cycle paleoclimate sea-level proxy.
+
+    Quaternary-style raised terraces and drowned valleys are not one flat
+    present-day snapshot: repeated eccentricity/obliquity/precession-style
+    orbital cycles drive successive glacial/interglacial eustatic
+    highstands and lowstands, and which highstand generation is best
+    preserved/exposed varies by location. This module deliberately does not
+    solve real glacial chronology, so amplitude is scaled by the planet's
+    own orbital parameters (near-circular, low-tilt worlds get far less
+    orbitally forced variability than an eccentric, high-tilt one) rather
+    than literal Earth cycle periods, and each location's phase in that
+    history is an independent seeded value standing in for its own
+    preservation/exposure history.
+    """
+    amplitude = _clamp(
+        float(eccentricity or 0.0) * 1.8 + abs(float(axial_tilt_deg or 23.44) - 23.44) / 35.0,
+        0.0,
+        1.0,
+    )
+    if amplitude <= 0.0:
+        return 0.0
+    key = f"paleoclimate_phase:{round(planetary_centroid[0], 5)}:{round(planetary_centroid[1], 5)}"
+    phase = seed_range(map_seed, key, 0.0, math.tau)
+    eccentricity_cycle = math.sin(phase)
+    obliquity_cycle = math.sin(phase * 2.44 + 1.7)
+    precession_cycle = math.sin(phase * 4.31 + 3.2)
+    signal = eccentricity_cycle * 0.5 + obliquity_cycle * 0.32 + precession_cycle * 0.18
+    return _clamp(signal * amplitude, -1.0, 1.0) * 0.30
+
+
 def _tidal_regime(planet, star, measurements):
     radius = float(planet.get("radius_m") or (planet.get("derived_planet_physics") or {}).get("radius_m") or 6_371_000.0)
     distance = float(planet.get("semi_major_axis_m") or 0.0)
@@ -911,7 +1018,16 @@ def _tidal_regime(planet, star, measurements):
     normalized = potential / EARTH_SOLAR_TIDE_ACCELERATION if potential > 0.0 else 0.0
     shelf_amplification = 1.0 + _clamp((0.004 - measurements["nearshore_gradient"]) / 0.004) * 1.2
     enclosure_amplification = 1.0 + measurements["embayment_index"] * 0.8
-    tidal_range = 0.0 if not contributors else 0.55 * math.sqrt(max(0.0, normalized)) * shelf_amplification * enclosure_amplification
+    resonance_factor = _seiche_resonance_factor(
+        measurements["embayment_index"],
+        measurements["nearshore_gradient"],
+        measurements.get("shelf_width_km", 0.0),
+    )
+    tidal_range = (
+        0.0
+        if not contributors
+        else 0.55 * math.sqrt(max(0.0, normalized)) * shelf_amplification * enclosure_amplification * resonance_factor
+    )
     tidal_class = "microtidal" if tidal_range < 2.0 else ("mesotidal" if tidal_range < 4.0 else "macrotidal")
     confidence = 0.72 if mass > 0.0 and distance > 0.0 else 0.28
     if not planet.get("satellites"):
@@ -920,6 +1036,7 @@ def _tidal_regime(planet, star, measurements):
         "estimated_range_m": round(tidal_range, 2),
         "class": tidal_class,
         "astronomical_potential_relative_to_earth_solar": round(normalized, 4),
+        "resonance_amplification": round(resonance_factor, 3),
         "contributors": contributors,
         "confidence": round(confidence, 3),
         "method": "equilibrium_tide_with_reduced_shelf_and_enclosure_amplification",
@@ -1168,6 +1285,10 @@ def derive_coastal_geomorphology_model(*, planet, heightmap, water_cycle=None, t
     water_cycle = water_cycle if isinstance(water_cycle, dict) else {}
     tectonic_model = tectonic_model if isinstance(tectonic_model, dict) else {}
     surface_evolution = surface_evolution if isinstance(surface_evolution, dict) else {}
+    world_gen_seed = planet.get("world_gen_seed") if isinstance(planet.get("world_gen_seed"), dict) else {}
+    paleoclimate_map_seed = world_gen_seed.get("map_seed") or planet.get("id", "")
+    paleoclimate_eccentricity = _clamp(float(world_gen_seed.get("orbital_eccentricity", 0.0) or 0.0), 0.0, 0.85)
+    paleoclimate_axial_tilt_deg = float(world_gen_seed.get("axial_tilt_deg", 23.44) or 23.44)
     sea_level = heightmap.get("sea_level_m")
     if sea_level is None:
         return {"status": "not_applicable", "model_version": COASTAL_MODEL_VERSION, "reason": "no_marine_datum", "segments": [], "summary": {"segment_count": 0, "coastline_length_km": 0.0}}
@@ -1250,7 +1371,10 @@ def derive_coastal_geomorphology_model(*, planet, heightmap, water_cycle=None, t
             ice_loading = special["glacial"]
             tectonic_uplift = 0.7 if tectonic[0] == "collision_active" else (-0.15 if tectonic[0] == "trailing_passive" else 0.1)
             sediment_loading = sediment["river_supply"] * 0.55
-            relative_index = tectonic_uplift + ice_loading * 0.35 - sediment_loading
+            paleoclimate_signal = _paleoclimate_sea_level_signal(
+                paleoclimate_map_seed, paleoclimate_eccentricity, paleoclimate_axial_tilt_deg, planetary_centroid,
+            )
+            relative_index = tectonic_uplift + ice_loading * 0.35 - sediment_loading + paleoclimate_signal
             relative_state = "emergent" if relative_index > 0.34 else ("submergent" if relative_index < -0.18 else "stable")
             primary, secondary, morphology, geologic_characters, forcing, trajectory, confidence, scores = _classify(measurements, tectonic, wave, tide, substrate, sediment, special, river_influence, relative_state)
             beach_state = None
@@ -1274,7 +1398,8 @@ def derive_coastal_geomorphology_model(*, planet, heightmap, water_cycle=None, t
                     "tectonic_uplift_proxy": round(tectonic_uplift, 3),
                     "isostatic_ice_influence": round(ice_loading * 0.35, 3),
                     "sediment_loading_subsidence_proxy": round(sediment_loading, 3),
-                    "eustatic_history_resolution": "bounded_stable_present_snapshot",
+                    "orbital_paleoclimate_signal": round(paleoclimate_signal, 3),
+                    "eustatic_history_resolution": "bounded_multi_cycle_orbital_paleoclimate_proxy",
                 },
                 "shoreline_trajectory": trajectory,
                 "substrate": substrate,

@@ -1665,7 +1665,7 @@ class MapRenderer:
                 child_surface = self._hydrology_surface_for_layer(
                     {
                         "climate_display_mode": layer.get(
-                            "climate_display_mode", "zones"
+                            "climate_display_mode", "koppen"
                         )
                     },
                     model["water_cycle_model"],
@@ -1692,35 +1692,19 @@ class MapRenderer:
         cache = self._heightmap_surface_cache if surface_kind == "heightmap" else self._hydrology_surface_cache
         return self._cache_put(cache, cache_key, composite, limit=12)
 
-    def _climate_zone_colors(self, water_cycle):
-        colors = {
-            "polar_ice": (202, 224, 232),
-            "cold_steppe": (146, 158, 132),
-            "temperate_wet": (82, 142, 104),
-            "temperate_dry": (172, 156, 104),
-            "tropical_wet": (48, 130, 88),
-            "tropical_dry": (184, 146, 78),
-            "arid": (196, 176, 118),
-            "highland": (138, 128, 118),
-            "ocean": (50, 92, 132),
-        }
-        for zone in water_cycle.get("climate_zones") or []:
-            if isinstance(zone, dict) and zone.get("id"):
-                colors[str(zone["id"])] = self._coerce_rgb(
-                    zone.get("color"),
-                    fallback=colors.get(str(zone["id"]), (150, 150, 150)),
-                )
-        for zone in water_cycle.get("koppen_classes") or []:
-            if isinstance(zone, dict) and zone.get("id"):
-                colors[str(zone["id"])] = self._coerce_rgb(
-                    zone.get("color"),
+    def _koppen_class_colors(self, water_cycle):
+        colors = {}
+        for climate_class in water_cycle.get("koppen_classes") or []:
+            if isinstance(climate_class, dict) and climate_class.get("id"):
+                colors[str(climate_class["id"])] = self._coerce_rgb(
+                    climate_class.get("color"),
                     fallback=(150, 150, 150),
                 )
         return colors
 
     def _hydrology_surface_for_layer(self, layer, water_cycle):
         climate_grid = water_cycle.get("climate_grid") if isinstance(water_cycle, dict) else {}
-        display_mode = str(layer.get("climate_display_mode") or "zones")
+        display_mode = str(layer.get("climate_display_mode") or "koppen")
         if display_mode == "annual_temperature":
             field_name = "temperature_rows_k"
         elif display_mode == "annual_precipitation":
@@ -1767,7 +1751,7 @@ class MapRenderer:
         max_elevation = max(elevations) if elevations else 1.0
         elevation_span = max(1.0, max_elevation - min_elevation)
 
-        colors = self._climate_zone_colors(water_cycle)
+        colors = self._koppen_class_colors(water_cycle)
         numeric_values = [
             float(value)
             for row in rows
@@ -1824,8 +1808,8 @@ class MapRenderer:
                         elevation = 0.0
                     elevation_norm = max(0.0, min(1.0, (elevation - min_elevation) / elevation_span))
                     ocean_value = (
-                        str(field_value) in {"ocean", "Ocean"}
-                        if display_mode == "zones"
+                        str(field_value) == "Ocean"
+                        if display_mode == "koppen"
                         else False
                     )
                     shade = 0.76 + (1.0 - elevation_norm) * 0.14 if ocean_value else 0.78 + elevation_norm * 0.24
