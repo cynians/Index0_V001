@@ -1286,15 +1286,41 @@ class TimelineUI:
             for location_id in self._entity_location_reference_ids(entity)
         )
 
+    def _entity_relation_target_ids(self, entity):
+        if not isinstance(entity, dict):
+            return []
+        ids = []
+        for field_key in self.RELATION_CLUSTER_FIELDS:
+            ids.extend(self._relation_entity_ids(entity.get(field_key)))
+        return ids
+
     def _location_focus_visible_items(self, visible_items):
         if self.location_focus_id is None:
             return visible_items
-        return [
-            item
-            for item in visible_items
-            if item.get("timeline_kind") == "major_period"
-            or self._entity_is_in_location_focus(item.get("entity_id"))
-        ]
+        directly_included = []
+        candidate_pool = []
+        for item in visible_items:
+            if item.get("timeline_kind") == "major_period":
+                directly_included.append(item)
+                continue
+            if self._entity_is_in_location_focus(item.get("entity_id")):
+                directly_included.append(item)
+            else:
+                candidate_pool.append(item)
+        # "Explicit mention": an item outside the focused location's own
+        # ancestor/descendant chain still shows up if it directly names
+        # (via `related`/`predecessor`/etc., RELATION_CLUSTER_FIELDS) an
+        # entry that IS in that chain -- one hop only, so a card connected
+        # to a card connected to a neighbouring star system's location does
+        # not leak in transitively.
+        included_ids = {str(item.get("entity_id") or "") for item in directly_included}
+        explicitly_mentioned = []
+        for item in candidate_pool:
+            entity = self.entity_lookup.get(str(item.get("entity_id") or ""))
+            relation_ids = {str(relation_id) for relation_id in self._entity_relation_target_ids(entity)}
+            if relation_ids & included_ids:
+                explicitly_mentioned.append(item)
+        return directly_included + explicitly_mentioned
 
     def _contemporary_visible_items(self, visible_items):
         if self.selected_year is not None:

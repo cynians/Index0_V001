@@ -4,6 +4,7 @@ from world.entity_loader import EntityLoader
 from world.dione_reference_models import apply_dione_reference_models
 from world.earth_reference_models import apply_earth_reference_models
 from world.material_reference_models import apply_material_reference_models
+from world.orbital_space_reference_models import apply_orbital_space_reference_models
 from world.periods import apply_period_reference_models
 from world.relationship_graph import TouchDegrees
 from world.schema_loader import SchemaLoader
@@ -218,6 +219,7 @@ class WorldModel:
         apply_earth_reference_models(self.loader)
         apply_dione_reference_models(self.loader)
         apply_material_reference_models(self.loader)
+        apply_orbital_space_reference_models(self.loader)
         apply_period_reference_models(self.loader, self.MAJOR_PERIODS)
         # Reuse schemas already decoded by EntityLoader. Parsing the complete
         # ontology a second time is especially costly once generated maps are
@@ -261,6 +263,7 @@ class WorldModel:
     def _refresh_after_repository_mutation(self, changed_entity_ids):
         if not changed_entity_ids:
             return
+        apply_orbital_space_reference_models(self.loader)
         apply_period_reference_models(self.loader, self.MAJOR_PERIODS)
         if hasattr(self.touch_degrees, "refresh"):
             self.touch_degrees.refresh()
@@ -268,6 +271,7 @@ class WorldModel:
         self.repository_revision += 1
 
     def mark_repository_changed(self):
+        apply_orbital_space_reference_models(self.loader)
         apply_period_reference_models(self.loader, self.MAJOR_PERIODS)
         if hasattr(self.touch_degrees, "refresh"):
             self.touch_degrees.refresh()
@@ -513,6 +517,7 @@ class WorldModel:
         apply_earth_reference_models(self.loader)
         apply_dione_reference_models(self.loader)
         apply_material_reference_models(self.loader)
+        apply_orbital_space_reference_models(self.loader)
         apply_period_reference_models(self.loader, self.MAJOR_PERIODS)
         self.schemas = SchemaLoader(schema_entities=self.loader.get_dataset("schemas"))
         self.touch_degrees.schemas = self.schemas

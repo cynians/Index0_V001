@@ -74,6 +74,10 @@ from simulations.world_gen.tectonics import (
 from simulations.world_gen.water_cycle import derive_water_cycle_model
 from simulations.world_gen.mineralization_potential import derive_mineralization_potential_model
 from simulations.world_gen.desert_surface_morphology import derive_desert_surface_morphology_model
+from simulations.world_gen.duricrust_weathering import derive_duricrust_weathering_model
+from simulations.world_gen.karst_dissolution import derive_karst_dissolution_model
+from simulations.world_gen.periglacial_patterned_ground import derive_periglacial_patterned_ground_model
+from simulations.world_gen.playa_evaporite_basins import derive_playa_evaporite_basin_model
 from simulations.world_gen.worldgen_realism import derive_worldgen_realism_metrics
 from simulations.world_gen.template_catalog import ADDITIONAL_PLANET_TEMPLATES
 from simulations.world_gen.true_color import derive_true_color_model
@@ -84,6 +88,7 @@ from simulations.world_gen.world_classification import (
 )
 from world.year_utils import parse_year
 from world.relation_mirror import mirror_location_sim_relations
+from world.orbital_space_reference_models import orbital_space_entity_id
 
 
 _TEMPLATE_FIRST_SCREEN_KEYS = {
@@ -1085,6 +1090,16 @@ class WorldGenSimulation:
         parent_body_id = self._resolve_entity_id(self.orbit_parent_body_id) if body_class == "moon" else parent_star_id
         anomaly_seed = f"{self.parent_system_id}:{self._slug_from_text(body_name)}:{semi_major_au:.6f}:{eccentricity:.6f}:{body_class}:{parent_body_id}"
         body_label = "moon" if body_class == "moon" else "planet"
+        # A moon's *location* parent is the planet's orbital-space companion
+        # (auto-maintained by apply_orbital_space_reference_models), not the
+        # planet's own surface location -- a moon is in orbit around a
+        # planet, not standing on it. parent_body stays the real planet so
+        # Kepler orbit physics (simulations/space/system.py) keeps anchoring
+        # on an entity that actually has mass/position. Planets themselves
+        # are left star-parented as before; only orbiting bodies move.
+        location_parent_id = (
+            orbital_space_entity_id(parent_body_id) if body_class == "moon" else parent_body_id
+        )
         fields = {
             "pretty_name": body_name,
             "name": body_name,
@@ -1094,7 +1109,7 @@ class WorldGenSimulation:
             "location_role": "orbital_body",
             "system_role": "orbital_body",
             "star_system": self.parent_system_id,
-            "parent_location": parent_body_id,
+            "parent_location": location_parent_id,
             "parent_body": parent_body_id,
             "semi_major_axis_m": semi_major_au * self.AU_M,
             "eccentricity": eccentricity,
@@ -3073,6 +3088,27 @@ class WorldGenSimulation:
         enrich_coastal_hydrology(model, coastal_model)
         planet["coastal_summary"] = coastal_summary(coastal_model)
         planet["desert_surface_morphology_model"] = derive_desert_surface_morphology_model(
+            heightmap,
+            water_cycle=model,
+            surface_evolution=evolution,
+        )
+        planet["duricrust_weathering_model"] = derive_duricrust_weathering_model(
+            heightmap,
+            water_cycle=model,
+            surface_evolution=evolution,
+        )
+        planet["karst_dissolution_model"] = derive_karst_dissolution_model(
+            heightmap,
+            water_cycle=model,
+            surface_evolution=evolution,
+            planet_tags=(planet.get("natural_material_model") or {}).get("planet_tags"),
+        )
+        planet["periglacial_patterned_ground_model"] = derive_periglacial_patterned_ground_model(
+            heightmap,
+            water_cycle=model,
+            surface_evolution=evolution,
+        )
+        planet["playa_evaporite_basins_model"] = derive_playa_evaporite_basin_model(
             heightmap,
             water_cycle=model,
             surface_evolution=evolution,

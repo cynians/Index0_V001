@@ -41,13 +41,17 @@ def _sample_mineralization_potential(mineralization_model, profile_id, global_u,
     height = int(mineralization_model.get("height", 0) or 0)
     if not width or not height:
         return 0.0
-    x = max(0, min(width - 1, int(round(global_u * (width - 1)))))
-    y = max(0, min(height - 1, int(round(global_v * (height - 1)))))
     best = 0.0
     for key in row_keys:
         rows = mineralization_model.get(key) or []
-        if y < len(rows) and x < len(rows[y]):
-            best = max(best, float(rows[y][x] or 0.0))
+        # Bilinear rather than nearest-neighbour: rounding to the nearest
+        # potential-grid cell gave every ore-favourability zone a faceted,
+        # cracked-looking boundary once true_color.py's aggressive
+        # substrate competitive weighting (power(abundance, 6.0)) sharpened
+        # those step edges further -- the same class of nearest-neighbour
+        # aliasing already fixed this session in water_cycle.py's shore
+        # distance and upwind relief sampling.
+        best = max(best, _sample(rows, global_u, global_v, default=0.0))
     return best
 
 

@@ -770,6 +770,18 @@ class HeadlessWorldGenRunner:
             "desert_surface_morphology": (
                 (planet.get("desert_surface_morphology_model") or {}).get("summary")
             ),
+            "duricrust_weathering": (
+                (planet.get("duricrust_weathering_model") or {}).get("summary")
+            ),
+            "karst_dissolution": (
+                (planet.get("karst_dissolution_model") or {}).get("summary")
+            ),
+            "periglacial_patterned_ground": (
+                (planet.get("periglacial_patterned_ground_model") or {}).get("summary")
+            ),
+            "playa_evaporite_basins": (
+                (planet.get("playa_evaporite_basins_model") or {}).get("summary")
+            ),
         }
 
     def run(self, config=None):

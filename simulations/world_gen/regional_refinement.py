@@ -1053,10 +1053,20 @@ def generate_refined_region(
             # Plains receive only low-amplitude rolling and microrelief.
             # Folded ridge relief exists exclusively inside the inherited,
             # height-derived mountain morphology mask.
+            #
+            # The plains baseline used to be 0.018/0.008 -- against a Site
+            # level's ~12 m amplitude budget that is well under half a metre
+            # of total relief, which reads as a perfectly flat, contourless
+            # tile (and, since a flat child feeds _parent_structure_context's
+            # ruggedness/anchor measurement at the next level down, it also
+            # self-perpetuates: a flat parent can never re-authorize texture
+            # in its own children). Raised so non-mountain terrain keeps
+            # genuine, visible rolling microrelief at every detail level
+            # while mountain terrain still stands out clearly above it.
             structural_factor = mountain_factor * inherited_ruggedness * structural_anchor
             detail = (
-                broad * amplitude * (0.018 + structural_factor * 0.055)
-                + fine * amplitude * (0.008 + structural_factor * 0.045)
+                broad * amplitude * (0.06 + structural_factor * 0.07)
+                + fine * amplitude * (0.035 + structural_factor * 0.05)
                 + fold_relief * amplitude * structural_factor * 0.20
             )
             if sea_level is not None and inherited < float(sea_level) and level >= 4:

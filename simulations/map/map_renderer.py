@@ -2899,10 +2899,13 @@ class MapRenderer:
 
         # A single cached contour overlay keeps every raster subtype on the
         # same elevation reference. Regions deliberately omits the terrain
-        # fill, so its contour treatment is stronger.
+        # fill, so its contour treatment is stronger. The climate/hydrology
+        # layer used to be excluded here even though its own "Contours On"
+        # control implied it should work -- without it, a Koppen/temperature/
+        # precipitation map gave no indication that a cold or dry reading sat
+        # on a mountain rather than a plain at the same latitude.
         if (
             heightmap_base_layer is not None
-            and active_layer_kind != "hydrology"
             and active_layer_kind != "true_color"
             and bool(getattr(sim, "is_height_contours_visible", lambda: True)())
         ):
