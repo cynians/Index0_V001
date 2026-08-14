@@ -5,6 +5,7 @@ from unittest.mock import patch
 from simulations.map.map_simulation import MapSimulation
 from simulations.world_gen.coastal_geomorphology import COASTAL_MODEL_VERSION
 from simulations.world_gen.heightmap import refresh_heightmap_derivatives
+from simulations.world_gen.true_color import TRUE_COLOR_MODEL_VERSION
 from world.simulation_context import SimulationContext
 
 
@@ -208,6 +209,69 @@ class MapRegionContextTests(unittest.TestCase):
 
         self.assertEqual([refinement["id"]], [row["entity_id"] for row in region_models])
         self.assertEqual([refinement["id"]], [row["entity_id"] for row in planet_models])
+        self.assertEqual(
+            {"min_u": 0.0, "max_u": 1.0, "min_v": 0.0, "max_v": 1.0},
+            region_models[0]["uv_bounds"],
+        )
+        self.assertEqual(
+            {
+                "min_u": 160.0 / 360.0,
+                "max_u": 200.0 / 360.0,
+                "min_v": 80.0 / 180.0,
+                "max_v": 100.0 / 180.0,
+            },
+            planet_models[0]["uv_bounds"],
+        )
+
+    def test_polygon_authored_region_refinement_fills_its_regional_map(self):
+        earth = _planet()
+        region = {
+            "id": "authored_polygon_continent",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "continent",
+            "parent_location": "earth",
+            "parents": ["earth"],
+            "bounds": {
+                "type": "polygon",
+                "points": [(-140, -60), (-30, -60), (-20, 35), (-125, 45)],
+            },
+        }
+        refinement = {
+            "id": "refined_polygon_continent_lod1_test",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "generated_region",
+            "location_role": "map_refinement_region",
+            "refinement_parent_map_id": region["id"],
+            "refinement_root_planet_id": "earth",
+            "map_detail_level": 1,
+            "bounds": {
+                "type": "bbox",
+                "min_x": -140,
+                "max_x": -20,
+                "min_y": -60,
+                "max_y": 45,
+            },
+            "heightmap_model": {
+                "sample_grid": {
+                    "width": 2,
+                    "height": 2,
+                    "rows": [[0, 1], [1, 0]],
+                },
+            },
+        }
+        world = _World([earth, region, refinement])
+
+        models = MapSimulation(
+            SimulationContext(2400, region["id"], world)
+        )._refined_region_models()
+
+        self.assertEqual(1, len(models))
+        self.assertEqual(
+            {"min_u": 0.0, "max_u": 1.0, "min_v": 0.0, "max_v": 1.0},
+            models[0]["uv_bounds"],
+        )
 
     def test_generated_region_can_regenerate_itself_from_its_parent_footprint(self):
         earth = _planet()
@@ -385,7 +449,7 @@ class MapRegionContextTests(unittest.TestCase):
         true_color_layer = sim.get_heightmap_base_layer(render_mode="true_color")
         self.assertEqual("true_color", true_color_layer["render_mode"])
         self.assertEqual(
-            "planet-true-color-v4",
+            TRUE_COLOR_MODEL_VERSION,
             true_color_layer["true_color_model"]["model_version"],
         )
         base_layer = sim.get_heightmap_base_layer()

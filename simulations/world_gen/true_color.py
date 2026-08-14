@@ -3,6 +3,11 @@
 The scientific height, climate, and material layers remain the simulation
 truth.  This module combines those fields into a compact visual product; it
 does not invent terrain or write another large global raster to the ontology.
+
+Architecture invariants: entity semantics come only from the ontology and
+runtime mappings are disposable caches. Planetary True Color is strictly
+abiotic; vegetation is produced later by Biosphere simulation. Generated
+planets are currently disposable, so model changes invalidate older products.
 """
 
 from __future__ import annotations
@@ -28,7 +33,7 @@ except ImportError:  # pragma: no cover - exercised only by minimal installs.
     np = None
 
 
-TRUE_COLOR_MODEL_VERSION = "planet-true-color-v8"
+TRUE_COLOR_MODEL_VERSION = "planet-true-color-v12-physical-rivers-no-global-vegetation"
 
 
 # These are not ten decorative noise channels.  Each entry names an
@@ -264,6 +269,8 @@ def derive_true_color_model(
             "atmospheric_scattering": pressure_bar >= 0.0015,
             "clouds": False,
             "vegetation": False,
+            "vegetation_policy": "forbidden_at_planetary_detail",
+            "rivers": bool((water_cycle or {}).get("rivers")),
             "orbital_appearance_influences": list(
                 ORBITAL_APPEARANCE_INFLUENCES
             ),
@@ -359,6 +366,80 @@ def _grid_rows(model, keys):
         if isinstance(rows, list) and rows and isinstance(rows[0], list):
             return rows
     return None
+
+
+def river_true_color_rgb(river):
+    """Resolve visible river water from hydrology, never from vegetation.
+
+    Clear, persistent high-discharge channels tend toward blue. Closed-basin
+    and mineral-rich low-flow water tends toward teal/green, while steep or
+    strongly seasonal runoff carries enough suspended sediment to read brown.
+    These are orbital-scale water-color classes, not biome colors.
+    """
+    river = river if isinstance(river, dict) else {}
+    flow = _clamp(river.get("flow", 0.0))
+    runoff = max(0.0, float(river.get("catchment_mean_runoff_mm", 0.0) or 0.0))
+    source_relief = max(0.0, float(river.get("source_elevation_m", 0.0) or 0.0))
+    dryness = _clamp(river.get("catchment_dryness_ratio", 1.0) / 3.0)
+    discharge = max(0.0, float(river.get("estimated_discharge_m3_s", 0.0) or 0.0))
+    seasonal = str(river.get("flow_regime") or "") != "perennial"
+    closed_basin = str(river.get("mouth") or "") != "ocean"
+    sediment = _clamp(
+        source_relief / 6500.0 * 0.34
+        + min(1.0, runoff / 900.0) * 0.22
+        + dryness * 0.20
+        + (0.18 if seasonal else 0.0)
+        - min(0.18, math.log1p(discharge) / 55.0)
+    )
+    mineral = _clamp(
+        (0.42 if closed_basin else 0.08)
+        + (1.0 - flow) * 0.20
+        + dryness * 0.10
+        - sediment * 0.24
+    )
+    clear = np.asarray([31.0, 96.0, 132.0], dtype=np.float32) if np is not None else (31.0, 96.0, 132.0)
+    mineral_rgb = np.asarray([53.0, 112.0, 94.0], dtype=np.float32) if np is not None else (53.0, 112.0, 94.0)
+    sediment_rgb = np.asarray([131.0, 101.0, 61.0], dtype=np.float32) if np is not None else (131.0, 101.0, 61.0)
+    if np is None:
+        color = [
+            clear[index] * (1.0 - mineral) + mineral_rgb[index] * mineral
+            for index in range(3)
+        ]
+        color = [
+            color[index] * (1.0 - sediment) + sediment_rgb[index] * sediment
+            for index in range(3)
+        ]
+    else:
+        color = clear * (1.0 - mineral) + mineral_rgb * mineral
+        color = color * (1.0 - sediment) + sediment_rgb * sediment
+    return tuple(int(round(float(channel))) for channel in color)
+
+
+def _true_color_river_overlay(water_cycle, size):
+    water_cycle = water_cycle if isinstance(water_cycle, dict) else {}
+    rivers = [river for river in water_cycle.get("rivers") or [] if isinstance(river, dict)]
+    if not rivers:
+        return None
+    width, height = size
+    overlay = pygame.Surface(size, pygame.SRCALPHA)
+    for river in rivers:
+        points = []
+        for point in river.get("display_points") or river.get("points") or []:
+            if not isinstance(point, dict):
+                continue
+            points.append((
+                int(round(_clamp(point.get("x", 0.0)) * (width - 1))),
+                int(round(_clamp(point.get("y", 0.0)) * (height - 1))),
+            ))
+        if len(points) < 2:
+            continue
+        discharge = max(0.0, float(river.get("estimated_discharge_m3_s", 0.0) or 0.0))
+        line_width = 1 + int(discharge >= 450.0) + int(discharge >= 6000.0)
+        color = (*river_true_color_rgb(river), 224)
+        if line_width > 1:
+            pygame.draw.lines(overlay, color, False, points, line_width)
+        pygame.draw.aalines(overlay, color, False, points)
+    return overlay
 
 
 def _surface_to_rgb_array(surface, size):
@@ -497,16 +578,51 @@ def _optical_mixture_fraction(abundance, profile, maximum=1.0):
     return np.clip(influence, 0.0, maximum)
 
 
+_COLOR_DRIVER_EXPOSURE_FIELDS = {
+    "weathering": "weathering",
+    "oxidation": "oxidation",
+    "wetness": "wetness",
+    "space_weathering": "space_weathering",
+}
+
+
+def _color_driver_fraction(profile, exposure, bedrock_modulation):
+    """Per-material fresh/weathered blend fraction along its own driver.
+
+    Materials vary along a range (oxidation, wetness, weathering maturity)
+    rather than sitting at a single fixed colour.  Each material names which
+    exposure field drives that range; this keeps the blend local to the
+    material instead of assuming every material on the mix shares the same
+    driver.
+    """
+    field = _COLOR_DRIVER_EXPOSURE_FIELDS.get(
+        str(profile.get("color_driver") or "weathering"),
+        "weathering",
+    )
+    one = exposure.get("one")
+    driver_value = exposure.get(field, one if one is not None else 1.0)
+    response = _clamp(profile.get("weathering_color_response", 0.18))
+    return np.clip(driver_value * response * bedrock_modulation, 0.0, 0.62)
+
+
 def _mix_material_endmembers(
     material_components,
     fallback_reflectance,
     exposure,
     size,
+    *,
+    detail_level=0,
+    wrap_x=False,
 ):
     """Mix optical endmembers within substrate, constituent and cover strata."""
     width, height = size
     shape = (height, width)
     base = np.asarray(fallback_reflectance, dtype=np.float32)
+    bedrock_exposure_for_weathering = exposure.get(
+        "bedrock_exposure",
+        np.full(shape, 0.35, dtype=np.float32),
+    )
+    bedrock_modulation = 0.28 + bedrock_exposure_for_weathering * 0.72
     substrate_sum = np.zeros((*shape, 3), dtype=np.float32)
     substrate_weight = np.zeros(shape, dtype=np.float32)
     constituent_sum = np.zeros((*shape, 3), dtype=np.float32)
@@ -516,7 +632,6 @@ def _mix_material_endmembers(
     cover_sum = np.zeros((*shape, 3), dtype=np.float32)
     cover_weight = np.zeros(shape, dtype=np.float32)
     cover_presence = np.zeros(shape, dtype=np.float32)
-    weathered_sum = np.zeros((*shape, 3), dtype=np.float32)
     property_sum = {
         key: np.zeros(shape, dtype=np.float32)
         for key in (
@@ -525,7 +640,6 @@ def _mix_material_endmembers(
             "hydration_response",
             "space_weathering_response",
             "grain_size_sensitivity",
-            "weathering_color_response",
             "fracture_darkening_factor",
             "surface_fabric_strength",
             "bedded_fraction",
@@ -567,13 +681,35 @@ def _mix_material_endmembers(
         driver = _driver_field(component, exposure)
         role = _component_visual_role(component)
         abundance = np.clip(suitability * driver, 0.0, 1.0)
+        if role == "substrate" and detail_level <= 0:
+            # At planetary scale a pixel represents a broad lithologic
+            # footprint.  Competing substrate suitability therefore needs a
+            # small spatial support before the categorical competition; using
+            # raw pixels turns the upstream province grid into optical panels.
+            abundance = _neighbourhood_mean(
+                abundance,
+                2,
+                wrap_x=wrap_x,
+            )
+        # Blend this component's own fresh/weathered endpoints along its own
+        # colour driver before it enters the role-based mix, so a material
+        # driven by local oxidation doesn't get averaged against one driven
+        # by generic age-weathering.
+        color_fraction = _color_driver_fraction(profile, exposure, bedrock_modulation)
+        blended_reflectance = (
+            reflectance[None, None, :] * (1.0 - color_fraction[..., None])
+            + weathered_reflectance[None, None, :] * color_fraction[..., None]
+        )
         if role == "substrate":
             # Lithologic provinces are categorical geological bodies, not an
             # intimate paint mixture.  A high competitive exponent leaves a
             # narrow two-unit contact while preventing eight weakly suitable
             # rocks from averaging into the same grey-brown substrate.
-            weight = np.power(abundance, 6.0)
-            substrate_sum += weight[..., None] * reflectance
+            competitive_exponent = (
+                2.4 if detail_level <= 0 else 4.2 if detail_level == 1 else 6.0
+            )
+            weight = np.power(abundance, competitive_exponent)
+            substrate_sum += weight[..., None] * blended_reflectance
             substrate_weight += weight
         elif role == "intimate_substrate_component":
             weight = _optical_mixture_fraction(
@@ -581,12 +717,12 @@ def _mix_material_endmembers(
                 profile,
                 maximum,
             )
-            constituent_sum += weight[..., None] * reflectance
+            constituent_sum += weight[..., None] * blended_reflectance
             constituent_weight += weight
         elif role == "mobile_or_regolith_cover":
             physical_fraction = _optical_mixture_fraction(abundance, profile, maximum)
             weight = np.power(physical_fraction, 4.0)
-            cover_sum += weight[..., None] * reflectance
+            cover_sum += weight[..., None] * blended_reflectance
             cover_weight += weight
             cover_presence = np.maximum(cover_presence, physical_fraction)
         else:
@@ -595,10 +731,9 @@ def _mix_material_endmembers(
                 profile,
                 maximum,
             )
-            bounded_sum += weight[..., None] * reflectance
+            bounded_sum += weight[..., None] * blended_reflectance
             bounded_weight += weight
         property_weight += weight
-        weathered_sum += weight[..., None] * weathered_reflectance
         for key in property_sum:
             if key.endswith("_fraction"):
                 fabric = str(profile.get("surface_fabric") or "massive")
@@ -654,10 +789,6 @@ def _mix_material_endmembers(
         key: values / np.maximum(property_weight, 0.001)
         for key, values in property_sum.items()
     }
-    properties["weathered_visible_reflectance"] = weathered_sum / np.maximum(
-        property_weight[..., None],
-        0.001,
-    )
     return np.clip(mixed, 0.002, 0.98), properties
 
 
@@ -709,8 +840,8 @@ def render_true_color_surface(
         return _fallback_surface(heightmap, model)
 
     cell_w, cell_h = source_w - 1, source_h - 1
+    detail_level = max(0, int(heightmap.get("map_detail_level", 0) or 0))
     if target_size is None:
-        detail_level = max(0, int(heightmap.get("map_detail_level", 0) or 0))
         target_w = min(1024, max(cell_w, 768 if detail_level <= 0 else cell_w * 2))
         target_h = max(1, int(round(target_w * cell_h / max(1, cell_w))))
     else:
@@ -781,13 +912,22 @@ def render_true_color_surface(
     # terrain/process truth.  Its bedrock estimate replaces the older generic
     # slope proxy when available.
     if geomorphology:
-        exposure["bedrock_exposure"] = geomorphology["bedrock_exposure"]
+        bedrock_exposure = geomorphology["bedrock_exposure"]
+        if detail_level <= 0:
+            bedrock_exposure = _neighbourhood_mean(
+                bedrock_exposure,
+                2,
+                wrap_x=bool(heightmap.get("wrap_x", False)),
+            )
+        exposure["bedrock_exposure"] = bedrock_exposure
     exposure["one"] = np.ones((target_h, target_w), dtype=np.float32)
     linear_surface, optical_properties = _mix_material_endmembers(
         material_components,
         fallback_reflectance,
         exposure,
         (target_w, target_h),
+        detail_level=detail_level,
+        wrap_x=bool(heightmap.get("wrap_x", False)),
     )
 
     # Legacy composites are accepted only as a compatibility fallback. New
@@ -826,37 +966,18 @@ def render_true_color_surface(
     linear_surface *= (
         1.0 - wetness[..., None] * wet_factor[..., None] * 0.72
     )
-    weathering = exposure.get(
-        "weathering",
-        np.zeros((target_h, target_w), dtype=np.float32),
-    )
-    weathering_response = optical_properties.get(
-        "weathering_color_response",
-        np.full((target_h, target_w), 0.18, dtype=np.float32),
-    )
-    weathered_reflectance = optical_properties.get(
-        "weathered_visible_reflectance",
-        linear_surface,
-    )
-    bedrock_exposure_for_weathering = exposure.get(
-        "bedrock_exposure",
-        np.full((target_h, target_w), 0.35, dtype=np.float32),
-    )
-    weathered_fraction = np.clip(
-        weathering * weathering_response
-        * (0.28 + bedrock_exposure_for_weathering * 0.72),
-        0.0,
-        0.62,
-    )
-    linear_surface = (
-        linear_surface * (1.0 - weathered_fraction[..., None])
-        + weathered_reflectance * weathered_fraction[..., None]
-    )
+    # The fresh/weathered blend now happens per-material, inside
+    # _mix_material_endmembers, along each material's own colour driver
+    # (see color_driver on the optical profile). What remains here is a
+    # small residual global ferric tint for oxidation-driven redness that
+    # isn't already carried by a material's own weathered endpoint; it is
+    # kept deliberately weak so it doesn't double up with that per-material
+    # range on materials such as laterite/ferric crusts.
     ferric = np.asarray([0.31, 0.075, 0.038], dtype=np.float32)
     ferric_fraction = np.clip(
-        oxidation * oxidation_response * 0.34,
+        oxidation * oxidation_response * 0.16,
         0.0,
-        0.38,
+        0.20,
     )
     linear_surface = (
         linear_surface * (1.0 - ferric_fraction[..., None])
@@ -884,8 +1005,18 @@ def render_true_color_surface(
     # albedo fields over the surface; attractive at first glance, but they did
     # not follow mountains, basins, channels or inherited regional detail.
     wrap_x = bool(heightmap.get("wrap_x", False))
-    broad_form = _neighbourhood_mean(elevation, 8, wrap_x=wrap_x)
-    meso_form = _neighbourhood_mean(elevation, 3, wrap_x=wrap_x)
+    source_cell_footprint = max(
+        1.0,
+        target_w / max(1, cell_w),
+        target_h / max(1, cell_h),
+    )
+    # Filters must span the reconstructed source-cell footprint. Fixed
+    # three-pixel filters detected bilinear cell interiors as geological
+    # fabric and produced the fine rectangular scratches seen from orbit.
+    meso_passes = max(3, int(round(source_cell_footprint * 1.45)))
+    broad_passes = max(meso_passes + 4, int(round(source_cell_footprint * 3.4)))
+    broad_form = _neighbourhood_mean(elevation, broad_passes, wrap_x=wrap_x)
+    meso_form = _neighbourhood_mean(elevation, meso_passes, wrap_x=wrap_x)
     broad_relief = _normalise_signed(meso_form - broad_form)
     local_relief = _normalise_signed(elevation - meso_form)
     curvature = _normalise_signed(
@@ -999,6 +1130,7 @@ def render_true_color_surface(
     )
     if (
         material_components
+        and int(heightmap.get("map_detail_level", 0) or 0) > 0
         and fabric.get("bedrock_banding_enabled")
         and float(np.max(material_fabric_strength)) > 0.01
     ):
@@ -1164,7 +1296,13 @@ def render_true_color_surface(
     )[..., None]
     rgb = np.where(ice[..., None], ice_rgb * ice_texture, rgb)
 
-    exaggeration = max(1.25, 4.0 - int(heightmap.get("map_detail_level", 0) or 0) * 0.30)
+    detail_level = max(0, int(heightmap.get("map_detail_level", 0) or 0))
+    # Planetary samples average relief across roughly 100 km, so their raw
+    # gradients understate mountain-facing slopes. Use scale-aware vertical
+    # exaggeration for legibility, tapering rapidly as regional truth gains
+    # real slopes. The correctly declared sample spacing prevents this from
+    # re-amplifying the old render-grid scratches.
+    exaggeration = max(1.25, 18.0 / (2.0 ** detail_level))
     nx = -dzdx * exaggeration
     ny = -dzdy * exaggeration
     nz = np.ones_like(nx)
@@ -1189,4 +1327,13 @@ def render_true_color_surface(
         rgb = rgb * (1.0 - haze) + tint * haze
 
     rgb = np.clip(rgb, 0.0, 255.0).astype(np.uint8)
-    return pygame.surfarray.make_surface(np.transpose(rgb, (1, 0, 2)))
+    surface = pygame.surfarray.make_surface(np.transpose(rgb, (1, 0, 2)))
+    # Rivers are water surfaces and therefore belong in True Color. Their
+    # color is derived from hydrology and suspended/mineral load proxies;
+    # planetary rendering intentionally has no vegetation contribution.
+    river_overlay = _true_color_river_overlay(water_cycle, surface.get_size())
+    if river_overlay is not None:
+        surface = surface.convert_alpha()
+        surface.blit(river_overlay, (0, 0))
+        surface.set_alpha(None)
+    return surface

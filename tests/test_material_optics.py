@@ -7,12 +7,26 @@ from simulations.world_gen.material_optics import (
     material_optical_surface_profile,
     reflectance_triplet,
 )
-from simulations.world_gen.natural_materials import natural_material_entries
+from simulations.world_gen.natural_materials import (
+    configure_material_catalog,
+    natural_material_entries,
+)
+
+
 from simulations.world_gen.surface_exposure import (
     SURFACE_EXPOSURE_MODEL_VERSION,
     derive_surface_exposure_fields,
     derive_surface_exposure_model,
 )
+from world.persistent_ontology_store import PersistentOntologyStore
+from pathlib import Path
+
+
+def setUpModule():
+    rows = PersistentOntologyStore(
+        Path(__file__).resolve().parents[1] / "ontology" / "index0.owl"
+    ).load_datasets().get("materials") or []
+    configure_material_catalog(rows)
 
 
 class MaterialOpticsTests(unittest.TestCase):
@@ -28,7 +42,7 @@ class MaterialOpticsTests(unittest.TestCase):
             for entry in natural_material_entries()
             if entry.get("material_system_role") == "natural_geologic_material"
         ]
-        self.assertEqual(200, len(entries))
+        self.assertEqual(210, len(entries))
         for entry in entries:
             profile = entry.get("optical_surface_profile")
             self.assertIsInstance(profile, dict, entry["id"])

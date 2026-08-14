@@ -227,6 +227,33 @@ class EntityIdUpdateTests(unittest.TestCase):
         self.assertEqual(["export"], calls)
         self.assertEqual("Ontology checkpoint saved", ui.ontology_checkpoint_status)
 
+    def test_ontology_checkpoint_reports_save_progress(self):
+        ui = KnowledgeBrowserHarness()
+        repository_progress = []
+        displayed_progress = []
+
+        def export(progress_callback=None):
+            progress_callback(0.32, "Writing RDF/XML checkpoint")
+            repository_progress.append("written")
+            progress_callback(0.94, "Recording checkpoint metadata")
+            return True
+
+        ui.world_model.loader.export_ontology_checkpoint = export
+        ui.ontology_checkpoint_confirm = True
+
+        self.assertTrue(
+            ui._handle_ontology_checkpoint_request(
+                progress_callback=lambda progress, message: displayed_progress.append((progress, message))
+            )
+        )
+
+        self.assertEqual(["written"], repository_progress)
+        self.assertIn((0.32, "Writing RDF/XML checkpoint"), displayed_progress)
+        self.assertIn((0.94, "Recording checkpoint metadata"), displayed_progress)
+        self.assertEqual((1.0, "Ontology checkpoint saved"), displayed_progress[-1])
+        self.assertEqual(1.0, ui.ontology_checkpoint_progress)
+        self.assertFalse(ui.ontology_checkpoint_saving)
+
     def test_performance_debug_setting_is_persisted_and_applied(self):
         ui = KnowledgeBrowserUI.__new__(KnowledgeBrowserUI)
         ui.performance_debug_enabled = False
@@ -1100,6 +1127,42 @@ class EntityIdUpdateTests(unittest.TestCase):
         }
 
         self.assertTrue(ui._save_card_draft(card))
+
+    def test_cached_draft_restores_complete_existing_entity_snapshot(self):
+        entity = {
+            "id": "idea_source",
+            "type": "idea",
+            "_dataset": "ideas",
+            "name": "Saved name",
+            "removed_in_draft": "saved value",
+            "card_color": "#111111",
+        }
+        ui = KnowledgeBrowserHarness({"idea_source": entity})
+        ui.card_drafts["idea_source"] = {
+            "entity": {
+                "id": "idea_source",
+                "type": "idea",
+                "name": "Unsaved name",
+                "card_color": "#abcdef",
+                "new_unsaved_field": {"value": 7},
+            },
+            "dataset": "ideas",
+            "is_new_entry": False,
+            "edit_buffers": {"name": {"text": "Unsaved name", "cursor": 12}},
+        }
+        card = {
+            "entity_id": "idea_source",
+            "card_view": EntityCard(entity, dataset_name="ideas", world_model=ui.world_model),
+        }
+        ui.cards = [card]
+
+        self.assertTrue(ui._apply_cached_draft_to_card(card))
+        self.assertEqual("Unsaved name", entity["name"])
+        self.assertEqual("#abcdef", entity["card_color"])
+        self.assertEqual({"value": 7}, entity["new_unsaved_field"])
+        self.assertNotIn("removed_in_draft", entity)
+        self.assertEqual("ideas", entity["_dataset"])
+        self.assertTrue(card["has_unsaved_draft"])
 
     def test_card_color_slider_click_defers_repository_persist(self):
         entity = {

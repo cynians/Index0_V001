@@ -6,11 +6,30 @@ from tools.verify_material_map_scenarios import SCENARIOS, evaluate_scenario
 from simulations.world_gen.material_heatmaps import (
     DEFAULT_MATERIAL_LAYER_LIMIT,
     _lithologic_province_affinity,
+    _relax_native_material_field,
     _tectonic_lithology_context,
 )
 
 
 class MaterialMapScenarioTests(unittest.TestCase):
+    def test_native_planetary_material_relaxation_removes_column_panels(self):
+        rows = [[0.1, 0.9, 0.1, 0.9, 0.1, 0.9] for _ in range(5)]
+        corrected = _relax_native_material_field(
+            rows,
+            [[False] * 6 for _ in range(5)],
+            passes=5,
+            strength=0.46,
+        )
+        before = sum(
+            abs(row[x + 1] - row[x]) for row in rows for x in range(5)
+        )
+        after = sum(
+            abs(row[x + 1] - row[x])
+            for row in corrected
+            for x in range(5)
+        )
+        self.assertLess(after, before * 0.35)
+
     def test_planetary_layer_budget_can_represent_multiple_geologic_provinces(self):
         self.assertGreaterEqual(DEFAULT_MATERIAL_LAYER_LIMIT, 12)
 
@@ -69,6 +88,17 @@ class MaterialMapScenarioTests(unittest.TestCase):
                         "valid substrates or covers without inventing deferred "
                         "minerals and deposits.",
                     )
+                    planetary_ids = {
+                        layer["material_id"]
+                        for layer in result["planetary_layers"]
+                    }
+                    self.assertFalse(planetary_ids.intersection({
+                        "mat_alluvium",
+                        "mat_beach_sand",
+                        "mat_dune_sand",
+                        "mat_lacustrine_mud",
+                        "mat_marine_mud",
+                    }))
             self.assertEqual([], failures)
 
 

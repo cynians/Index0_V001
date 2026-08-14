@@ -20,8 +20,8 @@ class DioneReferenceModelsTests(unittest.TestCase):
         grid = heightmap["sample_grid"]
 
         self.assertEqual("dione_cassini_spc_reference_heightmap", heightmap["status"])
-        self.assertEqual((257, 129), (grid["width"], grid["height"]))
-        self.assertEqual(129, len(grid["rows"]))
+        self.assertEqual((385, 193), (grid["width"], grid["height"]))
+        self.assertEqual(193, len(grid["rows"]))
         self.assertTrue(all(row[0] == row[-1] for row in grid["rows"]))
         self.assertLess(heightmap["min_elevation_m"], -5000)
         self.assertGreater(heightmap["max_elevation_m"], 4000)

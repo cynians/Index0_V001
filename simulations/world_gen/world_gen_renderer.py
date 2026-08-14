@@ -1804,7 +1804,10 @@ class WorldGenRenderer:
     def _draw_water_cycle_preview(self, screen, rect, water_cycle):
         climate_grid = water_cycle.get("climate_grid") if isinstance(water_cycle, dict) else {}
         rows = (
-            climate_grid.get("koppen_rows")
+            climate_grid.get("koppen_display_rows")
+            if isinstance(climate_grid.get("koppen_display_rows"), list)
+            and climate_grid.get("koppen_display_rows")
+            else climate_grid.get("koppen_rows")
             if isinstance(climate_grid.get("koppen_rows"), list)
             else climate_grid.get("rows")
             if isinstance(climate_grid.get("rows"), list)
@@ -1818,7 +1821,16 @@ class WorldGenRenderer:
         colors = self._koppen_class_colors(water_cycle)
         row_count = len(rows)
         col_count = min(len(row) for row in rows if row)
-        elevation_rows = climate_grid.get("elevation_rows") if isinstance(climate_grid.get("elevation_rows"), list) else []
+        display_elevation_rows = climate_grid.get("koppen_display_elevation_rows")
+        elevation_rows = (
+            display_elevation_rows
+            if rows is climate_grid.get("koppen_display_rows")
+            and isinstance(display_elevation_rows, list)
+            and display_elevation_rows
+            else climate_grid.get("elevation_rows")
+            if isinstance(climate_grid.get("elevation_rows"), list)
+            else []
+        )
         elevations = [
             float(value or 0.0)
             for row in elevation_rows[:row_count]

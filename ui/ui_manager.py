@@ -1,3 +1,5 @@
+import math
+
 import pygame
 
 from ui.knowledge_browser_ui import KnowledgeBrowserUI
@@ -40,6 +42,11 @@ class UIManager:
         self.hover_tooltip_lines = []
         self.hover_tooltip_pos = None
         self.person_dossier_lines = []
+        self.person_panel_mode = None
+        self.person_panel_model = None
+        self.person_panel_rect = None
+        self.person_panel_close_rect = None
+        self.person_panel_icons = []
         self.simulation_selection_payload = None
         self.simulation_selection_buttons = []
         self.simulation_selection_rect = None
@@ -155,6 +162,10 @@ class UIManager:
         self.hover_tooltip_lines = []
         self.hover_tooltip_pos = None
         self.person_dossier_lines = []
+        self.person_panel_model = None
+        self.person_panel_rect = None
+        self.person_panel_close_rect = None
+        self.person_panel_icons = []
         self.simulation_selection_payload = None
         self.simulation_selection_buttons = []
         self.simulation_selection_rect = None
@@ -1029,9 +1040,12 @@ class UIManager:
 
     def _rebuild_active_simulation_ui(self, active_sim, app_width, app_height, camera):
         if active_sim is None:
+            self.person_panel_mode = None
             return
 
         render_mode = getattr(active_sim, "render_mode", None)
+        if render_mode != "person":
+            self.person_panel_mode = None
         show_time_ui = bool(getattr(active_sim, "show_time_ui", True))
 
         if show_time_ui:
@@ -1472,6 +1486,56 @@ class UIManager:
                 UIButton("open_person_inspector", "Edit Dossier",
                          pygame.Rect(button_x, button_y + 40, button_width, button_height))
             )
+            control_mode = getattr(active_sim, "control_mode", "autonomous")
+            self.buttons.append(
+                UIButton(
+                    "person_mode_autonomous",
+                    "Autonomous Queue",
+                    pygame.Rect(button_x, button_y + 80, button_width, button_height),
+                    enabled=control_mode != "autonomous",
+                )
+            )
+            self.buttons.append(
+                UIButton(
+                    "person_mode_direct",
+                    "Direct Control",
+                    pygame.Rect(button_x, button_y + 120, button_width, button_height),
+                    enabled=control_mode != "direct",
+                )
+            )
+
+            icon_size = 46
+            icon_x = app_width - icon_size - 20
+            icon_y = button_y + 166
+            self.person_panel_icons = [
+                {
+                    "id": "needs",
+                    "label": "Needs",
+                    "rect": pygame.Rect(icon_x, icon_y, icon_size, icon_size),
+                },
+                {
+                    "id": "personality",
+                    "label": "Personality",
+                    "rect": pygame.Rect(icon_x, icon_y + icon_size + 12, icon_size, icon_size),
+                },
+            ]
+            if self.person_panel_mode == "needs" and hasattr(active_sim, "get_needs_panel_model"):
+                self.person_panel_model = active_sim.get_needs_panel_model()
+            elif self.person_panel_mode == "personality" and hasattr(active_sim, "get_personality_panel_model"):
+                self.person_panel_model = active_sim.get_personality_panel_model()
+
+            if self.person_panel_model is not None:
+                panel_w = min(760, max(520, app_width - 250))
+                panel_h = min(610, max(430, app_height - 110))
+                panel_x = max(20, icon_x - panel_w - 18)
+                panel_y = max(52, (app_height - panel_h) // 2)
+                self.person_panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+                self.person_panel_close_rect = pygame.Rect(
+                    self.person_panel_rect.right - 40,
+                    self.person_panel_rect.y + 12,
+                    26,
+                    26,
+                )
 
             self._rebuild_map_history_timeline(
                 active_sim=active_sim,
@@ -2428,6 +2492,37 @@ class UIManager:
         screen.blit(title_surface, (self.system_menu_rect.x + 22, self.system_menu_rect.y + 20))
         screen.blit(subtitle_surface, (self.system_menu_rect.x + 22, self.system_menu_rect.y + 42))
 
+        if self.system_settings_active:
+            checkpoint_progress = getattr(self.knowledge_ui, "ontology_checkpoint_progress", None)
+            if checkpoint_progress is not None:
+                checkpoint_progress = max(0.0, min(1.0, float(checkpoint_progress)))
+                bar_rect = pygame.Rect(
+                    self.system_menu_rect.x + 22,
+                    self.system_menu_rect.y + 64,
+                    self.system_menu_rect.width - 84,
+                    8,
+                )
+                fill_rect = pygame.Rect(
+                    bar_rect.x + 1,
+                    bar_rect.y + 1,
+                    int(round((bar_rect.width - 2) * checkpoint_progress)),
+                    bar_rect.height - 2,
+                )
+                pygame.draw.rect(screen, (38, 42, 52), bar_rect)
+                pygame.draw.rect(screen, (105, 116, 136), bar_rect, 1)
+                if fill_rect.width > 0:
+                    fill_color = (104, 190, 132) if checkpoint_progress >= 1.0 else (112, 166, 218)
+                    pygame.draw.rect(screen, fill_color, fill_rect)
+                percent_surface = self._render_text(
+                    font,
+                    f"{int(round(checkpoint_progress * 100))}%",
+                    (192, 204, 220),
+                )
+                screen.blit(
+                    percent_surface,
+                    percent_surface.get_rect(midleft=(bar_rect.right + 8, bar_rect.centery)),
+                )
+
         for button in self.system_menu_buttons:
             self._draw_button(screen, font, button)
 
@@ -2488,6 +2583,245 @@ class UIManager:
 
             screen.blit(text_surface, (draw_x, y))
 
+    def _draw_person_panel_icons(self, screen, font):
+        for item in self.person_panel_icons:
+            rect = item["rect"]
+            active = item["id"] == self.person_panel_mode
+            fill = (54, 62, 78) if active else (28, 32, 40)
+            border = (230, 207, 126) if active else (142, 153, 173)
+            pygame.draw.rect(screen, fill, rect, border_radius=5)
+            pygame.draw.rect(screen, border, rect, 2, border_radius=5)
+
+            cx, cy = rect.center
+            if item["id"] == "needs":
+                for row in range(3):
+                    width = 10 + row * 7
+                    y = cy - 11 + row * 9
+                    pygame.draw.polygon(
+                        screen,
+                        (203, 184, 119),
+                        [(cx - width // 2, y + 6), (cx + width // 2, y + 6), (cx, y)],
+                    )
+            else:
+                points = []
+                for index in range(5):
+                    angle = -math.pi / 2 + index * math.tau / 5
+                    points.append((cx + math.cos(angle) * 14, cy + math.sin(angle) * 14))
+                pygame.draw.polygon(screen, (111, 157, 188), points, 2)
+                pygame.draw.circle(screen, (184, 211, 225), (cx, cy), 3)
+
+            if self.person_panel_mode is None:
+                label = self._render_text(font, item["label"], (220, 225, 232))
+                label_x = rect.x - label.get_width() - 8
+                screen.blit(label, (label_x, rect.centery - label.get_height() // 2))
+
+    def _draw_panel_heading(self, screen, font, text, x, y, color=(231, 232, 235)):
+        heading_font = pygame.font.SysFont("consolas", max(17, font.get_height() + 2), bold=True)
+        screen.blit(self._render_text(heading_font, text, color), (x, y))
+
+    def _draw_person_needs_panel(self, screen, font, rect, model):
+        content = rect.inflate(-28, -64)
+        content.y += 34
+        content.height -= 34
+        left_w = max(250, int(content.width * 0.53))
+        pyramid_rect = pygame.Rect(content.x, content.y + 20, left_w, content.height - 34)
+        right_rect = pygame.Rect(
+            pyramid_rect.right + 22,
+            content.y,
+            max(170, content.right - pyramid_rect.right - 22),
+            content.height,
+        )
+
+        tiers = list(model.get("tiers") or [])[:5]
+        if tiers:
+            apex_y = pyramid_rect.y + 22
+            base_y = pyramid_rect.bottom - 18
+            total_h = max(100, base_y - apex_y)
+            tier_h = total_h / len(tiers)
+            center_x = pyramid_rect.centerx
+            max_half = max(90, pyramid_rect.width * 0.47)
+            for tier_index, tier in enumerate(tiers):
+                top_y = base_y - (tier_index + 1) * tier_h
+                bottom_y = base_y - tier_index * tier_h
+                top_half = max_half * ((top_y - apex_y) / total_h)
+                bottom_half = max_half * ((bottom_y - apex_y) / total_h)
+                score = max(0.0, min(1.0, float(tier.get("score", 0.0) or 0.0)))
+                deprived = (164, 88, 80)
+                satisfied = (78, 145, 132)
+                fill = tuple(
+                    int(deprived[channel] + (satisfied[channel] - deprived[channel]) * score)
+                    for channel in range(3)
+                )
+                polygon = [
+                    (int(center_x - top_half), int(top_y)),
+                    (int(center_x + top_half), int(top_y)),
+                    (int(center_x + bottom_half), int(bottom_y)),
+                    (int(center_x - bottom_half), int(bottom_y)),
+                ]
+                pygame.draw.polygon(screen, fill, polygon)
+                pygame.draw.polygon(screen, (196, 199, 202), polygon, 1)
+                label = f"{tier.get('label', 'Need')}  {score * 100:.0f}"
+                label_surface = self._render_text(font, label, (246, 246, 240))
+                label_y = int((top_y + bottom_y) / 2 - label_surface.get_height() / 2)
+                if label_surface.get_width() < bottom_half * 1.75:
+                    screen.blit(
+                        label_surface,
+                        (center_x - label_surface.get_width() // 2, label_y),
+                    )
+                else:
+                    compact_label = tier.get("label", "Need").replace("Self-actualization", "Self-actual.")
+                    compact = self._render_text(font, f"{compact_label} {score * 100:.0f}", (220, 224, 226))
+                    compact_x = pyramid_rect.x + 2
+                    screen.blit(compact, (compact_x, label_y))
+                    line_start = (compact_x + compact.get_width() + 5, int((top_y + bottom_y) / 2))
+                    line_end = (int(center_x - (top_half + bottom_half) / 2 - 4), line_start[1])
+                    if line_end[0] > line_start[0]:
+                        pygame.draw.line(screen, (134, 145, 157), line_start, line_end, 1)
+
+            note = self._render_text(
+                font,
+                "Current fulfillment (0 deprived - 100 fulfilled)",
+                (153, 163, 177),
+            )
+            screen.blit(note, (pyramid_rect.centerx - note.get_width() // 2, pyramid_rect.bottom - 4))
+
+        section_y = right_rect.y
+        for title, key, accent in (
+            ("Wishes", "wishes", (191, 151, 105)),
+            ("Goals", "goals", (112, 164, 130)),
+        ):
+            section_h = max(150, (right_rect.height - 16) // 2)
+            section_rect = pygame.Rect(right_rect.x, section_y, right_rect.width, section_h)
+            pygame.draw.rect(screen, (24, 28, 36), section_rect, border_radius=6)
+            pygame.draw.rect(screen, (83, 92, 108), section_rect, 1, border_radius=6)
+            pygame.draw.rect(screen, accent, (section_rect.x, section_rect.y, 5, section_rect.height), border_radius=3)
+            self._draw_panel_heading(screen, font, title, section_rect.x + 14, section_rect.y + 10, accent)
+            row_y = section_rect.y + 42
+            rows = list(model.get(key) or [])
+            if not rows:
+                rows = [{"label": "None currently recorded", "source": ""}]
+            for item in rows[:5]:
+                label = self._ellipsize_text(item.get("label", ""), font, section_rect.width - 32)
+                screen.blit(self._render_text(font, f"- {label}", (223, 226, 231)), (section_rect.x + 14, row_y))
+                source = str(item.get("source") or "").strip()
+                if source:
+                    source_text = self._ellipsize_text(source, font, section_rect.width - 42)
+                    screen.blit(self._render_text(font, source_text, (130, 141, 157)), (section_rect.x + 28, row_y + 19))
+                    row_y += 42
+                else:
+                    row_y += 25
+                if row_y > section_rect.bottom - 24:
+                    break
+            section_y += section_h + 16
+
+    def _draw_personality_panel(self, screen, font, rect, model):
+        axes = list(model.get("axes") or [])[:5]
+        chart_center = (rect.x + int(rect.width * 0.36), rect.y + int(rect.height * 0.53))
+        radius = min(165, int(rect.height * 0.29), int(rect.width * 0.25))
+        angles = [-math.pi / 2 + index * math.tau / 5 for index in range(5)]
+
+        for fraction in (0.25, 0.5, 0.75, 1.0):
+            ring = [
+                (
+                    chart_center[0] + math.cos(angle) * radius * fraction,
+                    chart_center[1] + math.sin(angle) * radius * fraction,
+                )
+                for angle in angles
+            ]
+            pygame.draw.polygon(screen, (67, 76, 91), ring, 1)
+        for angle in angles:
+            endpoint = (
+                chart_center[0] + math.cos(angle) * radius,
+                chart_center[1] + math.sin(angle) * radius,
+            )
+            pygame.draw.line(screen, (67, 76, 91), chart_center, endpoint, 1)
+
+        if len(axes) == 5:
+            value_points = []
+            for axis, angle in zip(axes, angles):
+                value = max(0.0, min(1.0, float(axis.get("value", 0.5) or 0.0)))
+                value_points.append(
+                    (
+                        chart_center[0] + math.cos(angle) * radius * value,
+                        chart_center[1] + math.sin(angle) * radius * value,
+                    )
+                )
+            fill_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+            pygame.draw.polygon(fill_surface, (76, 144, 179, 82), value_points)
+            screen.blit(fill_surface, (0, 0))
+            pygame.draw.polygon(screen, (132, 194, 221), value_points, 3)
+            for axis, point in zip(axes, value_points):
+                pygame.draw.circle(
+                    screen,
+                    (204, 225, 232) if axis.get("authored") else (116, 122, 134),
+                    (int(point[0]), int(point[1])),
+                    5,
+                    0 if axis.get("authored") else 2,
+                )
+
+        list_x = rect.x + int(rect.width * 0.69)
+        for index, (axis, angle) in enumerate(zip(axes, angles)):
+            label_radius = radius + 34
+            x = chart_center[0] + math.cos(angle) * label_radius
+            y = chart_center[1] + math.sin(angle) * label_radius
+            label = self._render_text(font, axis.get("label", "Axis"), (218, 222, 229))
+            if math.cos(angle) < -0.2:
+                x -= label.get_width()
+            elif abs(math.cos(angle)) <= 0.2:
+                x -= label.get_width() // 2
+            if math.sin(angle) < -0.2:
+                y -= label.get_height()
+            x = min(x, list_x - label.get_width() - 16)
+            screen.blit(label, (int(x), int(y)))
+
+        list_y = rect.y + 86
+        for axis in axes:
+            value = float(axis.get("value", 0.5) or 0.0)
+            authored = bool(axis.get("authored"))
+            name = axis.get("label", "Axis")
+            screen.blit(self._render_text(font, name, (224, 226, 232)), (list_x, list_y))
+            bar_rect = pygame.Rect(list_x, list_y + 22, max(90, rect.right - list_x - 34), 10)
+            pygame.draw.rect(screen, (45, 50, 60), bar_rect, border_radius=4)
+            pygame.draw.rect(
+                screen,
+                (105, 166, 190) if authored else (92, 96, 106),
+                (bar_rect.x, bar_rect.y, int(bar_rect.width * value), bar_rect.height),
+                border_radius=4,
+            )
+            score_text = f"{value * 100:.0f}" if authored else "50 preview - not authored"
+            screen.blit(self._render_text(font, score_text, (145, 155, 170)), (list_x, list_y + 36))
+            list_y += 69
+
+        markers = list(model.get("adjective_markers") or [])
+        footer = "Markers: " + (", ".join(markers[:5]) if markers else "none authored")
+        footer = self._ellipsize_text(footer, font, rect.width - 50)
+        screen.blit(self._render_text(font, footer, (153, 162, 176)), (rect.x + 24, rect.bottom - 36))
+
+    def _draw_person_panel(self, screen, font):
+        rect = self.person_panel_rect
+        model = self.person_panel_model
+        if rect is None or model is None or self.person_panel_mode not in {"needs", "personality"}:
+            return
+
+        shadow = rect.move(7, 8)
+        pygame.draw.rect(screen, (4, 5, 8), shadow, border_radius=8)
+        pygame.draw.rect(screen, (18, 22, 29), rect, border_radius=8)
+        pygame.draw.rect(screen, (151, 161, 178), rect, 2, border_radius=8)
+        title = "Needs, wishes & goals" if self.person_panel_mode == "needs" else "Personality - Big Five"
+        self._draw_panel_heading(screen, font, title, rect.x + 20, rect.y + 16)
+        subtitle = self._ellipsize_text(model.get("person_name", "Person"), font, rect.width - 100)
+        screen.blit(self._render_text(font, subtitle, (137, 149, 166)), (rect.x + 21, rect.y + 44))
+        if self.person_panel_close_rect is not None:
+            pygame.draw.rect(screen, (39, 44, 54), self.person_panel_close_rect, border_radius=4)
+            pygame.draw.rect(screen, (119, 130, 146), self.person_panel_close_rect, 1, border_radius=4)
+            close = self._render_text(font, "x", (225, 228, 232))
+            screen.blit(close, close.get_rect(center=self.person_panel_close_rect.center))
+
+        if self.person_panel_mode == "needs":
+            self._draw_person_needs_panel(screen, font, rect, model)
+        else:
+            self._draw_personality_panel(screen, font, rect, model)
+
     def draw(self, screen, font):
         self.app_font = font
         self._draw_tab_strip(screen, font)
@@ -2515,6 +2849,7 @@ class UIManager:
             if not button.visible:
                 continue
             self._draw_button(screen, font, button)
+        self._draw_person_panel_icons(screen, font)
 
         info_lines = []
         if self.scope_label:
@@ -2549,6 +2884,7 @@ class UIManager:
         self._draw_simulation_bar(screen, font)
         self.selection_inspector.draw(screen, font)
         self._draw_hover_tooltip(screen, font)
+        self._draw_person_panel(screen, font)
         self._draw_system_menu(screen, font)
         self._draw_repository_return_confirm(screen, font)
 
@@ -2779,6 +3115,51 @@ class UIManager:
 
         if self.menu_active:
             return self.knowledge_ui.handle_event(event)
+
+        if (
+            event.type == pygame.KEYDOWN
+            and event.key == pygame.K_ESCAPE
+            and self.person_panel_mode is not None
+        ):
+            self.person_panel_mode = None
+            self.person_panel_model = None
+            self.person_panel_rect = None
+            self.person_panel_close_rect = None
+            return "__ui_consumed__"
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mouse_pos = event.pos
+            for item in self.person_panel_icons:
+                if item["rect"].collidepoint(mouse_pos):
+                    mode = item["id"]
+                    self.person_panel_mode = None if self.person_panel_mode == mode else mode
+                    self.person_panel_model = None
+                    self.person_panel_rect = None
+                    self.person_panel_close_rect = None
+                    return "__ui_consumed__"
+
+            if self.person_panel_mode is not None:
+                if self.person_panel_close_rect and self.person_panel_close_rect.collidepoint(mouse_pos):
+                    self.person_panel_mode = None
+                    self.person_panel_model = None
+                    self.person_panel_rect = None
+                    self.person_panel_close_rect = None
+                    return "__ui_consumed__"
+                if self.person_panel_rect is None or not self.person_panel_rect.collidepoint(mouse_pos):
+                    self.person_panel_mode = None
+                    self.person_panel_model = None
+                    self.person_panel_rect = None
+                    self.person_panel_close_rect = None
+                return "__ui_consumed__"
+
+        if self.person_panel_rect is not None and event.type in (
+            pygame.MOUSEBUTTONUP,
+            pygame.MOUSEMOTION,
+            pygame.MOUSEWHEEL,
+        ):
+            event_pos = getattr(event, "pos", pygame.mouse.get_pos())
+            if self.person_panel_rect.collidepoint(event_pos):
+                return "__ui_consumed__"
 
         if (
             event.type == pygame.KEYDOWN

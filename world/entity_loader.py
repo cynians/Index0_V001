@@ -1,3 +1,11 @@
+"""Load ontology entities into disposable application query caches.
+
+Architecture invariants: the ontology alone owns entity identity and semantic
+facts; loaded dictionaries are projections, never an independent registry.
+Generated planets are not current persistence targets, so worldgen contract
+changes do not require legacy-product accommodation.
+"""
+
 import json
 import sqlite3
 import uuid
@@ -630,14 +638,17 @@ class EntityLoader:
             if changed:
                 self._save_dataset_file(record["file"], record["data"])
 
-    def save_ontology_file(self):
+    def save_ontology_file(self, progress_callback=None):
         if self._persistent_store is None:
             self._persistent_store = PersistentOntologyStore(self.ontology_path)
-        self._persistent_store.export_rdfxml(self.ontology_path)
+        self._persistent_store.export_rdfxml(
+            self.ontology_path,
+            progress_callback=progress_callback,
+        )
         self._clear_palette_overrides()
 
-    def export_ontology_checkpoint(self):
-        self.save_ontology_file()
+    def export_ontology_checkpoint(self, progress_callback=None):
+        self.save_ontology_file(progress_callback=progress_callback)
         return True
 
     def reimport_ontology_checkpoint(self):
@@ -1057,7 +1068,12 @@ class EntityLoader:
 
             self.edges[entity_id] = []
 
-            for value in entity.values():
+            values = (
+                entity.loaded_values()
+                if hasattr(entity, "loaded_values")
+                else entity.values()
+            )
+            for value in values:
 
                 if isinstance(value, str):
 

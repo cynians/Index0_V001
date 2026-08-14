@@ -120,6 +120,15 @@ class LaunchAffordanceResolver:
                 options.append(_option("building", "Building", "Open this room through its parent building.", 100, entity_id))
                 return options
 
+            if location_class in {"space_station", "station"}:
+                if entity.get("star_system"):
+                    options.append(_option("space", "Space", "Open the station in its orbital context.", 110, entity_id))
+                options.append(_option("building", "Interior", "Open the station interior and room map.", 100, entity_id))
+                options.append(_option("vehicle", "Design", "Open component and systems design.", 90, entity_id))
+                if _has_map_surface(entity):
+                    options.append(_option("map", "Map", "Open the station map workspace.", 80, entity_id))
+                return options
+
             if _is_orbital_body(entity):
                 star_system_id = entity.get("star_system")
                 if body_class == "planet":

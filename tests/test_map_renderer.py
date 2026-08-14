@@ -158,6 +158,72 @@ class MapRendererTests(unittest.TestCase):
         self.assertEqual(surface.get_at((1, 1)), surface.get_at((2, 1)))
         self.assertEqual(surface.get_at((1, 1)), surface.get_at((2, 2)))
 
+    def test_individual_material_view_is_subdued_and_softly_outlined(self):
+        renderer = self._renderer()
+        source = pygame.Surface((6, 3), pygame.SRCALPHA)
+        source.fill((112, 116, 104, 0))
+        for y in range(3):
+            for x in range(2, 6):
+                source.set_at((x, y), (112, 116, 104, 230))
+        renderer._load_image_surface = lambda _path: source
+
+        surface = renderer._material_composite_surface({
+            "image_path": "synthetic.png",
+            "material_id": "mat_andesite",
+            "geological_map_color": [179, 112, 99],
+            "dominance_threshold": 0.2,
+        }, None)
+
+        self.assertEqual((49, 55, 58), surface.get_at((0, 2))[:3])
+        contact = surface.get_at((4, 2))[:3]
+        fill = surface.get_at((8, 2))[:3]
+        self.assertLess(sum(contact), sum(fill))
+        self.assertGreater(fill[0], fill[1])
+
+    def test_composite_material_view_softens_palette_and_avoids_black_contacts(self):
+        renderer = self._renderer()
+        source = pygame.Surface((4, 2), pygame.SRCALPHA)
+        source.fill((179, 112, 99, 255))
+        pygame.draw.rect(source, (70, 94, 115, 255), pygame.Rect(2, 0, 2, 2))
+        renderer._load_image_surface = lambda _path: source
+
+        surface = renderer._material_composite_surface({
+            "image_path": "synthetic.png",
+            "bundle_layer_id": "composite",
+            "render_mode": "categorical_geological_map",
+            "geological_unit_palette": [
+                {
+                    "material_id": "old-red",
+                    "source_color": [179, 112, 99],
+                    "color": [150, 126, 112],
+                },
+            ],
+        }, None)
+
+        self.assertEqual((8, 4), surface.get_size())
+        self.assertGreater(min(surface.get_at((3, 1))[:3]), 20)
+        self.assertLess(surface.get_at((0, 0)).r, 179)
+
+    def test_koppen_view_includes_hypsometric_color_not_only_class_color(self):
+        renderer = self._renderer()
+        water_cycle = {
+            "climate_grid": {
+                "koppen_rows": [["BWh", "BWh"]],
+                "elevation_rows": [[0.0, 3000.0]],
+            },
+            "koppen_classes": [{"id": "BWh", "color": [220, 180, 100]}],
+            "lakes": [],
+        }
+
+        surface = renderer._hydrology_surface_for_layer(
+            {"climate_display_mode": "koppen"}, water_cycle,
+        )
+        low = surface.get_at((0, 0))
+        high = surface.get_at((1, 0))
+
+        self.assertNotEqual(low, high)
+        self.assertGreater(high.b / max(1, high.r), low.b / max(1, low.r))
+
     def test_refined_contour_patch_clears_stale_parent_contours(self):
         renderer = self._renderer()
         base = pygame.Surface((100, 50), pygame.SRCALPHA)

@@ -1,10 +1,18 @@
-"""Hierarchical, persistent map refinement for generated worlds."""
+"""Hierarchical map refinement for generated worlds.
+
+Architecture invariants: entity and semantic truth is ontology-owned; local
+lookups and rasters are derived caches. Generated planets are currently
+disposable, so a changed refinement contract invalidates old products rather
+than requiring compatibility behavior.
+"""
 
 import copy
 import hashlib
 import math
+import time
 from pathlib import Path
 
+from engine.logger import logger
 from simulations.world_gen.heightmap import (
     _clamp, _crater_height_adjustment_m, _crater_spatial_index, _fbm_noise,
     refresh_heightmap_derivatives,
@@ -528,7 +536,7 @@ def _enforce_parent_height_contract(
         "topology_correction_count": topology_corrections,
         "maximum_child_residual_m": round(maximum_observed_delta, 4),
         "allowed_child_residual_m": round(maximum_delta, 4),
-        "rule": "child_equals_bilinear_parent_plus_bounded_process_residual",
+        "rule": "child_equals_bicubic_parent_plus_bounded_process_residual",
     }
 
 
@@ -800,6 +808,23 @@ def generate_refined_region(
     focus_occurrence_id=None,
     terrain_only=False,
 ):
+    started_at = time.perf_counter()
+    last_stage_at = started_at
+
+    def report_stage(stage, **details):
+        nonlocal last_stage_at
+        now = time.perf_counter()
+        detail_text = " ".join(
+            f"{key}={value}" for key, value in details.items()
+            if value is not None
+        )
+        logger.info(
+            "[RegionalRefinement] "
+            f"stage={stage} step_s={now - last_stage_at:.2f} "
+            f"total_s={now - started_at:.2f} {detail_text}".rstrip()
+        )
+        last_stage_at = now
+
     parent_heightmap = parent_entity.get("heightmap_model") if isinstance(parent_entity, dict) else None
     parent_grid = parent_heightmap.get("sample_grid") if isinstance(parent_heightmap, dict) else None
     parent_rows = parent_grid.get("rows") if isinstance(parent_grid, dict) else None
@@ -850,6 +875,16 @@ def generate_refined_region(
         level,
         estimated_width_m,
         estimated_height_m,
+    )
+    report_stage(
+        "request_resolved",
+        parent=parent_entity.get("id"),
+        level=level,
+        requested_bounds={key: round(float(bounds[key]), 6) for key in ("min_x", "max_x", "min_y", "max_y")},
+        local_uv=(round(u0, 6), round(u1, 6), round(v0, 6), round(v1, 6)),
+        source_uv=(round(source_u0, 6), round(source_u1, 6), round(source_v0, 6), round(source_v1, 6)),
+        estimated_m=(round(estimated_width_m, 1), round(estimated_height_m, 1)),
+        grid=f"{sample_width}x{sample_height}",
     )
     sea_level = parent_heightmap.get("sea_level_m")
     min_parent = float(parent_heightmap.get("min_elevation_m", -5000.0) or -5000.0)
@@ -1204,6 +1239,11 @@ def generate_refined_region(
         tectonic_model=(root_planet or {}).get("tectonic_model"),
         inherited_sea_level_m=sea_level,
     )
+    report_stage(
+        "heightfield_ready",
+        elevation_m=(heightmap.get("min_elevation_m"), heightmap.get("max_elevation_m")),
+        source_uv=heightmap.get("source_uv_bounds"),
+    )
     if terrain_only:
         spec = detail_level_spec(level)
         region = {
@@ -1257,6 +1297,11 @@ def generate_refined_region(
         terrain, heightmap, atmosphere=atmosphere, seed=seed, planet_id=region_id,
         parent_climate_model=parent_entity.get("water_cycle_model"),
     )
+    report_stage(
+        "initial_hydrology_ready",
+        rivers=len(water_cycle.get("rivers") or []),
+        lakes=len(water_cycle.get("lakes") or []),
+    )
     # Regional refinement previously stopped here: rivers were solved on a
     # depression-filled DEM and then drawn over the unchanged relief.  Match
     # the production planetary route with two bounded climate-landscape
@@ -1277,6 +1322,11 @@ def generate_refined_region(
             heightmap=heightmap,
             water_cycle=water_cycle,
             atmosphere=atmosphere,
+        )
+        report_stage(
+            f"surface_evolution_{iteration}_ready",
+            status=surface_evolution.get("status"),
+            dominant=surface_evolution.get("dominant_process"),
         )
         feedback_iterations.append({
             "iteration": iteration,
@@ -1310,6 +1360,11 @@ def generate_refined_region(
             parent_climate_model=parent_entity.get("water_cycle_model"),
             previous_regional_model=previous_water_cycle,
         )
+        report_stage(
+            f"hydrology_feedback_{iteration}_ready",
+            rivers=len(water_cycle.get("rivers") or []),
+            lakes=len(water_cycle.get("lakes") or []),
+        )
     if isinstance(surface_evolution, dict):
         surface_evolution["feedback_iterations"] = feedback_iterations
         surface_evolution["coupling"] = "scale_appropriate_bounded_regional_climate_landscape_feedback"
@@ -1330,6 +1385,12 @@ def generate_refined_region(
             parent_climate_model=parent_entity.get("water_cycle_model"),
             previous_regional_model=previous_water_cycle,
         )
+    report_stage(
+        "landscape_feedback_ready",
+        iterations=len(feedback_iterations),
+        rivers=len(water_cycle.get("rivers") or []),
+        lakes=len(water_cycle.get("lakes") or []),
+    )
     stellar_parent = world_model.get_entity((root_planet or {}).get("parent_body")) if isinstance(root_planet, dict) else None
     all_entities = getattr(getattr(world_model, "loader", None), "entities", {}) or {}
     satellites = [
@@ -1397,6 +1458,14 @@ def generate_refined_region(
     refinement_audit["parent_height_contract"] = parent_height_contract
     heightmap["refinement"] = refinement_audit
     coastal_refinement["parent_height_contract"] = parent_height_contract
+    report_stage(
+        "coastal_refinement_ready",
+        segments=len(coastal_model.get("segments") or []),
+        changed_cells=(
+            int(pre_coastal_topology.get("flipped_cell_count", 0) or 0)
+            + int(topology_stabilization.get("flipped_cell_count", 0) or 0)
+        ),
+    )
     if (
         coastal_refinement.get("drainage_reconciliation_required")
         or parent_height_contract.get("changed_cell_count", 0)
@@ -1488,6 +1557,10 @@ def generate_refined_region(
             "regional_material_model"
         ),
     )
+    report_stage(
+        "regional_materials_ready",
+        occurrences=len(regional_material_model.get("occurrences") or []),
+    )
     if focus_occurrence_id:
         regional_material_model["focus_occurrence_id"] = str(
             focus_occurrence_id
@@ -1576,6 +1649,11 @@ def generate_refined_region(
             max(64, min(256, int(round(256 / region_aspect)))),
         ),
     )
+    report_stage(
+        "material_rasters_ready",
+        layers=len(material_heatmap_model.get("layers") or []),
+        bundle=(material_heatmap_model.get("composite_layer") or {}).get("raster_bundle_path"),
+    )
     surface_exposure_model = derive_surface_exposure_model(
         material_generation_context,
         heightmap=heightmap,
@@ -1594,6 +1672,7 @@ def generate_refined_region(
         surface_exposure=surface_exposure_model,
         surface_geomorphology=surface_geomorphology_model,
     )
+    report_stage("surface_render_models_ready")
     detail_contract = surface_detail_contract(heightmap)
 
     spec = detail_level_spec(level)
@@ -1673,4 +1752,10 @@ def generate_refined_region(
         children.append(region_id)
         parent["constituents"] = children
         loader.persist_entity(parent)
+    report_stage(
+        "persisted",
+        entity=region_id,
+        revision=refinement_revision,
+        bounds=region.get("bounds"),
+    )
     return region

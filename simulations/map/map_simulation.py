@@ -1,3 +1,11 @@
+"""Map interaction over ontology entities and disposable worldgen products.
+
+Architecture invariants: the ontology is the sole durable source for entities
+and semantic facts; local mappings are startup/query caches. No generated
+planet is presently a persistence target, so changed worldgen contracts may
+invalidate old maps without compatibility code.
+"""
+
 import copy
 import math
 import re
@@ -10,6 +18,7 @@ from world.year_utils import parse_year
 from simulations.world_gen.natural_materials import (
     derive_planet_surface_palette,
     material_display_color,
+    material_geological_map_color,
 )
 from simulations.world_gen.coastal_geomorphology import ensure_coastal_model_current
 from simulations.world_gen.surface_exposure import derive_surface_exposure_model
@@ -591,12 +600,35 @@ class MapSimulation:
         if request is None:
             return None
         generation_parent, bounds, seed_suffix, focus_occurrence_id = request
+        parent_heightmap = generation_parent.get("heightmap_model") or {}
+        parent_grid = parent_heightmap.get("sample_grid") or {}
+        logger.info(
+            "[RegionalRefinement] Starting regeneration "
+            f"parent={generation_parent.get('id')} "
+            f"level={int(generation_parent.get('map_detail_level', 0) or 0) + 1} "
+            f"bounds={bounds} "
+            f"source_uv={parent_heightmap.get('source_uv_bounds')} "
+            f"parent_grid={parent_grid.get('width')}x{parent_grid.get('height')} "
+            f"physical_m={parent_heightmap.get('region_width_m')}x"
+            f"{parent_heightmap.get('region_height_m')}"
+        )
         regenerated = generate_refined_region(
             self.world_model,
             generation_parent,
             bounds,
             seed_suffix=seed_suffix,
             focus_occurrence_id=focus_occurrence_id,
+        )
+        regenerated_heightmap = (regenerated or {}).get("heightmap_model") or {}
+        regenerated_grid = regenerated_heightmap.get("sample_grid") or {}
+        logger.info(
+            "[RegionalRefinement] Regeneration stored "
+            f"entity={(regenerated or {}).get('id')} "
+            f"bounds={(regenerated or {}).get('bounds')} "
+            f"source_uv={regenerated_heightmap.get('source_uv_bounds')} "
+            f"grid={regenerated_grid.get('width')}x{regenerated_grid.get('height')} "
+            f"physical_m={regenerated_heightmap.get('region_width_m')}x"
+            f"{regenerated_heightmap.get('region_height_m')}"
         )
         self._invalidate_layer_cache()
         return regenerated
@@ -881,9 +913,19 @@ class MapSimulation:
         entities = getattr(getattr(self.world_model, "loader", None), "entities", {})
         root_id = str(root.get("id") or "")
         root_planet_id = root.get("refinement_root_planet_id") or (root_id if root.get("location_class") in {"planet", "moon"} else None)
-        rect = self._planet_rect_from_entity(root)
-        left, top = rect["x"] - rect["width_world"] * 0.5, rect["y"] - rect["height_world"] * 0.5
-        width, height = max(1e-9, rect["width_world"]), max(1e-9, rect["height_world"])
+        root_bounds = self._entity_map_bounds(root)
+        if not isinstance(root_bounds, dict):
+            return []
+        # Refinement bounds are stored in the coordinate frame of the open
+        # map.  Polygon-authored regions do not have a rectangular ``bounds``
+        # record, so routing them through the planet-rectangle fallback used
+        # the default 360 x 180 frame.  A child covering the complete authored
+        # polygon was consequently composited as a tiny rectangle near the
+        # middle of its own regional map.  Normalize against the actual map
+        # envelope for every root shape instead.
+        left, top = float(root_bounds["min_x"]), float(root_bounds["min_y"])
+        width = max(1e-9, float(root_bounds["max_x"]) - left)
+        height = max(1e-9, float(root_bounds["max_y"]) - top)
 
         def descends_from(candidate):
             current, visited = candidate, set()
@@ -913,6 +955,27 @@ class MapSimulation:
                          "max_u": (float(bounds["max_x"]) - left) / width,
                          "min_v": (float(bounds["min_y"]) - top) / height,
                          "max_v": (float(bounds["max_y"]) - top) / height}
+            logger.debug(
+                "[RegionalRefinement] Composite placement "
+                f"root={root_id} child={candidate.get('id')} "
+                f"root_bounds={root_bounds} child_bounds={bounds} "
+                f"normalized={uv_bounds}",
+                key=(
+                    "regional_refinement_composite_"
+                    f"{root_id}_{candidate.get('id')}"
+                ),
+                interval=1.0,
+            )
+            if any(
+                value < -0.001 or value > 1.001
+                for value in uv_bounds.values()
+            ):
+                logger.warn(
+                    "[RegionalRefinement] Child bounds extend beyond the open "
+                    f"map frame root={root_id} child={candidate.get('id')} "
+                    f"root_bounds={root_bounds} child_bounds={bounds} "
+                    f"normalized={uv_bounds}"
+                )
             # A refinement covering the entire planet is not a regional LOD.
             # Older builds could create one while fully zoomed out; applying it
             # replaced the authored planet and made the map appear duplicated.
@@ -5996,6 +6059,16 @@ class MapSimulation:
             "alpha": 232,
             "pickable": False,
             "material_heatmap_model": heatmap_model,
+            "material_id": selected_layer.get("material_id"),
+            "display_color": selected_layer.get("display_color"),
+            "geological_map_color": material_geological_map_color(
+                selected_layer.get("material_id"),
+                selected_layer.get("geological_map_color"),
+            ),
+            "render_mode": selected_layer.get("render_mode"),
+            "formation_category": selected_layer.get("formation_category"),
+            "distribution_role": selected_layer.get("distribution_role"),
+            "dominance_threshold": selected_layer.get("dominance_threshold"),
         }]
         if isinstance(source_uv_bounds, dict):
             layers[0]["source_uv_bounds"] = dict(source_uv_bounds)

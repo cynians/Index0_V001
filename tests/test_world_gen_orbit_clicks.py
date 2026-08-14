@@ -26,7 +26,7 @@ from simulations.world_gen.material_heatmaps import (
     import_png_to_raster_bundle,
     load_raster_bundle_surface,
 )
-from simulations.world_gen.natural_materials import NATURAL_MATERIAL_CATALOG, NATURAL_MATERIAL_CATALOG_VERSION
+from simulations.world_gen.natural_materials import NATURAL_MATERIAL_CATALOG_VERSION, natural_material_entries
 from simulations.world_gen.terrain_seed import (
     PLANETARY_CANVAS_HEIGHT_PX,
     PLANETARY_CANVAS_WIDTH_PX,
@@ -133,10 +133,15 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         return SimpleNamespace(type=pygame.MOUSEBUTTONDOWN, button=1, pos=pos)
 
     def test_natural_material_catalog_has_expanded_surface_coverage(self):
-        material_ids = {material["id"] for material in NATURAL_MATERIAL_CATALOG}
+        catalog = [
+            material
+            for material in natural_material_entries()
+            if material.get("material_subclass") not in {"atmospheric_gas", "element"}
+        ]
+        material_ids = {material["id"] for material in catalog}
 
         self.assertEqual("natural-materials-v8", NATURAL_MATERIAL_CATALOG_VERSION)
-        self.assertEqual(200, len(NATURAL_MATERIAL_CATALOG))
+        self.assertEqual(210, len(catalog))
         self.assertIn("mat_limestone", material_ids)
         self.assertIn("mat_chalcopyrite", material_ids)
         self.assertIn("mat_water_ice", material_ids)
@@ -1662,14 +1667,14 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         self.assertEqual("longitude_wrap_latitude_clamp", heightmap["storage"]["edge_policy"])
         self.assertEqual(32, heightmap["storage"]["chunk_cols"])
         self.assertEqual(16, heightmap["storage"]["chunk_rows"])
-        self.assertEqual(257, heightmap["sample_grid"]["width"])
-        self.assertEqual(129, heightmap["sample_grid"]["height"])
+        self.assertEqual(385, heightmap["sample_grid"]["width"])
+        self.assertEqual(193, heightmap["sample_grid"]["height"])
         self.assertTrue(heightmap["sample_grid"]["wrap_x"])
-        self.assertEqual(129, len(heightmap["sample_grid"]["rows"]))
-        self.assertEqual(257, len(heightmap["sample_grid"]["rows"][0]))
+        self.assertEqual(193, len(heightmap["sample_grid"]["rows"]))
+        self.assertEqual(385, len(heightmap["sample_grid"]["rows"][0]))
         self.assertEqual("full_planet", heightmap["coverage"])
         self.assertAlmostEqual(4885.7, heightmap["equator_resolution_m_per_px"], delta=1.0)
-        self.assertEqual("physiographic-heightmap-v3", heightmap["geology_model"]["model_version"])
+        self.assertEqual("physiographic-heightmap-v7-deformation-state", heightmap["geology_model"]["model_version"])
         self.assertIn("continental_shelves", heightmap["geology_model"]["passive_margin_features"])
         for row in heightmap["sample_grid"]["rows"]:
             self.assertEqual(row[0], row[-1])

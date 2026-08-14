@@ -1,9 +1,6 @@
 import sys
 from pathlib import Path
 
-import pygame
-
-
 # Support both documented direct execution (``py app/app.py``) and
 # package execution (``py -m app.app``) without requiring PYTHONPATH edits.
 if __package__ in (None, ""):
@@ -14,6 +11,18 @@ if __package__ in (None, ""):
     if project_root in sys.path:
         sys.path.remove(project_root)
     sys.path.insert(0, project_root)
+
+from engine.crash_reporting import (
+    install_crash_reporting,
+    mark_clean_shutdown,
+    record_runtime_stage,
+)
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+CRASH_REPORT_PATH = install_crash_reporting(PROJECT_ROOT)
+
+import pygame
 
 from engine.window import SimWindow
 from engine.tab_manager import TabManager
@@ -74,6 +83,7 @@ class App(SimWindow):
         """
         Draw a synchronous startup screen between initialization steps.
         """
+        record_runtime_stage(f"startup {message}")
         progress = max(0.0, min(1.0, float(progress or 0.0)))
         pygame.event.pump()
 
@@ -213,7 +223,9 @@ class App(SimWindow):
 
 def main():
     app = App()
+    record_runtime_stage("main loop started")
     app.run()
+    mark_clean_shutdown()
 
 
 if __name__ == "__main__":

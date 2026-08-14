@@ -70,6 +70,26 @@ class NavigationBuildingTests(unittest.TestCase):
         self.assertEqual(("building", "loc_test_building"), tab.tab_key)
         self.assertEqual("Building: Test Building", tab.name)
 
+    def test_open_region_map_routes_space_station_to_interior_sim(self):
+        controller = self._controller([
+            {
+                "id": "loc_test_station",
+                "name": "Test Station",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "space_station",
+                "dimension_length_m": 120.0,
+                "dimension_width_m": 50.0,
+            }
+        ])
+
+        self.assertTrue(controller.open_region_map_tab("loc_test_station"))
+
+        tab = controller.app.tab_manager.tabs[0]
+        self.assertEqual(("building", "loc_test_station"), tab.tab_key)
+        self.assertEqual("Station Interior: Test Station", tab.name)
+        self.assertTrue(tab.sim_instance.simulation.can_create_spatial_feature_draft())
+
     def test_regenerating_current_region_refreshes_parent_and_child_map_views(self):
         controller = self._controller([])
         refreshed = []

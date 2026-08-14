@@ -27,7 +27,6 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from simulations.space.stellar import stellar_profile_for_class
 from simulations.world_gen.natural_materials import natural_material_entries
-from world.material_reference_models import apply_material_reference_models
 from world.persistent_ontology_store import PersistentOntologyStore
 
 
@@ -445,15 +444,6 @@ def _normalized_materials(datasets):
         for entity in datasets.get(dataset_name, [])
         if isinstance(entity, dict) and entity.get("id")
     }
-    runtime_datasets = {
-        key: [copy.deepcopy(entity) for entity in value]
-        for key, value in datasets.items()
-    }
-    runtime_entities = _entity_index(runtime_datasets)
-    target = type("RuntimeTarget", (), {})()
-    target.datasets = runtime_datasets
-    target.entities = runtime_entities
-    apply_material_reference_models(target)
     natural_reference = {
         entity["id"]: entity
         for entity in natural_material_entries()
@@ -480,7 +470,7 @@ def _normalized_materials(datasets):
             )
         before_missing[entity_id] = sorted(set(missing))
 
-        normalized = copy.deepcopy(target.entities.get(entity_id) or original)
+        normalized = copy.deepcopy(original)
         reference = natural_reference.get(entity_id)
         if reference:
             authored_wiki = original.get("wiki_entry")

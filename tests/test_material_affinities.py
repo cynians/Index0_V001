@@ -14,11 +14,21 @@ from simulations.world_gen.material_heatmaps import (
 )
 from simulations.world_gen.material_formation import formation_contract
 from simulations.world_gen.natural_materials import (
-    NATURAL_MATERIAL_CATALOG,
+    configure_material_catalog,
     derive_natural_material_model,
     natural_material_entries,
 )
+
+
 from simulations.world_gen.regional_materials import derive_regional_material_model
+from world.persistent_ontology_store import PersistentOntologyStore
+
+
+def setUpModule():
+    rows = PersistentOntologyStore(
+        Path(__file__).resolve().parents[1] / "ontology" / "index0.owl"
+    ).load_datasets().get("materials") or []
+    configure_material_catalog(rows)
 
 
 def _context(**overrides):
@@ -74,9 +84,13 @@ class MaterialAffinityTests(unittest.TestCase):
             )
 
     def test_every_natural_material_has_an_explicit_profile(self):
-        catalog_ids = {material["id"] for material in NATURAL_MATERIAL_CATALOG}
+        catalog_ids = {
+            material["id"]
+            for material in natural_material_entries()
+            if material.get("material_subclass") not in {"atmospheric_gas", "element"}
+        }
 
-        self.assertEqual(200, len(catalog_ids))
+        self.assertEqual(210, len(catalog_ids))
         self.assertEqual(catalog_ids, set(MATERIAL_AFFINITY_PROFILES))
         for material_id, profile in MATERIAL_AFFINITY_PROFILES.items():
             self.assertTrue(profile.get("profile_id"), material_id)

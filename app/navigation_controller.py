@@ -217,6 +217,10 @@ class NavigationController:
 
         vehicle_entity = self.app.world_model.get_entity(vehicle_entity_id)
         vehicle_name = vehicle_entity.get("name", vehicle_entity_id) if vehicle_entity else vehicle_entity_id
+        is_station = bool(
+            vehicle_entity
+            and vehicle_entity.get("location_class") in {"space_station", "station"}
+        )
 
         new_vehicle_sim = VehicleSimulation(
             world_model=self.app.world_model,
@@ -224,7 +228,7 @@ class NavigationController:
         )
         new_tab = Tab(
             SimulationInstance(new_vehicle_sim),
-            name=f"Vehicle: {vehicle_name}",
+            name=(f"Station Design: {vehicle_name}" if is_station else f"Vehicle: {vehicle_name}"),
             tab_key=tab_key
         )
 
@@ -361,7 +365,7 @@ class NavigationController:
             return False
 
         building = self.app.world_model.get_entity(building_location_id)
-        if not building or building.get("location_class") != "building":
+        if not building or building.get("location_class") not in {"building", "space_station", "station"}:
             return False
 
         tab_key = ("building", building_location_id)
@@ -380,9 +384,14 @@ class NavigationController:
             world_model=self.app.world_model,
         )
         new_building_sim = BuildingSimulation(context)
+        is_station = building.get("location_class") in {"space_station", "station"}
         new_tab = Tab(
             SimulationInstance(new_building_sim),
-            name=f"Building: {building.get('name', building_location_id)}",
+            name=(
+                f"Station Interior: {building.get('name', building_location_id)}"
+                if is_station
+                else f"Building: {building.get('name', building_location_id)}"
+            ),
             tab_key=tab_key,
         )
 
@@ -404,13 +413,13 @@ class NavigationController:
         if not entity:
             return
 
-        if entity.get("location_class") == "building":
+        if entity.get("location_class") in {"building", "space_station", "station"}:
             return self.launch_building_tab(entity_id)
 
         if entity.get("location_class") == "room":
             parent_location_id = entity.get("parent_location")
             parent_location = self.app.world_model.get_entity(parent_location_id)
-            if parent_location and parent_location.get("location_class") == "building":
+            if parent_location and parent_location.get("location_class") in {"building", "space_station", "station"}:
                 return self.launch_building_tab(parent_location_id)
 
         tab_key = ("map", entity_id)
@@ -491,7 +500,7 @@ class NavigationController:
             if entity.get("location_class") == "room":
                 parent_location_id = entity.get("parent_location")
                 parent_location = self.app.world_model.get_entity(parent_location_id)
-                if parent_location and parent_location.get("location_class") == "building":
+                if parent_location and parent_location.get("location_class") in {"building", "space_station", "station"}:
                     return self.launch_building_tab(parent_location_id)
                 return False
             return self.launch_building_tab(entity_id)
@@ -1001,6 +1010,12 @@ class NavigationController:
         if action_id == "open_person_inspector" and active_sim is not None:
             return bool(getattr(active_sim, "open_person_inspector", lambda: False)())
 
+        if action_id == "person_mode_autonomous" and active_sim is not None:
+            return bool(getattr(active_sim, "set_control_mode", lambda _mode: False)("autonomous"))
+
+        if action_id == "person_mode_direct" and active_sim is not None:
+            return bool(getattr(active_sim, "set_control_mode", lambda _mode: False)("direct"))
+
         if action_id == "vehicle_mode_design" and active_sim is not None:
             return bool(getattr(active_sim, "set_view_mode", lambda mode: False)("design"))
 
@@ -1062,7 +1077,19 @@ class NavigationController:
             knowledge_ui = getattr(self.app.ui_manager, "knowledge_ui", None)
             if knowledge_ui is None:
                 return False
-            return bool(knowledge_ui._handle_ontology_checkpoint_request())
+
+            def redraw_save_progress(_progress, _message):
+                if pygame.get_init():
+                    pygame.event.pump()
+                render_frame = getattr(self.app, "_render_frame", None)
+                if callable(render_frame):
+                    render_frame()
+
+            return bool(
+                knowledge_ui._handle_ontology_checkpoint_request(
+                    progress_callback=redraw_save_progress,
+                )
+            )
 
         if action_id in {
             "phylogeny_clade_members_dec",

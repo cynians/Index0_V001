@@ -33,7 +33,7 @@ class KnowledgeBrowserModel:
         if self.world_model is None:
             return ["all", "schemas"]
         preferred = ["all", "schemas", "locations", "systems", "vehicles", "components", "events"]
-        names = ["all"] + sorted(name for name in self.world_model.get_dataset_names() if name != "all")
+        names = ["all"] + sorted(name for name in self.world_model.get_dataset_names() if name not in {"all", "production"})
         if "schemas" not in names:
             names.append("schemas")
         ordered = [name for name in preferred if name in names]
@@ -133,6 +133,8 @@ class KnowledgeBrowserModel:
         items = []
 
         for schema_name, schema in sorted(self.schema_loader.schemas.items()):
+            if str(schema_name).strip().lower() == "production":
+                continue
             if not self._matches_schema_browser_filters(schema_name, schema):
                 continue
 
@@ -1040,7 +1042,7 @@ class KnowledgeBrowserModel:
             items.append({"kind": "spacer"})
             return items
 
-        dataset_names = sorted(world_model.get_dataset_names())
+        dataset_names = sorted(name for name in world_model.get_dataset_names() if name != "production")
 
         preferred_order = [
             "ideas",

@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 
@@ -25,10 +26,15 @@ class KnowledgeRepositoryService:
         return drafts if isinstance(drafts, dict) else {}
 
     def _write_card_drafts(self):
-        os.makedirs(os.path.dirname(str(self.DRAFT_CACHE_PATH)), exist_ok=True)
+        draft_path = str(self.DRAFT_CACHE_PATH)
+        os.makedirs(os.path.dirname(draft_path), exist_ok=True)
         payload = {"drafts": self.card_drafts}
-        with open(self.DRAFT_CACHE_PATH, "w", encoding="utf-8") as f:
+        temporary_path = f"{draft_path}.{os.getpid()}.tmp"
+        with open(temporary_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2, sort_keys=True)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary_path, draft_path)
 
     def _entity_for_card(self, card):
         if card is None:
@@ -188,6 +194,7 @@ class KnowledgeRepositoryService:
         card["draft_edit_buffers"] = edit_buffers
         draft["edit_buffers"] = edit_buffers
         self.card_drafts[entity_id] = draft
+        card["has_unsaved_draft"] = True
         self.host._write_card_drafts()
         return True
 
@@ -195,6 +202,9 @@ class KnowledgeRepositoryService:
         if not entity_id or entity_id not in self.card_drafts:
             return False
         del self.card_drafts[entity_id]
+        for card in self.cards:
+            if str(card.get("entity_id") or "") == str(entity_id):
+                card["has_unsaved_draft"] = False
         self.host._write_card_drafts()
         return True
 
@@ -204,9 +214,23 @@ class KnowledgeRepositoryService:
         if not isinstance(draft, dict):
             return False
 
+        draft_entity = draft.get("entity")
+        entity = self._entity_for_card(card)
+        if isinstance(entity, dict) and isinstance(draft_entity, dict):
+            runtime_values = {
+                key: value
+                for key, value in entity.items()
+                if str(key).startswith("_")
+            }
+            entity.clear()
+            entity.update(runtime_values)
+            entity.update(copy.deepcopy(draft_entity))
+            entity["id"] = str(entity_id)
+
         edit_buffers = draft.get("edit_buffers", {})
         card["draft_edit_buffers"] = edit_buffers if isinstance(edit_buffers, dict) else {}
         card["is_draft_entity"] = bool(draft.get("is_new_entry", False))
+        card["has_unsaved_draft"] = True
         return True
 
     def _hydrate_draft_entities(self, world_model):

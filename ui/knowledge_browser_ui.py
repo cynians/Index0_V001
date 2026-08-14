@@ -68,6 +68,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         "site",
         "building",
         "room",
+        "space_station",
     )
     CANONICAL_VEHICLE_CLASSES = (
         "ground_vehicle",
@@ -114,7 +115,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
     PROJECT_ROOT = Path(__file__).resolve().parents[1]
     DRAFT_CACHE_PATH = PROJECT_ROOT / ".cache" / "card_drafts.json"
     SETTINGS_PATH = PROJECT_ROOT / ".cache" / "knowledge_settings.json"
-    ABSTRACT_SCHEMA_NAMES = {"entity_core", "entity_base", "core", "base"}
+    ABSTRACT_SCHEMA_NAMES = {"entity_core", "entity_base", "component_host", "core", "base"}
     TEMPLATE_PICKER_ROW_H = 34
     CARD_TYPE_PICKER_ROW_H = 26
     IDEA_GENERIC_FIELDS = {
@@ -179,6 +180,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.new_entry_button = None
         self.ontology_checkpoint_confirm = False
         self.ontology_checkpoint_status = ""
+        self.ontology_checkpoint_progress = None
+        self.ontology_checkpoint_saving = False
         self.clear_canvas_button = None
         self.keep_card_open_button = None
         self.contemporary_spawn_decrease_button = None
@@ -323,6 +326,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.new_entry_button = None
         self.ontology_checkpoint_confirm = False
         self.ontology_checkpoint_status = ""
+        self.ontology_checkpoint_progress = None
+        self.ontology_checkpoint_saving = False
         self.clear_canvas_button = None
         self.keep_card_open_button = None
         self.contemporary_spawn_decrease_button = None
@@ -1079,28 +1084,51 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self._build_header_button()
         return True
 
-    def _export_ontology_checkpoint(self):
+    def _export_ontology_checkpoint(self, progress_callback=None):
         """Write the active SQLite ontology store to its RDF/XML checkpoint."""
         loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
         export = getattr(loader, "export_ontology_checkpoint", None)
         if not callable(export):
             self.ontology_checkpoint_status = "Ontology checkpoint is unavailable"
             return False
+
+        def report(progress, message):
+            self.ontology_checkpoint_progress = max(0.0, min(1.0, float(progress or 0.0)))
+            self.ontology_checkpoint_status = str(message or "Saving ontology")
+            if callable(progress_callback):
+                progress_callback(self.ontology_checkpoint_progress, self.ontology_checkpoint_status)
+
+        self.ontology_checkpoint_saving = True
+        report(0.0, "Preparing ontology checkpoint")
         try:
-            saved = bool(export())
+            try:
+                saved = bool(export(progress_callback=report))
+            except TypeError as exc:
+                if "progress_callback" not in str(exc):
+                    raise
+                saved = bool(export())
         except (OSError, ValueError) as exc:
+            self.ontology_checkpoint_saving = False
+            self.ontology_checkpoint_progress = None
             self.ontology_checkpoint_status = f"Ontology save failed: {exc}"
+            if callable(progress_callback):
+                progress_callback(0.0, self.ontology_checkpoint_status)
             return False
+        self.ontology_checkpoint_saving = False
+        self.ontology_checkpoint_progress = 1.0 if saved else None
         self.ontology_checkpoint_status = "Ontology checkpoint saved" if saved else "Ontology save failed"
+        if callable(progress_callback):
+            progress_callback(self.ontology_checkpoint_progress or 0.0, self.ontology_checkpoint_status)
         return saved
 
-    def _handle_ontology_checkpoint_request(self):
+    def _handle_ontology_checkpoint_request(self, progress_callback=None):
         if not getattr(self, "ontology_checkpoint_confirm", False):
             self.ontology_checkpoint_confirm = True
+            self.ontology_checkpoint_progress = None
             self.ontology_checkpoint_status = "Click Confirm Save to write the active ontology to index0.owl"
             return True
         self.ontology_checkpoint_confirm = False
-        saved = self._export_ontology_checkpoint()
+        saved = self._export_ontology_checkpoint(progress_callback=progress_callback)
         return saved
 
     def _font_line_height(self, font=None):
@@ -1295,7 +1323,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
         datasets = getattr(loader, "datasets", None)
         if isinstance(datasets, dict):
-            return set(datasets.keys()) - {"schemas"}
+            return set(datasets.keys()) - {"schemas", "production"}
         return set()
 
     def _dataset_name_for_schema(self, schema_name, file_base, existing_datasets):
@@ -1378,7 +1406,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             raw_schema_name = schema.get("schema") or metadata_name or loader_schema_name
             schema_name = self._normalize_schema_name(raw_schema_name)
             file_base = schema_name
-            if schema_name in self.ABSTRACT_SCHEMA_NAMES or schema_name == "entity_core" or schema_name == "systems":
+            if schema_name in self.ABSTRACT_SCHEMA_NAMES or schema_name in {"entity_core", "systems", "production"}:
                 continue
 
             dataset_name = self._dataset_name_for_schema(schema_name, file_base, existing_datasets)
@@ -1807,6 +1835,20 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             **dict(template.get("initial_fields", {})),
             field_key: subclass_value,
         }
+        if field_key == "location_class" and subclass_value == "space_station":
+            variant["initial_fields"].update(
+                {
+                    "system_role": "orbital_body",
+                    "body_class": "space_station",
+                    "vehicle_class": "orbital_spacecraft",
+                    "schema_mixins": ["component_host"],
+                    "dimension_length_m": 100.0,
+                    "dimension_width_m": 40.0,
+                    "dimension_height_m": 30.0,
+                    "installed_components": [],
+                    "interior_layout": [],
+                }
+            )
         return variant
 
     def _template_initial_fields(self, template, extra_fields=None):
@@ -2331,6 +2373,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             for entity in self.world_model.loader.entities.values()
             if isinstance(entity, dict)
             and entity.get("id")
+            and not self._is_standalone_production_entity(entity)
             and str(entity.get("id")) not in excluded_entity_ids
         ]
         return random.choice(entities) if entities else None
@@ -2342,7 +2385,9 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         entities = [
             entity
             for entity in self.world_model.loader.entities.values()
-            if isinstance(entity, dict) and entity.get("id")
+            if isinstance(entity, dict)
+            and entity.get("id")
+            and not self._is_standalone_production_entity(entity)
         ]
         if not entities:
             return None
@@ -3012,6 +3057,9 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 card_view = producer_card.get("card_view")
                 if card_view is not None and hasattr(card_view, "_update_production_line"):
                     card_view._update_production_line(producer_card, line_index, location_id=created_entity_id)
+                    removed_ids = list(producer_card.pop("production_removed_entity_ids", []) or [])
+                    for production_id in removed_ids:
+                        self._remove_entity_from_repository("production", production_id)
                     related_update_ids = list(producer_card.pop("production_related_entity_update_ids", []) or [])
                     for related_entity_id in related_update_ids:
                         related_entity = self.world_model.get_entity(related_entity_id) if self.world_model is not None else None
@@ -3555,7 +3603,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             self._append_unique_relation_value(created_entity, "produced_by", source_entity_id)
         elif tool_id == "producer_add_product_component":
             self._append_unique_relation_value(source_entity, "produced_components", created_entity_id)
-            self._append_unique_relation_value(created_entity, "related", source_entity_id)
+            self._append_unique_relation_value(created_entity, "produced_by", source_entity_id)
 
         self._save_or_persist_card_for_entity_id(source_entity_id)
         if created_card is not None:
@@ -3918,8 +3966,15 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self._clear_timeline_edit_target()
         return False
 
+    @staticmethod
+    def _is_standalone_production_entity(entity):
+        return isinstance(entity, dict) and (
+            str(entity.get("_dataset") or "").strip().lower() == "production"
+            or str(entity.get("type") or "").strip().lower() == "production"
+        )
+
     def _ensure_card(self, entity, relayout=True, bring_to_front=True):
-        if entity is None:
+        if entity is None or self._is_standalone_production_entity(entity):
             return None
 
         entity_id = entity.get("id")
@@ -4967,6 +5022,14 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self.font_for_layout = font
         self.world_model = world_model
         self._bind_world_schema_loader(world_model)
+        if world_model is not None:
+            self.cards = [
+                card
+                for card in self.cards
+                if not self._is_standalone_production_entity(
+                    world_model.get_entity(card.get("entity_id"))
+                )
+            ]
         self.parent_assignment_request = (
             dict(parent_assignment_request)
             if isinstance(parent_assignment_request, dict)
@@ -5035,6 +5098,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         pygame.draw.rect(screen, border, rect, 1)
 
         title = card.get("title") or card.get("entity_id") or "Card"
+        if card.get("has_unsaved_draft"):
+            title = f"{title}  • UNSAVED"
         subtitle = card.get("subtitle") or ""
         description = ""
         if isinstance(entity, dict):

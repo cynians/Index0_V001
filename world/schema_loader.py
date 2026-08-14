@@ -83,11 +83,31 @@ class SchemaLoader:
         if core_schema:
             fields.update(core_schema.get("fields", {}))
 
-        extends_name = schema.get("extends")
-        if extends_name and extends_name != "entity_core":
-            parent_schema = self._resolve_schema(extends_name, seen=seen)
+        extends_value = schema.get("extends")
+        extends_names = (
+            list(extends_value)
+            if isinstance(extends_value, (list, tuple, set))
+            else [extends_value]
+        )
+        for extends_name in extends_names:
+            if not extends_name or extends_name == "entity_core":
+                continue
+            parent_schema = self._resolve_schema(str(extends_name), seen=set(seen))
             if parent_schema:
                 fields.update(parent_schema.get("fields", {}))
+
+        mixins_value = schema.get("mixins") or []
+        mixin_names = (
+            list(mixins_value)
+            if isinstance(mixins_value, (list, tuple, set))
+            else [mixins_value]
+        )
+        for mixin_name in mixin_names:
+            if not mixin_name:
+                continue
+            mixin_schema = self._resolve_schema(str(mixin_name), seen=set(seen))
+            if mixin_schema:
+                fields.update(mixin_schema.get("fields", {}))
 
         fields.update(schema.get("fields", {}))
         resolved["fields"] = fields

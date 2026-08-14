@@ -126,7 +126,12 @@ class TouchDegrees:
 
             else:
 
-                for field, value in entity.items():
+                items = (
+                    entity.loaded_items()
+                    if hasattr(entity, "loaded_items")
+                    else entity.items()
+                )
+                for field, value in items:
 
                     if field in self.ignore_fields:
                         continue

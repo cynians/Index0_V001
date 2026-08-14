@@ -8,6 +8,7 @@ from simulations.world_gen.true_color import (
     _optical_mixture_fraction,
     derive_true_color_model,
     render_true_color_surface,
+    river_true_color_rgb,
 )
 from simulations.world_gen.material_optics import material_optical_surface_profile
 
@@ -51,6 +52,20 @@ def _heightmap(*, ocean=True):
 
 
 class TrueColorRenderingTests(unittest.TestCase):
+    def test_river_true_color_uses_hydrology_not_vegetation(self):
+        clear = river_true_color_rgb({
+            "flow": 0.9, "flow_regime": "perennial", "mouth": "ocean",
+            "estimated_discharge_m3_s": 9000.0,
+            "catchment_mean_runoff_mm": 360.0,
+        })
+        sediment = river_true_color_rgb({
+            "flow": 0.25, "flow_regime": "intermittent", "mouth": "basin",
+            "source_elevation_m": 5200.0, "catchment_dryness_ratio": 2.6,
+            "catchment_mean_runoff_mm": 720.0,
+        })
+        self.assertGreater(clear[2], clear[0])
+        self.assertGreater(sediment[0], sediment[2])
+
     @unittest.skipIf(np is None, "numpy unavailable")
     def test_opaque_pigment_coating_outcolors_clear_crystal_at_equal_abundance(self):
         abundance = np.full((2, 2), 0.08, dtype=np.float32)

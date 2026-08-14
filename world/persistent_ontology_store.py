@@ -1,7 +1,15 @@
+"""Persistent storage boundary for ontology-owned entity and semantic truth.
+
+All semantic registries belong in the ontology; returned dictionaries and
+indexes are disposable projections. Current generated planets have no durable
+compatibility contract and may be regenerated after worldgen changes.
+"""
+
 import hashlib
 import json
 import logging
 import os
+import pickle
 import shutil
 import sqlite3
 import threading
@@ -17,6 +25,100 @@ from world.ontology_repository import BASE_IRI, ENTITY_IRI, OntologyRepository
 logger = logging.getLogger(__name__)
 
 
+class LazyEntity(dict):
+    """Dictionary-compatible entity with separately cached heavy fields.
+
+    Startup and relationship indexing only need identity, schema and relation
+    fields. Large generated-world models are loaded from their cache shard the
+    first time a map or simulation actually asks for one of them.
+    """
+
+    def __init__(self, values, *, payload_path, lazy_fields):
+        super().__init__(values or {})
+        self._payload_path = Path(payload_path)
+        self._lazy_fields = set(lazy_fields or ())
+        self._payload_lock = threading.RLock()
+
+    @property
+    def is_hydrated(self):
+        return not self._lazy_fields
+
+    def _hydrate(self):
+        if not self._lazy_fields:
+            return
+        with self._payload_lock:
+            if not self._lazy_fields:
+                return
+            try:
+                with self._payload_path.open("rb") as handle:
+                    payload = pickle.load(handle)
+                if not isinstance(payload, dict):
+                    raise ValueError("lazy entity payload is not a mapping")
+            except (OSError, ValueError, TypeError, pickle.PickleError, EOFError) as exc:
+                logger.warning(
+                    "Could not hydrate ontology cache payload %s: %s",
+                    self._payload_path,
+                    exc,
+                )
+                payload = {}
+            dict.update(self, payload)
+            self._lazy_fields.clear()
+
+    def materialize(self):
+        self._hydrate()
+        return self
+
+    def loaded_items(self):
+        """Items already resident in memory, for startup graph indexing."""
+        return dict.items(self)
+
+    def loaded_values(self):
+        return dict.values(self)
+
+    def __contains__(self, key):
+        return key in self._lazy_fields or dict.__contains__(self, key)
+
+    def __getitem__(self, key):
+        if key in self._lazy_fields:
+            self._hydrate()
+        return dict.__getitem__(self, key)
+
+    def get(self, key, default=None):
+        if key in self._lazy_fields:
+            self._hydrate()
+        return dict.get(self, key, default)
+
+    def __setitem__(self, key, value):
+        if key in self._lazy_fields:
+            self._hydrate()
+        dict.__setitem__(self, key, value)
+
+    def __delitem__(self, key):
+        if key in self._lazy_fields:
+            self._hydrate()
+        dict.__delitem__(self, key)
+
+    def items(self):
+        self._hydrate()
+        return dict.items(self)
+
+    def values(self):
+        self._hydrate()
+        return dict.values(self)
+
+    def keys(self):
+        self._hydrate()
+        return dict.keys(self)
+
+    def __iter__(self):
+        self._hydrate()
+        return dict.__iter__(self)
+
+    def copy(self):
+        self._hydrate()
+        return dict.copy(self)
+
+
 class PersistentOntologyStore:
     """SQLite-backed Owlready2 store used for transactional point edits.
 
@@ -30,6 +132,11 @@ class PersistentOntologyStore:
     _DATABASE_LOCKS_GUARD = threading.Lock()
     LOCK_RETRY_ATTEMPTS = 5
     SQLITE_BUSY_TIMEOUT_MS = 1_500
+    PROJECTION_CACHE_VERSION = 2
+    LAZY_LOCATION_FIELDS = {
+        "map_layers",
+        "regional_material_occurrences",
+    }
 
     def __init__(self, ontology_path, database_path=None):
         self.ontology_path = Path(ontology_path).resolve()
@@ -43,6 +150,12 @@ class PersistentOntologyStore:
             )
         self.database_path = Path(database_path).resolve()
         self.manifest_path = self.database_path.with_suffix(".manifest.json")
+        self.projection_cache_path = self.database_path.with_suffix(
+            ".decoded-projection.pickle"
+        )
+        self.projection_manifest_path = self.database_path.with_suffix(
+            ".decoded-projection.manifest.json"
+        )
         database_key = str(self.database_path).casefold()
         with self._DATABASE_LOCKS_GUARD:
             self._operation_lock = self._DATABASE_LOCKS.setdefault(
@@ -77,12 +190,28 @@ class PersistentOntologyStore:
                     timeout=self.SQLITE_BUSY_TIMEOUT_MS / 1000.0,
                 )
                 connection.execute(f"PRAGMA busy_timeout = {self.SQLITE_BUSY_TIMEOUT_MS}")
-                return owlready2.World(
-                    filename=str(self.database_path),
-                    exclusive=False,
-                    read_only=bool(read_only),
-                    connection=connection,
-                )
+                try:
+                    return owlready2.World(
+                        filename=str(self.database_path),
+                        exclusive=False,
+                        read_only=bool(read_only),
+                        connection=connection,
+                    )
+                except TypeError as exc:
+                    # Owlready2 added Graph(connection=...) after 0.45.  The
+                    # application's established Python environment still uses
+                    # 0.45, whose World accepts arbitrary kwargs but only
+                    # rejects this one when constructing the backend Graph.
+                    # Let that version open the identical SQLite file itself.
+                    if "unexpected keyword argument 'connection'" not in str(exc):
+                        raise
+                    connection.close()
+                    connection = None
+                    return owlready2.World(
+                        filename=str(self.database_path),
+                        exclusive=False,
+                        read_only=bool(read_only),
+                    )
             except sqlite3.OperationalError as exc:
                 if connection is not None:
                     connection.close()
@@ -92,12 +221,14 @@ class PersistentOntologyStore:
                 time.sleep(min(0.8, 0.06 * (2 ** attempt)))
         raise last_error or sqlite3.OperationalError("ontology database remained locked")
 
-    def _save_world(self, world):
+    def _save_world(self, world, *, invalidate_projection_cache=True):
         """Commit an Owlready2 world, retrying transient SQLite writer locks."""
         last_error = None
         for attempt in range(self.LOCK_RETRY_ATTEMPTS):
             try:
                 world.save()
+                if invalidate_projection_cache:
+                    self._invalidate_projection_cache()
                 return True
             except sqlite3.OperationalError as exc:
                 if not self._is_locked_database_error(exc):
@@ -149,14 +280,353 @@ class PersistentOntologyStore:
         )
         temp_path.replace(self.manifest_path)
 
+    @staticmethod
+    def _file_signature(path):
+        try:
+            stat = Path(path).stat()
+        except OSError:
+            return None
+        return {
+            "size": int(stat.st_size),
+            "mtime_ns": int(stat.st_mtime_ns),
+        }
+
+    def _projection_source_signature(self):
+        """Identify the complete transactional SQLite state cheaply."""
+        database_path = Path(self.database_path)
+        return {
+            "version": self.PROJECTION_CACHE_VERSION,
+            "database": self._file_signature(database_path),
+            "wal": self._file_signature(Path(f"{database_path}-wal")),
+        }
+
+    def _projection_payload_root(self):
+        cache_path = Path(self.projection_cache_path)
+        return cache_path.with_suffix(".payloads")
+
+    @classmethod
+    def _is_lazy_projection_field(cls, dataset_name, field_name):
+        return dataset_name == "locations" and (
+            str(field_name).endswith("_model")
+            or field_name in cls.LAZY_LOCATION_FIELDS
+        )
+
+    def _split_projection_entity(self, dataset_name, entity):
+        light = {}
+        payload = {}
+        for field_name, value in entity.items():
+            target = (
+                payload
+                if self._is_lazy_projection_field(dataset_name, field_name)
+                else light
+            )
+            target[field_name] = value
+        return light, payload
+
+    def _invalidate_projection_cache(self):
+        for path in (
+            getattr(self, "projection_cache_path", None),
+            getattr(self, "projection_manifest_path", None),
+        ):
+            if path is None:
+                continue
+            try:
+                Path(path).unlink(missing_ok=True)
+            except OSError:
+                # The source signature still prevents reuse after a write.
+                pass
+        payload_root = self._projection_payload_root()
+        try:
+            if payload_root.exists() and payload_root.parent == Path(self.projection_cache_path).parent:
+                shutil.rmtree(payload_root)
+        except OSError:
+            pass
+
+    def _wrap_lazy_projection_entities(self, datasets, manifest):
+        lazy_entities = manifest.get("lazy_entities", {})
+        if not isinstance(lazy_entities, dict):
+            return datasets
+        payload_root = self._projection_payload_root()
+        for dataset_name, dataset in datasets.items():
+            if not isinstance(dataset, list):
+                continue
+            for index, entity in enumerate(dataset):
+                if not isinstance(entity, dict):
+                    continue
+                metadata = lazy_entities.get(str(entity.get("id") or ""))
+                if not isinstance(metadata, dict) or metadata.get("dataset") != dataset_name:
+                    continue
+                filename = str(metadata.get("file") or "")
+                fields = metadata.get("fields") or []
+                if filename and fields:
+                    dataset[index] = LazyEntity(
+                        entity,
+                        payload_path=payload_root / filename,
+                        lazy_fields=fields,
+                    )
+        return datasets
+
+    def _load_projection_cache(self):
+        cache_path = Path(self.projection_cache_path)
+        manifest_path = Path(self.projection_manifest_path)
+        if not cache_path.exists() or not manifest_path.exists():
+            return None
+        started_at = time.perf_counter()
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if manifest.get("version") != self.PROJECTION_CACHE_VERSION:
+                old_signature = manifest.get("source_signature") or {}
+                current_signature = self._projection_source_signature()
+                if (
+                    manifest.get("version") == 1
+                    and old_signature.get("database") == current_signature.get("database")
+                    and old_signature.get("wal") == current_signature.get("wal")
+                ):
+                    logger.info("Migrating monolithic ontology projection cache to lazy shards")
+                    with cache_path.open("rb") as handle:
+                        legacy_datasets = pickle.load(handle)
+                    if not isinstance(legacy_datasets, dict):
+                        raise ValueError("legacy projection cache is not a dataset mapping")
+                    if self._write_projection_cache(legacy_datasets):
+                        return self._load_projection_cache()
+                self._invalidate_projection_cache()
+                return None
+            if manifest.get("source_signature") != self._projection_source_signature():
+                return None
+            with cache_path.open("rb") as handle:
+                datasets = pickle.load(handle)
+            if not isinstance(datasets, dict):
+                raise ValueError("decoded projection cache is not a dataset mapping")
+            datasets = self._wrap_lazy_projection_entities(datasets, manifest)
+        except (OSError, ValueError, TypeError, pickle.PickleError, EOFError) as exc:
+            logger.warning("Ignoring invalid ontology projection cache: %s", exc)
+            self._invalidate_projection_cache()
+            return None
+        logger.info(
+            "Loaded decoded ontology projection in %.2fs (%d datasets)",
+            time.perf_counter() - started_at,
+            len(datasets),
+        )
+        return datasets
+
+    def _write_projection_cache(self, datasets):
+        cache_path = Path(self.projection_cache_path)
+        manifest_path = Path(self.projection_manifest_path)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        token = uuid.uuid4().hex
+        temporary_cache = cache_path.with_name(f".{cache_path.name}.{token}.tmp")
+        temporary_manifest = manifest_path.with_name(
+            f".{manifest_path.name}.{token}.tmp"
+        )
+        payload_root = self._projection_payload_root()
+        temporary_payload_root = payload_root.with_name(f".{payload_root.name}.{token}.tmp")
+        started_at = time.perf_counter()
+        try:
+            temporary_payload_root.mkdir(parents=True, exist_ok=False)
+            startup_datasets = {}
+            lazy_entities = {}
+            for dataset_name, dataset in datasets.items():
+                startup_dataset = []
+                for entity in dataset or []:
+                    if not isinstance(entity, dict):
+                        startup_dataset.append(entity)
+                        continue
+                    light, payload = self._split_projection_entity(dataset_name, entity)
+                    startup_dataset.append(light)
+                    if payload:
+                        entity_id = str(entity.get("id") or "")
+                        filename = f"{hashlib.sha256(entity_id.encode('utf-8')).hexdigest()}.pickle"
+                        with (temporary_payload_root / filename).open("wb") as handle:
+                            pickle.dump(payload, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                        lazy_entities[entity_id] = {
+                            "dataset": dataset_name,
+                            "file": filename,
+                            "fields": sorted(payload),
+                        }
+                startup_datasets[dataset_name] = startup_dataset
+            with temporary_cache.open("wb") as handle:
+                pickle.dump(startup_datasets, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                handle.flush()
+                os.fsync(handle.fileno())
+            signature = self._projection_source_signature()
+            temporary_manifest.write_text(
+                json.dumps(
+                    {
+                        "version": self.PROJECTION_CACHE_VERSION,
+                        "source_signature": signature,
+                        "cache_size": int(temporary_cache.stat().st_size),
+                        "lazy_entities": lazy_entities,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                ) + "\n",
+                encoding="utf-8",
+            )
+            # Publish data first and its validity marker last. An interrupted
+            # write can therefore never make a partial pickle discoverable.
+            if payload_root.exists():
+                shutil.rmtree(payload_root)
+            temporary_payload_root.replace(payload_root)
+            temporary_cache.replace(cache_path)
+            temporary_manifest.replace(manifest_path)
+            logger.info(
+                "Cached decoded ontology projection in %.2fs (%.1f MiB)",
+                time.perf_counter() - started_at,
+                cache_path.stat().st_size / (1024.0 * 1024.0),
+            )
+            return True
+        except OSError as exc:
+            logger.warning("Could not cache decoded ontology projection: %s", exc)
+            return False
+        finally:
+            temporary_cache.unlink(missing_ok=True)
+            temporary_manifest.unlink(missing_ok=True)
+            if temporary_payload_root.exists():
+                shutil.rmtree(temporary_payload_root, ignore_errors=True)
+
+    def _patch_projection_cache(
+        self,
+        *,
+        entities=(),
+        remove_entity_ids=(),
+        previous_entity_ids=None,
+        field_names_by_id=None,
+        previous_signature=None,
+    ):
+        """Incrementally update the disposable cache after an ontology commit."""
+        cache_path = Path(self.projection_cache_path)
+        manifest_path = Path(self.projection_manifest_path)
+        if not cache_path.exists() or not manifest_path.exists():
+            return False
+        previous_entity_ids = previous_entity_ids or {}
+        field_names_by_id = field_names_by_id or {}
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if (
+                manifest.get("version") != self.PROJECTION_CACHE_VERSION
+                or manifest.get("source_signature") != previous_signature
+            ):
+                self._invalidate_projection_cache()
+                return False
+            with cache_path.open("rb") as handle:
+                datasets = pickle.load(handle)
+            lazy_entities = manifest.get("lazy_entities", {})
+            payload_root = self._projection_payload_root()
+            payload_root.mkdir(parents=True, exist_ok=True)
+
+            removals = set(str(value) for value in remove_entity_ids if value)
+            removals.update(
+                str(value) for value in previous_entity_ids.values() if value
+            )
+
+            def remove_cached(entity_id):
+                for dataset in datasets.values():
+                    if isinstance(dataset, list):
+                        dataset[:] = [
+                            item for item in dataset
+                            if not isinstance(item, dict) or str(item.get("id") or "") != entity_id
+                        ]
+                metadata = lazy_entities.pop(entity_id, None)
+                if isinstance(metadata, dict) and metadata.get("file"):
+                    (payload_root / metadata["file"]).unlink(missing_ok=True)
+
+            def find_cached(entity_id):
+                for dataset_name, dataset in datasets.items():
+                    for item in dataset or []:
+                        if isinstance(item, dict) and str(item.get("id") or "") == entity_id:
+                            return dataset_name, item
+                return None, None
+
+            for entity_id in removals:
+                remove_cached(entity_id)
+
+            for entity in entities:
+                entity_id = str(entity.get("id") or "")
+                if not entity_id:
+                    continue
+                existing_dataset, existing_light = find_cached(entity_id)
+                dataset_name = str(entity.get("_dataset") or existing_dataset or entity.get("type") or "")
+                if dataset_name not in datasets and f"{dataset_name}s" in datasets:
+                    dataset_name = f"{dataset_name}s"
+                if not dataset_name:
+                    continue
+
+                selected_fields = field_names_by_id.get(entity_id)
+                if selected_fields is not None and existing_light is not None:
+                    complete = dict(existing_light)
+                    metadata = lazy_entities.get(entity_id, {})
+                    filename = metadata.get("file") if isinstance(metadata, dict) else None
+                    if filename:
+                        with (payload_root / filename).open("rb") as handle:
+                            payload = pickle.load(handle)
+                        if isinstance(payload, dict):
+                            complete.update(payload)
+                    for field_name in selected_fields:
+                        if field_name in entity:
+                            complete[field_name] = entity.get(field_name)
+                        else:
+                            complete.pop(field_name, None)
+                else:
+                    complete = dict(entity.items())
+
+                remove_cached(entity_id)
+                light, payload = self._split_projection_entity(dataset_name, complete)
+                datasets.setdefault(dataset_name, []).append(light)
+                if payload:
+                    filename = f"{hashlib.sha256(entity_id.encode('utf-8')).hexdigest()}.pickle"
+                    temporary_payload = payload_root / f".{filename}.{uuid.uuid4().hex}.tmp"
+                    with temporary_payload.open("wb") as handle:
+                        pickle.dump(payload, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                    temporary_payload.replace(payload_root / filename)
+                    lazy_entities[entity_id] = {
+                        "dataset": dataset_name,
+                        "file": filename,
+                        "fields": sorted(payload),
+                    }
+
+            token = uuid.uuid4().hex
+            temporary_cache = cache_path.with_name(f".{cache_path.name}.{token}.tmp")
+            temporary_manifest = manifest_path.with_name(f".{manifest_path.name}.{token}.tmp")
+            with temporary_cache.open("wb") as handle:
+                pickle.dump(datasets, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                handle.flush()
+                os.fsync(handle.fileno())
+            new_manifest = {
+                "version": self.PROJECTION_CACHE_VERSION,
+                "source_signature": self._projection_source_signature(),
+                "cache_size": int(temporary_cache.stat().st_size),
+                "lazy_entities": lazy_entities,
+            }
+            temporary_manifest.write_text(
+                json.dumps(new_manifest, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            temporary_cache.replace(cache_path)
+            temporary_manifest.replace(manifest_path)
+            return True
+        except (OSError, ValueError, TypeError, pickle.PickleError, EOFError) as exc:
+            logger.warning("Could not patch ontology projection cache: %s", exc)
+            self._invalidate_projection_cache()
+            return False
+
     def load_datasets(self):
         with self._operation_lock:
+            cached = self._load_projection_cache()
+            if cached is not None:
+                return cached
+            started_at = time.perf_counter()
             world = self._open_world(read_only=True)
             try:
                 ontology = world.get_ontology(BASE_IRI)
-                return OntologyRepository({})._datasets_from_ontology(ontology)
+                datasets = OntologyRepository({})._datasets_from_ontology(ontology)
             finally:
                 world.close()
+            logger.info(
+                "Decoded ontology quadstore in %.2fs; building startup projection cache",
+                time.perf_counter() - started_at,
+            )
+            self._write_projection_cache(datasets)
+            return datasets
 
     def persist_entity(self, entity, previous_entity_id=None):
         return self.persist_entities([entity], previous_entity_ids={str(entity.get("id") or ""): previous_entity_id})
@@ -175,6 +645,7 @@ class PersistentOntologyStore:
             return False
 
         with self._operation_lock:
+            previous_signature = self._projection_source_signature()
             world = self._open_world()
             try:
                 ontology = world.get_ontology(BASE_IRI)
@@ -214,7 +685,12 @@ class PersistentOntologyStore:
                         )[individual] = self._data_values(value)
                     self._ensure_data_property(world, ontology, "listFieldName")[individual] = sorted(list_fields)
                     self._ensure_data_property(world, ontology, "jsonFieldName")[individual] = sorted(json_fields)
-                self._save_world(world)
+                self._save_world(world, invalidate_projection_cache=False)
+                self._patch_projection_cache(
+                    entities=[entity],
+                    field_names_by_id={entity_id: field_names},
+                    previous_signature=previous_signature,
+                )
                 return True
             finally:
                 world.close()
@@ -225,13 +701,19 @@ class PersistentOntologyStore:
             return False
         previous_entity_ids = previous_entity_ids or {}
         with self._operation_lock:
+            previous_signature = self._projection_source_signature()
             world = self._open_world()
             try:
                 for entity in entities:
                     entity_id = str(entity.get("id") or "").strip()
                     previous_id = previous_entity_ids.get(entity_id)
                     self._replace_entity(world, entity, previous_entity_id=previous_id)
-                self._save_world(world)
+                self._save_world(world, invalidate_projection_cache=False)
+                self._patch_projection_cache(
+                    entities=entities,
+                    previous_entity_ids=previous_entity_ids,
+                    previous_signature=previous_signature,
+                )
                 return True
             finally:
                 world.close()
@@ -258,6 +740,7 @@ class PersistentOntologyStore:
             return {"upserted": 0, "removed": 0}
 
         with self._operation_lock:
+            previous_signature = self._projection_source_signature()
             owlready2 = self._import_owlready2()
             world = self._open_world()
             try:
@@ -270,7 +753,12 @@ class PersistentOntologyStore:
                     removed += 1
                 for entity in entities:
                     self._replace_entity(world, entity)
-                self._save_world(world)
+                self._save_world(world, invalidate_projection_cache=False)
+                self._patch_projection_cache(
+                    entities=entities,
+                    remove_entity_ids=remove_entity_ids,
+                    previous_signature=previous_signature,
+                )
                 return {"upserted": len(entities), "removed": removed}
             finally:
                 world.close()
@@ -280,6 +768,7 @@ class PersistentOntologyStore:
         if not entity_id:
             return False
         with self._operation_lock:
+            previous_signature = self._projection_source_signature()
             owlready2 = self._import_owlready2()
             world = self._open_world()
             try:
@@ -287,22 +776,41 @@ class PersistentOntologyStore:
                 if individual is None:
                     return False
                 owlready2.destroy_entity(individual)
-                self._save_world(world)
+                self._save_world(world, invalidate_projection_cache=False)
+                self._patch_projection_cache(
+                    remove_entity_ids=[entity_id],
+                    previous_signature=previous_signature,
+                )
                 return True
             finally:
                 world.close()
 
-    def export_rdfxml(self, output_path=None):
+    @staticmethod
+    def _report_export_progress(progress_callback, progress, message):
+        if not callable(progress_callback):
+            return
+        try:
+            progress_callback(max(0.0, min(1.0, float(progress))), str(message or ""))
+        except Exception as exc:
+            logger.debug("Ontology export progress callback failed: %s", exc)
+
+    def export_rdfxml(self, output_path=None, progress_callback=None):
+        self._report_export_progress(progress_callback, 0.04, "Preparing ontology checkpoint")
         output_path = Path(output_path or self.ontology_path).resolve()
         output_path.parent.mkdir(parents=True, exist_ok=True)
         temp_path = output_path.with_name(f".{output_path.name}.{uuid.uuid4().hex}.tmp")
+        self._report_export_progress(progress_callback, 0.12, "Waiting for ontology store")
         with self._operation_lock:
+            self._report_export_progress(progress_callback, 0.20, "Opening ontology store")
             world = self._open_world(read_only=True)
             try:
                 ontology = world.get_ontology(BASE_IRI)
+                self._report_export_progress(progress_callback, 0.32, "Writing RDF/XML checkpoint")
                 ontology.save(file=str(temp_path), format="rdfxml")
+                self._report_export_progress(progress_callback, 0.78, "RDF/XML checkpoint written")
             finally:
                 world.close()
+        self._report_export_progress(progress_callback, 0.84, "Replacing previous checkpoint")
         replace_error = None
         for attempt in range(24):
             try:
@@ -311,9 +819,12 @@ class PersistentOntologyStore:
                 break
             except OSError as exc:
                 replace_error = exc
+                retry_progress = min(0.91, 0.84 + (attempt + 1) * 0.003)
+                self._report_export_progress(progress_callback, retry_progress, "Waiting for checkpoint file")
                 time.sleep(min(0.75, 0.08 * (attempt + 1)))
         if replace_error is not None:
             self._replace_locked_file(temp_path, output_path)
+        self._report_export_progress(progress_callback, 0.94, "Recording checkpoint metadata")
         stat = output_path.stat()
         self._write_manifest(
             {
@@ -324,6 +835,7 @@ class PersistentOntologyStore:
                 "database_authoritative": True,
             }
         )
+        self._report_export_progress(progress_callback, 1.0, "Ontology checkpoint saved")
         return True
 
     def compact_database(self):
@@ -347,6 +859,7 @@ class PersistentOntologyStore:
     def reimport_rdfxml(self):
         """Deliberately replace the working quadstore from the RDF/XML checkpoint."""
         with self._operation_lock:
+            self._invalidate_projection_cache()
             self.database_path.unlink(missing_ok=True)
             self.manifest_path.unlink(missing_ok=True)
             self._ensure_initialized()

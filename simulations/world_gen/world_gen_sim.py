@@ -1,3 +1,11 @@
+"""Primary world-generation simulation workflow.
+
+Architecture invariants: the ontology is the sole durable source of entity and
+semantic truth; runtime projections are caches. Generated planets are not yet
+intended to persist, so worldgen changes invalidate old products and require no
+backward-compatibility accommodation.
+"""
+
 import random
 import re
 import hashlib
@@ -43,6 +51,7 @@ from simulations.world_gen.interior_regime import derive_interior_regime_model
 from simulations.world_gen.map_seed import resolved_map_seed, seed_range
 from simulations.world_gen.material_catalog import element_symbols_by_rarity
 from simulations.world_gen.material_heatmaps import generate_material_heatmap_model
+from simulations.world_gen.mechanical_lithology import derive_planetary_mechanical_lithology_model
 from simulations.world_gen.natural_materials import (
     atmospheric_band_palette,
     derive_atmospheric_material_model,
@@ -2145,6 +2154,11 @@ class WorldGenSimulation:
             planet_id=planet.get("id", ""),
             tectonic_model=planet.get("tectonic_model") if isinstance(planet.get("tectonic_model"), dict) else None,
             crater_model=planet.get("crater_model") if isinstance(planet.get("crater_model"), dict) else None,
+            mechanical_lithology_model=(
+                planet.get("mechanical_lithology_model")
+                if isinstance(planet.get("mechanical_lithology_model"), dict)
+                else None
+            ),
         )
 
     def _derive_tectonic_model(self, terrain=None, seed=None, physics=None, planet=None):
@@ -2693,6 +2707,9 @@ class WorldGenSimulation:
         canvas = terrain.get("map_canvas", {})
         planet["terrain_seed_model"] = terrain
         planet["natural_material_model"] = natural_material_model
+        planet["mechanical_lithology_model"] = derive_planetary_mechanical_lithology_model(
+            natural_material_model
+        )
         planet["natural_materials"] = list(natural_material_model.get("dominant_materials") or [])
         planet["map_generation_recipe"] = terrain.get("map_recipe", [])
         planet["map_layers"] = terrain.get("map_layers", [])
@@ -2735,6 +2752,17 @@ class WorldGenSimulation:
             "relief_driver": terrain["heightfield"]["relief_driver"],
             "crater_density": terrain["cratering"]["density"],
         }
+        orogen_model = (planet.get("tectonic_model") or {}).get("orogen_system_model") if isinstance(planet.get("tectonic_model"), dict) else {}
+        if isinstance(orogen_model, dict) and orogen_model.get("status") == "orogen_systems_derived":
+            planet["geology_summary"]["orogen_system_count"] = int(orogen_model.get("system_count", 0) or 0)
+            planet["geology_summary"]["orogen_mechanisms"] = dict(orogen_model.get("mechanism_counts") or {})
+        deformation_model = (planet.get("heightmap_model") or {}).get("deformation_state_model")
+        if isinstance(deformation_model, dict):
+            planet["geology_summary"]["deformation_state_model_version"] = deformation_model.get("model_version")
+            planet["geology_summary"]["deformation_field_summaries"] = dict(deformation_model.get("summaries") or {})
+        mechanical_model = planet.get("mechanical_lithology_model")
+        if isinstance(mechanical_model, dict):
+            planet["geology_summary"]["dominant_mechanical_class"] = mechanical_model.get("dominant_mechanical_class")
         if isinstance(planet.get("heightmap_model"), dict):
             planet["geology_summary"]["elevation_range_m"] = [
                 planet["heightmap_model"]["min_elevation_m"],
@@ -2833,6 +2861,11 @@ class WorldGenSimulation:
             physics=seed["derived_planet_physics"],
             planet_id=planet.get("id", ""),
             tectonic_model=advanced,
+            mechanical_lithology_model=(
+                planet.get("mechanical_lithology_model")
+                if isinstance(planet.get("mechanical_lithology_model"), dict)
+                else None
+            ),
         )
         heightmap["simulated_age_myr"] = terrain_for_heightmap["simulated_age_myr"]
         planet["heightmap_model"] = heightmap
@@ -2848,6 +2881,10 @@ class WorldGenSimulation:
             "orogenic_uplift": advanced["surface_effects"]["orogenic_uplift"],
             "ocean_basin_opening": advanced["surface_effects"]["ocean_basin_opening"],
             "erosion_progress": advanced["surface_effects"]["erosion_progress"],
+            "orogen_system_count": int((advanced.get("orogen_system_model") or {}).get("system_count", 0) or 0),
+            "orogen_mechanisms": dict((advanced.get("orogen_system_model") or {}).get("mechanism_counts") or {}),
+            "deformation_state_model_version": ((heightmap.get("deformation_state_model") or {}).get("model_version")),
+            "dominant_mechanical_class": ((planet.get("mechanical_lithology_model") or {}).get("dominant_mechanical_class")),
             "elevation_range_m": [
                 heightmap["min_elevation_m"],
                 heightmap["max_elevation_m"],
@@ -2898,6 +2935,11 @@ class WorldGenSimulation:
             planet_id=planet.get("id", ""),
             tectonic_model=tectonic_model,
             crater_model=planet.get("crater_model") if isinstance(planet.get("crater_model"), dict) else None,
+            mechanical_lithology_model=(
+                planet.get("mechanical_lithology_model")
+                if isinstance(planet.get("mechanical_lithology_model"), dict)
+                else None
+            ),
         )
         heightmap["simulated_age_myr"] = next_age
         planet["heightmap_model"] = heightmap
@@ -2910,6 +2952,10 @@ class WorldGenSimulation:
                 heightmap["max_elevation_m"],
             ]
             planet["geology_summary"]["simulated_age_myr"] = next_age
+            if isinstance(tectonic_model, dict):
+                orogen_model = tectonic_model.get("orogen_system_model") if isinstance(tectonic_model.get("orogen_system_model"), dict) else {}
+                planet["geology_summary"]["orogen_system_count"] = int(orogen_model.get("system_count", 0) or 0)
+                planet["geology_summary"]["orogen_mechanisms"] = dict(orogen_model.get("mechanism_counts") or {})
         self._set_world_gen_progress(planet, "heightmap", complete=False)
         persisted = self._mirror_and_persist_planet(planet)
         self.commit_status = f"Advanced heightmap to {next_age:.1f} Myr" if persisted else f"Advanced heightmap to {next_age:.1f} Myr in memory"

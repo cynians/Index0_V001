@@ -157,6 +157,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         "species": ["general", "overview", "phylogeny", "relations", "temporal", "location", "simulation", "media"],
         "components": ["general", "overview", "temporal", "location", "relations", "operational", "simulation", "media"],
         "producers": ["general", "overview", "production", "temporal", "location", "relations", "media"],
+        "jobs": ["general", "overview", "temporal", "location", "relations", "media"],
+        "employments": ["general", "overview", "temporal", "location", "relations", "media"],
     }
     TAB_LABELS = {
         "general": "General",
@@ -1919,10 +1921,29 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             seen.add(schema_name)
 
         combined = {}
-        extends_name = schema.get("extends")
-        if extends_name:
-            parent_schema = self._active_schema_loader().get_schema(extends_name)
-            combined.update(self._collect_schema_fields(parent_schema, seen=seen))
+        extends_value = schema.get("extends")
+        extends_names = (
+            list(extends_value)
+            if isinstance(extends_value, (list, tuple, set))
+            else [extends_value]
+        )
+        for extends_name in extends_names:
+            if not extends_name:
+                continue
+            parent_schema = self._active_schema_loader().get_schema(str(extends_name))
+            combined.update(self._collect_schema_fields(parent_schema, seen=set(seen)))
+
+        mixins_value = schema.get("mixins") or []
+        mixin_names = (
+            list(mixins_value)
+            if isinstance(mixins_value, (list, tuple, set))
+            else [mixins_value]
+        )
+        for mixin_name in mixin_names:
+            if not mixin_name:
+                continue
+            mixin_schema = self._active_schema_loader().get_schema(str(mixin_name))
+            combined.update(self._collect_schema_fields(mixin_schema, seen=set(seen)))
 
         combined.update(schema.get("fields", {}))
         return combined
@@ -1930,6 +1951,14 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
     def _get_schema_field_specs(self):
         schema = self._resolve_schema()
         field_specs = self._collect_schema_fields(schema)
+        entity_mixins = self.entity.get("schema_mixins") or []
+        if not isinstance(entity_mixins, (list, tuple, set)):
+            entity_mixins = [entity_mixins]
+        for mixin_name in entity_mixins:
+            if not mixin_name:
+                continue
+            mixin_schema = self._active_schema_loader().get_schema(str(mixin_name))
+            field_specs.update(self._collect_schema_fields(mixin_schema))
         if self._is_idea_card():
             return {
                 key: value
@@ -4900,6 +4929,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                         "start_year_rect",
                         "end_year_rect",
                         "requirements_rect",
+                        "job_rect",
+                        "technology_rect",
+                        "employment_rect",
                         "remove_rect",
                     ):
                         rect_value = row.get(rect_key)
@@ -5175,6 +5207,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                             "start_year_rect",
                             "end_year_rect",
                             "requirements_rect",
+                            "job_rect",
+                            "technology_rect",
+                            "employment_rect",
                         )
                     )
                 ]
@@ -5690,6 +5725,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         title_max_w = max(30, rect.right - 156 - title_x)
         if type_label_rect is not None:
             title_max_w = max(30, type_label_rect.right - title_x)
+        if card.get("has_unsaved_draft") and not card.get("is_edit_mode", False):
+            title_text = f"{title_text}  • UNSAVED"
         title_surface = font.render(self._ellipsize_text(title_text, font, title_max_w), True, header_text_color)
         subtitle_max_w = title_max_w
         description_surface = None

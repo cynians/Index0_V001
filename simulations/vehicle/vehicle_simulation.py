@@ -194,12 +194,36 @@ class VehicleSimulation:
     def get_vehicle_class(self):
         return self.vehicle.get("vehicle_class", "vehicle")
 
+    def _is_space_station(self):
+        entity = self.vehicle.get("_entity")
+        return bool(
+            isinstance(entity, dict)
+            and entity.get("location_class") in {"space_station", "station"}
+        )
+
     def get_vehicle_dimensions_m(self):
         return self.design.get_vehicle_dimensions_m()
 
+    def _persist_design_state(self):
+        entity = self._get_vehicle_entity()
+        if not isinstance(entity, dict):
+            return False
+        installed_components = self.design.get_placed_components()
+        if self.world_model is not None and hasattr(self.world_model, "set_literal"):
+            changed = self.world_model.set_literal(
+                self.vehicle_entity_id,
+                "installed_components",
+                installed_components,
+            )
+            return bool(changed)
+        entity["installed_components"] = installed_components
+        if self.world_model is not None and hasattr(self.world_model, "mark_repository_changed"):
+            self.world_model.mark_repository_changed()
+        return True
+
     def get_active_mode_label(self):
         mode_labels = {
-            self.VIEW_DESIGN: "Vehicle Design",
+            self.VIEW_DESIGN: "Station Design" if self._is_space_station() else "Vehicle Design",
             self.VIEW_INTERIOR: "Interior",
             self.VIEW_OPERATIONAL: "Operational",
         }
@@ -615,6 +639,8 @@ class VehicleSimulation:
                 self.selected_part_id = ended_id
                 self.design.set_selected_component(ended_id)
                 self.hover_screen_pos = screen_pos if ended_id else None
+                if ended_id:
+                    self._persist_design_state()
                 return
 
             return

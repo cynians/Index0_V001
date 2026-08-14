@@ -28,8 +28,8 @@ class EarthReferenceModelTests(unittest.TestCase):
         self.assertGreater(len(earth["reference_land_polygons"]["polygons"]), 100)
         self.assertEqual("negative_latitude", earth["reference_land_polygons"]["y_axis"])
         grid = earth["heightmap_model"]["sample_grid"]
-        self.assertEqual((257, 129), (grid["width"], grid["height"]))
-        self.assertEqual(129, len(grid["rows"]))
+        self.assertEqual((385, 193), (grid["width"], grid["height"]))
+        self.assertEqual(193, len(grid["rows"]))
         self.assertGreater(len(earth["water_cycle_model"]["rivers"]), 500)
         self.assertGreater(len(earth["water_cycle_model"]["reference_lakes"]), 300)
         self.assertIn("annual_runoff_rows_mm", earth["water_cycle_model"]["climate_grid"])

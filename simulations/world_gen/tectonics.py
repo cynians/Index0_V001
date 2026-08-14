@@ -1,6 +1,14 @@
+"""Generate tectonic state from ontology-backed planetary inputs.
+
+Architecture invariants: entities and semantic facts live only in the ontology;
+tectonic models are derived products. Generated planets are currently
+disposable, so model changes do not carry legacy compatibility requirements.
+"""
+
 import math
 
 from simulations.world_gen.map_seed import resolved_map_seed, seed_range
+from simulations.world_gen.orogen_systems import derive_orogen_system_model
 
 
 def _clamp(value, low, high):
@@ -269,6 +277,187 @@ def _segment_kinematics(segment, plates_by_id):
         "subducting_plate": subducting,
         "overriding_plate": overriding,
     }
+
+
+def _summarize_boundaries(boundary_segments):
+    boundaries = []
+    segments_by_pair = {}
+    for segment in boundary_segments or []:
+        if not isinstance(segment, dict):
+            continue
+        pair = tuple(sorted((segment.get("plate_a"), segment.get("plate_b"))))
+        segments_by_pair.setdefault(pair, []).append(segment)
+    for pair, pair_segments in sorted(segments_by_pair.items(), key=lambda item: len(item[1]), reverse=True):
+        kind_counts = {}
+        for segment in pair_segments:
+            kind = str(segment.get("kind") or "passive")
+            kind_counts[kind] = kind_counts.get(kind, 0) + 1
+        dominant_kind = max(kind_counts, key=kind_counts.get)
+        boundaries.append({
+            "plate_a": pair[0],
+            "plate_b": pair[1],
+            "kind": dominant_kind,
+            "segment_kind_counts": kind_counts,
+            "sample_length": len(pair_segments),
+            "activity": round(sum(float(item.get("activity_scale", 1.0)) for item in pair_segments) / len(pair_segments), 3),
+            "mean_normal_velocity_cm_year": round(sum(float(item.get("normal_velocity_cm_year", 0.0)) for item in pair_segments) / len(pair_segments), 3),
+            "mean_shear_velocity_cm_year": round(sum(float(item.get("shear_velocity_cm_year", 0.0)) for item in pair_segments) / len(pair_segments), 3),
+        })
+    return boundaries
+
+
+def _pair_distance_delta(nx, ny, plate_a, plate_b):
+    return _plate_distance(nx % 1.0, _clamp(ny, 0.0, 1.0), plate_a) - _plate_distance(
+        nx % 1.0,
+        _clamp(ny, 0.0, 1.0),
+        plate_b,
+    )
+
+
+def _boundary_edge_crossing(point_a, owner_a, point_b, owner_b, plates):
+    pair = tuple(sorted((owner_a, owner_b)))
+    plate_a, plate_b = plates[pair[0]], plates[pair[1]]
+    value_a = _pair_distance_delta(point_a[0], point_a[1], plate_a, plate_b)
+    value_b = _pair_distance_delta(point_b[0], point_b[1], plate_a, plate_b)
+    denominator = value_a - value_b
+    t = 0.5 if abs(denominator) <= 1e-12 else _clamp(value_a / denominator, 0.0, 1.0)
+    dx = _wrapped_delta(point_b[0], point_a[0])
+    return pair, ((point_a[0] + dx * t) % 1.0, point_a[1] + (point_b[1] - point_a[1]) * t)
+
+
+def _continuous_boundary_segments(owner_rows, plates):
+    """Extract sub-cell plate boundaries from continuous plate-distance fields."""
+    height = len(owner_rows)
+    width = len(owner_rows[0]) if height else 0
+    if width < 2 or height < 2:
+        return []
+    segments = []
+
+    def point_distance(first, second):
+        return math.hypot(_wrapped_delta(first[0], second[0]), first[1] - second[1])
+
+    def add_segment(pair, point_a, point_b):
+        dx = _wrapped_delta(point_b[0], point_a[0])
+        dy = point_b[1] - point_a[1]
+        length = math.hypot(dx, dy)
+        if length <= 1e-8:
+            return
+        midpoint_x = (point_a[0] + dx * 0.5) % 1.0
+        midpoint_y = (point_a[1] + point_b[1]) * 0.5
+        plate_a, plate_b = plates[pair[0]], plates[pair[1]]
+        # The contour tangent is continuous; its perpendicular is oriented by
+        # the underlying distance field so the normal always points A -> B.
+        normal_x, normal_y = -dy / length, dx / length
+        probe = min(0.0015, length * 0.35)
+        forward = _pair_distance_delta(
+            midpoint_x + normal_x * probe,
+            midpoint_y + normal_y * probe,
+            plate_a,
+            plate_b,
+        )
+        backward = _pair_distance_delta(
+            midpoint_x - normal_x * probe,
+            midpoint_y - normal_y * probe,
+            plate_a,
+            plate_b,
+        )
+        if forward < backward:
+            normal_x, normal_y = -normal_x, -normal_y
+        segments.append({
+            "x1": round(point_a[0] % 1.0, 7),
+            "y1": round(_clamp(point_a[1], 0.0, 1.0), 7),
+            "x2": round(point_b[0] % 1.0, 7),
+            "y2": round(_clamp(point_b[1], 0.0, 1.0), 7),
+            "plate_a": plate_a["id"],
+            "plate_b": plate_b["id"],
+            "normal_x": round(normal_x, 6),
+            "normal_y": round(normal_y, 6),
+            "geometry_model": "continuous_plate_distance_contour_v1",
+        })
+
+    for row in range(height - 1):
+        y0 = row / max(1, height - 1)
+        y1 = (row + 1) / max(1, height - 1)
+        for col in range(width - 1):
+            x0 = col / max(1, width - 1)
+            x1 = (col + 1) / max(1, width - 1)
+            corners = (
+                ((x0, y0), owner_rows[row][col]),
+                ((x1, y0), owner_rows[row][col + 1]),
+                ((x1, y1), owner_rows[row + 1][col + 1]),
+                ((x0, y1), owner_rows[row + 1][col]),
+            )
+            crossings = {}
+            for first, second in ((0, 1), (1, 2), (2, 3), (3, 0)):
+                point_a, owner_a = corners[first]
+                point_b, owner_b = corners[second]
+                if owner_a == owner_b:
+                    continue
+                pair, crossing = _boundary_edge_crossing(point_a, owner_a, point_b, owner_b, plates)
+                pair_crossings = crossings.setdefault(pair, [])
+                if not any(point_distance(crossing, existing) <= 1e-8 for existing in pair_crossings):
+                    pair_crossings.append(crossing)
+
+            for pair, points in crossings.items():
+                if len(points) == 2:
+                    add_segment(pair, points[0], points[1])
+                elif len(points) == 4:
+                    pairings = (
+                        ((0, 1), (2, 3)),
+                        ((0, 2), (1, 3)),
+                        ((0, 3), (1, 2)),
+                    )
+                    best = min(
+                        pairings,
+                        key=lambda pairing: sum(point_distance(points[a], points[b]) for a, b in pairing),
+                    )
+                    for first, second in best:
+                        add_segment(pair, points[first], points[second])
+                elif points:
+                    # Triple-junction cells commonly contribute one crossing
+                    # for each participating pair. Join those arms at a shared
+                    # sub-cell junction instead of leaving visible gaps.
+                    junction = ((x0 + x1) * 0.5 % 1.0, (y0 + y1) * 0.5)
+                    for point in points:
+                        add_segment(pair, point, junction)
+    return segments
+
+
+def _sample_plate_owner_rows(plates, width, height):
+    rows = []
+    for row in range(height):
+        ny = row / max(1, height - 1)
+        rows.append([
+            _nearest_plate_index(col / max(1, width - 1), ny, plates)
+            for col in range(width)
+        ])
+    return rows
+
+
+def _decorate_boundary_segments(boundary_segments, plates, map_seed):
+    plates_by_id = {plate["id"]: plate for plate in plates}
+    for index, segment in enumerate(boundary_segments):
+        segment["id"] = f"boundary_segment_{index + 1:04d}"
+        pair = tuple(sorted((segment.get("plate_a"), segment.get("plate_b"))))
+        segment.update(_segment_kinematics(segment, plates_by_id))
+        pair_key = f"{pair[0]}:{pair[1]}"
+        segment_x1 = float(segment.get("x1", 0.0) or 0.0)
+        segment_x2 = float(segment.get("x2", 0.0) or 0.0)
+        midpoint_x = (segment_x1 + _wrapped_delta(segment_x2, segment_x1) * 0.5) % 1.0
+        midpoint_y = (float(segment.get("y1", 0.5) or 0.5) + float(segment.get("y2", 0.5) or 0.5)) * 0.5
+        activity_phase = seed_range(map_seed, f"boundary:{pair_key}:activity_phase", 0.0, math.tau)
+        activity_frequency = seed_range(map_seed, f"boundary:{pair_key}:activity_frequency", 2.4, 5.8)
+        activity_wave = 0.5 + 0.5 * math.sin(
+            math.tau * activity_frequency * (midpoint_x + midpoint_y * 0.57)
+            + activity_phase
+        )
+        segment["activity_scale"] = round(0.42 + activity_wave * 0.78, 3)
+        segment["influence_width"] = round(
+            seed_range(map_seed, f"boundary:{pair_key}:base_width", 0.018, 0.033)
+            * (0.82 + activity_wave * 0.34),
+            5,
+        )
+    return boundary_segments
 
 
 def _topology_and_lithosphere(owner_rows, plates, boundary_segments, map_seed):
@@ -694,85 +883,37 @@ def derive_tectonic_model(terrain, seed=None, physics=None, planet_id=""):
 
     sample_w = 97
     sample_h = 49
-    owner_rows = []
-    boundary_segments = []
-    boundary_pairs = {}
-    for row in range(sample_h):
-        ny = row / max(1, sample_h - 1)
-        owner_row = []
-        for col in range(sample_w):
-            nx = col / max(1, sample_w - 1)
-            owner_row.append(_nearest_plate_index(nx, ny, plates))
-        owner_rows.append(owner_row)
+    owner_rows = _sample_plate_owner_rows(plates, sample_w, sample_h)
 
-    for row in range(sample_h - 1):
-        for col in range(sample_w - 1):
-            a = owner_rows[row][col]
-            east = owner_rows[row][col + 1]
-            south = owner_rows[row + 1][col]
-            if east != a:
-                pair = tuple(sorted((a, east)))
-                x = (col + 0.5) / max(1, sample_w - 1)
-                y1 = row / max(1, sample_h - 1)
-                y2 = (row + 1) / max(1, sample_h - 1)
-                normal_x = 1.0 if pair[0] == a else -1.0
-                boundary_segments.append({"x1": x, "y1": y1, "x2": x, "y2": y2, "plate_a": plates[pair[0]]["id"], "plate_b": plates[pair[1]]["id"], "normal_x": normal_x, "normal_y": 0.0})
-                boundary_pairs[pair] = boundary_pairs.get(pair, 0) + 1
-            if south != a:
-                pair = tuple(sorted((a, south)))
-                x1 = col / max(1, sample_w - 1)
-                x2 = (col + 1) / max(1, sample_w - 1)
-                y = (row + 0.5) / max(1, sample_h - 1)
-                normal_y = 1.0 if pair[0] == a else -1.0
-                boundary_segments.append({"x1": x1, "y1": y, "x2": x2, "y2": y, "plate_a": plates[pair[0]]["id"], "plate_b": plates[pair[1]]["id"], "normal_x": 0.0, "normal_y": normal_y})
-                boundary_pairs[pair] = boundary_pairs.get(pair, 0) + 1
+    # Boundary geometry needs substantially more resolution than the stored
+    # lithosphere summary. Marching the continuous plate-distance fields at
+    # the heightfield resolution removes the old axis-aligned stair steps
+    # without inflating every downstream lithosphere grid.
+    boundary_w = 257
+    boundary_h = 129
+    boundary_owner_rows = _sample_plate_owner_rows(plates, boundary_w, boundary_h)
+    boundary_segments = _decorate_boundary_segments(
+        _continuous_boundary_segments(boundary_owner_rows, plates),
+        plates,
+        map_seed,
+    )
 
-    plates_by_id = {plate["id"]: plate for plate in plates}
-    for segment in boundary_segments:
-        pair = tuple(sorted((segment.get("plate_a"), segment.get("plate_b"))))
-        segment.update(_segment_kinematics(segment, plates_by_id))
-        pair_key = f"{pair[0]}:{pair[1]}"
-        midpoint_x = (float(segment["x1"]) + float(segment["x2"])) * 0.5
-        midpoint_y = (float(segment["y1"]) + float(segment["y2"])) * 0.5
-        activity_phase = seed_range(map_seed, f"boundary:{pair_key}:activity_phase", 0.0, math.tau)
-        activity_frequency = seed_range(map_seed, f"boundary:{pair_key}:activity_frequency", 2.4, 5.8)
-        activity_wave = 0.5 + 0.5 * math.sin(
-            math.tau * activity_frequency * (midpoint_x + midpoint_y * 0.57)
-            + activity_phase
-        )
-        segment["activity_scale"] = round(0.42 + activity_wave * 0.78, 3)
-        segment["influence_width"] = round(
-            seed_range(map_seed, f"boundary:{pair_key}:base_width", 0.018, 0.033)
-            * (0.82 + activity_wave * 0.34),
-            5,
-        )
-
-    boundaries = []
-    segments_by_pair = {}
-    for segment in boundary_segments:
-        pair = tuple(sorted((segment.get("plate_a"), segment.get("plate_b"))))
-        segments_by_pair.setdefault(pair, []).append(segment)
-    for pair, pair_segments in sorted(segments_by_pair.items(), key=lambda item: len(item[1]), reverse=True):
-        kind_counts = {}
-        for segment in pair_segments:
-            kind_counts[segment["kind"]] = kind_counts.get(segment["kind"], 0) + 1
-        dominant_kind = max(kind_counts, key=kind_counts.get)
-        boundaries.append({
-            "plate_a": pair[0],
-            "plate_b": pair[1],
-            "kind": dominant_kind,
-            "segment_kind_counts": kind_counts,
-            "sample_length": len(pair_segments),
-            "activity": round(sum(float(item.get("activity_scale", 1.0)) for item in pair_segments) / len(pair_segments), 3),
-            "mean_normal_velocity_cm_year": round(sum(float(item.get("normal_velocity_cm_year", 0.0)) for item in pair_segments) / len(pair_segments), 3),
-            "mean_shear_velocity_cm_year": round(sum(float(item.get("shear_velocity_cm_year", 0.0)) for item in pair_segments) / len(pair_segments), 3),
-        })
+    boundaries = _summarize_boundaries(boundary_segments)
 
     topology = _topology_and_lithosphere(owner_rows, plates, boundary_segments, map_seed)
 
     geologic_history = _latent_geologic_history(plates, terrain, map_seed, boundaries=boundaries)
     hotspot_model = _hotspot_model(plates, map_seed)
     continental_provinces = _continental_province_model(plates, map_seed)
+    canvas = terrain.get("map_canvas") if isinstance(terrain.get("map_canvas"), dict) else {}
+    orogen_system_model = derive_orogen_system_model(
+        plates,
+        boundary_segments,
+        geologic_history=geologic_history,
+        map_seed=map_seed,
+        age_myr=0.0,
+        circumference_m=max(1.0, float(canvas.get("circumference_m", 40_075_000.0) or 40_075_000.0)),
+    )
 
     return {
         "status": "plates_defined",
@@ -795,39 +936,31 @@ def derive_tectonic_model(terrain, seed=None, physics=None, planet_id=""):
             "uses_final_ocean_coverage": False,
         },
         "sample_grid": {"width": sample_w, "height": sample_h, "owners": owner_rows},
+        "boundary_trace_grid": {
+            "width": boundary_w,
+            "height": boundary_h,
+            "geometry_model": "continuous_plate_distance_contour_v1",
+        },
         "plates": plates,
         "mantle_currents": currents,
         "boundary_segments": boundary_segments,
         "boundaries": boundaries,
         **topology,
         "geologic_history": geologic_history,
+        "orogen_system_model": orogen_system_model,
         "hotspot_model": hotspot_model,
         "continental_province_model": continental_provinces,
         "registry_time_coupled": False,
         "notes": [
             "Plate motion is seeded from mantle current cells before terrain is uplifted.",
-            "Advancing tectonics turns convergent boundaries into mountains/trenches and divergent boundaries into ocean basins.",
+            "Coherent orogen systems translate local boundary kinematics into signed uplift, subsidence, volcanic and crustal-thickening forcing.",
         ],
     }
 
 
 def advance_tectonics_model(tectonic_model, terrain, million_years=125.0):
     tectonic_model = tectonic_model if isinstance(tectonic_model, dict) else {}
-    boundaries = list(tectonic_model.get("boundaries") or [])
     age = float(tectonic_model.get("age_myr", 0.0) or 0.0) + max(1.0, float(million_years or 1.0))
-    uplift = 0.0
-    basin = 0.0
-    erosion = 0.0
-    for boundary in boundaries:
-        activity = float(boundary.get("activity", 0.0) or 0.0)
-        kind = boundary.get("kind")
-        if kind in {"collision", "subduction"}:
-            uplift += activity
-        elif kind == "divergent":
-            basin += activity
-        if kind in {"collision", "subduction", "divergent"}:
-            erosion += activity * 0.35
-
     advanced = dict(tectonic_model)
     plates = []
     drift_factor = max(1.0, float(million_years or 1.0)) / 100.0
@@ -856,19 +989,50 @@ def advance_tectonics_model(tectonic_model, terrain, million_years=125.0):
         plates.append(updated)
     if plates:
         advanced["plates"] = plates
-        plates_by_id = {plate["id"]: plate for plate in plates}
-        updated_segments = []
-        for segment in advanced.get("boundary_segments") or []:
-            updated_segment = dict(segment)
-            updated_segment.update(_segment_kinematics(updated_segment, plates_by_id))
-            updated_segments.append(updated_segment)
-        if updated_segments:
-            advanced["boundary_segments"] = updated_segments
+        sample_w, sample_h = 97, 49
+        boundary_w, boundary_h = 257, 129
+        owner_rows = _sample_plate_owner_rows(plates, sample_w, sample_h)
+        boundary_owner_rows = _sample_plate_owner_rows(plates, boundary_w, boundary_h)
+        advanced["boundary_segments"] = _decorate_boundary_segments(
+            _continuous_boundary_segments(boundary_owner_rows, plates),
+            plates,
+            map_seed,
+        )
+        advanced["sample_grid"] = {"width": sample_w, "height": sample_h, "owners": owner_rows}
+        advanced["boundary_trace_grid"] = {
+            "width": boundary_w,
+            "height": boundary_h,
+            "geometry_model": "continuous_plate_distance_contour_v1",
+        }
+        advanced.update(_topology_and_lithosphere(owner_rows, plates, advanced["boundary_segments"], map_seed))
+    boundaries = _summarize_boundaries(advanced.get("boundary_segments") or [])
+    advanced["boundaries"] = boundaries
+    canvas = terrain.get("map_canvas") if isinstance(terrain.get("map_canvas"), dict) else {}
+    advanced["orogen_system_model"] = derive_orogen_system_model(
+        advanced.get("plates") or [],
+        advanced.get("boundary_segments") or [],
+        geologic_history=advanced.get("geologic_history") or {},
+        map_seed=map_seed,
+        age_myr=age,
+        circumference_m=max(1.0, float(canvas.get("circumference_m", 40_075_000.0) or 40_075_000.0)),
+    )
     advanced["status"] = "tectonics_advanced"
     advanced["age_myr"] = round(age, 1)
     advanced["geologic_time_step_myr"] = max(1.0, float(million_years or 1.0))
     advanced["time_domain"] = "pre_generation_geologic_history"
     advanced["registry_time_coupled"] = False
+    uplift = 0.0
+    basin = 0.0
+    erosion = 0.0
+    for boundary in boundaries:
+        activity = float(boundary.get("activity", 0.0) or 0.0)
+        kind = boundary.get("kind")
+        if kind in {"collision", "subduction"}:
+            uplift += activity
+        elif kind == "divergent":
+            basin += activity
+        if kind in {"collision", "subduction", "divergent"}:
+            erosion += activity * 0.35
     time_factor = min(1.0, age / 125.0)
     advanced["surface_effects"] = {
         "orogenic_uplift": round(min(1.0, time_factor * 0.65 + uplift / max(1.0, len(boundaries) * 0.12)), 3),

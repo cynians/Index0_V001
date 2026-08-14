@@ -15,7 +15,7 @@ from simulations.world_gen.drainage import (
 )
 
 
-WATER_CYCLE_MODEL_VERSION = "monthly-normals-koppen-geiger-v15"
+WATER_CYCLE_MODEL_VERSION = "monthly-normals-koppen-geiger-v18-zonal-continuity"
 
 # Only a fraction of condensed moisture truly leaves the advecting air mass
 # each hop; the rest represents the same parcel producing rain repeatedly
@@ -276,32 +276,175 @@ def _rows_from_heightmap(heightmap):
     # narrow peninsulas, small islands, straits, and inland drainage basins.
     detail_level = int(heightmap.get("map_detail_level", 0) or 0) if isinstance(heightmap, dict) else 0
     max_height = 257 if detail_level > 0 else 129
-    stride = max(1, math.ceil(width / 257), math.ceil(len(rows) / max_height))
-    if stride <= 1:
+    target_width = min(257, width)
+    target_height = min(max_height, len(rows))
+    if target_width == width and target_height == len(rows):
         return rows
-    # Box-filter (average) each stride x stride block instead of picking
-    # every Nth sample. Naive decimation aliases the heightmap's fine-scale
-    # ridge/rugged texture (deliberately high-frequency, see heightmap.py's
-    # along-strike orogenic segmentation noise) into moire/blocky artifacts
-    # in the coarser climate-solve grid, which then propagate downstream
-    # into windward uplift, rain shadow, and precipitation.
-    height = len(rows)
+    # Prefilter, then reconstruct onto the climate grid. Integer stride
+    # decimation turned a 385x193 parent into only 193x97 samples and exposed
+    # large rectangular cells. This retains the intended 257x129 solve while
+    # suppressing aliases from unresolved ridge texture.
+    filtered = _relax_continuous_planetary_field(rows, 0.16)
+    source_height = len(filtered)
     sampled = []
-    for y0 in range(0, height, stride):
-        y1 = min(height, y0 + stride)
+    for target_y in range(target_height):
+        source_y = target_y / max(1, target_height - 1) * max(1, source_height - 1)
+        y0 = int(math.floor(source_y))
+        y1 = min(source_height - 1, y0 + 1)
+        ty = source_y - y0
         sampled_row = []
-        for x0 in range(0, width, stride):
-            x1 = min(width, x0 + stride)
-            total = 0.0
-            count = 0
-            for yy in range(y0, y1):
-                row = rows[yy]
-                for xx in range(x0, x1):
-                    total += row[xx]
-                    count += 1
-            sampled_row.append(total / max(1, count))
+        for target_x in range(target_width):
+            source_x = target_x / max(1, target_width - 1) * max(1, width - 1)
+            x0 = int(math.floor(source_x))
+            x1 = min(width - 1, x0 + 1)
+            tx = source_x - x0
+            top = float(filtered[y0][x0]) * (1.0 - tx) + float(filtered[y0][x1]) * tx
+            bottom = float(filtered[y1][x0]) * (1.0 - tx) + float(filtered[y1][x1]) * tx
+            sampled_row.append(top * (1.0 - ty) + bottom * ty)
+        sampled_row[-1] = sampled_row[0]
         sampled.append(sampled_row)
     return sampled
+
+
+def _relax_continuous_planetary_field(rows, strength):
+    """Remove solver-cell discontinuities without blurring causal structure."""
+    if not rows or len(rows) < 3 or len(rows[0]) < 4:
+        return rows
+    height = len(rows)
+    width = min(len(row) for row in rows)
+    # Full planetary grids duplicate longitude zero in their final column.
+    duplicate_seam = all(
+        abs(float(row[0]) - float(row[width - 1])) < 1e-6
+        for row in rows
+    )
+    unique_width = width - 1 if duplicate_seam else width
+    amount = _clamp(strength, 0.0, 0.45)
+    result = [[float(value) for value in row[:width]] for row in rows]
+    for y in range(height):
+        north = max(0, y - 1)
+        south = min(height - 1, y + 1)
+        for x in range(unique_width):
+            west = (x - 1) % unique_width
+            east = (x + 1) % unique_width
+            neighbor_mean = (
+                float(rows[y][west])
+                + float(rows[y][east])
+                + float(rows[north][x])
+                + float(rows[south][x])
+            ) * 0.25
+            result[y][x] = float(rows[y][x]) * (1.0 - amount) + neighbor_mean * amount
+        if duplicate_seam:
+            result[y][-1] = result[y][0]
+    return result
+
+
+def _barrier_aware_relax_field(
+    field_rows,
+    elevation_rows,
+    *,
+    strength=0.32,
+    passes=2,
+    preserve_total=False,
+    zonal_bias=1.0,
+):
+    """Diffuse cell lanes while retaining mountain-controlled gradients."""
+    if not field_rows or len(field_rows) < 3 or len(field_rows[0]) < 4:
+        return field_rows
+    height = min(len(field_rows), len(elevation_rows or field_rows))
+    width = min(
+        min(len(row) for row in field_rows[:height]),
+        min(len(row) for row in (elevation_rows or field_rows)[:height]),
+    )
+    values = [[float(value) for value in row[:width]] for row in field_rows[:height]]
+    elevations = [
+        [float(value) for value in row[:width]]
+        for row in (elevation_rows or field_rows)[:height]
+    ]
+    duplicate_seam = all(
+        abs(values[y][0] - values[y][-1]) < 1e-6
+        and abs(elevations[y][0] - elevations[y][-1]) < 1e-6
+        for y in range(height)
+    )
+    unique_width = width - 1 if duplicate_seam else width
+    amount = _clamp(strength, 0.0, 0.48)
+    zonal_weight = max(0.25, min(4.0, float(zonal_bias or 1.0)))
+    area_weights = [
+        max(0.02, math.cos((y / max(1, height - 1) - 0.5) * math.pi))
+        for y in range(height)
+    ]
+    initial_total = sum(
+        values[y][x] * area_weights[y]
+        for y in range(height)
+        for x in range(unique_width)
+    )
+    for _pass in range(max(1, int(passes or 1))):
+        source = values
+        target = [row[:] for row in source]
+        for y in range(height):
+            north = max(0, y - 1)
+            south = min(height - 1, y + 1)
+            for x in range(unique_width):
+                center_height = elevations[y][x]
+                weighted_sum = 0.0
+                weight_sum = 0.0
+                for nx, ny, directional_weight in (
+                    ((x - 1) % unique_width, y, zonal_weight),
+                    ((x + 1) % unique_width, y, zonal_weight),
+                    (x, north, 1.0),
+                    (x, south, 1.0),
+                ):
+                    # A kilometre-scale barrier strongly inhibits lateral
+                    # reconstruction; ordinary rolling relief does not.
+                    barrier = math.exp(
+                        -((abs(elevations[ny][nx] - center_height) / 1050.0) ** 1.35)
+                    )
+                    weight = barrier * directional_weight
+                    weighted_sum += source[ny][nx] * weight
+                    weight_sum += weight
+                neighbor_mean = weighted_sum / max(1e-9, weight_sum)
+                target[y][x] = source[y][x] * (1.0 - amount) + neighbor_mean * amount
+            if duplicate_seam:
+                target[y][-1] = target[y][0]
+        values = target
+    if preserve_total:
+        resolved_total = sum(
+            values[y][x] * area_weights[y]
+            for y in range(height)
+            for x in range(unique_width)
+        )
+        scale = initial_total / max(1e-9, resolved_total)
+        for y in range(height):
+            for x in range(unique_width):
+                values[y][x] = max(0.0, values[y][x] * scale)
+            if duplicate_seam:
+                values[y][-1] = values[y][0]
+    return values
+
+
+def _sample_bilinear_rows(rows, u, v, *, wrap_x=True):
+    if not rows or not rows[0]:
+        return 0.0
+    height = len(rows)
+    width = min(len(row) for row in rows)
+    duplicate_seam = bool(
+        wrap_x
+        and width > 2
+        and all(
+            abs(float(row[0]) - float(row[width - 1])) < 1e-6
+            for row in rows
+        )
+    )
+    unique_width = width - 1 if duplicate_seam else width
+    px = (float(u) % 1.0 if wrap_x else _clamp(u)) * max(1, unique_width)
+    py = _clamp(v) * max(1, height - 1)
+    x0 = int(math.floor(px)) % unique_width
+    x1 = (x0 + 1) % unique_width if wrap_x else min(unique_width - 1, x0 + 1)
+    y0 = max(0, min(height - 1, int(math.floor(py))))
+    y1 = min(height - 1, y0 + 1)
+    tx, ty = px - math.floor(px), py - math.floor(py)
+    top = float(rows[y0][x0]) * (1.0 - tx) + float(rows[y0][x1]) * tx
+    bottom = float(rows[y1][x0]) * (1.0 - tx) + float(rows[y1][x1]) * tx
+    return top * (1.0 - ty) + bottom * ty
 
 
 def _wave_noise(map_seed, key, nx, ny):
@@ -711,6 +854,95 @@ def _koppen_geiger_class(
     return major + moisture_suffix + thermal_suffix
 
 
+def _derive_koppen_display_grid(
+    temperature_rows,
+    seasonality_rows,
+    precipitation_rows,
+    shore_distance_rows,
+    condensation_rows,
+    elevation_rows,
+    *,
+    sea_level,
+    map_seed,
+    source_uv_bounds,
+    wrap_x,
+):
+    """Reclassify continuous climate fields at display resolution.
+
+    The physical solver remains on its compact planetary grid.  Interpolating
+    its *classes* would turn each solver cell into a rectangular biome panel,
+    so the map instead interpolates the continuous state and applies the
+    Koppen thresholds at the finer display samples.
+    """
+    source_height = len(temperature_rows)
+    source_width = len(temperature_rows[0]) if source_height else 0
+    if source_width < 2 or source_height < 2:
+        return [], []
+
+    display_width = min(513, (source_width - 1) * 2 + 1)
+    display_height = min(257, (source_height - 1) * 2 + 1)
+    source_u0 = float(source_uv_bounds.get("min_u", 0.0) or 0.0)
+    source_u1 = float(source_uv_bounds.get("max_u", 1.0) or 1.0)
+    source_v0 = float(source_uv_bounds.get("min_v", 0.0) or 0.0)
+    source_v1 = float(source_uv_bounds.get("max_v", 1.0) or 1.0)
+    display_rows = []
+    display_elevation_rows = []
+
+    for y in range(display_height):
+        local_v = y / max(1, display_height - 1)
+        global_v = source_v0 + (source_v1 - source_v0) * local_v
+        latitude_signed, _latitude_abs = _global_latitude_metrics(global_v)
+        class_row = []
+        elevation_row = []
+        for x in range(display_width):
+            local_u = x / max(1, display_width - 1)
+            global_u = source_u0 + (source_u1 - source_u0) * local_u
+            temperature = _sample_bilinear_rows(
+                temperature_rows, local_u, local_v, wrap_x=wrap_x
+            )
+            seasonality = _sample_bilinear_rows(
+                seasonality_rows, local_u, local_v, wrap_x=wrap_x
+            )
+            precipitation = _sample_bilinear_rows(
+                precipitation_rows, local_u, local_v, wrap_x=wrap_x
+            )
+            continentality = _clamp(_sample_bilinear_rows(
+                shore_distance_rows, local_u, local_v, wrap_x=wrap_x
+            ))
+            condensation = _sample_bilinear_rows(
+                condensation_rows, local_u, local_v, wrap_x=wrap_x
+            )
+            elevation = _sample_bilinear_rows(
+                elevation_rows, local_u, local_v, wrap_x=wrap_x
+            )
+            circulation_texture = _wave_noise(
+                map_seed, "precipitation_seasonality", global_u, global_v
+            )
+            monthly_temperature_c, monthly_precipitation_mm, summer, winter = (
+                _monthly_climate_normals(
+                    temperature,
+                    seasonality,
+                    precipitation,
+                    latitude_signed,
+                    continentality,
+                    1.0 - continentality,
+                    condensation,
+                    circulation_texture,
+                )
+            )
+            class_row.append(_koppen_geiger_class(
+                monthly_temperature_c,
+                monthly_precipitation_mm,
+                summer,
+                winter,
+                is_ocean=(sea_level is not None and elevation < sea_level),
+            ))
+            elevation_row.append(round(elevation, 1))
+        display_rows.append(class_row)
+        display_elevation_rows.append(elevation_row)
+    return display_rows, display_elevation_rows
+
+
 def _solve_coupled_annual_climate_arrays(
     base_temperature_rows,
     wind_vector_rows,
@@ -945,8 +1177,8 @@ def _solve_coupled_annual_climate_arrays(
             + moisture[upstream_y1, upstream_x1] * upstream_fx * upstream_fy
         )
         incoming = (
-            upstream_moisture * 0.72
-            + lateral * 0.20
+            upstream_moisture * 0.64
+            + lateral * 0.28
             + moisture * 0.08
         )
         humidity = np.clip(incoming / 1.8, 0.03, 0.98)
@@ -1268,8 +1500,8 @@ def _solve_coupled_annual_climate(
                     + moisture[min(height - 1, y + 1)][x]
                 ) * 0.25
                 incoming = (
-                    upstream_moisture * 0.72
-                    + lateral * 0.20
+                    upstream_moisture * 0.64
+                    + lateral * 0.28
                     + moisture[y][x] * 0.08
                 )
                 humidity = _clamp(incoming / 1.8, 0.03, 0.98)
@@ -1978,6 +2210,9 @@ def derive_water_cycle_model(
     source_v0 = float(source_uv.get("min_v", 0.0) or 0.0)
     source_v1 = float(source_uv.get("max_v", 1.0) or 1.0)
     parent_climate_grid = parent_climate_model.get("climate_grid") if isinstance(parent_climate_model, dict) else {}
+    has_parent_climate = bool(
+        isinstance(parent_climate_grid, dict) and parent_climate_grid
+    )
     parent_source_uv = parent_climate_grid.get("source_uv_bounds") if isinstance(parent_climate_grid, dict) else {}
     detail_level = int(heightmap.get("map_detail_level", 0) or 0)
     inheritance_weights = _climate_inheritance_weights(detail_level)
@@ -2219,6 +2454,18 @@ def derive_water_cycle_model(
         condensation_rows.append(condensation_row)
         permanent_ice_rows.append(permanent_ice_row)
 
+    if not has_parent_climate:
+        # Condensation is a transported atmospheric field, not a set of
+        # independent longitude columns.  Relax it before the moisture solve
+        # so column-scale forcing cannot be amplified into rainfall lanes.
+        condensation_rows = _barrier_aware_relax_field(
+            condensation_rows,
+            rows,
+            strength=0.34,
+            passes=3,
+            zonal_bias=2.4,
+        )
+
     coupled_climate = _solve_coupled_annual_climate(
         temperature_rows,
         seasonality_rows,
@@ -2252,6 +2499,28 @@ def derive_water_cycle_model(
         coupled_climate.get("relative_humidity_rows")
         or [[0.0 for _x in range(width)] for _y in range(height)]
     )
+
+    if not has_parent_climate:
+        # The coupled solver works on a deliberately reduced planetary grid.
+        # A light conservative relaxation makes its annual scalar outputs
+        # continuous before categorical Köppen classification. This removes
+        # single-column stripes and rectangular solver cells while retaining
+        # broad circulation, coastal gradients and orographic rain shadows.
+        temperature_rows = _relax_continuous_planetary_field(temperature_rows, 0.14)
+        precipitation_rows = _barrier_aware_relax_field(
+            precipitation_rows,
+            rows,
+            strength=0.38,
+            passes=5,
+            preserve_total=True,
+            zonal_bias=2.8,
+        )
+        potential_evaporation_rows = _relax_continuous_planetary_field(
+            potential_evaporation_rows, 0.12,
+        )
+        relative_humidity_rows = _relax_continuous_planetary_field(
+            relative_humidity_rows, 0.16,
+        )
 
     # Rebuild the land water balance and classifications from the converged
     # annual climate. The first pass only established energy, terrain, and
@@ -2497,6 +2766,30 @@ def derive_water_cycle_model(
             "color": list(spec["color"]),
             "fraction": round(count / total_cells, 3),
         })
+
+    koppen_display_rows = []
+    koppen_display_elevation_rows = []
+    if not has_parent_climate and detail_level == 0:
+        (
+            koppen_display_rows,
+            koppen_display_elevation_rows,
+        ) = _derive_koppen_display_grid(
+            temperature_rows,
+            seasonality_rows,
+            precipitation_rows,
+            shore_distances,
+            condensation_rows,
+            rows,
+            sea_level=sea_level,
+            map_seed=map_seed,
+            source_uv_bounds={
+                "min_u": source_u0,
+                "max_u": source_u1,
+                "min_v": source_v0,
+                "max_v": source_v1,
+            },
+            wrap_x=bool(heightmap.get("wrap_x", True)),
+        )
 
     region_width_m = float(heightmap.get("region_width_m") or 0.0)
     region_height_m = float(heightmap.get("region_height_m") or 0.0)
@@ -2783,6 +3076,16 @@ def derive_water_cycle_model(
             },
             "rows": koppen_rows,
             "koppen_rows": koppen_rows,
+            "koppen_display_rows": koppen_display_rows,
+            "koppen_display_elevation_rows": koppen_display_elevation_rows,
+            "koppen_display_contract": {
+                "method": "bilinear_continuous_fields_then_reclassify",
+                "width": (
+                    len(koppen_display_rows[0]) if koppen_display_rows else 0
+                ),
+                "height": len(koppen_display_rows),
+                "purpose": "remove categorical solver-cell panels",
+            },
             "elevation_rows": rows,
             "shore_distance_rows": shore_distances,
             "temperature_rows_k": temperature_rows,

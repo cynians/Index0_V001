@@ -1,3 +1,10 @@
+"""Derive planetary terrain from causal world-generation state.
+
+Architecture invariants: ontology data is the sole durable entity/semantic
+authority; heightfields and lookup tables are disposable products and caches.
+No generated planet currently needs backward-compatible regeneration.
+"""
+
 import copy
 import hashlib
 import json
@@ -5,12 +12,15 @@ import math
 from functools import lru_cache
 
 from simulations.world_gen.map_seed import resolved_map_seed, seed_range as _uncached_seed_range
+from simulations.world_gen.mechanical_lithology import terrain_response_factors
 from simulations.world_gen.terrain_seed import (
     PLANETARY_CANVAS_HEIGHT_PX,
     PLANETARY_CANVAS_WIDTH_PX,
 )
 
 _NOISE_CORNER_CACHE = {}
+
+DEFORMATION_STATE_MODEL_VERSION = "planetary-deformation-v1-reduced-flexure"
 
 
 @lru_cache(maxsize=4096)
@@ -309,52 +319,6 @@ def _crater_signal(nx, ny, map_seed=""):
     return _clamp(value, -0.8, 0.8)
 
 
-def _plate_distance(nx, ny, plate):
-    dx = _wrapped_delta(nx, float(plate.get("center_x", 0.0) or 0.0))
-    dy = float(ny) - float(plate.get("center_y", 0.5) or 0.5)
-    shape = plate.get("boundary_shape") if isinstance(plate.get("boundary_shape"), dict) else {}
-    orientation = float(shape.get("orientation_rad", 0.0) or 0.0)
-    axis_ratio = _clamp(shape.get("axis_ratio", 1.0), 0.72, 1.38)
-    cos_angle = math.cos(orientation)
-    sin_angle = math.sin(orientation)
-    rx = (dx * cos_angle - dy * sin_angle) / axis_ratio
-    ry = (dx * sin_angle + dy * cos_angle) * axis_ratio
-    angle = math.atan2(ry, rx)
-    lobe_scale = 1.0
-    lobe_scale += float(shape.get("lobe_a_amplitude", 0.0) or 0.0) * math.sin(
-        angle * int(shape.get("lobe_a_frequency", 3) or 3)
-        + float(shape.get("lobe_a_phase", 0.0) or 0.0)
-    )
-    lobe_scale += float(shape.get("lobe_b_amplitude", 0.0) or 0.0) * math.sin(
-        angle * int(shape.get("lobe_b_frequency", 5) or 5)
-        + float(shape.get("lobe_b_phase", 0.0) or 0.0)
-    )
-    return math.hypot(rx, ry) / max(0.68, lobe_scale)
-
-
-def _nearest_plate(nx, ny, plates):
-    best = None
-    best_distance = 999.0
-    for plate in plates:
-        distance = _plate_distance(nx, ny, plate)
-        if distance < best_distance:
-            best_distance = distance
-            best = plate
-    return best
-
-
-def _plate_base_height_m(plate):
-    if not isinstance(plate, dict):
-        return 0.0
-    plate_type = plate.get("plate_type")
-    continentality = float(plate.get("continentality", 0.5) or 0.5)
-    if plate_type == "continental":
-        return 680.0 + continentality * 420.0
-    if plate_type == "mixed":
-        return -750.0 + continentality * 1650.0
-    return -4100.0 + continentality * 850.0
-
-
 def _sample_lithosphere(tectonic_model, nx, ny):
     grid = tectonic_model.get("lithosphere_grid") if isinstance(tectonic_model.get("lithosphere_grid"), dict) else {}
     crust_rows = grid.get("crust_type_rows") or []
@@ -419,27 +383,12 @@ def _sample_lithosphere(tectonic_model, nx, ny):
     }
 
 
-def _blended_plate_base_height_m(nx, ny, plates):
-    weighted_height = 0.0
-    total_weight = 0.0
-    nearest = None
-    nearest_distance = 999.0
-    for plate in plates:
-        distance = _plate_distance(nx, ny, plate)
-        if distance < nearest_distance:
-            nearest_distance = distance
-            nearest = plate
-        weight = 1.0 / ((distance + 0.08) ** 2.15)
-        weighted_height += _plate_base_height_m(plate) * weight
-        total_weight += weight
-    if total_weight <= 0:
-        return 0.0, nearest
-    weighted_average = weighted_height / total_weight
-    # Preserve isostatic plate identity in interiors while retaining a small
-    # boundary blend. Global averaging flattened both continental freeboard
-    # and ocean-basin depth, drowning continents at realistic water volumes.
-    nearest_height = _plate_base_height_m(nearest)
-    return nearest_height * 0.76 + weighted_average * 0.24, nearest
+def _continuous_crustal_base_height_m(continental_fraction):
+    """Resolve freeboard from continuous crustal buoyancy, never plate ids."""
+    fraction = _smoothstep(_clamp(continental_fraction, 0.0, 1.0))
+    # The end members preserve the former global hypsometric contrast while
+    # transitional crust now crosses sea level without an ownership step.
+    return _lerp(-3920.0, 980.0, fraction)
 
 
 def _point_segment_distance(px, py, x1, y1, x2, y2):
@@ -484,62 +433,29 @@ def _boundary_kind_lookup(tectonic_model):
     return lookup
 
 
-def _representative_boundary_segments(tectonic_model, max_segments=180):
+def _heightmap_tectonic_model(tectonic_model):
+    if not isinstance(tectonic_model, dict):
+        return tectonic_model
     segments = [
         segment
         for segment in (tectonic_model.get("boundary_segments") or [])
         if isinstance(segment, dict)
     ]
-    if len(segments) <= max_segments:
-        return segments
-
-    by_kind = {}
-    for segment in segments:
-        by_kind.setdefault(segment.get("kind", "passive"), []).append(segment)
-
-    kind_priority = ["collision", "subduction", "divergent", "transform", "passive"]
-    selected = []
-    active_kind_count = max(1, sum(1 for items in by_kind.values() if items))
-    base_limit = max(8, int(max_segments / active_kind_count))
-    for kind in kind_priority:
-        items = by_kind.get(kind) or []
-        if not items:
-            continue
-        kind_limit = base_limit
-        if kind in {"collision", "subduction", "divergent"}:
-            kind_limit = int(base_limit * 1.35)
-        kind_limit = max(6, min(len(items), kind_limit))
-        stride = max(1, len(items) / kind_limit)
-        for index in range(kind_limit):
-            selected.append(items[min(len(items) - 1, int(index * stride))])
-            if len(selected) >= max_segments:
-                return selected
-
-    if len(selected) < max_segments:
-        remaining = [segment for segment in segments if segment not in selected]
-        stride = max(1, len(remaining) / max(1, max_segments - len(selected)))
-        for index in range(max_segments - len(selected)):
-            if not remaining:
-                break
-            selected.append(remaining[min(len(remaining) - 1, int(index * stride))])
-    return selected[:max_segments]
-
-
-def _heightmap_tectonic_model(tectonic_model):
-    if not isinstance(tectonic_model, dict):
-        return tectonic_model
-    segments = _representative_boundary_segments(tectonic_model)
-    if segments is tectonic_model.get("boundary_segments"):
-        return tectonic_model
     sampled = dict(tectonic_model)
     sampled["boundary_segments"] = segments
     sampled["heightmap_boundary_segment_count"] = len(segments)
     sampled["original_boundary_segment_count"] = len(tectonic_model.get("boundary_segments") or [])
     sampled["_heightmap_boundary_spatial_index"] = _boundary_spatial_index(segments)
+    orogen_model = tectonic_model.get("orogen_system_model") if isinstance(tectonic_model.get("orogen_system_model"), dict) else {}
+    sampled["_heightmap_orogen_system_lookup"] = {
+        str(system.get("id")): system
+        for system in (orogen_model.get("systems") or [])
+        if isinstance(system, dict) and system.get("id")
+    }
     return sampled
 
 
-def _boundary_spatial_index(segments, bins_x=32, bins_y=16):
+def _boundary_spatial_index(segments, bins_x=64, bins_y=32):
     """Bucket boundary segments without changing the exact distance test."""
     bins = {}
     for segment in segments:
@@ -551,7 +467,7 @@ def _boundary_spatial_index(segments, bins_x=32, bins_y=16):
             x2 += 1.0
         y1 = float(segment.get("y1", 0.0) or 0.0)
         y2 = float(segment.get("y2", 0.0) or 0.0)
-        margin = _clamp(segment.get("influence_width", 0.028), 0.012, 0.05) * 2.5
+        margin = _clamp(segment.get("influence_width", 0.028), 0.012, 0.05) * 3.2
         y_min = max(0.0, min(y1, y2) - margin)
         y_max = min(1.0, max(y1, y2) + margin)
         first_y = max(0, min(bins_y - 1, int(math.floor(y_min * bins_y))))
@@ -582,21 +498,342 @@ def _nearby_boundary_segments(tectonic_model, nx, ny):
     return spatial_index["bins"].get((bx, by), [])
 
 
+def _cross_range_band(signed_distance, center, width):
+    width = max(1e-6, float(width))
+    return math.exp(-(((float(signed_distance) - float(center)) / width) ** 2))
+
+
+def _orogen_segment_forcing(nx, ny, segment, system, signed_normal_distance, influence):
+    """Resolve one system segment into separate uplift/subsidence/volcanic forcing."""
+    profile = system.get("forcing_profile") if isinstance(system.get("forcing_profile"), dict) else {}
+    sides = system.get("sides") if isinstance(system.get("sides"), dict) else {}
+    mechanism = str(system.get("mechanism") or "")
+    width = _clamp(
+        segment.get("influence_width", profile.get("reference_width", 0.028)),
+        0.012,
+        0.05,
+    )
+    segment_activity = _clamp(segment.get("activity_scale", 1.0), 0.25, 1.35)
+    variation = profile.get("along_strike_variation") if isinstance(profile.get("along_strike_variation"), dict) else {}
+    continuity_floor = _clamp(variation.get("minimum_continuity", 0.66), 0.45, 0.90)
+    continuity = continuity_floor + (1.0 - continuity_floor) * _clamp((segment_activity - 0.25) / 1.10, 0.0, 1.0)
+    peak_uplift = max(0.0, float(profile.get("rock_uplift_peak_m", 0.0) or 0.0))
+    peak_subsidence = max(0.0, float(profile.get("tectonic_subsidence_peak_m", 0.0) or 0.0))
+    peak_volcanic = max(0.0, float(profile.get("volcanic_construction_peak_m", 0.0) or 0.0))
+    peak_outer_bulge = max(0.0, float(profile.get("outer_bulge_peak_m", 0.0) or 0.0))
+    response = {
+        "rock_uplift_m": 0.0,
+        "tectonic_subsidence_m": 0.0,
+        "volcanic_construction_m": 0.0,
+        "outer_bulge_m": 0.0,
+        "convergent_influence": 0.0,
+        "divergent_influence": 0.0,
+        "trench_influence": 0.0,
+        "transform_influence": 0.0,
+    }
+
+    if mechanism == "continental_collision":
+        hinterland_side = 1.0 if int(sides.get("hinterland_normal_side", 1) or 1) >= 0 else -1.0
+        foreland_side = -hinterland_side
+        core = _cross_range_band(signed_normal_distance, hinterland_side * width * 0.24, width * 0.68)
+        fold_thrust = _cross_range_band(signed_normal_distance, foreland_side * width * 0.52, width * 0.72)
+        foreland = _cross_range_band(signed_normal_distance, foreland_side * width * 1.48, width * 0.52)
+        outer_bulge = _cross_range_band(signed_normal_distance, foreland_side * width * 2.22, width * 0.58)
+        response["rock_uplift_m"] = min(peak_uplift * 1.08, peak_uplift * (core * 0.76 + fold_thrust * 0.38)) * continuity
+        response["tectonic_subsidence_m"] = peak_subsidence * foreland * continuity
+        response["outer_bulge_m"] = peak_outer_bulge * outer_bulge
+        response["convergent_influence"] = max(influence, core, fold_thrust)
+    elif mechanism in {"ocean_continent_subduction", "island_arc_subduction"}:
+        overriding_side = 1.0 if int(sides.get("overriding_normal_side", 1) or 1) >= 0 else -1.0
+        # Keep the volcanic/mountain arc inland of the trench and forearc.
+        # The former compact profile welded the entire active margin to the
+        # coastline and read as one narrow wall at planetary scale.
+        trench = _cross_range_band(signed_normal_distance, -overriding_side * width * 0.62, width * 0.34)
+        accretionary_margin = _cross_range_band(signed_normal_distance, -overriding_side * width * 0.10, width * 0.38)
+        forearc = _cross_range_band(signed_normal_distance, overriding_side * width * 0.44, width * 0.46)
+        arc = _cross_range_band(signed_normal_distance, overriding_side * width * 1.24, width * 0.58)
+        backarc = _cross_range_band(signed_normal_distance, overriding_side * width * 2.08, width * 0.72)
+        segment_x1 = float(segment.get("x1", 0.0) or 0.0)
+        segment_x2 = float(segment.get("x2", 0.0) or 0.0)
+        midpoint_x = (segment_x1 + _wrapped_delta(segment_x2, segment_x1) * 0.5) % 1.0
+        midpoint_y = (float(segment.get("y1", 0.5) or 0.5) + float(segment.get("y2", 0.5) or 0.5)) * 0.5
+        phase = float(variation.get("phase", 0.0) or 0.0)
+        frequency = float(variation.get("frequency", 4.0) or 4.0)
+        arc_pulse = max(0.0, math.sin(math.tau * frequency * (midpoint_x + midpoint_y * 0.618) + phase)) ** 4
+        response["rock_uplift_m"] = peak_uplift * (arc * 0.72 + accretionary_margin * 0.22) * continuity
+        response["tectonic_subsidence_m"] = peak_subsidence * (trench + forearc * 0.10 + backarc * 0.18)
+        response["volcanic_construction_m"] = peak_volcanic * arc * (0.28 + arc_pulse * 0.72)
+        response["convergent_influence"] = max(influence, arc, accretionary_margin)
+        response["trench_influence"] = trench
+    elif mechanism == "continental_rift":
+        rift_axis = _cross_range_band(signed_normal_distance, 0.0, width * 0.42)
+        shoulder_a = _cross_range_band(signed_normal_distance, width * 0.92, width * 0.48)
+        shoulder_b = _cross_range_band(signed_normal_distance, -width * 0.92, width * 0.48)
+        response["rock_uplift_m"] = peak_uplift * max(shoulder_a, shoulder_b) * continuity
+        response["tectonic_subsidence_m"] = peak_subsidence * rift_axis
+        response["divergent_influence"] = max(rift_axis, shoulder_a, shoulder_b)
+    elif mechanism == "oceanic_spreading":
+        ridge = _cross_range_band(signed_normal_distance, 0.0, width * 0.92)
+        axial_valley = _cross_range_band(signed_normal_distance, 0.0, width * 0.22)
+        response["rock_uplift_m"] = peak_uplift * ridge * continuity
+        response["tectonic_subsidence_m"] = peak_subsidence * axial_valley
+        response["divergent_influence"] = ridge
+    elif mechanism in {"transpressional_strike_slip", "transtensional_strike_slip", "strike_slip"}:
+        fault_zone = _cross_range_band(signed_normal_distance, 0.0, width * 0.40)
+        if mechanism == "transpressional_strike_slip":
+            response["rock_uplift_m"] = peak_uplift * fault_zone * continuity
+            response["tectonic_subsidence_m"] = peak_subsidence * fault_zone * 0.15
+        elif mechanism == "transtensional_strike_slip":
+            response["rock_uplift_m"] = peak_uplift * fault_zone * 0.22
+            response["tectonic_subsidence_m"] = peak_subsidence * fault_zone * continuity
+        else:
+            response["rock_uplift_m"] = peak_uplift * fault_zone * 0.42
+            response["tectonic_subsidence_m"] = peak_subsidence * fault_zone * 0.28
+        response["transform_influence"] = fault_zone
+    return response
+
+
+def _orogen_forcing_at(nx, ny, tectonic_model):
+    """Resolve system forcing without collapsing its physical components."""
+    orogen_lookup = tectonic_model.get("_heightmap_orogen_system_lookup")
+    if not isinstance(orogen_lookup, dict):
+        orogen_model = tectonic_model.get("orogen_system_model") if isinstance(tectonic_model.get("orogen_system_model"), dict) else {}
+        orogen_lookup = {
+            str(system.get("id")): system
+            for system in (orogen_model.get("systems") or [])
+            if isinstance(system, dict) and system.get("id")
+        }
+    combined_by_system = {}
+    for segment in _nearby_boundary_segments(tectonic_model, nx, ny):
+        distance = _wrapped_point_segment_distance(
+            nx, ny,
+            float(segment.get("x1", 0.0) or 0.0), float(segment.get("y1", 0.0) or 0.0),
+            float(segment.get("x2", 0.0) or 0.0), float(segment.get("y2", 0.0) or 0.0),
+        )
+        influence_width = _clamp(segment.get("influence_width", 0.028), 0.012, 0.05)
+        if distance > influence_width * 3.2:
+            continue
+        influence = math.exp(-((distance / influence_width) ** 2))
+        influence = influence ** 1.18 * _clamp(segment.get("activity_scale", 1.0), 0.25, 1.35)
+        normal_x = float(segment.get("normal_x", 0.0) or 0.0)
+        normal_y = float(segment.get("normal_y", 0.0) or 0.0)
+        segment_x1 = float(segment.get("x1", 0.0) or 0.0)
+        segment_x2 = float(segment.get("x2", 0.0) or 0.0)
+        midpoint_x = (segment_x1 + _wrapped_delta(segment_x2, segment_x1) * 0.5) % 1.0
+        midpoint_y = (float(segment.get("y1", 0.0) or 0.0) + float(segment.get("y2", 0.0) or 0.0)) * 0.5
+        signed_distance = _wrapped_delta(nx, midpoint_x) * normal_x + (ny - midpoint_y) * normal_y
+        system_id = str(segment.get("orogen_system_id") or "")
+        system = orogen_lookup.get(system_id)
+        if not isinstance(system, dict):
+            continue
+        response = _orogen_segment_forcing(nx, ny, segment, system, signed_distance, influence)
+        response["crustal_thickening_index"] = (
+            float((system.get("forcing_profile") or {}).get("crustal_thickening_index", 0.0) or 0.0)
+            * float(response.get("convergent_influence", 0.0) or 0.0)
+        )
+        response["cumulative_strain_index"] = max(
+            float(response.get("convergent_influence", 0.0) or 0.0),
+            float(response.get("divergent_influence", 0.0) or 0.0),
+            float(response.get("transform_influence", 0.0) or 0.0),
+        )
+        combined = combined_by_system.setdefault(system_id, {key: 0.0 for key in response})
+        for key, value in response.items():
+            previous = float(combined.get(key, 0.0) or 0.0)
+            current = float(value or 0.0)
+            high, low = max(previous, current), min(previous, current)
+            combined[key] = high * ((1.0 + (low / high) ** 6.0) ** (1.0 / 6.0)) if high > 0.0 else 0.0
+    total = {
+        "rock_uplift_m": 0.0,
+        "tectonic_subsidence_m": 0.0,
+        "volcanic_construction_m": 0.0,
+        "outer_bulge_m": 0.0,
+        "crustal_thickening_index": 0.0,
+        "cumulative_strain_index": 0.0,
+        "convergent_influence": 0.0,
+        "divergent_influence": 0.0,
+        "trench_influence": 0.0,
+        "transform_influence": 0.0,
+    }
+    for forcing in combined_by_system.values():
+        for key in ("rock_uplift_m", "tectonic_subsidence_m", "volcanic_construction_m", "outer_bulge_m"):
+            total[key] += float(forcing.get(key, 0.0) or 0.0)
+        for key in ("crustal_thickening_index", "cumulative_strain_index", "convergent_influence", "divergent_influence", "trench_influence", "transform_influence"):
+            total[key] = max(total[key], float(forcing.get(key, 0.0) or 0.0))
+    return total
+
+
+def _smooth_wrapped_rows(rows, passes=1):
+    current = [list(row) for row in rows]
+    height = len(current)
+    width = len(current[0]) if height else 0
+    unique_width = max(1, width - 1)
+    for _pass in range(max(0, int(passes))):
+        result = []
+        for y in range(height):
+            row = []
+            for x in range(unique_width):
+                center = current[y][x]
+                west = current[y][(x - 1) % unique_width]
+                east = current[y][(x + 1) % unique_width]
+                north = current[max(0, y - 1)][x]
+                south = current[min(height - 1, y + 1)][x]
+                row.append(center * 0.44 + (west + east) * 0.16 + (north + south) * 0.12)
+            row.append(row[0] if row else 0.0)
+            result.append(row)
+        current = result
+    return current
+
+
+def derive_planetary_deformation_state(terrain, tectonic_model, mechanical_lithology_model=None, width=97, height=49):
+    """Materialize persistent reduced-physics deformation and load fields."""
+    if not isinstance(tectonic_model, dict) or not tectonic_model.get("plates"):
+        return None
+    sampled = _heightmap_tectonic_model(tectonic_model)
+    mechanical = mechanical_lithology_model if isinstance(mechanical_lithology_model, dict) else {}
+    response_factors = terrain_response_factors(mechanical)
+    profile = mechanical.get("aggregate_profile") if isinstance(mechanical.get("aggregate_profile"), dict) else {}
+    resistance = _clamp(profile.get("slope_resistance_index", 0.55), 0.0, 1.0)
+    erodibility = _clamp(profile.get("erodibility_index", 0.50), 0.0, 1.0)
+    elastic_strength = _clamp(profile.get("elastic_strength_index", 0.55), 0.0, 1.0)
+    density = _clamp(profile.get("bulk_density_kg_m3", 2700.0), 1800.0, 3600.0)
+    retention = _clamp(response_factors["relief_retention"], 0.72, 1.12)
+    fields = {key: [] for key in (
+        "crust_thickness_km", "cumulative_strain_index", "rock_uplift_m",
+        "tectonic_subsidence_m", "volcanic_construction_m", "outer_bulge_m", "sediment_load_m",
+        "effective_elastic_thickness_km", "convergent_influence",
+        "divergent_influence", "trench_influence", "transform_influence",
+    )}
+    for row_index in range(height):
+        ny = row_index / max(1, height - 1)
+        row_fields = {key: [] for key in fields}
+        for col_index in range(width):
+            nx = 0.0 if col_index == width - 1 else col_index / max(1, width - 1)
+            lithosphere = _sample_lithosphere(sampled, nx, ny)
+            continental = _clamp(lithosphere.get("continental_fraction", 0.5), 0.0, 1.0)
+            forcing = _orogen_forcing_at(nx, ny, sampled)
+            thickening = float(forcing.get("crustal_thickening_index", 0.0) or 0.0)
+            base_crust = 7.0 + continental * 29.0
+            crust_thickness = base_crust + thickening * (11.0 + continental * 9.0)
+            strain = _clamp(float(forcing.get("cumulative_strain_index", 0.0) or 0.0), 0.0, 1.0)
+            elastic_km = (8.0 + continental * 24.0) * (0.72 + elastic_strength * 0.58) * (1.0 - strain * 0.28)
+            sediment_load = max(0.0, float(forcing.get("tectonic_subsidence_m", 0.0) or 0.0) * (0.10 + erodibility * 0.16))
+            values = {
+                "crust_thickness_km": crust_thickness,
+                "cumulative_strain_index": strain,
+                "rock_uplift_m": float(forcing.get("rock_uplift_m", 0.0) or 0.0) * retention,
+                "tectonic_subsidence_m": float(forcing.get("tectonic_subsidence_m", 0.0) or 0.0),
+                "volcanic_construction_m": float(forcing.get("volcanic_construction_m", 0.0) or 0.0),
+                "outer_bulge_m": float(forcing.get("outer_bulge_m", 0.0) or 0.0),
+                "sediment_load_m": sediment_load,
+                "effective_elastic_thickness_km": elastic_km,
+                "convergent_influence": float(forcing.get("convergent_influence", 0.0) or 0.0),
+                "divergent_influence": float(forcing.get("divergent_influence", 0.0) or 0.0),
+                "trench_influence": float(forcing.get("trench_influence", 0.0) or 0.0),
+                "transform_influence": float(forcing.get("transform_influence", 0.0) or 0.0),
+            }
+            for key, value in values.items():
+                row_fields[key].append(value)
+        for key in fields:
+            if row_fields[key]:
+                row_fields[key][-1] = row_fields[key][0]
+            fields[key].append(row_fields[key])
+    net_load_rows = [
+        [
+            fields["rock_uplift_m"][y][x] * 0.24
+            + fields["volcanic_construction_m"][y][x] * 0.34
+            + fields["sediment_load_m"][y][x] * 0.62
+            for x in range(width)
+        ]
+        for y in range(height)
+    ]
+    flexural_load = _smooth_wrapped_rows(net_load_rows, passes=2)
+    isostatic_rows, flexural_rows, response_rows = [], [], []
+    density_factor = _clamp(2700.0 / density, 0.78, 1.18)
+    for y in range(height):
+        iso_row, flex_row, response_row = [], [], []
+        for x in range(width):
+            continental = _clamp(
+                _sample_lithosphere(
+                    sampled,
+                    0.0 if x == width - 1 else x / max(1, width - 1),
+                    y / max(1, height - 1),
+                ).get("continental_fraction", 0.5),
+                0.0,
+                1.0,
+            )
+            root_excess_km = max(
+                0.0,
+                fields["crust_thickness_km"][y][x] - (7.0 + 29.0 * continental),
+            )
+            isostatic = root_excess_km * 1000.0 * 0.115 * density_factor - fields["sediment_load_m"][y][x] * 0.18
+            rigidity = _clamp(fields["effective_elastic_thickness_km"][y][x] / 42.0, 0.18, 1.0)
+            flexure = -flexural_load[y][x] * (0.16 + rigidity * 0.24)
+            surface = (
+                fields["rock_uplift_m"][y][x]
+                - fields["tectonic_subsidence_m"][y][x]
+                + fields["volcanic_construction_m"][y][x]
+                + fields["outer_bulge_m"][y][x]
+                + isostatic + flexure
+            )
+            iso_row.append(isostatic)
+            flex_row.append(flexure)
+            response_row.append(surface)
+        isostatic_rows.append(iso_row)
+        flexural_rows.append(flex_row)
+        response_rows.append(response_row)
+    fields["isostatic_response_m"] = isostatic_rows
+    fields["flexural_response_m"] = flexural_rows
+    fields["surface_response_m"] = response_rows
+    summaries = {
+        key: {"min": round(min(value for row in rows for value in row), 3), "max": round(max(value for row in rows for value in row), 3)}
+        for key, rows in fields.items()
+    }
+    return {
+        "status": "deformation_state_derived",
+        "model_version": DEFORMATION_STATE_MODEL_VERSION,
+        "truth_state": "persistent_reduced_physics_deformation_and_load_state",
+        "width": width, "height": height, "wrap_x": True,
+        "fields": {key: [[round(value, 3) for value in row] for row in rows] for key, rows in fields.items()},
+        "summaries": summaries,
+        "source_orogen_model_version": ((tectonic_model.get("orogen_system_model") or {}).get("model_version")),
+        "source_mechanical_model_version": mechanical.get("model_version"),
+        "dominant_mechanical_class": mechanical.get("dominant_mechanical_class"),
+        "terrain_response_factors": response_factors,
+        "composition_contract": "surface_response=rock_uplift-tectonic_subsidence+volcanic_construction+outer_bulge+isostasy+flexure",
+    }
+
+
+def _sample_deformation_state(model, nx, ny):
+    if not isinstance(model, dict) or model.get("status") != "deformation_state_derived":
+        return None
+    width, height = int(model.get("width", 0) or 0), int(model.get("height", 0) or 0)
+    fields = model.get("fields") if isinstance(model.get("fields"), dict) else {}
+    if width < 2 or height < 2:
+        return None
+    fx, fy = (float(nx) % 1.0) * (width - 1), _clamp(ny, 0.0, 1.0) * (height - 1)
+    x0, y0 = int(math.floor(fx)), int(math.floor(fy))
+    x1, y1 = (x0 + 1) % (width - 1), min(height - 1, y0 + 1)
+    tx, ty = fx - x0, fy - y0
+    sampled = {}
+    for key, rows in fields.items():
+        if not isinstance(rows, list) or len(rows) <= y1:
+            continue
+        top = float(rows[y0][x0]) * (1.0 - tx) + float(rows[y0][x1]) * tx
+        bottom = float(rows[y1][x0]) * (1.0 - tx) + float(rows[y1][x1]) * tx
+        sampled[key] = top * (1.0 - ty) + bottom * ty
+    return sampled
+
+
 def _tectonic_height_m(nx, ny, terrain, tectonic_model):
     plates = tectonic_model.get("plates") or []
     if not plates:
         return None
-    base, plate = _blended_plate_base_height_m(nx, ny, plates)
-    plate_type = plate.get("plate_type") if isinstance(plate, dict) else "mixed"
-    plate_continentality = float(plate.get("continentality", 0.5) or 0.5) if isinstance(plate, dict) else 0.5
     lithosphere = _sample_lithosphere(tectonic_model, nx, ny)
-    crust_type = lithosphere["crust_type"]
     crust_fraction = float(lithosphere.get("continental_fraction", 0.5) or 0.0)
     oceanic_fraction = _clamp(lithosphere.get("oceanic_fraction", 1.0 - crust_fraction), 0.0, 1.0)
     ocean_floor_age_myr = lithosphere["age_myr"] * oceanic_fraction
+    base = _continuous_crustal_base_height_m(crust_fraction)
 
-    longitude = nx * math.tau
-    latitude = (ny - 0.5) * math.pi
     map_seed = str(tectonic_model.get("map_seed") or terrain.get("map_seed") or "")
     continent_signal = _continent_signal(
         nx,
@@ -604,51 +841,24 @@ def _tectonic_height_m(nx, ny, terrain, tectonic_model):
         map_seed=map_seed,
         tectonic_model=tectonic_model,
     )
-    # A continental plate must carry broad buoyant crust, not merely a small
-    # circular root at its centre. Rifts, embayments and terrane noise still
-    # cut into this support, producing irregular margins and internal seas.
-    # Oceanic plates receive the opposite bias; mixed plates can host arcs and
-    # microcontinents without turning the whole plate into exposed land.
-    lithosphere_bias = {
-        "continental": 0.0,
-        "mixed": 0.18,
-        "oceanic": -0.20,
-    }.get(plate_type, 0.0)
-    continent_mask = _continental_mask(
-        continent_signal
-        + lithosphere_bias
-        + (plate_continentality - 0.5) * 0.48
+    assembled_crust = _continental_mask(continent_signal)
+    # The causal lithosphere field owns continentality. Procedural cratons and
+    # terranes perturb its margins, but cannot impose a categorical plate-wide
+    # shelf or abyssal step.
+    continent_mask = _clamp(
+        crust_fraction * 0.78 + assembled_crust * 0.22,
+        0.0,
+        1.0,
     )
-    if plate_type == "continental":
-        crust_province = _fbm_noise(
-            map_seed, "continental_plate_provinces", nx, ny,
-            base_cells=5, octaves=4,
-        )
-        margin_detail = _fbm_noise(
-            map_seed, "continental_plate_margin_detail", nx, ny,
-            base_cells=17, octaves=3, gain=0.48,
-        )
-        province_mix = _smoothstep(
-            (crust_province + margin_detail * 0.22 + 0.35) / 0.55
-        )
-        plate_support = 0.42 + province_mix * 0.56
-        continent_mask = max(plate_support, continent_mask)
-    elif plate_type == "oceanic":
-        continent_mask = min(0.06, continent_mask)
-    if plate_type == "mixed":
-        # Continental fragments grade into stretched transitional crust rather
-        # than stepping abruptly from abyssal basin to high continent.
-        continent_mask = continent_mask * 0.18 + crust_fraction * 0.82
     rugged_noise = _fbm_noise(map_seed, "rugged_relief", nx, ny, base_cells=18, octaves=4)
     shield_noise = _fbm_noise(map_seed, "cratonic_shields", nx, ny, base_cells=8, octaves=3)
     basin_noise = _fbm_noise(map_seed, "sedimentary_basins", nx, ny, base_cells=11, octaves=3)
     intracontinental_basin = _intracontinental_basin_signal(nx, ny, map_seed=map_seed)
     island_signal = _oceanic_island_signal(nx, ny, map_seed=map_seed)
-    broad_relief = (
-        360.0 * math.sin(longitude * seed_range(map_seed, "tectonic_broad_freq_a", 0.85, 1.45) + latitude * 0.75)
-        + 220.0 * math.cos(longitude * seed_range(map_seed, "tectonic_broad_freq_b", 1.65, 2.55) - latitude)
-        + 95.0 * math.sin(longitude * 4.1 + latitude * 1.7)
-    )
+    # Major interior relief comes from explicit cratons, failed rifts and
+    # intracratonic basins below. Retain only a low-amplitude residual instead
+    # of continent-scale sine domes.
+    broad_relief = shield_noise * 105.0 * continent_mask + basin_noise * 75.0 * oceanic_fraction
     height = base + broad_relief
     height += continent_mask * (780.0 + shield_noise * 360.0)
     # Isostatic contrast is what lets a realistic water volume coexist with
@@ -681,21 +891,30 @@ def _tectonic_height_m(nx, ny, terrain, tectonic_model):
             ny - float(basin.get("center_y", 0.5) or 0.5),
         ) / max(0.01, float(basin.get("radius", 0.05) or 0.05))
         height -= math.exp(-(distance ** 2)) * min(1250.0, float(basin.get("sediment_capacity_m", 0.0) or 0.0) * 0.16) * continent_mask
-    if plate_type == "oceanic":
-        height -= 520.0
-    elif plate_type == "continental":
-        height += 280.0
-
     effects = tectonic_model.get("surface_effects") if isinstance(tectonic_model.get("surface_effects"), dict) else {}
     uplift_gain = 0.7 + float(effects.get("orogenic_uplift", 0.0) or 0.0) * 0.9
-    basin_gain = 0.65 + float(effects.get("ocean_basin_opening", 0.0) or 0.0) * 0.75
     erosion = float(effects.get("erosion_progress", 0.0) or 0.0)
     convergent_influence = 0.0
     divergent_influence = 0.0
     trench_influence = 0.0
     transform_influence = 0.0
+    deformation = _sample_deformation_state(tectonic_model.get("deformation_state_model"), nx, ny)
+    height_before_orogen_response = height
+    orogen_lookup = tectonic_model.get("_heightmap_orogen_system_lookup")
+    if not isinstance(orogen_lookup, dict):
+        orogen_model = tectonic_model.get("orogen_system_model") if isinstance(tectonic_model.get("orogen_system_model"), dict) else {}
+        orogen_lookup = {
+            str(system.get("id")): system
+            for system in (orogen_model.get("systems") or [])
+            if isinstance(system, dict) and system.get("id")
+        }
+    orogen_forcing_by_system = {}
 
-    for segment in _nearby_boundary_segments(tectonic_model, nx, ny):
+    # The coarse deformation product already resolved all orogen segments.
+    # Re-evaluating them at every denser height sample would duplicate both
+    # physics and cost; retain direct evaluation only as the Phase 1 fallback.
+    candidate_segments = () if isinstance(deformation, dict) else _nearby_boundary_segments(tectonic_model, nx, ny)
+    for segment in candidate_segments:
         distance = _wrapped_point_segment_distance(
             nx,
             ny,
@@ -705,84 +924,84 @@ def _tectonic_height_m(nx, ny, terrain, tectonic_model):
             float(segment.get("y2", 0.0) or 0.0),
         )
         influence_width = _clamp(segment.get("influence_width", 0.028), 0.012, 0.05)
-        if distance > influence_width * 2.5:
+        if distance > influence_width * 3.2:
             continue
         influence = math.exp(-((distance / influence_width) ** 2))
         influence = influence ** 1.18 * _clamp(segment.get("activity_scale", 1.0), 0.25, 1.35)
-        # Fixed frequencies here (only the phase was seeded) gave every
-        # generated world's fold-and-thrust ridges the exact same along-
-        # strike wavelength -- a comb-regular pattern that reads as banding
-        # once rain shadow inherits it. Seeding the frequencies too, and
-        # adding a third, higher, lower-weight octave, breaks the pure
-        # 2-term periodicity into something closer to real ridge-and-valley
-        # terrain's irregular spacing.
-        segmentation_phase = seed_range(map_seed, "orogen_segmentation_phase", 0.0, math.tau)
-        primary_freq_x = seed_range(map_seed, "orogen_segmentation_freq_primary_x", 7.0, 15.0)
-        primary_freq_y = seed_range(map_seed, "orogen_segmentation_freq_primary_y", 10.0, 20.0)
-        secondary_freq_x = seed_range(map_seed, "orogen_segmentation_freq_secondary_x", 21.0, 37.0)
-        secondary_freq_y = seed_range(map_seed, "orogen_segmentation_freq_secondary_y", 13.0, 25.0)
-        tertiary_freq_x = seed_range(map_seed, "orogen_segmentation_freq_tertiary_x", 43.0, 61.0)
-        tertiary_freq_y = seed_range(map_seed, "orogen_segmentation_freq_tertiary_y", 31.0, 47.0)
-        primary_segment = 0.5 + 0.5 * math.sin(
-            (nx * primary_freq_x + ny * primary_freq_y) * math.tau + segmentation_phase
-        )
-        secondary_segment = 0.5 + 0.5 * math.sin(
-            (nx * secondary_freq_x - ny * secondary_freq_y) * math.tau + segmentation_phase * 1.73
-        )
-        tertiary_segment = 0.5 + 0.5 * math.sin(
-            (nx * tertiary_freq_x + ny * tertiary_freq_y) * math.tau + segmentation_phase * 2.41
-        )
-        along_strike_texture = 0.20 + 0.80 * _smoothstep(
-            primary_segment * 0.56 + secondary_segment * 0.28 + tertiary_segment * 0.16
-        )
-        kind = segment.get("kind") or "passive"
         normal_x = float(segment.get("normal_x", 0.0) or 0.0)
         normal_y = float(segment.get("normal_y", 0.0) or 0.0)
-        midpoint_x = (float(segment.get("x1", 0.0) or 0.0) + float(segment.get("x2", 0.0) or 0.0)) * 0.5
+        segment_x1 = float(segment.get("x1", 0.0) or 0.0)
+        segment_x2 = float(segment.get("x2", 0.0) or 0.0)
+        midpoint_x = (segment_x1 + _wrapped_delta(segment_x2, segment_x1) * 0.5) % 1.0
         midpoint_y = (float(segment.get("y1", 0.0) or 0.0) + float(segment.get("y2", 0.0) or 0.0)) * 0.5
         signed_normal_distance = _wrapped_delta(nx, midpoint_x) * normal_x + (ny - midpoint_y) * normal_y
-        if kind == "collision":
-            height += 3700.0 * uplift_gain * influence * along_strike_texture
-            # Flexural loading depresses a foreland basin outside the central
-            # fold-and-thrust belt and raises a weak outer bulge farther out.
-            foreland = math.exp(-(((abs(signed_normal_distance) - 0.040) / 0.014) ** 2))
-            outer_bulge = math.exp(-(((abs(signed_normal_distance) - 0.068) / 0.016) ** 2))
-            height -= 920.0 * foreland * along_strike_texture
-            height += 260.0 * outer_bulge
-            convergent_influence = max(convergent_influence, influence)
-        elif kind == "subduction":
-            overriding_side = 1.0 if segment.get("overriding_plate") == segment.get("plate_b") else -1.0
-            trench_band = math.exp(-(((signed_normal_distance + overriding_side * 0.012) / 0.009) ** 2))
-            arc_band = math.exp(-(((signed_normal_distance - overriding_side * 0.024) / 0.013) ** 2))
-            forearc_band = math.exp(-(((signed_normal_distance - overriding_side * 0.010) / 0.010) ** 2))
-            backarc_band = math.exp(-(((signed_normal_distance - overriding_side * 0.045) / 0.018) ** 2))
-            height += 2700.0 * uplift_gain * arc_band * along_strike_texture
-            height -= 2300.0 * trench_band
-            height -= 320.0 * forearc_band
-            height -= 520.0 * backarc_band * (0.35 + along_strike_texture * 0.65)
-            # Discrete volcanoes sit on the overriding arc rather than forming
-            # a continuous ridge exactly on the trench.
-            arc_beads = max(0.0, math.sin((nx * 71.0 + ny * 43.0) * math.tau)) ** 5
-            height += 2300.0 * arc_band * arc_beads
-            convergent_influence = max(convergent_influence, influence)
-            trench_influence = max(trench_influence, trench_band)
-        elif kind == "divergent":
-            height -= 2100.0 * basin_gain * influence
-            divergent_influence = max(divergent_influence, influence)
-        elif kind == "transform":
-            height += 650.0 * influence
-            transform_influence = max(transform_influence, influence)
+        orogen_system_id = str(segment.get("orogen_system_id") or "")
+        orogen_system = orogen_lookup.get(orogen_system_id)
+        if isinstance(orogen_system, dict):
+            response = _orogen_segment_forcing(
+                nx,
+                ny,
+                segment,
+                orogen_system,
+                signed_normal_distance,
+                influence,
+            )
+            combined = orogen_forcing_by_system.setdefault(
+                orogen_system_id,
+                {key: 0.0 for key in response},
+            )
+            for key, value in response.items():
+                previous = float(combined.get(key, 0.0) or 0.0)
+                current = float(value or 0.0)
+                # A sixth-order smooth maximum removes max() cusps where
+                # adjacent trace segments exchange dominance without stacking
+                # several coincident segments into an artificial summit.
+                high = max(previous, current)
+                low = min(previous, current)
+                combined[key] = (
+                    high * ((1.0 + (low / high) ** 6.0) ** (1.0 / 6.0))
+                    if high > 0.0
+                    else 0.0
+                )
+
+    for forcing in orogen_forcing_by_system.values():
+        height += float(forcing.get("rock_uplift_m", 0.0) or 0.0) * (0.86 + uplift_gain * 0.14)
+        height -= float(forcing.get("tectonic_subsidence_m", 0.0) or 0.0)
+        height += float(forcing.get("volcanic_construction_m", 0.0) or 0.0)
+        height += float(forcing.get("outer_bulge_m", 0.0) or 0.0)
+        convergent_influence = max(convergent_influence, float(forcing.get("convergent_influence", 0.0) or 0.0))
+        divergent_influence = max(divergent_influence, float(forcing.get("divergent_influence", 0.0) or 0.0))
+        trench_influence = max(trench_influence, float(forcing.get("trench_influence", 0.0) or 0.0))
+        transform_influence = max(transform_influence, float(forcing.get("transform_influence", 0.0) or 0.0))
+
+    if isinstance(deformation, dict):
+        # Phase 2 owns the physical collapse into elevation. The direct Phase 1
+        # forcing above remains only as a deterministic fallback for callers
+        # that have not requested a deformation-state product.
+        height = height_before_orogen_response + float(deformation.get("surface_response_m", 0.0) or 0.0)
+        convergent_influence = float(deformation.get("convergent_influence", 0.0) or 0.0)
+        divergent_influence = float(deformation.get("divergent_influence", 0.0) or 0.0)
+        trench_influence = float(deformation.get("trench_influence", 0.0) or 0.0)
+        transform_influence = float(deformation.get("transform_influence", 0.0) or 0.0)
 
     continental_shelf = math.exp(-(((continent_signal + 0.10) / 0.18) ** 2))
     passive_margin = continental_shelf * max(0.0, 1.0 - convergent_influence - divergent_influence * 0.7)
     height += passive_margin * 520.0
     height -= (1.0 - continent_mask) * max(0.0, 1.0 - divergent_influence) * 380.0
-    height += divergent_influence * (950.0 if plate_type == "oceanic" else -380.0)
-    height -= trench_influence * (1150.0 + (1.0 - continent_mask) * 900.0)
-    height += transform_influence * rugged_noise * 520.0
-    height += rugged_noise * (180.0 + continent_mask * 380.0 + convergent_influence * 950.0)
+    if isinstance(deformation, dict):
+        mechanical_response = (tectonic_model.get("deformation_state_model") or {}).get("terrain_response_factors") or {}
+        ruggedness_factor = float(mechanical_response.get("ruggedness_factor", 1.0) or 1.0)
+        # Noise is now bounded sub-resolution heterogeneity. It cannot place
+        # ranges, trenches, rifts, or transform relief independently of the
+        # persistent deformation fields.
+        height += rugged_noise * (105.0 + continent_mask * 235.0) * ruggedness_factor
+    else:
+        height += divergent_influence * _lerp(-380.0, 950.0, oceanic_fraction)
+        height -= trench_influence * (1150.0 + (1.0 - continent_mask) * 900.0)
+        height += transform_influence * rugged_noise * 520.0
+        height += rugged_noise * (180.0 + continent_mask * 380.0 + convergent_influence * 950.0)
     # Mantle plumes leave volcanic chains primarily on oceanic lithosphere.
-    height += island_signal * (1.0 - continent_mask) * (4100.0 if plate_type == "oceanic" else 2300.0)
+    height += island_signal * (1.0 - continent_mask) * _lerp(2300.0, 4100.0, oceanic_fraction)
     hotspot_model = tectonic_model.get("hotspot_model") if isinstance(tectonic_model.get("hotspot_model"), dict) else {}
     for hotspot in hotspot_model.get("hotspots") or []:
         for point in hotspot.get("track") or []:
@@ -805,7 +1024,11 @@ def _tectonic_height_m(nx, ny, terrain, tectonic_model):
                 )
 
     if height > 1000.0:
-        height *= 1.0 - min(0.34, erosion * 0.24)
+        erosion_factor = 1.0
+        if isinstance(deformation, dict):
+            mechanical_response = (tectonic_model.get("deformation_state_model") or {}).get("terrain_response_factors") or {}
+            erosion_factor = float(mechanical_response.get("erosion_susceptibility", 1.0) or 1.0)
+        height *= 1.0 - min(0.34, erosion * 0.24 * erosion_factor)
     return height
 
 
@@ -1186,28 +1409,6 @@ def _wave_height(nx, ny, terrain, tectonic_model=None, crater_model=None, crater
     return _clamp(value, -1.0, 1.0)
 
 
-def _smooth_height_rows(rows, passes=1, blend=0.35):
-    smoothed = [list(row) for row in rows]
-    for _index in range(max(0, int(passes or 0))):
-        next_rows = []
-        height = len(smoothed)
-        width = len(smoothed[0]) if height else 0
-        for row_index, row in enumerate(smoothed):
-            next_row = []
-            for col_index, value in enumerate(row):
-                left = row[(col_index - 1) % width]
-                right = row[(col_index + 1) % width]
-                up = smoothed[max(0, row_index - 1)][col_index]
-                down = smoothed[min(height - 1, row_index + 1)][col_index]
-                neighbor_average = (left + right + up + down) / 4.0
-                next_row.append(round(value * (1.0 - blend) + neighbor_average * blend, 1))
-            if next_row:
-                next_row[-1] = next_row[0]
-            next_rows.append(next_row)
-        smoothed = next_rows
-    return smoothed
-
-
 def _ice_score(nx, ny, elevation, min_elevation, max_elevation, map_seed=""):
     latitude_polarity = abs(ny - 0.5) * 2.0
     elevation_norm = (float(elevation) - float(min_elevation)) / max(1.0, float(max_elevation) - float(min_elevation))
@@ -1582,7 +1783,7 @@ def heightmap_derivatives_are_current(heightmap):
     )
 
 
-def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tectonic_model=None, crater_model=None):
+def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tectonic_model=None, crater_model=None, mechanical_lithology_model=None):
     terrain = terrain if isinstance(terrain, dict) else {}
     heightfield = terrain.get("heightfield") if isinstance(terrain.get("heightfield"), dict) else {}
     canvas = terrain.get("map_canvas") if isinstance(terrain.get("map_canvas"), dict) else {}
@@ -1591,6 +1792,11 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
 
     width_px = int(canvas.get("width_px", PLANETARY_CANVAS_WIDTH_PX) or PLANETARY_CANVAS_WIDTH_PX)
     height_px = int(canvas.get("height_px", PLANETARY_CANVAS_HEIGHT_PX) or PLANETARY_CANVAS_HEIGHT_PX)
+    circumference_m = float(
+        canvas.get("circumference_m")
+        or (math.tau * float((physics or {}).get("radius_m", 0.0) or 0.0))
+        or 0.0
+    )
     min_elevation = float(heightfield.get("min_elevation_m", -4000.0) or -4000.0)
     max_elevation = float(heightfield.get("max_elevation_m", 4000.0) or 4000.0)
     sea_level = heightfield.get("sea_level_m")
@@ -1613,12 +1819,24 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         midpoint = float(datum_center)
     half_range = max(1.0, (max_elevation - min_elevation) * 0.5)
     sampled_tectonic_model = _heightmap_tectonic_model(tectonic_model)
+    deformation_state_model = None
+    if isinstance(sampled_tectonic_model, dict) and sampled_tectonic_model.get("plates"):
+        deformation_state_model = derive_planetary_deformation_state(
+            terrain,
+            sampled_tectonic_model,
+            mechanical_lithology_model=mechanical_lithology_model,
+        )
+        sampled_tectonic_model["deformation_state_model"] = deformation_state_model
     explicit_crater_model = isinstance(crater_model, dict)
 
-    sample_width = max(129, min(257, int(width_px // 32) + 1))
+    # A 257x129 parent exposed ~156 km cells as visible coast and contour
+    # stairs. 385x193 is the next practical planetary truth level; climate may
+    # still solve on a filtered 257-wide grid, while regional inheritance and
+    # coast crossings retain the denser parent geometry.
+    sample_width = max(193, min(385, int(width_px // 21) + 1))
     if sample_width % 2 == 0:
         sample_width += 1
-    sample_height = max(65, min(129, int((sample_width - 1) / 2) + 1))
+    sample_height = max(97, min(193, int((sample_width - 1) / 2) + 1))
     rows = []
     sample_values = []
     sample_positions = []
@@ -1703,39 +1921,6 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
             for col in range(sample_width)
         ]
 
-    if isinstance(sampled_tectonic_model, dict) and sampled_tectonic_model.get("status") == "tectonics_advanced":
-        rows = _smooth_height_rows(rows, passes=1, blend=0.20)
-        sample_values = [value for row in rows for value in row]
-        sample_positions = [
-            (
-                col,
-                row,
-                0.0 if col == sample_width - 1 else col / max(1, sample_width - 1),
-                row / max(1, sample_height - 1),
-                rows[row][col],
-            )
-            for row in range(sample_height)
-            for col in range(sample_width)
-        ]
-    if simulated_age_myr > 0.0:
-        age_passes = min(3, max(1, int(simulated_age_myr // 60.0)))
-        erosion_blend = min(0.22, 0.06 + simulated_age_myr / 2200.0)
-        if target_ice_fraction > 0.0:
-            erosion_blend += min(0.08, target_ice_fraction * 0.08)
-        rows = _smooth_height_rows(rows, passes=age_passes, blend=erosion_blend)
-        sample_values = [value for row in rows for value in row]
-        sample_positions = [
-            (
-                col,
-                row,
-                0.0 if col == sample_width - 1 else col / max(1, sample_width - 1),
-                row / max(1, sample_height - 1),
-                rows[row][col],
-            )
-            for row in range(sample_height)
-            for col in range(sample_width)
-        ]
-
     sample_count = max(1, len(sample_values))
     if equivalent_global_water_depth_m > 0.0 and sample_values and not bool(heightfield.get("sea_level_locked")):
         sea_level = sea_level_for_equivalent_water_depth(
@@ -1787,8 +1972,18 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         "height_px": height_px,
         "coverage": canvas.get("coverage", "full_planet"),
         "radius_m": canvas.get("radius_m") or (physics or {}).get("radius_m"),
-        "circumference_m": canvas.get("circumference_m"),
+        "circumference_m": circumference_m or None,
         "equator_resolution_m_per_px": canvas.get("equator_resolution_m_per_px"),
+        # Physical spacing of the scientific samples. Render-pixel resolution
+        # is much finer and must never be used for slope or hillshade.
+        "sample_spacing_x_m": round(
+            circumference_m / max(1, sample_width - 1),
+            3,
+        ) if circumference_m else None,
+        "sample_spacing_y_m": round(
+            circumference_m * 0.5 / max(1, sample_height - 1),
+            3,
+        ) if circumference_m else None,
         "vertical_datum": canvas.get("vertical_datum", "mean_radius"),
         "elevation_unit": "m",
         "min_elevation_m": round(min_elevation, 1),
@@ -1827,7 +2022,7 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         },
         "shelf_sediment_model": shelf_model,
         "geology_model": {
-            "model_version": "physiographic-heightmap-v3",
+            "model_version": "physiographic-heightmap-v7-deformation-state",
             "surface_regime": terrain.get("surface_regime", "rocky_surface"),
             "continental_lithosphere": None if terrain.get("surface_regime") == "cratered_ice_shell" else "assembled_cratons_accreted_terranes_rifted_margins",
             "oceanic_lithosphere": None if terrain.get("surface_regime") == "cratered_ice_shell" else "abyssal_plains_ridges_trenches",
@@ -1836,6 +2031,13 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
             "erosion_model": "impact_gardening_and_viscous_relaxation" if terrain.get("surface_regime") == "cratered_ice_shell" else "multiscale_fl_pluvial_glacial_coastal_erosion",
             "continental_processes": ["craton_assembly", "terrane_accretion", "suture_uplift", "continental_rifting", "sedimentary_subsidence"],
             "island_processes": ["subduction_volcanic_arcs", "age_progressive_hotspot_chains", "rifted_microcontinents"],
+            "mountain_forcing": "coherent_orogen_system_signed_cross_range_profiles",
+            "mountain_forcing_components": ["rock_uplift", "tectonic_subsidence", "volcanic_construction", "outer_bulge", "isostatic_response", "flexural_response"],
+            "elevation_composition": "persistent_planetary_deformation_state_v1",
+            "tectonic_boundary_geometry": "continuous_plate_distance_contour_v1",
+            "crustal_freeboard": "continuous_lithosphere_fraction_isostasy_v2",
+            "coastline_parent_truth": "dense_continuous_sea_level_crossings_v2",
+            "age_expression": "explicit_tectonic_maturity_and_surface_processes_not_heightfield_smoothing",
             "inland_basin_count": len(_continental_process_model(str(map_seed or ""))["basins"]),
             "hotspot_chain_count": len(_continental_process_model(str(map_seed or ""))["island_chains"]),
             "sample_resolution": f"{sample_width}x{sample_height}",
@@ -1858,7 +2060,18 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
                 if isinstance(sampled_tectonic_model, dict)
                 else None
             ),
+            "orogen_systems": (
+                ((tectonic_model or {}).get("orogen_system_model") or {}).get("system_count")
+                if isinstance(tectonic_model, dict)
+                else None
+            ),
+            "orogen_system_model_version": (
+                ((tectonic_model or {}).get("orogen_system_model") or {}).get("model_version")
+                if isinstance(tectonic_model, dict)
+                else None
+            ),
         },
+        "deformation_state_model": deformation_state_model,
         "crater_surface_resolution": crater_surface_audit,
     }
     return refresh_heightmap_derivatives(model, tectonic_model=sampled_tectonic_model)

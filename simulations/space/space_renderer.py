@@ -1,4 +1,5 @@
 import math
+import statistics
 
 import pygame
 
@@ -123,6 +124,13 @@ class SpaceRenderer:
                 uy = (pos_b[1] - pos_a[1]) / baseline
                 along = (radius_a * radius_a - radius_b * radius_b + baseline * baseline) / (2.0 * baseline)
                 height_sq = radius_a * radius_a - along * along
+                # Do not silently flatten an impossible triangle onto the
+                # anchor baseline.  That was the source of the long, almost
+                # one-dimensional neighbourhood chains: an invalid circle
+                # intersection was presented as if triangulation succeeded.
+                tolerance = max(radius_a, radius_b, baseline, 1.0) ** 2 * 1e-9
+                if height_sq < -tolerance:
+                    continue
                 height = math.sqrt(max(0.0, height_sq))
                 base = (pos_a[0] + ux * along, pos_a[1] + uy * along)
                 perpendicular = (-uy, ux)
@@ -144,6 +152,64 @@ class SpaceRenderer:
 
         best = min(candidates, key=lambda candidate: (score(candidate), candidate[1] < 0, abs(candidate[1]), candidate[0]))
         return best, score(best)
+
+    @staticmethod
+    def _edge_key(left_id, right_id):
+        return tuple(sorted((str(left_id), str(right_id))))
+
+    @staticmethod
+    def _schematic_distance_ly(distance_ly, reference_ly):
+        """Compress route lengths while retaining their broad ordering.
+
+        Neighbourhood view is a network diagram, not an astrometric chart.
+        A square-root scale prevents a single 40--50 ly relation from making
+        all 1--5 ly stations and labels occupy the same few pixels.
+        """
+        reference = max(0.2, float(reference_ly or 1.0))
+        distance = max(0.01, float(distance_ly or 0.01))
+        result = reference * (0.35 + 0.65 * math.sqrt(distance / reference))
+        return max(reference * 0.58, min(reference * 2.1, result))
+
+    @staticmethod
+    def _metro_angle(angle):
+        step = math.pi / 4.0
+        return round(float(angle) / step) * step
+
+    def _branch_angle(self, system_id, parent_id, sibling_index, parent_angle):
+        if parent_id is None:
+            palette = (0, -1, 1, -2, 2, -3, 3, 4)
+            return palette[sibling_index % len(palette)] * math.pi / 4.0
+        offsets = (0, -1, 1, -2, 2, -3, 3)
+        return self._metro_angle(parent_angle + offsets[sibling_index % len(offsets)] * math.pi / 4.0)
+
+    def _circle_candidates(self, center_a, radius_a, center_b, radius_b):
+        baseline = self._distance(center_a, center_b)
+        tolerance = max(radius_a, radius_b, baseline, 1.0) * 1e-9
+        if (
+            baseline <= tolerance
+            or baseline > radius_a + radius_b + tolerance
+            or baseline < abs(radius_a - radius_b) - tolerance
+        ):
+            return []
+        ux = (center_b[0] - center_a[0]) / baseline
+        uy = (center_b[1] - center_a[1]) / baseline
+        along = (
+            radius_a * radius_a - radius_b * radius_b + baseline * baseline
+        ) / (2.0 * baseline)
+        height_sq = radius_a * radius_a - along * along
+        if height_sq < -tolerance * tolerance:
+            return []
+        height = math.sqrt(max(0.0, height_sq))
+        base = (center_a[0] + ux * along, center_a[1] + uy * along)
+        perpendicular = (-uy, ux)
+        candidates = [
+            (base[0] + perpendicular[0] * height, base[1] + perpendicular[1] * height),
+        ]
+        if height > tolerance:
+            candidates.append(
+                (base[0] - perpendicular[0] * height, base[1] - perpendicular[1] * height)
+            )
+        return candidates
 
     def _place_from_single_constraint(self, system_id, anchor_id, distance_ly, placed, parent_by):
         anchor_pos = placed[anchor_id]
@@ -175,12 +241,20 @@ class SpaceRenderer:
         if not isinstance(root, dict):
             return {}
 
+        positive_distances = [
+            float(edge.get("distance_ly"))
+            for edge in edges
+            if float(edge.get("distance_ly") or 0.0) > 0.0
+        ]
+        reference_ly = statistics.median(positive_distances) if positive_distances else 1.0
         layout = {
             root_id: {
                 "entity": root,
                 "pos": (0.0, 0.0),
                 "depth": 0,
                 "distance_ly": 0.0,
+                "branch_angle": 0.0,
+                "schematic_reference_ly": reference_ly,
             }
         }
         placed = {root_id: (0.0, 0.0)}
@@ -196,68 +270,157 @@ class SpaceRenderer:
             adjacency.setdefault(a_id, []).append((b_id, distance_ly))
             adjacency.setdefault(b_id, []).append((a_id, distance_ly))
 
-        first_edge = next((edge for edge in edges if root_id in {edge["a"], edge["b"]}), None)
-        if first_edge is not None:
-            first_id = first_edge["b"] if first_edge["a"] == root_id else first_edge["a"]
-            first_distance_ly = first_edge["distance_ly"]
-            placed[first_id] = (first_distance_ly * LY_M, 0.0)
-            parent_by[first_id] = root_id
-            layout[first_id] = {
-                "entity": entities[first_id],
-                "pos": placed[first_id],
-                "depth": depths.get(first_id, 1),
-                "distance_ly": first_distance_ly,
-                "parent_id": root_id,
-                "constraint_error": 0.0,
-            }
-
-        unresolved = set(entities.keys()) - set(placed.keys())
-        while unresolved:
-            progress = False
-            for system_id in sorted(unresolved, key=lambda item: (depths.get(item, 999), item)):
-                constraints = [
-                    (neighbor_id, distance_ly)
-                    for neighbor_id, distance_ly in adjacency.get(system_id, [])
-                    if neighbor_id in placed
-                ]
-                if not constraints:
+        # Build a deterministic breadth-first route tree.  Tree edges establish
+        # the metro branches; additional graph edges are triangle closures.
+        queue = [root_id]
+        sibling_counts = {}
+        while queue:
+            parent_id = queue.pop(0)
+            children = [
+                (system_id, distance_ly)
+                for system_id, distance_ly in adjacency.get(parent_id, [])
+                if system_id not in placed
+            ]
+            children.sort(key=lambda item: (float(item[1]), str(item[0])))
+            for system_id, distance_ly in children:
+                if system_id in placed:
                     continue
+                parent_by[system_id] = parent_id
+                sibling_index = sibling_counts.get(parent_id, 0)
+                sibling_counts[parent_id] = sibling_index + 1
+                parent_item = layout[parent_id]
+                parent_angle = float(parent_item.get("branch_angle", 0.0) or 0.0)
+                preferred_angle = self._branch_angle(
+                    system_id,
+                    None if parent_id == root_id else parent_id,
+                    sibling_index,
+                    parent_angle,
+                )
+                displayed_distance_ly = self._schematic_distance_ly(
+                    distance_ly, reference_ly,
+                )
+                displayed_radius = displayed_distance_ly * LY_M
+                parent_pos = placed[parent_id]
+                preferred = (
+                    parent_pos[0] + math.cos(preferred_angle) * displayed_radius,
+                    parent_pos[1] + math.sin(preferred_angle) * displayed_radius,
+                )
 
-                if len(constraints) >= 2:
-                    position, error = self._solve_position_from_constraints(constraints, placed)
-                    if position is None:
-                        anchor_id, distance_ly = constraints[0]
-                        position = self._place_from_single_constraint(system_id, anchor_id, distance_ly, placed, parent_by)
-                        error = None
-                else:
-                    anchor_id, distance_ly = constraints[0]
-                    position = self._place_from_single_constraint(system_id, anchor_id, distance_ly, placed, parent_by)
-                    error = None
-
-                parent_id, parent_distance_ly = min(
-                    constraints,
-                    key=lambda item: (depths.get(item[0], 999), item[0]),
+                # If this node closes a triangle to an already placed station,
+                # retain the exact displayed closure when possible, choosing
+                # the intersection nearest the desired metro branch.
+                triangle_candidates = []
+                for anchor_id, closing_distance_ly in adjacency.get(system_id, []):
+                    if anchor_id == parent_id or anchor_id not in placed:
+                        continue
+                    closing_radius = self._schematic_distance_ly(
+                        closing_distance_ly, reference_ly,
+                    ) * LY_M
+                    for candidate in self._circle_candidates(
+                        parent_pos, displayed_radius, placed[anchor_id], closing_radius,
+                    ):
+                        triangle_candidates.append(candidate)
+                position = min(
+                    triangle_candidates,
+                    key=lambda candidate: self._distance(candidate, preferred),
+                ) if triangle_candidates else preferred
+                actual_angle = math.atan2(
+                    position[1] - parent_pos[1], position[0] - parent_pos[0],
                 )
                 placed[system_id] = position
-                parent_by[system_id] = parent_id
                 layout[system_id] = {
                     "entity": entities[system_id],
                     "pos": position,
                     "depth": depths.get(system_id, 1),
-                    "distance_ly": parent_distance_ly,
+                    "distance_ly": distance_ly,
+                    "display_distance_ly": displayed_distance_ly,
                     "parent_id": parent_id,
-                    "constraint_error": error,
+                    "branch_angle": actual_angle,
+                    "constraint_error": None,
                 }
-                progress = True
+                queue.append(system_id)
 
-            if not progress:
-                break
-            unresolved = set(entities.keys()) - set(placed.keys())
+        # A disconnected remainder is not expected from the graph walk, but
+        # omit it instead of inventing an unrelated spatial origin.
 
         self._stellar_layout_cache[layout_key] = layout
         if len(self._stellar_layout_cache) > 8:
             self._stellar_layout_cache.pop(next(iter(self._stellar_layout_cache)))
         return layout
+
+    def _stellar_edge_diagnostics(self, graph, layout):
+        edges = graph.get("edges") or []
+        reference_ly = float(
+            (layout.get(graph.get("root_id")) or {}).get("schematic_reference_ly", 1.0)
+            or 1.0
+        )
+        by_key = {
+            self._edge_key(edge.get("a"), edge.get("b")): edge
+            for edge in edges
+        }
+        diagnostics = {}
+        tree_edges = {
+            self._edge_key(system_id, item.get("parent_id"))
+            for system_id, item in layout.items()
+            if item.get("parent_id")
+        }
+        for key, edge in by_key.items():
+            left = layout.get(edge.get("a"))
+            right = layout.get(edge.get("b"))
+            if not left or not right:
+                continue
+            expected = self._schematic_distance_ly(
+                edge.get("distance_ly"), reference_ly,
+            ) * LY_M
+            actual = self._distance(left["pos"], right["pos"])
+            relative_error = abs(actual - expected) / max(expected, 1.0)
+            diagnostics[key] = {
+                "valid": key in tree_edges or relative_error <= 0.08,
+                "reason": (
+                    "tree_route"
+                    if key in tree_edges
+                    else "triangle_closed"
+                    if relative_error <= 0.08
+                    else "triangle_cannot_close_at_displayed_angles"
+                ),
+                "relative_error": relative_error,
+            }
+
+        # Independently catch impossible declared triangles.  Mark their
+        # longest side: it is the relation that cannot connect the other two.
+        adjacency = {system_id: set() for system_id in graph.get("entities", {})}
+        for edge in edges:
+            adjacency.setdefault(edge["a"], set()).add(edge["b"])
+            adjacency.setdefault(edge["b"], set()).add(edge["a"])
+        entity_ids = sorted(adjacency)
+        for left_index, left_id in enumerate(entity_ids):
+            for middle_id in sorted(adjacency[left_id]):
+                if middle_id <= left_id:
+                    continue
+                for right_id in sorted(adjacency[left_id] & adjacency[middle_id]):
+                    if right_id <= middle_id:
+                        continue
+                    triangle = []
+                    for a_id, b_id in (
+                        (left_id, middle_id),
+                        (left_id, right_id),
+                        (middle_id, right_id),
+                    ):
+                        key = self._edge_key(a_id, b_id)
+                        edge = by_key.get(key)
+                        if edge is not None:
+                            triangle.append((float(edge["distance_ly"]), key))
+                    if len(triangle) != 3:
+                        continue
+                    triangle.sort(key=lambda item: item[0])
+                    if triangle[2][0] >= triangle[0][0] + triangle[1][0] - 1e-9:
+                        invalid_key = triangle[2][1]
+                        diagnostics.setdefault(invalid_key, {})
+                        diagnostics[invalid_key].update({
+                            "valid": False,
+                            "reason": "declared_distances_cannot_form_triangle",
+                        })
+        return diagnostics
 
     def _should_draw_stellar_neighbourhood(self, graph, camera, view):
         edges = graph.get("edges", []) if isinstance(graph, dict) else []
@@ -288,8 +451,25 @@ class SpaceRenderer:
             return
 
         root_id = getattr(sim, "root_system_id", None)
+        edge_diagnostics = self._stellar_edge_diagnostics(graph, layout)
 
         font = view.default_font
+        occupied_labels = []
+
+        def place_label(surface, candidates):
+            screen_rect = screen.get_rect()
+            for x, y in candidates:
+                rect = surface.get_rect(topleft=(int(x), int(y)))
+                if screen_rect.contains(rect) and not any(rect.colliderect(other) for other in occupied_labels):
+                    occupied_labels.append(rect.inflate(6, 3))
+                    screen.blit(surface, rect)
+                    return rect
+            x, y = candidates[0]
+            rect = surface.get_rect(topleft=(int(x), int(y))).clamp(screen_rect)
+            occupied_labels.append(rect.inflate(6, 3))
+            screen.blit(surface, rect)
+            return rect
+
         for edge in graph.get("edges", []):
             a_item = layout.get(edge.get("a"))
             b_item = layout.get(edge.get("b"))
@@ -299,11 +479,24 @@ class SpaceRenderer:
             b_point = camera.world_to_screen(b_item.get("pos", (0.0, 0.0)))
             if a_point is None or b_point is None:
                 continue
-            pygame.draw.line(screen, (58, 76, 96), a_point, b_point, 1)
+            diagnostic = edge_diagnostics.get(
+                self._edge_key(edge.get("a"), edge.get("b")), {}
+            )
+            valid = diagnostic.get("valid", True)
+            line_color = (72, 104, 138) if valid else (210, 66, 66)
+            pygame.draw.aaline(screen, line_color, a_point, b_point)
+            pygame.draw.line(screen, line_color, a_point, b_point, 2)
             midpoint = ((a_point[0] + b_point[0]) / 2, (a_point[1] + b_point[1]) / 2)
             distance_label = f"{edge.get('distance_ly', 0):.2f} ly"
-            label = font.render(distance_label, True, (118, 142, 168))
-            screen.blit(label, (int(midpoint[0]) + 4, int(midpoint[1]) + 4))
+            label_color = (126, 154, 184) if valid else (236, 98, 98)
+            label = font.render(distance_label, True, label_color)
+            dx, dy = b_point[0] - a_point[0], b_point[1] - a_point[1]
+            length = max(1.0, math.hypot(dx, dy))
+            nx, ny = -dy / length * 7.0, dx / length * 7.0
+            place_label(label, [
+                (midpoint[0] + nx + 4, midpoint[1] + ny + 2),
+                (midpoint[0] - nx + 4, midpoint[1] - ny + 2),
+            ])
 
         for system_id, item in layout.items():
             if system_id == root_id:
@@ -317,7 +510,21 @@ class SpaceRenderer:
             pygame.draw.circle(screen, color, (int(point[0]), int(point[1])), 5 if depth == 1 else 4)
             pygame.draw.circle(screen, (180, 206, 236), (int(point[0]), int(point[1])), 7 if depth == 1 else 6, 1)
             label = font.render(item["entity"].get("name", system_id), True, (172, 198, 228) if depth == 1 else (132, 150, 176))
-            screen.blit(label, (int(point[0]) + 9, int(point[1]) - 8))
+            place_label(label, [
+                (point[0] + 10, point[1] - 8),
+                (point[0] + 10, point[1] + 8),
+                (point[0] - label.get_width() - 10, point[1] - 8),
+                (point[0] - label.get_width() * 0.5, point[1] - 22),
+            ])
+
+        note = font.render(
+            "Neighbourhood schematic — labels show actual light-year distances",
+            True,
+            (104, 124, 148),
+        )
+        place_label(note, [
+            (getattr(view, "x", 0) + 18, getattr(view, "bottom", screen.get_height()) - note.get_height() - 14),
+        ])
 
     def _draw_habitable_zone(self, screen, sim, camera):
         if getattr(sim, "root_body_id", None) is not None:

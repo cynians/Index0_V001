@@ -4,6 +4,10 @@ This module does not reimplement planet generation.  It creates an isolated
 WorldModel, instantiates the real WorldGenSimulation, invokes the same stage
 actions used by the UI, and renders with the real WorldGenRenderer onto
 off-screen Pygame surfaces.
+
+Architecture invariants: ontology data is the only durable entity/semantic
+authority and runtime mappings are caches. Generated planets are disposable at
+this development stage; old worldgen products need not remain compatible.
 """
 
 import json
@@ -315,7 +319,7 @@ class HeadlessWorldGenRunner:
 
     def _new_runtime(self, config):
         self._prepare_output(config)
-        world = WorldModel(entries_directory=self.entries_root, use_ontology=False)
+        world = WorldModel()
         sim = WorldGenSimulation(
             world_model=world,
             parent_system_id=self.system_id,

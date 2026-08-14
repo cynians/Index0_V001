@@ -4,8 +4,22 @@ from simulations.world_gen.material_formation import (
     FORMATION_CATEGORIES,
     formation_contract,
 )
-from simulations.world_gen.natural_materials import natural_material_entries
+from simulations.world_gen.natural_materials import (
+    configure_material_catalog,
+    natural_material_entries,
+)
+
+
 from simulations.world_gen.regional_materials import derive_regional_material_model
+from world.persistent_ontology_store import PersistentOntologyStore
+from pathlib import Path
+
+
+def setUpModule():
+    rows = PersistentOntologyStore(
+        Path(__file__).resolve().parents[1] / "ontology" / "index0.owl"
+    ).load_datasets().get("materials") or []
+    configure_material_catalog(rows)
 
 
 def _regional_inputs(material_id, name, subclass, profile_id, *, tags, level):
@@ -55,7 +69,7 @@ class MaterialFormationSystemTests(unittest.TestCase):
             for entry in natural_material_entries()
             if entry.get("material_system_role") == "natural_geologic_material"
         ]
-        self.assertEqual(200, len(entries))
+        self.assertEqual(210, len(entries))
         for entry in entries:
             self.assertIn(entry["formation_category"], FORMATION_CATEGORIES)
             self.assertIn(

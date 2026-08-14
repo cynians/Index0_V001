@@ -1,6 +1,10 @@
 import sqlite3
 import tempfile
 import unittest
+import json
+import shutil
+import threading
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -11,11 +15,119 @@ from simulations.space.system import CelestialSystem
 from world.entity_loader import EntityLoader
 from world.simulation_context import SimulationContext
 from world.ontology_repository import OntologyDependencyError, OntologyRepository
-from world.persistent_ontology_store import PersistentOntologyStore
+from world.persistent_ontology_store import LazyEntity, PersistentOntologyStore
 from world.world_model import WorldModel
 
 
 class OntologyRepositoryTests(unittest.TestCase):
+    def test_decoded_projection_cache_is_reused_only_for_matching_store_signature(self):
+        temp_path = Path(__file__).resolve().parents[1] / ".cache" / f"projection-test-{uuid.uuid4().hex}"
+        temp_path.mkdir(parents=True, exist_ok=True)
+        try:
+            database_path = temp_path / "store.sqlite3"
+            database_path.write_bytes(b"quadstore-v1")
+            store = PersistentOntologyStore.__new__(PersistentOntologyStore)
+            store.database_path = database_path
+            store.projection_cache_path = temp_path / "projection.pickle"
+            store.projection_manifest_path = temp_path / "projection.manifest.json"
+            store.PROJECTION_CACHE_VERSION = 2
+            store._operation_lock = threading.RLock()
+            datasets = {"locations": [{"id": "planet_a", "heightmap_model": {"rows": [[1, 2]]}}]}
+
+            self.assertTrue(store._write_projection_cache(datasets))
+            loaded = store._load_projection_cache()
+            self.assertIsInstance(loaded["locations"][0], LazyEntity)
+            self.assertFalse(loaded["locations"][0].is_hydrated)
+            self.assertEqual({"rows": [[1, 2]]}, loaded["locations"][0]["heightmap_model"])
+            self.assertTrue(loaded["locations"][0].is_hydrated)
+
+            database_path.write_bytes(b"quadstore-v2-with-a-different-size")
+            self.assertIsNone(store._load_projection_cache())
+        finally:
+            shutil.rmtree(temp_path, ignore_errors=True)
+
+    def test_decoded_projection_cache_rejects_corrupt_payload(self):
+        temp_path = Path(__file__).resolve().parents[1] / ".cache" / f"projection-test-{uuid.uuid4().hex}"
+        temp_path.mkdir(parents=True, exist_ok=True)
+        try:
+            database_path = temp_path / "store.sqlite3"
+            database_path.write_bytes(b"quadstore")
+            store = PersistentOntologyStore.__new__(PersistentOntologyStore)
+            store.database_path = database_path
+            store.projection_cache_path = temp_path / "projection.pickle"
+            store.projection_manifest_path = temp_path / "projection.manifest.json"
+            store.PROJECTION_CACHE_VERSION = 2
+            store.projection_cache_path.write_bytes(b"not-a-pickle")
+            store.projection_manifest_path.write_text(json.dumps({
+                "source_signature": store._projection_source_signature(),
+            }), encoding="utf-8")
+
+            self.assertIsNone(store._load_projection_cache())
+            self.assertFalse(store.projection_cache_path.exists())
+            self.assertFalse(store.projection_manifest_path.exists())
+        finally:
+            shutil.rmtree(temp_path, ignore_errors=True)
+
+    def test_projection_cache_point_patch_preserves_lazy_location_payload(self):
+        temp_path = Path(__file__).resolve().parents[1] / ".cache" / f"projection-test-{uuid.uuid4().hex}"
+        temp_path.mkdir(parents=True, exist_ok=True)
+        try:
+            database_path = temp_path / "store.sqlite3"
+            database_path.write_bytes(b"quadstore-v1")
+            store = PersistentOntologyStore.__new__(PersistentOntologyStore)
+            store.database_path = database_path
+            store.projection_cache_path = temp_path / "projection.pickle"
+            store.projection_manifest_path = temp_path / "projection.manifest.json"
+            store.PROJECTION_CACHE_VERSION = 2
+            datasets = {
+                "locations": [{
+                    "id": "planet_a",
+                    "type": "location",
+                    "pretty_name": "Before",
+                    "heightmap_model": {"rows": [[1, 2]]},
+                }],
+            }
+            self.assertTrue(store._write_projection_cache(datasets))
+            previous_signature = store._projection_source_signature()
+            database_path.write_bytes(b"quadstore-v2-with-new-transaction")
+            changed_entity = {
+                "id": "planet_a",
+                "_dataset": "locations",
+                "pretty_name": "After",
+            }
+
+            self.assertTrue(store._patch_projection_cache(
+                entities=[changed_entity],
+                field_names_by_id={"planet_a": {"pretty_name"}},
+                previous_signature=previous_signature,
+            ))
+            loaded = store._load_projection_cache()["locations"][0]
+            self.assertEqual("After", loaded["pretty_name"])
+            self.assertFalse(loaded.is_hydrated)
+            self.assertEqual({"rows": [[1, 2]]}, loaded["heightmap_model"])
+        finally:
+            shutil.rmtree(temp_path, ignore_errors=True)
+
+    def test_successful_store_commit_invalidates_decoded_projection_cache(self):
+        temp_path = Path(__file__).resolve().parents[1] / ".cache" / f"projection-test-{uuid.uuid4().hex}"
+        temp_path.mkdir(parents=True, exist_ok=True)
+        try:
+            store = PersistentOntologyStore.__new__(PersistentOntologyStore)
+            store.projection_cache_path = temp_path / "projection.pickle"
+            store.projection_manifest_path = temp_path / "projection.manifest.json"
+            store.database_path = temp_path / "store.sqlite3"
+            store.database_path.write_bytes(b"quadstore")
+            store.LOCK_RETRY_ATTEMPTS = 1
+            store.projection_cache_path.write_bytes(b"cached")
+            store.projection_manifest_path.write_text("{}", encoding="utf-8")
+            world = SimpleNamespace(save=lambda: None)
+
+            self.assertTrue(store._save_world(world))
+            self.assertFalse(store.projection_cache_path.exists())
+            self.assertFalse(store.projection_manifest_path.exists())
+        finally:
+            shutil.rmtree(temp_path, ignore_errors=True)
+
     def test_persistent_store_point_edit_survives_restart_without_touching_other_fields(self):
         ontology = OntologyRepository({
             "ideas": [{
@@ -197,6 +309,47 @@ class OntologyRepositoryTests(unittest.TestCase):
         self.assertTrue(connections[0].closed)
         self.assertTrue(connections[1].closed)
         self.assertFalse(connections[2].closed)
+
+    def test_persistent_store_falls_back_for_owlready2_without_connection_api(self):
+        class FakeConnection:
+            def __init__(self):
+                self.closed = False
+
+            def execute(self, _statement):
+                return None
+
+            def close(self):
+                self.closed = True
+
+        connection = FakeConnection()
+        calls = []
+        sentinel_world = object()
+
+        def open_world(**kwargs):
+            calls.append(kwargs)
+            if "connection" in kwargs:
+                raise TypeError(
+                    "Graph.__init__() got an unexpected keyword argument 'connection'"
+                )
+            return sentinel_world
+
+        store = PersistentOntologyStore.__new__(PersistentOntologyStore)
+        store.database_path = Path("legacy-owlready2.sqlite3")
+        store.LOCK_RETRY_ATTEMPTS = 1
+        store.SQLITE_BUSY_TIMEOUT_MS = 1
+        store._import_owlready2 = lambda: SimpleNamespace(World=open_world)
+
+        with patch(
+            "world.persistent_ontology_store.sqlite3.connect",
+            return_value=connection,
+        ):
+            world = store._open_world(read_only=True)
+
+        self.assertIs(sentinel_world, world)
+        self.assertTrue(connection.closed)
+        self.assertIn("connection", calls[0])
+        self.assertNotIn("connection", calls[1])
+        self.assertTrue(calls[1]["read_only"])
 
     def test_persistent_store_retries_locked_world_commit(self):
         save_calls = []
@@ -517,6 +670,28 @@ class OntologyRepositoryTests(unittest.TestCase):
             self.assertEqual(["idea_parent"], loaded.entities["idea_child"]["parents"])
             self.assertEqual(["idea_parent"], loaded.entities["idea_child"]["related"])
             self.assertEqual(["idea_child"], loaded.entities["idea_parent"]["related"])
+
+    def test_owl_round_trip_preserves_ordered_scalar_lists_and_duplicates(self):
+        ontology = OntologyRepository({
+            "materials": [{
+                "id": "mat_neutral_rock",
+                "type": "material",
+                "display_color": [112, 116, 112],
+                "ordered_samples": [3, 1, 3, 2],
+            }],
+        })
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "ontology" / "index0.owl"
+            try:
+                ontology.save_owl(output_path)
+                loaded = OntologyRepository.from_owl(output_path)
+            except OntologyDependencyError as exc:
+                self.skipTest(str(exc))
+
+        material = loaded.entities["mat_neutral_rock"]
+        self.assertEqual([112, 116, 112], material["display_color"])
+        self.assertEqual([3, 1, 3, 2], material["ordered_samples"])
 
     def test_non_core_entity_reference_field_round_trips_as_object_property(self):
         ontology = OntologyRepository({

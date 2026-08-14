@@ -13,6 +13,7 @@ class BuildingSimulation(MapSimulation):
     ROOM_LAYER_KIND = "rooms"
     DEFAULT_BUILDING_WORLD_WIDTH = 48.0
     DEFAULT_BUILDING_WORLD_HEIGHT = 32.0
+    STRUCTURE_LOCATION_CLASSES = {"building", "space_station", "station"}
 
     def __init__(self, simulation_context):
         super().__init__(simulation_context)
@@ -26,6 +27,16 @@ class BuildingSimulation(MapSimulation):
             bounds = root.get("bounds") or {}
             if bounds.get("type") in {"bbox", "polygon"}:
                 return super()._resolve_root_bounds()
+
+            if root.get("location_class") in {"space_station", "station"}:
+                half_w = max(1.0, float(root.get("dimension_length_m", 100.0))) / 2.0
+                half_h = max(1.0, float(root.get("dimension_width_m", 40.0))) / 2.0
+                return {
+                    "min_x": -half_w,
+                    "max_x": half_w,
+                    "min_y": -half_h,
+                    "max_y": half_h,
+                }
 
         half_w = self.DEFAULT_BUILDING_WORLD_WIDTH / 2.0
         half_h = self.DEFAULT_BUILDING_WORLD_HEIGHT / 2.0
@@ -46,7 +57,7 @@ class BuildingSimulation(MapSimulation):
         root = self.get_root_entity()
         return (
             root is not None
-            and root.get("location_class") == "building"
+            and root.get("location_class") in self.STRUCTURE_LOCATION_CLASSES
         )
 
     def get_spatial_feature_draft_button_label(self):

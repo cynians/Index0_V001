@@ -265,6 +265,16 @@ MATERIAL_PROFILE_TYPES = {
     "mat_zeolite": "hydrated_alteration",
     "mat_blueschist": "metamorphic_uplift",
     "mat_eclogite": "metamorphic_uplift",
+    "mat_red_bed_sandstone": "sand",
+    "mat_malachite_azurite_gossan": "sulfide_ore",
+    "mat_solfataric_sulfur_crust": "sulfur_surface",
+    "mat_chrysoprase": "nickel_laterite",
+    "mat_rock_varnish": "duricrust",
+    "mat_evaporite_salt_crust": "evaporite",
+    "mat_welded_ignimbrite": "fresh_pyroclastic",
+    "mat_banded_jasper": "hydrothermal",
+    "mat_lapis_lazuli_marble": "metamorphic_uplift",
+    "mat_siliceous_sinter": "hydrothermal",
 }
 MATERIAL_PROFILE_TYPES.update(GEOLOGICAL_PROFILE_TYPES)
 

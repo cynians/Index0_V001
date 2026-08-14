@@ -15,6 +15,39 @@ FORMATION_CATEGORIES = {
         "required_any_planet_tags": ["felsic_crust", "silica_rich_crust"],
         "valid_scale_levels": [0, 1, 2, 3, 4],
     },
+    "igneous_intrusive_intermediate": {
+        "process": "intermediate_magma_differentiation_intrusion_and_exhumation",
+        "spatial_representation": "bedrock_unit",
+        "required_any_planet_tags": [
+            "intermediate_silicate_crust", "plate_tectonic_surface", "felsic_crust",
+        ],
+        "valid_scale_levels": [0, 1, 2, 3, 4],
+    },
+    "igneous_intrusive_alkaline": {
+        "process": "alkali_rich_magma_intrusion_crystallization_and_exhumation",
+        "spatial_representation": "bedrock_unit",
+        "required_any_planet_tags": [
+            "intermediate_silicate_crust", "volcanic_surface",
+            "felsic_crust", "mafic_crust",
+        ],
+        "valid_scale_levels": [0, 1, 2, 3, 4],
+    },
+    "igneous_extrusive_mafic": {
+        "process": "mafic_lava_extrusion_cooling_and_flow_emplacement",
+        "spatial_representation": "bedrock_unit",
+        "required_any_planet_tags": [
+            "mafic_crust", "basaltic_surface", "volcanic_surface",
+        ],
+        "valid_scale_levels": [0, 1, 2, 3, 4],
+    },
+    "igneous_hypabyssal_mafic": {
+        "process": "shallow_mafic_dike_and_sill_intrusion_cooling_and_exhumation",
+        "spatial_representation": "bedrock_unit",
+        "required_any_planet_tags": [
+            "mafic_crust", "basaltic_surface", "volcanic_surface",
+        ],
+        "valid_scale_levels": [0, 1, 2, 3, 4],
+    },
     "igneous_mafic": {
         "process": "mafic_magma_crystallization_extrusion_or_exhumation",
         "spatial_representation": "bedrock_unit",
@@ -40,7 +73,7 @@ FORMATION_CATEGORIES = {
         "spatial_representation": "bedrock_unit",
         "required_any_planet_tags": ["intermediate_silicate_crust", "volcanic_surface"],
         "local_minimums": {"volcanic": 0.20},
-        "valid_scale_levels": [1, 2, 3, 4],
+        "valid_scale_levels": [0, 1, 2, 3, 4],
     },
     "igneous_extrusive_felsic": {
         "process": "silicic_magma_extrusion_and_cooling",
@@ -69,7 +102,9 @@ FORMATION_CATEGORIES = {
         "spatial_representation": "constituent_abundance",
         "required_any_planet_tags": ["silicate_crust", "felsic_crust", "mafic_crust"],
         "host_formation_categories": [
-            "igneous_intrusive_felsic", "igneous_mafic", "igneous_ultramafic",
+            "igneous_intrusive_felsic", "igneous_intrusive_intermediate",
+            "igneous_intrusive_alkaline", "igneous_mafic",
+            "igneous_hypabyssal_mafic", "igneous_ultramafic",
         ],
         "valid_scale_levels": [1, 2, 3, 4],
     },
@@ -164,6 +199,16 @@ FORMATION_CATEGORIES = {
         "required_any_planet_tags": ["aeolian_surface", "weathered_surface"],
         "local_minimums": {"aeolian": 0.30, "low_slope": 0.20},
         "valid_scale_levels": [1, 2, 3, 4],
+    },
+    "quartz_sand_accumulation": {
+        "process": "quartz_rich_parent_weathering_abrasion_transport_sorting_and_accumulation",
+        "spatial_representation": "surface_cover",
+        "required_any_planet_tags": [
+            "silica_rich_crust", "weathered_surface",
+            "active_hydrology", "aeolian_surface",
+        ],
+        "local_minimums": {"low_slope": 0.08},
+        "valid_scale_levels": [0, 1, 2, 3, 4],
     },
     "clastic_sedimentary_basin": {
         "process": "basin_deposition_burial_compaction_and_cementation",
@@ -336,6 +381,13 @@ PROFILE_FORMATION_CATEGORIES = {
 
 
 MATERIAL_FORMATION_OVERRIDES = {
+    "mat_basalt": "igneous_extrusive_mafic",
+    "mat_diabase": "igneous_hypabyssal_mafic",
+    "mat_diorite": "igneous_intrusive_intermediate",
+    "mat_monzonite": "igneous_intrusive_intermediate",
+    "mat_syenite": "igneous_intrusive_alkaline",
+    "mat_nepheline_syenite": "igneous_intrusive_alkaline",
+    "mat_silica_sand": "quartz_sand_accumulation",
     "mat_kimberlite": "kimberlite_pipe",
     "mat_obsidian": "volcanic_glass",
     "mat_travertine": "spring_carbonate",
@@ -349,6 +401,7 @@ MATERIAL_FORMATION_OVERRIDES = {
     "mat_talus": "colluvial_sediment",
     "mat_glacial_till": "glacial_sediment",
     "mat_diamond": "kimberlitic_diamond",
+    "mat_lapis_lazuli_marble": "contact_metasomatic_skarn",
 }
 
 

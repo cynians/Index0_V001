@@ -1,3 +1,11 @@
+"""Repository boundary for the sole durable entity and semantic authority.
+
+All entity identity and ontological/semantic information belongs in the
+ontology; returned mappings are disposable projections. No generated planets
+are currently intended to persist, so worldgen model changes may invalidate
+their derived products without compatibility migration.
+"""
+
 import copy
 import json
 import logging
@@ -399,7 +407,15 @@ class OntologyRepository:
             self._replace_locked_ontology_in_place(temp_path, path)
 
         signature = self._source_signature(path)
-        self._write_dataset_cache(path, signature, self.datasets)
+        # The cache is a loader projection, so it must contain the same
+        # inverse/symmetric relations that reading the RDF graph would
+        # materialize.  Caching raw authored rows made a fresh save behave
+        # differently from a cache miss.
+        self._write_dataset_cache(
+            path,
+            signature,
+            self.materialized_repository().datasets,
+        )
 
     def _replace_locked_ontology_in_place(self, temp_path, path):
         """Safely overwrite a Windows-locked target while retaining a rollback copy."""
@@ -562,23 +578,17 @@ class OntologyRepository:
         if isinstance(value, (str, int, float, bool)):
             return [value]
         if isinstance(value, list):
-            values = []
-            for item in value:
-                if isinstance(item, (str, int, float, bool)) and item not in values:
-                    values.append(item)
-                elif isinstance(item, dict):
-                    values.append(json.dumps(item, ensure_ascii=False))
-            return values
+            # RDF data-property values are an unordered set: repeated values
+            # are collapsed and channel/order semantics are lost.  Persist a
+            # data list as one JSON literal so RGB triples, coordinate arrays,
+            # ordered steps, and deliberate duplicates round-trip exactly.
+            return [json.dumps(value, ensure_ascii=False)]
         if isinstance(value, dict):
             return [json.dumps(value, ensure_ascii=False)]
         return [str(value)]
 
     def _field_uses_json(self, value):
-        if isinstance(value, dict):
-            return True
-        if isinstance(value, list):
-            return any(isinstance(item, dict) for item in value)
-        return False
+        return isinstance(value, (dict, list))
 
     def _object_relation_ids_for_field(self, field_name, value):
         ids = self._relation_ids(value)
@@ -656,7 +666,17 @@ class OntologyRepository:
                 for value in values
             ]
             if field_name in list_fields:
-                entity[field_name] = values
+                # New ontologies store a complete ordered list as one JSON
+                # literal.  Continue accepting legacy files that stored each
+                # member as a separate property value.
+                if (
+                    field_name in json_fields
+                    and len(values) == 1
+                    and isinstance(values[0], list)
+                ):
+                    entity[field_name] = values[0]
+                else:
+                    entity[field_name] = values
             elif len(values) == 1:
                 entity[field_name] = values[0]
             elif values:

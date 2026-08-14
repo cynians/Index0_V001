@@ -1,5 +1,7 @@
 import pygame
 
+from world.requirement_resolver import RequirementResolver
+
 
 def _query_matches_text(query, text):
     terms = [term for term in str(query or "").strip().casefold().split() if term]
@@ -26,16 +28,49 @@ class CardProductionMixin:
             return "produced_components"
         return "produced_items"
 
-    def _production_output_field_for_id(self, product_id):
-        field_key = self._production_product_field_for_id(product_id)
-        return {
-            "produced_vehicles": "output_vehicles",
-            "produced_components": "output_components",
-            "produced_items": "output_items",
-        }.get(field_key, "output_items")
-
     def _producer_entity_id(self):
         return str(self.entity.get("id") or "").strip()
+
+    def _production_line_id(self, line, index=0):
+        explicit = str((line or {}).get("line_id") or (line or {}).get("production_id") or "").strip()
+        if explicit:
+            return explicit
+        producer_id = self._producer_entity_id() or "producer"
+        product_id = str((line or {}).get("product_id") or "product").strip()
+        safe_product = "".join(character if character.isalnum() else "_" for character in product_id).strip("_")
+        return f"line_{producer_id}_{safe_product}_{int(index):03d}"
+
+    def _production_line_relation_ids(self, line, field_name):
+        aliases = {
+            "job_ids": ("job_ids", "jobs", "assigned_jobs"),
+            "employed_technology_ids": ("employed_technology_ids", "employed_technologies", "workflow_technologies"),
+            "employment_ids": ("employment_ids", "employments", "workforce_assignments"),
+        }
+        values = []
+        for alias in aliases.get(field_name, (field_name,)):
+            for entity_id in self._relation_entity_ids((line or {}).get(alias)):
+                if entity_id not in values:
+                    values.append(entity_id)
+        return values
+
+    def _normalized_production_line(self, line, index=0):
+        line = line if isinstance(line, dict) else {}
+        period = str(line.get("rate_period") or line.get("production_rate_period") or "month").strip().lower()
+        if period not in {"year", "month", "week"}:
+            period = "month"
+        return {
+            "line_id": self._production_line_id(line, index),
+            "production_id": str(line.get("production_id") or "").strip(),
+            "product_id": str(line.get("product_id") or line.get("product") or line.get("id") or "").strip(),
+            "location_id": str(line.get("location_id") or line.get("production_location") or "").strip(),
+            "rate_value": "" if line.get("rate_value") is None else str(line.get("rate_value")),
+            "rate_period": period,
+            "start_year": "" if line.get("start_year") is None else str(line.get("start_year")),
+            "end_year": "" if line.get("end_year") is None else str(line.get("end_year")),
+            "job_ids": self._production_line_relation_ids(line, "job_ids"),
+            "employed_technology_ids": self._production_line_relation_ids(line, "employed_technology_ids"),
+            "employment_ids": self._production_line_relation_ids(line, "employment_ids"),
+        }
 
     def _production_location_is_site(self, entity):
         if not isinstance(entity, dict):
@@ -47,30 +82,6 @@ class CardProductionMixin:
             entity.get("type"),
         )
         return any("site" in str(value or "").strip().lower() for value in values)
-
-    def _production_slug(self, value):
-        text = str(value or "").strip().lower()
-        return "".join(char if char.isalnum() else "_" for char in text).strip("_") or "entry"
-
-    def _production_line_entity_id(self, product_id, location_id=""):
-        producer_id = self._producer_entity_id()
-        base = "_".join(
-            part
-            for part in (
-                "prodline",
-                self._production_slug(producer_id),
-                self._production_slug(product_id),
-                self._production_slug(location_id) if location_id else "",
-            )
-            if part
-        )
-        entities = getattr(getattr(self.world_model, "loader", None), "entities", {}) if self.world_model is not None else {}
-        if base not in entities:
-            return base
-        index = 2
-        while f"{base}_{index}" in entities:
-            index += 1
-        return f"{base}_{index}"
 
     def _production_product_id_from_entity(self, entity):
         if not isinstance(entity, dict):
@@ -90,7 +101,7 @@ class CardProductionMixin:
         period = str(entity.get("production_rate_period") or entity.get("rate_period") or "month").strip().lower()
         if period not in {"year", "month", "week"}:
             period = "month"
-        return {
+        return self._normalized_production_line({
             "production_id": str(entity.get("id") or "").strip(),
             "product_id": product_id,
             "location_id": str(entity.get("production_location") or entity.get("location_id") or "").strip(),
@@ -98,7 +109,10 @@ class CardProductionMixin:
             "rate_period": period,
             "start_year": "" if entity.get("start_year") is None else str(entity.get("start_year")),
             "end_year": "" if entity.get("end_year") is None else str(entity.get("end_year")),
-        }
+            "job_ids": entity.get("job_ids") or entity.get("assigned_jobs") or [],
+            "employed_technology_ids": entity.get("employed_technologies") or entity.get("production_technology") or [],
+            "employment_ids": entity.get("employment_ids") or [],
+        })
 
     def _production_group_mode(self, card):
         mode = str(card.get("production_group_mode") or "product").strip().lower()
@@ -112,6 +126,23 @@ class CardProductionMixin:
         lines = []
         seen = set()
         producer_id = self._producer_entity_id()
+        for raw_index, raw_line in enumerate(self.entity.get("production_lines") or []):
+            if not isinstance(raw_line, dict):
+                continue
+            product_id = str(raw_line.get("product_id") or raw_line.get("product") or raw_line.get("id") or "").strip()
+            if not product_id:
+                continue
+            location_id = str(raw_line.get("location_id") or raw_line.get("production_location") or "").strip()
+            key = (product_id, location_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            lines.append(self._normalized_production_line(raw_line, raw_index))
+
+        # Backward compatibility: old repositories represented every line as
+        # a standalone production card.  Keep that data visible in the
+        # producer tab until the producer is next saved, at which point it is
+        # migrated to the inline representation above.
         entities = getattr(getattr(self.world_model, "loader", None), "entities", {}) if self.world_model is not None else {}
         for entity in entities.values():
             if not isinstance(entity, dict):
@@ -123,40 +154,18 @@ class CardProductionMixin:
             line = self._production_line_from_entity(entity)
             if not line:
                 continue
-            key = line.get("production_id") or (line["product_id"], line.get("location_id", ""))
+            key = (line["product_id"], line.get("location_id", ""))
             if key in seen:
                 continue
             seen.add(key)
             lines.append(line)
 
-        for raw_line in self.entity.get("production_lines") or []:
-            if not isinstance(raw_line, dict):
-                continue
-            product_id = str(raw_line.get("product_id") or raw_line.get("product") or raw_line.get("id") or "").strip()
-            if not product_id:
-                continue
-            location_id = str(raw_line.get("location_id") or raw_line.get("production_location") or "").strip()
-            key = ("legacy", product_id, location_id)
-            if key in seen:
-                continue
-            seen.add(key)
-            lines.append(
-                {
-                    "production_id": "",
-                    "product_id": product_id,
-                    "location_id": location_id,
-                    "rate_value": "" if raw_line.get("rate_value") is None else str(raw_line.get("rate_value")),
-                    "rate_period": str(raw_line.get("rate_period") or "month"),
-                    "start_year": "" if raw_line.get("start_year") is None else str(raw_line.get("start_year")),
-                    "end_year": "" if raw_line.get("end_year") is None else str(raw_line.get("end_year")),
-                }
-            )
+        products_with_lines = {str(line.get("product_id") or "") for line in lines}
         for field_key in ("produced_vehicles", "produced_components", "produced_items"):
             for product_id in self._relation_entity_ids(self.entity.get(field_key)):
-                key = (product_id, "")
-                if product_id and key not in seen:
-                    seen.add(key)
-                    lines.append({"production_id": "", "product_id": product_id, "location_id": "", "rate_value": "", "rate_period": "month", "start_year": "", "end_year": ""})
+                if product_id and product_id not in products_with_lines:
+                    products_with_lines.add(product_id)
+                    lines.append(self._normalized_production_line({"product_id": product_id}, len(lines)))
         return lines
 
     def _production_requirements_for_product(self, product_id):
@@ -193,11 +202,6 @@ class CardProductionMixin:
                 items.append({"id": entity_id, "group": group_key, "label": label})
         return items
 
-    def _production_line_entity_for_line(self, line):
-        production_id = str((line or {}).get("production_id") or "").strip()
-        entity = self.world_model.get_entity(production_id) if self.world_model is not None and production_id else None
-        return entity if isinstance(entity, dict) else None
-
     def _mark_production_entity_update(self, card, entity_id):
         entity_id = str(entity_id or "").strip()
         if not entity_id:
@@ -207,61 +211,176 @@ class CardProductionMixin:
             updates.append(entity_id)
         card["production_related_entity_update_ids"] = updates
 
-    def _build_production_line_entity(self, product_id, location_id=""):
+    def _queue_legacy_production_removals(self, card, lines):
+        removed = list(card.get("production_removed_entity_ids") or [])
+        for line in lines or []:
+            production_id = str((line or {}).get("production_id") or "").strip()
+            if production_id and production_id not in removed:
+                removed.append(production_id)
         producer_id = self._producer_entity_id()
-        product_label = self._entity_label_for_id(product_id)
-        producer_label = self._entity_label_for_id(producer_id)
-        entity_id = self._production_line_entity_id(product_id, location_id)
-        output_field = self._production_output_field_for_id(product_id)
-        entity = {
-            "id": entity_id,
-            "pretty_name": f"{producer_label} - {product_label} Production",
-            "name": f"{producer_label} - {product_label} Production",
-            "type": "production",
-            "_dataset": "production",
-            "production_class": "production_line",
-            "produced_by": [producer_id] if producer_id else [],
-            "operated_by": [producer_id] if producer_id else [],
-            "production_location": str(location_id or "").strip(),
-            "production_rate_value": "",
-            "production_rate_period": "month",
-            "start_year": "",
-            "end_year": "",
-            "input_materials": [],
-            "input_items": [],
-            "input_components": [],
-            "output_materials": [],
-            "output_items": [],
-            "output_components": [],
-            "output_vehicles": [],
-        }
-        entity[output_field] = [product_id]
-        return entity
+        entities = getattr(getattr(self.world_model, "loader", None), "entities", {}) if self.world_model is not None else {}
+        for entity in entities.values():
+            if not isinstance(entity, dict):
+                continue
+            if entity.get("_dataset") != "production" and entity.get("type") != "production":
+                continue
+            if producer_id not in self._relation_entity_ids(entity.get("produced_by")):
+                continue
+            production_id = str(entity.get("id") or "").strip()
+            if production_id and production_id not in removed:
+                removed.append(production_id)
+        if removed:
+            card["production_removed_entity_ids"] = removed
 
-    def _ensure_production_line_entity(self, card, line):
-        entity = self._production_line_entity_for_line(line)
-        if entity is not None:
-            return entity
-        product_id = str((line or {}).get("product_id") or "").strip()
-        if not product_id or self.world_model is None:
-            return None
-        entity = self._build_production_line_entity(product_id, (line or {}).get("location_id", ""))
-        entity["production_rate_value"] = str((line or {}).get("rate_value") or "")
-        entity["production_rate_period"] = str((line or {}).get("rate_period") or "month")
-        entity["start_year"] = str((line or {}).get("start_year") or "")
-        entity["end_year"] = str((line or {}).get("end_year") or "")
-        loader = getattr(self.world_model, "loader", None)
-        if loader is not None:
-            loader.datasets.setdefault("production", []).append(entity)
-            loader.entities[entity["id"]] = entity
-        self._mark_production_entity_update(card, entity.get("id"))
-        return entity
+    def _link_production_product(self, card, product_id):
+        product_id = str(product_id or "").strip()
+        producer_id = self._producer_entity_id()
+        if not product_id or not producer_id:
+            return
+        field_key = self._production_product_field_for_id(product_id)
+        values = self._relation_entity_ids(self.entity.get(field_key))
+        if product_id not in values:
+            values.append(product_id)
+            self.entity[field_key] = values
+        self._mark_production_entity_update(card, producer_id)
+
+        product = self.world_model.get_entity(product_id) if self.world_model is not None else None
+        if isinstance(product, dict):
+            producers = self._relation_entity_ids(product.get("produced_by"))
+            if producer_id not in producers:
+                producers.append(producer_id)
+                product["produced_by"] = producers
+            self._mark_production_entity_update(card, product_id)
+
+    def _unlink_production_product(self, card, product_id):
+        product_id = str(product_id or "").strip()
+        producer_id = self._producer_entity_id()
+        if not product_id or not producer_id:
+            return
+        for field_key in ("produced_vehicles", "produced_components", "produced_items"):
+            values = self._relation_entity_ids(self.entity.get(field_key))
+            if product_id in values:
+                self.entity[field_key] = [value for value in values if value != product_id]
+        self._mark_production_entity_update(card, producer_id)
+
+        product = self.world_model.get_entity(product_id) if self.world_model is not None else None
+        if isinstance(product, dict):
+            producers = self._relation_entity_ids(product.get("produced_by"))
+            if producer_id in producers:
+                product["produced_by"] = [value for value in producers if value != producer_id]
+                self._mark_production_entity_update(card, product_id)
+
+    def _store_inline_production_lines(self, card, lines):
+        previous_job_ids = set(self._relation_entity_ids(self.entity.get("production_jobs")))
+        previous_employment_ids = set(self._relation_entity_ids(self.entity.get("employment_assignments")))
+        stored = []
+        for line_index, line in enumerate(lines or []):
+            product_id = str((line or {}).get("product_id") or "").strip()
+            if not product_id:
+                continue
+            normalized = self._normalized_production_line(line, line_index)
+            normalized.pop("production_id", None)
+            stored.append(normalized)
+            self._link_production_product(card, product_id)
+        self.entity["production_lines"] = stored
+        # These are ontology-visible projections of references nested in the
+        # inline line records.  The line remains the operational source while
+        # the aggregate relations keep Jobs, technologies, and employment
+        # discoverable by the normal relation graph.
+        self.entity["production_jobs"] = list(dict.fromkeys(
+            entity_id for line in stored for entity_id in line.get("job_ids", [])
+        ))
+        self.entity["production_technologies"] = list(dict.fromkeys(
+            entity_id for line in stored for entity_id in line.get("employed_technology_ids", [])
+        ))
+        self.entity["employment_assignments"] = list(dict.fromkeys(
+            entity_id for line in stored for entity_id in line.get("employment_ids", [])
+        ))
+        self._synchronize_production_workforce_relations(
+            card, stored, previous_job_ids, previous_employment_ids
+        )
+        self._mark_production_entity_update(card, self._producer_entity_id())
+
+    def _synchronize_production_workforce_relations(
+        self, card, lines, previous_job_ids=None, previous_employment_ids=None
+    ):
+        producer_id = self._producer_entity_id()
+        if not producer_id or self.world_model is None:
+            return
+        previous_job_ids = set(previous_job_ids or [])
+        previous_employment_ids = set(previous_employment_ids or [])
+        current_job_ids = {
+            entity_id for line in lines for entity_id in line.get("job_ids", [])
+        }
+        current_employment_lines = {
+            entity_id: line
+            for line in lines
+            for entity_id in line.get("employment_ids", [])
+        }
+
+        for job_id in previous_job_ids | current_job_ids:
+            job = self.world_model.get_entity(job_id)
+            if not isinstance(job, dict):
+                continue
+            producers = self._relation_entity_ids(job.get("associated_producers"))
+            if job_id in current_job_ids and producer_id not in producers:
+                producers.append(producer_id)
+            if job_id not in current_job_ids and producer_id in producers:
+                producers.remove(producer_id)
+            job["associated_producers"] = producers
+            self._mark_production_entity_update(card, job_id)
+
+        for employment_id in previous_employment_ids | set(current_employment_lines):
+            employment = self.world_model.get_entity(employment_id)
+            if not isinstance(employment, dict):
+                continue
+            line = current_employment_lines.get(employment_id)
+            employers = self._relation_entity_ids(employment.get("employers"))
+            if line is not None:
+                if producer_id not in employers:
+                    employers.append(producer_id)
+                employment["production_context"] = producer_id
+                employment["production_line_id"] = line.get("line_id", "")
+                line_job_ids = line.get("job_ids", [])
+                if not employment.get("job") and len(line_job_ids) == 1:
+                    employment["job"] = line_job_ids[0]
+            else:
+                employers = [value for value in employers if value != producer_id]
+                if employment.get("production_context") == producer_id:
+                    employment["production_context"] = ""
+                    employment["production_line_id"] = ""
+            employment["employers"] = employers
+            self._mark_production_entity_update(card, employment_id)
+
+            for workforce_field in ("employed_people", "employed_pops"):
+                for worker_id in self._relation_entity_ids(employment.get(workforce_field)):
+                    worker = self.world_model.get_entity(worker_id)
+                    if not isinstance(worker, dict):
+                        continue
+                    assignments = self._relation_entity_ids(worker.get("employment_assignments"))
+                    if line is not None and employment_id not in assignments:
+                        assignments.append(employment_id)
+                    if line is None and employment_id in assignments:
+                        assignments.remove(employment_id)
+                    worker["employment_assignments"] = assignments
+                    self._mark_production_entity_update(card, worker_id)
+
+    def _production_line_job_reports(self, line):
+        if self.world_model is None:
+            return []
+        return RequirementResolver(self.world_model).production_line_job_reports(self.entity, line)
 
     def _production_entity_matches(self, query_text, target):
         query = str(query_text or "").strip().lower()
         target = str(target or "product").strip().lower()
-        allowed_datasets = {"locations"} if target == "location" else {"vehicles", "components", "items"}
-        allowed_types = {"location"} if target == "location" else {"vehicle", "component", "assembly", "item"}
+        target_kinds = {
+            "location": ({"locations"}, {"location"}),
+            "job": ({"jobs"}, {"job"}),
+            "technology": ({"technologies"}, {"technology"}),
+            "employment": ({"employments"}, {"employment"}),
+            "product": ({"vehicles", "components", "items"}, {"vehicle", "component", "assembly", "item"}),
+        }
+        allowed_datasets, allowed_types = target_kinds.get(target, target_kinds["product"])
         matches = []
         entities = getattr(getattr(self.world_model, "loader", None), "entities", {}) if self.world_model is not None else {}
         for entity_id, entity in entities.items():
@@ -281,6 +400,16 @@ class CardProductionMixin:
                 location_class = str(entity.get("site_class") or entity.get("location_class") or entity_type or dataset)
                 rank = 0
                 subtitle = location_class.replace("_", " ")
+            elif target == "job":
+                rank = 0
+                doctrine = str(entity.get("job_subtype") or entity.get("job_doctrine") or "job doctrine")
+                subtitle = doctrine.replace("_", " ")
+            elif target == "technology":
+                rank = 0
+                subtitle = "workflow technology"
+            elif target == "employment":
+                rank = 0
+                subtitle = "workforce assignment"
             else:
                 rank = 0
                 subtitle = dataset or entity_type
@@ -300,7 +429,13 @@ class CardProductionMixin:
             card["production_match_rows"] = []
             card["production_selected_index"] = 0
             return
-        target = "location" if card.get("production_active_field") == "location" else "product"
+        active_field = card.get("production_active_field")
+        target = {
+            "location": "location",
+            "job": "job",
+            "technology": "technology",
+            "employment": "employment",
+        }.get(active_field, "product")
         card["production_matches"] = self._production_entity_matches(card.get("production_query", ""), target)
         if target == "location":
             query = str(card.get("production_query") or "").strip()
@@ -333,9 +468,6 @@ class CardProductionMixin:
         return f"Produces {value} a {self._production_period_label(line.get('rate_period')).lower()}"
 
     def _mark_production_commit(self, card):
-        if "production_lines" in self.entity:
-            self.entity.pop("production_lines", None)
-            self._mark_production_entity_update(card, self._producer_entity_id())
         card["last_edit_action"] = "commit"
         card["last_committed_field"] = "production"
         return True
@@ -352,12 +484,11 @@ class CardProductionMixin:
             return False
         if self.world_model is None:
             return False
-        entity = self._build_production_line_entity(product_id)
-        loader = getattr(self.world_model, "loader", None)
-        if loader is not None:
-            loader.datasets.setdefault("production", []).append(entity)
-            loader.entities[entity["id"]] = entity
-        self._mark_production_entity_update(card, entity.get("id"))
+        lines = self._production_lines()
+        self._queue_legacy_production_removals(card, lines)
+        if not any(str(line.get("product_id") or "") == product_id for line in lines):
+            lines.append({"product_id": product_id, "location_id": "", "rate_value": "", "rate_period": "month", "start_year": "", "end_year": ""})
+        self._store_inline_production_lines(card, lines)
         card["production_query"] = ""
         card["production_input_active"] = False
         card["production_matches"] = []
@@ -373,15 +504,11 @@ class CardProductionMixin:
             return False
         line = dict(lines[line_index])
         line.update(updates)
-        entity = self._ensure_production_line_entity(card, line)
-        if entity is None:
-            return False
+        self._queue_legacy_production_removals(card, lines)
+        lines[line_index] = line
         if "location_id" in updates:
             location_id = str(updates.get("location_id") or "").strip()
-            entity["production_location"] = location_id
             producer_id = self._producer_entity_id()
-            if producer_id:
-                entity["operated_by"] = [producer_id]
             location = self.world_model.get_entity(location_id) if self.world_model is not None and location_id else None
             if isinstance(location, dict) and producer_id:
                 operators = self._relation_entity_ids(location.get("operated_by"))
@@ -389,16 +516,7 @@ class CardProductionMixin:
                     operators.append(producer_id)
                     location["operated_by"] = operators
                     self._mark_production_entity_update(card, location_id)
-        if "rate_value" in updates:
-            entity["production_rate_value"] = str(updates.get("rate_value") or "").strip()
-        if "rate_period" in updates:
-            period = str(updates.get("rate_period") or "month").strip().lower()
-            entity["production_rate_period"] = period if period in {"week", "month", "year"} else "month"
-        if "start_year" in updates:
-            entity["start_year"] = str(updates.get("start_year") or "").strip()
-        if "end_year" in updates:
-            entity["end_year"] = str(updates.get("end_year") or "").strip()
-        self._mark_production_entity_update(card, entity.get("id"))
+        self._store_inline_production_lines(card, lines)
         return self._mark_production_commit(card)
 
     def _remove_production_line(self, card, line_index):
@@ -409,22 +527,12 @@ class CardProductionMixin:
             return False
         if line_index < 0 or line_index >= len(lines):
             return False
-        production_id = str(lines[line_index].get("production_id") or "").strip()
-        if production_id:
-            removed = list(card.get("production_removed_entity_ids") or [])
-            if production_id not in removed:
-                removed.append(production_id)
-            card["production_removed_entity_ids"] = removed
-        else:
-            product_id = str(lines[line_index].get("product_id") or "").strip()
-            changed = False
-            for field_key in ("produced_vehicles", "produced_components", "produced_items"):
-                values = self._relation_entity_ids(self.entity.get(field_key))
-                if product_id in values:
-                    self.entity[field_key] = [value for value in values if value != product_id]
-                    changed = True
-            if changed:
-                self._mark_production_entity_update(card, self._producer_entity_id())
+        self._queue_legacy_production_removals(card, lines)
+        product_id = str(lines[line_index].get("product_id") or "").strip()
+        lines.pop(line_index)
+        if not any(str(line.get("product_id") or "") == product_id for line in lines):
+            self._unlink_production_product(card, product_id)
+        self._store_inline_production_lines(card, lines)
         return self._mark_production_commit(card)
 
     def _set_production_input(self, card, field_name, line_index=None):
@@ -443,6 +551,36 @@ class CardProductionMixin:
                 card["production_query"] = str(lines[line_index_value].get(value_key) or "")
         self._refresh_production_matches(card)
         return True
+
+    def _add_production_line_relation(self, card, line_index, field_name, entity_id):
+        lines = self._production_lines()
+        try:
+            line_index = int(line_index)
+        except (TypeError, ValueError):
+            return False
+        if line_index < 0 or line_index >= len(lines):
+            return False
+        entity_id = str(entity_id or "").strip()
+        if not entity_id:
+            return False
+        values = self._production_line_relation_ids(lines[line_index], field_name)
+        if entity_id not in values:
+            values.append(entity_id)
+        return self._update_production_line(card, line_index, **{field_name: values})
+
+    def _remove_production_line_relation(self, card, line_index, field_name, entity_id):
+        lines = self._production_lines()
+        try:
+            line_index = int(line_index)
+        except (TypeError, ValueError):
+            return False
+        if line_index < 0 or line_index >= len(lines):
+            return False
+        values = [
+            value for value in self._production_line_relation_ids(lines[line_index], field_name)
+            if value != str(entity_id or "").strip()
+        ]
+        return self._update_production_line(card, line_index, **{field_name: values})
 
     def _handle_production_keydown(self, card, event):
         if not self._is_production_mode() or not card.get("production_input_active"):
@@ -488,6 +626,19 @@ class CardProductionMixin:
             if field_name in {"start_year", "end_year"}:
                 card["production_input_active"] = False
                 return self._update_production_line(card, line_index, **{field_name: str(card.get("production_query") or "").strip()})
+            relation_fields = {
+                "job": "job_ids",
+                "technology": "employed_technology_ids",
+                "employment": "employment_ids",
+            }
+            if field_name in relation_fields:
+                if not matches:
+                    return False
+                index = max(0, min(int(card.get("production_selected_index", 0) or 0), len(matches) - 1))
+                card["production_input_active"] = False
+                return self._add_production_line_relation(
+                    card, line_index, relation_fields[field_name], matches[index].get("id")
+                )
 
         if event.key == pygame.K_BACKSPACE:
             card["production_query"] = str(card.get("production_query", ""))[:-1]
@@ -540,6 +691,15 @@ class CardProductionMixin:
                 return self._set_production_input(card, "start_year", line_index=line_index)
             if kind == "end_year_input":
                 return self._set_production_input(card, "end_year", line_index=line_index)
+            if kind in {"job_input", "technology_input", "employment_input"}:
+                return self._set_production_input(card, kind.removesuffix("_input"), line_index=line_index)
+            if kind in {"remove_job", "remove_technology", "remove_employment"}:
+                field_name = {
+                    "remove_job": "job_ids",
+                    "remove_technology": "employed_technology_ids",
+                    "remove_employment": "employment_ids",
+                }[kind]
+                return self._remove_production_line_relation(card, line_index, field_name, info.get("entity_id"))
             if kind == "period":
                 lines = self._production_lines()
                 periods = ["week", "month", "year"]
@@ -570,6 +730,16 @@ class CardProductionMixin:
                     return True
                 card["production_input_active"] = False
                 return self._update_production_line(card, line_index, location_id=match.get("id"))
+            relation_fields = {
+                "job": "job_ids",
+                "technology": "employed_technology_ids",
+                "employment": "employment_ids",
+            }
+            if field_name in relation_fields:
+                card["production_input_active"] = False
+                return self._add_production_line_relation(
+                    card, line_index, relation_fields[field_name], match.get("id")
+                )
 
         return False
 
@@ -648,6 +818,12 @@ class CardProductionMixin:
             current_y = start_year_rect.bottom + 4
             requirements_rect = pygame.Rect(content_left + 34, current_y, max(120, text_width - 52), 24)
             current_y = requirements_rect.bottom + row_gap
+            job_rect = pygame.Rect(content_left + 18, current_y, max(120, text_width - 36), 24)
+            current_y = job_rect.bottom + 4
+            technology_rect = pygame.Rect(content_left + 18, current_y, max(120, text_width - 36), 24)
+            current_y = technology_rect.bottom + 4
+            employment_rect = pygame.Rect(content_left + 18, current_y, max(120, text_width - 36), 24)
+            current_y = employment_rect.bottom + row_gap
             remove_rect = None
             requirement_chips = []
             if card.get("is_edit_mode", False):
@@ -660,6 +836,9 @@ class CardProductionMixin:
                         {"kind": "period", "line_index": line_index, "rect": period_rect},
                         {"kind": "start_year_input", "line_index": line_index, "rect": start_year_rect},
                         {"kind": "end_year_input", "line_index": line_index, "rect": end_year_rect},
+                        {"kind": "job_input", "line_index": line_index, "rect": job_rect},
+                        {"kind": "technology_input", "line_index": line_index, "rect": technology_rect},
+                        {"kind": "employment_input", "line_index": line_index, "rect": employment_rect},
                     ]
                 )
             chip_x = content_left + 52
@@ -676,8 +855,14 @@ class CardProductionMixin:
                 chip_x = chip_rect.right + 6
             if requirement_chips:
                 current_y = max(current_y, chip_y + 24 + row_gap)
-            if card.get("production_input_active") and card.get("production_active_line") == line_index and card.get("production_active_field") == "location":
-                anchor = location_rect
+            active_relation_field = card.get("production_active_field")
+            if card.get("production_input_active") and card.get("production_active_line") == line_index and active_relation_field in {"location", "job", "technology", "employment"}:
+                anchor = {
+                    "location": location_rect,
+                    "job": job_rect,
+                    "technology": technology_rect,
+                    "employment": employment_rect,
+                }[active_relation_field]
                 for index, match in enumerate((card.get("production_matches") or [])[:5]):
                     row_rect = pygame.Rect(anchor.x, current_y, min(text_width - 18, anchor.width + 150), 22)
                     card["production_match_rows"].append({"index": index, "match": match, "rect": row_rect})
@@ -694,6 +879,9 @@ class CardProductionMixin:
                     "start_year_rect": start_year_rect,
                     "end_year_rect": end_year_rect,
                     "requirements_rect": requirements_rect,
+                    "job_rect": job_rect,
+                    "technology_rect": technology_rect,
+                    "employment_rect": employment_rect,
                     "remove_rect": remove_rect,
                     "requirement_chips": requirement_chips,
                 }
@@ -828,6 +1016,29 @@ class CardProductionMixin:
                 pygame.draw.rect(screen, (94, 104, 124), requirements_rect, 1)
                 requirement_label = "Requires from product card" if row.get("requirement_chips") else "No product requirements set"
                 screen.blit(font.render(self._ellipsize_text(requirement_label, font, requirements_rect.width - 12), True, (176, 188, 208)), (requirements_rect.x + 6, requirements_rect.y + 4))
+            relation_rows = (
+                ("job_rect", "job_ids", "Doctrine Jobs", "Assign doctrinal Job", (80, 68, 44), (198, 170, 104)),
+                ("technology_rect", "employed_technology_ids", "Workflow", "Assign employed technology", (42, 58, 70), (112, 170, 210)),
+                ("employment_rect", "employment_ids", "Workforce", "Assign people/pop employment", (48, 62, 50), (124, 182, 136)),
+            )
+            for rect_key, field_name, prefix, empty_label, fill_color, border_color in relation_rows:
+                relation_rect = row.get(rect_key)
+                if relation_rect is None:
+                    continue
+                entity_ids = self._production_line_relation_ids(line, field_name)
+                if field_name == "job_ids":
+                    reports = {report.get("job_id"): report for report in self._production_line_job_reports(line)}
+                    labels = [
+                        f"{self._entity_label_for_id(entity_id)} ({'available' if reports.get(entity_id, {}).get('complete') else 'locked'})"
+                        for entity_id in entity_ids
+                    ]
+                else:
+                    labels = [self._entity_label_for_id(entity_id) for entity_id in entity_ids]
+                label = f"{prefix}: {', '.join(labels)}" if labels else empty_label
+                pygame.draw.rect(screen, fill_color if entity_ids else (30, 34, 44), relation_rect)
+                pygame.draw.rect(screen, border_color if entity_ids else (94, 104, 124), relation_rect, 1)
+                color = (236, 240, 232) if entity_ids else (132, 142, 160)
+                screen.blit(font.render(self._ellipsize_text(label, font, relation_rect.width - 12), True, color), (relation_rect.x + 6, relation_rect.y + 4))
             for chip in row.get("requirement_chips", []):
                 chip_rect = chip.get("rect")
                 if chip_rect is None:

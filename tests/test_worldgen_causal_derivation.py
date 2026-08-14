@@ -1,12 +1,41 @@
 import math
 import unittest
 
-from simulations.world_gen.heightmap import sea_level_for_equivalent_water_depth
-from simulations.world_gen.tectonics import _plate_distance, derive_tectonic_model
+from simulations.world_gen.heightmap import (
+    _continuous_crustal_base_height_m,
+    derive_heightmap_model,
+    sea_level_for_equivalent_water_depth,
+)
+from simulations.world_gen.water_cycle import _rows_from_heightmap
+from simulations.world_gen.tectonics import _plate_distance, advance_tectonics_model, derive_tectonic_model
 from simulations.world_gen.terrain_seed import derive_terrain_seed_model
 
 
 class WorldgenCausalDerivationTests(unittest.TestCase):
+    def test_planetary_parent_uses_continuous_crustal_freeboard(self):
+        samples = [
+            _continuous_crustal_base_height_m(index / 100.0)
+            for index in range(101)
+        ]
+        self.assertTrue(all(a <= b for a, b in zip(samples, samples[1:])))
+        self.assertLess(max(b - a for a, b in zip(samples, samples[1:])), 90.0)
+        self.assertLess(samples[0], -3500.0)
+        self.assertGreater(samples[-1], 800.0)
+
+    def test_dense_parent_is_filtered_to_full_climate_resolution(self):
+        rows = [
+            [float(x + y) for x in range(385)]
+            for y in range(193)
+        ]
+        for row in rows:
+            row[-1] = row[0]
+        sampled = _rows_from_heightmap({
+            "sample_grid": {"rows": rows},
+            "map_detail_level": 0,
+        })
+        self.assertEqual((129, 257), (len(sampled), len(sampled[0])))
+        self.assertTrue(all(row[0] == row[-1] for row in sampled))
+
     def test_water_volume_not_requested_coverage_sets_sea_level(self):
         shallow_basins = [
             [-1000.0, -500.0, 0.0, 500.0, -1000.0],
@@ -112,7 +141,18 @@ class WorldgenCausalDerivationTests(unittest.TestCase):
         self.assertGreater(max(distances) - min(distances), 0.01)
         self.assertGreaterEqual(model["sample_grid"]["width"], 97)
         self.assertTrue(model["boundary_segments"])
+        self.assertEqual(
+            "continuous_plate_distance_contour_v1",
+            model["boundary_trace_grid"]["geometry_model"],
+        )
+        self.assertGreater(model["boundary_trace_grid"]["width"], model["sample_grid"]["width"])
+        self.assertTrue(any(
+            abs(float(segment["x2"]) - float(segment["x1"])) > 1e-6
+            and abs(float(segment["y2"]) - float(segment["y1"])) > 1e-6
+            for segment in model["boundary_segments"]
+        ))
         for segment in model["boundary_segments"][:20]:
+            self.assertEqual("continuous_plate_distance_contour_v1", segment["geometry_model"])
             self.assertIn("activity_scale", segment)
             self.assertIn("influence_width", segment)
             self.assertIn("normal_velocity_cm_year", segment)
@@ -128,6 +168,64 @@ class WorldgenCausalDerivationTests(unittest.TestCase):
             len(model["lithosphere_grid"]["ocean_floor_age_rows_myr"]),
         )
         self.assertTrue(model["hotspot_model"]["hotspots"])
+        orogen_model = model["orogen_system_model"]
+        self.assertEqual("orogen-systems-v2-spaced-margin-profiles", orogen_model["model_version"])
+        self.assertGreater(orogen_model["system_count"], 0)
+        system_ids = {system["id"] for system in orogen_model["systems"]}
+        self.assertTrue(system_ids)
+        for system in orogen_model["systems"]:
+            self.assertIn("rock_uplift_peak_m", system["forcing_profile"])
+            self.assertIn("tectonic_subsidence_peak_m", system["forcing_profile"])
+            self.assertTrue(system["forcing_profile"]["zones"])
+            self.assertTrue(system["source_segment_ids"])
+        self.assertTrue(
+            any(segment.get("orogen_system_id") in system_ids for segment in model["boundary_segments"])
+        )
+        heightmap = derive_heightmap_model(
+            terrain,
+            seed={"map_seed": "causal-orogen-height"},
+            physics={"radius_m": 6_371_000.0},
+            planet_id="test_causal_orogen",
+            tectonic_model=model,
+            mechanical_lithology_model={
+                "status": "mechanical_lithology_prior_derived",
+                "model_version": "mechanical-lithology-v1-ontology-prior",
+                "dominant_mechanical_class": "massive_crystalline_rock",
+                "aggregate_profile": {
+                    "bulk_density_kg_m3": 2720,
+                    "erodibility_index": 0.23,
+                    "slope_resistance_index": 0.86,
+                    "elastic_strength_index": 0.82,
+                },
+            },
+        )
+        deformation = heightmap["deformation_state_model"]
+        self.assertEqual("deformation_state_derived", deformation["status"])
+        self.assertEqual(
+            "planetary-deformation-v1-reduced-flexure",
+            deformation["model_version"],
+        )
+        for field in (
+            "crust_thickness_km", "cumulative_strain_index", "rock_uplift_m",
+            "tectonic_subsidence_m", "volcanic_construction_m",
+            "effective_elastic_thickness_km", "isostatic_response_m",
+            "flexural_response_m", "surface_response_m",
+        ):
+            self.assertIn(field, deformation["fields"])
+            self.assertIn(field, deformation["summaries"])
+        self.assertGreater(deformation["summaries"]["rock_uplift_m"]["max"], 0.0)
+        self.assertLess(deformation["summaries"]["flexural_response_m"]["min"], 0.0)
+        self.assertEqual("massive_crystalline_rock", deformation["dominant_mechanical_class"])
+        self.assertEqual(
+            "mechanical-lithology-v1-ontology-prior",
+            deformation["source_mechanical_model_version"],
+        )
+        advanced = advance_tectonics_model(model, terrain, million_years=45.0)
+        self.assertEqual(45.0, advanced["orogen_system_model"]["age_myr"])
+        self.assertGreaterEqual(
+            max(system["maturity"] for system in advanced["orogen_system_model"]["systems"]),
+            max(system["maturity"] for system in orogen_model["systems"]),
+        )
         self.assertTrue(
             any(
                 event["kind"] in {

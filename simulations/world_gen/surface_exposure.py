@@ -14,7 +14,7 @@ except ImportError:  # pragma: no cover
     np = None
 
 
-SURFACE_EXPOSURE_MODEL_VERSION = "surface-exposure-v2"
+SURFACE_EXPOSURE_MODEL_VERSION = "surface-exposure-v3-planetary-footprints"
 
 
 def _clamp(value, low=0.0, high=1.0):
@@ -259,6 +259,22 @@ def _resample(values, target_h, target_w):
     return top * (1.0 - fy) + bottom * fy
 
 
+def _neighbourhood_mean(values, passes=1, *, wrap_x=False):
+    """Average a field over its planetary rendering footprint."""
+    result = np.asarray(values, dtype=np.float32)
+    for _index in range(max(0, int(passes or 0))):
+        if wrap_x:
+            left = np.roll(result, 1, axis=1)
+            right = np.roll(result, -1, axis=1)
+        else:
+            left = np.concatenate((result[:, :1], result[:, :-1]), axis=1)
+            right = np.concatenate((result[:, 1:], result[:, -1:]), axis=1)
+        up = np.concatenate((result[:1, :], result[:-1, :]), axis=0)
+        down = np.concatenate((result[1:, :], result[-1:, :]), axis=0)
+        result = (result * 4.0 + left + right + up + down) / 8.0
+    return result
+
+
 def _rows(model, group, key):
     container = model.get(group) if isinstance(model, dict) else {}
     rows = container.get(key) if isinstance(container, dict) else None
@@ -290,6 +306,8 @@ def derive_surface_exposure_fields(
     surface_geomorphology = (
         surface_geomorphology if isinstance(surface_geomorphology, dict) else {}
     )
+    planetary_footprint = int(heightmap.get("map_detail_level", 0) or 0) <= 0
+    wrap_x = bool(heightmap.get("wrap_x", False))
 
     elevation_rows = ((heightmap.get("sample_grid") or {}).get("rows") or [])
     elevation = _resample(elevation_rows, target_h, target_w)
@@ -346,6 +364,10 @@ def derive_surface_exposure_fields(
         rows = _rows(surface_evolution, "process_grid", key)
         if rows:
             fields[field] = np.clip(_resample(rows, target_h, target_w), 0.0, 1.0)
+            if planetary_footprint:
+                fields[field] = _neighbourhood_mean(
+                    fields[field], 2, wrap_x=wrap_x
+                )
         else:
             default = (
                 0.55
@@ -368,6 +390,10 @@ def derive_surface_exposure_fields(
             0.0,
             _resample(precipitation_rows, target_h, target_w),
         )
+        if planetary_footprint:
+            precipitation = _neighbourhood_mean(
+                precipitation, 2, wrap_x=wrap_x
+            )
         wetness = np.clip(np.log1p(precipitation) / np.log(3001.0), 0.0, 1.0)
     else:
         wetness = np.zeros((target_h, target_w), dtype=np.float32)
@@ -383,6 +409,16 @@ def derive_surface_exposure_fields(
         bedrock_exposure = partition["exposed_bedrock_fraction"]
         mobile_cover = partition["transported_cover_fraction"]
         regolith = partition["residual_regolith_fraction"]
+        if planetary_footprint:
+            bedrock_exposure = _neighbourhood_mean(
+                bedrock_exposure, 2, wrap_x=wrap_x
+            )
+            mobile_cover = _neighbourhood_mean(
+                mobile_cover, 2, wrap_x=wrap_x
+            )
+            regolith = _neighbourhood_mean(
+                regolith, 2, wrap_x=wrap_x
+            )
     else:
         bedrock_exposure = np.clip(0.24 + slope * 0.52 + fields["erosion"] * 0.36 - fields["deposition"] * 0.46, 0.04, 0.98)
         mobile_cover = np.clip((1.0 - slope) * 0.10 + fields["deposition"] * 0.48 + fields["aeolian"] * aridity * 0.42, 0.0, 0.92)

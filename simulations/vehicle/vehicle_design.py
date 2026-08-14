@@ -1,3 +1,6 @@
+import copy
+
+
 class VehicleDesignController:
     """
     Stores vehicle design-state and design-specific interaction logic.
@@ -155,7 +158,11 @@ class VehicleDesignController:
         self.component_catalog = self._load_component_catalog(world_model, vehicle_entity)
         self.placed_components = self._load_placed_components(world_model, vehicle_entity)
 
-        if not self.placed_components and self.component_catalog:
+        has_authored_component_layout = (
+            isinstance(vehicle_entity, dict)
+            and "installed_components" in vehicle_entity
+        )
+        if not self.placed_components and self.component_catalog and not has_authored_component_layout:
             first_entry = self.component_catalog[0]
             self.placed_components = [
                 {
@@ -306,10 +313,52 @@ class VehicleDesignController:
         ]
 
     def _load_component_catalog(self, world_model, vehicle_entity):
+        if isinstance(vehicle_entity, dict) and "component_catalog" in vehicle_entity:
+            catalog = []
+            for raw_entry in vehicle_entity.get("component_catalog") or []:
+                if isinstance(raw_entry, str):
+                    component_entity = (
+                        world_model.get_entity(raw_entry)
+                        if world_model is not None and hasattr(world_model, "get_entity")
+                        else None
+                    )
+                    if isinstance(component_entity, dict):
+                        catalog.append(self._build_catalog_entry_from_component_entity(component_entity))
+                    continue
+                if not isinstance(raw_entry, dict):
+                    continue
+                component_id = raw_entry.get("id") or raw_entry.get("entity_id")
+                component_entity = (
+                    world_model.get_entity(component_id)
+                    if component_id and world_model is not None and hasattr(world_model, "get_entity")
+                    else None
+                )
+                if isinstance(component_entity, dict):
+                    catalog.append(self._build_catalog_entry_from_component_entity(component_entity))
+                elif raw_entry.get("dimensions_m"):
+                    catalog.append(copy.deepcopy(raw_entry))
+            return catalog
         return self._default_component_catalog()
 
     def _load_placed_components(self, world_model, vehicle_entity):
-        return []
+        if not isinstance(vehicle_entity, dict):
+            return []
+        placed = []
+        for raw_component in vehicle_entity.get("installed_components") or []:
+            if not isinstance(raw_component, dict):
+                continue
+            component = copy.deepcopy(raw_component)
+            instance_id = str(component.get("instance_id") or "").strip()
+            local_rect = component.get("local_rect_m")
+            if not instance_id or not isinstance(local_rect, dict):
+                continue
+            component.setdefault("label", component.get("catalog_id") or instance_id)
+            component.setdefault("component_type", "component")
+            component.setdefault("satisfies_categories", [])
+            component.setdefault("operational_groups", [])
+            component.setdefault("subsystem_labels", [])
+            placed.append(component)
+        return placed
 
     def _infer_next_component_index(self):
         max_index = 0

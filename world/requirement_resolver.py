@@ -114,6 +114,105 @@ class RequirementResolver:
             })
         return checks
 
+    def _context_technology_ids(self, producer, site, production_line):
+        technology_ids = set()
+        for source, field_names in (
+            (producer, ("active_production_technologies", "used_technologies")),
+            (site, ("active_production_technologies",)),
+            (production_line, ("employed_technology_ids", "employed_technologies")),
+        ):
+            for field_name in field_names:
+                technology_ids.update(self._relation_ids((source or {}).get(field_name)))
+        return technology_ids
+
+    def _context_cultural_aspect_ids(self, producer):
+        aspect_ids = set(self._relation_ids((producer or {}).get("associated_cultural_aspects")))
+        for culture_id in self._relation_ids((producer or {}).get("associated_cultures")):
+            culture = self._entity(culture_id)
+            for field_name in ("cultural_aspects", "associated_cultural_aspects", "aspects"):
+                aspect_ids.update(self._relation_ids((culture or {}).get(field_name)))
+        return aspect_ids
+
+    def _context_production_output_ids(self, producer):
+        output_ids = set()
+        for field_name in ("produced_vehicles", "produced_components", "produced_items"):
+            output_ids.update(self._relation_ids((producer or {}).get(field_name)))
+        for line in (producer or {}).get("production_lines") or []:
+            if isinstance(line, dict):
+                output_ids.update(self._relation_ids(line.get("product_id")))
+        return output_ids
+
+    def job_availability_report(self, job, producer=None, site=None, production_line=None):
+        """Evaluate whether a doctrinal Job can be used in one production context.
+
+        Job subtype defines purpose and allocation doctrine.  Technologies are
+        read from the production line and site because they describe the local
+        workflow, not the identity of the Job subtype.
+        """
+        if not isinstance(job, dict):
+            return {"job": None, "checks": [], "complete": False}
+        production_line = production_line if isinstance(production_line, dict) else {}
+        technology_ids = self._context_technology_ids(producer, site, production_line)
+        cultural_aspect_ids = self._context_cultural_aspect_ids(producer)
+        production_output_ids = self._context_production_output_ids(producer)
+        institution_ids = set(self._relation_ids((producer or {}).get("parent_institution")))
+        institution_ids.update(self._relation_ids((producer or {}).get("associated_institutions")))
+        site_conditions = set(self._string_values((site or {}).get("site_conditions")))
+        site_conditions.update(self._entity_tags(site))
+        checks = []
+
+        requirement_groups = (
+            ("unlock_technologies", technology_ids, "technology", "Technology"),
+            ("unlock_cultural_aspects", cultural_aspect_ids, "culture", "Cultural aspect"),
+            ("unlock_production_outputs", production_output_ids, "production", "Present production"),
+        )
+        for field_name, available_ids, kind, prefix in requirement_groups:
+            for required_id in self._relation_ids(job.get(field_name)):
+                required = self._entity(required_id)
+                label = (required or {}).get("pretty_name") or (required or {}).get("name") or required_id
+                checks.append({
+                    "kind": kind,
+                    "label": f"{prefix}: {label}",
+                    "entity_id": required_id,
+                    "satisfied": required_id in available_ids,
+                })
+
+        for required_id in self._relation_ids(job.get("required_institutions")):
+            required = self._entity(required_id)
+            label = (required or {}).get("pretty_name") or (required or {}).get("name") or required_id
+            checks.append({
+                "kind": "institution",
+                "label": f"Institution: {label}",
+                "entity_id": required_id,
+                "satisfied": required_id in institution_ids,
+            })
+        for condition in self._string_values(job.get("required_site_conditions")):
+            checks.append({
+                "kind": "site",
+                "label": f"Site condition: {condition}",
+                "satisfied": condition in site_conditions,
+            })
+
+        return {
+            "job_id": str(job.get("id") or ""),
+            "job": job,
+            "label": job.get("pretty_name") or job.get("name") or job.get("id") or "Job",
+            "checks": checks,
+            "complete": all(check.get("satisfied") for check in checks) if checks else True,
+        }
+
+    def production_line_job_reports(self, producer, production_line):
+        if not isinstance(producer, dict) or not isinstance(production_line, dict):
+            return []
+        site_ids = self._relation_ids(production_line.get("location_id"))
+        site = self._entity(site_ids[0]) if site_ids else None
+        reports = []
+        for job_id in self._relation_ids(production_line.get("job_ids")):
+            job = self._entity(job_id)
+            if isinstance(job, dict):
+                reports.append(self.job_availability_report(job, producer, site, production_line))
+        return reports
+
     def production_site_report(self, site):
         if not isinstance(site, dict):
             return []

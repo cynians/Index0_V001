@@ -1,3 +1,11 @@
+"""Generate material projections from ontology-authored material facts.
+
+Architecture invariants: the ontology owns entities, colors, formation rules,
+and other semantic facts; module-level lookups are disposable caches. Current
+generated planets are disposable and obsolete model versions are regenerated,
+not translated by legacy compatibility paths.
+"""
+
 import hashlib
 import json
 import math
@@ -21,6 +29,7 @@ from simulations.world_gen.material_formation import (
 )
 from simulations.world_gen.natural_materials import (
     material_display_color,
+    material_geological_map_color,
     material_surface_phase_profile,
     material_surface_phase_stability,
 )
@@ -31,7 +40,7 @@ from simulations.world_gen.surface_geomorphology import (
 )
 
 
-MATERIAL_HEATMAP_MODEL_VERSION = "material-heatmaps-v17"
+MATERIAL_HEATMAP_MODEL_VERSION = "material-heatmaps-v21-ontology-cartography"
 RASTER_BUNDLE_FORMAT = "index0_raster_bundle"
 RASTER_BUNDLE_VERSION = 1
 RASTER_BUNDLE_EXTENSION = ".i0r"
@@ -53,6 +62,64 @@ def _smoothstep(edge0, edge1, value):
         return 1.0 if value >= edge1 else 0.0
     t = _clamp((value - edge0) / (edge1 - edge0))
     return t * t * (3.0 - 2.0 * t)
+
+
+def _relax_native_material_field(
+    rows,
+    ocean_mask,
+    *,
+    passes=3,
+    strength=0.42,
+    wrap_x=False,
+):
+    """Give planetary material suitability a finite geographic footprint.
+
+    This operates before the raster is enlarged by the map renderer.  It
+    therefore removes native material-grid panels instead of merely blurring
+    their already-upscaled edges.  Land and ocean are relaxed independently
+    so substrate does not bleed across coastlines.
+    """
+    if not rows or len(rows) < 2 or len(rows[0]) < 2:
+        return rows
+    height = min(len(rows), len(ocean_mask or rows))
+    width = min(
+        min(len(row) for row in rows[:height]),
+        min(len(row) for row in (ocean_mask or rows)[:height]),
+    )
+    values = [[float(value) for value in row[:width]] for row in rows[:height]]
+    masks = [
+        [bool(value) for value in row[:width]]
+        for row in (ocean_mask or [[False] * width for _ in range(height)])[:height]
+    ]
+    unique_width = width - 1 if wrap_x and width > 2 else width
+    amount = _clamp(strength, 0.0, 0.49)
+    for _pass in range(max(1, int(passes or 1))):
+        source = values
+        target = [row[:] for row in source]
+        for y in range(height):
+            north = max(0, y - 1)
+            south = min(height - 1, y + 1)
+            for x in range(unique_width):
+                same_surface = masks[y][x]
+                neighbors = []
+                for nx, ny in (
+                    ((x - 1) % unique_width, y),
+                    ((x + 1) % unique_width, y),
+                    (x, north),
+                    (x, south),
+                ):
+                    if masks[ny][nx] == same_surface:
+                        neighbors.append(source[ny][nx])
+                if neighbors:
+                    local_mean = sum(neighbors) / len(neighbors)
+                    target[y][x] = (
+                        source[y][x] * (1.0 - amount)
+                        + local_mean * amount
+                    )
+            if wrap_x and width > unique_width:
+                target[y][-1] = target[y][0]
+        values = target
+    return values
 
 
 def _safe_slug(value):
@@ -386,6 +453,7 @@ def _tectonic_lithology_constants(tectonic_model, map_seed):
     if not plates:
         plates = [{"id": "unresolved_plate", "center_x": 0.5, "center_y": 0.5, "continentality": 0.5}]
     centers_by_plate = {}
+    all_centers = []
     for plate_index, plate in enumerate(plates):
         plate_id = str(plate.get("id") or f"plate_{plate_index:02d}")
         plate_x = float(plate.get("center_x", 0.5) or 0.5) % 1.0
@@ -405,8 +473,9 @@ def _tectonic_lithology_constants(tectonic_model, map_seed):
                 + seed_range(map_seed, f"terrane:{plate_id}:{index}:y", -spread_y, spread_y)
             )
             centers.append((center_x, center_y, index))
+            all_centers.append((center_x, center_y, plate_id, index))
         centers_by_plate[plate_id] = tuple(centers)
-    return {"centers_by_plate": centers_by_plate}
+    return {"centers_by_plate": centers_by_plate, "all_centers": tuple(all_centers)}
 
 
 def _tectonic_lithology_context(tectonic_model, nx, ny, map_seed, terrane_constants=None):
@@ -445,6 +514,11 @@ def _tectonic_lithology_context(tectonic_model, nx, ny, map_seed, terrane_consta
     )
     centers_by_plate = constants.get("centers_by_plate") or {}
     centers = centers_by_plate.get(plate_id) or centers_by_plate.get("unresolved_plate") or ()
+    all_centers = constants.get("all_centers") or tuple(
+        (center_x, center_y, source_plate_id, province_id)
+        for source_plate_id, source_centers in centers_by_plate.items()
+        for center_x, center_y, province_id in source_centers
+    )
     distances = sorted(
         (
             math.hypot(
@@ -468,6 +542,31 @@ def _tectonic_lithology_context(tectonic_model, nx, ny, map_seed, terrane_consta
     else:
         province_a = province_b = 0
         blend = 0.0
+    # Lithology may change across plate contacts, but the exposed optical
+    # substrate must not jump at the categorical owner raster. Blend several
+    # nearby terrane nuclei with radial support in global coordinates. The
+    # nearest-two fields remain for compatibility and diagnostics.
+    weighted_provinces = []
+    for center_x, center_y, source_plate_id, province_id in all_centers:
+        distance = math.hypot(
+            _wrapped_distance(float(nx) % 1.0, center_x),
+            (float(ny) - center_y) * 0.72,
+        )
+        if distance > 0.34:
+            continue
+        weight = math.exp(-((distance / 0.145) ** 2))
+        if weight > 0.002:
+            weighted_provinces.append((weight, source_plate_id, province_id))
+    weighted_provinces.sort(reverse=True)
+    weighted_provinces = weighted_provinces[:6]
+    weight_total = sum(item[0] for item in weighted_provinces)
+    if weight_total > 0.0:
+        province_weights = [
+            (source_plate_id, province_id, weight / weight_total)
+            for weight, source_plate_id, province_id in weighted_provinces
+        ]
+    else:
+        province_weights = [(plate_id, province_a, 1.0)]
     return {
         "plate_id": plate_id,
         "plate_index": plate_index,
@@ -479,6 +578,7 @@ def _tectonic_lithology_context(tectonic_model, nx, ny, map_seed, terrane_consta
         "province_a": province_a,
         "province_b": province_b,
         "province_blend": blend,
+        "province_weights": province_weights,
     }
 
 
@@ -496,14 +596,26 @@ def _lithologic_province_affinity(map_seed, material_id, formation, profile, tec
     """Score one rock against a shared plate-bound lithologic province."""
     context = tectonic_context if isinstance(tectonic_context, dict) else {}
     plate_id = str(context.get("plate_id") or "unresolved_plate")
-    first = _province_material_preference(
-        str(map_seed), plate_id, int(context.get("province_a", 0) or 0), str(material_id)
-    )
-    second = _province_material_preference(
-        str(map_seed), plate_id, int(context.get("province_b", 1) or 1), str(material_id)
-    )
-    blend = _clamp(context.get("province_blend", 0.0))
-    affinity = first * (1.0 - blend) + second * blend
+    province_weights = context.get("province_weights") if isinstance(context.get("province_weights"), list) else []
+    if province_weights:
+        affinity = 0.0
+        total_weight = 0.0
+        for source_plate_id, province_id, weight in province_weights:
+            weight = max(0.0, float(weight or 0.0))
+            affinity += _province_material_preference(
+                str(map_seed), str(source_plate_id), int(province_id or 0), str(material_id)
+            ) * weight
+            total_weight += weight
+        affinity /= max(1e-9, total_weight)
+    else:
+        first = _province_material_preference(
+            str(map_seed), plate_id, int(context.get("province_a", 0) or 0), str(material_id)
+        )
+        second = _province_material_preference(
+            str(map_seed), plate_id, int(context.get("province_b", 1) or 1), str(material_id)
+        )
+        blend = _clamp(context.get("province_blend", 0.0))
+        affinity = first * (1.0 - blend) + second * blend
 
     category = str((formation or {}).get("category_id") or "").lower()
     profile_id = str((profile or {}).get("profile_id") or "").lower()
@@ -520,6 +632,12 @@ def _lithologic_province_affinity(map_seed, material_id, formation, profile, tec
         affinity *= 0.38 + oceanic * 0.52 + (1.0 - continental) * 0.24
     elif any(token in text for token in ("sediment", "carbonate", "limestone", "sandstone", "shale", "chert")):
         affinity *= 0.34 + basin * 0.80 + continental * 0.24
+    elif any(token in text for token in ("graphite", "carbonaceous")):
+        # When carbon inventory promotes graphite to a foundational
+        # lithology it forms broad metamorphic/carbonaceous terranes rather
+        # than inheriting the much narrower generic metamorphic exposure
+        # penalty used for regional schists and marbles.
+        affinity *= 0.82 + continental * 0.32 + craton * 0.16
     elif any(token in text for token in ("metamorph", "gneiss", "schist", "marble", "quartzite")):
         affinity *= 0.48 + continental * 0.48 + craton * 0.22
     return _clamp(affinity)
@@ -1177,12 +1295,23 @@ def generate_material_heatmap_model(
             })
         environment_grid.append(environment_row)
 
+    native_ocean_mask = [
+        [bool(cell.get("ocean", 0.0) >= 0.5) for cell in row]
+        for row in environment_grid
+    ]
+    native_wrap_x = bool(heightmap.get("wrap_x", False)) and (
+        source_min_u <= 1e-6 and source_max_u >= 1.0 - 1e-6
+    )
     layer_pixels = []
     layer_metadata = []
     bundle_layers = []
     for material in materials:
         material_id = str(material.get("material_id"))
         color = material_display_color(material_id, material.get("display_color"))
+        geology_color = material_geological_map_color(
+            material_id,
+            material.get("geological_map_color"),
+        )
         confidence = _clamp(float(material.get("confidence", 0.45) or 0.45), 0.05, 1.0)
         affinity_profile = material_affinity_profile(material_id)
         if affinity_profile is None:
@@ -1350,6 +1479,16 @@ def generate_material_heatmap_model(
                 elif category == "aeolian_sediment":
                     surface_expression = 0.05 + context["weathered_mantle"] * 0.72 + context["aeolian"] * 0.23
                     topographic_driver = "aeolian_mantled_plain"
+                elif category == "quartz_sand_accumulation":
+                    surface_expression = (
+                        0.03
+                        + context["weathered_mantle"] * 0.30
+                        + context["aeolian"] * 0.22
+                        + context["shoreline"] * 0.20
+                        + context["deposition"] * 0.15
+                        + context["low_slope"] * 0.10
+                    )
+                    topographic_driver = "sorted_quartz_sand_cover"
                 elif category in {"weathering_clay", "saprolitic_regolith", "lateritic_regolith", "residual_bauxite", "nickel_laterite", "iron_weathering", "duricrust"}:
                     surface_expression = 0.05 + context["weathered_mantle"] * 0.60 + context["residual_regolith"] * 0.35
                     topographic_driver = "weathered_residual_mantle"
@@ -1413,6 +1552,35 @@ def generate_material_heatmap_model(
                 surface.set_at((x, y), (color[0], color[1], color[2], alpha))
             pixels.append(row)
 
+        if detail_level <= 0:
+            is_substrate = foundational_bedrock or distribution_role == "bedrock"
+            pixels = _relax_native_material_field(
+                pixels,
+                native_ocean_mask,
+                passes=5 if is_substrate else 3,
+                strength=0.46 if is_substrate else 0.38,
+                wrap_x=native_wrap_x,
+            )
+            # Rebuild both the raster and its diagnostics from the corrected
+            # native field.  Otherwise layer selection would still use the
+            # pre-correction coverage while true color receives the new one.
+            peak = 0.0
+            total = 0.0
+            coverage = 0
+            for y, row in enumerate(pixels):
+                for x, value in enumerate(row):
+                    value = _clamp(value)
+                    peak = max(peak, value)
+                    total += value
+                    if value >= 0.18:
+                        coverage += 1
+                    surface.set_at((x, y), (
+                        color[0],
+                        color[1],
+                        color[2],
+                        int(round(value * 230.0)),
+                    ))
+
         layer_id = f"heatmap_{_safe_slug(material_id)}"
         display_semantics = {
             "bedrock": "substrate_distribution",
@@ -1430,11 +1598,12 @@ def generate_material_heatmap_model(
             "material_subclass": material.get("material_subclass"),
             "distribution_role": distribution_role,
             "display_semantics": display_semantics,
+            "foundational_lithology": foundational_bedrock,
             "formation_category": formation.get("category_id"),
             "spatial_representation": formation.get("spatial_representation"),
-            "foundational_lithology": foundational_bedrock,
             "surface": surface,
             "display_color": color,
+            "geological_map_color": geology_color,
             "optical_surface_profile": optical_profile,
             "confidence": round(confidence, 3),
             "phase_profile": phase_profile,
@@ -1445,6 +1614,7 @@ def generate_material_heatmap_model(
             "material_id": material_id,
             "pixels": pixels,
             "color": color,
+            "geological_map_color": geology_color,
             "confidence": confidence,
             "distribution_role": distribution_role,
             "display_semantics": display_semantics,
@@ -1461,6 +1631,7 @@ def generate_material_heatmap_model(
             "material_subclass": material.get("material_subclass"),
             "distribution_role": distribution_role,
             "display_semantics": display_semantics,
+            "foundational_lithology": foundational_bedrock,
             "formation_category": formation.get("category_id"),
             "spatial_representation": formation.get("spatial_representation"),
             "minimum_map_detail_level": max(
@@ -1471,6 +1642,7 @@ def generate_material_heatmap_model(
             "bundle_path": _relative_or_absolute(bundle_path, storage_root=storage_root),
             "bundle_layer_id": layer_id,
             "display_color": color,
+            "geological_map_color": geology_color,
             "optical_surface_profile": optical_profile,
             "confidence": round(confidence, 3),
             "affinity_profile": affinity_profile.get("profile_id"),
@@ -1492,18 +1664,64 @@ def generate_material_heatmap_model(
             "topographic_driver": topographic_driver,
         })
 
+    planetary_local_cover_categories = {
+        "fluvial_sediment",
+        "colluvial_sediment",
+        "littoral_sediment",
+        "lacustrine_sediment",
+        "marine_sediment",
+    }
+    planetary_local_cover_ids = {
+        "mat_alluvium",
+        "mat_beach_sand",
+        "mat_lacustrine_mud",
+        "mat_marine_mud",
+    }
+    terrain_style = str(
+        terrain.get("geologic_style")
+        or terrain.get("terrain_style")
+        or ""
+    ).lower()
+    if terrain_style not in {"aeolian_dune_seas", "hydrocarbon_dunes_and_lakes"}:
+        planetary_local_cover_ids.add("mat_dune_sand")
+
+    def resolves_in_composite(index):
+        if detail_level > 0:
+            return True
+        metadata = layer_metadata[index]
+        role = str(metadata.get("distribution_role") or "")
+        if role not in {"bedrock", "surface_cover"}:
+            return False
+        if (
+            role == "surface_cover"
+            and (
+                str(metadata.get("formation_category") or "")
+                in planetary_local_cover_categories
+                or str(metadata.get("material_id") or "")
+                in planetary_local_cover_ids
+            )
+        ):
+            return False
+        return (
+            bool(metadata.get("foundational_lithology"))
+            or int(metadata.get("minimum_map_detail_level", 0) or 0) <= 0
+        )
+
     usable_candidates = [
         index
         for index, metadata in enumerate(layer_metadata)
         if (
-            float(metadata.get("coverage_fraction", 0.0) or 0.0) > 0.0
-            or (
-                detail_level > 0
-                and metadata.get("distribution_role") in {
-                    "sparse_deposit", "mineral_constituent",
-                    "local_lithology", "local_material_unit",
-                }
-                and float(metadata.get("peak_intensity", 0.0) or 0.0) > 0.01
+            resolves_in_composite(index)
+            and (
+                float(metadata.get("coverage_fraction", 0.0) or 0.0) > 0.0
+                or (
+                    detail_level > 0
+                    and metadata.get("distribution_role") in {
+                        "sparse_deposit", "mineral_constituent",
+                        "local_lithology", "local_material_unit",
+                    }
+                    and float(metadata.get("peak_intensity", 0.0) or 0.0) > 0.01
+                )
             )
         )
     ]
@@ -1609,6 +1827,8 @@ def generate_material_heatmap_model(
                 layer_metadata[index].get("distribution_role")
                 or "local_material_unit"
             )
+            if detail_level <= 0 and role not in final_role_caps:
+                continue
             if selected_role_counts.get(role, 0) >= final_role_caps.get(role, 2):
                 continue
             usable_indices.append(index)
@@ -1621,6 +1841,7 @@ def generate_material_heatmap_model(
     layer_metadata = [layer_metadata[index] for index in usable_indices]
 
     composite = pygame.Surface((width, height), pygame.SRCALPHA)
+    dominant_material_rows = [[None for _x in range(width)] for _y in range(height)]
     dominant_counts = {
         str(layer.get("material_id") or ""): 0
         for layer in layer_pixels
@@ -1641,7 +1862,7 @@ def generate_material_heatmap_model(
             bedrock_candidates.sort(key=lambda item: item[0], reverse=True)
             cover_candidates.sort(key=lambda item: item[0], reverse=True)
             if not bedrock_candidates and not cover_candidates:
-                composite.set_at((x, y), (36, 34, 30, 0))
+                composite.set_at((x, y), (31, 50, 65, 255))
             else:
                 # Bedrock is the persistent substrate. Surface materials only
                 # replace it visually where their own process field forms a
@@ -1652,10 +1873,6 @@ def generate_material_heatmap_model(
                     if bedrock_candidates
                     else cover_candidates[0]
                 )
-                if bedrock_candidates:
-                    dominant_counts[
-                        str(bedrock_candidates[0][1].get("material_id") or "")
-                    ] += 1
                 if cover_candidates:
                     cover_score, cover_layer = cover_candidates[0]
                     cover_threshold = max(
@@ -1664,36 +1881,15 @@ def generate_material_heatmap_model(
                     )
                     if cover_score >= cover_threshold:
                         best_score, best_layer = cover_score, cover_layer
-                if (
-                    best_layer.get("distribution_role") == "surface_cover"
-                    or not bedrock_candidates
-                ):
-                    dominant_counts[
-                        str(best_layer.get("material_id") or "")
-                    ] += 1
-                color = list(best_layer["color"])
-                peer_candidates = (
-                    bedrock_candidates
-                    if best_layer.get("distribution_role") == "bedrock"
-                    else cover_candidates
-                )
-                if len(peer_candidates) > 1 and peer_candidates[1][0] > best_score * 0.68:
-                    second_score, second_layer = peer_candidates[1]
-                    blend = _clamp((second_score / max(0.001, best_score) - 0.68) / 0.32) * 0.28
-                    second_color = second_layer["color"]
-                    color = [
-                        color[index] * (1.0 - blend) + second_color[index] * blend
-                        for index in range(3)
-                    ]
-                alpha = int(round(112 + _clamp(best_score) * 136))
+                material_id = str(best_layer.get("material_id") or "")
+                dominant_material_rows[y][x] = material_id
+                dominant_counts[material_id] += 1
+                color = best_layer["geological_map_color"]
                 composite.set_at((
                     x,
                     y,
                 ), (
-                    max(0, min(255, int(color[0]))),
-                    max(0, min(255, int(color[1]))),
-                    max(0, min(255, int(color[2]))),
-                    alpha,
+                    int(color[0]), int(color[1]), int(color[2]), 255,
                 ))
 
     for metadata in layer_metadata:
@@ -1716,9 +1912,10 @@ def generate_material_heatmap_model(
         "role": "composite",
         "name": "Composite Material Heatmap",
         "surface": composite,
-        "render_mode": "dominant_material_color",
+        "render_mode": "categorical_geological_map",
         "render_contract": "surface_cover_over_bedrock",
         "visualization_purpose": "analytical_only_not_surface_reflectance",
+        "contact_style": "renderer_soft_cartographic_boundary",
     })
     manifest = _write_raster_bundle(
         bundle_path,
@@ -1757,9 +1954,10 @@ def generate_material_heatmap_model(
         "name": "Composite Material Heatmap",
         "bundle_path": _relative_or_absolute(bundle_path, storage_root=storage_root),
         "bundle_layer_id": composite_layer_id,
-        "render_mode": "dominant_material_color",
+        "render_mode": "categorical_geological_map",
         "render_contract": "surface_cover_over_bedrock",
         "visualization_purpose": "analytical_only_not_surface_reflectance",
+        "contact_style": "renderer_soft_cartographic_boundary",
         "confidence_state": "inferred",
         "truth_state": "generated",
     }

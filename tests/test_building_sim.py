@@ -490,7 +490,7 @@ class BuildingSimulationTests(unittest.TestCase):
         self.assertEqual("loc_planet_blue", layers[0]["entity_id"])
         self.assertEqual("water_cycle_seeded", layers[0]["water_cycle_model"]["status"])
         self.assertEqual(
-            ["zones", "annual_temperature", "annual_precipitation"],
+            ["koppen", "annual_temperature", "annual_precipitation"],
             [item["id"] for item in sim.get_climate_display_items()],
         )
         self.assertTrue(

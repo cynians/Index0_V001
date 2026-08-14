@@ -46,12 +46,12 @@ class TimelineUI:
         ("locations", "Locations", ["locations"]),
         ("engineering", "Engineering", ["vehicles", "components", "technologies"]),
         ("human", "Human", ["pops", "people", "cultures", "factions", "institutions"]),
-        ("material", "Material", ["items", "materials", "production", "producers"]),
+        ("material", "Material", ["items", "materials", "producers"]),
         ("world", "World", ["systems", "species", "events", "formations", "spatial_features"]),
         ("ideas", "Ideas", ["ideas", "tasks", "behaviors", "cultural_aspects", "cladistics", "conflicts"]),
     ]
-    DEFAULT_HIDDEN_DATASETS = {"animals", "cladistics", "species"}
-    DEFAULT_HIDDEN_ENTITY_TYPES = {"animal", "animals", "cladistics", "species"}
+    DEFAULT_HIDDEN_DATASETS = {"animals", "cladistics", "production", "species"}
+    DEFAULT_HIDDEN_ENTITY_TYPES = {"animal", "animals", "cladistics", "production", "species"}
     RELATION_CLUSTER_FIELDS = (
         "parents",
         "related",
@@ -70,6 +70,7 @@ class TimelineUI:
     ZOOM_IN_FACTOR = 0.80
     ZOOM_OUT_FACTOR = 1.25
     MIN_VIEW_SPAN_YEARS = 10
+    SELECTED_PERIOD_CONTEXT_YEARS = 1000
     AXIS_PICK_HALF_H = 10
 
     def __init__(self):
@@ -112,6 +113,8 @@ class TimelineUI:
         self.working_year_enabled = False
         self.working_year = None
         self.working_year_range = None
+        self.working_period_id = None
+        self.working_period_label = None
         self.working_year_buffer = ""
         self.working_year_active = False
         self.working_year_rect = pygame.Rect(0, 0, 0, 0)
@@ -323,9 +326,12 @@ class TimelineUI:
     def set_working_year(self, year, focus=False):
         old_year = self.working_year
         old_range = self.working_year_range
+        old_period_id = self.working_period_id
         if year is None or str(year).strip() == "":
             self.working_year = None
             self.working_year_range = None
+            self.working_period_id = None
+            self.working_period_label = None
             self.working_year_buffer = ""
             self.working_year_active = False
             if (
@@ -335,17 +341,43 @@ class TimelineUI:
                 self.selected_year = None
                 self.selected_year_context_label = None
             self.rebuild_layout()
-            return old_range is not None
+            return old_range is not None or old_period_id is not None
 
         parsed_range = self._parse_working_year_value(year)
+        selected_period = None
+        if parsed_range is None:
+            selected_period = self._resolve_named_period(year)
+            if selected_period is not None:
+                parsed_range = (
+                    int(selected_period["start_year"]),
+                    int(selected_period["end_year"]),
+                )
         if parsed_range is None:
             return False
         start_year, end_year = parsed_range
 
-        changed = parsed_range != self.working_year_range
+        selected_period_id = (
+            str(selected_period.get("entity_id") or "")
+            if selected_period is not None
+            else None
+        )
+        changed = (
+            parsed_range != self.working_year_range
+            or selected_period_id != self.working_period_id
+        )
         self.working_year_range = parsed_range
+        self.working_period_id = selected_period_id
+        self.working_period_label = (
+            str(selected_period.get("label") or selected_period_id)
+            if selected_period is not None
+            else None
+        )
         self.working_year = start_year if start_year == end_year else None
-        self.working_year_buffer = self._format_working_year_range(parsed_range)
+        self.working_year_buffer = (
+            self.working_period_label
+            if self.working_period_label is not None
+            else self._format_working_year_range(parsed_range)
+        )
         self.working_year_active = False
         if self.working_year is not None:
             self.set_selected_year(
@@ -357,7 +389,11 @@ class TimelineUI:
             self.selected_year = None
             self.selected_year_context_label = None
             if focus:
-                self.focus_year((start_year + end_year) // 2)
+                if selected_period is not None:
+                    self._compute_full_range()
+                    self.focus_period(start_year, end_year)
+                else:
+                    self.focus_year((start_year + end_year) // 2)
         self.rebuild_layout()
         return changed
 
@@ -366,6 +402,41 @@ class TimelineUI:
 
     def get_working_year_range(self):
         return self.working_year_range
+
+    def get_working_period_id(self):
+        return self.working_period_id
+
+    def _named_period_items(self):
+        periods = []
+        seen = set()
+        for item in self.items:
+            if item.get("timeline_kind") != "major_period":
+                continue
+            label = str(item.get("label") or "").strip()
+            entity_id = str(item.get("entity_id") or "").strip()
+            if not label or item.get("start_year") is None or item.get("end_year") is None:
+                continue
+            identity = entity_id or (label.casefold(), item.get("start_year"), item.get("end_year"))
+            if identity in seen:
+                continue
+            seen.add(identity)
+            periods.append(item)
+        return periods
+
+    def _resolve_named_period(self, value):
+        query = str(value or "").strip().casefold()
+        if not query:
+            return None
+        exact = []
+        for item in self._named_period_items():
+            label = str(item.get("label") or "").strip()
+            entity_id = str(item.get("entity_id") or "").strip()
+            label_aliases = {label.casefold(), entity_id.casefold()}
+            if label.casefold().endswith(" period"):
+                label_aliases.add(label[:-7].strip().casefold())
+            if query in label_aliases:
+                exact.append(item)
+        return exact[0] if len(exact) == 1 else None
 
     def set_location_focus(self, location_value):
         old_location_id = self.location_focus_id
@@ -806,6 +877,8 @@ class TimelineUI:
     def _format_working_year_display_value(self):
         if self.working_year_active:
             return self.working_year_buffer
+        if self.working_period_label:
+            return self.working_period_label
         return self._format_working_year_range(self.working_year_range)
 
     def _entity_display_label(self, entity, fallback=None):
@@ -902,6 +975,21 @@ class TimelineUI:
                 (selected_x + 5, self.axis_y + 16),
             ],
         )
+
+    def _draw_working_period_boundaries(self, screen):
+        if self.working_period_id is None or self.working_year_range is None:
+            return
+        for boundary_year in self.working_year_range:
+            if not self._year_is_in_view(boundary_year):
+                continue
+            boundary_x = self._year_to_x(boundary_year)
+            pygame.draw.line(
+                screen,
+                (226, 196, 126),
+                (boundary_x, self.content_rect.y),
+                (boundary_x, self.rect.bottom - 10),
+                2,
+            )
 
     def _filtered_visible_items(self):
         visible_items = self._location_focus_visible_items(
@@ -1449,7 +1537,7 @@ class TimelineUI:
             half = self.MIN_VIEW_SPAN_YEARS / 2.0
             self.view_min_year = int(round(center - half))
             self.view_max_year = int(round(center + half))
-            self._clamp_view_to_full()
+        self._clamp_view_to_full()
 
     def _default_focus_year(self):
         if self.selected_year is not None:
@@ -1496,32 +1584,40 @@ class TimelineUI:
         self._clamp_view_to_full()
 
     def _clamp_view_to_full(self):
-        full_span = self.full_max_year - self.full_min_year
+        min_bound = self.full_min_year
+        max_bound = self.full_max_year
+        if self.working_period_id is not None and self.working_year_range is not None:
+            period_start, period_end = self.working_year_range
+            min_bound = max(min_bound, period_start - self.SELECTED_PERIOD_CONTEXT_YEARS)
+            max_bound = min(max_bound, period_end + self.SELECTED_PERIOD_CONTEXT_YEARS)
+
+        full_span = max_bound - min_bound
         view_span = self.view_max_year - self.view_min_year
 
         if full_span <= 0:
-            self.view_min_year = self.full_min_year
-            self.view_max_year = self.full_max_year
+            self.view_min_year = min_bound
+            self.view_max_year = max_bound
             return
 
         if view_span >= full_span:
-            self.view_min_year = self.full_min_year
-            self.view_max_year = self.full_max_year
+            self.view_min_year = min_bound
+            self.view_max_year = max_bound
             return
 
-        if self.view_min_year < self.full_min_year:
-            shift = self.full_min_year - self.view_min_year
+        if self.view_min_year < min_bound:
+            shift = min_bound - self.view_min_year
             self.view_min_year += shift
             self.view_max_year += shift
 
-        if self.view_max_year > self.full_max_year:
-            shift = self.view_max_year - self.full_max_year
+        if self.view_max_year > max_bound:
+            shift = self.view_max_year - max_bound
             self.view_min_year -= shift
             self.view_max_year -= shift
 
     def reset_zoom(self):
         self.view_min_year = self.full_min_year
         self.view_max_year = self.full_max_year
+        self._clamp_view_to_full()
         self.rebuild_layout()
 
     def _year_to_x(self, year):
@@ -2596,6 +2692,23 @@ class TimelineUI:
         self.rebuild_layout()
         return (self.view_min_year != old_min) or (self.view_max_year != old_max)
 
+    def focus_period(self, start_year, end_year):
+        start_year = int(start_year)
+        end_year = int(end_year)
+        if end_year < start_year:
+            start_year, end_year = end_year, start_year
+
+        old_min = self.view_min_year
+        old_max = self.view_max_year
+        span = max(self.MIN_VIEW_SPAN_YEARS, end_year - start_year)
+        center = (start_year + end_year) / 2.0
+        self.view_min_year = int(round(center - span / 2.0))
+        self.view_max_year = self.view_min_year + span
+        self._view_range_initialized = True
+        self._clamp_view_to_full()
+        self.rebuild_layout()
+        return (self.view_min_year != old_min) or (self.view_max_year != old_max)
+
     def pan_by_pixels(self, delta_px):
         if self.content_rect.width <= 1:
             return False
@@ -2623,13 +2736,21 @@ class TimelineUI:
         )
 
     def _vertical_scroll_content_height(self):
-        return self._period_section_height() + self.lane_count * self._lane_pitch()
+        return self.lane_count * self._lane_pitch()
+
+    def _period_base_y(self):
+        return self.axis_y + 28
+
+    def _period_filter_y(self):
+        if self.period_lane_count <= 0:
+            return self.axis_y + 10
+        period_rows_h = max(0, self._period_section_height() - self.PERIOD_SECTION_GAP)
+        return self._period_base_y() + period_rows_h + 22
 
     def _unscrolled_period_base_y(self):
-        if self.period_filter_rect is None:
-            return self.content_rect.y
         return (
-            self.period_filter_rect.bottom
+            self._period_filter_y()
+            + self.PERIOD_FILTER_H
             + self.PERIOD_FILTER_GAP
             + self.COVERAGE_H
             + self.COVERAGE_GAP
@@ -2647,6 +2768,8 @@ class TimelineUI:
 
     def _max_vertical_scroll_px(self):
         viewport = self._vertical_viewport_rect()
+        if self.lane_count <= 1:
+            return 0
         return max(0, self._vertical_scroll_content_height() - viewport.height)
 
     def _clamp_vertical_scroll(self):
@@ -2708,7 +2831,7 @@ class TimelineUI:
 
         if event.key == pygame.K_ESCAPE:
             self.working_year_active = False
-            self.working_year_buffer = self._format_working_year_range(self.working_year_range)
+            self.working_year_buffer = self._format_working_year_display_value()
             return {"kind": "working_year_cancelled", "changed": False}
 
         if event.key == pygame.K_BACKSPACE:
@@ -2721,8 +2844,7 @@ class TimelineUI:
 
         text = getattr(event, "unicode", "")
         if text and text.isprintable():
-            if text.isdigit() or text in {" ", "-", "+", "–", "—"}:
-                self.working_year_buffer += text
+            self.working_year_buffer += text
             return {"kind": "working_year_editing", "changed": False}
 
         return {"kind": "working_year_editing", "changed": False}
@@ -2850,28 +2972,24 @@ class TimelineUI:
         right = max(x1 + bar_w, label_x + label_w)
         return pygame.Rect(left, y - 4, max(8, right - left), self._lane_pitch() + 4)
 
-    def _period_base_y(self):
+    def _lane_base_y(self):
         return self._unscrolled_period_base_y() - self.vertical_scroll_px
 
-    def _lane_base_y(self):
-        return self._period_base_y() + self._period_section_height()
-
     def handle_item_click(self, mouse_pos):
-        if not self._vertical_viewport_rect().collidepoint(mouse_pos):
-            return None
-        for item in reversed(self.layout_items):
-            hit_rect = self._timeline_item_hit_rect(item)
-            if hit_rect is not None and hit_rect.collidepoint(mouse_pos):
-                entity_id = item.get("entity_id")
-                if entity_id:
-                    return {
-                        "kind": "open_timeline_entity",
-                        "entity_id": entity_id,
-                        "year": item.get("raw_start_year", item.get("start_year")),
-                        "start_year": item.get("raw_start_year", item.get("start_year")),
-                        "end_year": item.get("raw_end_year", item.get("end_year")),
-                        "changed": False,
-                    }
+        if self._vertical_viewport_rect().collidepoint(mouse_pos):
+            for item in reversed(self.layout_items):
+                hit_rect = self._timeline_item_hit_rect(item)
+                if hit_rect is not None and hit_rect.collidepoint(mouse_pos):
+                    entity_id = item.get("entity_id")
+                    if entity_id:
+                        return {
+                            "kind": "open_timeline_entity",
+                            "entity_id": entity_id,
+                            "year": item.get("raw_start_year", item.get("start_year")),
+                            "start_year": item.get("raw_start_year", item.get("start_year")),
+                            "end_year": item.get("raw_end_year", item.get("end_year")),
+                            "changed": False,
+                        }
 
         for item in reversed(self.period_layout_items):
             hit_rect = self._timeline_item_hit_rect(item, period=True)
@@ -2897,8 +3015,8 @@ class TimelineUI:
             self.working_year_active = True
             self.location_focus_active = False
             self.location_focus_invalid = False
-            self.working_year_buffer = "" if self.working_year is None else str(self.working_year)
-            if self.working_year_range is not None:
+            self.working_year_buffer = self.working_period_label or ""
+            if self.working_period_label is None and self.working_year_range is not None:
                 self.working_year_buffer = self._format_working_year_range(self.working_year_range)
             return {
                 "kind": "working_year_focus",
@@ -2908,7 +3026,7 @@ class TimelineUI:
 
         if self.working_year_active:
             self.working_year_active = False
-            self.working_year_buffer = self._format_working_year_range(self.working_year_range)
+            self.working_year_buffer = self._format_working_year_display_value()
 
         return None
 
@@ -3208,7 +3326,29 @@ class TimelineUI:
                 picker_x = self._year_to_x(self.picker_preview_year)
                 pygame.draw.line(screen, (232, 210, 148), (picker_x, self.content_rect.y), (picker_x, self.rect.bottom - 10), 1)
 
-            period_filter_y = self.axis_y + 10
+            period_base_y = self._period_base_y()
+            if self.period_lane_count > 0:
+                periods_label = font.render("Periods", True, (184, 190, 208))
+                screen.blit(periods_label, (axis_left, period_base_y - 18))
+            for item in self.period_layout_items:
+                lane = item["lane"]
+                x1 = self._year_to_x(item["start_year"])
+                x2 = self._year_to_x(item["end_year"])
+                y = period_base_y + lane * (self.PERIOD_H + self.PERIOD_GAP)
+                if x2 < axis_left or x1 > axis_right:
+                    continue
+                fill_color = self._coerce_color(item.get("card_color"), (70, 76, 108))
+                border_color = self._mix_color(fill_color, (240, 230, 180), 0.55)
+                label_color = self._readable_text_color(fill_color)
+
+                bar_rect = pygame.Rect(x1, y, max(8, x2 - x1), self.PERIOD_H)
+                pygame.draw.rect(screen, fill_color, bar_rect)
+                pygame.draw.rect(screen, border_color, bar_rect, 1)
+                label_surface = font.render(item.get("label", "period"), True, label_color)
+                label_x = max(axis_left, min(bar_rect.x + 6, axis_right - label_surface.get_width()))
+                screen.blit(label_surface, (label_x, y - 2))
+
+            period_filter_y = self._period_filter_y()
             period_filter_label = font.render("Period Filter", True, (166, 174, 190))
             screen.blit(period_filter_label, (axis_left, period_filter_y - 16))
             self.period_filter_rect = pygame.Rect(axis_left, period_filter_y, self.content_rect.width, self.PERIOD_FILTER_H)
@@ -3257,30 +3397,7 @@ class TimelineUI:
             timeline_content_clip = screen.get_clip()
             vertical_viewport = self._vertical_viewport_rect()
             screen.set_clip(timeline_content_clip.clip(vertical_viewport))
-            period_base_y = self._period_base_y()
-
-            for item in self.period_layout_items:
-                lane = item["lane"]
-                x1 = self._year_to_x(item["start_year"])
-                x2 = self._year_to_x(item["end_year"])
-                y = period_base_y + lane * (self.PERIOD_H + self.PERIOD_GAP)
-                if y > vertical_viewport.bottom or y + self.PERIOD_H < vertical_viewport.y:
-                    continue
-                if x2 < axis_left or x1 > axis_right:
-                    continue
-                fill_color = self._coerce_color(item.get("card_color"), (70, 76, 108))
-                border_color = self._mix_color(fill_color, (240, 230, 180), 0.55)
-                label_color = self._readable_text_color(fill_color)
-
-                bar_rect = pygame.Rect(x1, y, max(8, x2 - x1), self.PERIOD_H)
-                pygame.draw.rect(screen, fill_color, bar_rect)
-                pygame.draw.rect(screen, border_color, bar_rect, 1)
-
-                label_surface = font.render(item.get("label", "period"), True, label_color)
-                label_x = max(axis_left, min(bar_rect.x + 6, axis_right - label_surface.get_width()))
-                screen.blit(label_surface, (label_x, y - 2))
-
-            lane_base_y = period_base_y + self._period_section_height()
+            lane_base_y = self._lane_base_y()
             lane_pitch = self._lane_pitch()
 
             if self.timeline_sort_mode == "relations":
@@ -3361,6 +3478,7 @@ class TimelineUI:
 
             screen.set_clip(timeline_content_clip)
             self._draw_vertical_scrollbar(screen)
+            self._draw_working_period_boundaries(screen)
             self._draw_selected_year_marker(screen)
         finally:
             screen.set_clip(previous_clip)

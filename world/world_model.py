@@ -1,9 +1,17 @@
+"""Application-facing projection of the ontology-backed world.
+
+Architecture invariants: all entities and their ontological/semantic facts are
+stored in the ontology. Python mappings are disposable startup/query caches.
+Worldgen currently has no planets intended for durable persistence, so changed
+generation contracts invalidate old products rather than requiring migration.
+"""
+
 import re
 
 from world.entity_loader import EntityLoader
 from world.dione_reference_models import apply_dione_reference_models
+from world.component_host import apply_component_host_schema
 from world.earth_reference_models import apply_earth_reference_models
-from world.material_reference_models import apply_material_reference_models
 from world.orbital_space_reference_models import apply_orbital_space_reference_models
 from world.periods import apply_period_reference_models
 from world.relationship_graph import TouchDegrees
@@ -216,11 +224,22 @@ class WorldModel:
             ontology_path=ontology_path,
             use_ontology=use_ontology,
         )
+        # World-gen reads the ontology material dataset through one fast
+        # process-local cache. There is no separately authored material list.
+        from simulations.world_gen.natural_materials import configure_material_catalog
+        material_count = configure_material_catalog(
+            self.loader.get_dataset("materials")
+        )
+        if material_count <= 0:
+            raise RuntimeError(
+                "The ontology material dataset is required; compatibility "
+                "JSON directories cannot supply world-generation materials"
+            )
         apply_earth_reference_models(self.loader)
         apply_dione_reference_models(self.loader)
-        apply_material_reference_models(self.loader)
         apply_orbital_space_reference_models(self.loader)
         apply_period_reference_models(self.loader, self.MAJOR_PERIODS)
+        apply_component_host_schema(self.loader)
         # Reuse schemas already decoded by EntityLoader. Parsing the complete
         # ontology a second time is especially costly once generated maps are
         # persisted in the repository.
@@ -265,6 +284,7 @@ class WorldModel:
             return
         apply_orbital_space_reference_models(self.loader)
         apply_period_reference_models(self.loader, self.MAJOR_PERIODS)
+        apply_component_host_schema(self.loader)
         if hasattr(self.touch_degrees, "refresh"):
             self.touch_degrees.refresh()
         self.yearer = Yearer(self.loader)
@@ -273,6 +293,7 @@ class WorldModel:
     def mark_repository_changed(self):
         apply_orbital_space_reference_models(self.loader)
         apply_period_reference_models(self.loader, self.MAJOR_PERIODS)
+        apply_component_host_schema(self.loader)
         if hasattr(self.touch_degrees, "refresh"):
             self.touch_degrees.refresh()
         self.yearer = Yearer(self.loader)
@@ -516,9 +537,9 @@ class WorldModel:
         self.loader.refresh()
         apply_earth_reference_models(self.loader)
         apply_dione_reference_models(self.loader)
-        apply_material_reference_models(self.loader)
         apply_orbital_space_reference_models(self.loader)
         apply_period_reference_models(self.loader, self.MAJOR_PERIODS)
+        apply_component_host_schema(self.loader)
         self.schemas = SchemaLoader(schema_entities=self.loader.get_dataset("schemas"))
         self.touch_degrees.schemas = self.schemas
         self.touch_degrees.refresh()

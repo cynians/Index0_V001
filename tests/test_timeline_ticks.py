@@ -208,6 +208,7 @@ class TimelineTickTests(unittest.TestCase):
                 {"entity_id": "species_one", "dataset": "species", "entity_type": "species", "start_year": 1950, "end_year": 1960},
                 {"entity_id": "animal_one", "dataset": "animals", "entity_type": "animal", "start_year": 1950, "end_year": 1960},
                 {"entity_id": "clade_one", "dataset": "cladistics", "entity_type": "cladistics", "start_year": 1950, "end_year": 1960},
+                {"entity_id": "production_one", "dataset": "production", "entity_type": "production", "start_year": 1950, "end_year": 1960},
             ]
         )
 
@@ -217,6 +218,7 @@ class TimelineTickTests(unittest.TestCase):
         self.assertNotIn("species", timeline._available_filter_categories())
         self.assertNotIn("animals", timeline._available_filter_categories())
         self.assertNotIn("cladistics", timeline._available_filter_categories())
+        self.assertNotIn("production", timeline._available_filter_categories())
 
     def test_period_filter_bar_uses_two_click_range(self):
         timeline = self._timeline(1900, 2000, width=100)
@@ -332,6 +334,99 @@ class TimelineTickTests(unittest.TestCase):
         self.assertEqual(2016, action["end_year"])
         self.assertEqual((2013, 2016), timeline.get_working_year_range())
         self.assertFalse(timeline.working_year_active)
+
+    def test_named_period_can_be_entered_in_working_year_input(self):
+        timeline = self._timeline(1900, 4000, width=240)
+        timeline.set_working_year_enabled(True)
+        timeline.set_items(
+            [
+                {
+                    "entity_id": "period_race_for_sol",
+                    "label": "Race for Sol",
+                    "timeline_kind": "major_period",
+                    "start_year": 2100,
+                    "end_year": 2400,
+                },
+                {
+                    "entity_id": "period_ggo_hegemony",
+                    "label": "GGO Hegemony Period",
+                    "timeline_kind": "major_period",
+                    "start_year": 2400,
+                    "end_year": 2800,
+                },
+            ]
+        )
+
+        self.assertTrue(timeline.set_working_year("Race for Sol", focus=True))
+
+        self.assertEqual("period_race_for_sol", timeline.get_working_period_id())
+        self.assertEqual((2100, 2400), timeline.get_working_year_range())
+        self.assertEqual("Race for Sol", timeline._format_working_year_display_value())
+        self.assertEqual((2100, 2400), (timeline.view_min_year, timeline.view_max_year))
+
+    def test_named_period_accepts_label_without_period_suffix(self):
+        timeline = self._timeline(1900, 4000, width=240)
+        timeline.set_items(
+            [
+                {
+                    "entity_id": "period_ggo_hegemony",
+                    "label": "GGO Hegemony Period",
+                    "timeline_kind": "major_period",
+                    "start_year": 2400,
+                    "end_year": 2800,
+                },
+            ]
+        )
+
+        self.assertTrue(timeline.set_working_year("GGO Hegemony"))
+
+        self.assertEqual("period_ggo_hegemony", timeline.get_working_period_id())
+        self.assertEqual("GGO Hegemony Period", timeline._format_working_year_display_value())
+
+    def test_named_period_zoom_is_limited_to_one_thousand_year_context(self):
+        timeline = TimelineUI()
+        timeline.set_rect(pygame.Rect(0, 0, 500, 240))
+        timeline.set_items(
+            [
+                {
+                    "entity_id": "period_race_for_sol",
+                    "label": "Race for Sol",
+                    "timeline_kind": "major_period",
+                    "start_year": 2100,
+                    "end_year": 2400,
+                },
+                {
+                    "entity_id": "deep_context",
+                    "dataset": "events",
+                    "start_year": -5000,
+                    "end_year": 8000,
+                },
+            ]
+        )
+        timeline.rebuild_layout()
+        timeline.set_working_year("Race for Sol", focus=True)
+
+        for _ in range(20):
+            timeline.zoom_at(timeline.content_rect.centerx, timeline.ZOOM_OUT_FACTOR)
+
+        self.assertEqual(1100, timeline.view_min_year)
+        self.assertEqual(3400, timeline.view_max_year)
+
+    def test_numeric_period_does_not_enable_named_period_zoom_limit(self):
+        timeline = TimelineUI()
+        timeline.set_rect(pygame.Rect(0, 0, 500, 240))
+        timeline.set_items(
+            [
+                {"entity_id": "context", "dataset": "events", "start_year": -5000, "end_year": 8000},
+            ]
+        )
+        timeline.rebuild_layout()
+        timeline.set_working_year("2100 - 2400", focus=True)
+        timeline.reset_zoom()
+
+        self.assertIsNone(timeline.get_working_period_id())
+        self.assertLess(timeline.view_min_year, 1100)
+        self.assertGreater(timeline.view_max_year, 3400)
 
     def test_working_year_accepts_and_formats_mya_values(self):
         timeline = self._timeline(-50_000_000, 2030, width=200)

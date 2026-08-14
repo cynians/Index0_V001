@@ -1,3 +1,11 @@
+"""Render ontology-backed world and map projections.
+
+Architecture invariants: entity identity and semantic/ontological facts live
+only in the ontology; renderer mappings are disposable caches. Generated
+planets are currently disposable too, so a worldgen contract change invalidates
+old products instead of requiring compatibility rendering or migration.
+"""
+
 from pathlib import Path
 import math
 
@@ -9,6 +17,7 @@ except ImportError:  # Keep a functional, slower path for minimal installations.
     np = None
 
 from simulations.world_gen.material_heatmaps import load_raster_bundle_surface
+from simulations.world_gen.natural_materials import material_geological_map_color
 from simulations.world_gen.true_color import render_true_color_surface
 from simulations.world_gen.heightmap import (
     contour_levels_for_heightmap,
@@ -1193,25 +1202,142 @@ class MapRenderer:
         self._draw_image_rect_layer(screen, prepared, camera)
 
     def _material_composite_surface(self, material_layer, heightmap_layer):
-        heightmap = heightmap_layer.get("heightmap_model") if isinstance(heightmap_layer, dict) else None
-        sample_grid = heightmap.get("sample_grid") if isinstance(heightmap, dict) else None
-        rows = sample_grid.get("rows") if isinstance(sample_grid, dict) else None
-        if not rows:
+        """Render the Materials layer as geology, never as shaded terrain."""
+        if not isinstance(material_layer, dict):
             return None
-        # The Material Distribution layer is intentionally a full-strength
-        # view.  Do not first apply the subtle normal-map material tint and
-        # then stack the same raster a second time.
-        terrain_layer = dict(heightmap_layer)
-        terrain_layer.pop("surface_material_layer", None)
-        terrain_layer.pop("surface_material_opacity", None)
-        terrain_surface = self._heightmap_surface_for_layer(terrain_layer, heightmap, rows)
-        if terrain_surface is None:
+        if material_layer.get("bundle_path"):
+            source = self._load_raster_bundle_surface(
+                material_layer.get("bundle_path"),
+                material_layer.get("bundle_layer_id"),
+            )
+        else:
+            source = self._load_image_surface(material_layer.get("image_path"))
+        if source is None:
             return None
-        return self._surface_material_composite(
-            terrain_surface,
-            material_layer,
-            opacity=material_layer.get("alpha", 232),
+        source = self._crop_surface_to_uv(source, material_layer.get("source_uv_bounds"))
+
+        render_mode = str(material_layer.get("render_mode") or "")
+        is_composite = (
+            str(material_layer.get("bundle_layer_id") or "") == "composite"
+            or render_mode == "categorical_geological_map"
         )
+        bounds = material_layer.get("source_uv_bounds")
+        bounds_key = tuple(sorted(bounds.items())) if isinstance(bounds, dict) else None
+        material_id = str(material_layer.get("material_id") or "")
+        map_color = self._coerce_rgb(
+            material_geological_map_color(
+                material_id,
+                material_layer.get("geological_map_color"),
+            ),
+            fallback=(122, 126, 124),
+        )
+        cache_key = (
+            id(source), "geological_map", is_composite, material_id,
+            tuple(map_color),
+            bounds_key,
+        )
+        cached = self._material_composite_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        if is_composite:
+            # Categorical unit identity stays exact in storage. Presentation is
+            # applied here at twice the source resolution: restrained printed
+            # geology colors, softened pixel steps, and a fine low-contrast
+            # contact. Worldgen-version changes invalidate older rasters; this
+            # renderer deliberately does not translate obsolete products.
+            if np is None:
+                result = pygame.transform.smoothscale(
+                    source,
+                    (source.get_width() * 2, source.get_height() * 2),
+                )
+                result.set_alpha(None)
+                return self._cache_put(
+                    self._material_composite_cache, cache_key, result, limit=12,
+                )
+            rgb = pygame.surfarray.array3d(source).astype(np.float32)
+            # Preserve categorical hue distinctions while taking the palette
+            # out of debug-mask saturation and into a printed-map register.
+            luma = (
+                rgb[..., 0] * 0.2126
+                + rgb[..., 1] * 0.7152
+                + rgb[..., 2] * 0.0722
+            )[..., None]
+            rgb = luma + (rgb - luma) * 0.68
+            rgb = rgb * 0.94 + np.asarray([203.0, 197.0, 184.0]) * 0.06
+            rgb = np.clip(rgb, 38.0, 224.0).astype(np.uint8)
+
+            color_delta_x = np.max(
+                np.abs(rgb.astype(np.int16) - np.roll(rgb, -1, axis=0).astype(np.int16)),
+                axis=2,
+            )
+            color_delta_y = np.max(
+                np.abs(
+                    rgb.astype(np.int16)
+                    - np.concatenate((rgb[:, 1:], rgb[:, -1:]), axis=1).astype(np.int16)
+                ),
+                axis=2,
+            )
+            contact_mask = (color_delta_x > 13) | (color_delta_y > 13)
+            base = pygame.surfarray.make_surface(rgb)
+            target_size = (base.get_width() * 2, base.get_height() * 2)
+            result = pygame.transform.smoothscale(base, target_size)
+            if result.get_flags() & pygame.SRCALPHA == 0:
+                with_alpha = pygame.Surface(target_size, pygame.SRCALPHA)
+                with_alpha.blit(result, (0, 0))
+                result = with_alpha
+            contact = pygame.Surface(base.get_size(), pygame.SRCALPHA)
+            contact.fill((35, 40, 42, 0))
+            contact_alpha = np.zeros(base.get_size(), dtype=np.uint8)
+            contact_alpha[contact_mask] = 84
+            pygame.surfarray.pixels_alpha(contact)[:, :] = contact_alpha
+            contact = pygame.transform.smoothscale(contact, target_size)
+            result.blit(contact, (0, 0))
+            result.set_alpha(None)
+            return self._cache_put(self._material_composite_cache, cache_key, result, limit=12)
+
+        # Individual material selection is a categorical occurrence map with
+        # a subdued background and an explicit contact around the resolved
+        # suitability field.  The source alpha remains untouched in storage
+        # for the separate True Color optical mixer.
+        width, height = source.get_size()
+        result = pygame.Surface((width, height), pygame.SRCALPHA)
+        background = (49, 55, 58, 255)
+        present_rows = [[False for _x in range(width)] for _y in range(height)]
+        threshold = max(0.14, min(0.52, float(material_layer.get("dominance_threshold", 0.20) or 0.20) * 0.72))
+        for y in range(height):
+            for x in range(width):
+                intensity = max(0.0, min(1.0, source.get_at((x, y)).a / 230.0))
+                present = intensity >= threshold
+                present_rows[y][x] = present
+                if not present:
+                    result.set_at((x, y), background)
+                    continue
+                strength = 0.78 + intensity * 0.22
+                coverage = max(0.0, min(1.0, (intensity - threshold) / max(0.08, 1.0 - threshold)))
+                coverage = 0.48 + coverage * 0.52
+                result.set_at((x, y), tuple(
+                    int(background[index] * (1.0 - coverage) + map_color[index] * strength * coverage)
+                    for index in range(3)
+                ) + (255,))
+        contact = (31, 37, 39, 255)
+        for y in range(height):
+            for x in range(width):
+                if not present_rows[y][x]:
+                    continue
+                if (
+                    not present_rows[y][(x - 1) % width]
+                    or not present_rows[y][(x + 1) % width]
+                    or (y > 0 and not present_rows[y - 1][x])
+                    or (y + 1 < height and not present_rows[y + 1][x])
+                ):
+                    result.set_at((x, y), contact)
+        result = pygame.transform.smoothscale(
+            result,
+            (max(2, width * 2), max(2, height * 2)),
+        )
+        result.set_alpha(None)
+        return self._cache_put(self._material_composite_cache, cache_key, result, limit=12)
 
     def _surface_material_composite(self, terrain_surface, material_layer, opacity=92):
         """Tint terrain with the probabilistic material raster while retaining relief."""
@@ -1596,6 +1722,15 @@ class MapRenderer:
     def _composite_refined_surface(self, base_surface, layer, surface_kind):
         models = layer.get("refined_region_models") if isinstance(layer.get("refined_region_models"), list) else []
         models = [model for model in models if isinstance(model, dict) and isinstance(model.get(f"{surface_kind}_model"), dict)]
+        if surface_kind == "heightmap" and layer.get("render_mode") == "true_color":
+            parent_true_color = layer.get("true_color_model") or {}
+            parent_version = parent_true_color.get("model_version")
+            models = [
+                model
+                for model in models
+                if isinstance(model.get("true_color_model"), dict)
+                and model["true_color_model"].get("model_version") == parent_version
+            ]
         if not models:
             return base_surface
         root_level = int((layer.get("heightmap_model") or {}).get("map_detail_level", 0) or 0)
@@ -1711,7 +1846,10 @@ class MapRenderer:
             field_name = "annual_precipitation_rows_mm"
         else:
             field_name = (
-                "koppen_rows"
+                "koppen_display_rows"
+                if isinstance(climate_grid.get("koppen_display_rows"), list)
+                and climate_grid.get("koppen_display_rows")
+                else "koppen_rows"
                 if isinstance(climate_grid.get("koppen_rows"), list)
                 else "rows"
             )
@@ -1727,7 +1865,16 @@ class MapRenderer:
         if row_count <= 0 or col_count <= 0:
             return None
 
-        elevation_rows = climate_grid.get("elevation_rows") if isinstance(climate_grid.get("elevation_rows"), list) else []
+        display_elevation_rows = climate_grid.get("koppen_display_elevation_rows")
+        elevation_rows = (
+            display_elevation_rows
+            if field_name == "koppen_display_rows"
+            and isinstance(display_elevation_rows, list)
+            and display_elevation_rows
+            else climate_grid.get("elevation_rows")
+            if isinstance(climate_grid.get("elevation_rows"), list)
+            else []
+        )
         lakes = water_cycle.get("lakes") if isinstance(water_cycle.get("lakes"), list) else []
         cache_key = (
             id(water_cycle),
@@ -1812,6 +1959,24 @@ class MapRenderer:
                         if display_mode == "koppen"
                         else False
                     )
+                    if display_mode == "koppen":
+                        if ocean_value:
+                            relief_color = self._mix_rgb(
+                                (28, 69, 118), (73, 132, 166), elevation_norm,
+                            )
+                            color = self._mix_rgb(color, relief_color, 0.14)
+                        else:
+                            if elevation_norm < 0.52:
+                                relief_color = self._mix_rgb(
+                                    (105, 139, 91), (170, 151, 104),
+                                    elevation_norm / 0.52,
+                                )
+                            else:
+                                relief_color = self._mix_rgb(
+                                    (170, 151, 104), (218, 215, 202),
+                                    (elevation_norm - 0.52) / 0.48,
+                                )
+                            color = self._mix_rgb(color, relief_color, 0.20)
                     shade = 0.76 + (1.0 - elevation_norm) * 0.14 if ocean_value else 0.78 + elevation_norm * 0.24
                     color = tuple(max(0, min(255, int(channel * shade))) for channel in color)
                 surface.set_at((col_index, row_index), color)
@@ -1827,9 +1992,12 @@ class MapRenderer:
                 continue
             depth = float(lake.get("maximum_depth_m", 0.0) or 0.0)
             lake_color = self._mix_rgb((62, 132, 178), (24, 76, 132), min(1.0, depth / 900.0))
+            source_width = max(2, int(climate_grid.get("width", col_count) or col_count))
+            source_height = max(2, int(climate_grid.get("height", row_count) or row_count))
             for cell in lake.get("cells") or []:
                 if isinstance(cell, (list, tuple)) and len(cell) >= 2:
-                    x, y = int(cell[0]), int(cell[1])
+                    x = int(round(float(cell[0]) * (col_count - 1) / (source_width - 1)))
+                    y = int(round(float(cell[1]) * (row_count - 1) / (source_height - 1)))
                     if 0 <= x < col_count and 0 <= y < row_count:
                         surface.set_at((x, y), lake_color)
 
@@ -2730,7 +2898,7 @@ class MapRenderer:
                     pass
 
             if shape == "image_rect":
-                if active_layer_kind == "material_heatmaps" and heightmap_base_layer is not None:
+                if active_layer_kind == "material_heatmaps":
                     composite = self._material_composite_surface(layer, heightmap_base_layer)
                     if composite is not None:
                         prepared_layer = dict(layer)

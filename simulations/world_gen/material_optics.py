@@ -62,6 +62,7 @@ def _profile(
     fracture_darkening=0.18,
     surface_fabric="massive",
     fabric_strength=0.0,
+    color_driver="weathering",
 ):
     profile = {
         "visible_reflectance": {
@@ -91,6 +92,12 @@ def _profile(
         "fracture_darkening_factor": float(fracture_darkening),
         "surface_fabric": str(surface_fabric),
         "surface_fabric_strength": float(fabric_strength),
+        # Which exposure field drives the blend toward
+        # ``weathered_visible_reflectance``.  Most rock weathers with age
+        # regardless of what's driving other materials on the same world, so
+        # "weathering" is the default; ferric/lateritic materials instead
+        # redden with local oxidation, and this lets them say so.
+        "color_driver": str(color_driver),
     }
     if weathered_reflectance is not None:
         profile["weathered_visible_reflectance"] = {
@@ -203,12 +210,18 @@ OPTICAL_FAMILIES = {
         grain=0.58, wet_darkening=0.32, oxidation=0.88,
         mixing_mode="coating", opacity_depth_mm=4.0,
         optical_coloring_power=2.35,
+        weathered_reflectance=[0.41, 0.088, 0.040],
+        weathering_color_response=0.55, fracture_darkening=0.14,
+        color_driver="oxidation",
     ),
     "ferric": _profile(
         [0.32, 0.075, 0.040], albedo=0.14, roughness=0.80,
         grain=0.52, wet_darkening=0.28, oxidation=1.0,
         mixing_mode="coating", opacity_depth_mm=2.0,
         optical_coloring_power=3.20,
+        weathered_reflectance=[0.37, 0.058, 0.028],
+        weathering_color_response=0.60, fracture_darkening=0.12,
+        color_driver="oxidation",
     ),
     "sulfide_ore": _profile(
         [0.08, 0.075, 0.060], albedo=0.075, roughness=0.48,
@@ -254,6 +267,10 @@ OPTICAL_FAMILIES = {
 
 FORMATION_OPTICAL_FAMILIES = {
     "igneous_intrusive_felsic": "felsic_rock",
+    "igneous_intrusive_intermediate": "intermediate_rock",
+    "igneous_intrusive_alkaline": "felsic_rock",
+    "igneous_extrusive_mafic": "mafic_rock",
+    "igneous_hypabyssal_mafic": "mafic_rock",
     "igneous_mafic": "mafic_rock",
     "igneous_ultramafic": "ultramafic_rock",
     "kimberlite_pipe": "ultramafic_rock",
@@ -274,6 +291,7 @@ FORMATION_OPTICAL_FAMILIES = {
     "colluvial_sediment": "siliciclastic",
     "littoral_sediment": "siliciclastic",
     "aeolian_sediment": "siliciclastic",
+    "quartz_sand_accumulation": "siliciclastic",
     "clastic_sedimentary_basin": "siliciclastic",
     "carbonate_sedimentary_basin": "carbonate",
     "spring_carbonate": "carbonate",
@@ -311,9 +329,44 @@ MATERIAL_OPTICAL_OVERRIDES = {
         "surface_fabric_strength": 0.04,
         "fracture_darkening_factor": 0.34,
     },
-    "mat_basalt": {"family_id": "mafic_rock"},
+    "mat_basalt": {
+        "family_id": "mafic_rock",
+        "weathered_visible_reflectance": {
+            "red_650nm": 0.13, "green_550nm": 0.075, "blue_450nm": 0.045,
+        },
+        "oxidation_response": 0.18,
+        "weathering_color_response": 0.44,
+        "surface_fabric": "volcanic_flow",
+        "surface_fabric_strength": 0.16,
+    },
     "mat_gabbro": {"family_id": "mafic_rock"},
-    "mat_diabase": {"family_id": "mafic_rock"},
+    "mat_diabase": {
+        "family_id": "mafic_rock",
+        "visible_reflectance": {
+            "red_650nm": 0.10, "green_550nm": 0.11, "blue_450nm": 0.10,
+        },
+        "weathered_visible_reflectance": {
+            "red_650nm": 0.17, "green_550nm": 0.115, "blue_450nm": 0.07,
+        },
+        "broadband_albedo": 0.106,
+        "oxidation_response": 0.18,
+        "weathering_color_response": 0.40,
+        "surface_fabric": "massive",
+        "surface_fabric_strength": 0.08,
+    },
+    "mat_diorite": {
+        "family_id": "intermediate_rock",
+        "visible_reflectance": {
+            "red_650nm": 0.30, "green_550nm": 0.305, "blue_450nm": 0.285,
+        },
+        "weathered_visible_reflectance": {
+            "red_650nm": 0.35, "green_550nm": 0.315, "blue_450nm": 0.25,
+        },
+        "broadband_albedo": 0.301,
+        "weathering_color_response": 0.27,
+        "surface_fabric": "massive",
+        "surface_fabric_strength": 0.06,
+    },
     "mat_komatiite": {
         "family_id": "ultramafic_rock",
         "visible_reflectance": {
@@ -409,23 +462,41 @@ MATERIAL_OPTICAL_OVERRIDES = {
     "mat_syenite": {
         "family_id": "felsic_rock",
         "visible_reflectance": {
-            "red_650nm": 0.36, "green_550nm": 0.31, "blue_450nm": 0.255,
+            "red_650nm": 0.40, "green_550nm": 0.35, "blue_450nm": 0.31,
         },
-        "broadband_albedo": 0.315,
+        "weathered_visible_reflectance": {
+            "red_650nm": 0.43, "green_550nm": 0.34, "blue_450nm": 0.26,
+        },
+        "broadband_albedo": 0.355,
+        "weathering_color_response": 0.26,
+        "surface_fabric": "massive",
+        "surface_fabric_strength": 0.05,
     },
     "mat_nepheline_syenite": {
         "family_id": "felsic_rock",
         "visible_reflectance": {
-            "red_650nm": 0.29, "green_550nm": 0.255, "blue_450nm": 0.22,
+            "red_650nm": 0.43, "green_550nm": 0.40, "blue_450nm": 0.36,
         },
-        "broadband_albedo": 0.258,
+        "weathered_visible_reflectance": {
+            "red_650nm": 0.45, "green_550nm": 0.37, "blue_450nm": 0.29,
+        },
+        "broadband_albedo": 0.402,
+        "weathering_color_response": 0.24,
+        "surface_fabric": "massive",
+        "surface_fabric_strength": 0.05,
     },
     "mat_monzonite": {
         "family_id": "intermediate_rock",
         "visible_reflectance": {
-            "red_650nm": 0.235, "green_550nm": 0.22, "blue_450nm": 0.19,
+            "red_650nm": 0.31, "green_550nm": 0.29, "blue_450nm": 0.25,
         },
-        "broadband_albedo": 0.218,
+        "weathered_visible_reflectance": {
+            "red_650nm": 0.35, "green_550nm": 0.28, "blue_450nm": 0.21,
+        },
+        "broadband_albedo": 0.292,
+        "weathering_color_response": 0.29,
+        "surface_fabric": "massive",
+        "surface_fabric_strength": 0.06,
     },
     "mat_tonalite": {
         "family_id": "felsic_rock",
@@ -433,6 +504,12 @@ MATERIAL_OPTICAL_OVERRIDES = {
             "red_650nm": 0.42, "green_550nm": 0.40, "blue_450nm": 0.365,
         },
         "broadband_albedo": 0.399,
+        "weathered_visible_reflectance": {
+            "red_650nm": 0.44, "green_550nm": 0.40, "blue_450nm": 0.34,
+        },
+        "weathering_color_response": 0.20,
+        "surface_fabric": "massive",
+        "surface_fabric_strength": 0.05,
     },
     "mat_granodiorite": {
         "family_id": "felsic_rock",
@@ -440,6 +517,12 @@ MATERIAL_OPTICAL_OVERRIDES = {
             "red_650nm": 0.39, "green_550nm": 0.355, "blue_450nm": 0.305,
         },
         "broadband_albedo": 0.355,
+        "weathered_visible_reflectance": {
+            "red_650nm": 0.43, "green_550nm": 0.36, "blue_450nm": 0.29,
+        },
+        "weathering_color_response": 0.24,
+        "surface_fabric": "massive",
+        "surface_fabric_strength": 0.05,
     },
     "mat_anorthosite": {
         "family_id": "felsic_rock",
@@ -877,6 +960,118 @@ MATERIAL_OPTICAL_OVERRIDES = {
             "red_650nm": 0.60, "green_550nm": 0.57, "blue_450nm": 0.50,
         },
         "broadband_albedo": 0.57,
+        "weathered_visible_reflectance": {
+            "red_650nm": 0.56, "green_550nm": 0.52, "blue_450nm": 0.43,
+        },
+        "wet_darkening_factor": 0.28,
+        "oxidation_response": 0.05,
+        "weathering_color_response": 0.18,
+        "surface_fabric": "loose_granular",
+        "surface_fabric_strength": 0.22,
+    },
+    "mat_red_bed_sandstone": {
+        "family_id": "siliciclastic",
+        "visible_reflectance": {
+            "red_650nm": 0.40, "green_550nm": 0.24, "blue_450nm": 0.16,
+        },
+        "weathered_visible_reflectance": {
+            "red_650nm": 0.46, "green_550nm": 0.22, "blue_450nm": 0.13,
+        },
+        "broadband_albedo": 0.29,
+        "weathering_color_response": 0.36,
+        "color_driver": "oxidation",
+    },
+    "mat_malachite_azurite_gossan": {
+        "family_id": "crystalline_mineral",
+        "visible_reflectance": {
+            "red_650nm": 0.075, "green_550nm": 0.30, "blue_450nm": 0.19,
+        },
+        "weathered_visible_reflectance": {
+            "red_650nm": 0.055, "green_550nm": 0.22, "blue_450nm": 0.28,
+        },
+        "broadband_albedo": 0.21,
+        "mixing_mode": "areal",
+        "optical_coloring_power": 1.60,
+        "weathering_color_response": 0.45,
+        "color_driver": "oxidation",
+    },
+    "mat_solfataric_sulfur_crust": {
+        "family_id": "sulfur",
+        "visible_reflectance": {
+            "red_650nm": 0.76, "green_550nm": 0.58, "blue_450nm": 0.075,
+        },
+        "weathered_visible_reflectance": {
+            "red_650nm": 0.68, "green_550nm": 0.42, "blue_450nm": 0.045,
+        },
+        "broadband_albedo": 0.55,
+        "weathering_color_response": 0.30,
+    },
+    "mat_chrysoprase": {
+        "family_id": "crystalline_mineral",
+        "visible_reflectance": {
+            "red_650nm": 0.32, "green_550nm": 0.50, "blue_450nm": 0.30,
+        },
+        "broadband_albedo": 0.39,
+        "mixing_mode": "translucent",
+        "optical_coloring_power": 1.1,
+    },
+    "mat_rock_varnish": {
+        "family_id": "weathered_clay",
+        "visible_reflectance": {
+            "red_650nm": 0.085, "green_550nm": 0.068, "blue_450nm": 0.056,
+        },
+        "weathered_visible_reflectance": {
+            "red_650nm": 0.055, "green_550nm": 0.042, "blue_450nm": 0.034,
+        },
+        "broadband_albedo": 0.07,
+        "mixing_mode": "coating",
+        "optical_opacity_depth_mm": 1.5,
+        "optical_coloring_power": 2.1,
+        "weathering_color_response": 0.5,
+        "color_driver": "oxidation",
+    },
+    "mat_evaporite_salt_crust": {"family_id": "evaporite"},
+    "mat_welded_ignimbrite": {
+        "family_id": "pyroclastic",
+        "visible_reflectance": {
+            "red_650nm": 0.27, "green_550nm": 0.22, "blue_450nm": 0.19,
+        },
+        "weathered_visible_reflectance": {
+            "red_650nm": 0.33, "green_550nm": 0.25, "blue_450nm": 0.19,
+        },
+        "broadband_albedo": 0.23,
+    },
+    "mat_banded_jasper": {
+        "family_id": "crystalline_mineral",
+        "visible_reflectance": {
+            "red_650nm": 0.55, "green_550nm": 0.13, "blue_450nm": 0.075,
+        },
+        "broadband_albedo": 0.24,
+        "mixing_mode": "areal",
+        "optical_coloring_power": 1.55,
+    },
+    "mat_lapis_lazuli_marble": {
+        "family_id": "carbonate",
+        "visible_reflectance": {
+            "red_650nm": 0.10, "green_550nm": 0.135, "blue_450nm": 0.32,
+        },
+        "broadband_albedo": 0.16,
+        "mixing_mode": "areal",
+        "optical_coloring_power": 1.45,
+    },
+    "mat_siliceous_sinter": {
+        "family_id": "crystalline_mineral",
+        "visible_reflectance": {
+            "red_650nm": 0.62, "green_550nm": 0.56, "blue_450nm": 0.42,
+        },
+        "weathered_visible_reflectance": {
+            "red_650nm": 0.72, "green_550nm": 0.42, "blue_450nm": 0.18,
+        },
+        "broadband_albedo": 0.53,
+        "mixing_mode": "areal",
+        "optical_coloring_power": 1.3,
+        "weathering_color_response": 0.42,
+        "color_driver": "wetness",
     },
 }
 
@@ -955,6 +1150,9 @@ def material_optical_surface_profile(
     mixing_mode = str(profile.get("mixing_mode") or "intimate")
     if mixing_mode not in {"intimate", "areal", "coating", "translucent"}:
         mixing_mode = "intimate"
+    color_driver = str(profile.get("color_driver") or "weathering")
+    if color_driver not in {"weathering", "oxidation", "wetness", "space_weathering"}:
+        color_driver = "weathering"
 
     profile.update({
         "profile_version": MATERIAL_OPTICAL_PROFILE_VERSION,
@@ -1000,6 +1198,7 @@ def material_optical_surface_profile(
         ),
         "surface_fabric": surface_fabric,
         "mixing_mode": mixing_mode,
+        "color_driver": color_driver,
         "surface_fabric_strength": round(
             _clamp(profile.get("surface_fabric_strength", 0.0)),
             5,

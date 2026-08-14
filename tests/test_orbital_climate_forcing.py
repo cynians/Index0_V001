@@ -3,6 +3,7 @@ import unittest
 import simulations.world_gen.water_cycle as water_cycle_module
 from simulations.world_gen.atmosphere import equilibrium_temperature_k
 from simulations.world_gen.water_cycle import (
+    _barrier_aware_relax_field,
     _sample_inherited_category,
     _sample_inherited_rows,
     derive_water_cycle_model,
@@ -125,6 +126,48 @@ class OrbitalClimateForcingTests(unittest.TestCase):
         self.assertIn("prevailing_wind_rows", grid)
         self.assertTrue(model["koppen_classes"])
         self.assertIn("converged", model["climate_solver"])
+        self.assertGreater(
+            len(grid["koppen_display_rows"]),
+            len(grid["koppen_rows"]),
+        )
+        self.assertGreater(
+            len(grid["koppen_display_rows"][0]),
+            len(grid["koppen_rows"][0]),
+        )
+        self.assertEqual(
+            "bilinear_continuous_fields_then_reclassify",
+            grid["koppen_display_contract"]["method"],
+        )
+
+    def test_planetary_precipitation_relaxation_removes_lanes_and_preserves_total(self):
+        precipitation = [
+            [100.0, 900.0, 100.0, 900.0, 100.0]
+            for _row in range(5)
+        ]
+        elevation = [[100.0] * 5 for _row in range(5)]
+        corrected = _barrier_aware_relax_field(
+            precipitation,
+            elevation,
+            strength=0.34,
+            passes=3,
+            preserve_total=True,
+        )
+        before_lane_contrast = sum(
+            abs(precipitation[y][x + 1] - precipitation[y][x])
+            for y in range(5)
+            for x in range(4)
+        )
+        after_lane_contrast = sum(
+            abs(corrected[y][x + 1] - corrected[y][x])
+            for y in range(5)
+            for x in range(4)
+        )
+        self.assertLess(after_lane_contrast, before_lane_contrast * 0.45)
+        self.assertAlmostEqual(
+            sum(sum(row[:-1]) for row in precipitation),
+            sum(sum(row[:-1]) for row in corrected),
+            places=5,
+        )
 
     def test_regional_feedback_warm_start_reaches_same_climate_faster(self):
         atmosphere = {
