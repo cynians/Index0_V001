@@ -18,6 +18,15 @@ JOB_FIELDS = {
     "job_subtype": {"type": "string", "section": "Classification", "optional": True},
     "parent_job": {"type": "entity", "target": "jobs", "section": "Relations", "optional": True},
     "job_doctrine": {"type": "text", "section": "Doctrine", "optional": True},
+    "job_criticality": {
+        "type": "number", "section": "Doctrine", "optional": True,
+        "description": (
+            "0-1 base weight for how seriously this job is normally taken, independent of "
+            "who holds it or who employs them -- combines with the employer's "
+            "employer_discipline_level and the worker's own personality when a duty task "
+            "tied to this job is scored (see PersonSimulation._score_task)."
+        ),
+    },
     "intended_beneficiaries": {"type": "string_list", "section": "Doctrine", "optional": True},
     "output_allocation_doctrine": {"type": "text", "section": "Doctrine", "optional": True},
     "ownership_doctrine": {"type": "text", "section": "Doctrine", "optional": True},
@@ -60,19 +69,24 @@ SCHEMA_EXTENSIONS = {
         "production_lines": {"type": "dict_list", "section": "Production", "optional": True},
         "production_jobs": {"type": "entity_list", "target": "jobs", "section": "Production", "optional": True},
         "production_technologies": {"type": "entity_list", "target": "technologies", "section": "Production", "optional": True},
-        "employment_assignments": {"type": "entity_list", "target": "employments", "section": "Production", "optional": True},
+        "employer_discipline_level": {
+            "type": "number", "section": "Production", "optional": True,
+            "description": (
+                "0-1 baseline for how strictly this employer enforces compliance/indoctrination "
+                "-- feeds the coercion input of a duty task's decision score alongside the "
+                "worker's own personality, not a substitute for it."
+            ),
+        },
+        # Derived, never hand-authored: computed from every person's
+        # is_employed_by by EntityLoader.populate_employment_rosters(),
+        # the same way locations' offspring is derived from parent_location.
+        "employed_people": {"type": "entity_list", "target": "people", "section": "Workforce", "optional": True},
         "associated_cultural_aspects": {"type": "entity_list", "target": "cultural_aspects", "section": "Relations", "optional": True},
     },
     "person": {
-        "employment_assignments": {"type": "entity_list", "target": "employments", "section": "Class Relations", "optional": True},
-    },
-    "pop": {
-        "employment_assignments": {"type": "entity_list", "target": "employments", "section": "Class Relations", "optional": True},
-    },
-    "production": {
-        "assigned_jobs": {"type": "entity_list", "target": "jobs", "section": "Production", "optional": True},
-        "employed_technologies": {"type": "entity_list", "target": "technologies", "section": "Workflow", "optional": True},
-        "employment_assignments": {"type": "entity_list", "target": "employments", "section": "Workforce", "optional": True},
+        "is_employed_by": {"type": "entity_list", "target": ["producers", "institutions", "factions"], "section": "Employment", "optional": True},
+        "is_employed_as": {"type": "entity", "target": "jobs", "section": "Employment", "optional": True},
+        "is_employed_at": {"type": "entity", "target": "locations", "section": "Employment", "optional": True},
     },
 }
 

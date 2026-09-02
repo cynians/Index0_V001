@@ -1978,8 +1978,9 @@ class KnowledgeCanvasController:
 
                         channel = tool_info.get("channel")
                         slider_rect = tool_info.get("slider_rect")
-                        role = card_obj.get("active_color_role", "body")
-                        section_id = card_obj.get("active_wiki_section_id")
+                        color_field = tool_info.get("color_field")
+                        role = None if color_field else card_obj.get("active_color_role", "body")
+                        section_id = None if color_field else card_obj.get("active_wiki_section_id")
                         self._set_card_color_from_slider(
                             card_obj,
                             channel,
@@ -1988,6 +1989,7 @@ class KnowledgeCanvasController:
                             persist=False,
                             role=role,
                             section_id=section_id,
+                            color_field=color_field,
                         )
                         visual_rect = self._card_visual_rect(card_obj)
                         visual_area = visual_rect.width * visual_rect.height if visual_rect is not None else 0
@@ -2003,6 +2005,7 @@ class KnowledgeCanvasController:
                             "slider_rect": slider_rect,
                             "role": role,
                             "section_id": section_id,
+                            "color_field": color_field,
                             "last_update_ms": pygame.time.get_ticks(),
                             "pending_mouse_x": mouse_pos[0],
                             "preview_interval_ms": preview_interval_ms,

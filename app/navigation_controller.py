@@ -5,11 +5,15 @@ from engine.tab import Tab
 from simulations.space.space_simulation import SpaceSimulation
 from simulations.map.map_simulation import MapSimulation
 from simulations.bioregion.bioregion_simulation import BioregionSimulation
-from simulations.vehicle.vehicle_simulation import VehicleSimulation
+from simulations.vehicle.vehicle_design_simulation import VehicleDesignSimulation
 from simulations.person.person_simulation import PersonSimulation
+from simulations.person.site_simulation import SiteSimulation
+from simulations.pop.pop_simulation import PopSimulation
 from simulations.world_gen.world_gen_sim import WorldGenSimulation
 from simulations.building.building_sim import BuildingSimulation
 from simulations.phylogeny.phylogeny_simulation import PhylogenySimulation
+from simulations.formation.formation_simulation import FormationSimulation
+from world.temporal import DEFAULT_SIMULATION_YEAR
 
 try:
     from .launch_affordance_resolver import LaunchAffordanceResolver
@@ -191,8 +195,72 @@ class NavigationController:
         new_bioregion_sim = BioregionSimulation(
             world_model=self.app.world_model,
             biosphere_context=context,
+            biosphere_id=context.get("biosphere_id"),
         )
         patch_name = context.get("patch_name") or patch_id
+        new_tab = Tab(
+            SimulationInstance(new_bioregion_sim),
+            name=f"Biosphere: {patch_name}",
+            tab_key=tab_key,
+        )
+
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+        self.app.camera_controller.setup_for_sim(new_bioregion_sim)
+        return True
+
+    def launch_biosphere_tab(self, location_entity_id):
+        """
+        Open or focus the Biosphere overlaying a location, from a plain
+        location-card launch affordance -- no active MapSimulation required
+        (unlike launch_biosphere_design_tab, which drives the in-progress
+        polygon-draft/create flow from an already-open Map tab).
+        """
+        if not location_entity_id:
+            return False
+
+        location = self.app.world_model.get_entity(location_entity_id)
+        if not isinstance(location, dict):
+            return False
+
+        biosphere_id = location.get("biosphere_entity_id")
+        if not biosphere_id:
+            return False
+
+        tab_key = ("biosphere", biosphere_id)
+        if self.focus_existing_tab_by_key(tab_key):
+            self.app.knowledge_layer_active = False
+            return True
+
+        parent_id = location.get("parent_location") or location.get("parent_entity")
+        parent = self.app.world_model.get_entity(parent_id) if parent_id else None
+        active_sim = self.app.get_active_simulation()
+        year = getattr(active_sim, "year", 2400) if active_sim is not None else 2400
+        patch_name = location.get("name") or location.get("pretty_name") or location_entity_id
+
+        context = {
+            "patch_location_id": location_entity_id,
+            "patch_name": patch_name,
+            "parent_location_id": parent_id,
+            "root_location_id": parent_id,
+            "root_name": (parent or {}).get("name") or (parent or {}).get("pretty_name") or parent_id,
+            "year": year,
+            "source_bounds": location.get("bounds") or location.get("geometry"),
+            "biosphere_shape": location.get("biosphere_shape"),
+            "biosphere_area_m2": location.get("biosphere_area_m2"),
+            "biosphere_width_m": location.get("biosphere_width_m"),
+            "biosphere_height_m": location.get("biosphere_height_m"),
+            "map_size_m": location.get("biosphere_map_size_m") or 10.0,
+            "species_collection_id": location.get("biosphere_species_collection"),
+            "biosphere_id": biosphere_id,
+        }
+
+        new_bioregion_sim = BioregionSimulation(
+            world_model=self.app.world_model,
+            biosphere_context=context,
+            biosphere_id=biosphere_id,
+        )
         new_tab = Tab(
             SimulationInstance(new_bioregion_sim),
             name=f"Biosphere: {patch_name}",
@@ -222,13 +290,13 @@ class NavigationController:
             and vehicle_entity.get("location_class") in {"space_station", "station"}
         )
 
-        new_vehicle_sim = VehicleSimulation(
+        new_vehicle_sim = VehicleDesignSimulation(
             world_model=self.app.world_model,
             vehicle_entity_id=vehicle_entity_id,
         )
         new_tab = Tab(
             SimulationInstance(new_vehicle_sim),
-            name=(f"Station Design: {vehicle_name}" if is_station else f"Vehicle: {vehicle_name}"),
+            name=(f"Station Design: {vehicle_name}" if is_station else f"Vehicle Design: {vehicle_name}"),
             tab_key=tab_key
         )
 
@@ -279,6 +347,74 @@ class NavigationController:
         self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
         self.app.knowledge_layer_active = False
         self.app.camera_controller.setup_for_sim(new_person_sim)
+
+    def launch_pop_tab(self, pop_entity_id):
+        """
+        Open or focus a population composition view.
+        """
+        if not pop_entity_id:
+            return
+
+        tab_key = ("pop", pop_entity_id)
+
+        if self.focus_existing_tab_by_key(tab_key):
+            self.app.knowledge_layer_active = False
+            return
+
+        pop_entity = self.app.world_model.get_entity(pop_entity_id)
+        if not pop_entity:
+            return
+
+        active_sim = self.app.get_active_simulation()
+        year = getattr(active_sim, "year", 2400) if active_sim is not None else 2400
+        pop_name = pop_entity.get("pretty_name") or pop_entity.get("name") or pop_entity_id
+
+        new_pop_sim = PopSimulation(
+            world_model=self.app.world_model,
+            pop_entity_id=pop_entity_id,
+            year=year,
+        )
+        new_tab = Tab(
+            SimulationInstance(new_pop_sim),
+            name=f"Pop: {pop_name}",
+            tab_key=tab_key,
+        )
+
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+
+    def launch_site_simulation_tab(self, site_entity_id):
+        """Open the local person/population runtime for an authored location."""
+        if not site_entity_id:
+            return False
+        site = self.app.world_model.get_entity(site_entity_id)
+        if not site or not (
+            site.get("_dataset") == "locations"
+            or site.get("type") == "location"
+            or site.get("location_class")
+        ):
+            return False
+
+        tab_key = ("site_people", site_entity_id)
+        if self.focus_existing_tab_by_key(tab_key):
+            self.app.knowledge_layer_active = False
+            return True
+
+        active_sim = self.app.get_active_simulation()
+        year = getattr(active_sim, "year", 2400) if active_sim is not None else 2400
+        site_name = site.get("pretty_name") or site.get("name") or site_entity_id
+        simulation = SiteSimulation(self.app.world_model, site_entity_id, year=year)
+        new_tab = Tab(
+            SimulationInstance(simulation),
+            name=f"Site Sim: {site_name}",
+            tab_key=tab_key,
+        )
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+        self.app.camera_controller.setup_for_sim(simulation)
+        return True
 
     def launch_phylogeny_tab(self, clade_entity_id):
         """
@@ -513,10 +649,65 @@ class NavigationController:
             self.launch_person_tab(entity_id)
             return True
 
+        if mode == "pop":
+            self.launch_pop_tab(entity_id)
+            return True
+
+        if mode == "formation":
+            return self.launch_formation_tab(entity_id)
+
+        if mode == "formation_create":
+            if not self.launch_formation_tab(entity_id):
+                return False
+            simulation = self.app.get_active_simulation()
+            return bool(simulation and simulation.open_creation_menu())
+
+        if mode == "site_people":
+            return self.launch_site_simulation_tab(entity_id)
+
+        if mode == "biosphere":
+            return self.launch_biosphere_tab(entity_id)
+
         if mode == "phylogeny":
             return self.launch_phylogeny_tab(entity_id)
 
         return False
+
+    def launch_formation_tab(self, formation_id):
+        """Open or focus the first Formation Sim workspace."""
+        if not formation_id:
+            return False
+
+        formation = self.app.world_model.get_entity(formation_id)
+        if not formation:
+            return False
+        if formation.get("_dataset") != "formations" and formation.get("type") != "formation":
+            return False
+
+        tab_key = ("formation", formation_id)
+        if self.focus_existing_tab_by_key(tab_key):
+            self.app.knowledge_layer_active = False
+            return True
+
+        active_simulation = self.app.get_active_simulation()
+        year = getattr(active_simulation, "year", DEFAULT_SIMULATION_YEAR)
+        simulation = FormationSimulation(
+            world_model=self.app.world_model,
+            formation_id=formation_id,
+            year=year,
+        )
+        formation_name = formation.get("pretty_name") or formation.get("name") or formation_id
+        new_tab = Tab(
+            SimulationInstance(simulation),
+            name=f"Formation: {formation_name}",
+            tab_key=tab_key,
+        )
+
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+        self.app.camera_controller.setup_for_sim(simulation)
+        return True
 
     def open_parent_region_map_tab(self, map_sim):
         """
@@ -722,6 +913,9 @@ class NavigationController:
 
         if render_mode == "person":
             return getattr(active_sim, "person_entity_id", None) or self.app.repository_scope_entity_id
+
+        if render_mode == "pop":
+            return getattr(active_sim, "pop_entity_id", None) or self.app.repository_scope_entity_id
 
         return self.app.repository_scope_entity_id
 

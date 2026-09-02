@@ -3,6 +3,11 @@
 Architecture invariants: ontology data is the sole durable entity/semantic
 authority; heightfields and lookup tables are disposable products and caches.
 No generated planet currently needs backward-compatible regeneration.
+
+LOD contract: the full-planet heightmap is canonical LOD0 scientific truth;
+its sample support must be sufficient for continents, basins, mountain systems,
+and parent conditions. Child heightmaps are parent samples plus bounded
+child-scale residuals, never a second root-generation path.
 """
 
 import copy
@@ -21,6 +26,39 @@ from simulations.world_gen.terrain_seed import (
 _NOISE_CORNER_CACHE = {}
 
 DEFORMATION_STATE_MODEL_VERSION = "planetary-deformation-v1-reduced-flexure"
+
+# LOD0 is the canonical full-planet scientific surface.  The display canvas
+# remains 8192x4096, but the scientific grid must be materially finer than a
+# display-independent 385x193 fallback: downstream climate, coast, materials,
+# and all future child LODs inherit this grid as planetary truth.
+CANONICAL_LOD0_SAMPLE_WIDTH = 1025
+CANONICAL_LOD0_SAMPLE_HEIGHT = 513
+CANONICAL_LOD0_BENCHMARK_DIMENSIONS = (2049, 1025)
+CANONICAL_LOD0_RESOLUTION_VERSION = "lod0-canonical-grid-v1"
+
+
+def _heightmap_sample_dimensions(canvas, heightfield):
+    """Return an explicit canonical LOD0 scientific grid size.
+
+    Authored callers may request a bounded benchmark or fixture grid through
+    ``heightfield.scientific_sample_dimensions``.  The ordinary world-gen
+    route always uses the canonical LOD0 dimensions and never derives science
+    resolution from the render canvas.
+    """
+    requested = heightfield.get("scientific_sample_dimensions")
+    if requested is None:
+        requested = canvas.get("scientific_sample_dimensions")
+    if isinstance(requested, dict):
+        requested = (requested.get("width"), requested.get("height"))
+    if isinstance(requested, (list, tuple)) and len(requested) == 2:
+        try:
+            width = int(requested[0])
+            height = int(requested[1])
+        except (TypeError, ValueError):
+            width = height = 0
+        if width >= 3 and height >= 3 and width % 2 == 1 and height % 2 == 1:
+            return width, height, "explicit"
+    return CANONICAL_LOD0_SAMPLE_WIDTH, CANONICAL_LOD0_SAMPLE_HEIGHT, "canonical_lod0"
 
 
 @lru_cache(maxsize=4096)
@@ -453,6 +491,28 @@ def _heightmap_tectonic_model(tectonic_model):
         if isinstance(system, dict) and system.get("id")
     }
     return sampled
+
+
+def _ensure_heightmap_tectonic_model(tectonic_model):
+    """Return a tectonic model with the heightfield lookup structures ready.
+
+    Regional derivative refreshes are also called by older world-generation
+    paths that pass the durable raw tectonic snapshot.  Keep those callers
+    correct and fast by materializing the same private indexes used by the
+    production height evaluator exactly once per model object.
+    """
+    if not isinstance(tectonic_model, dict):
+        return tectonic_model
+    segments = tectonic_model.get("boundary_segments") or []
+    spatial_index = tectonic_model.get("_heightmap_boundary_spatial_index")
+    system_lookup = tectonic_model.get("_heightmap_orogen_system_lookup")
+    if (
+        isinstance(spatial_index, dict)
+        and isinstance(system_lookup, dict)
+        and tectonic_model.get("heightmap_boundary_segment_count") == len(segments)
+    ):
+        return tectonic_model
+    return _heightmap_tectonic_model(tectonic_model)
 
 
 def _boundary_spatial_index(segments, bins_x=64, bins_y=32):
@@ -1416,7 +1476,14 @@ def _ice_score(nx, ny, elevation, min_elevation, max_elevation, map_seed=""):
         math.sin(nx * math.tau * seed_range(map_seed, "ice_freq_a", 1.2, 2.8) + seed_range(map_seed, "ice_phase_a", 0.0, math.tau))
         + math.cos((nx + ny) * math.tau * seed_range(map_seed, "ice_freq_b", 0.8, 1.9) + seed_range(map_seed, "ice_phase_b", 0.0, math.tau))
     ) * 0.08
-    return latitude_polarity * 0.68 + elevation_norm * 0.22 + ridge_noise
+    # Elevation can push the snow line toward the equator, but only where
+    # latitude has already brought it into plausible range -- gating it by
+    # latitude_polarity instead of adding it flat. A flat additive elevation
+    # term let the top-N quota selection below outrank genuine polar cells
+    # with merely-tall equatorial terrain, glaciating mountains at the
+    # equator purely to fill the planet's target ice fraction.
+    elevation_bonus = elevation_norm * latitude_polarity * 0.34
+    return latitude_polarity * 0.66 + elevation_bonus + ridge_noise
 
 
 def sea_level_for_equivalent_water_depth(rows, equivalent_depth_m, wrap_x=True):
@@ -1450,6 +1517,104 @@ def sea_level_for_equivalent_water_depth(rows, equivalent_depth_m, wrap_x=True):
         else:
             high = candidate
     return (low + high) * 0.5
+
+
+def _materialize_shallow_margin_bathymetry(rows, sea_level, tectonic_model=None, circumference_m=0.0):
+    """Create a bounded shallow-margin ramp before shelf classification.
+
+    The tectonic height sampler correctly creates deep ocean basins, but its
+    continental/oceanic freeboard transition can be steeper than a planetary
+    sample cell.  In that case the existing shelf classifier sees almost no
+    cells between sea level and 420 m depth.  This pass raises only submerged
+    cells immediately offshore toward a passive-margin ramp; active convergent
+    margins retain a much narrower response.  Water volume is conserved later
+    by the normal sea-level solve.
+    """
+    if sea_level is None or not rows or not rows[0]:
+        return {"status": "not_applicable", "raised_cell_count": 0}
+    height, width = len(rows), len(rows[0])
+    unique_width = width - 1 if width > 1 else width
+    spacing_m = max(
+        1.0,
+        float(circumference_m or 0.0) / max(1, unique_width - 1),
+    )
+    band_cells = max(2, min(8, int(round(520.0 / spacing_m)) + 2))
+    distance = [[999 for _x in range(width)] for _y in range(height)]
+    frontier = []
+    for y in range(height):
+        for x in range(unique_width):
+            if float(rows[y][x]) >= float(sea_level):
+                distance[y][x] = 0
+                frontier.append((x, y))
+    cursor = 0
+    while cursor < len(frontier):
+        x, y = frontier[cursor]
+        cursor += 1
+        next_distance = distance[y][x] + 1
+        for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+            if ny < 0 or ny >= height:
+                continue
+            nx %= unique_width
+            if next_distance < distance[ny][nx]:
+                distance[ny][nx] = next_distance
+                frontier.append((nx, ny))
+
+    boundaries = [
+        segment for segment in (tectonic_model or {}).get("boundary_segments") or []
+        if isinstance(segment, dict)
+    ]
+    raised = 0
+    for y in range(height):
+        ny = y / max(1, height - 1)
+        for x in range(unique_width):
+            current = float(rows[y][x])
+            if current >= float(sea_level) or distance[y][x] > band_cells:
+                continue
+            nx = x / max(1, unique_width - 1)
+            step = float(distance[y][x])
+            target_depth = 55.0 + 365.0 * (step / max(1.0, band_cells))
+            target = float(sea_level) - target_depth
+            if current >= target:
+                continue
+            active_margin = 1.0
+            for segment in boundaries:
+                kind = str(segment.get("kind") or "")
+                if kind not in {"subduction", "collision", "divergent"}:
+                    continue
+                distance_to_boundary = _wrapped_point_segment_distance(
+                    nx,
+                    ny,
+                    float(segment.get("x1", 0.0) or 0.0),
+                    float(segment.get("y1", 0.5) or 0.5),
+                    float(segment.get("x2", 0.0) or 0.0),
+                    float(segment.get("y2", 0.5) or 0.5),
+                )
+                if distance_to_boundary <= 0.035:
+                    active_margin = min(
+                        active_margin,
+                        0.22 if kind == "subduction" else 0.42,
+                    )
+            if active_margin >= 0.999:
+                # A passive shelf is a bounded shallow-water condition, not
+                # a soft colour transition.  Enforce the ramp's lower bound
+                # so a one-cell continental/oceanic freeboard jump cannot
+                # erase the shelf entirely.
+                updated = max(current, target)
+            else:
+                blend = active_margin * (0.74 - 0.16 * step / max(1.0, band_cells))
+                updated = current * (1.0 - blend) + target * blend
+            if updated > current:
+                rows[y][x] = round(updated, 1)
+                raised += 1
+    for y in range(height):
+        rows[y][-1] = rows[y][0]
+    return {
+        "status": "shallow_margin_bathymetry_materialized",
+        "raised_cell_count": raised,
+        "band_cells": band_cells,
+        "shelf_depth_limit_m": 420.0,
+        "active_margin_blend": "subduction_0.22_collision_0.42_passive_1.0",
+    }
 
 
 def _shelf_and_sediment_model(rows, sea_level, tectonic_model=None):
@@ -1506,7 +1671,16 @@ def _shelf_and_sediment_model(rows, sea_level, tectonic_model=None):
 HEIGHTMAP_DERIVATIVE_MODEL_VERSION = "heightmap-derivatives-v2"
 
 
-def _mountain_morphology_mask(rows, land_rows, cell_spacing_m, *, wrap_x=False):
+def _mountain_morphology_mask(
+    rows,
+    land_rows,
+    cell_spacing_m,
+    *,
+    wrap_x=False,
+    tectonic_model=None,
+    source_uv_bounds=None,
+    sea_level=None,
+):
     """Classify resolved mountain terrain from relief, not latitude or noise.
 
     The returned field is deliberately continuous.  Regional refinement can
@@ -1550,6 +1724,56 @@ def _mountain_morphology_mask(rows, land_rows, cell_spacing_m, *, wrap_x=False):
         if wrap_x and width > unique_width:
             raw[y][-1] = raw[y][0]
 
+    # A regional child can resolve a mountain system as a broad, mostly
+    # monotonic rise.  In that case local relief alone is below the threshold
+    # even though the production tectonic model explicitly places the cell in
+    # an active uplift/arc system.  Use that causal signal as support for the
+    # inherited mask, but only for regional products; the canonical planetary
+    # derivative remains purely height-derived.
+    if source_uv_bounds and isinstance(tectonic_model, dict):
+        tectonic_support = [[0.0] * width for _ in range(height)]
+        min_u = float(source_uv_bounds.get("min_u", 0.0) or 0.0)
+        max_u = float(source_uv_bounds.get("max_u", 1.0) or 1.0)
+        min_v = float(source_uv_bounds.get("min_v", 0.0) or 0.0)
+        max_v = float(source_uv_bounds.get("max_v", 1.0) or 1.0)
+        for y in range(height):
+            v = min_v + (max_v - min_v) * y / max(1, height - 1)
+            for x in range(unique_width):
+                if not land_rows[y][x]:
+                    continue
+                u = min_u + (max_u - min_u) * x / max(1, unique_width - 1)
+                response = _orogen_forcing_at(u, v, tectonic_model)
+                uplift = _clamp(
+                    float(response.get("rock_uplift_m", 0.0) or 0.0) / 1800.0,
+                    0.0,
+                    1.0,
+                )
+                volcanic = _clamp(
+                    float(response.get("volcanic_construction_m", 0.0) or 0.0) / 2400.0,
+                    0.0,
+                    1.0,
+                )
+                convergence = _clamp(
+                    float(response.get("convergent_influence", 0.0) or 0.0) / 2.0,
+                    0.0,
+                    1.0,
+                )
+                tectonic_score = _clamp(
+                    uplift * 0.52 + volcanic * 0.28 + convergence * 0.20,
+                    0.0,
+                    1.0,
+                )
+                if sea_level is not None:
+                    standing = _smoothstep(
+                        (float(rows[y][x]) - float(sea_level) - 250.0) / 1000.0
+                    )
+                    tectonic_score *= 0.30 + 0.70 * standing
+                tectonic_support[y][x] = round(tectonic_score, 4)
+            if wrap_x and width > unique_width:
+                tectonic_support[y][-1] = tectonic_support[y][0]
+        for y in range(height):
+            for x in range(unique_width):
+                raw[y][x] = max(raw[y][x], tectonic_support[y][x] * 0.82)
     # Two compact diffusion passes produce a coherent belt mask while
     # preserving broad non-mountain interiors as exact zeroes.
     smoothed = raw
@@ -1569,6 +1793,8 @@ def _mountain_morphology_mask(rows, land_rows, cell_spacing_m, *, wrap_x=False):
             if wrap_x and width > unique_width:
                 next_rows[y][-1] = next_rows[y][0]
         smoothed = next_rows
+    # Keep the helper's historical two-value return contract; callers and
+    # tests outside derivative refresh use it directly.
     return smoothed, relief_threshold_m
 
 
@@ -1602,6 +1828,11 @@ def refresh_heightmap_derivatives(heightmap, *, tectonic_model=None, inherited_s
     wrap_x = bool(grid.get("wrap_x", refreshed.get("wrap_x", True)))
     unique_width = width - 1 if wrap_x and width > 1 else width
     regional = str(refreshed.get("coverage") or "full_planet") != "full_planet" or not wrap_x
+    indexed_tectonic_model = (
+        _ensure_heightmap_tectonic_model(tectonic_model)
+        if regional and isinstance(tectonic_model, dict)
+        else tectonic_model
+    )
     equivalent_depth = max(0.0, float(refreshed.get("equivalent_global_water_depth_m", 0.0) or 0.0))
     if regional and inherited_sea_level_m is not None:
         sea_level = float(inherited_sea_level_m)
@@ -1660,7 +1891,17 @@ def refresh_heightmap_derivatives(heightmap, *, tectonic_model=None, inherited_s
         if wrap_x and width > unique_width:
             ice_adjacency_rows[y][-1] = ice_adjacency_rows[y][0]
 
-    shelf_model = _shelf_and_sediment_model(rows, sea_level, tectonic_model)
+    shelf_model = _shelf_and_sediment_model(rows, sea_level, indexed_tectonic_model)
+    prior_shelf_model = refreshed.get("shelf_sediment_model")
+    if isinstance(prior_shelf_model, dict) and isinstance(
+        prior_shelf_model.get("bathymetry_materialization"), dict
+    ):
+        # Derivative refreshes rebuild the shelf rows from the evolved
+        # heightfield, but must retain the causal audit that explains why the
+        # canonical parent contains a shallow-margin ramp.
+        shelf_model["bathymetry_materialization"] = copy.deepcopy(
+            prior_shelf_model["bathymetry_materialization"]
+        )
     shelf_rows = shelf_model.get("shelf_rows") or []
     if wrap_x:
         for row in shelf_rows:
@@ -1691,6 +1932,14 @@ def refresh_heightmap_derivatives(heightmap, *, tectonic_model=None, inherited_s
         land_rows,
         cell_spacing_m,
         wrap_x=wrap_x,
+        tectonic_model=indexed_tectonic_model if regional else None,
+        source_uv_bounds=refreshed.get("source_uv_bounds") if regional else None,
+        sea_level=sea_level,
+    )
+    mountain_support_source = (
+        "resolved_relief_plus_production_orogen"
+        if regional and isinstance(tectonic_model, dict)
+        else "resolved_relief"
     )
     coastal_gradients = []
     shelf_cell_count = 0
@@ -1750,8 +1999,9 @@ def refresh_heightmap_derivatives(heightmap, *, tectonic_model=None, inherited_s
         "shelf_sediment_model": shelf_model,
         "derivative_model_version": HEIGHTMAP_DERIVATIVE_MODEL_VERSION,
         "mountain_morphology": {
-            "model": "resolved_local_relief_v1",
+            "model": "resolved_relief_plus_orogen_support_v2",
             "relief_threshold_m": round(mountain_relief_threshold_m, 2),
+            "support_source": mountain_support_source,
             "mountain_cell_fraction": round(
                 sum(mountain_rows[y][x] >= 0.35 for y in range(height) for x in range(unique_width))
                 / max(1, height * unique_width),
@@ -1829,14 +2079,13 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         sampled_tectonic_model["deformation_state_model"] = deformation_state_model
     explicit_crater_model = isinstance(crater_model, dict)
 
-    # A 257x129 parent exposed ~156 km cells as visible coast and contour
-    # stairs. 385x193 is the next practical planetary truth level; climate may
-    # still solve on a filtered 257-wide grid, while regional inheritance and
-    # coast crossings retain the denser parent geometry.
-    sample_width = max(193, min(385, int(width_px // 21) + 1))
-    if sample_width % 2 == 0:
-        sample_width += 1
-    sample_height = max(97, min(193, int((sample_width - 1) / 2) + 1))
+    # LOD0 scientific resolution is an explicit physical contract.  It must
+    # not change when the display canvas changes, and must not be inferred from
+    # render pixels.  A smaller explicit grid remains available for authored
+    # fixtures and bounded performance benchmarks.
+    sample_width, sample_height, resolution_mode = _heightmap_sample_dimensions(
+        canvas, heightfield,
+    )
     rows = []
     sample_values = []
     sample_positions = []
@@ -1906,8 +2155,36 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
                         max_elevation,
                     ),
                     1,
-                )
+            )
             rows[row_index][-1] = rows[row_index][0]
+        sample_values = [value for row_values in rows for value in row_values]
+        sample_positions = [
+            (
+                col,
+                row,
+                0.0 if col == sample_width - 1 else col / max(1, sample_width - 1),
+                row / max(1, sample_height - 1),
+                rows[row][col],
+            )
+            for row in range(sample_height)
+            for col in range(sample_width)
+        ]
+
+    # The tectonic sampler remains the source of truth for continental and
+    # oceanic elevation.  At planetary LOD0 its freeboard transition can be
+    # steeper than one scientific cell, which otherwise removes nearly all
+    # continental-shelf cells before the shelf and sediment systems see them.
+    # Materialize a bounded margin ramp here, then let the normal water-volume
+    # solve restore the global datum.  Authored small grids retain their old
+    # behavior so fixtures and regional products are not silently changed.
+    bathymetry_materialization = {"status": "not_applicable"}
+    if resolution_mode == "canonical_lod0" and preliminary_sea_level is not None:
+        bathymetry_materialization = _materialize_shallow_margin_bathymetry(
+            rows,
+            preliminary_sea_level,
+            sampled_tectonic_model,
+            circumference_m,
+        )
         sample_values = [value for row_values in rows for value in row_values]
         sample_positions = [
             (
@@ -1958,6 +2235,7 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
     ice_count = sum(1 for row in ice_rows for value in row if value)
     ice_fraction = ice_count / sample_count
     shelf_model = _shelf_and_sediment_model(rows, sea_level_value, sampled_tectonic_model)
+    shelf_model["bathymetry_materialization"] = bathymetry_materialization
 
     model = {
         "status": "heightmap_seeded",
@@ -2022,7 +2300,7 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         },
         "shelf_sediment_model": shelf_model,
         "geology_model": {
-            "model_version": "physiographic-heightmap-v7-deformation-state",
+            "model_version": "physiographic-heightmap-v8-canonical-lod0",
             "surface_regime": terrain.get("surface_regime", "rocky_surface"),
             "continental_lithosphere": None if terrain.get("surface_regime") == "cratered_ice_shell" else "assembled_cratons_accreted_terranes_rifted_margins",
             "oceanic_lithosphere": None if terrain.get("surface_regime") == "cratered_ice_shell" else "abyssal_plains_ridges_trenches",
@@ -2041,6 +2319,24 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
             "inland_basin_count": len(_continental_process_model(str(map_seed or ""))["basins"]),
             "hotspot_chain_count": len(_continental_process_model(str(map_seed or ""))["island_chains"]),
             "sample_resolution": f"{sample_width}x{sample_height}",
+        },
+        "resolution_contract": {
+            "version": CANONICAL_LOD0_RESOLUTION_VERSION,
+            "detail_level": 0,
+            "mode": resolution_mode,
+            "scientific_sample_dimensions": {
+                "width": sample_width,
+                "height": sample_height,
+            },
+            "render_canvas_dimensions": {
+                "width": width_px,
+                "height": height_px,
+            },
+            "benchmark_dimensions": {
+                "width": CANONICAL_LOD0_BENCHMARK_DIMENSIONS[0],
+                "height": CANONICAL_LOD0_BENCHMARK_DIMENSIONS[1],
+            },
+            "resolution_source": "explicit_scientific_grid_not_render_pixels",
         },
         "storage": {
             "kind": "chunked_heightfield_seed",

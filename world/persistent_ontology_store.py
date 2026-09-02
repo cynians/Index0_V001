@@ -929,6 +929,13 @@ class PersistentOntologyStore:
         if entity_class is None:
             with ontology:
                 entity_class = types.new_class(class_name, (owlready2.Thing,))
+        # Older imports can leave Owlready's allocator below the highest
+        # resource already present in the quadstore. Synchronize it before
+        # creating a new individual so authoring does not reuse a storid.
+        world.graph.execute(
+            "UPDATE store SET current_resource = MAX(current_resource, "
+            "(SELECT MAX(storid) FROM resources))"
+        )
         individual = entity_class(self._owl_name(f"entry_{entity.get('id')}"))
         individual.iri = f"{ENTITY_IRI}{quote(str(entity.get('id')), safe='')}"
         return individual

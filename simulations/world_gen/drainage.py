@@ -1,4 +1,9 @@
-"""Scale-aware watershed, lake, and branching river-network generation."""
+"""Scale-aware watershed, lake, and branching river-network generation.
+
+LOD contract: major basins and rivers originate in LOD0; child levels inherit
+the parent drainage scaffold and resolve tributaries, channels, banks, and
+microdrainage only when their physical footprint can support them.
+"""
 
 import heapq
 import math

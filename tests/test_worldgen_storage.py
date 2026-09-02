@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import patch
@@ -28,6 +29,7 @@ class _Result:
     regional_layer_images: list = None
     contact_sheet: str = ""
     regional_contact_sheet: str = ""
+    regional_lod_overview: str = ""
 
 
 class WorldGenStorageTests(unittest.TestCase):
@@ -75,6 +77,47 @@ class WorldGenStorageTests(unittest.TestCase):
             self.assertEqual("index0_worldgen_bundle", validate_worldgen_bundle(destination)["format"])
             self.assertEqual("planet_x", read_worldgen_bundle_json(destination, "planet.json")["id"])
             self.assertEqual([], list(destination.parent.glob("*.tmp-*")))
+
+    def test_bundle_rebases_retained_diagnostic_paths(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            run = root / "run"
+            image = run / "images" / "overview.png"
+            image.parent.mkdir(parents=True)
+            image.write_bytes(b"png")
+            summary = run / "summary.json"
+            summary.write_text(json.dumps({"render_diagnostics": {"overview": str(image)}}), encoding="utf-8")
+            result = _Result(
+                output_root=str(run), planet_id="planet_x",
+                input_contract_path="", summary_path=str(summary), planet_path="",
+                stage_screenshots=[], layer_images=[], regional_layer_images=[],
+                regional_lod_overview=str(image),
+            )
+            destination = root / "retained" / "planet_x.i0wg"
+            write_worldgen_bundle(destination, result=result, include_images=True)
+
+            bundled_result = read_worldgen_bundle_json(destination, "result.json")
+            bundled_summary = read_worldgen_bundle_json(destination, "summary.json")
+            self.assertEqual("images/overview.png", bundled_result["regional_lod_overview"])
+            self.assertEqual("images/overview.png", bundled_summary["render_diagnostics"]["overview"])
+
+    def test_bundle_includes_run_local_raster_assets(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            run = root / "run"
+            raster = run / "repository" / "assets" / "maps" / "material_heatmaps" / "planet.i0r"
+            raster.parent.mkdir(parents=True)
+            raster.write_bytes(b"raster-bundle")
+            result = _Result(
+                output_root=str(run), planet_id="planet_x",
+                input_contract_path="", summary_path="", planet_path="",
+                stage_screenshots=[], layer_images=[], regional_layer_images=[],
+            )
+            destination = root / "retained" / "planet_x.i0wg"
+            write_worldgen_bundle(destination, result=result)
+
+            with zipfile.ZipFile(destination, "r") as archive:
+                self.assertIn("derived/repository/assets/maps/material_heatmaps/planet.i0r", archive.namelist())
 
     def test_policy_rejects_cleanup_outside_generated_roots(self):
         with tempfile.TemporaryDirectory() as temp_dir:

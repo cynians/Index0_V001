@@ -31,10 +31,12 @@ from simulations.world_gen.generation_contract import (
     contract_fingerprint,
     validate_generation_input_contract,
 )
+from simulations.world_gen.heightmap import _clamp
 from simulations.world_gen.material_heatmaps import load_raster_bundle_surface
-from simulations.world_gen.regional_refinement import generate_refined_region
+from simulations.world_gen.regional_refinement import map_physical_dimensions_m
 from simulations.world_gen.world_gen_renderer import WorldGenRenderer
 from simulations.world_gen.world_gen_sim import WorldGenSimulation
+from simulations.world_gen.worldgen_diagnostics import derive_causal_feature_diagnostics
 from world.world_model import WorldModel
 
 
@@ -61,6 +63,21 @@ class HeadlessWorldGenConfig:
     regional_center_x: float = 0.5
     regional_center_y: float = 0.5
     regional_target_mode: str = "manual"
+    # Optional physical footprint for the first refinement.  The ordinary
+    # runner keeps its historical fractional crop when these are zero; the
+    # representative-world scenario can additionally provide an explicit
+    # per-LOD footprint schedule.
+    regional_width_km: float = 0.0
+    regional_height_km: float = 0.0
+    regional_center_seed: int = None
+    regional_center_latitude: float = None
+    regional_center_longitude: float = None
+    # Optional per-level physical footprints.  This lets the representative
+    # fixture exercise the documented 500-2000 km LOD1 macroregion followed by
+    # a 100 km LOD2 region, while ordinary callers retain fractional zoom.
+    regional_footprint_schedule_km: tuple = None
+    force_plate_tectonics: bool = False
+    earthlike_constraints: bool = False
     render_outputs: bool = True
     trace_elements: list = field(default_factory=list)
     replay_contract_path: str = ""
@@ -68,6 +85,13 @@ class HeadlessWorldGenConfig:
     attach_moon: bool = False
     moon_semi_major_axis_km: float = 384_400.0
     moon_radius_earth: float = 0.27
+    # Optional scientific-grid and feedback budgets for representative runs.
+    # These are normal world-generation parameters: the production stage
+    # actions and models remain unchanged, while a bounded scenario can use a
+    # coarser canonical support and fewer climate/landscape feedback passes.
+    scientific_sample_dimensions: tuple = None
+    regional_sample_dimensions: tuple = None
+    worldgen_feedback_iterations: int = 2
 
 
 @dataclass
@@ -83,10 +107,14 @@ class HeadlessWorldGenResult:
     planet_path: str
     runtime_classes: dict
     regional_refinement_ids: list
+    regional_refinement_manifest: list
     regional_materials_path: str
     regional_region_path: str
     regional_layer_images: list
     regional_contact_sheet: str
+    regional_level_diagnostics: list
+    regional_lod_overview: str
+    regional_level_snapshot_paths: list
     input_contract_path: str
 
 
@@ -97,6 +125,80 @@ class IsolatedHeadlessWorldGenResult:
     summary: dict
     stage_fingerprints: list
     bundle_path: str = ""
+
+
+PRODUCTION_WORLDGEN_STAGE_ACTIONS = (
+    "_save_selected_planet_seed",
+    "_save_atmosphere_model",
+    "_save_interior_regime_model",
+    "_save_terrain_seed_model",
+    "_handle_heightmap_primary_action",
+)
+
+
+def verify_production_pipeline(
+    simulation,
+    action_sequence,
+    *,
+    tectonic_pass_used=False,
+    gas_giant_terminal=False,
+    regional_selection_diagnostics=None,
+):
+    """Return evidence that headless generation used production stage methods.
+
+    The representative scenario is intentionally an isolated execution, but
+    isolation must not mean a second generator.  This check records both the
+    actual action sequence and the bound method modules so a future test
+    runner cannot quietly replace a production action with a fixture helper.
+    """
+    expected = list(PRODUCTION_WORLDGEN_STAGE_ACTIONS[:2]) if gas_giant_terminal else [
+        *PRODUCTION_WORLDGEN_STAGE_ACTIONS[:4],
+        *([PRODUCTION_WORLDGEN_STAGE_ACTIONS[4]] if tectonic_pass_used else []),
+        PRODUCTION_WORLDGEN_STAGE_ACTIONS[4],
+    ]
+    actual = [str(name) for name in action_sequence]
+    bindings = {}
+    bound_methods_verified = True
+    for name in dict.fromkeys(expected):
+        method = getattr(simulation, name, None)
+        function = getattr(method, "__func__", method)
+        bound_to_simulation = getattr(method, "__self__", None) is simulation
+        module = getattr(function, "__module__", None)
+        bindings[name] = {
+            "bound_to_simulation": bound_to_simulation,
+            "module": module,
+            "qualname": getattr(function, "__qualname__", None),
+        }
+        bound_methods_verified = bound_methods_verified and (
+            bound_to_simulation
+            and module == "simulations.world_gen.world_gen_sim"
+        )
+
+    diagnostics = regional_selection_diagnostics or []
+    regional_route_verified = all(
+        item.get("route") == "MapSimulation.regenerate_visible_region"
+        for item in diagnostics
+    )
+    return {
+        "verified": bool(
+            simulation.__class__ is WorldGenSimulation
+            and actual == expected
+            and bound_methods_verified
+            and regional_route_verified
+        ),
+        "simulation_class": f"{simulation.__class__.__module__}.{simulation.__class__.__name__}",
+        "stage_action_sequence": actual,
+        "expected_stage_action_sequence": expected,
+        "stage_action_bindings": bindings,
+        "regional_route": (
+            "MapSimulation.regenerate_visible_region"
+            if diagnostics
+            else None
+        ),
+        "regional_route_verified": regional_route_verified,
+        "isolation_scope": "isolated_world_model_and_run_local_storage",
+        "generator_scope": "production_worldgen_simulation_and_stage_handlers",
+    }
 
 
 class HeadlessWorldGenRunner:
@@ -143,11 +245,62 @@ class HeadlessWorldGenRunner:
             1.0,
             float(global_crater_model.get("radius_m", entity.get("radius_m", 1.0)) or 1.0),
         )
+        tectonic_model = entity.get("tectonic_model") or {}
+        all_boundary_segments = [
+            segment for segment in (tectonic_model.get("boundary_segments") or [])
+            if isinstance(segment, dict)
+        ]
+        segments_by_id = {
+            str(segment.get("id")): segment
+            for segment in all_boundary_segments
+            if segment.get("id")
+        }
+        orogen_model = tectonic_model.get("orogen_system_model") or {}
+        mountain_systems = []
+        for system in (orogen_model.get("systems") or []):
+            if not isinstance(system, dict):
+                continue
+            mechanism = str(system.get("mechanism") or "")
+            if mechanism not in {
+                "continental_collision",
+                "ocean_continent_subduction",
+                "island_arc_subduction",
+                "transpressional_strike_slip",
+            }:
+                continue
+            segments = [
+                segments_by_id[str(segment_id)]
+                for segment_id in (system.get("source_segment_ids") or [])
+                if str(segment_id) in segments_by_id
+            ]
+            if segments:
+                mountain_systems.append((system, segments))
         tectonic_segments = [
             segment
-            for segment in ((entity.get("tectonic_model") or {}).get("boundary_segments") or [])
-            if str(segment.get("kind") or "") in {"collision", "subduction"}
+            for _system, segments in mountain_systems
+            for segment in segments
         ]
+        if not tectonic_segments:
+            tectonic_segments = [
+                segment for segment in all_boundary_segments
+                if str(segment.get("kind") or "") in {"collision", "subduction"}
+            ]
+
+        def segment_distance(u, v, segment):
+            x1 = float(segment.get("x1", 0.5) or 0.5)
+            x2 = x1 + ((float(segment.get("x2", x1) or x1) - x1 + 0.5) % 1.0 - 0.5)
+            y1 = float(segment.get("y1", 0.5) or 0.5)
+            y2 = float(segment.get("y2", y1) or y1)
+            px = float(u)
+            if px - x1 > 0.5:
+                px -= 1.0
+            elif px - x1 < -0.5:
+                px += 1.0
+            dx, dy = x2 - x1, y2 - y1
+            length_sq = dx * dx + dy * dy
+            t = 0.0 if length_sq <= 1e-12 else ((px - x1) * dx + (float(v) - y1) * dy) / length_sq
+            t = max(0.0, min(1.0, t))
+            return math.hypot(px - (x1 + dx * t), float(v) - (y1 + dy * t))
         candidate_pixels = [
             (x, y)
             for y in range(max(radius, int(height * 0.16)), min(height - radius, int(height * 0.84) + 1))
@@ -164,6 +317,31 @@ class HeadlessWorldGenRunner:
                 du = min(du, 1.0 - du)
                 distance = math.hypot(du * 2.0, v - sv)
                 tectonic_bonus = max(tectonic_bonus, 0.12 * max(0.0, 1.0 - distance / 0.10))
+            connected_orogen_bonus = 0.0
+            for system, segments in mountain_systems:
+                mean_width = float(
+                    ((system.get("geometry") or {}).get("mean_influence_width", 0.025))
+                    or 0.025
+                )
+                distance = min(segment_distance(u, v, segment) for segment in segments)
+                corridor = max(0.018, mean_width * 3.2)
+                if distance <= corridor:
+                    geometry = system.get("geometry") or {}
+                    length_prior = _clamp(
+                        float(geometry.get("length_km", 0.0) or 0.0) / 5000.0,
+                        0.0,
+                        1.0,
+                    )
+                    activity_prior = _clamp(
+                        float((system.get("kinematics") or {}).get("activity", 0.0) or 0.0),
+                        0.0,
+                        1.0,
+                    )
+                    connected_orogen_bonus = max(
+                        connected_orogen_bonus,
+                        (0.09 + length_prior * 0.08 + activity_prior * 0.07)
+                        * max(0.0, 1.0 - distance / corridor),
+                    )
             inside_crater = False
             for crater in regional_craters:
                 cu, cv = float(crater.get("center_u", -10.0)), float(crater.get("center_v", -10.0))
@@ -205,10 +383,276 @@ class HeadlessWorldGenRunner:
             local_relief = max([center, *samples]) - min([center, *samples])
             prominence = max(0.0, center - sum(samples) / len(samples))
             altitude = max(0.0, center - land_floor)
-            score = local_relief / span * 0.64 + prominence / span * 0.16 + altitude / span * 0.14 + tectonic_bonus
+            score = (
+                local_relief / span * 0.58
+                + prominence / span * 0.14
+                + altitude / span * 0.12
+                + tectonic_bonus
+                + connected_orogen_bonus
+            )
             if score > best[0]:
                 best = (score, x, y)
         return best[1] / max(1, width - 1), best[2] / max(1, height - 1)
+
+    @staticmethod
+    def _configured_refinement_footprint(config, refinement_index):
+        schedule = getattr(config, "regional_footprint_schedule_km", None)
+        if isinstance(schedule, (list, tuple)) and refinement_index < len(schedule):
+            item = schedule[refinement_index]
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                try:
+                    width_km, height_km = float(item[0]), float(item[1])
+                except (TypeError, ValueError):
+                    return None
+            else:
+                try:
+                    width_km = height_km = float(item)
+                except (TypeError, ValueError):
+                    return None
+            if width_km > 0.0 and height_km > 0.0:
+                return width_km, height_km
+        if refinement_index == 0:
+            width_km = max(0.0, float(config.regional_width_km or 0.0))
+            height_km = max(0.0, float(config.regional_height_km or 0.0))
+            if width_km > 0.0 and height_km > 0.0:
+                return width_km, height_km
+        return None
+
+    @staticmethod
+    def _representative_region_bounds(parent_entity, config, footprint_km=None):
+        """Resolve one deterministic geographic window on the root planet.
+
+        Worldgen's planetary rectangle is an equirectangular longitude /
+        latitude domain, and regional refinement converts that domain back to
+        physical metres.  Resolving the requested footprint against the
+        parent's saved physical dimensions keeps the test window at the
+        requested scale while preserving the production refinement path.
+        """
+        parent_bounds = parent_entity.get("bounds") or {}
+        if parent_bounds.get("type") != "bbox":
+            return None, None
+        if footprint_km is None:
+            footprint_km = (
+                float(config.regional_width_km or 0.0),
+                float(config.regional_height_km or 0.0),
+            )
+        width_km = max(0.0, float(footprint_km[0] or 0.0))
+        height_km = max(0.0, float(footprint_km[1] or 0.0))
+        if width_km <= 0.0 or height_km <= 0.0:
+            return None, None
+
+        domain_width = float(parent_bounds["max_x"]) - float(parent_bounds["min_x"])
+        domain_height = float(parent_bounds["max_y"]) - float(parent_bounds["min_y"])
+        physical_width_m, physical_height_m = map_physical_dimensions_m(parent_entity)
+        if physical_width_m <= 0.0 or physical_height_m <= 0.0:
+            return None, None
+        width = domain_width * (width_km * 1000.0) / physical_width_m
+        height = domain_height * (height_km * 1000.0) / physical_height_m
+        width = min(domain_width, max(1e-6, width))
+        height = min(domain_height, max(1e-6, height))
+
+        half_width = width * 0.5
+        half_height = height * 0.5
+        min_x = float(parent_bounds["min_x"]) + half_width
+        max_x = float(parent_bounds["max_x"]) - half_width
+        min_y = float(parent_bounds["min_y"]) + half_height
+        max_y = float(parent_bounds["max_y"]) - half_height
+        center_seed = config.regional_center_seed
+        if center_seed is None:
+            center_seed = config.randomizer_seed
+        if center_seed is None:
+            center_seed = str(config.map_seed or config.name)
+        seed_bytes = str(center_seed).encode("utf-8")
+        center_rng = random.Random(int.from_bytes(hashlib.sha256(seed_bytes).digest()[:8], "big"))
+
+        center_longitude = config.regional_center_longitude
+        center_latitude = config.regional_center_latitude
+        if (
+            center_longitude is None
+            and center_latitude is None
+            and str(config.regional_target_mode or "manual") == "mountain"
+        ):
+            # A uniformly random globe point can land in deep ocean, producing
+            # a technically valid but diagnostically empty tile. Use the
+            # saved production heightfield to select a seeded high-relief land
+            # focus instead; explicit coordinates still override this for
+            # ocean/coast/desert test cases.
+            focus_u, focus_v = HeadlessWorldGenRunner._mountain_center_fraction(parent_entity)
+            center_longitude = float(parent_bounds["min_x"]) + focus_u * domain_width
+            center_map_y = float(parent_bounds["min_y"]) + focus_v * domain_height
+            center_latitude = -center_map_y
+        if center_longitude is None:
+            center_longitude = center_rng.uniform(min_x, max_x)
+        # The map stores Y positive downward, while the representative
+        # scenario's public coordinate is geographic latitude. Keep that
+        # distinction explicit so the simulated globe focus and the stored
+        # diagnostic agree with the user's selected latitude.
+        if center_latitude is None:
+            center_latitude = center_rng.uniform(-70.0, 70.0)
+        center_longitude = max(min_x, min(max_x, float(center_longitude)))
+        center_latitude = max(-90.0, min(90.0, float(center_latitude)))
+        center_map_y = -center_latitude
+        center_map_y = max(min_y, min(max_y, center_map_y))
+        center_latitude = -center_map_y
+        bounds = {
+            "min_x": center_longitude - half_width,
+            "max_x": center_longitude + half_width,
+            "min_y": center_map_y - half_height,
+            "max_y": center_map_y + half_height,
+        }
+        metadata = {
+            "center_latitude": round(center_latitude, 6),
+            "center_longitude": round(center_longitude, 6),
+            "requested_width_km": width_km,
+            "requested_height_km": height_km,
+            "resolved_domain_width_degrees": round(width, 8),
+            "resolved_domain_height_degrees": round(height, 8),
+            "center_seed": str(center_seed),
+            "coordinate_system": "equirectangular_longitude_latitude",
+        }
+        return bounds, metadata
+
+    def _map_ui_region_selection(self, world, parent_entity, config, refinement_index):
+        """Simulate the map UI's zoomed selection and visible-region action.
+
+        This deliberately delegates final bounds resolution to
+        ``MapSimulation.regenerate_visible_region``.  The headless fixture
+        only chooses the camera focus/zoom and a map content viewport, just as
+        the interactive map does before the user presses Regenerate Region.
+        """
+        from simulations.map.map_simulation import MapSimulation
+
+        screen_width, screen_height = (
+            int(config.screen_size[0]),
+            int(config.screen_size[1]),
+        )
+        context = SimpleNamespace(
+            year=2400,
+            root_entity_id=parent_entity.get("id"),
+            world_model=world,
+            regional_sample_dimensions=config.regional_sample_dimensions,
+            regional_feedback_iterations=config.worldgen_feedback_iterations,
+            worldgen_storage_root=self.repository_root,
+        )
+        map_simulation = MapSimulation(context)
+        root = map_simulation.get_root_entity() or parent_entity
+        parent_bounds = map_simulation._entity_map_bounds(root)
+        if not isinstance(parent_bounds, dict):
+            raise RuntimeError("Map UI could not resolve the selected parent bounds")
+
+        parent_width = max(1e-9, float(parent_bounds["max_x"]) - float(parent_bounds["min_x"]))
+        parent_height = max(1e-9, float(parent_bounds["max_y"]) - float(parent_bounds["min_y"]))
+        parent_width_m, parent_height_m = map_physical_dimensions_m(root)
+        if parent_width_m <= 0.0 or parent_height_m <= 0.0:
+            raise RuntimeError("Map UI could not resolve the selected parent physical dimensions")
+
+        selection_mode = "nested_visible_fraction"
+        focus_longitude = None
+        focus_latitude = None
+        configured_footprint = self._configured_refinement_footprint(
+            config, refinement_index,
+        )
+        if refinement_index == 0 and configured_footprint is not None:
+            _unused_bounds, focus = self._representative_region_bounds(
+                root, config, configured_footprint,
+            )
+            focus_longitude = float(focus["center_longitude"])
+            focus_latitude = float(focus["center_latitude"])
+            target_width_world = parent_width * (configured_footprint[0] * 1000.0) / parent_width_m
+            target_height_world = parent_height * (configured_footprint[1] * 1000.0) / parent_height_m
+            selection_mode = (
+                "seeded_high_relief_land_focus_and_physical_zoom"
+                if str(config.regional_target_mode or "manual") == "mountain"
+                and config.regional_center_latitude is None
+                and config.regional_center_longitude is None
+                else "random_geographic_focus_and_physical_zoom"
+            )
+        else:
+            if str(config.regional_target_mode or "manual") == "mountain":
+                center_x_fraction, center_y_fraction = self._mountain_center_fraction(root)
+                center_x_fraction = max(0.2, min(0.8, center_x_fraction))
+                center_y_fraction = max(0.2, min(0.8, center_y_fraction))
+            else:
+                center_x_fraction = max(0.2, min(0.8, float(config.regional_center_x))) if refinement_index == 0 else 0.5
+                center_y_fraction = max(0.2, min(0.8, float(config.regional_center_y))) if refinement_index == 0 else 0.5
+            if root.get("location_class") in {"planet", "moon"}:
+                focus_longitude = (float(parent_bounds["min_x"]) + parent_width * center_x_fraction)
+                focus_latitude = -(float(parent_bounds["min_y"]) + parent_height * center_y_fraction)
+            if configured_footprint is not None:
+                target_width_world = parent_width * (configured_footprint[0] * 1000.0) / parent_width_m
+                target_height_world = parent_height * (configured_footprint[1] * 1000.0) / parent_height_m
+            else:
+                target_width_world = parent_width * 0.4
+                target_height_world = parent_height * 0.4
+
+        camera = Camera(screen_width, screen_height)
+        camera.x = (float(parent_bounds["min_x"]) + float(parent_bounds["max_x"])) * 0.5
+        camera.y = (float(parent_bounds["min_y"]) + float(parent_bounds["max_y"])) * 0.5
+
+        if root.get("location_class") in {"planet", "moon"}:
+            # A focused globe is locally compressed in longitude by cos(lat).
+            # Compensate the simulated zoom so a requested geographic window
+            # remains representative at random latitudes.
+            focus_latitude = max(-89.0, min(89.0, float(focus_latitude or 0.0)))
+            map_simulation.map_projection_focus_x = (float(focus_longitude or 0.0) / 360.0) % 1.0
+            map_simulation.map_projection_focus_y = max(-0.5, min(0.5, -focus_latitude / 180.0))
+            longitude_scale = max(0.12, abs(math.cos(math.radians(focus_latitude))))
+        else:
+            longitude_scale = 1.0
+
+        usable_height = max(240.0, float(screen_height) * 0.94)
+        usable_width = max(240.0, float(screen_width) * 0.94)
+        camera.zoom = min(
+            usable_height / max(1e-9, target_height_world),
+            usable_width / max(1e-9, target_width_world * longitude_scale),
+        )
+        camera.zoom = max(1e-6, min(float(map_simulation.max_zoom), camera.zoom))
+
+        # The production UI passes its map content rectangle to the action.
+        # Keep the simulated content centered in the configured screen while
+        # matching the selected footprint's projected aspect ratio.
+        viewport_height = min(usable_height, max(240.0, camera.zoom * target_height_world))
+        viewport_width = min(usable_width, max(240.0, camera.zoom * target_width_world * longitude_scale))
+        viewport_left = (float(screen_width) - viewport_width) * 0.5
+        viewport_top = (float(screen_height) - viewport_height) * 0.5
+        viewport_rect = SimpleNamespace(
+            left=viewport_left,
+            right=viewport_left + viewport_width,
+            top=viewport_top,
+            bottom=viewport_top + viewport_height,
+        )
+        selected_bounds = map_simulation._visible_refinement_bounds(
+            camera,
+            screen_width,
+            screen_height,
+            {"type": "bbox", **{key: float(parent_bounds[key]) for key in ("min_x", "max_x", "min_y", "max_y")}},
+            root,
+            viewport_rect=viewport_rect,
+        )
+        region = map_simulation.regenerate_visible_region(
+            camera,
+            screen_width,
+            screen_height,
+            viewport_rect=viewport_rect,
+        )
+        if not isinstance(region, dict) or not region.get("id"):
+            raise RuntimeError(
+                f"Map UI regeneration returned no region for level {refinement_index + 1}"
+            )
+        region_bounds = region.get("bounds") or {}
+        return region, {
+            "route": "MapSimulation.regenerate_visible_region",
+            "selection_mode": selection_mode,
+            "focus_longitude": focus_longitude,
+            "focus_latitude": focus_latitude,
+            "camera_zoom": round(float(camera.zoom), 8),
+            "viewport_px": {
+                "width": round(float(viewport_width), 3),
+                "height": round(float(viewport_height), 3),
+            },
+            "visible_bounds_before_regeneration": copy.deepcopy(selected_bounds or {}),
+            "regenerated_bounds": copy.deepcopy(region_bounds),
+        }
 
     def _resolve_replay_contract(self, config):
         contract = config.replay_contract
@@ -268,6 +712,10 @@ class HeadlessWorldGenRunner:
         pygame.init()
         pygame.font.init()
         width, height = (int(config.screen_size[0]), int(config.screen_size[1]))
+        # Some production renderer paths call Surface.convert_alpha(), which
+        # requires an initialized display even when all output is off-screen.
+        # The dummy driver keeps this headless and avoids opening a window.
+        pygame.display.set_mode((width, height))
         camera = Camera(width, height)
         camera.zoom = min(width, height) / (3.4 * WorldGenSimulation.AU_M)
         self._app_view = SimpleNamespace(
@@ -324,7 +772,10 @@ class HeadlessWorldGenRunner:
             world_model=world,
             parent_system_id=self.system_id,
             year=int((self._replay_contract or {}).get("registry_year") or 2400),
+            worldgen_storage_root=self.repository_root,
         )
+        sim.scientific_sample_dimensions = config.scientific_sample_dimensions
+        sim.worldgen_feedback_iterations = int(config.worldgen_feedback_iterations or 2)
         if self._replay_contract:
             first_screen = self._replay_contract["first_screen"]
             identity = self._replay_contract.get("planet_identity") or {}
@@ -358,10 +809,24 @@ class HeadlessWorldGenRunner:
                 raise ValueError(f"Unknown randomizer mode: {config.randomize_mode}")
             if config.randomizer_seed is None:
                 config.randomizer_seed = secrets.randbits(64)
+            randomizer_rng = random.Random(config.randomizer_seed)
             sim.randomize_seed(
                 mode=config.randomize_mode,
-                rng=random.Random(config.randomizer_seed),
+                rng=randomizer_rng,
             )
+            if config.earthlike_constraints:
+                # Preserve randomized body size, composition, spin, and map
+                # seed while keeping this diagnostic fixture in the intended
+                # temperate, water-bearing Earth-like family.
+                sim.seed_input_buffers["water_fraction"] = sim._format_seed_input(
+                    round(randomizer_rng.uniform(0.35, 0.65), 4)
+                )
+                sim.seed_input_buffers["volatile_inventory"] = "earthlike"
+            if config.force_plate_tectonics:
+                # Keep every generic randomized physical input, but constrain
+                # this benchmark to the plate-tectonic branch so runs remain
+                # comparable across seeds.
+                sim.seed_input_buffers["tectonics_mode"] = "mobile_lid"
             return world, sim
 
         template = sim.PLANET_TEMPLATES[config.template_id]
@@ -462,12 +927,138 @@ class HeadlessWorldGenRunner:
         )
         return surface
 
+    def _render_heightmap_hillshade(self, planet, size):
+        """Render the stored physical heightfield as a morphology diagnostic.
+
+        True color is intentionally material-driven and can hide relief on a
+        uniform lithologic province.  This layer is a diagnostic view of the
+        actual child heightfield: the broad form is inherited from the parent
+        and the hillshade reveals only the residual relief resolved at this
+        level.  It is not a second terrain representation.
+        """
+        heightmap = planet.get("heightmap_model") or {}
+        grid = heightmap.get("sample_grid") or {}
+        rows = grid.get("rows") or []
+        if not rows or not rows[0]:
+            surface = pygame.Surface(size)
+            surface.fill((22, 26, 34))
+            return surface
+        grid_height = len(rows)
+        grid_width = len(rows[0])
+        sea_level = heightmap.get("sea_level_m")
+        all_values = [
+            float(value)
+            for row in rows
+            for value in row[:grid_width]
+            if isinstance(value, (int, float))
+        ]
+        minimum = min(all_values) if all_values else -1.0
+        maximum = max(all_values) if all_values else 1.0
+        # Separate land relief from bathymetry for readability.  Otherwise a
+        # deep ocean basin compresses a several-kilometre mountain range into
+        # a narrow fraction of the diagnostic's tonal range.
+        land_values = [
+            float(value)
+            for y, row in enumerate(rows)
+            for x, value in enumerate(row[:grid_width])
+            if sea_level is None or float(value) > float(sea_level)
+        ]
+        land_minimum = min(land_values) if land_values else minimum
+        land_maximum = max(land_values) if land_values else maximum
+        land_span = max(1.0, land_maximum - land_minimum)
+        span = max(1.0, maximum - minimum)
+        source = pygame.Surface((grid_width, grid_height))
+        light_x, light_y, light_z = -0.62, -0.48, 0.62
+        light_length = max(1e-6, math.sqrt(light_x ** 2 + light_y ** 2 + light_z ** 2))
+        light_x /= light_length
+        light_y /= light_length
+        light_z /= light_length
+        for y, row in enumerate(rows):
+            north_row = rows[max(0, y - 1)]
+            south_row = rows[min(grid_height - 1, y + 1)]
+            for x, value in enumerate(row[:grid_width]):
+                west_x = max(0, x - 1)
+                east_x = min(grid_width - 1, x + 1)
+                dx = (float(row[east_x]) - float(row[west_x])) * 0.5
+                dy = (float(south_row[x]) - float(north_row[x])) * 0.5
+                # The physical samples are intentionally not stretched into
+                # an exaggerated mountain renderer.  A modest vertical gain
+                # keeps basin/ridge topology visible at both regional levels.
+                nx = -dx / max(1.0, span * 0.018)
+                ny = -dy / max(1.0, span * 0.018)
+                nz = 1.0
+                normal_length = max(1e-6, math.sqrt(nx ** 2 + ny ** 2 + nz ** 2))
+                shade = max(
+                    0.0,
+                    min(
+                        1.0,
+                        (nx * light_x + ny * light_y + nz * light_z)
+                        / normal_length,
+                    ),
+                )
+                if sea_level is not None and float(value) <= float(sea_level):
+                    base = (22, 52, 78)
+                    relief_t = max(0.0, min(1.0, (float(value) - minimum) / span))
+                    color = tuple(
+                        max(0, min(255, int(channel * (0.55 + shade * 0.65))))
+                        for channel in base
+                    )
+                else:
+                    relief_t = max(
+                        0.0,
+                        min(1.0, (float(value) - land_minimum) / land_span),
+                    )
+                    # Neutral earth tones prevent the diagnostic from being
+                    # confused with a material or climate layer.
+                    base = (
+                        int(74 + relief_t * 102),
+                        int(78 + relief_t * 86),
+                        int(72 + relief_t * 62),
+                    )
+                    color = tuple(
+                        max(0, min(255, int(channel * (0.55 + shade * 0.70))))
+                        for channel in base
+                    )
+                source.set_at((x, y), color)
+        # Planetary maps are 2:1 in equirectangular space, while regional
+        # patches carry their own physical width/height and are commonly
+        # square.  Preserve that physical aspect in the diagnostic canvas;
+        # stretching a square child to 2:1 makes inherited ridge directions
+        # and border behavior impossible to judge visually.
+        physical_width_m, physical_height_m = map_physical_dimensions_m(planet)
+        source_aspect = (
+            physical_width_m / physical_height_m
+            if physical_width_m > 0.0 and physical_height_m > 0.0
+            else source.get_width() / max(1, source.get_height())
+        )
+        canvas_width, canvas_height = int(size[0]), int(size[1])
+        canvas_aspect = canvas_width / max(1, canvas_height)
+        if source_aspect > canvas_aspect:
+            draw_width = canvas_width
+            draw_height = max(1, int(round(canvas_width / source_aspect)))
+        else:
+            draw_height = canvas_height
+            draw_width = max(1, int(round(canvas_height * source_aspect)))
+        rendered = pygame.Surface((canvas_width, canvas_height))
+        rendered.fill((8, 10, 14))
+        scaled = pygame.transform.smoothscale(source, (draw_width, draw_height))
+        rendered.blit(
+            scaled,
+            ((canvas_width - draw_width) // 2, (canvas_height - draw_height) // 2),
+        )
+        return rendered
+
     def _render_material_layer(self, planet, size):
         model = planet.get("material_heatmap_model") or {}
         composite = model.get("composite_layer") or {}
         path = Path(composite.get("bundle_path") or "")
         if path and not path.is_absolute():
-            path = self.repository_root / path
+            candidates = (
+                self.output_root / path,
+                self.repository_root / path,
+                Path(__file__).resolve().parents[2] / path,
+            )
+            path = next((candidate for candidate in candidates if candidate.exists()), candidates[0])
         source = load_raster_bundle_surface(
             path,
             composite.get("bundle_layer_id") or "composite",
@@ -630,6 +1221,11 @@ class HeadlessWorldGenRunner:
         evolution = planet.get("surface_evolution_model") or {}
         process = evolution.get("process_grid") or {}
         layers = [
+            self._save_layer(
+                "Heightmap Hillshade",
+                self._render_heightmap_hillshade(planet, size),
+                prefix,
+            ),
             self._save_layer("True Color", self._render_height_layer(planet, size, include_materials=True), prefix),
             self._save_layer("Surface Materials", self._render_material_layer(planet, size), prefix),
             self._save_layer("Climate and Rivers", self._render_climate_layer(planet, size), prefix),
@@ -689,6 +1285,58 @@ class HeadlessWorldGenRunner:
             tile_rect = pygame.Rect(x, y + header_h, tile_w, tile_h)
             sheet.blit(layer["surface"], tile_rect.topleft)
             pygame.draw.rect(sheet, (112, 124, 148), tile_rect, 1)
+        path = self.images_root / filename
+        pygame.image.save(sheet, str(path))
+        return str(path)
+
+    def _build_lod_overview(self, level_renderings, config, filename="regional_lod_overview.png"):
+        """Build a compact cross-level comparison from already-rendered layers."""
+        if not level_renderings:
+            return ""
+        representative_labels = (
+            "True Color",
+            "Surface Materials",
+            "Climate and Rivers",
+            "Annual Precipitation",
+        )
+        tile_w = max(220, min(360, int(config.layer_size[0] * 0.55)))
+        tile_h = max(120, min(200, int(config.layer_size[1] * 0.55)))
+        columns = len(representative_labels)
+        header_h = 56
+        gap = 12
+        row_h = tile_h + 28
+        sheet = pygame.Surface((columns * tile_w + (columns + 1) * gap, header_h + len(level_renderings) * (row_h + gap) + gap))
+        sheet.fill((12, 16, 23))
+        font = pygame.font.SysFont("consolas", max(12, min(18, tile_w // 18)))
+        small_font = pygame.font.SysFont("consolas", max(10, min(14, tile_w // 22)))
+        for column, label in enumerate(representative_labels):
+            x = gap + column * (tile_w + gap)
+            title = font.render(label, True, (236, 240, 248))
+            sheet.blit(title, (x + 6, 10))
+        for row, rendering in enumerate(level_renderings):
+            y = header_h + gap + row * (row_h + gap)
+            level = rendering.get("detail_level")
+            level_id = str(rendering.get("detail_level_id") or "lod")
+            footprint = rendering.get("physical_footprint_m") or {}
+            spacing = rendering.get("sample_spacing_m") or {}
+            label = (
+                f"LOD {level} {level_id} | "
+                f"{float(footprint.get('width', 0.0) or 0.0) / 1000.0:.2f} x "
+                f"{float(footprint.get('height', 0.0) or 0.0) / 1000.0:.2f} km | "
+                f"{float(spacing.get('x', 0.0) or 0.0):.2f} m/px"
+            )
+            sheet.blit(small_font.render(label, True, (178, 190, 208)), (gap, y - 19))
+            level_layers = {str(item.get("label")): item for item in rendering.get("layers") or []}
+            for column, layer_label in enumerate(representative_labels):
+                x = gap + column * (tile_w + gap)
+                tile_rect = pygame.Rect(x, y, tile_w, tile_h)
+                layer = level_layers.get(layer_label)
+                if layer and layer.get("surface") is not None:
+                    surface = pygame.transform.smoothscale(layer["surface"], (tile_w, tile_h))
+                    sheet.blit(surface, tile_rect.topleft)
+                else:
+                    sheet.fill((24, 28, 36), tile_rect)
+                pygame.draw.rect(sheet, (104, 118, 142), tile_rect, 1)
         path = self.images_root / filename
         pygame.image.save(sheet, str(path))
         return str(path)
@@ -786,6 +1434,10 @@ class HeadlessWorldGenRunner:
             "playa_evaporite_basins": (
                 (planet.get("playa_evaporite_basins_model") or {}).get("summary")
             ),
+            "causal_feature_diagnostics": derive_causal_feature_diagnostics(planet),
+            "climate_field_diagnostics": copy.deepcopy(
+                (water.get("climate_field_diagnostics") or {})
+            ),
         }
 
     def run(self, config=None):
@@ -800,6 +1452,8 @@ class HeadlessWorldGenRunner:
         stage_fingerprints = []
         stage_screenshots = []
         action_timings = []
+        pipeline_action_sequence = []
+        tectonic_pass_used = False
 
         def capture(label):
             stage_history.append(sim.editor_stage)
@@ -821,8 +1475,9 @@ class HeadlessWorldGenRunner:
         def advance(action, expected_stage):
             started_at = time.perf_counter()
             succeeded = action()
+            action_name = getattr(action, "__name__", action.__class__.__name__)
             action_timings.append({
-                "action": getattr(action, "__name__", action.__class__.__name__),
+                "action": action_name,
                 "expected_stage": expected_stage,
                 "seconds": round(time.perf_counter() - started_at, 6),
             })
@@ -830,6 +1485,7 @@ class HeadlessWorldGenRunner:
                 raise RuntimeError(sim.commit_status)
             if sim.editor_stage != expected_stage:
                 raise RuntimeError(f"Expected stage {expected_stage}, got {sim.editor_stage}: {sim.commit_status}")
+            pipeline_action_sequence.append(action_name)
 
         capture("crust")
         advance(sim._save_selected_planet_seed, "atmosphere")
@@ -843,6 +1499,7 @@ class HeadlessWorldGenRunner:
         })
         if not atmosphere_succeeded:
             raise RuntimeError(sim.commit_status)
+        pipeline_action_sequence.append("_save_atmosphere_model")
         atmosphere_planet = sim._selected_planet_entity()
         gas_giant_terminal = (
             sim.editor_stage == "atmosphere"
@@ -862,6 +1519,7 @@ class HeadlessWorldGenRunner:
             advance(sim._save_terrain_seed_model, "heightmap")
             capture("heightmap")
             if sim._heightmap_can_advance_tectonics():
+                tectonic_pass_used = True
                 advance(sim._handle_heightmap_primary_action, "heightmap")
                 capture("heightmap_after_tectonics")
             advance(sim._handle_heightmap_primary_action, "water_cycle")
@@ -876,46 +1534,112 @@ class HeadlessWorldGenRunner:
         regional_region_path = ""
         regional_layers = []
         regional_contact_sheet = ""
+        regional_level_diagnostics = []
+        regional_lod_overview = ""
+        diagnostic_level_renderings = []
+        regional_level_snapshot_paths = []
         refinement_parent = planet
+        regional_refinement_manifest = []
+        regional_selection_diagnostics = []
+        representative_region = None
         refinement_depth = (
             0
             if gas_giant_terminal
             else max(0, int(config.regional_refinement_depth or 0))
         )
         for refinement_index in range(refinement_depth):
-            parent_bounds = refinement_parent.get("bounds") or {}
-            if parent_bounds.get("type") != "bbox":
-                break
-            width = float(parent_bounds["max_x"]) - float(parent_bounds["min_x"])
-            height = float(parent_bounds["max_y"]) - float(parent_bounds["min_y"])
-            if str(config.regional_target_mode or "manual") == "mountain":
-                center_x_fraction, center_y_fraction = self._mountain_center_fraction(refinement_parent)
-                center_x_fraction = max(0.2, min(0.8, center_x_fraction))
-                center_y_fraction = max(0.2, min(0.8, center_y_fraction))
-            else:
-                center_x_fraction = (
-                    max(0.2, min(0.8, float(config.regional_center_x)))
-                    if refinement_index == 0 else 0.5
+            configured_footprint = self._configured_refinement_footprint(
+                config, refinement_index,
+            )
+            if refinement_index == 0 and configured_footprint is not None:
+                _unused_bounds, representative_region = self._representative_region_bounds(
+                    refinement_parent, config, configured_footprint,
                 )
-                center_y_fraction = (
-                    max(0.2, min(0.8, float(config.regional_center_y)))
-                    if refinement_index == 0 else 0.5
-                )
-            center_x = float(parent_bounds["min_x"]) + width * center_x_fraction
-            center_y = float(parent_bounds["min_y"]) + height * center_y_fraction
-            bounds = {
-                "min_x": center_x - width * 0.20,
-                "max_x": center_x + width * 0.20,
-                "min_y": center_y - height * 0.20,
-                "max_y": center_y + height * 0.20,
-            }
-            refinement_parent = generate_refined_region(
+            refinement_parent, selection_diagnostic = self._map_ui_region_selection(
                 world,
                 refinement_parent,
-                bounds,
-                seed_suffix="headless-regional-material-validation",
+                config,
+                refinement_index,
             )
+            regional_selection_diagnostics.append(selection_diagnostic)
             regional_refinement_ids.append(str(refinement_parent.get("id")))
+            regional_heightmap = refinement_parent.get("heightmap_model") or {}
+            regional_refinement_manifest.append({
+                "id": refinement_parent.get("id"),
+                "detail_level": refinement_parent.get("map_detail_level"),
+                "detail_level_id": (regional_heightmap.get("detail_level_spec") or {}).get("id"),
+                "bounds": copy.deepcopy(refinement_parent.get("bounds") or {}),
+                "center": copy.deepcopy(refinement_parent.get("coords") or {}),
+                "physical_footprint_m": {
+                    "width": regional_heightmap.get("region_width_m"),
+                    "height": regional_heightmap.get("region_height_m"),
+                },
+                "sample_grid": {
+                    key: (regional_heightmap.get("sample_grid") or {}).get(key)
+                    for key in ("width", "height", "wrap_x", "wrap_y")
+                },
+                "sample_spacing_m": {
+                    "x": regional_heightmap.get("sample_spacing_x_m"),
+                    "y": regional_heightmap.get("sample_spacing_y_m"),
+                },
+                "source_uv_bounds": copy.deepcopy(regional_heightmap.get("source_uv_bounds") or {}),
+                "parent_lineage": copy.deepcopy(
+                    (regional_heightmap.get("generated_truth_lineage") or {})
+                ),
+                "map_selection": copy.deepcopy(selection_diagnostic),
+                "production_tectonic_response": copy.deepcopy(
+                    regional_heightmap.get("production_tectonic_response") or {}
+                ),
+                "regional_tectonic_model": {
+                    "status": (refinement_parent.get("tectonic_model") or {}).get("status"),
+                    "source_status": (refinement_parent.get("tectonic_model") or {}).get("source_status"),
+                    "plate_count": len((refinement_parent.get("tectonic_model") or {}).get("plates") or []),
+                    "boundary_segment_count": len((refinement_parent.get("tectonic_model") or {}).get("boundary_segments") or []),
+                },
+            })
+            # Retain every intermediate child entity, including its actual
+            # sample rows and parent lineage. The final child alone is not
+            # enough to prove that LOD N was derived from LOD N-1.
+            snapshot_detail_level = int(refinement_parent.get("map_detail_level", 0) or 0)
+            snapshot_detail_level_id = str(
+                (regional_heightmap.get("detail_level_spec") or {}).get("id") or "lod"
+            )
+            snapshot_root = self.output_root / "regional"
+            snapshot_root.mkdir(parents=True, exist_ok=True)
+            snapshot_path = snapshot_root / (
+                f"lod_{snapshot_detail_level:02d}_{self._slug(snapshot_detail_level_id)}.json"
+            )
+            snapshot_path.write_text(
+                json.dumps(refinement_parent, indent=2, sort_keys=True, default=str) + "\n",
+                encoding="utf-8",
+            )
+            regional_level_snapshot_paths.append(str(snapshot_path))
+            if config.render_outputs:
+                detail_level = snapshot_detail_level
+                detail_level_id = snapshot_detail_level_id
+                level_layers = self._render_layers(
+                    refinement_parent,
+                    config,
+                    prefix=f"regional_lod_{detail_level:02d}_{detail_level_id}",
+                )
+                level_contact_sheet = self._build_contact_sheet(
+                    level_layers,
+                    config,
+                    filename=f"regional_lod_{detail_level:02d}_{detail_level_id}_layers_contact_sheet.png",
+                )
+                diagnostic_level_renderings.append({
+                    "detail_level": detail_level,
+                    "detail_level_id": detail_level_id,
+                    "physical_footprint_m": copy.deepcopy(
+                        regional_refinement_manifest[-1]["physical_footprint_m"]
+                    ),
+                    "sample_spacing_m": copy.deepcopy(
+                        regional_refinement_manifest[-1]["sample_spacing_m"]
+                    ),
+                    "snapshot_path": str(snapshot_path),
+                    "layers": level_layers,
+                    "contact_sheet": level_contact_sheet,
+                })
         if regional_refinement_ids:
             regional_region_path_obj = self.output_root / "regional_region.json"
             regional_region_path_obj.write_text(
@@ -954,17 +1678,44 @@ class HeadlessWorldGenRunner:
         if config.render_outputs:
             contact_sheet = self._build_contact_sheet(layers, config)
             if regional_refinement_ids:
-                regional_layers = self._render_layers(
-                    refinement_parent,
-                    config,
-                    prefix=f"regional_lod_{refinement_parent.get('map_detail_level', 1)}",
-                )
-                regional_contact_sheet = self._build_contact_sheet(
-                    regional_layers,
-                    config,
-                    filename="regional_map_layers_contact_sheet.png",
-                )
+                if diagnostic_level_renderings:
+                    final_rendering = diagnostic_level_renderings[-1]
+                    regional_layers = final_rendering["layers"]
+                    regional_contact_sheet = final_rendering["contact_sheet"]
+                    regional_lod_overview = self._build_lod_overview(
+                        diagnostic_level_renderings,
+                        config,
+                    )
+                    regional_level_diagnostics = [
+                        {
+                            "detail_level": rendering["detail_level"],
+                            "detail_level_id": rendering["detail_level_id"],
+                            "physical_footprint_m": rendering["physical_footprint_m"],
+                            "sample_spacing_m": rendering["sample_spacing_m"],
+                            "snapshot_path": rendering.get("snapshot_path"),
+                            "layer_images": [
+                                {"label": item["label"], "path": item["path"]}
+                                for item in rendering["layers"]
+                            ],
+                            "contact_sheet": rendering["contact_sheet"],
+                        }
+                        for rendering in diagnostic_level_renderings
+                    ]
         summary = self._summary(planet, config, stage_history)
+        summary["representative_region"] = representative_region
+        summary["regional_refinement_manifest"] = regional_refinement_manifest
+        summary["regional_selection_diagnostics"] = regional_selection_diagnostics
+        summary["regional_level_snapshot_paths"] = list(regional_level_snapshot_paths)
+        summary["render_diagnostics"] = {
+            "stage_screenshots": list(stage_screenshots),
+            "planetary_layer_images": [
+                {"label": item["label"], "path": item["path"]}
+                for item in layers
+            ],
+            "planetary_contact_sheet": contact_sheet,
+            "regional_levels": copy.deepcopy(regional_level_diagnostics),
+            "regional_lod_overview": regional_lod_overview,
+        }
         summary["timings"] = {
             "actions": action_timings,
             "generation_and_render_seconds": round(time.perf_counter() - run_started_at, 6),
@@ -976,6 +1727,13 @@ class HeadlessWorldGenRunner:
             "stage_fingerprints": stage_fingerprints,
             "ordinary_stage_renderer": "simulations.world_gen.world_gen_renderer.WorldGenRenderer",
         }
+        summary["pipeline_parity"] = verify_production_pipeline(
+            sim,
+            pipeline_action_sequence,
+            tectonic_pass_used=tectonic_pass_used,
+            gas_giant_terminal=gas_giant_terminal,
+            regional_selection_diagnostics=regional_selection_diagnostics,
+        )
 
         input_contract = planet.get("world_gen_input_contract") or self._replay_contract or {}
         input_contract_path = self.output_root / "input_contract.json"
@@ -1014,10 +1772,14 @@ class HeadlessWorldGenRunner:
                 "world_model": f"{world.__class__.__module__}.{world.__class__.__name__}",
             },
             regional_refinement_ids=regional_refinement_ids,
+            regional_refinement_manifest=regional_refinement_manifest,
             regional_materials_path=regional_materials_path,
             regional_region_path=regional_region_path,
             regional_layer_images=[{"label": item["label"], "path": item["path"]} for item in regional_layers],
             regional_contact_sheet=regional_contact_sheet,
+            regional_level_diagnostics=regional_level_diagnostics,
+            regional_lod_overview=regional_lod_overview,
+            regional_level_snapshot_paths=regional_level_snapshot_paths,
             input_contract_path=str(input_contract_path),
         )
         result_path = self.output_root / "result.json"

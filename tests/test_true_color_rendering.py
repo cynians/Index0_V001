@@ -9,6 +9,7 @@ from simulations.world_gen.true_color import (
     derive_true_color_model,
     render_true_color_surface,
     river_true_color_rgb,
+    true_color_model_sources_match,
 )
 from simulations.world_gen.material_optics import material_optical_surface_profile
 
@@ -52,6 +53,45 @@ def _heightmap(*, ocean=True):
 
 
 class TrueColorRenderingTests(unittest.TestCase):
+    def test_true_color_binds_to_the_same_heightfield_and_material_optics(self):
+        heightmap = _heightmap(ocean=False)
+        heightmap["source_heightfield_fingerprint"] = "heightfield-a"
+        heatmap = {
+            "model_version": "material-heatmap-test",
+            "source_heightfield_fingerprint": "heightfield-a",
+            "layers": [{
+                "material_id": "mat_basalt",
+                "bundle_layer_id": "heatmap_mat_basalt",
+                "display_color": [42, 48, 52],
+                "optical_surface_profile": {
+                    "material_id": "mat_basalt",
+                    "profile_version": "natural-material-optics-test",
+                    "visible_reflectance": {"red_650nm": 0.08},
+                },
+            }],
+        }
+        model = derive_true_color_model(
+            {"id": "bound-surface", "natural_material_model": {}},
+            heightmap=heightmap,
+            material_heatmap_model=heatmap,
+        )
+
+        self.assertTrue(true_color_model_sources_match(model, heightmap, heatmap))
+        binding = model["source_bindings"]
+        self.assertEqual("heightfield-a", binding["heightmap_source_heightfield_fingerprint"])
+        self.assertEqual("heightfield-a", binding["material_heatmap_source_heightfield_fingerprint"])
+        self.assertEqual(
+            "material_heatmap.layers.optical_surface_profile",
+            binding["material_color_source"],
+        )
+        self.assertFalse(
+            true_color_model_sources_match(
+                model,
+                {**heightmap, "source_heightfield_fingerprint": "heightfield-b"},
+                heatmap,
+            )
+        )
+
     def test_river_true_color_uses_hydrology_not_vegetation(self):
         clear = river_true_color_rgb({
             "flow": 0.9, "flow_regime": "perennial", "mouth": "ocean",

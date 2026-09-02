@@ -177,6 +177,113 @@ class InputRouterClickHandlingTests(unittest.TestCase):
 
         self.assertEqual(["browser", "layout", "cards"], calls)
 
+    def test_floating_card_input_is_noop_when_no_card_is_open(self):
+        app = SimpleNamespace(
+            ui_manager=SimpleNamespace(floating_card_rect=None, knowledge_ui=SimpleNamespace(cards=[])),
+        )
+        router = InputRouter(app)
+
+        handled = router._handle_floating_card_input(
+            SimpleNamespace(type=pygame.MOUSEBUTTONDOWN, button=1, pos=(50, 50))
+        )
+
+        self.assertFalse(handled)
+
+    def test_escape_closes_an_open_floating_card_and_takes_priority(self):
+        closed = []
+        app = SimpleNamespace(
+            ui_manager=SimpleNamespace(
+                floating_card_rect=pygame.Rect(0, 0, 100, 100),
+                knowledge_ui=SimpleNamespace(cards=[]),
+                close_floating_card=lambda: closed.append(True),
+            ),
+        )
+        router = InputRouter(app)
+
+        handled = router._handle_floating_card_input(
+            SimpleNamespace(type=pygame.KEYDOWN, key=pygame.K_ESCAPE)
+        )
+
+        self.assertTrue(handled)
+        self.assertEqual([True], closed)
+
+    def test_click_inside_floating_card_rect_is_routed_and_scrubbed(self):
+        scrub_calls = []
+        click_calls = []
+
+        def fake_click(pos, rect):
+            click_calls.append((pos, rect))
+            return "__ui_consumed__"
+
+        app = SimpleNamespace(
+            ui_manager=SimpleNamespace(
+                floating_card_rect=pygame.Rect(0, 0, 100, 100),
+                knowledge_ui=SimpleNamespace(cards=[], _handle_card_canvas_click=fake_click),
+                scrub_floating_card_hitboxes=lambda: scrub_calls.append(True),
+            ),
+        )
+        router = InputRouter(app)
+
+        handled = router._handle_floating_card_input(
+            SimpleNamespace(type=pygame.MOUSEBUTTONDOWN, button=1, pos=(50, 50))
+        )
+
+        self.assertTrue(handled)
+        self.assertEqual([((50, 50), pygame.Rect(0, 0, 100, 100))], click_calls)
+        self.assertEqual([True], scrub_calls)
+
+    def test_click_outside_floating_card_rect_is_not_consumed(self):
+        app = SimpleNamespace(
+            ui_manager=SimpleNamespace(
+                floating_card_rect=pygame.Rect(0, 0, 100, 100),
+                knowledge_ui=SimpleNamespace(
+                    cards=[], _handle_card_canvas_click=lambda pos, rect: None,
+                ),
+                scrub_floating_card_hitboxes=lambda: None,
+            ),
+        )
+        router = InputRouter(app)
+
+        handled = router._handle_floating_card_input(
+            SimpleNamespace(type=pygame.MOUSEBUTTONDOWN, button=1, pos=(500, 500))
+        )
+
+        self.assertFalse(handled)
+
+    def test_keydown_routes_to_card_when_a_field_is_being_edited(self):
+        keydown_calls = []
+        app = SimpleNamespace(
+            ui_manager=SimpleNamespace(
+                floating_card_rect=pygame.Rect(0, 0, 100, 100),
+                knowledge_ui=SimpleNamespace(
+                    cards=[{"is_edit_mode": True, "active_edit_field": "name"}],
+                    _handle_keydown_event=lambda event: keydown_calls.append(event),
+                ),
+            ),
+        )
+        router = InputRouter(app)
+        event = SimpleNamespace(type=pygame.KEYDOWN, key=pygame.K_x, unicode="x")
+
+        handled = router._handle_floating_card_input(event)
+
+        self.assertTrue(handled)
+        self.assertEqual([event], keydown_calls)
+
+    def test_keydown_falls_through_when_no_field_is_being_edited(self):
+        app = SimpleNamespace(
+            ui_manager=SimpleNamespace(
+                floating_card_rect=pygame.Rect(0, 0, 100, 100),
+                knowledge_ui=SimpleNamespace(cards=[{"is_edit_mode": False, "active_edit_field": None}]),
+            ),
+        )
+        router = InputRouter(app)
+
+        handled = router._handle_floating_card_input(
+            SimpleNamespace(type=pygame.KEYDOWN, key=pygame.K_x, unicode="x")
+        )
+
+        self.assertFalse(handled)
+
     def test_input_controller_coalesces_knowledge_wheel_bursts(self):
         class FakeCamera:
             def __init__(self):

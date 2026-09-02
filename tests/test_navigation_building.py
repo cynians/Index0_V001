@@ -2,6 +2,7 @@ import unittest
 from types import SimpleNamespace
 
 from app.navigation_controller import NavigationController
+from app.launch_affordance_resolver import LaunchAffordanceResolver
 
 
 class FakeTabManager:
@@ -89,6 +90,32 @@ class NavigationBuildingTests(unittest.TestCase):
         self.assertEqual(("building", "loc_test_station"), tab.tab_key)
         self.assertEqual("Station Interior: Test Station", tab.name)
         self.assertTrue(tab.sim_instance.simulation.can_create_spatial_feature_draft())
+
+    def test_site_location_exposes_map_and_population_simulation_launches(self):
+        entity = {
+            "id": "loc_test_site", "name": "Test Site", "type": "location",
+            "_dataset": "locations", "location_class": "site",
+            "bounds": {"type": "bbox", "min_x": -10, "max_x": 10, "min_y": -10, "max_y": 10},
+            "person_simulation_enabled": True,
+        }
+        modes = [option["mode"] for option in LaunchAffordanceResolver().options_for_entity(entity)]
+        self.assertEqual(["map", "site_people"], modes)
+
+    def test_site_population_launch_uses_separate_tab_context(self):
+        controller = self._controller([
+            {
+                "id": "loc_test_site", "name": "Test Site", "type": "location",
+                "_dataset": "locations", "location_class": "site",
+                "bounds": {"type": "bbox", "min_x": -10, "max_x": 10, "min_y": -10, "max_y": 10},
+                "person_simulation_enabled": True,
+            }
+        ])
+
+        self.assertTrue(controller.launch_site_simulation_tab("loc_test_site"))
+
+        tab = controller.app.tab_manager.tabs[0]
+        self.assertEqual(("site_people", "loc_test_site"), tab.tab_key)
+        self.assertEqual("site_people", tab.sim_instance.simulation.render_mode)
 
     def test_regenerating_current_region_refreshes_parent_and_child_map_views(self):
         controller = self._controller([])

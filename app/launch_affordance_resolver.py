@@ -148,19 +148,41 @@ class LaunchAffordanceResolver:
                     options.append(_option("map", "Map", "Open the linked map/location workspace.", 80, entity_id))
                 return options
 
+            has_person_site_context = bool(
+                entity.get("person_simulation_enabled")
+                or entity.get("simulation_points")
+                or entity.get("resident_people")
+                or entity.get("present_pops")
+                or entity.get("visitor_scenarios")
+            )
             if _has_map_surface(entity):
-                options.append(_option("map", "Map", "Open the location map workspace.", 100, entity_id))
+                options.append(_option("map", "Map", "Open the authored location map workspace.", 100, entity_id))
+                if has_person_site_context:
+                    options.append(_option("site_people", "Site Simulation", "Run people and pop representatives on this authored map.", 95, entity_id))
             elif _has_structural_parent_hint(entity):
                 options.append(_option("place_parent", "Place on Parent", "This map has not been defined yet.", 100, entity_id))
             else:
                 options.append(_option("map", "Map", "Open the location map workspace.", 100, entity_id))
+                if has_person_site_context:
+                    options.append(_option("site_people", "Site Simulation", "Run people and pop representatives at this location.", 95, entity_id))
+            if entity.get("biosphere_entity_id"):
+                options.append(_option("biosphere", "Biosphere", "Open the Biosphere overlaying this location.", 90, entity_id))
             return options
 
         if dataset_name == "vehicles":
-            return [_option("vehicle", "Vehicle", "Open the vehicle simulation workspace.", 100, entity_id)]
+            return [_option("vehicle", "Design", "Open the vehicle design workspace.", 100, entity_id)]
 
         if dataset_name == "people" or entity.get("type") == "person":
             return [_option("person", "Person", "Open the person dossier simulation.", 100, entity_id)]
+
+        if dataset_name == "pops" or entity.get("type") == "pop":
+            return [_option("pop", "Pop", "Open the population composition view.", 100, entity_id)]
+
+        if dataset_name == "formations" or entity.get("type") == "formation":
+            return [
+                _option("formation", "Formation Sim", "Open the formation hierarchy and organization view.", 100, entity_id),
+                _option("formation_create", "Add subordinate", "Create a formation or blueprint under this formation.", 90, entity_id),
+            ]
 
         if dataset_name in {"cladistics", "species"} or entity.get("type") in {"cladistics", "species"}:
             return [_option("phylogeny", "Phylogeny", "Open the phylogeny simulation.", 100, entity_id)]

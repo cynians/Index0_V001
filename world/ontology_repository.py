@@ -48,6 +48,9 @@ class OntologyRepository:
 
     DERIVED_FIELDS = {
         "offspring",
+        # Computed from every person's is_employed_by by
+        # EntityLoader.populate_employment_rosters() -- never hand-authored.
+        "employed_people",
     }
 
     DATASET_CACHE_VERSION = 1

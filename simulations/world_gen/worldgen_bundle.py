@@ -29,6 +29,24 @@ def _sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def _entry_name_for_source(source_path, run_root, *, fallback_directory="images"):
+    source_path = Path(source_path).resolve()
+    try:
+        return source_path.relative_to(run_root).as_posix()
+    except ValueError:
+        return (Path(fallback_directory) / source_path.name).as_posix()
+
+
+def _rewrite_source_paths(value, path_entries):
+    if isinstance(value, str):
+        return path_entries.get(value, value)
+    if isinstance(value, list):
+        return [_rewrite_source_paths(item, path_entries) for item in value]
+    if isinstance(value, dict):
+        return {key: _rewrite_source_paths(item, path_entries) for key, item in value.items()}
+    return value
+
+
 def write_worldgen_bundle(bundle_path, *, result, retention=RETENTION_RETAINED, include_images=False):
     """Archive a completed isolated run and atomically publish one ``.i0wg``."""
     if retention not in RETENTION_CLASSES - {"temporary"}:
@@ -38,9 +56,7 @@ def write_worldgen_bundle(bundle_path, *, result, retention=RETENTION_RETAINED, 
         bundle_path = bundle_path.with_suffix(WORLDGEN_BUNDLE_EXTENSION)
     result_payload = asdict(result) if is_dataclass(result) else dict(result)
     run_root = Path(result_payload["output_root"]).resolve()
-    entries = {
-        "result.json": _json_bytes(result_payload),
-    }
+    entries = {}
     source_paths = {
         "input_contract.json": result_payload.get("input_contract_path"),
         "summary.json": result_payload.get("summary_path"),
@@ -48,9 +64,17 @@ def write_worldgen_bundle(bundle_path, *, result, retention=RETENTION_RETAINED, 
         "regional/region.json": result_payload.get("regional_region_path"),
         "regional/materials.json": result_payload.get("regional_materials_path"),
     }
+    for source in result_payload.get("regional_level_snapshot_paths") or []:
+        if source:
+            source_paths[
+                f"regional/{Path(source).name}"
+            ] = source
+    path_entries = {}
     for entry_name, source in source_paths.items():
         if source and Path(source).is_file():
-            entries[entry_name] = Path(source).read_bytes()
+            path_entries[str(Path(source).resolve())] = entry_name
+            if entry_name != "summary.json":
+                entries[entry_name] = Path(source).read_bytes()
     if "planet.json" in entries:
         planet_payload = json.loads(entries["planet.json"].decode("utf-8"))
         coastal_model = planet_payload.get("coastal_geomorphology_model") or {}
@@ -72,16 +96,23 @@ def write_worldgen_bundle(bundle_path, *, result, retention=RETENTION_RETAINED, 
         image_paths = list(result_payload.get("stage_screenshots") or [])
         image_paths.extend(item.get("path") for item in result_payload.get("layer_images") or [])
         image_paths.extend(item.get("path") for item in result_payload.get("regional_layer_images") or [])
+        for diagnostic in result_payload.get("regional_level_diagnostics") or []:
+            image_paths.extend(item.get("path") for item in diagnostic.get("layer_images") or [])
+            image_paths.append(diagnostic.get("contact_sheet"))
         image_paths.extend(filter(None, (result_payload.get("contact_sheet"), result_payload.get("regional_contact_sheet"))))
+        image_paths.append(result_payload.get("regional_lod_overview"))
         for source in image_paths:
             source_path = Path(source)
             if not source_path.is_file():
                 continue
-            try:
-                relative = source_path.resolve().relative_to(run_root)
-            except ValueError:
-                relative = Path("images") / source_path.name
-            entries[relative.as_posix()] = source_path.read_bytes()
+            entry_name = _entry_name_for_source(source_path, run_root)
+            path_entries[str(source_path.resolve())] = entry_name
+            entries[entry_name] = source_path.read_bytes()
+    summary_source = source_paths.get("summary.json")
+    if summary_source and Path(summary_source).is_file():
+        summary_payload = json.loads(Path(summary_source).read_text(encoding="utf-8"))
+        entries["summary.json"] = _json_bytes(_rewrite_source_paths(summary_payload, path_entries))
+    entries["result.json"] = _json_bytes(_rewrite_source_paths(result_payload, path_entries))
     manifest = {
         "format": WORLDGEN_BUNDLE_FORMAT,
         "format_version": WORLDGEN_BUNDLE_VERSION,

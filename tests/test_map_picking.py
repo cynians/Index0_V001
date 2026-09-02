@@ -74,5 +74,63 @@ class MapPickingTests(unittest.TestCase):
         self.assertIs(country, sim._pick_layer_at_world(0.0, 0.0, FailingScreenCamera(), (50, 50)))
 
 
+class _RightClickEvent:
+    type = MapSimulation.MOUSEBUTTONDOWN_EVENT_TYPE
+    button = 3
+
+
+class MapRightClickFloatingCardTests(unittest.TestCase):
+    def _sim_with_pick(self, entity_id):
+        sim = MapSimulation.__new__(MapSimulation)
+        sim._screen_to_world = lambda camera, screen_pos: (0.0, 0.0)
+        sim.is_square_editor_active = lambda: False
+        sim.is_creating_point_location = False
+        sim.is_polygon_editor_active = lambda: False
+        sim._pick_layer_at_world = lambda *args, **kwargs: (
+            {"entity_id": entity_id} if entity_id else None
+        )
+        sim._pending_floating_card_target = None
+        return sim
+
+    def test_right_click_outside_drafting_opens_an_edit_mode_card(self):
+        sim = self._sim_with_pick("location_example")
+
+        sim.handle_pointer_event(_RightClickEvent(), camera=None, screen_pos=(50, 50))
+
+        target = sim.consume_pending_floating_card_target()
+        self.assertIsNotNone(target)
+        self.assertEqual("location_example", target["id"])
+        self.assertEqual("edit", target["mode"])
+
+    def test_right_click_on_empty_map_does_not_open_a_card(self):
+        sim = self._sim_with_pick(None)
+
+        sim.handle_pointer_event(_RightClickEvent(), camera=None, screen_pos=(50, 50))
+
+        self.assertIsNone(sim.consume_pending_floating_card_target())
+
+    def test_right_click_during_polygon_drafting_still_cancels_the_draft_not_a_card(self):
+        sim = self._sim_with_pick("location_example")
+        sim.is_polygon_editor_active = lambda: True
+        drafting_calls = []
+        sim._handle_polygon_editor_pointer_event = lambda *args, **kwargs: drafting_calls.append(args)
+
+        sim.handle_pointer_event(_RightClickEvent(), camera=None, screen_pos=(50, 50))
+
+        self.assertEqual(1, len(drafting_calls))
+        self.assertIsNone(sim.consume_pending_floating_card_target())
+
+    def test_right_click_during_square_drafting_still_cancels_the_draft_not_a_card(self):
+        sim = self._sim_with_pick("location_example")
+        sim.is_square_editor_active = lambda: True
+        drafting_calls = []
+        sim._handle_square_editor_pointer_event = lambda *args, **kwargs: drafting_calls.append(args)
+
+        sim.handle_pointer_event(_RightClickEvent(), camera=None, screen_pos=(50, 50))
+
+        self.assertEqual(1, len(drafting_calls))
+        self.assertIsNone(sim.consume_pending_floating_card_target())
+
+
 if __name__ == "__main__":
     unittest.main()

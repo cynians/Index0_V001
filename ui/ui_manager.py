@@ -42,11 +42,15 @@ class UIManager:
         self.hover_tooltip_lines = []
         self.hover_tooltip_pos = None
         self.person_dossier_lines = []
+        self.person_dossier_model = None
+        self.person_ui_active = False
         self.person_panel_mode = None
         self.person_panel_model = None
         self.person_panel_rect = None
         self.person_panel_close_rect = None
         self.person_panel_icons = []
+        self.pop_ui_active = False
+        self.pop_panel_model = None
         self.simulation_selection_payload = None
         self.simulation_selection_buttons = []
         self.simulation_selection_rect = None
@@ -75,6 +79,7 @@ class UIManager:
         self.tab_hitboxes = []
 
         self.time_lines = []
+        self.time_info = None
         self.timeline_fraction = 0.0
         self.mouse_world_label = None
 
@@ -87,7 +92,20 @@ class UIManager:
         self.repository_return_confirm_rect = None
         self.repository_return_confirm_buttons = []
         self.knowledge_ui = KnowledgeBrowserUI()
+        # Deliberately a *separate* instance from self.knowledge_ui (the
+        # full-screen modal repository browser), not a shared reference.
+        # The floating in-sim card used to reuse self.knowledge_ui directly,
+        # which meant opening it overwrote the modal browser's own
+        # layout["right_rect"]/canvas_offset_x/canvas_offset_y/canvas_zoom
+        # and appended into its shared .cards list -- so exiting a
+        # simulation without explicitly closing the floating card first left
+        # a stale, broken card entry haunting the repository browser's own
+        # canvas. A dedicated instance means the two can never leak state
+        # into each other, in either direction.
+        self.floating_knowledge_ui = KnowledgeBrowserUI()
         self.selection_inspector = SelectionInspectorUI()
+        self.floating_card_rect = None
+        self.floating_card_mode = None
         self.map_history_timeline = TimelineUI()
         self.map_history_timeline_visible = False
         self.map_history_timeline_rect = None
@@ -152,6 +170,7 @@ class UIManager:
             "hours": hours,
             "minutes": minutes,
             "timeline_fraction": seconds_in_day / self.DAY_SECONDS,
+            "year_fraction": ((day_of_year - 1) + seconds_in_day / self.DAY_SECONDS) / 365.0,
         }
 
     def _reset_shared_state(self):
@@ -162,10 +181,14 @@ class UIManager:
         self.hover_tooltip_lines = []
         self.hover_tooltip_pos = None
         self.person_dossier_lines = []
+        self.person_dossier_model = None
+        self.person_ui_active = False
         self.person_panel_model = None
         self.person_panel_rect = None
         self.person_panel_close_rect = None
         self.person_panel_icons = []
+        self.pop_ui_active = False
+        self.pop_panel_model = None
         self.simulation_selection_payload = None
         self.simulation_selection_buttons = []
         self.simulation_selection_rect = None
@@ -208,6 +231,7 @@ class UIManager:
         self.tab_hitboxes = []
 
         self.time_lines = []
+        self.time_info = None
         self.timeline_fraction = 0.0
         self.mouse_world_label = None
 
@@ -1050,6 +1074,7 @@ class UIManager:
 
         if show_time_ui:
             time_info = self._format_sim_time(active_sim)
+            self.time_info = time_info
             self.timeline_fraction = time_info["timeline_fraction"]
 
             self.time_lines = [
@@ -1058,6 +1083,7 @@ class UIManager:
                 f"Time Scale x{active_sim.sim_clock.time_scale:.2f}",
             ]
         else:
+            self.time_info = None
             self.timeline_fraction = 0.0
             self.time_lines = []
 
@@ -1467,7 +1493,33 @@ class UIManager:
             )
             return
 
+        if render_mode == "site_people":
+            self.person_ui_active = False
+            site = getattr(active_sim, "site_entity", {}) or {}
+            site_name = site.get("pretty_name") or site.get("name") or getattr(active_sim, "site_root_id", "Site")
+            self.scope_label = f"Site Simulation: {site_name}"
+            self.breadcrumb_label = "Authored people · pop representatives · provisional visitors"
+            self.person_dossier_lines = (
+                active_sim.get_site_summary_lines()
+                if hasattr(active_sim, "get_site_summary_lines")
+                else []
+            )
+            # A hovered/selected presence (person or vehicle) takes priority
+            # over the static site summary above -- see _draw_person_dossier_card,
+            # which already prefers person_dossier_model over person_dossier_lines.
+            self.person_dossier_model = (
+                active_sim.get_dossier_panel_model()
+                if hasattr(active_sim, "get_dossier_panel_model")
+                else None
+            )
+            self.buttons.append(
+                UIButton("open_repository", "Open Repository",
+                         pygame.Rect(button_x, button_y, button_width, button_height))
+            )
+            return
+
         if render_mode == "person":
+            self.person_ui_active = True
             person_name = active_sim.get_person_name() if hasattr(active_sim, "get_person_name") else "Person"
             person_class = active_sim.get_person_class() if hasattr(active_sim, "get_person_class") else "person"
             self.scope_label = f"Person: {person_name}"
@@ -1476,6 +1528,11 @@ class UIManager:
                 active_sim.get_dossier_panel_lines()
                 if hasattr(active_sim, "get_dossier_panel_lines")
                 else []
+            )
+            self.person_dossier_model = (
+                active_sim.get_dossier_panel_model()
+                if hasattr(active_sim, "get_dossier_panel_model")
+                else None
             )
 
             self.buttons.append(
@@ -1518,15 +1575,40 @@ class UIManager:
                     "label": "Personality",
                     "rect": pygame.Rect(icon_x, icon_y + icon_size + 12, icon_size, icon_size),
                 },
+                {
+                    "id": "knowledge",
+                    "label": "Knowledge",
+                    "rect": pygame.Rect(icon_x, icon_y + (icon_size + 12) * 2, icon_size, icon_size),
+                },
+                {
+                    "id": "tasks",
+                    "label": "Tasks",
+                    "rect": pygame.Rect(icon_x, icon_y + (icon_size + 12) * 3, icon_size, icon_size),
+                },
+                {
+                    "id": "inventory",
+                    "label": "Items",
+                    "rect": pygame.Rect(icon_x, icon_y + (icon_size + 12) * 4, icon_size, icon_size),
+                },
             ]
             if self.person_panel_mode == "needs" and hasattr(active_sim, "get_needs_panel_model"):
                 self.person_panel_model = active_sim.get_needs_panel_model()
             elif self.person_panel_mode == "personality" and hasattr(active_sim, "get_personality_panel_model"):
                 self.person_panel_model = active_sim.get_personality_panel_model()
+            elif self.person_panel_mode == "knowledge" and hasattr(active_sim, "get_knowledge_panel_model"):
+                self.person_panel_model = active_sim.get_knowledge_panel_model()
+            elif self.person_panel_mode == "tasks" and hasattr(active_sim, "get_task_panel_model"):
+                self.person_panel_model = active_sim.get_task_panel_model()
+            elif self.person_panel_mode == "inventory" and hasattr(active_sim, "get_inventory_panel_model"):
+                self.person_panel_model = active_sim.get_inventory_panel_model()
 
             if self.person_panel_model is not None:
-                panel_w = min(760, max(520, app_width - 250))
-                panel_h = min(610, max(430, app_height - 110))
+                # Fill essentially the whole screen (up to the icon column
+                # and a small margin) rather than the old fixed 760x610 cap,
+                # which clipped panel content -- e.g. a longer Wishes/Goals
+                # list -- on ordinary window sizes.
+                panel_w = max(520, icon_x - 40)
+                panel_h = max(430, app_height - 90)
                 panel_x = max(20, icon_x - panel_w - 18)
                 panel_y = max(52, (app_height - panel_h) // 2)
                 self.person_panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
@@ -1542,6 +1624,23 @@ class UIManager:
                 app_width=app_width,
                 app_height=app_height,
                 font=self.app_font,
+            )
+            return
+
+        if render_mode == "pop":
+            self.person_ui_active = False
+            self.pop_ui_active = True
+            self.pop_panel_model = (
+                active_sim.get_population_panel_model()
+                if hasattr(active_sim, "get_population_panel_model")
+                else None
+            )
+            pop_name = (self.pop_panel_model or {}).get("pop_name", "Pop")
+            self.scope_label = f"Pop: {pop_name}"
+            self.breadcrumb_label = (self.pop_panel_model or {}).get("pop_type", "")
+            self.buttons.append(
+                UIButton("open_repository", "Open Repository",
+                         pygame.Rect(button_x, button_y, button_width, button_height))
             )
             return
 
@@ -1674,6 +1773,7 @@ class UIManager:
         self._rebuild_repository_return_confirm(app_width, app_height)
 
         self._rebuild_selection_inspector(active_sim, app_width, app_height)
+        self._rebuild_floating_card(active_sim, world_model, app_width, app_height)
 
         if tab_manager is not None:
             self.tab_labels = [tab.name for tab in tab_manager.tabs]
@@ -1789,6 +1889,172 @@ class UIManager:
                     )
 
         self.selection_inspector.rebuild(app_width, app_height)
+
+    FLOATING_CARD_WIDTH = 440
+    FLOATING_CARD_HEIGHT = 420
+    FLOATING_CARD_FAMILIARITY_LOW = 0.2
+    FLOATING_CARD_FAMILIARITY_HIGH = 0.6
+
+    @staticmethod
+    def _redact_entity_for_familiarity(entity, familiarity):
+        """Build a display-only copy of entity with fields trimmed to what the
+        protagonist plausibly knows. Returning a copy (never the real entity
+        dict) is a deliberate second layer of safety on top of disabling the
+        edit/delete hitboxes -- see _rebuild_floating_card.
+        """
+        entity_id = entity.get("id")
+        dataset_name = entity.get("_dataset") or entity.get("type") or "entity"
+        entity_type = entity.get("type", dataset_name)
+
+        if familiarity < UIManager.FLOATING_CARD_FAMILIARITY_LOW:
+            return {
+                "id": entity_id,
+                "_dataset": dataset_name,
+                "type": entity_type,
+                "name": "Unknown",
+                "pretty_name": "Unknown",
+                "wiki_entry": "Not yet encountered.",
+            }
+
+        if familiarity < UIManager.FLOATING_CARD_FAMILIARITY_HIGH:
+            allowed_keys = {"id", "_dataset", "type", "name", "pretty_name", "three_word_description", "tags"}
+            redacted = {
+                key: value for key, value in entity.items()
+                if key in allowed_keys or str(key).endswith("_class")
+            }
+            redacted.setdefault("id", entity_id)
+            redacted.setdefault("_dataset", dataset_name)
+            redacted.setdefault("type", entity_type)
+            return redacted
+
+        return dict(entity)
+
+    def _rebuild_floating_card(self, active_sim, world_model, app_width, app_height):
+        consume = getattr(active_sim, "consume_pending_floating_card_target", None)
+        if callable(consume):
+            target = consume()
+            if target:
+                self._open_floating_card(target, world_model, app_width, app_height)
+
+        if self.floating_card_rect is None:
+            return
+
+        self.floating_knowledge_ui._relayout_cards()
+        self.scrub_floating_card_hitboxes()
+
+    def scrub_floating_card_hitboxes(self):
+        """Strip edit/delete hitboxes while the floating card is in
+        read-only inspect mode, so a familiarity-redacted card can never be
+        mutated through it -- drag and resize stay live in every mode (the
+        floating card is meant to have full repo-browser-card functionality,
+        just data-mutation is what inspect mode must forbid).
+
+        Several click-dispatch branches inside KnowledgeCanvasController call
+        _relayout_cards()/layout_card again as a side effect of handling that
+        same click (e.g. toggling edit mode re-lays-out immediately), which
+        re-populates every hitbox from scratch -- including the ones this
+        scrub just cleared a moment earlier. So this must run again after
+        *every* dispatched click, not just once per frame, or a single click
+        sequence can silently undo the inspect-mode safety guarantee.
+        """
+        if self.floating_card_rect is None or self.floating_card_mode != "inspect":
+            return
+        for card in self.floating_knowledge_ui.cards:
+            card["edit_toggle_rect"] = None
+            card["delete_rect"] = None
+
+    def _open_floating_card(self, target, world_model, app_width, app_height):
+        if world_model is None:
+            return
+        entity_id = target.get("id")
+        entity = world_model.get_entity(entity_id) if entity_id else None
+        if not isinstance(entity, dict):
+            return
+        mode = target.get("mode", "edit")
+
+        floating_ui = self.floating_knowledge_ui
+        if floating_ui.layout is None:
+            floating_ui.layout = floating_ui._build_layout(app_width, app_height)
+        floating_ui.world_model = world_model
+        floating_ui._bind_world_schema_loader(world_model)
+        floating_ui.font_for_layout = self.app_font
+
+        if mode == "inspect":
+            entity_for_card = self._redact_entity_for_familiarity(entity, float(target.get("familiarity") or 0.0))
+            # _ensure_card dedups by entity id and, for a *new* card, would
+            # also merge in any unsaved draft for that id via
+            # _apply_cached_draft_to_card. Either path could hand an
+            # inspect-mode request the real (or draft) full entity instead
+            # of the familiarity-redacted copy -- e.g. if this entity is
+            # already open in an edit-mode card elsewhere, or the player has
+            # an unsaved draft for it from their own authoring session. Drop
+            # any existing card for this id first so inspect mode always
+            # builds fresh from the redacted copy.
+            floating_ui.cards = [
+                existing for existing in floating_ui.cards
+                if existing.get("entity_id") != entity_id
+            ]
+        else:
+            entity_for_card = entity
+
+        width, height = self.FLOATING_CARD_WIDTH, self.FLOATING_CARD_HEIGHT
+        x = max(20, min(app_width - width - 20, (app_width - width) // 2))
+        y = max(60, min(app_height - height - 20, (app_height - height) // 2))
+        floating_rect = pygame.Rect(x, y, width, height)
+
+        floating_ui.layout["right_rect"] = floating_rect
+        floating_ui.canvas_offset_x = 0.0
+        floating_ui.canvas_offset_y = 0.0
+        floating_ui.canvas_zoom = 1.0
+
+        card = floating_ui._ensure_card(entity_for_card)
+        if card is None:
+            return
+        card["canvas_x"] = 0
+        card["canvas_y"] = 0
+        card["canvas_w"] = width
+        card["canvas_h"] = height
+        card["auto_canvas_h"] = False
+        if mode == "inspect":
+            # _build_card_from_entity may have merged in the player's own
+            # unsaved draft for this entity id via _apply_cached_draft_to_card,
+            # which mutates the entity dict *in place* (entity.clear() +
+            # entity.update(draft)) -- that draft could easily carry full,
+            # un-redacted field values unrelated to what this protagonist
+            # actually knows. Recompute the redaction fresh against the real
+            # entity and force it back, so drafts can never leak past the
+            # familiarity gate.
+            fresh_redacted = self._redact_entity_for_familiarity(entity, float(target.get("familiarity") or 0.0))
+            card["card_view"].entity.clear()
+            card["card_view"].entity.update(fresh_redacted)
+            card["is_edit_mode"] = False
+            card["has_unsaved_draft"] = False
+            card["is_draft_entity"] = False
+            card["draft_edit_buffers"] = {}
+
+        self.floating_card_rect = floating_rect
+        self.floating_card_mode = mode
+
+    def draw_floating_card(self, screen, font):
+        if self.floating_card_rect is None:
+            return
+        self.floating_knowledge_ui._draw_card_canvas(screen, font, self.floating_card_rect)
+
+    def draw_system_menu_overlay(self, screen, font):
+        """Draw the ESC/system menu on top of everything else, including the
+        floating in-sim card. Must be called after draw_floating_card() --
+        app.py calls draw_floating_card() after draw(), which is where the
+        system menu used to be drawn, leaving it underneath the floating
+        card. Self-gated (no-op when the menu isn't open), safe to call
+        unconditionally every frame."""
+        self._draw_system_menu(screen, font)
+
+    def close_floating_card(self):
+        if self.floating_card_rect is None:
+            return
+        self.floating_knowledge_ui.cards = []
+        self.floating_card_rect = None
+        self.floating_card_mode = None
 
     def _draw_simulation_bar(self, screen, font):
         if self.simulation_bar_rect is None:
@@ -2270,6 +2536,129 @@ class UIManager:
 
         self._draw_info_panel(screen, font, 20, 40, lines)
 
+    def _draw_person_time_strip(self, screen, font):
+        info = self.time_info or {}
+        if not info:
+            return
+
+        x = 20
+        y = 40
+        width = min(960, max(520, screen.get_width() - 250))
+        height = 54
+        rect = pygame.Rect(x, y, width, height)
+
+        shadow = rect.move(4, 5)
+        pygame.draw.rect(screen, (5, 7, 10), shadow, border_radius=8)
+        pygame.draw.rect(screen, (17, 22, 29), rect, border_radius=8)
+        pygame.draw.rect(screen, (76, 91, 108), rect, 1, border_radius=8)
+        pygame.draw.rect(screen, (100, 181, 199), (rect.x, rect.y, 4, rect.height), border_radius=3)
+
+        year = int(info.get("year", 0))
+        day = int(info.get("day_of_year", 1))
+        clock = f"{int(info.get('hours', 0)):02d}:{int(info.get('minutes', 0)):02d}"
+        scale = self.time_lines[2].replace("Time Scale ", "") if len(self.time_lines) > 2 else "x1.00"
+
+        title_font = pygame.font.SysFont("consolas", max(17, font.get_height() + 1), bold=True)
+        screen.blit(self._render_text(title_font, f"YEAR {year}", (230, 234, 238)), (rect.x + 16, rect.y + 10))
+        day_text = self._render_text(font, f"DAY {day:03d} / 365", (154, 201, 207))
+        screen.blit(day_text, (rect.x + 132, rect.y + 13))
+        clock_text = self._render_text(font, f"{clock}  {scale}", (170, 180, 192))
+        screen.blit(clock_text, (rect.x + 310, rect.y + 13))
+        mode = str((self.person_dossier_model or {}).get("mode") or "Autonomous").upper()
+        mode_text = self._render_text(title_font, mode, (225, 201, 116))
+        screen.blit(mode_text, (rect.right - mode_text.get_width() - 16, rect.y + 10))
+
+        line_x = rect.x + 17
+        line_y = rect.y + 43
+        line_w = rect.width - 34
+        year_fraction = max(0.0, min(1.0, float(info.get("year_fraction", 0.0) or 0.0)))
+        pygame.draw.line(screen, (48, 58, 70), (line_x, line_y), (line_x + line_w, line_y), 4)
+        filled = int(round(line_w * year_fraction))
+        if filled:
+            pygame.draw.line(screen, (91, 173, 191), (line_x, line_y), (line_x + filled, line_y), 4)
+        marker_x = line_x + filled
+        pygame.draw.circle(screen, (225, 201, 116), (marker_x, line_y), 5)
+        pygame.draw.circle(screen, (238, 232, 202), (marker_x, line_y), 2)
+
+    def _draw_person_dossier_card(self, screen, font):
+        model = self.person_dossier_model or {}
+        if not model:
+            return
+
+        width = min(390, max(320, screen.get_width() - 870))
+        height = 198
+        bottom_margin = 20
+        if self.map_history_timeline_visible and self.map_history_timeline_rect is not None:
+            bottom_margin = max(bottom_margin, screen.get_height() - self.map_history_timeline_rect.y + 12)
+        rect = pygame.Rect(20, screen.get_height() - bottom_margin - height, width, height)
+
+        shadow = rect.move(5, 6)
+        pygame.draw.rect(screen, (4, 6, 9), shadow, border_radius=10)
+        pygame.draw.rect(screen, (18, 23, 30), rect, border_radius=10)
+        pygame.draw.rect(screen, (80, 93, 110), rect, 1, border_radius=10)
+        pygame.draw.rect(screen, (213, 188, 111), (rect.x, rect.y, 5, rect.height), border_radius=3)
+
+        title_font = pygame.font.SysFont("consolas", max(18, font.get_height() + 2), bold=True)
+        name = self._ellipsize_text(model.get("name", "Person"), title_font, rect.width - 145)
+        screen.blit(self._render_text(title_font, name, (239, 239, 235)), (rect.x + 17, rect.y + 12))
+
+        mode = str(model.get("mode") or "Autonomous").upper()
+        mode_surface = self._render_text(font, mode, (177, 213, 189))
+        mode_rect = pygame.Rect(rect.right - mode_surface.get_width() - 27, rect.y + 11, mode_surface.get_width() + 14, 24)
+        pygame.draw.rect(screen, (34, 55, 48), mode_rect, border_radius=12)
+        pygame.draw.rect(screen, (80, 133, 107), mode_rect, 1, border_radius=12)
+        screen.blit(mode_surface, mode_surface.get_rect(center=mode_rect.center))
+
+        subtitle = f"{model.get('person_class', 'person')}  |  {model.get('anchor', 'not anchored')}"
+        subtitle = self._ellipsize_text(subtitle, font, rect.width - 34)
+        screen.blit(self._render_text(font, subtitle, (126, 143, 160)), (rect.x + 17, rect.y + 40))
+
+        task_rect = pygame.Rect(rect.x + 15, rect.y + 65, rect.width - 30, 39)
+        pygame.draw.rect(screen, (25, 31, 40), task_rect, border_radius=6)
+        pygame.draw.rect(screen, (62, 75, 91), task_rect, 1, border_radius=6)
+        phase = str(model.get("active_phase") or "idle").replace("_", " ")
+        queue = int(model.get("queue_count", 0) or 0)
+        task_meta = self._render_text(font, f"{phase}  ·  {queue} queued", (120, 155, 177))
+        screen.blit(task_meta, (task_rect.right - task_meta.get_width() - 10, task_rect.y + 6))
+        task_label_w = max(70, task_rect.width - task_meta.get_width() - 34)
+        task_label = self._ellipsize_text(
+            model.get("active_action") or model.get("active_task", "No active task"),
+            font,
+            task_label_w,
+        )
+        screen.blit(self._render_text(font, task_label, (220, 225, 229)), (task_rect.x + 10, task_rect.y + 6))
+
+        needs = list(model.get("needs") or [])[:3]
+        gap = 10
+        need_w = max(70, (rect.width - 30 - gap * 2) // 3)
+        for index, need in enumerate(needs):
+            nx = rect.x + 15 + index * (need_w + gap)
+            value = max(0.0, min(100.0, float(need.get("value", 0.0) or 0.0)))
+            label = self._render_text(font, f"{need.get('label', 'Need')} {value:.0f}", (174, 184, 193))
+            screen.blit(label, (nx, rect.y + 116))
+            bar = pygame.Rect(nx, rect.y + 138, need_w, 5)
+            pygame.draw.rect(screen, (44, 52, 63), bar, border_radius=3)
+            color = (194, 104, 91) if value < 30 else (207, 169, 91) if value < 60 else (91, 163, 137)
+            pygame.draw.rect(screen, color, (bar.x, bar.y, int(bar.width * value / 100.0), bar.height), border_radius=3)
+
+        affiliations = list(model.get("affiliations") or [])
+        chip_x = rect.x + 15
+        chip_y = rect.y + 153
+        for affiliation in affiliations[:2]:
+            chip_text = f"{affiliation.get('kind', '')}: {affiliation.get('label', '')}"
+            chip_text = self._ellipsize_text(chip_text, font, max(90, (rect.width - 42) // 2))
+            rendered = self._render_text(font, chip_text, (142, 165, 185))
+            chip = pygame.Rect(chip_x, chip_y, rendered.get_width() + 13, 22)
+            if chip.right > rect.right - 15:
+                break
+            pygame.draw.rect(screen, (29, 38, 48), chip, border_radius=11)
+            pygame.draw.rect(screen, (56, 76, 94), chip, 1, border_radius=11)
+            screen.blit(rendered, rendered.get_rect(center=chip.center))
+            chip_x = chip.right + 7
+
+        status = self._ellipsize_text(model.get("status", ""), font, rect.width - 30)
+        screen.blit(self._render_text(font, status, (108, 124, 139)), (rect.x + 15, rect.bottom - 18))
+
     def _draw_map_empty_state(self, screen, font):
         if not self.map_empty_state_lines:
             return
@@ -2602,13 +2991,37 @@ class UIManager:
                         (203, 184, 119),
                         [(cx - width // 2, y + 6), (cx + width // 2, y + 6), (cx, y)],
                     )
-            else:
+            elif item["id"] == "personality":
                 points = []
                 for index in range(5):
                     angle = -math.pi / 2 + index * math.tau / 5
                     points.append((cx + math.cos(angle) * 14, cy + math.sin(angle) * 14))
                 pygame.draw.polygon(screen, (111, 157, 188), points, 2)
                 pygame.draw.circle(screen, (184, 211, 225), (cx, cy), 3)
+            elif item["id"] == "knowledge":
+                book_color = (132, 177, 202)
+                pygame.draw.line(screen, book_color, (cx, cy - 12), (cx, cy + 13), 2)
+                pygame.draw.lines(
+                    screen, book_color, False,
+                    [(cx - 2, cy - 10), (cx - 15, cy - 13), (cx - 15, cy + 9), (cx - 2, cy + 12)], 2,
+                )
+                pygame.draw.lines(
+                    screen, book_color, False,
+                    [(cx + 2, cy - 10), (cx + 15, cy - 13), (cx + 15, cy + 9), (cx + 2, cy + 12)], 2,
+                )
+                pygame.draw.circle(screen, (218, 194, 113), (cx + 12, cy - 10), 3)
+            elif item["id"] == "tasks":
+                task_color = (127, 183, 145)
+                for row in range(3):
+                    row_y = cy - 11 + row * 11
+                    pygame.draw.rect(screen, task_color, (cx - 15, row_y, 6, 6), 1)
+                    pygame.draw.line(screen, task_color, (cx - 5, row_y + 3), (cx + 15, row_y + 3), 2)
+            else:
+                item_color = (191, 158, 105)
+                pygame.draw.rect(screen, item_color, (cx - 15, cy - 11, 30, 24), 2, border_radius=3)
+                pygame.draw.line(screen, item_color, (cx - 15, cy - 3), (cx + 15, cy - 3), 2)
+                pygame.draw.line(screen, item_color, (cx, cy - 11), (cx, cy - 3), 2)
+                pygame.draw.circle(screen, (224, 206, 157), (cx, cy + 5), 3)
 
             if self.person_panel_mode is None:
                 label = self._render_text(font, item["label"], (220, 225, 232))
@@ -2797,17 +3210,232 @@ class UIManager:
         footer = self._ellipsize_text(footer, font, rect.width - 50)
         screen.blit(self._render_text(font, footer, (153, 162, 176)), (rect.x + 24, rect.bottom - 36))
 
+    def _draw_person_knowledge_panel(self, screen, font, rect, model):
+        content = pygame.Rect(rect.x + 20, rect.y + 76, rect.width - 40, rect.height - 96)
+        categories = list(model.get("categories") or [])
+        gap = 14
+        column_w = (content.width - gap) // 2
+        cursors = [content.y, content.y]
+        accents = (
+            (116, 166, 194), (137, 177, 139), (190, 154, 103),
+            (163, 132, 190), (181, 125, 116), (113, 174, 174),
+        )
+        for index, category in enumerate(categories[:8]):
+            column = index % 2
+            entries = list(category.get("entries") or [])[:4]
+            card_h = 48 + len(entries) * 57
+            if cursors[column] + card_h > content.bottom:
+                continue
+            card = pygame.Rect(content.x + column * (column_w + gap), cursors[column], column_w, card_h)
+            accent = accents[index % len(accents)]
+            pygame.draw.rect(screen, (24, 29, 37), card, border_radius=7)
+            pygame.draw.rect(screen, (72, 82, 98), card, 1, border_radius=7)
+            pygame.draw.rect(screen, accent, (card.x, card.y, 5, card.height), border_radius=3)
+            heading = f"{category.get('label', 'Knowledge')}  {len(category.get('entries') or [])}"
+            self._draw_panel_heading(screen, font, heading, card.x + 14, card.y + 9, accent)
+            y = card.y + 42
+            for entry in entries:
+                interest = max(0.0, min(1.0, float(entry.get("interest", 0.0) or 0.0)))
+                label = self._ellipsize_text(entry.get("label", "Unknown"), font, card.width - 76)
+                screen.blit(self._render_text(font, label, (227, 230, 235)), (card.x + 15, y))
+                score = self._render_text(font, f"{interest * 100:.0f}", accent)
+                screen.blit(score, (card.right - score.get_width() - 14, y))
+                bar = pygame.Rect(card.x + 15, y + 22, card.width - 30, 7)
+                pygame.draw.rect(screen, (43, 49, 59), bar, border_radius=3)
+                pygame.draw.rect(screen, accent, (bar.x, bar.y, int(bar.width * interest), bar.height), border_radius=3)
+                wayfinding = str(entry.get("navigation_knowledge") or "").strip()
+                detail = (
+                    f"{wayfinding} knowledge"
+                    if wayfinding
+                    else str(entry.get("stance") or entry.get("source") or entry.get("entity_type") or "known")
+                )
+                conviction = float(entry.get("conviction", 0.0) or 0.0)
+                if conviction > 0:
+                    detail += f"  |  conviction {conviction * 100:.0f}"
+                detail = self._ellipsize_text(detail, font, card.width - 30)
+                screen.blit(self._render_text(font, detail, (133, 145, 160)), (card.x + 15, y + 33))
+                y += 57
+            cursors[column] = card.bottom + gap
+
+    def _draw_person_tasks_panel(self, screen, font, rect, model):
+        content = pygame.Rect(rect.x + 20, rect.y + 76, rect.width - 40, rect.height - 96)
+        left = pygame.Rect(content.x, content.y, int(content.width * 0.55), content.height)
+        right = pygame.Rect(left.right + 14, content.y, content.right - left.right - 14, content.height)
+        active = model.get("active")
+        active_rect = pygame.Rect(left.x, left.y, left.width, 190)
+        pygame.draw.rect(screen, (27, 32, 41), active_rect, border_radius=7)
+        pygame.draw.rect(screen, (95, 111, 132), active_rect, 1, border_radius=7)
+        self._draw_panel_heading(screen, font, "Current decision", active_rect.x + 14, active_rect.y + 10, (218, 194, 113))
+        if active:
+            score = float(active.get("decision_score", 0.0) or 0.0)
+            title = self._ellipsize_text(active.get("label", "Task"), font, active_rect.width - 92)
+            screen.blit(self._render_text(font, title, (234, 235, 238)), (active_rect.x + 14, active_rect.y + 43))
+            score_text = self._render_text(font, f"{score:.0f}", (218, 194, 113))
+            screen.blit(score_text, (active_rect.right - score_text.get_width() - 14, active_rect.y + 43))
+            source = active.get("issuer_label") or active.get("allocation_kind") or active.get("source", "internal")
+            screen.blit(self._render_text(font, f"Source: {source}", (139, 153, 170)), (active_rect.x + 14, active_rect.y + 67))
+            lifecycle = str(active.get("lifecycle_state") or active.get("phase") or "proposed").replace("_", " ")
+            action = str(active.get("action_label") or active.get("label") or "Task")
+            action = self._ellipsize_text(action, font, active_rect.width - 132)
+            screen.blit(
+                self._render_text(font, f"{lifecycle.upper()}  |  {action}", (137, 187, 174)),
+                (active_rect.x + 14, active_rect.y + 87),
+            )
+            navigation = model.get("navigation") or {}
+            navigation_mode = str(navigation.get("mode") or "idle").replace("_", " ")
+            explanation_y = active_rect.y + 112
+            explanation_limit = 4
+            if navigation_mode != "idle":
+                nav_text = self._ellipsize_text(
+                    f"Wayfinding: {navigation_mode} · {model.get('status', '')}",
+                    font,
+                    active_rect.width - 28,
+                )
+                screen.blit(self._render_text(font, nav_text, (139, 176, 201)), (active_rect.x + 14, active_rect.y + 109))
+                explanation_y = active_rect.y + 132
+                explanation_limit = 3
+            explanation = str(active.get("decision_explanation") or "No explanation recorded")
+            words = explanation.split()
+            lines = []
+            current = ""
+            for word in words:
+                candidate = f"{current} {word}".strip()
+                if font.size(candidate)[0] > active_rect.width - 28 and current:
+                    lines.append(current)
+                    current = word
+                else:
+                    current = candidate
+            if current:
+                lines.append(current)
+            for line_index, line in enumerate(lines[:explanation_limit]):
+                screen.blit(self._render_text(font, line, (186, 194, 205)), (active_rect.x + 14, explanation_y + line_index * 18))
+        else:
+            screen.blit(self._render_text(font, "No active task", (145, 155, 168)), (active_rect.x + 14, active_rect.y + 50))
+
+        self._draw_panel_heading(screen, font, "Competing pressures", left.x, active_rect.bottom + 18, (126, 174, 149))
+        y = active_rect.bottom + 48
+        for task in list(model.get("comparisons") or [])[:6]:
+            row = pygame.Rect(left.x, y, left.width, 48)
+            pygame.draw.rect(screen, (23, 27, 34), row, border_radius=4)
+            label = self._ellipsize_text(task.get("label", "Task"), font, row.width - 100)
+            screen.blit(self._render_text(font, label, (218, 222, 228)), (row.x + 10, row.y + 6))
+            score = float(task.get("decision_score", 0.0) or 0.0)
+            color = (179, 112, 106) if score < 0 else (119, 175, 143)
+            score_surface = self._render_text(font, f"{score:+.0f}", color)
+            screen.blit(score_surface, (row.right - score_surface.get_width() - 10, row.y + 6))
+            response = self._ellipsize_text(task.get("likely_response", task.get("source", "")), font, row.width - 20)
+            screen.blit(self._render_text(font, response, (132, 144, 159)), (row.x + 10, row.y + 26))
+            y += 54
+            if y > left.bottom - 42:
+                break
+
+        pygame.draw.rect(screen, (24, 29, 37), right, border_radius=7)
+        pygame.draw.rect(screen, (72, 82, 98), right, 1, border_radius=7)
+        self._draw_panel_heading(screen, font, "Allocation & history", right.x + 14, right.y + 10, (137, 166, 198))
+        counts = f"External {model.get('external_count', 0)}  |  Internal {model.get('internal_count', 0)}"
+        screen.blit(self._render_text(font, counts, (151, 164, 181)), (right.x + 14, right.y + 42))
+        y = right.y + 76
+        for entry in list(model.get("history") or [])[:5]:
+            event = str(entry.get("event") or "decision").upper()
+            screen.blit(self._render_text(font, event, (218, 194, 113)), (right.x + 14, y))
+            label = self._ellipsize_text(entry.get("label", "Task"), font, right.width - 28)
+            screen.blit(self._render_text(font, label, (225, 228, 232)), (right.x + 14, y + 20))
+            explanation = self._ellipsize_text(entry.get("explanation", ""), font, right.width - 28)
+            screen.blit(self._render_text(font, explanation, (126, 139, 155)), (right.x + 14, y + 40))
+            y += 77
+            if y > right.bottom - 58:
+                break
+        status = self._ellipsize_text(model.get("status", ""), font, right.width - 28)
+        screen.blit(self._render_text(font, status, (143, 181, 153)), (right.x + 14, right.bottom - 31))
+
+    def _draw_person_inventory_panel(self, screen, font, rect, model):
+        content = pygame.Rect(rect.x + 20, rect.y + 78, rect.width - 40, rect.height - 98)
+        left = pygame.Rect(content.x, content.y, int(content.width * 0.55), content.height)
+        right = pygame.Rect(left.right + 14, content.y, content.right - left.right - 14, content.height)
+
+        self._draw_panel_heading(screen, font, "Carried items", left.x, left.y, (220, 190, 130))
+        count_text = (
+            f"{model.get('held_stack_count', 0)} stacks  |  "
+            f"{model.get('held_unit_count', 0)} units"
+        )
+        screen.blit(self._render_text(font, count_text, (137, 150, 166)), (left.x, left.y + 28))
+        y = left.y + 58
+        held = list(model.get("held_items") or [])
+        if not held:
+            empty = pygame.Rect(left.x, y, left.width, 66)
+            pygame.draw.rect(screen, (24, 29, 37), empty, border_radius=6)
+            pygame.draw.rect(screen, (69, 79, 94), empty, 1, border_radius=6)
+            screen.blit(self._render_text(font, "No items carried", (143, 154, 168)), (empty.x + 14, empty.y + 22))
+        for entry in held[:7]:
+            card = pygame.Rect(left.x, y, left.width, 64)
+            pygame.draw.rect(screen, (25, 31, 39), card, border_radius=6)
+            pygame.draw.rect(screen, (83, 92, 105), card, 1, border_radius=6)
+            label = self._ellipsize_text(entry.get("label", "Item"), font, card.width - 110)
+            screen.blit(self._render_text(font, label, (229, 230, 226)), (card.x + 13, card.y + 9))
+            quantity = f"x{entry.get('quantity', 0)}"
+            quantity_surface = self._render_text(font, quantity, (224, 195, 130))
+            screen.blit(quantity_surface, (card.right - quantity_surface.get_width() - 13, card.y + 9))
+            detail = str(entry.get("item_class") or "item")
+            if entry.get("consumable"):
+                detail += f"  |  food +{entry.get('food_satiation', 0)}"
+            detail = self._ellipsize_text(detail, font, card.width - 26)
+            screen.blit(self._render_text(font, detail, (132, 148, 163)), (card.x + 13, card.y + 35))
+            y += 72
+            if y > left.bottom - 60:
+                break
+
+        pygame.draw.rect(screen, (23, 28, 36), right, border_radius=7)
+        pygame.draw.rect(screen, (72, 83, 98), right, 1, border_radius=7)
+        self._draw_panel_heading(screen, font, "Nearby storage", right.x + 14, right.y + 12, (143, 184, 190))
+        y = right.y + 48
+        nearby = list(model.get("nearby_items") or [])
+        if not nearby:
+            screen.blit(self._render_text(font, "No accessible stock listed", (137, 148, 162)), (right.x + 14, y))
+            y += 34
+        for entry in nearby[:4]:
+            label = self._ellipsize_text(entry.get("label", "Item"), font, right.width - 85)
+            screen.blit(self._render_text(font, label, (220, 224, 226)), (right.x + 14, y))
+            qty = self._render_text(font, f"x{entry.get('quantity', 0)}", (220, 190, 126))
+            screen.blit(qty, (right.right - qty.get_width() - 14, y))
+            holder = self._ellipsize_text(entry.get("holder_label", "storage"), font, right.width - 28)
+            screen.blit(self._render_text(font, holder, (127, 148, 159)), (right.x + 14, y + 21))
+            y += 52
+
+        self._draw_panel_heading(screen, font, "Recent item movements", right.x + 14, y + 8, (156, 175, 201))
+        y += 42
+        history = list(model.get("history") or [])
+        if not history:
+            screen.blit(self._render_text(font, "No transfers yet", (135, 146, 159)), (right.x + 14, y))
+        for entry in history[:5]:
+            delta = float(entry.get("delta", 0) or 0)
+            color = (123, 190, 151) if delta > 0 else (199, 133, 117)
+            delta_surface = self._render_text(font, f"{delta:+g}", color)
+            screen.blit(delta_surface, (right.x + 14, y))
+            label = self._ellipsize_text(entry.get("label", "Item"), font, right.width - 75)
+            screen.blit(self._render_text(font, label, (221, 224, 228)), (right.x + 58, y))
+            reason = self._ellipsize_text(entry.get("reason", ""), font, right.width - 28)
+            screen.blit(self._render_text(font, reason, (125, 139, 154)), (right.x + 14, y + 20))
+            y += 51
+            if y > right.bottom - 28:
+                break
+
     def _draw_person_panel(self, screen, font):
         rect = self.person_panel_rect
         model = self.person_panel_model
-        if rect is None or model is None or self.person_panel_mode not in {"needs", "personality"}:
+        if rect is None or model is None or self.person_panel_mode not in {"needs", "personality", "knowledge", "tasks", "inventory"}:
             return
 
         shadow = rect.move(7, 8)
         pygame.draw.rect(screen, (4, 5, 8), shadow, border_radius=8)
         pygame.draw.rect(screen, (18, 22, 29), rect, border_radius=8)
         pygame.draw.rect(screen, (151, 161, 178), rect, 2, border_radius=8)
-        title = "Needs, wishes & goals" if self.person_panel_mode == "needs" else "Personality - Big Five"
+        title = {
+            "needs": "Needs, wishes & goals",
+            "personality": "Personality - Big Five",
+            "knowledge": "Knowledge & interests",
+            "tasks": "Task allocation & decisions",
+            "inventory": "Items & inventory",
+        }[self.person_panel_mode]
         self._draw_panel_heading(screen, font, title, rect.x + 20, rect.y + 16)
         subtitle = self._ellipsize_text(model.get("person_name", "Person"), font, rect.width - 100)
         screen.blit(self._render_text(font, subtitle, (137, 149, 166)), (rect.x + 21, rect.y + 44))
@@ -2819,8 +3447,97 @@ class UIManager:
 
         if self.person_panel_mode == "needs":
             self._draw_person_needs_panel(screen, font, rect, model)
-        else:
+        elif self.person_panel_mode == "personality":
             self._draw_personality_panel(screen, font, rect, model)
+        elif self.person_panel_mode == "knowledge":
+            self._draw_person_knowledge_panel(screen, font, rect, model)
+        elif self.person_panel_mode == "tasks":
+            self._draw_person_tasks_panel(screen, font, rect, model)
+        else:
+            self._draw_person_inventory_panel(screen, font, rect, model)
+
+    def _draw_pop_composition(self, screen, font, top_y):
+        model = self.pop_panel_model
+        if not model:
+            return
+
+        rect = pygame.Rect(20, top_y, 620, 520)
+        shadow = rect.move(7, 8)
+        pygame.draw.rect(screen, (4, 5, 8), shadow, border_radius=8)
+        pygame.draw.rect(screen, (18, 22, 29), rect, border_radius=8)
+        pygame.draw.rect(screen, (151, 161, 178), rect, 2, border_radius=8)
+
+        self._draw_panel_heading(screen, font, "Population composition", rect.x + 20, rect.y + 16)
+        total = model.get("total_population", 0)
+        derived_note = " (derived)" if model.get("is_derived_count") else ""
+        subtitle = f"{model.get('pop_type', 'unspecified')} pop · {total} people{derived_note}"
+        screen.blit(self._render_text(font, subtitle, (137, 149, 166)), (rect.x + 21, rect.y + 44))
+
+        y = rect.y + 74
+        if model.get("employer_label"):
+            screen.blit(
+                self._render_text(font, f"Employer: {model['employer_label']}", (170, 178, 190)),
+                (rect.x + 21, y),
+            )
+            y += 22
+        parent_pop = model.get("parent_pop")
+        if parent_pop:
+            screen.blit(
+                self._render_text(font, f"Category: {parent_pop.get('label')}", (170, 178, 190)),
+                (rect.x + 21, y),
+            )
+            y += 22
+        sex_ratio = model.get("sex_ratio")
+        if sex_ratio is not None:
+            screen.blit(
+                self._render_text(font, f"Sex ratio (female): {float(sex_ratio) * 100:.0f}%", (170, 178, 190)),
+                (rect.x + 21, y),
+            )
+            y += 22
+        y += 8
+
+        composition = model.get("composition") or []
+        if composition:
+            screen.blit(self._render_text(font, "Recruited from", (210, 214, 222)), (rect.x + 21, y))
+            y += 24
+            bar_x = rect.x + 21
+            bar_w = rect.width - 42
+            for row in composition:
+                fraction = max(0.0, min(1.0, float(row.get("fraction") or 0.0)))
+                bar_rect = pygame.Rect(bar_x, y, bar_w, 18)
+                pygame.draw.rect(screen, (30, 36, 46), bar_rect, border_radius=3)
+                fill_rect = pygame.Rect(bar_x, y, int(bar_w * fraction), 18)
+                pygame.draw.rect(screen, (96, 148, 176), fill_rect, border_radius=3)
+                label = f"{row.get('label')} — {row.get('count')} ({fraction * 100:.0f}%)"
+                screen.blit(self._render_text(font, label, (225, 228, 232)), (bar_x + 8, y + 1))
+                y += 24
+            y += 10
+
+        age_buckets = model.get("age_buckets") or []
+        if age_buckets:
+            screen.blit(self._render_text(font, "Age distribution", (210, 214, 222)), (rect.x + 21, y))
+            y += 20
+            chart_h = 90
+            bucket_w = (rect.width - 42) / max(1, len(age_buckets))
+            max_fraction = max((bucket.get("fraction") or 0.0) for bucket in age_buckets) or 1.0
+            for index, bucket in enumerate(age_buckets):
+                fraction = float(bucket.get("fraction") or 0.0)
+                bar_h = int(chart_h * (fraction / max_fraction))
+                bx = int(rect.x + 21 + index * bucket_w)
+                bar_rect = pygame.Rect(bx, y + (chart_h - bar_h), int(bucket_w) - 4, bar_h)
+                pygame.draw.rect(screen, (139, 122, 168), bar_rect, border_radius=2)
+                age_label = self._render_text(font, bucket.get("range_label", ""), (150, 156, 168))
+                screen.blit(age_label, (bx, y + chart_h + 4))
+            y += chart_h + 26
+
+        nested_children = model.get("nested_children") or []
+        if nested_children:
+            screen.blit(self._render_text(font, "Nested employment pops", (210, 214, 222)), (rect.x + 21, y))
+            y += 22
+            for child in nested_children:
+                line = f"{child.get('label')} — {child.get('total_population')} people"
+                screen.blit(self._render_text(font, line, (200, 204, 214)), (rect.x + 30, y))
+                y += 20
 
     def draw(self, screen, font):
         self.app_font = font
@@ -2835,9 +3552,12 @@ class UIManager:
             self._draw_map_workspace(screen, font)
             return
 
-        self._draw_time_panel(screen, font)
+        if self.person_ui_active:
+            self._draw_person_time_strip(screen, font)
+        else:
+            self._draw_time_panel(screen, font)
 
-        if self.time_lines:
+        if self.time_lines and not self.person_ui_active:
             timeline_x = 20
             timeline_y = 135
             timeline_w = 320
@@ -2852,10 +3572,11 @@ class UIManager:
         self._draw_person_panel_icons(screen, font)
 
         info_lines = []
-        if self.scope_label:
-            info_lines.append(self.scope_label)
-        if self.breadcrumb_label:
-            info_lines.append(self.breadcrumb_label)
+        if not self.person_ui_active:
+            if self.scope_label:
+                info_lines.append(self.scope_label)
+            if self.breadcrumb_label:
+                info_lines.append(self.breadcrumb_label)
 
         current_info_y = 170
         if info_lines:
@@ -2874,7 +3595,9 @@ class UIManager:
         if selection_height:
             current_info_y += selection_height + 12
 
-        if self.person_dossier_lines:
+        if self.person_ui_active:
+            self._draw_person_dossier_card(screen, font)
+        elif self.person_dossier_lines:
             dossier_lines = ["Dossier"] + self.person_dossier_lines
             self._draw_info_panel(screen, font, 20, current_info_y, dossier_lines)
 
@@ -2885,8 +3608,13 @@ class UIManager:
         self.selection_inspector.draw(screen, font)
         self._draw_hover_tooltip(screen, font)
         self._draw_person_panel(screen, font)
-        self._draw_system_menu(screen, font)
+        if self.pop_ui_active:
+            self._draw_pop_composition(screen, font, current_info_y)
         self._draw_repository_return_confirm(screen, font)
+        # The ESC/system menu is drawn separately, by draw_system_menu_overlay(),
+        # called from app.py *after* draw_floating_card() -- see that method's
+        # docstring for why: it must render on top of the floating card, not
+        # underneath it.
 
     def _reset_map_history_timeline_drag(self):
         self.map_history_timeline_drag_mode = None

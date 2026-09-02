@@ -1,4 +1,4 @@
-"""Author person needs-panel and Big Five fields into the ontology schema.
+"""Author person agency, knowledge, and personality fields into the ontology schema.
 
 The ontology is the durable semantic source. Runtime person code may cache or
 project these values for display, but this module does not create a parallel
@@ -20,15 +20,46 @@ ONTOLOGY_PATH = PROJECT_ROOT / "ontology" / "index0.owl"
 
 
 PERSON_PSYCHOLOGY_FIELDS = {
+    "known_entities": {
+        "type": "entity_list",
+        "section": "Knowledge",
+        "optional": True,
+    },
+    "knowledge_records": {
+        "type": "object_list",
+        "section": "Knowledge",
+        "optional": True,
+        "description": "Interest, familiarity, stance, conviction, and behavioral rules concerning any ontology entity.",
+    },
     "wishes": {
-        "type": "string_list",
+        "type": "entity_list",
+        "target": "wishes",
         "section": "Needs and Agency",
         "optional": True,
     },
     "goals": {
-        "type": "string_list",
+        "type": "entity_list",
+        "target": "wishes",
         "section": "Needs and Agency",
         "optional": True,
+    },
+    "dreams": {
+        "type": "entity_list",
+        "target": "wishes",
+        "section": "Needs and Agency",
+        "optional": True,
+    },
+    "assigned_tasks": {
+        "type": "entity_list",
+        "target": "tasks",
+        "section": "Needs and Agency",
+        "optional": True,
+    },
+    "task_allocation_preferences": {
+        "type": "object_list",
+        "section": "Needs and Agency",
+        "optional": True,
+        "description": "Durable priorities and responses used when internal motives and externally assigned duties compete.",
     },
     "big_five_openness": {
         "type": "number",

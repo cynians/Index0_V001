@@ -2802,7 +2802,9 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         red, green, blue = [max(0, min(255, int(part))) for part in color[:3]]
         return f"#{red:02x}{green:02x}{blue:02x}"
 
-    def _card_color_value(self, entity, role="body", section_id=None):
+    def _card_color_value(self, entity, role="body", section_id=None, color_field=None):
+        if color_field:
+            return entity.get(color_field) or "#7a7e7c"
         role = str(role or "body").strip().lower()
         if role == "header":
             return entity.get("card_header_color") or entity.get("card_color") or EntityCard.CARD_COLOR_DEFAULT
@@ -2816,34 +2818,39 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             return colors.get(section_id) or colors.get("default") or "#222632"
         return entity.get("card_color") or entity.get("wiki_link_color") or EntityCard.CARD_COLOR_DEFAULT
 
-    def _card_color_hsv(self, entity, role="body", section_id=None):
-        rgb = self._coerce_hex_rgb(self._card_color_value(entity, role=role, section_id=section_id))
+    def _card_color_hsv(self, entity, role="body", section_id=None, color_field=None):
+        rgb = self._coerce_hex_rgb(
+            self._card_color_value(entity, role=role, section_id=section_id, color_field=color_field)
+        )
         return colorsys.rgb_to_hsv(rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0)
 
-    def _set_card_color(self, card, color_hex, persist=True, role=None, section_id=None):
+    def _set_card_color(self, card, color_hex, persist=True, role=None, section_id=None, color_field=None):
         entity = self._entity_for_card(card)
         color_hex = str(color_hex or "").strip()
         if not isinstance(entity, dict) or not color_hex:
             return False
 
-        if role is None:
-            role = card.get("active_color_role", "body") if card is not None else "body"
-        role = str(role or "body").strip().lower()
-        if role == "header":
-            entity["card_header_color"] = color_hex
-        elif role in {"wiki", "wiki_alt"}:
-            section_id = str(section_id or (card or {}).get("active_wiki_section_id") or "default").strip() or "default"
-            if role == "wiki_alt":
-                section_id = "alternate"
-            colors = entity.get("wiki_field_colors")
-            if not isinstance(colors, dict):
-                colors = {}
-            colors[section_id] = color_hex
-            entity["wiki_field_colors"] = colors
+        if color_field:
+            entity[color_field] = color_hex
         else:
-            entity["card_color"] = color_hex
-            entity.pop("card_color_source", None)
-        entity.pop("wiki_link_color", None)
+            if role is None:
+                role = card.get("active_color_role", "body") if card is not None else "body"
+            role = str(role or "body").strip().lower()
+            if role == "header":
+                entity["card_header_color"] = color_hex
+            elif role in {"wiki", "wiki_alt"}:
+                section_id = str(section_id or (card or {}).get("active_wiki_section_id") or "default").strip() or "default"
+                if role == "wiki_alt":
+                    section_id = "alternate"
+                colors = entity.get("wiki_field_colors")
+                if not isinstance(colors, dict):
+                    colors = {}
+                colors[section_id] = color_hex
+                entity["wiki_field_colors"] = colors
+            else:
+                entity["card_color"] = color_hex
+                entity.pop("card_color_source", None)
+            entity.pop("wiki_link_color", None)
         if card is None:
             return True
 
@@ -2862,7 +2869,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             self._refresh_timeline_items()
         return True
 
-    def _set_card_color_from_slider(self, card, channel, slider_rect, mouse_x, persist=True, role=None, section_id=None):
+    def _set_card_color_from_slider(self, card, channel, slider_rect, mouse_x, persist=True, role=None, section_id=None, color_field=None):
         entity = self._entity_for_card(card)
         if not isinstance(entity, dict) or slider_rect is None:
             return False
@@ -2870,9 +2877,10 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         slider_w = max(1, int(slider_rect.width))
         value = (mouse_x - slider_rect.x) / slider_w
         value = max(0.0, min(1.0, value))
-        role = role or (card or {}).get("active_color_role", "body")
-        section_id = section_id or (card or {}).get("active_wiki_section_id")
-        hue, saturation, brightness = self._card_color_hsv(entity, role=role, section_id=section_id)
+        if not color_field:
+            role = role or (card or {}).get("active_color_role", "body")
+            section_id = section_id or (card or {}).get("active_wiki_section_id")
+        hue, saturation, brightness = self._card_color_hsv(entity, role=role, section_id=section_id, color_field=color_field)
         if channel == "h":
             hue = value
         elif channel == "s":
@@ -2884,9 +2892,11 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
         red, green, blue = colorsys.hsv_to_rgb(hue, saturation, brightness)
         color_hex = self._rgb_to_hex((round(red * 255), round(green * 255), round(blue * 255)))
-        if str(self._card_color_value(entity, role=role, section_id=section_id)).lower() == color_hex.lower():
+        if str(self._card_color_value(entity, role=role, section_id=section_id, color_field=color_field)).lower() == color_hex.lower():
             return False
-        return self._set_card_color(card, color_hex, persist=persist, role=role, section_id=section_id)
+        return self._set_card_color(
+            card, color_hex, persist=persist, role=role, section_id=section_id, color_field=color_field,
+        )
 
     def _close_entry_name_prompt(self):
         return self._entry_name_prompt_controller()._close_entry_name_prompt()
@@ -5558,6 +5568,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                     persist=False,
                     role=active_color_slider.get("role"),
                     section_id=active_color_slider.get("section_id"),
+                    color_field=active_color_slider.get("color_field"),
                 )
             self._finalize_card_color_slider_edit(active_color_slider)
         self.active_card_drag_id = None
@@ -5653,6 +5664,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                     persist=False,
                     role=slider.get("role"),
                     section_id=slider.get("section_id"),
+                    color_field=slider.get("color_field"),
                 )
                 if update_started is not None:
                     performance_debug.record(

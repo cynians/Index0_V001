@@ -17,7 +17,9 @@ from simulations.world_gen.material_heatmaps import load_raster_bundle_surface
 from simulations.world_gen.true_color import (
     derive_true_color_model,
     render_true_color_surface,
+    true_color_model_sources_match,
 )
+from simulations.world_gen.water_cycle import shade_koppen_rgb
 
 
 class WorldGenRenderer:
@@ -50,6 +52,23 @@ class WorldGenRenderer:
             for index in range(3)
         )
 
+    def _resolve_asset_path(self, value):
+        """Resolve generated assets across project and isolated-run roots."""
+        path = Path(value or "")
+        if path.is_absolute():
+            return path
+        storage_root = getattr(self.app_view, "storage_root", None)
+        roots = []
+        if storage_root:
+            storage_root = Path(storage_root).resolve()
+            roots.extend((storage_root, storage_root.parent))
+        roots.append(Path(__file__).resolve().parents[2])
+        for root in roots:
+            candidate = root / path
+            if candidate.exists():
+                return candidate
+        return roots[0] / path if roots else path
+
     def _material_preview_surface(self, material_heatmap_model):
         model = material_heatmap_model if isinstance(material_heatmap_model, dict) else {}
         layer = model.get("composite_layer") if isinstance(model.get("composite_layer"), dict) else {}
@@ -61,10 +80,7 @@ class WorldGenRenderer:
             return None
         if cache_key in self._material_preview_surface_cache:
             return self._material_preview_surface_cache[cache_key]
-        path = Path(cache_key[1])
-        if not path.is_absolute():
-            storage_root = getattr(self.app_view, "storage_root", None)
-            path = Path(storage_root).resolve() / path if storage_root else Path(__file__).resolve().parents[2] / path
+        path = self._resolve_asset_path(cache_key[1])
         if bundle_path:
             surface = load_raster_bundle_surface(path, layer_id)
         else:
@@ -92,14 +108,7 @@ class WorldGenRenderer:
             cache_key = (id(model), str(bundle_path), str(layer_id))
             surface = self._material_preview_surface_cache.get(cache_key)
             if surface is None:
-                path = Path(bundle_path)
-                if not path.is_absolute():
-                    storage_root = getattr(self.app_view, "storage_root", None)
-                    path = (
-                        Path(storage_root).resolve() / path
-                        if storage_root
-                        else Path(__file__).resolve().parents[2] / path
-                    )
+                path = self._resolve_asset_path(bundle_path)
                 surface = load_raster_bundle_surface(path, layer_id)
                 self._material_preview_surface_cache[cache_key] = surface
             if surface is not None:
@@ -149,11 +158,14 @@ class WorldGenRenderer:
     ):
         selected_planet = selected_planet if isinstance(selected_planet, dict) else {}
         model = selected_planet.get("true_color_model")
-        if not isinstance(model, dict):
+        if not true_color_model_sources_match(
+            model, heightmap, material_heatmap_model
+        ):
             model = derive_true_color_model(
                 selected_planet,
                 heightmap=heightmap,
                 natural_material_model=material_model,
+                material_heatmap_model=material_heatmap_model,
                 atmosphere=selected_planet.get("atmosphere_model"),
                 water_cycle=selected_planet.get("water_cycle_model"),
                 surface_evolution=selected_planet.get("surface_evolution_model"),
@@ -1858,12 +1870,13 @@ class WorldGenRenderer:
                             elevation = float(elevation_rows[row_index][col_index] or 0.0)
                         except (TypeError, ValueError):
                             elevation = 0.0
-                        elevation_norm = max(0.0, min(1.0, (elevation - min_elevation) / elevation_span))
-                        if str(class_code) == "Ocean":
-                            shade = 0.78 + (1.0 - elevation_norm) * 0.18
-                        else:
-                            shade = 0.78 + elevation_norm * 0.28
-                        color = tuple(max(0, min(255, int(channel * shade))) for channel in color)
+                        color = shade_koppen_rgb(
+                            color,
+                            class_code,
+                            elevation,
+                            min_elevation,
+                            max_elevation,
+                        )
                     source.set_at((col_index, row_index), color)
             preview_surface = pygame.transform.smoothscale(source, rect.size)
             if len(self._water_cycle_preview_cache) > 12:

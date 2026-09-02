@@ -1,4 +1,13 @@
+"""Climate, ocean, hydrology, and drainage models for generated worlds.
+
+LOD contract: global climate, water inventory, sea level, major drainage, and
+ice are canonical LOD0 fields. Descendants inherit parent boundary conditions
+and progressively resolve regional runoff, lakes, tributaries, channels, and
+microdrainage without silently replacing parent topology.
+"""
+
 import heapq
+import logging
 import math
 from collections import deque
 
@@ -15,7 +24,8 @@ from simulations.world_gen.drainage import (
 )
 
 
-WATER_CYCLE_MODEL_VERSION = "monthly-normals-koppen-geiger-v18-zonal-continuity"
+WATER_CYCLE_MODEL_VERSION = "monthly-normals-koppen-geiger-v20-parent-seeded-regional-moisture"
+PARENT_CLIMATE_EDGE_BLEND_MARGIN = 0.025
 
 # Only a fraction of condensed moisture truly leaves the advecting air mass
 # each hop; the rest represents the same parcel producing rain repeatedly
@@ -66,44 +76,105 @@ CLOUD_FOREST_ELEVATION_NORM = 0.40
 CLOUD_FOREST_BAND_WIDTH = 0.18
 CLOUD_FOREST_BONUS_STRENGTH = 0.10
 
+# Colors follow the conventional Koppen-Geiger map palette (as used by
+# Peel/Beck-style reference maps: tropical = blues, arid = reds/oranges,
+# temperate = greens/yellow-greens, continental = teals/purples, polar =
+# grays) rather than an ad hoc scheme, so this reads the way anyone who has
+# seen a real Koppen map expects. The classification logic itself was
+# already correct and complete -- this only changes the palette.
 KOPPEN_CLASSES = {
-    "Af": {"label": "Tropical Rainforest", "color": [24, 116, 68]},
-    "Am": {"label": "Tropical Monsoon", "color": [48, 142, 78]},
-    "Aw": {"label": "Tropical Savanna", "color": [160, 164, 70]},
-    "As": {"label": "Tropical Savanna, Dry Summer", "color": [174, 164, 76]},
-    "BWh": {"label": "Hot Desert", "color": [222, 184, 102]},
-    "BWk": {"label": "Cold Desert", "color": [188, 166, 124]},
-    "BSh": {"label": "Hot Steppe", "color": [178, 162, 94]},
-    "BSk": {"label": "Cold Steppe", "color": [148, 154, 112]},
-    "Csa": {"label": "Hot-summer Mediterranean", "color": [142, 158, 86]},
-    "Csb": {"label": "Warm-summer Mediterranean", "color": [126, 158, 94]},
-    "Csc": {"label": "Cool-summer Mediterranean", "color": [112, 150, 104]},
-    "Cwa": {"label": "Dry-winter Humid Subtropical", "color": [76, 148, 88]},
-    "Cwb": {"label": "Dry-winter Subtropical Highland", "color": [82, 142, 104]},
-    "Cwc": {"label": "Dry-winter Cool Highland", "color": [96, 140, 112]},
-    "Cfa": {"label": "Humid Subtropical", "color": [66, 146, 92]},
-    "Cfb": {"label": "Oceanic", "color": [72, 136, 116]},
-    "Cfc": {"label": "Subpolar Oceanic", "color": [100, 136, 124]},
-    "Dsa": {"label": "Dry-summer Continental", "color": [112, 136, 94]},
-    "Dsb": {"label": "Dry-summer Continental", "color": [106, 134, 102]},
-    "Dsc": {"label": "Dry-summer Subarctic", "color": [118, 138, 116]},
-    "Dsd": {"label": "Severe Dry-summer Subarctic", "color": [126, 140, 124]},
-    "Dwa": {"label": "Dry-winter Continental", "color": [96, 132, 96]},
-    "Dwb": {"label": "Dry-winter Continental", "color": [100, 134, 102]},
-    "Dwc": {"label": "Dry-winter Subarctic", "color": [112, 136, 118]},
-    "Dwd": {"label": "Severe Dry-winter Subarctic", "color": [122, 138, 126]},
-    "Dfa": {"label": "Hot-summer Continental", "color": [88, 130, 98]},
-    "Dfb": {"label": "Warm-summer Continental", "color": [92, 132, 104]},
-    "Dfc": {"label": "Subarctic", "color": [108, 136, 122]},
-    "Dfd": {"label": "Severe Subarctic", "color": [118, 138, 128]},
-    "ET": {"label": "Tundra", "color": [166, 180, 168]},
-    "EF": {"label": "Ice Cap", "color": [218, 232, 238]},
+    "Af": {"label": "Tropical Rainforest", "color": [0, 0, 254]},
+    "Am": {"label": "Tropical Monsoon", "color": [0, 119, 255]},
+    "Aw": {"label": "Tropical Savanna", "color": [70, 169, 250]},
+    "As": {"label": "Tropical Savanna, Dry Summer", "color": [96, 180, 240]},
+    "BWh": {"label": "Hot Desert", "color": [255, 0, 0]},
+    "BWk": {"label": "Cold Desert", "color": [255, 150, 150]},
+    "BSh": {"label": "Hot Steppe", "color": [245, 165, 0]},
+    "BSk": {"label": "Cold Steppe", "color": [255, 220, 100]},
+    "Csa": {"label": "Hot-summer Mediterranean", "color": [255, 255, 0]},
+    "Csb": {"label": "Warm-summer Mediterranean", "color": [198, 199, 0]},
+    "Csc": {"label": "Cool-summer Mediterranean", "color": [150, 150, 0]},
+    "Cwa": {"label": "Dry-winter Humid Subtropical", "color": [150, 255, 150]},
+    "Cwb": {"label": "Dry-winter Subtropical Highland", "color": [100, 200, 100]},
+    "Cwc": {"label": "Dry-winter Cool Highland", "color": [50, 150, 50]},
+    "Cfa": {"label": "Humid Subtropical", "color": [198, 255, 78]},
+    "Cfb": {"label": "Oceanic", "color": [102, 255, 51]},
+    "Cfc": {"label": "Subpolar Oceanic", "color": [51, 199, 1]},
+    "Dsa": {"label": "Dry-summer Continental", "color": [255, 0, 254]},
+    "Dsb": {"label": "Dry-summer Continental", "color": [198, 0, 199]},
+    "Dsc": {"label": "Dry-summer Subarctic", "color": [150, 50, 150]},
+    "Dsd": {"label": "Severe Dry-summer Subarctic", "color": [150, 100, 150]},
+    "Dwa": {"label": "Dry-winter Continental", "color": [171, 177, 255]},
+    "Dwb": {"label": "Dry-winter Continental", "color": [90, 119, 219]},
+    "Dwc": {"label": "Dry-winter Subarctic", "color": [76, 81, 181]},
+    "Dwd": {"label": "Severe Dry-winter Subarctic", "color": [50, 0, 135]},
+    "Dfa": {"label": "Hot-summer Continental", "color": [0, 255, 255]},
+    "Dfb": {"label": "Warm-summer Continental", "color": [56, 200, 255]},
+    "Dfc": {"label": "Subarctic", "color": [0, 126, 125]},
+    "Dfd": {"label": "Severe Subarctic", "color": [0, 69, 94]},
+    "ET": {"label": "Tundra", "color": [178, 178, 178]},
+    "EF": {"label": "Ice Cap", "color": [104, 104, 104]},
     "Ocean": {"label": "Ocean", "color": [50, 92, 132]},
 }
 
 
+def shade_koppen_rgb(base_rgb, class_code, elevation, min_elevation, max_elevation):
+    """Return the canonical visual shade for one Köppen climate cell.
+
+    The climate class color is generated truth.  Relief shading is a display
+    concern only, but it must be identical in the world-generation preview,
+    the map renderer, and diagnostic comparisons or the same model will look
+    like it changed between LODs.  Keep this helper pygame-free so every
+    renderer uses the same deterministic transform.
+    """
+    try:
+        color = tuple(max(0, min(255, int(base_rgb[index]))) for index in range(3))
+    except (TypeError, ValueError, IndexError):
+        color = (150, 150, 150)
+    try:
+        elevation_value = float(elevation or 0.0)
+        minimum = float(min_elevation or 0.0)
+        maximum = float(max_elevation or 0.0)
+    except (TypeError, ValueError):
+        elevation_value, minimum, maximum = 0.0, 0.0, 1.0
+    span = max(1.0, maximum - minimum)
+    elevation_norm = max(0.0, min(1.0, (elevation_value - minimum) / span))
+
+    def mix(color_a, color_b, weight_b):
+        weight_b = max(0.0, min(1.0, float(weight_b or 0.0)))
+        return tuple(
+            max(0, min(255, int(color_a[index] * (1.0 - weight_b) + color_b[index] * weight_b)))
+            for index in range(3)
+        )
+
+    ocean = str(class_code) == "Ocean"
+    if ocean:
+        relief_color = mix((28, 69, 118), (73, 132, 166), elevation_norm)
+        color = mix(color, relief_color, 0.14)
+        shade = 0.76 + (1.0 - elevation_norm) * 0.14
+    else:
+        if elevation_norm < 0.52:
+            relief_color = mix((105, 139, 91), (170, 151, 104), elevation_norm / 0.52)
+        else:
+            relief_color = mix((170, 151, 104), (218, 215, 202), (elevation_norm - 0.52) / 0.48)
+        color = mix(color, relief_color, 0.20)
+        shade = 0.78 + elevation_norm * 0.24
+    return tuple(max(0, min(255, int(channel * shade))) for channel in color)
+
+
 def _clamp(value, low=0.0, high=1.0):
     return max(low, min(high, float(value)))
+
+
+def _rows_all_finite(rows):
+    """True if a nested list-of-lists grid contains no NaN/inf values."""
+    if not rows:
+        return False
+    return all(
+        math.isfinite(value)
+        for row in rows
+        for value in row
+    )
 
 
 def _smoothstep(edge0, edge1, x):
@@ -139,7 +210,14 @@ def _orbital_eccentricity(seed):
     return _clamp(seed.get("orbital_eccentricity", seed.get("eccentricity", 0.0)), 0.0, 0.85)
 
 
-def _sample_inherited_rows(rows, global_u, global_v, source_bounds=None):
+def _sample_inherited_rows(
+    rows,
+    global_u,
+    global_v,
+    source_bounds=None,
+    *,
+    width_hint=None,
+):
     if not isinstance(rows, list) or not rows or not isinstance(rows[0], list) or not rows[0]:
         return None
     source_bounds = source_bounds if isinstance(source_bounds, dict) else {}
@@ -152,7 +230,16 @@ def _sample_inherited_rows(rows, global_u, global_v, source_bounds=None):
     local_u = _clamp(local_u)
     local_v = _clamp(local_v)
     height = len(rows)
-    width = min(len(row) for row in rows if isinstance(row, list))
+    if width_hint is None:
+        width = min(len(row) for row in rows if isinstance(row, list))
+    else:
+        try:
+            width = int(width_hint)
+        except (TypeError, ValueError):
+            width = 0
+        width = min(width, len(rows[0]))
+    if width <= 0:
+        return None
     px, py = local_u * max(1, width - 1), local_v * max(1, height - 1)
     x0, y0 = int(math.floor(px)), int(math.floor(py))
     x1, y1 = min(width - 1, x0 + 1), min(height - 1, y0 + 1)
@@ -208,7 +295,10 @@ def _edge_locked_parent_weight(base_weight, local_x, local_y):
         float(local_y),
         1.0 - float(local_y),
     )
-    transition = _clamp(edge_distance / 0.075)
+    # Keep the exact parent value on the outer boundary, but confine the
+    # conditioning strip to a few cells. A broad 7.5% strip was visible as a
+    # rectangular frame in 100 km diagnostic tiles after climate upscaling.
+    transition = _clamp(edge_distance / PARENT_CLIMATE_EDGE_BLEND_MARGIN)
     transition = transition * transition * (3.0 - 2.0 * transition)
     edge_lock = 1.0 - transition
     return float(base_weight) + (1.0 - float(base_weight)) * edge_lock
@@ -278,6 +368,7 @@ def _rows_from_heightmap(heightmap):
     max_height = 257 if detail_level > 0 else 129
     target_width = min(257, width)
     target_height = min(max_height, len(rows))
+    wrap_x = bool(heightmap.get("wrap_x", True)) if isinstance(heightmap, dict) else True
     if target_width == width and target_height == len(rows):
         return rows
     # Prefilter, then reconstruct onto the climate grid. Integer stride
@@ -301,7 +392,8 @@ def _rows_from_heightmap(heightmap):
             top = float(filtered[y0][x0]) * (1.0 - tx) + float(filtered[y0][x1]) * tx
             bottom = float(filtered[y1][x0]) * (1.0 - tx) + float(filtered[y1][x1]) * tx
             sampled_row.append(top * (1.0 - ty) + bottom * ty)
-        sampled_row[-1] = sampled_row[0]
+        if wrap_x:
+            sampled_row[-1] = sampled_row[0]
         sampled.append(sampled_row)
     return sampled
 
@@ -607,7 +699,7 @@ def _terrain_metrics(rows, ocean_mask, x, y, span):
     }
 
 
-def _prevailing_wind_vector(ny, map_seed):
+def _prevailing_wind_vector(ny, map_seed, nx=0.5):
     latitude = (0.5 - float(ny)) * 2.0
     abs_lat = abs(latitude)
     seasonal_tilt = seed_range(map_seed, "wind:seasonal_tilt", -0.16, 0.16)
@@ -633,6 +725,16 @@ def _prevailing_wind_vector(ny, map_seed):
     wind_y = trade_y + (westerly_y - trade_y) * trade_to_westerly
     wind_x += (polar_x - wind_x) * westerly_to_polar
     wind_y += (polar_y - wind_y) * westerly_to_polar
+    # Planetary circulation cells are zonally organized but not perfectly
+    # straight.  A low-frequency, seed-stable meander gives storm tracks and
+    # moisture advection a coherent longitude component without turning the
+    # climate into independent random weather cells.  The amplitude is
+    # deliberately strongest in the mid-latitude storm belt and weakest near
+    # the equator/poles, where the zonal circulation is less meandering.
+    meander = _wave_noise(map_seed, "wind_circulation_meander", nx, ny) - 0.5
+    midlatitude_weight = math.exp(-(((abs_lat - 0.56) / 0.28) ** 2))
+    wind_x += meander * 0.11 * midlatitude_weight
+    wind_y += meander * 0.24 * (0.35 + 0.65 * midlatitude_weight)
     wind_y += seasonal_tilt
     length = math.hypot(wind_x, wind_y) or 1.0
     return wind_x / length, wind_y / length
@@ -954,6 +1056,8 @@ def _solve_coupled_annual_climate_arrays(
     hydrology_cycle,
     liquid_water,
     initial_climate=None,
+    latitude_abs_rows=None,
+    wrap_x=True,
 ):
     """Array implementation of the annual solver's existing cell equations."""
     base_temperature = np.asarray(base_temperature_rows, dtype=np.float64)
@@ -975,7 +1079,15 @@ def _solve_coupled_annual_climate_arrays(
             grid = np.asarray(initial_climate.get(name), dtype=np.float64)
         except (TypeError, ValueError):
             return None
-        return grid if grid.shape == (height, width) else None
+        if grid.shape != (height, width):
+            return None
+        # A warm-start seed that already carries non-finite values (e.g. a
+        # corrupted parent climate_grid) would otherwise multiplicatively
+        # contaminate the whole solve within a handful of iterations -- see
+        # docs/CLAUDE_CODE_HANDOFF_2026-08-16.md's 100%-NaN regional bug.
+        if not np.all(np.isfinite(grid)):
+            return None
+        return grid
 
     initial_temperature = compatible_grid("temperature_rows_k")
     initial_precipitation = compatible_grid(
@@ -1028,14 +1140,21 @@ def _solve_coupled_annual_climate_arrays(
         if warm_started
         else np.zeros((height, width), dtype=np.float64)
     )
-    latitude_abs = (
-        np.abs(
-            np.arange(height, dtype=np.float64)
-            / max(1, height - 1)
-            - 0.5
-        )
-        * 2.0
-    )[:, None]
+    try:
+        inherited_latitudes = np.asarray(latitude_abs_rows, dtype=np.float64)
+    except (TypeError, ValueError):
+        inherited_latitudes = np.asarray([], dtype=np.float64)
+    if inherited_latitudes.shape == (height,):
+        latitude_abs = np.clip(inherited_latitudes, 0.0, 1.0)[:, None]
+    else:
+        latitude_abs = (
+            np.abs(
+                np.arange(height, dtype=np.float64)
+                / max(1, height - 1)
+                - 0.5
+            )
+            * 2.0
+        )[:, None]
     # A moisture floor (caps how low a cell can fall each iteration, rather
     # than adding on top of already-adequate cells) weighted toward the same
     # ITCZ/storm-track bands real continental interiors (Amazon, Congo, US
@@ -1058,9 +1177,16 @@ def _solve_coupled_annual_climate_arrays(
     # wind angle into whole-cell steps, aliasing into a blocky texture on
     # top of whatever the wind field itself contributes.
     source_x = grid_x - wind_x
+    if not wrap_x:
+        source_x = np.clip(source_x, 0.0, width - 1.0)
     source_y = np.clip(grid_y - wind_y, 0.0, height - 1)
-    upstream_x0 = np.floor(source_x).astype(np.int64) % width
-    upstream_x1 = (upstream_x0 + 1) % width
+    upstream_x0 = np.floor(source_x).astype(np.int64)
+    if wrap_x:
+        upstream_x0 %= width
+        upstream_x1 = (upstream_x0 + 1) % width
+    else:
+        upstream_x0 = np.clip(upstream_x0, 0, width - 1)
+        upstream_x1 = np.minimum(width - 1, upstream_x0 + 1)
     upstream_y0 = np.clip(np.floor(source_y).astype(np.int64), 0, height - 1)
     upstream_y1 = np.clip(upstream_y0 + 1, 0, height - 1)
     upstream_fx = source_x - np.floor(source_x)
@@ -1079,7 +1205,13 @@ def _solve_coupled_annual_climate_arrays(
     # The former 112 cap was already binding at typical planetary sample
     # resolution (e.g. 257 wide), cutting the solve off before large
     # landmasses reached a converged interior.
-    iterations = max(48, min(220, width // 2 + height // 3))
+    if warm_started:
+        # Parent-seeded regional solves already begin near the atmospheric
+        # fixed point. Keep them bounded for the representative test loop;
+        # a cold planetary solve still receives the larger global budget.
+        iterations = max(24, min(96, width // 3 + height // 5))
+    else:
+        iterations = max(48, min(220, width // 2 + height // 3))
     converged_at = iterations
     previous_max_delta = 0.0
 
@@ -1139,7 +1271,7 @@ def _solve_coupled_annual_climate_arrays(
         return np.where(valid, result, 0.0)
 
     has_surface_reservoir = bool(ocean.any() or permanent_ice.any())
-    if not liquid_water or not has_surface_reservoir:
+    if not liquid_water or (not has_surface_reservoir and not warm_started):
         potential_evaporation = annual_reference_evaporation(
             temperatures,
             np.full((height, width), 0.05, dtype=np.float64),
@@ -1164,12 +1296,13 @@ def _solve_coupled_annual_climate_arrays(
     for iteration in range(iterations):
         north = np.vstack((moisture[:1], moisture[:-1]))
         south = np.vstack((moisture[1:], moisture[-1:]))
-        lateral = (
-            np.roll(moisture, 1, axis=1)
-            + np.roll(moisture, -1, axis=1)
-            + north
-            + south
-        ) * 0.25
+        if wrap_x:
+            west = np.roll(moisture, 1, axis=1)
+            east = np.roll(moisture, -1, axis=1)
+        else:
+            west = np.concatenate((moisture[:, :1], moisture[:, :-1]), axis=1)
+            east = np.concatenate((moisture[:, 1:], moisture[:, -1:]), axis=1)
+        lateral = (west + east + north + south) * 0.25
         upstream_moisture = (
             moisture[upstream_y0, upstream_x0] * (1.0 - upstream_fx) * (1.0 - upstream_fy)
             + moisture[upstream_y0, upstream_x1] * upstream_fx * (1.0 - upstream_fy)
@@ -1255,7 +1388,15 @@ def _solve_coupled_annual_climate_arrays(
             - hydrologic_cooling
             + dry_surface_warming
         )
-        temperatures = temperatures * 0.72 + target_temperature * 0.28
+        blended_temperature = temperatures * 0.72 + target_temperature * 0.28
+        # Unlike moisture/humidity/PET/precip above, this state array was
+        # never sanitized -- a single non-finite cell here would otherwise
+        # ride the advection step and spread across the whole grid well
+        # before the iteration cap. Fall back to the last-good value per
+        # cell rather than letting NaN propagate forward.
+        temperatures = np.where(
+            np.isfinite(blended_temperature), blended_temperature, temperatures,
+        )
         moisture = new_moisture
         minimum_convergence_iteration = 5 if warm_started else 12
         if (
@@ -1331,6 +1472,8 @@ def _solve_coupled_annual_climate(
     hydrology_cycle,
     liquid_water,
     initial_climate=None,
+    latitude_abs_rows=None,
+    wrap_x=True,
 ):
     """Iterate annual heat, atmospheric moisture, evaporation, and precipitation."""
     height = len(base_temperature_rows)
@@ -1348,6 +1491,8 @@ def _solve_coupled_annual_climate(
             hydrology_cycle=hydrology_cycle,
             liquid_water=liquid_water,
             initial_climate=initial_climate,
+            latitude_abs_rows=latitude_abs_rows,
+            wrap_x=wrap_x,
         )
 
     initial_climate = (
@@ -1427,14 +1572,17 @@ def _solve_coupled_annual_climate(
         0.95,
         0.985,
     )
-    iterations = max(48, min(220, width // 2 + height // 3))
+    if warm_started:
+        iterations = max(24, min(96, width // 3 + height // 5))
+    else:
+        iterations = max(48, min(220, width // 2 + height // 3))
     converged_at = iterations
     previous_max_delta = None
 
     has_surface_reservoir = any(any(row) for row in ocean_mask) or any(
         any(row) for row in permanent_ice_rows
     )
-    if not liquid_water or not has_surface_reservoir:
+    if not liquid_water or (not has_surface_reservoir and not warm_started):
         for y in range(height):
             latitude_abs = _local_latitude_fraction(y, height)
             for x in range(width):
@@ -1897,6 +2045,109 @@ def _planet_circumference_m(heightmap):
     return 2.0 * math.pi * 6_371_000.0
 
 
+def _climate_field_diagnostics(
+    rows,
+    ocean_mask,
+    shore_distances,
+    temperature_rows,
+    precipitation_rows,
+    wind_vector_rows,
+):
+    """Summarize causal climate structure without replacing the climate grid.
+
+    These metrics are intended for representative-world comparisons. They
+    distinguish a useful longitudinal circulation signal from a purely zonal
+    latitude field and make the terrain/climate coupling visible in reports.
+    """
+    height = len(rows)
+    width = min((len(row) for row in rows if isinstance(row, list)), default=0)
+    land_samples = []
+    all_precipitation = []
+    coastal_precipitation = []
+    interior_precipitation = []
+    wind_meander = []
+    for y in range(height):
+        row_values = rows[y][:width]
+        precipitation_row = precipitation_rows[y][:width]
+        ocean_row = ocean_mask[y][:width]
+        shore_row = shore_distances[y][:width] if y < len(shore_distances) else []
+        all_precipitation.extend(float(value or 0.0) for value in precipitation_row)
+        for x, elevation in enumerate(row_values):
+            precipitation = float(precipitation_row[x] or 0.0)
+            if ocean_row[x]:
+                continue
+            land_samples.append((float(elevation or 0.0), precipitation))
+            shore_distance = float(shore_row[x] or 0.0) if x < len(shore_row) else 0.0
+            if shore_distance >= 0.5:
+                coastal_precipitation.append(precipitation)
+            elif shore_distance <= 0.25:
+                interior_precipitation.append(precipitation)
+        if y < len(wind_vector_rows):
+            wind_row = wind_vector_rows[y][:width]
+            if wind_row:
+                wind_values = [
+                    float(item[1])
+                    for item in wind_row
+                    if isinstance(item, list) and len(item) >= 2
+                ]
+                if wind_values:
+                    wind_meander.append(max(wind_values) - min(wind_values))
+
+    if not all_precipitation:
+        return {
+            "status": "not_applicable",
+            "causal_inputs": ["heightmap", "wind_field", "ocean_mask"],
+        }
+
+    zonal_residual = 0.0
+    total_residual = 0.0
+    for y in range(height):
+        values = [float(value or 0.0) for value in precipitation_rows[y][:width]]
+        if not values:
+            continue
+        mean = sum(values) / len(values)
+        zonal_residual += sum(abs(value - mean) for value in values)
+        total_residual += sum(abs(value) for value in values)
+
+    elevation_sorted = sorted(value[0] for value in land_samples)
+    high_threshold = elevation_sorted[int(0.75 * (len(elevation_sorted) - 1))] if elevation_sorted else 0.0
+    low_threshold = elevation_sorted[int(0.25 * (len(elevation_sorted) - 1))] if elevation_sorted else 0.0
+    high_precipitation = [p for elevation, p in land_samples if elevation >= high_threshold]
+    low_precipitation = [p for elevation, p in land_samples if elevation <= low_threshold]
+    high_mean = sum(high_precipitation) / max(1, len(high_precipitation))
+    low_mean = sum(low_precipitation) / max(1, len(low_precipitation))
+    return {
+        "status": "climate_structure_diagnosed",
+        "causal_inputs": [
+            "heightmap.sample_grid.rows",
+            "heightmap.surface_masks.ocean_rows",
+            "prevailing_wind_rows",
+            "ocean_circulation_model",
+        ],
+        "non_zonal_precipitation_index": round(
+            zonal_residual / max(1e-9, total_residual), 4
+        ),
+        "high_vs_low_relief_precipitation_ratio": round(
+            high_mean / max(1e-9, low_mean), 4
+        ),
+        "coastal_precipitation_mm": round(
+            sum(coastal_precipitation) / max(1, len(coastal_precipitation)), 2
+        ),
+        "interior_precipitation_mm": round(
+            sum(interior_precipitation) / max(1, len(interior_precipitation)), 2
+        ),
+        "wind_longitude_meander_index": round(
+            sum(wind_meander) / max(1, len(wind_meander)), 4
+        ),
+        "finite_fields": all(
+            math.isfinite(float(value or 0.0))
+            for field in (temperature_rows, precipitation_rows)
+            for row in field
+            for value in row
+        ),
+    }
+
+
 def _path_length_m(points, width_m, height_m=None, *, wrap_x=True):
     if len(points) < 2:
         return 0.0
@@ -2214,6 +2465,26 @@ def derive_water_cycle_model(
         isinstance(parent_climate_grid, dict) and parent_climate_grid
     )
     parent_source_uv = parent_climate_grid.get("source_uv_bounds") if isinstance(parent_climate_grid, dict) else {}
+    inherited_width_cache = {}
+
+    def sample_parent_rows(parent_rows, global_u, global_v):
+        """Sample parent climate rows without rescanning their shape per cell."""
+        if not isinstance(parent_rows, list) or not parent_rows:
+            return None
+        cache_key = id(parent_rows)
+        width_hint = inherited_width_cache.get(cache_key)
+        if width_hint is None:
+            valid_rows = [row for row in parent_rows if isinstance(row, list)]
+            width_hint = min((len(row) for row in valid_rows), default=0)
+            inherited_width_cache[cache_key] = width_hint
+        return _sample_inherited_rows(
+            parent_rows,
+            global_u,
+            global_v,
+            parent_source_uv,
+            width_hint=width_hint,
+        )
+
     detail_level = int(heightmap.get("map_detail_level", 0) or 0)
     inheritance_weights = _climate_inheritance_weights(detail_level)
 
@@ -2255,7 +2526,7 @@ def derive_water_cycle_model(
             )
             shore = _clamp(shore)
             terrain = _terrain_metrics(rows, ocean_mask, x, y, span)
-            wind_x, wind_y = _prevailing_wind_vector(ny, map_seed)
+            wind_x, wind_y = _prevailing_wind_vector(ny, map_seed, nx=nx)
             wind_gradient = terrain["gradient_x"] * wind_x + terrain["gradient_y"] * wind_y
             relief_context = _upwind_relief_context(
                 rows, ocean_mask, x, y, wind_x, wind_y, span,
@@ -2397,11 +2668,11 @@ def derive_water_cycle_model(
             continentality = 1.0 - shore
             seasonality = 4.0 + latitude_abs * (axial_tilt_deg / 23.44) * (10.0 + continentality * 18.0)
             seasonality += orbital_temperature_amplitude_k * (0.48 + continentality * 0.52)
-            inherited_temperature = _sample_inherited_rows(
-                parent_climate_grid.get("temperature_rows_k"), nx, ny, parent_source_uv,
+            inherited_temperature = sample_parent_rows(
+                parent_climate_grid.get("temperature_rows_k"), nx, ny,
             ) if isinstance(parent_climate_grid, dict) else None
-            inherited_elevation = _sample_inherited_rows(
-                parent_climate_grid.get("elevation_rows"), nx, ny, parent_source_uv,
+            inherited_elevation = sample_parent_rows(
+                parent_climate_grid.get("elevation_rows"), nx, ny,
             ) if isinstance(parent_climate_grid, dict) else None
             if inherited_temperature is not None:
                 inherited_local_temperature = inherited_temperature
@@ -2411,8 +2682,8 @@ def derive_water_cycle_model(
                     inheritance_weights["temperature"], local_nx, local_ny
                 )
                 temperature = inherited_local_temperature * parent_weight + temperature * (1.0 - parent_weight)
-            inherited_seasonality = _sample_inherited_rows(
-                parent_climate_grid.get("temperature_seasonality_rows_k"), nx, ny, parent_source_uv,
+            inherited_seasonality = sample_parent_rows(
+                parent_climate_grid.get("temperature_seasonality_rows_k"), nx, ny,
             ) if isinstance(parent_climate_grid, dict) else None
             if inherited_seasonality is not None:
                 parent_weight = _edge_locked_parent_weight(
@@ -2466,6 +2737,59 @@ def derive_water_cycle_model(
             zonal_bias=2.4,
         )
 
+    solver_initial_climate = (
+        (previous_regional_model.get("climate_grid") or {})
+        if isinstance(previous_regional_model, dict)
+        else None
+    )
+    solver_seed_source = (
+        "previous_regional_climate"
+        if isinstance(solver_initial_climate, dict) and solver_initial_climate
+        else "cold_start"
+    )
+    if (
+        not solver_initial_climate
+        and has_parent_climate
+    ):
+        # A small inland child has no local ocean cell, but it still sits
+        # inside the parent atmosphere. Seed the local coupled solve from the
+        # parent climate at the child's physical coordinates; otherwise the
+        # no-reservoir guard returns zero precipitation and the later parent
+        # blend collapses the whole region to one nearly uniform value.
+        inherited_solver_climate = {}
+        inherited_keys = (
+            "temperature_rows_k",
+            "annual_precipitation_rows_mm",
+            "annual_evapotranspiration_rows_mm",
+            "annual_potential_evaporation_rows_mm",
+            "relative_humidity_rows",
+        )
+        for key in inherited_keys:
+            parent_rows = parent_climate_grid.get(key)
+            if not isinstance(parent_rows, list) or not parent_rows:
+                continue
+            local_rows = []
+            for y in range(height):
+                local_ny = y / max(1, height - 1)
+                global_v = source_v0 + (source_v1 - source_v0) * local_ny
+                local_row = []
+                for x in range(width):
+                    local_nx = x / max(1, width - 1)
+                    global_u = source_u0 + (source_u1 - source_u0) * local_nx
+                    value = sample_parent_rows(parent_rows, global_u, global_v)
+                    local_row.append(0.0 if value is None else value)
+                local_rows.append(local_row)
+            inherited_solver_climate[key] = local_rows
+        if all(key in inherited_solver_climate for key in inherited_keys):
+            solver_initial_climate = inherited_solver_climate
+            solver_seed_source = "parent_climate_coordinate_seed"
+
+    latitude_abs_rows = [
+        _global_latitude_metrics(
+            source_v0 + (source_v1 - source_v0) * y / max(1, height - 1)
+        )[1]
+        for y in range(height)
+    ]
     coupled_climate = _solve_coupled_annual_climate(
         temperature_rows,
         seasonality_rows,
@@ -2476,13 +2800,21 @@ def derive_water_cycle_model(
         pressure_bar=pressure_bar,
         hydrology_cycle=hydrology_cycle,
         liquid_water=liquid_water,
-        initial_climate=(
-            (previous_regional_model.get("climate_grid") or {})
-            if isinstance(previous_regional_model, dict)
-            else None
-        ),
+        initial_climate=solver_initial_climate,
+        latitude_abs_rows=latitude_abs_rows,
+        wrap_x=bool(heightmap.get("wrap_x", True)),
     )
-    temperature_rows = coupled_climate.get("temperature_rows_k") or temperature_rows
+    solved_temperature_rows = coupled_climate.get("temperature_rows_k")
+    if solved_temperature_rows and not _rows_all_finite(solved_temperature_rows):
+        # Last line of defense: a corrupted solve should not overwrite the
+        # pre-solve estimate with NaN just because the returned list is
+        # non-empty (plain `or` only rejects falsy/empty results).
+        logging.getLogger(__name__).warning(
+            "Coupled climate solve produced non-finite temperatures; "
+            "keeping the pre-solve estimate instead."
+        )
+        solved_temperature_rows = None
+    temperature_rows = solved_temperature_rows or temperature_rows
     precipitation_rows = (
         coupled_climate.get("annual_precipitation_rows_mm")
         or precipitation_rows
@@ -2571,17 +2903,11 @@ def derive_water_cycle_model(
             mean_temperature = float(temperature_rows[y][x])
             seasonality = float(seasonality_rows[y][x])
             if isinstance(parent_climate_grid, dict):
-                inherited_temperature = _sample_inherited_rows(
-                    parent_climate_grid.get("temperature_rows_k"),
-                    nx,
-                    ny,
-                    parent_source_uv,
+                inherited_temperature = sample_parent_rows(
+                    parent_climate_grid.get("temperature_rows_k"), nx, ny,
                 )
-                inherited_elevation = _sample_inherited_rows(
-                    parent_climate_grid.get("elevation_rows"),
-                    nx,
-                    ny,
-                    parent_source_uv,
+                inherited_elevation = sample_parent_rows(
+                    parent_climate_grid.get("elevation_rows"), nx, ny,
                 )
                 if inherited_temperature is not None:
                     inherited_local_temperature = float(inherited_temperature)
@@ -2623,11 +2949,8 @@ def derive_water_cycle_model(
                 parent_weight = _edge_locked_parent_weight(
                     inheritance_weights["precipitation"], local_nx, local_ny
                 )
-                inherited_precipitation = _sample_inherited_rows(
-                    parent_climate_grid.get("annual_precipitation_rows_mm"),
-                    nx,
-                    ny,
-                    parent_source_uv,
+                inherited_precipitation = sample_parent_rows(
+                    parent_climate_grid.get("annual_precipitation_rows_mm"), nx, ny,
                 )
                 if inherited_precipitation is not None and parent_weight > 0.0:
                     precipitation = (
@@ -2988,6 +3311,14 @@ def derive_water_cycle_model(
         / max(1, len(retained_lakes)),
         3,
     )
+    climate_field_diagnostics = _climate_field_diagnostics(
+        rows,
+        ocean_mask,
+        shore_distances,
+        temperature_rows,
+        precipitation_rows,
+        wind_vector_rows,
+    )
 
     return {
         "status": "water_cycle_seeded",
@@ -3000,6 +3331,7 @@ def derive_water_cycle_model(
                 "ocean_thermal_inertia",
                 "seasonality",
                 "prevailing_wind_moisture_transport",
+                "longitude_meandering_circulation",
                 "orographic_rain_shadow",
                 "penman_monteith_reference_evaporation",
                 "budyko_land_water_balance",
@@ -3024,6 +3356,7 @@ def derive_water_cycle_model(
                 or 0.0
             ),
         },
+        "climate_field_diagnostics": climate_field_diagnostics,
         "map_seed": map_seed,
         "hydrology_enabled": drainage_enabled,
         "liquid_water_possible": liquid_water,
@@ -3092,6 +3425,12 @@ def derive_water_cycle_model(
             "annual_precipitation_rows_mm": precipitation_rows,
             "relative_humidity_rows": relative_humidity_rows,
             "prevailing_wind_rows": wind_vector_rows,
+            "circulation_field_contract": {
+                "method": "smooth_latitude_cells_with_seeded_longitude_meander",
+                "meander_source": "wind_circulation_meander_seed_wave",
+                "meander_scope": "midlatitude_storm_belts_and_meridional_transport",
+                "orographic_feedback_source": "heightmap.sample_grid.rows",
+            },
             "condensation_efficiency_rows": condensation_rows,
             "temperature_seasonality_rows_k": seasonality_rows,
             "seasonal_min_temperature_rows_k": seasonal_min_temperature_rows,
@@ -3112,6 +3451,8 @@ def derive_water_cycle_model(
             },
             "parent_climate_inheritance": {
                 "enabled": isinstance(parent_climate_model, dict),
+                "solver_seed_source": solver_seed_source,
+                "solver_uses_global_latitude": True,
                 "temperature_weight": inheritance_weights["temperature"],
                 "precipitation_weight": inheritance_weights["precipitation"],
                 "seasonality_weight": inheritance_weights["seasonality"],

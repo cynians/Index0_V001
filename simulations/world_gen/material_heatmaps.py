@@ -4,6 +4,11 @@ Architecture invariants: the ontology owns entities, colors, formation rules,
 and other semantic facts; module-level lookups are disposable caches. Current
 generated planets are disposable and obsolete model versions are regenerated,
 not translated by legacy compatibility paths.
+
+LOD contract: material provinces and rasters are derived from the current
+parent-derived height/material context. Raster assets belong to the same
+isolated lineage namespace as the region that references them; shared project
+files are not a valid dependency for replay or True Color.
 """
 
 import hashlib
@@ -44,7 +49,7 @@ MATERIAL_HEATMAP_MODEL_VERSION = "material-heatmaps-v21-ontology-cartography"
 RASTER_BUNDLE_FORMAT = "index0_raster_bundle"
 RASTER_BUNDLE_VERSION = 1
 RASTER_BUNDLE_EXTENSION = ".i0r"
-DEFAULT_HEATMAP_SIZE = (256, 128)
+DEFAULT_HEATMAP_SIZE = (320, 160)
 # A differentiated terrestrial crust needs enough planetary-scale lithologies
 # to express shields, arcs, flood basalts and sedimentary basins.  This is a
 # catalogue/output limit, not the number mixed at one pixel; the lithologic
@@ -1986,6 +1991,7 @@ def generate_material_heatmap_model(
         "distribution_mode": "topography_resolved_surface_materials",
         "distribution_roles": ["bedrock", "surface_cover"],
         "true_color_source": "fractional_individual_material_layers",
+        "material_color_source": "natural_material_model.optical_surface_profile.visible_reflectance",
         "fractional_endmember_contract": "suitability_times_process_exposure_normalized_within_stratum",
         "surface_material_causality": "final_heightfield_to_geomorphic_partition_to_material_surface_expression_to_true_color",
         "surface_geomorphology_version": surface_geomorphology.get("model_version"),

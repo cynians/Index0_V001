@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from simulations.world_gen.heightmap import (
     _crater_height_adjustment_m,
@@ -6,7 +7,11 @@ from simulations.world_gen.heightmap import (
 )
 from simulations.world_gen.regional_refinement import (
     _enforce_parent_height_contract,
+    _build_orogen_structural_grid,
+    _build_production_residual_grid,
+    _orogen_structural_context,
     _parent_structure_context,
+    _sample_orogen_structural_grid,
     _refinement_detail_band,
     _sample_bicubic,
     _stable_region_id,
@@ -79,6 +84,95 @@ class CraterSurfaceResolutionTests(unittest.TestCase):
 
 
 class ParentHeightContractTests(unittest.TestCase):
+    def test_production_residual_is_resolved_on_a_compact_child_grid(self):
+        parent_rows = [[float(x * 10 + y * 5) for x in range(9)] for y in range(9)]
+
+        def production_height(u, v, _terrain, _root_heightmap, _tectonics):
+            return 100.0 + float(u) * 200.0 + float(v) * 100.0
+
+        with patch(
+            "simulations.world_gen.regional_refinement._production_height_at",
+            side_effect=production_height,
+        ):
+            grid = _build_production_residual_grid(
+                parent_rows,
+                {},
+                {},
+                {"status": "production"},
+                parent_u0=0.2,
+                parent_u1=0.4,
+                parent_v0=0.3,
+                parent_v1=0.5,
+                source_u0=0.2,
+                source_u1=0.4,
+                source_v0=0.3,
+                source_v1=0.5,
+                sample_width=513,
+                sample_height=509,
+            )
+
+        self.assertEqual(65, grid["width"])
+        self.assertEqual(509 // 8 + 1, grid["height"])
+        self.assertEqual("production_heightfield_residual_compact_child_scale_grid", grid["source"])
+        self.assertEqual(grid["height"], len(grid["residual_rows"]))
+        self.assertEqual(grid["width"], len(grid["residual_rows"][0]))
+
+    def test_orogen_structural_context_uses_production_forcing(self):
+        with patch(
+            "simulations.world_gen.regional_refinement._orogen_forcing_at",
+            return_value={
+                "convergent_influence": 0.92,
+                "trench_influence": 0.41,
+                "rock_uplift_m": 1100.0,
+                "volcanic_construction_m": 600.0,
+                "cumulative_strain_index": 0.92,
+                "transform_influence": 0.0,
+            },
+        ):
+            context = _orogen_structural_context(0.5, 0.5, {"status": "production"})
+
+        self.assertGreater(context["mountain_influence"], 0.40)
+        self.assertAlmostEqual(context["trench_influence"], 0.41 / 1.25)
+        self.assertEqual(1100.0, context["rock_uplift_m"])
+
+    def test_orogen_structural_context_is_empty_without_production_model(self):
+        self.assertEqual(
+            0.0,
+            _orogen_structural_context(0.5, 0.5, None)["mountain_influence"],
+        )
+
+    def test_orogen_structural_grid_preserves_cross_range_profile(self):
+        def forcing(u, v, _model):
+            return {
+                "convergent_influence": 1.0,
+                "trench_influence": v * 1.25,
+                "rock_uplift_m": (1.0 - v) * 1800.0,
+                "volcanic_construction_m": (1.0 - v) * 2400.0,
+                "cumulative_strain_index": 1.0,
+                "transform_influence": 0.0,
+            }
+
+        with patch(
+            "simulations.world_gen.regional_refinement._orogen_forcing_at",
+            side_effect=forcing,
+        ):
+            grid = _build_orogen_structural_grid(
+                {"status": "production"},
+                0.25,
+                0.35,
+                0.45,
+                0.55,
+                sample_width=513,
+                sample_height=509,
+            )
+
+        north = _sample_orogen_structural_grid(grid, 0.30, 0.45)
+        south = _sample_orogen_structural_grid(grid, 0.30, 0.55)
+        self.assertGreater(north["core_influence"], south["core_influence"])
+        self.assertGreater(south["forearc_influence"], north["forearc_influence"])
+        self.assertGreater(north["mountain_influence"], 0.0)
+        self.assertGreater(south["mountain_influence"], 0.0)
+
     def test_new_mountain_detail_is_anchored_to_inherited_structure(self):
         flat = [[0.0 for _x in range(7)] for _y in range(7)]
         ramp = [[float(x * 100) for x in range(7)] for _y in range(7)]

@@ -325,7 +325,12 @@ class SchemaCard:
         pygame.draw.rect(screen, (26, 30, 38), rect)
         pygame.draw.rect(screen, (172, 182, 198), rect, 1)
 
-        header_rect = card["header_drag_rect"]
+        # See ui/card.py draw_card for why this can legitimately be None:
+        # ui_manager.scrub_floating_card_hitboxes() clears it every frame
+        # the floating entity card is open.
+        header_rect = card.get("header_drag_rect") or pygame.Rect(
+            rect.x + 1, rect.y + 1, rect.width - 2, self.HEADER_H,
+        )
         pygame.draw.rect(screen, (34, 42, 52), header_rect)
         pygame.draw.line(screen, (112, 124, 144), (header_rect.x, header_rect.bottom), (header_rect.right, header_rect.bottom), 1)
 

@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 from app.launch_affordance_resolver import LaunchAffordanceResolver
 from simulations.vehicle.vehicle_design import VehicleDesignController
-from simulations.vehicle.vehicle_simulation import VehicleSimulation
+from simulations.vehicle.vehicle_design_simulation import VehicleDesignSimulation
 from ui.card import EntityCard
 from ui.knowledge_browser_ui import KnowledgeBrowserUI
 from world.component_host import COMPONENT_HOST_SCHEMA_ENTITY, apply_component_host_schema
@@ -163,7 +163,7 @@ class SpaceStationHybridTests(unittest.TestCase):
             "installed_components": [],
         }
         world = _World([station])
-        simulation = VehicleSimulation(world_model=world, vehicle_entity_id="loc_station")
+        simulation = VehicleDesignSimulation(world_model=world, vehicle_entity_id="loc_station")
         simulation.design.placed_components = [
             {
                 "instance_id": "placed_component_001",

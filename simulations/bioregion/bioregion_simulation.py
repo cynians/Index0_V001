@@ -61,7 +61,7 @@ class BioregionSimulation:
         "plant_species",
     ]
 
-    def __init__(self, world_model=None, biosphere_context=None):
+    def __init__(self, world_model=None, biosphere_context=None, biosphere_id=None):
         class _DummySystem:
             def update(self, dt):
                 pass
@@ -73,6 +73,8 @@ class BioregionSimulation:
         self.species_collection_id = self.biosphere_context.get("species_collection_id")
         self.selected_species_ids = []
         self.worldgen_context = None
+        self.biosphere_id = biosphere_id or self.biosphere_context.get("biosphere_id")
+        self.biosphere_entity = self._get_entity(self.biosphere_id) if self.biosphere_id else None
         self.biosphere_shape_points = self._resolve_biosphere_shape_points()
         self.biosphere_width_m = float(self.biosphere_context.get("biosphere_width_m") or self.biosphere_context.get("map_size_m") or self.MAP_SIZE_M)
         self.biosphere_height_m = float(self.biosphere_context.get("biosphere_height_m") or self.biosphere_context.get("map_size_m") or self.MAP_SIZE_M)
@@ -125,6 +127,7 @@ class BioregionSimulation:
         self.geology = GeologyGenerator()
         self.geology.populate_grid(self.grid, seed=42)
         self.worldgen_context = self._resolve_worldgen_context()
+        self._ensure_biosphere_soil_profiles()
         self._apply_worldgen_context_to_grid()
         self.grid.initialize_water_from_soil()
         self._apply_worldgen_water_context_to_grid()
@@ -217,12 +220,16 @@ class BioregionSimulation:
             "environment_summary",
             "water_cycle_model",
             "koppen_climate_model",
-            "climate_zone_model",
             "river_model",
             "climate_summary",
             "materials_summary",
             "natural_material_model",
             "material_heatmap_model",
+            "regolith_soil_model",
+            "ocean_circulation_model",
+            "cryosphere_model",
+            "surface_evolution_model",
+            "true_color_model",
         ):
             if isinstance(entity.get(field_name), dict):
                 return True
@@ -231,10 +238,14 @@ class BioregionSimulation:
         return False
 
     def _resolve_worldgen_context(self):
-        if not self.biosphere_context or self.world_model is None:
+        if (not self.biosphere_context and self.biosphere_entity is None) or self.world_model is None:
             return None
 
         start_ids = []
+        if isinstance(self.biosphere_entity, dict):
+            for entity_id in self._relation_ids(self.biosphere_entity.get("overlay_location")):
+                if entity_id not in start_ids:
+                    start_ids.append(entity_id)
         for field_name in ("patch_location_id", "parent_location_id", "root_location_id"):
             entity_id = self.biosphere_context.get(field_name)
             if entity_id and entity_id not in start_ids:
@@ -260,17 +271,17 @@ class BioregionSimulation:
                     "hydrology": entity.get("hydrology_summary") if isinstance(entity.get("hydrology_summary"), dict) else None,
                     "environment": entity.get("environment_summary") if isinstance(entity.get("environment_summary"), dict) else None,
                     "water_cycle": entity.get("water_cycle_model") if isinstance(entity.get("water_cycle_model"), dict) else None,
-                    "koppen_climate": (
-                        entity.get("koppen_climate_model")
-                        if isinstance(entity.get("koppen_climate_model"), dict)
-                        else entity.get("climate_zone_model")
-                        if isinstance(entity.get("climate_zone_model"), dict)
-                        else None
-                    ),
+                    "koppen_climate": entity.get("koppen_climate_model") if isinstance(entity.get("koppen_climate_model"), dict) else None,
                     "rivers": entity.get("river_model") if isinstance(entity.get("river_model"), dict) else None,
                     "climate_summary": entity.get("climate_summary") if isinstance(entity.get("climate_summary"), dict) else None,
                     "materials": entity.get("natural_material_model") if isinstance(entity.get("natural_material_model"), dict) else None,
                     "materials_summary": entity.get("materials_summary") if isinstance(entity.get("materials_summary"), dict) else None,
+                    "material_heatmap": entity.get("material_heatmap_model") if isinstance(entity.get("material_heatmap_model"), dict) else None,
+                    "regolith_soil": entity.get("regolith_soil_model") if isinstance(entity.get("regolith_soil_model"), dict) else None,
+                    "ocean_circulation": entity.get("ocean_circulation_model") if isinstance(entity.get("ocean_circulation_model"), dict) else None,
+                    "cryosphere": entity.get("cryosphere_model") if isinstance(entity.get("cryosphere_model"), dict) else None,
+                    "surface_evolution": entity.get("surface_evolution_model") if isinstance(entity.get("surface_evolution_model"), dict) else None,
+                    "true_color": entity.get("true_color_model") if isinstance(entity.get("true_color_model"), dict) else None,
                 }
                 if context["heightmap"] is not None:
                     return context
@@ -424,9 +435,8 @@ class BioregionSimulation:
             return []
         return rows
 
-    def _sample_heightmap(self, heightmap, nx, ny):
-        rows = self._heightmap_rows(heightmap)
-        if not rows:
+    def _bilinear_sample_rows(self, rows, nx, ny):
+        if not isinstance(rows, list) or not rows or not isinstance(rows[0], list) or not rows[0]:
             return None
         height = len(rows)
         width = min(len(row) for row in rows if isinstance(row, list))
@@ -452,6 +462,9 @@ class BioregionSimulation:
         top = value_at(y0, x0) * (1.0 - fx) + value_at(y0, x1) * fx
         bottom = value_at(y1, x0) * (1.0 - fx) + value_at(y1, x1) * fx
         return top * (1.0 - fy) + bottom * fy
+
+    def _sample_heightmap(self, heightmap, nx, ny):
+        return self._bilinear_sample_rows(self._heightmap_rows(heightmap), nx, ny)
 
     def _sample_koppen_class(self, nx, ny):
         context = self.worldgen_context or {}
@@ -506,6 +519,121 @@ class BioregionSimulation:
         if any(token in text for token in ("granite", "feldspar", "mica")):
             return "granite"
         return None
+
+    def _patch_center_normalised_point(self):
+        patch_bbox = self._points_bbox(self._source_bounds_points())
+        if patch_bbox["min_x"] == patch_bbox["max_x"] or patch_bbox["min_y"] == patch_bbox["max_y"]:
+            patch_bbox = self._source_entity_bbox()
+        center_x = (patch_bbox["min_x"] + patch_bbox["max_x"]) / 2.0
+        center_y = (patch_bbox["min_y"] + patch_bbox["max_y"]) / 2.0
+        return self._normalise_source_point(center_x, center_y)
+
+    def _drainage_label(self, relative_permeability):
+        if relative_permeability is None:
+            return None
+        if relative_permeability < 0.3:
+            return "poor"
+        if relative_permeability < 0.6:
+            return "moderate"
+        return "well_drained"
+
+    def _generate_area_soil_profile(self):
+        """
+        First-pass soil profile from the corrected worldgen bridge.
+
+        Biology (organic layer, nutrients, microbial activity, compaction) is
+        deliberately left None -- regolith_soils.py self-labels its output
+        "biosphere_contribution": "excluded_pending_separate_design", so those
+        fields stay visibly unresolved until a later plant/soil co-development
+        pass actually generates them, rather than guessing.
+        """
+        context = self.worldgen_context or {}
+        regolith = context.get("regolith_soil") or {}
+        grid = regolith.get("grid") if isinstance(regolith.get("grid"), dict) else {}
+        nx, ny = self._patch_center_normalised_point()
+
+        soil_depth_m = self._bilinear_sample_rows(grid.get("soil_depth_m_rows"), nx, ny)
+        porosity = self._bilinear_sample_rows(grid.get("porosity_rows"), nx, ny)
+        permeability = self._bilinear_sample_rows(grid.get("relative_permeability_rows"), nx, ny)
+        ph = self._bilinear_sample_rows(grid.get("ph_rows"), nx, ny)
+        salinity = self._bilinear_sample_rows(grid.get("salinity_index_rows"), nx, ny)
+
+        surface_evolution = context.get("surface_evolution") or {}
+        process_grid = surface_evolution.get("process_grid") if isinstance(surface_evolution.get("process_grid"), dict) else {}
+        erosion = self._bilinear_sample_rows(process_grid.get("erosion_intensity_rows"), nx, ny)
+
+        dominant_classes = regolith.get("dominant_soil_classes") if isinstance(regolith.get("dominant_soil_classes"), list) else []
+        parent_material = None
+        if dominant_classes and isinstance(dominant_classes[0], dict):
+            parent_material = dominant_classes[0].get("id")
+        if not parent_material:
+            parent_material = self._worldgen_bedrock_type(self._material_ids_for_worldgen_context()) or "unresolved_regolith"
+
+        if soil_depth_m is None:
+            return {
+                "generated_from": "geology_heuristic_fallback",
+                "organic_layer": None,
+                "topsoil": None,
+                "subsoil": None,
+                "parent_material": parent_material,
+                "moisture_capacity": None,
+                "ph": None,
+                "salinity": None,
+                "nutrients": None,
+                "microbial_activity": None,
+                "drainage": None,
+                "compaction": None,
+                "erosion_risk": None,
+                "root_depth_constraints": None,
+            }
+
+        return {
+            "generated_from": "regolith_soil_model",
+            "organic_layer": None,
+            "topsoil": round(soil_depth_m * 0.3, 3),
+            "subsoil": round(soil_depth_m * 0.7, 3),
+            "parent_material": parent_material,
+            "moisture_capacity": round(porosity, 3) if porosity is not None else None,
+            "ph": round(ph, 2) if ph is not None else None,
+            "salinity": round(salinity, 3) if salinity is not None else None,
+            "nutrients": None,
+            "microbial_activity": None,
+            "drainage": self._drainage_label(permeability),
+            "compaction": None,
+            "erosion_risk": round(erosion, 3) if erosion is not None else None,
+            "root_depth_constraints": round(min(soil_depth_m, 3.0), 3),
+        }
+
+    def _ensure_biosphere_soil_profiles(self):
+        """
+        Generate area/biosphere soil profiles once and stage the write onto
+        the durable entity. Staged only (world_model.set_literal), never
+        auto-saved -- durability still requires the user's explicit Save.
+        """
+        if not isinstance(self.biosphere_entity, dict) or self.world_model is None:
+            return
+        biosphere_id = self.biosphere_entity.get("id")
+        if not biosphere_id:
+            return
+
+        area_profile = self.biosphere_entity.get("area_soil_profile")
+        if not isinstance(area_profile, dict) or not area_profile:
+            area_profile = self._generate_area_soil_profile()
+            self.biosphere_entity["area_soil_profile"] = area_profile
+            try:
+                self.world_model.set_literal(biosphere_id, "area_soil_profile", area_profile, persist=True)
+            except AttributeError:
+                pass
+
+        biosphere_profile = self.biosphere_entity.get("biosphere_soil_profile")
+        if not isinstance(biosphere_profile, dict) or not biosphere_profile:
+            biosphere_profile = dict(area_profile)
+            biosphere_profile["generated_from"] = "area_soil_profile_baseline"
+            self.biosphere_entity["biosphere_soil_profile"] = biosphere_profile
+            try:
+                self.world_model.set_literal(biosphere_id, "biosphere_soil_profile", biosphere_profile, persist=True)
+            except AttributeError:
+                pass
 
     def _worldgen_soil_type(self, material_ids, is_under_water, elevation_norm):
         text = " ".join(material_ids)
@@ -634,21 +762,26 @@ class BioregionSimulation:
             ]
 
         species_ids = []
-        collection = (
-            self.world_model.get_entity(self.species_collection_id)
-            if self.species_collection_id
-            else None
-        )
-        if isinstance(collection, dict):
+        # A durable Biosphere entity carries its own roster buckets directly
+        # (see tools/author_biosphere_model.py) -- prefer that over the older
+        # ephemeral species-roster collection when both are available.
+        roster_source = self.biosphere_entity
+        if not isinstance(roster_source, dict):
+            roster_source = (
+                self.world_model.get_entity(self.species_collection_id)
+                if self.species_collection_id
+                else None
+            )
+        if isinstance(roster_source, dict):
             for field_name in self.BIOSPHERE_SPECIES_ROSTER_FIELDS:
-                species_ids.extend(self._relation_ids(collection.get(field_name)))
+                species_ids.extend(self._relation_ids(roster_source.get(field_name)))
             for field_name in self.LEGACY_BIOSPHERE_SPECIES_ROSTER_FIELDS:
-                species_ids.extend(self._relation_ids(collection.get(field_name)))
+                species_ids.extend(self._relation_ids(roster_source.get(field_name)))
             if not species_ids:
-                species_ids.extend(self._relation_ids(collection.get("includes")))
-                species_ids.extend(self._relation_ids(collection.get("featured_entries")))
+                species_ids.extend(self._relation_ids(roster_source.get("includes")))
+                species_ids.extend(self._relation_ids(roster_source.get("featured_entries")))
 
-        if not species_ids and not isinstance(collection, dict):
+        if not species_ids and not isinstance(roster_source, dict):
             species_ids = list(self.STARTER_SPECIES_IDS)
 
         entries = []
@@ -673,13 +806,33 @@ class BioregionSimulation:
             return f"{patch_name} | 10 m x 10 m"
         return "Bioregion Test Map | 10 km x 10 km"
 
+    def get_bioregion_hierarchy_breadcrumb(self):
+        """Walk parent_biosphere links from the current Biosphere entity upward."""
+        if not isinstance(self.biosphere_entity, dict):
+            return ""
+        names = []
+        visited = set()
+        current = self.biosphere_entity
+        while isinstance(current, dict):
+            entity_id = current.get("id")
+            if not entity_id or entity_id in visited:
+                break
+            visited.add(entity_id)
+            names.append(current.get("pretty_name") or current.get("name") or entity_id)
+            parent_ids = self._relation_ids(current.get("parent_biosphere"))
+            current = self._get_entity(parent_ids[0]) if parent_ids else None
+        return " > ".join(reversed(names))
+
     def get_scope_breadcrumb(self):
         if not self.biosphere_context:
             return ""
         root_name = self.biosphere_context.get("root_name") or self.biosphere_context.get("root_location_id")
         patch_name = self.biosphere_context.get("patch_name") or self.biosphere_context.get("patch_location_id")
         source_name = (self.worldgen_context or {}).get("source_name")
-        if root_name and patch_name:
+        hierarchy = self.get_bioregion_hierarchy_breadcrumb()
+        if hierarchy and " > " in hierarchy:
+            breadcrumb = hierarchy
+        elif root_name and patch_name:
             breadcrumb = f"{root_name} > {patch_name}"
         else:
             breadcrumb = str(patch_name or root_name or "")

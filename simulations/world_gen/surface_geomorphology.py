@@ -5,6 +5,10 @@ that relief is expressed at the surface: ridges and scarps, incised valleys,
 colluvial slopes, alluvial/depositional lows, and mantled plains.  The compact
 model is persisted; dense fields are deterministically reconstructed from the
 saved height, drainage, and surface-evolution grids at render resolution.
+
+LOD contract: this is a derived interpretation of the current parent-derived
+height and process state. It may classify finer ridges, valleys, scarps, talus,
+alluvium, and exposure, but it is not an independent terrain source.
 """
 
 from __future__ import annotations
@@ -130,32 +134,65 @@ def derive_surface_geomorphology_fields(
     water_cycle = water_cycle if isinstance(water_cycle, dict) else {}
     surface_evolution = surface_evolution if isinstance(surface_evolution, dict) else {}
     target_w, target_h = max(2, int(target_size[0])), max(2, int(target_size[1]))
+    detail_level = max(0, int(heightmap.get("map_detail_level", 0) or 0))
     rows = ((heightmap.get("sample_grid") or {}).get("rows") or [])
     if not rows or not isinstance(rows[0], list):
         return {}
     source_h = len(rows)
     source_w = min(len(row) for row in rows if isinstance(row, list))
-    elevation = _resample([row[:source_w] for row in rows], target_h, target_w)
+    source_elevation = np.asarray(
+        [row[:source_w] for row in rows],
+        dtype=np.float32,
+    )
+    elevation = _resample(source_elevation, target_h, target_w)
     spacing_x = max(1.0, float(heightmap.get("sample_spacing_x_m") or heightmap.get("equator_resolution_m_per_px") or 1.0))
     spacing_y = max(1.0, float(heightmap.get("sample_spacing_y_m") or spacing_x))
-    scale_x = spacing_x * max(1.0, source_w / target_w)
-    scale_y = spacing_y * max(1.0, source_h / target_h)
-    dzdy, dzdx = np.gradient(elevation, scale_y, scale_x)
+    wrap_x = bool(heightmap.get("wrap_x", False))
+    source_form_elevation = source_elevation
+    if detail_level >= 1:
+        # Regional samples can contain one-cell generator noise that is below
+        # the intended visual scale of this LOD. Smooth only the derived
+        # interpretation; the persisted heightmap and all inherited values
+        # remain unchanged.
+        source_form_elevation = _smooth(
+            source_elevation,
+            1,
+            wrap_x=wrap_x,
+        )
+    # Derive slope from the persisted sample lattice before upsampling it.
+    # Differentiating the bilinear render lattice creates a slope discontinuity
+    # at every source-cell edge; true color and hillshade then turn those
+    # harmless interpolation boundaries into dark rectangular scratches.
+    source_dzdy, source_dzdx = np.gradient(
+        source_form_elevation,
+        spacing_y,
+        spacing_x,
+    )
+    dzdx = _resample(source_dzdx, target_h, target_w)
+    dzdy = _resample(source_dzdy, target_h, target_w)
     gradient = np.sqrt(dzdx * dzdx + dzdy * dzdy)
     slope_degrees = np.degrees(np.arctan(gradient))
     slope = np.clip(slope_degrees / 38.0, 0.0, 1.0)
 
-    wrap_x = bool(heightmap.get("wrap_x", False))
-    local_mean = _smooth(elevation, 2, wrap_x=wrap_x)
-    broad_mean = _smooth(elevation, 8, wrap_x=wrap_x)
-    local_tpi = elevation - local_mean
-    broad_tpi = local_mean - broad_mean
-    ridge = _positive(local_tpi * 0.72 + broad_tpi * 0.28)
-    valley = _positive(-local_tpi * 0.78 - broad_tpi * 0.22)
-    ruggedness = _positive(np.abs(elevation - local_mean))
-    laplacian = elevation - _smooth(elevation, 1, wrap_x=wrap_x)
-    convexity = _positive(laplacian)
-    concavity = _positive(-laplacian)
+    # Classify landforms on the persisted height lattice before resampling.
+    # Computing these fields on an enlarged render lattice makes each
+    # bilinear cell edge look like a real ridge/scarp boundary in downstream
+    # products, even though the underlying elevation is continuous.
+    source_local_mean = _smooth(source_form_elevation, 2, wrap_x=wrap_x)
+    source_broad_mean = _smooth(source_form_elevation, 8, wrap_x=wrap_x)
+    source_local_tpi = source_form_elevation - source_local_mean
+    source_broad_tpi = source_local_mean - source_broad_mean
+    source_ridge = _positive(source_local_tpi * 0.72 + source_broad_tpi * 0.28)
+    source_valley = _positive(-source_local_tpi * 0.78 - source_broad_tpi * 0.22)
+    source_ruggedness = _positive(np.abs(source_form_elevation - source_local_mean))
+    source_laplacian = source_form_elevation - _smooth(source_form_elevation, 1, wrap_x=wrap_x)
+    source_convexity = _positive(source_laplacian)
+    source_concavity = _positive(-source_laplacian)
+    ridge = _resample(source_ridge, target_h, target_w)
+    valley = _resample(source_valley, target_h, target_w)
+    ruggedness = _resample(source_ruggedness, target_h, target_w)
+    convexity = _resample(source_convexity, target_h, target_w)
+    concavity = _resample(source_concavity, target_h, target_w)
     scarp = np.clip(slope * (0.38 + convexity * 0.62) * (0.42 + ruggedness * 0.58), 0.0, 1.0)
 
     evolution = {}

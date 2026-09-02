@@ -66,6 +66,99 @@ class CardSiteMixin:
         else:
             add_row("empty", "No site conditions assigned", field_key="site_conditions")
 
+        add_section("Layout & Access")
+        structures = self._relation_entity_ids(self.entity.get("layout_structures"))
+        if structures:
+            add_row("summary", f"Structures ({len(structures)})", field_key="layout_structures")
+            for structure_id in structures:
+                add_row(
+                    "structure",
+                    self._entity_label_for_id(structure_id),
+                    structure_id,
+                    indent=18,
+                    field_key="layout_structures",
+                )
+        else:
+            building_class = str(self.entity.get("building_class") or "").strip()
+            if building_class:
+                add_row("summary", f"Building: {building_class}", field_key="building_class")
+
+        openings = [value for value in self.entity.get("openings") or [] if isinstance(value, dict)]
+        if openings:
+            add_row("summary", f"Passable openings ({len(openings)})", field_key="openings")
+            for opening in openings:
+                opening_class = str(opening.get("opening_class") or "opening")
+                side = str(opening.get("side") or "wall")
+                width = opening.get("width")
+                detail = f"{side} wall" + (f" · {width} m" if width not in (None, "") else "")
+                add_row("opening", opening_class.title(), detail, indent=18, field_key="openings")
+
+        layers = [str(value) for value in self.entity.get("representational_layers") or [] if str(value).strip()]
+        if layers:
+            add_row("summary", "Map layers", ", ".join(layers), field_key="representational_layers")
+
+        residents = self._relation_entity_ids(self.entity.get("resident_people"))
+        if residents:
+            add_section("Residents")
+            for resident_id in residents:
+                resident = self.world_model.get_entity(resident_id) or {}
+                sex = str(resident.get("sex") or "person").strip()
+                add_row(
+                    "resident",
+                    self._entity_label_for_id(resident_id),
+                    sex,
+                    field_key="resident_people",
+                )
+
+        present_pops = self._relation_entity_ids(self.entity.get("present_pops"))
+        authored_visitors = self._relation_entity_ids(self.entity.get("authored_visitors"))
+        visitor_scenarios = [
+            value for value in self.entity.get("visitor_scenarios") or []
+            if isinstance(value, dict)
+        ]
+        if present_pops or authored_visitors or visitor_scenarios:
+            add_section("Population & Encounters")
+            for pop_id in present_pops:
+                pop = self.world_model.get_entity(pop_id) or {}
+                count = pop.get("population_count", pop.get("size", "?"))
+                representatives = pop.get("representative_count", 3)
+                add_row(
+                    "population",
+                    self._entity_label_for_id(pop_id),
+                    f"{count} people · {representatives} full representatives",
+                    field_key="present_pops",
+                )
+            for visitor_id in authored_visitors:
+                visitor = self.world_model.get_entity(visitor_id) or {}
+                add_row(
+                    "resident",
+                    self._entity_label_for_id(visitor_id),
+                    str(visitor.get("visit_purpose") or "authored visitor"),
+                    field_key="authored_visitors",
+                )
+            for scenario in visitor_scenarios:
+                names = scenario.get("names") or [scenario.get("name") or scenario.get("id") or "Visitor"]
+                add_row(
+                    "population",
+                    ", ".join(str(name) for name in names),
+                    f"{scenario.get('person_class', 'visitor')} · {scenario.get('simulation_detail', 'lightweight')}",
+                    field_key="visitor_scenarios",
+                )
+
+        inventory = [value for value in self.entity.get("inventory_items") or [] if isinstance(value, dict)]
+        if inventory:
+            add_section("Stored Items")
+            for entry in inventory:
+                item_id = str(entry.get("item") or entry.get("entity") or "").strip()
+                quantity = entry.get("quantity", 0)
+                unit = str(entry.get("unit") or "units").strip()
+                add_row(
+                    "inventory",
+                    self._entity_label_for_id(item_id) if item_id else "Unspecified item",
+                    f"{quantity:g} {unit}" if isinstance(quantity, (int, float)) else f"{quantity} {unit}",
+                    field_key="inventory_items",
+                )
+
         add_section("Production Requirements")
         production_reports = (self._site_requirement_report() or {}).get("production", [])
         if not production_reports:

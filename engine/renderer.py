@@ -5,6 +5,7 @@ from simulations.vehicle.vehicle_renderer import VehicleRenderer
 from simulations.world_gen.world_gen_renderer import WorldGenRenderer
 from simulations.phylogeny.phylogeny_renderer import PhylogenyRenderer
 from simulations.person.person_renderer import PersonRenderer
+from simulations.formation.formation_renderer import FormationRenderer
 
 
 class Renderer:
@@ -29,6 +30,7 @@ class Renderer:
         self.world_gen_renderer = WorldGenRenderer(simulation)
         self.phylogeny_renderer = PhylogenyRenderer(simulation)
         self.person_renderer = PersonRenderer(simulation)
+        self.formation_renderer = FormationRenderer(simulation)
 
     # --------------------------------------------------
     # MAIN ENTRY
@@ -71,8 +73,12 @@ class Renderer:
             self.vehicle_renderer.draw(self.screen, sim)
             return
 
-        if render_mode == "person":
+        if render_mode in {"person", "site_people"}:
             self.person_renderer.draw(self.screen, sim)
+            return
+
+        if render_mode == "formation":
+            self.formation_renderer.draw(self.screen, sim)
             return
 
         if render_mode == "phylogeny":

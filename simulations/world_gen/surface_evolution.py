@@ -6,6 +6,11 @@ drainage grids to the existing tectonic/impact heightfield with conservative,
 bounded changes.  The process ordering follows the usual planetary surface
 framework: tectonism and impacts create relief; water, ice, wind, weathering,
 mass wasting, and deposition progressively redistribute it.
+
+LOD contract: surface evolution is a bounded causal refinement of the current
+parent terrain. Its process fields may become spatially richer at deeper LODs,
+but they must preserve parent topology at patch edges and remain distinguishable
+from purely visual noise.
 """
 
 import math
@@ -25,6 +30,42 @@ def _grid(rows):
     if width < 2:
         return []
     return [[float(value or 0.0) for value in row[:width]] for row in rows]
+
+
+def _resample_rows(rows, target_width, target_height, wrap_x=True):
+    """Bilinearly resample a continuous field onto an explicit solver grid."""
+    rows = _grid(rows)
+    if not rows or target_width < 2 or target_height < 2:
+        return []
+    source_height = len(rows)
+    source_width = len(rows[0])
+    if source_width == target_width and source_height == target_height:
+        return [[float(value) for value in row] for row in rows]
+    result = []
+    for target_y in range(target_height):
+        source_y = target_y / max(1, target_height - 1) * max(1, source_height - 1)
+        y0 = max(0, min(source_height - 1, int(math.floor(source_y))))
+        y1 = min(source_height - 1, y0 + 1)
+        fy = source_y - math.floor(source_y)
+        result_row = []
+        for target_x in range(target_width):
+            source_x = target_x / max(1, target_width - 1) * max(1, source_width - 1)
+            x0 = int(math.floor(source_x))
+            x1 = x0 + 1
+            if wrap_x:
+                x0 %= source_width
+                x1 %= source_width
+            else:
+                x0 = max(0, min(source_width - 1, x0))
+                x1 = max(0, min(source_width - 1, x1))
+            fx = source_x - math.floor(source_x)
+            top = float(rows[y0][x0]) * (1.0 - fx) + float(rows[y0][x1]) * fx
+            bottom = float(rows[y1][x0]) * (1.0 - fx) + float(rows[y1][x1]) * fx
+            result_row.append(top * (1.0 - fy) + bottom * fy)
+        if wrap_x:
+            result_row[-1] = result_row[0]
+        result.append(result_row)
+    return result
 
 
 def _sample(rows, x, y, default=0.0):
@@ -330,9 +371,9 @@ def derive_surface_evolution_model(planet, terrain, heightmap, water_cycle, atmo
     heightmap = heightmap if isinstance(heightmap, dict) else {}
     water_cycle = water_cycle if isinstance(water_cycle, dict) else {}
     atmosphere = atmosphere if isinstance(atmosphere, dict) else {}
-    original_rows = _grid(((heightmap.get("sample_grid") or {}).get("rows")))
+    canonical_rows = _grid(((heightmap.get("sample_grid") or {}).get("rows")))
     climate = water_cycle.get("climate_grid") if isinstance(water_cycle.get("climate_grid"), dict) else {}
-    if not original_rows or not climate:
+    if not canonical_rows or not climate:
         return {
             "status": "unavailable",
             "model_version": SURFACE_EVOLUTION_MODEL_VERSION,
@@ -340,7 +381,6 @@ def derive_surface_evolution_model(planet, terrain, heightmap, water_cycle, atmo
             "heightmap": heightmap,
         }
 
-    height, width = len(original_rows), len(original_rows[0])
     temperature = _grid(climate.get("temperature_rows_k"))
     precipitation = _grid(climate.get("annual_precipitation_rows_mm"))
     runoff = _grid(climate.get("annual_runoff_rows_mm"))
@@ -352,6 +392,26 @@ def derive_surface_evolution_model(planet, terrain, heightmap, water_cycle, atmo
             "reason": "climate_forcing_missing",
             "heightmap": heightmap,
         }
+
+    canonical_height = len(canonical_rows)
+    canonical_width = len(canonical_rows[0])
+    solver_height = len(temperature)
+    solver_width = min((len(row) for row in temperature), default=0)
+    wrap_x = bool(heightmap.get("wrap_x", True))
+    original_rows = _resample_rows(
+        canonical_rows,
+        solver_width,
+        solver_height,
+        wrap_x=wrap_x,
+    )
+    if not original_rows:
+        return {
+            "status": "unavailable",
+            "model_version": SURFACE_EVOLUTION_MODEL_VERSION,
+            "reason": "invalid_solver_grid",
+            "heightmap": heightmap,
+        }
+    height, width = len(original_rows), len(original_rows[0])
 
     drainage = water_cycle.get("drainage_network_model") if isinstance(water_cycle.get("drainage_network_model"), dict) else {}
     accumulation = _grid(drainage.get("flow_accumulation_rows"))
@@ -366,7 +426,6 @@ def derive_surface_evolution_model(planet, terrain, heightmap, water_cycle, atmo
     radius_m = float(heightmap.get("radius_m") or ((terrain.get("map_canvas") or {}).get("radius_m")) or 6_371_000.0)
     circumference_m = float(heightmap.get("circumference_m") or (math.tau * radius_m))
     dy_m = math.pi * radius_m / max(1, height - 1)
-    wrap_x = bool(heightmap.get("wrap_x", True))
     pressure_bar = float(
         atmosphere.get(
             "surface_pressure_bar",
@@ -486,21 +545,47 @@ def derive_surface_evolution_model(planet, terrain, heightmap, water_cycle, atmo
         radius_m,
         wrap_x,
     )
+    solver_heightmap = dict(heightmap)
+    solver_heightmap["sample_spacing_x_m"] = circumference_m / max(1, width - 1)
+    solver_heightmap["sample_spacing_y_m"] = math.pi * radius_m / max(1, height - 1)
+    solver_heightmap["sample_grid"] = {
+        **(heightmap.get("sample_grid") or {}),
+        "width": width,
+        "height": height,
+    }
     smoothed, channel_incision_rows = _apply_channel_incision(
         smoothed,
         drainage,
-        heightmap,
+        solver_heightmap,
         active_water,
         declared_strength,
         wrap_x,
     )
 
+    if width == canonical_width and height == canonical_height:
+        final_rows = smoothed
+    else:
+        delta_rows = [
+            [float(smoothed[y][x]) - float(original_rows[y][x]) for x in range(width)]
+            for y in range(height)
+        ]
+        delta_at_canonical = _resample_rows(
+            delta_rows,
+            canonical_width,
+            canonical_height,
+            wrap_x=wrap_x,
+        )
+        final_rows = [
+            [canonical_rows[y][x] + delta_at_canonical[y][x] for x in range(canonical_width)]
+            for y in range(canonical_height)
+        ]
+
     changed_heightmap = dict(heightmap)
     sample_grid = dict(heightmap.get("sample_grid") or {})
-    sample_grid["rows"] = [[round(value, 2) for value in row] for row in smoothed]
+    sample_grid["rows"] = [[round(value, 2) for value in row] for row in final_rows]
     changed_heightmap["sample_grid"] = sample_grid
-    changed_heightmap["min_elevation_m"] = round(min(min(row) for row in smoothed), 1)
-    changed_heightmap["max_elevation_m"] = round(max(max(row) for row in smoothed), 1)
+    changed_heightmap["min_elevation_m"] = round(min(min(row) for row in final_rows), 1)
+    changed_heightmap["max_elevation_m"] = round(max(max(row) for row in final_rows), 1)
     geology = dict(heightmap.get("geology_model") or {})
     geology.update({
         "surface_evolution_model_version": SURFACE_EVOLUTION_MODEL_VERSION,
@@ -529,6 +614,16 @@ def derive_surface_evolution_model(planet, terrain, heightmap, water_cycle, atmo
         "status": "surface_evolution_seeded",
         "model_version": SURFACE_EVOLUTION_MODEL_VERSION,
         "coupling": "one_climate_to_landscape_feedback_iteration",
+        "solver_resolution": {
+            "width": width,
+            "height": height,
+            "source": "water_cycle_climate_grid",
+            "canonical_heightmap_dimensions": {
+                "width": canonical_width,
+                "height": canonical_height,
+            },
+            "application": "bounded_solver_delta_resampled_to_canonical_lod0",
+        },
         "surface_age_myr": round(surface_age_myr, 1),
         "equilibration_interval_myr": round(equilibration_myr, 1),
         "liquid_water_enabled": active_water > 0.0,

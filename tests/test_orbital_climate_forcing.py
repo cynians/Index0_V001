@@ -4,6 +4,7 @@ import simulations.world_gen.water_cycle as water_cycle_module
 from simulations.world_gen.atmosphere import equilibrium_temperature_k
 from simulations.world_gen.water_cycle import (
     _barrier_aware_relax_field,
+    _prevailing_wind_vector,
     _sample_inherited_category,
     _sample_inherited_rows,
     derive_water_cycle_model,
@@ -138,6 +139,19 @@ class OrbitalClimateForcingTests(unittest.TestCase):
             "bilinear_continuous_fields_then_reclassify",
             grid["koppen_display_contract"]["method"],
         )
+        self.assertEqual(
+            "smooth_latitude_cells_with_seeded_longitude_meander",
+            grid["circulation_field_contract"]["method"],
+        )
+        self.assertGreater(
+            model["climate_field_diagnostics"]["wind_longitude_meander_index"],
+            0.0,
+        )
+
+    def test_wind_circulation_meanders_by_longitude(self):
+        western = _prevailing_wind_vector(0.32, "wind-meander-test", nx=0.12)
+        eastern = _prevailing_wind_vector(0.32, "wind-meander-test", nx=0.81)
+        self.assertNotEqual(western, eastern)
 
     def test_planetary_precipitation_relaxation_removes_lanes_and_preserves_total(self):
         precipitation = [

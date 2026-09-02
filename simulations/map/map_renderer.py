@@ -19,6 +19,7 @@ except ImportError:  # Keep a functional, slower path for minimal installations.
 from simulations.world_gen.material_heatmaps import load_raster_bundle_surface
 from simulations.world_gen.natural_materials import material_geological_map_color
 from simulations.world_gen.true_color import render_true_color_surface
+from simulations.world_gen.water_cycle import shade_koppen_rgb
 from simulations.world_gen.heightmap import (
     contour_levels_for_heightmap,
     display_contour_interval_m,
@@ -31,6 +32,29 @@ class MapRenderer:
     """
     Handles rendering for map simulations.
     """
+
+    # A cell that resolves to NaN/inf (a corrupted upstream model, not a
+    # legitimate data value) renders as this instead of silently becoming
+    # the brightest/most-extreme color a clamp happens to pick -- see
+    # docs/CLAUDE_CODE_HANDOFF_2026-08-16.md's temperature-NaN incident.
+    NAN_SENTINEL_COLOR = (255, 0, 220)
+
+    # Fixed (not per-render-auto-scaled) color range for the Temperature
+    # climate layer, so the same color means the same temperature across
+    # different planets/regions -- comparable the way Precipitation's fixed
+    # log1p(5000mm) cap already is. Anchored around the Koppen thresholds
+    # already used for classification (0C/273.15K EF/ET boundary, -38C/
+    # 235.15K D-severe boundary both fall inside this range).
+    TEMPERATURE_COLOR_SCALE_MIN_K = 210.0
+    TEMPERATURE_COLOR_SCALE_MAX_K = 325.0
+
+    @staticmethod
+    def _finite_or(value, fallback=0.0):
+        try:
+            result = float(value or 0.0)
+        except (TypeError, ValueError):
+            return fallback
+        return result if math.isfinite(result) else fallback
 
     def __init__(self, app_view):
         self.app_view = app_view
@@ -373,8 +397,17 @@ class MapRenderer:
 
         requested_interval = height_marker_interval_m(pixels_per_map_pixel)
         interval = display_contour_interval_m(heightmap, requested_interval, max_levels=18)
-        target_w = max(2, int((target_size or (512, 256))[0]))
-        target_h = max(2, int((target_size or (512, 256))[1]))
+        requested_target_w = max(2, int((target_size or (512, 256))[0]))
+        requested_target_h = max(2, int((target_size or (512, 256))[1]))
+        target_w = requested_target_w
+        target_h = requested_target_h
+        # Snap to a coarse bucket so continuous zoom doesn't rebuild the
+        # (expensive, antialiased) contour surface every single frame --
+        # the result is already smooth-scaled to the real target at blit
+        # time, so a bucketed source resolution costs no visible fidelity.
+        contour_size_bucket = 32
+        target_w = ((target_w + contour_size_bucket - 1) // contour_size_bucket) * contour_size_bucket
+        target_h = ((target_h + contour_size_bucket - 1) // contour_size_bucket) * contour_size_bucket
         # Contours are vector-derived and then smoothly scaled with the map.
         # A 1280x720 cache is visually indistinguishable at normal line widths
         # but avoids multi-megapixel antialiasing stalls on activation.
@@ -390,7 +423,12 @@ class MapRenderer:
         )
         cached = self._height_contour_surface_cache.get(cache_key)
         if cached is not None:
-            return cached, interval
+            surface = cached
+            if surface.get_size() != (requested_target_w, requested_target_h):
+                surface = pygame.transform.smoothscale(
+                    surface, (requested_target_w, requested_target_h),
+                )
+            return surface, interval
 
         cell_w = sample_w - 1
         cell_h = sample_h - 1
@@ -446,6 +484,10 @@ class MapRenderer:
             pygame.draw.lines(surface, shoreline_color, closed, screen_points, 2)
             pygame.draw.aalines(surface, shoreline_color, closed, screen_points)
         self._cache_put(self._height_contour_surface_cache, cache_key, surface, limit=18)
+        if surface.get_size() != (requested_target_w, requested_target_h):
+            surface = pygame.transform.smoothscale(
+                surface, (requested_target_w, requested_target_h),
+            )
         return surface, interval
 
     def _composite_refined_contours(
@@ -1301,37 +1343,40 @@ class MapRenderer:
         # suitability field.  The source alpha remains untouched in storage
         # for the separate True Color optical mixer.
         width, height = source.get_size()
-        result = pygame.Surface((width, height), pygame.SRCALPHA)
-        background = (49, 55, 58, 255)
-        present_rows = [[False for _x in range(width)] for _y in range(height)]
+        background_rgb = np.asarray((49, 55, 58), dtype=np.float32)
+        contact_rgb = np.asarray((31, 37, 39), dtype=np.uint8)
         threshold = max(0.14, min(0.52, float(material_layer.get("dominance_threshold", 0.20) or 0.20) * 0.72))
-        for y in range(height):
-            for x in range(width):
-                intensity = max(0.0, min(1.0, source.get_at((x, y)).a / 230.0))
-                present = intensity >= threshold
-                present_rows[y][x] = present
-                if not present:
-                    result.set_at((x, y), background)
-                    continue
-                strength = 0.78 + intensity * 0.22
-                coverage = max(0.0, min(1.0, (intensity - threshold) / max(0.08, 1.0 - threshold)))
-                coverage = 0.48 + coverage * 0.52
-                result.set_at((x, y), tuple(
-                    int(background[index] * (1.0 - coverage) + map_color[index] * strength * coverage)
-                    for index in range(3)
-                ) + (255,))
-        contact = (31, 37, 39, 255)
-        for y in range(height):
-            for x in range(width):
-                if not present_rows[y][x]:
-                    continue
-                if (
-                    not present_rows[y][(x - 1) % width]
-                    or not present_rows[y][(x + 1) % width]
-                    or (y > 0 and not present_rows[y - 1][x])
-                    or (y + 1 < height and not present_rows[y + 1][x])
-                ):
-                    result.set_at((x, y), contact)
+        map_rgb = np.asarray(map_color[:3], dtype=np.float32)
+
+        alpha = pygame.surfarray.array_alpha(source).astype(np.float32)
+        intensity = np.clip(alpha / 230.0, 0.0, 1.0)
+        present = intensity >= threshold
+        strength = 0.78 + intensity * 0.22
+        coverage = np.clip((intensity - threshold) / max(0.08, 1.0 - threshold), 0.0, 1.0)
+        coverage = 0.48 + coverage * 0.52
+        blended = (
+            background_rgb[None, None, :] * (1.0 - coverage[..., None])
+            + map_rgb[None, None, :] * strength[..., None] * coverage[..., None]
+        )
+        rgb = np.where(present[..., None], blended, background_rgb[None, None, :])
+        rgb = np.clip(rgb, 0, 255).astype(np.uint8)
+
+        # Contact outline: present pixels touching a not-present neighbour.
+        # x wraps (matches the source raster's longitude wrap); y does not
+        # -- the top/bottom edges never count a missing neighbour as an
+        # edge, matching the original per-pixel guard.
+        left_present = np.roll(present, 1, axis=0)
+        right_present = np.roll(present, -1, axis=0)
+        up_present = np.ones_like(present)
+        up_present[:, 1:] = present[:, :-1]
+        down_present = np.ones_like(present)
+        down_present[:, :-1] = present[:, 1:]
+        contact_mask = present & (
+            ~left_present | ~right_present | ~up_present | ~down_present
+        )
+        rgb[contact_mask] = contact_rgb
+
+        result = pygame.surfarray.make_surface(rgb)
         result = pygame.transform.smoothscale(
             result,
             (max(2, width * 2), max(2, height * 2)),
@@ -1412,6 +1457,8 @@ class MapRenderer:
         max_elevation = context["max_elevation"]
         land_dark, land_mid, land_high, land_shadow = context["palette"]
         elevation = float(elevation or 0.0)
+        if math.isnan(elevation):
+            return self.NAN_SENTINEL_COLOR
         if has_ice:
             relief = min(1.0, (elevation - min_elevation) / max(1.0, max_elevation - min_elevation))
             return self._mix_rgb(
@@ -1580,7 +1627,7 @@ class MapRenderer:
         cache_key = (
             id(heightmap),
             id((heightmap.get("sample_grid") or {}).get("rows")),
-            repr(model),
+            id(model),
             id(material_surface),
             tuple(id(item.get("surface")) for item in material_components),
             id(layer.get("water_cycle_model")),
@@ -1663,27 +1710,33 @@ class MapRenderer:
                         and col_index < len(ice_rows[row_index])
                         and bool(ice_rows[row_index][col_index])
                     )
-                    elevation_bin = max(0, min(lut_steps, int((elevation - min_elevation) / elevation_span * lut_steps)))
-                    color_key = (elevation_bin, has_ice)
-                    color = color_lut.get(color_key)
-                    if color is None:
-                        representative_elevation = min_elevation + elevation_span * elevation_bin / lut_steps
-                        color = self._heightmap_color_from_context(
-                            representative_elevation,
-                            color_context,
-                            has_ice=has_ice,
-                        )
-                        color_lut[color_key] = color
+                    if math.isnan(elevation):
+                        # int() on a NaN bin index raises ValueError; a
+                        # corrupted cell renders as the sentinel instead of
+                        # crashing the whole surface.
+                        color = self.NAN_SENTINEL_COLOR
+                    else:
+                        elevation_bin = max(0, min(lut_steps, int((elevation - min_elevation) / elevation_span * lut_steps)))
+                        color_key = (elevation_bin, has_ice)
+                        color = color_lut.get(color_key)
+                        if color is None:
+                            representative_elevation = min_elevation + elevation_span * elevation_bin / lut_steps
+                            color = self._heightmap_color_from_context(
+                                representative_elevation,
+                                color_context,
+                                has_ice=has_ice,
+                            )
+                            color_lut[color_key] = color
                     # Directional relief shading exposes valleys and ridges
                     # that an elevation-only ramp hides.  Moderate vertical
                     # exaggeration is visual only; stored elevations remain
                     # the simulation truth.
-                    left = float(row_a[max(0, col_index - 1)] or 0.0)
-                    right = float(row_a[min(len(row_a) - 1, col_index + 1)] or 0.0)
+                    left = self._finite_or(row_a[max(0, col_index - 1)])
+                    right = self._finite_or(row_a[min(len(row_a) - 1, col_index + 1)])
                     upper_row = rows[max(0, row_index - 1)]
                     lower_row = rows[min(len(rows) - 1, row_index + 1)]
-                    up = float(upper_row[min(col_index, len(upper_row) - 1)] or 0.0)
-                    down = float(lower_row[min(col_index, len(lower_row) - 1)] or 0.0)
+                    up = self._finite_or(upper_row[min(col_index, len(upper_row) - 1)])
+                    down = self._finite_or(lower_row[min(col_index, len(lower_row) - 1)])
                     dzdx = (right - left) / (2.0 * spacing_x) * vertical_exaggeration
                     dzdy = (down - up) / (2.0 * spacing_y) * vertical_exaggeration
                     normal_length = math.sqrt(dzdx * dzdx + dzdy * dzdy + 1.0)
@@ -1893,25 +1946,38 @@ class MapRenderer:
             float(value or 0.0)
             for row in elevation_rows[:row_count]
             for value in (row[:col_count] if isinstance(row, list) else [])
+            if isinstance(value, (int, float)) and math.isfinite(float(value or 0.0))
         ]
         min_elevation = min(elevations) if elevations else 0.0
         max_elevation = max(elevations) if elevations else 1.0
         elevation_span = max(1.0, max_elevation - min_elevation)
 
         colors = self._koppen_class_colors(water_cycle)
+        # A single non-finite cell here would otherwise be able to poison
+        # min()/max() for the *whole* grid -- NaN comparisons are always
+        # False, so a NaN encountered first leaves the running min/max
+        # stuck at NaN for every remaining cell. Excluding non-finite
+        # values keeps the scale anchored to real data.
         numeric_values = [
             float(value)
             for row in rows
             for value in row[:col_count]
-            if isinstance(value, (int, float))
+            if isinstance(value, (int, float)) and math.isfinite(value)
         ]
         numeric_min = min(numeric_values) if numeric_values else 0.0
         numeric_max = max(numeric_values) if numeric_values else 1.0
+        if display_mode == "annual_temperature":
+            numeric_min = self.TEMPERATURE_COLOR_SCALE_MIN_K
+            numeric_max = self.TEMPERATURE_COLOR_SCALE_MAX_K
         numeric_span = max(1e-9, numeric_max - numeric_min)
         surface = pygame.Surface((col_count, row_count))
         for row_index, row in enumerate(rows):
             for col_index, field_value in enumerate(row[:col_count]):
-                if display_mode == "annual_temperature":
+                if display_mode == "annual_temperature" and not math.isfinite(float(field_value or 0.0)):
+                    color = self.NAN_SENTINEL_COLOR
+                elif display_mode == "annual_precipitation" and not math.isfinite(float(field_value or 0.0)):
+                    color = self.NAN_SENTINEL_COLOR
+                elif display_mode == "annual_temperature":
                     value = float(field_value)
                     normalized = max(
                         0.0, min(1.0, (value - numeric_min) / numeric_span)
@@ -1949,10 +2015,7 @@ class MapRenderer:
                 else:
                     color = colors.get(str(field_value), (126, 128, 126))
                 if elevation_rows and row_index < len(elevation_rows) and col_index < len(elevation_rows[row_index]):
-                    try:
-                        elevation = float(elevation_rows[row_index][col_index] or 0.0)
-                    except (TypeError, ValueError):
-                        elevation = 0.0
+                    elevation = self._finite_or(elevation_rows[row_index][col_index])
                     elevation_norm = max(0.0, min(1.0, (elevation - min_elevation) / elevation_span))
                     ocean_value = (
                         str(field_value) == "Ocean"
@@ -1960,25 +2023,13 @@ class MapRenderer:
                         else False
                     )
                     if display_mode == "koppen":
-                        if ocean_value:
-                            relief_color = self._mix_rgb(
-                                (28, 69, 118), (73, 132, 166), elevation_norm,
-                            )
-                            color = self._mix_rgb(color, relief_color, 0.14)
-                        else:
-                            if elevation_norm < 0.52:
-                                relief_color = self._mix_rgb(
-                                    (105, 139, 91), (170, 151, 104),
-                                    elevation_norm / 0.52,
-                                )
-                            else:
-                                relief_color = self._mix_rgb(
-                                    (170, 151, 104), (218, 215, 202),
-                                    (elevation_norm - 0.52) / 0.48,
-                                )
-                            color = self._mix_rgb(color, relief_color, 0.20)
-                    shade = 0.76 + (1.0 - elevation_norm) * 0.14 if ocean_value else 0.78 + elevation_norm * 0.24
-                    color = tuple(max(0, min(255, int(channel * shade))) for channel in color)
+                        color = shade_koppen_rgb(
+                            color,
+                            field_value,
+                            elevation,
+                            min_elevation,
+                            max_elevation,
+                        )
                 surface.set_at((col_index, row_index), color)
 
         for lake in lakes:

@@ -156,6 +156,71 @@ class InputRouter:
 
         return False
 
+    def _handle_floating_card_input(self, event):
+        """
+        Route input into the floating in-simulation entity card, if one is
+        open. Reuses the real KnowledgeBrowserUI card-click/keydown/drag
+        dispatch directly (see ui_manager.py's _rebuild_floating_card),
+        through the dedicated ui_manager.floating_knowledge_ui instance kept
+        separate from the full-screen modal browser's ui_manager.knowledge_ui
+        so opening/dragging/closing a floating card never leaks canvas
+        offset/zoom/card state into the browser or vice versa. Consumption
+        here must happen before simulation pointer forwarding but does not
+        touch knowledge_layer_active -- that gate still belongs solely to
+        the full-screen modal browser.
+        """
+        ui_manager = self.app.ui_manager
+        floating_ui = ui_manager.floating_knowledge_ui
+        floating_rect = getattr(ui_manager, "floating_card_rect", None)
+
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE and floating_rect is not None:
+            ui_manager.close_floating_card()
+            return True
+
+        if floating_rect is None:
+            return False
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            # _handle_card_canvas_click returns None exactly when the click
+            # fell outside floating_rect (its own first check), and always
+            # returns a truthy sentinel/action otherwise -- so this doubles
+            # as the "was this click ours to consume" test.
+            result = floating_ui._handle_card_canvas_click(event.pos, floating_rect)
+            # Several click branches re-layout (and thus re-populate hitboxes)
+            # as a side effect of handling that same click, so the
+            # inspect-mode-safety scrub must be re-applied every time, not
+            # just once per frame -- see scrub_floating_card_hitboxes.
+            ui_manager.scrub_floating_card_hitboxes()
+            return result is not None
+
+        # Drag/resize/color-slider continuation: only claim motion/buttonup
+        # while one of these is actually in progress on this card, since the
+        # floating card is non-modal -- otherwise every mouse move anywhere
+        # on screen would get swallowed and the simulation underneath would
+        # stop receiving hover/click events the moment a card is merely open.
+        card_interaction_active = (
+            floating_ui.active_card_drag_id is not None
+            or floating_ui.active_card_resize_id is not None
+            or floating_ui.active_card_color_slider is not None
+        )
+        if card_interaction_active and event.type == pygame.MOUSEMOTION:
+            floating_ui._handle_mousemotion_event(event)
+            return True
+        if card_interaction_active and event.type == pygame.MOUSEBUTTONUP:
+            floating_ui._handle_mousebuttonup_event(event)
+            return True
+
+        if event.type == pygame.KEYDOWN:
+            active_edit_field = any(
+                card.get("is_edit_mode") and card.get("active_edit_field")
+                for card in floating_ui.cards
+            )
+            if active_edit_field:
+                floating_ui._handle_keydown_event(event)
+                return True
+
+        return False
+
     def _handle_simulation_pointer_input(self, event, active_sim):
         """
         Forward pointer motion and map-edit pointer events to the active simulation.
@@ -212,6 +277,9 @@ class InputRouter:
             self._rebuild_ui_for_event(active_sim)
 
         if self._handle_ui_action(event, active_sim):
+            return True
+
+        if self._handle_floating_card_input(event):
             return True
 
         if self.app.system_menu_active:

@@ -38,6 +38,18 @@ def _coerce_color(value, fallback=None):
             return [max(0, min(255, int(value[index]))) for index in range(3)]
         except (TypeError, ValueError):
             return fallback
+    if isinstance(value, str):
+        # Every other user-editable color field in the app (card_color,
+        # card_header_color, wiki_field_colors) is stored as a "#rrggbb"
+        # hex string -- accept the same format here so a color set from
+        # the material card's color picker actually takes effect, not
+        # just the [r, g, b] list format the authoring migration writes.
+        text = value.strip()
+        if text.startswith("#") and len(text) == 7:
+            try:
+                return [int(text[1:3], 16), int(text[3:5], 16), int(text[5:7], 16)]
+            except ValueError:
+                return fallback
     return fallback
 
 

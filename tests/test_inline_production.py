@@ -42,6 +42,12 @@ class InlineProductionTests(unittest.TestCase):
             "_dataset": "technologies",
             "pretty_name": "Hydroponics",
         }
+        self.recipe = {
+            "id": "recipe_colony_ration",
+            "type": "recipe",
+            "_dataset": "recipes",
+            "pretty_name": "Colony Ration Recipe",
+        }
         self.cultural_aspect = {
             "id": "aspect_colony_self_reliance",
             "type": "cultural_aspect",
@@ -68,6 +74,7 @@ class InlineProductionTests(unittest.TestCase):
             self.site["id"]: self.site,
             self.job["id"]: self.job,
             self.technology["id"]: self.technology,
+            self.recipe["id"]: self.recipe,
             self.cultural_aspect["id"]: self.cultural_aspect,
             self.employment["id"]: self.employment,
             self.person["id"]: self.person,
@@ -78,6 +85,7 @@ class InlineProductionTests(unittest.TestCase):
                 "producers": [self.producer],
                 "vehicles": [self.vehicle],
                 "locations": [self.site],
+                "recipes": [self.recipe],
             },
         )
         self.world = SimpleNamespace(
@@ -132,6 +140,8 @@ class InlineProductionTests(unittest.TestCase):
                 "job_ids": [],
                 "employed_technology_ids": [],
                 "employment_ids": [],
+                "recipe_ids": [],
+                "assigned_component_ids": [],
             },
             self.producer["production_lines"][0],
         )
@@ -178,6 +188,15 @@ class InlineProductionTests(unittest.TestCase):
         self.assertEqual([self.producer["id"]], self.employment["employers"])
         self.assertEqual(line["line_id"], self.employment["production_line_id"])
         self.assertEqual([self.employment["id"]], self.person["employment_assignments"])
+
+    def test_production_line_links_reusable_recipe_knowledge(self):
+        state = {}
+        self.card._add_production_line(state, self.vehicle["id"])
+
+        self.assertTrue(self.card._add_production_line_relation(state, 0, "recipe_ids", self.recipe["id"]))
+
+        self.assertEqual([self.recipe["id"]], self.producer["production_lines"][0]["recipe_ids"])
+        self.assertEqual([self.recipe["id"]], self.producer["production_recipes"])
 
     def test_job_doctrine_unlocks_from_production_context_not_era(self):
         self.producer["produced_vehicles"] = [self.vehicle["id"]]

@@ -3,6 +3,10 @@
 Architecture invariants: entities and semantic facts live only in the ontology;
 tectonic models are derived products. Generated planets are currently
 disposable, so model changes do not carry legacy compatibility requirements.
+
+LOD contract: plate geometry, boundaries, events, and orogen envelopes first
+appear in canonical LOD0 and are inherited downward. Deeper levels may resolve
+local structural expressions but must not invent a contradictory plate story.
 """
 
 import math

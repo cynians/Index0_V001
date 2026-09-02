@@ -194,6 +194,15 @@ class App(SimWindow):
         return bool(handler(event))
 
     def draw(self):
+        if self.knowledge_layer_active and self.ui_manager.floating_card_rect is not None:
+            # The full modal repository browser and the floating in-simulation
+            # card share the same KnowledgeBrowserUI/self.cards state; hand
+            # off cleanly rather than leaving a floating card to jump into
+            # the modal canvas. Checked every frame so it catches the
+            # transition regardless of which of the many call sites in
+            # navigation_controller.py set knowledge_layer_active.
+            self.ui_manager.close_floating_card()
+
         if not self.knowledge_layer_active:
             super().draw_background()
 
@@ -217,8 +226,11 @@ class App(SimWindow):
             self.renderer.simulation = active_sim
             self.renderer.draw(self.screen)
 
-        super().draw_ui()
+        if not getattr(active_sim, "suppress_global_overlays", False):
+            super().draw_ui()
         self.ui_manager.draw(self.screen, self.default_font)
+        self.ui_manager.draw_floating_card(self.screen, self.default_font)
+        self.ui_manager.draw_system_menu_overlay(self.screen, self.default_font)
 
 
 def main():

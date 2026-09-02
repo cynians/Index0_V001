@@ -488,8 +488,25 @@ class KnowledgeRepositoryService:
                 mark_changed()
             else:
                 self.world_model.repository_revision = getattr(self.world_model, "repository_revision", 0) + 1
+            self._refresh_material_catalog_if_needed(entity)
             return True
-        return self._persist_card_entity(card)
+        persisted = self._persist_card_entity(card)
+        if persisted:
+            self._refresh_material_catalog_if_needed(entity)
+        return persisted
+
+    def _refresh_material_catalog_if_needed(self, entity):
+        # natural_materials.MATERIAL_BY_ID is a process-local cache built
+        # once at WorldModel construction; a material color edited from its
+        # card would otherwise not show up on the map until an app restart.
+        if self.world_model is None or self._dataset_name_for_entity(entity) != "materials":
+            return
+        get_by_dataset = getattr(self.world_model, "get_entities_by_dataset", None)
+        if not callable(get_by_dataset):
+            return
+        from simulations.world_gen.natural_materials import configure_material_catalog
+
+        configure_material_catalog(get_by_dataset("materials"))
 
     def _remove_entity_from_dataset_index(self, dataset_name, entity_id, entity_obj):
         if self.world_model is None or not dataset_name:

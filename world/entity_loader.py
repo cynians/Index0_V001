@@ -49,6 +49,7 @@ class EntityLoader:
         "wiki_field_colors",
         "card_color_source",
         "wiki_link_color",
+        "geological_map_color",
     }
     LEGACY_IDEA_FIELDS = {
         "related_entities",
@@ -612,6 +613,30 @@ class EntityLoader:
 
         return changed_entities
 
+    def populate_employment_rosters(self):
+        """Derive each employer's employed_people roster from person-side
+        is_employed_by references -- the same reciprocal-projection pattern
+        as populate_offspring()/parent_location, so employment is a plain
+        relationship (person authors is_employed_by once) rather than a
+        mediating employment entity that both sides have to keep in sync."""
+        people_by_employer = {}
+        for entity_id, entity in self.entities.items():
+            if entity.get("_dataset") != "people" and entity.get("type") != "person":
+                continue
+            for employer_id in self._relation_ids(entity.get("is_employed_by")):
+                roster = people_by_employer.setdefault(employer_id, [])
+                if entity_id not in roster:
+                    roster.append(entity_id)
+
+        changed_entities = set()
+        for entity_id, entity in self.entities.items():
+            roster = people_by_employer.get(entity_id, [])
+            if entity.get("employed_people") != roster:
+                entity["employed_people"] = roster
+                changed_entities.add(entity_id)
+
+        return changed_entities
+
     def save_changed_dataset_files(self, changed_entity_ids=None):
         if self.use_ontology:
             changed_entity_ids = set(changed_entity_ids or [])
@@ -973,6 +998,7 @@ class EntityLoader:
         self.datasets = repository.datasets
         self.build_entity_index()
         changed_entity_ids.update(self.populate_offspring())
+        changed_entity_ids.update(self.populate_employment_rosters())
         self.build_reference_graph()
         if persist:
             self.save_changed_dataset_files(changed_entity_ids)
@@ -1104,6 +1130,7 @@ class EntityLoader:
         self.load_datasets()
         self.build_entity_index()
         changed_entity_ids = self.populate_offspring()
+        changed_entity_ids.update(self.populate_employment_rosters())
         if auto_save_normalized:
             self.save_changed_dataset_files(changed_entity_ids)
         self.build_reference_graph()

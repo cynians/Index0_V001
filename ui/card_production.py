@@ -45,6 +45,7 @@ class CardProductionMixin:
             "job_ids": ("job_ids", "jobs", "assigned_jobs"),
             "employed_technology_ids": ("employed_technology_ids", "employed_technologies", "workflow_technologies"),
             "employment_ids": ("employment_ids", "employments", "workforce_assignments"),
+            "recipe_ids": ("recipe_ids", "recipes", "production_recipes"),
         }
         values = []
         for alias in aliases.get(field_name, (field_name,)):
@@ -70,6 +71,8 @@ class CardProductionMixin:
             "job_ids": self._production_line_relation_ids(line, "job_ids"),
             "employed_technology_ids": self._production_line_relation_ids(line, "employed_technology_ids"),
             "employment_ids": self._production_line_relation_ids(line, "employment_ids"),
+            "recipe_ids": self._production_line_relation_ids(line, "recipe_ids"),
+            "assigned_component_ids": self._relation_entity_ids(line.get("assigned_component_ids") or line.get("assigned_components")),
         }
 
     def _production_location_is_site(self, entity):
@@ -112,6 +115,8 @@ class CardProductionMixin:
             "job_ids": entity.get("job_ids") or entity.get("assigned_jobs") or [],
             "employed_technology_ids": entity.get("employed_technologies") or entity.get("production_technology") or [],
             "employment_ids": entity.get("employment_ids") or [],
+            "recipe_ids": entity.get("production_recipes") or entity.get("recipes") or [],
+            "assigned_component_ids": entity.get("assigned_components") or [],
         })
 
     def _production_group_mode(self, card):
@@ -293,6 +298,9 @@ class CardProductionMixin:
         self.entity["production_technologies"] = list(dict.fromkeys(
             entity_id for line in stored for entity_id in line.get("employed_technology_ids", [])
         ))
+        self.entity["production_recipes"] = list(dict.fromkeys(
+            entity_id for line in stored for entity_id in line.get("recipe_ids", [])
+        ))
         self.entity["employment_assignments"] = list(dict.fromkeys(
             entity_id for line in stored for entity_id in line.get("employment_ids", [])
         ))
@@ -378,6 +386,7 @@ class CardProductionMixin:
             "job": ({"jobs"}, {"job"}),
             "technology": ({"technologies"}, {"technology"}),
             "employment": ({"employments"}, {"employment"}),
+            "recipe": ({"recipes"}, {"recipe"}),
             "product": ({"vehicles", "components", "items"}, {"vehicle", "component", "assembly", "item"}),
         }
         allowed_datasets, allowed_types = target_kinds.get(target, target_kinds["product"])
@@ -410,6 +419,9 @@ class CardProductionMixin:
             elif target == "employment":
                 rank = 0
                 subtitle = "workforce assignment"
+            elif target == "recipe":
+                rank = 0
+                subtitle = "production knowledge"
             else:
                 rank = 0
                 subtitle = dataset or entity_type
@@ -435,6 +447,7 @@ class CardProductionMixin:
             "job": "job",
             "technology": "technology",
             "employment": "employment",
+            "recipe": "recipe",
         }.get(active_field, "product")
         card["production_matches"] = self._production_entity_matches(card.get("production_query", ""), target)
         if target == "location":
@@ -630,6 +643,7 @@ class CardProductionMixin:
                 "job": "job_ids",
                 "technology": "employed_technology_ids",
                 "employment": "employment_ids",
+                "recipe": "recipe_ids",
             }
             if field_name in relation_fields:
                 if not matches:
@@ -691,13 +705,14 @@ class CardProductionMixin:
                 return self._set_production_input(card, "start_year", line_index=line_index)
             if kind == "end_year_input":
                 return self._set_production_input(card, "end_year", line_index=line_index)
-            if kind in {"job_input", "technology_input", "employment_input"}:
+            if kind in {"job_input", "technology_input", "employment_input", "recipe_input"}:
                 return self._set_production_input(card, kind.removesuffix("_input"), line_index=line_index)
-            if kind in {"remove_job", "remove_technology", "remove_employment"}:
+            if kind in {"remove_job", "remove_technology", "remove_employment", "remove_recipe"}:
                 field_name = {
                     "remove_job": "job_ids",
                     "remove_technology": "employed_technology_ids",
                     "remove_employment": "employment_ids",
+                    "remove_recipe": "recipe_ids",
                 }[kind]
                 return self._remove_production_line_relation(card, line_index, field_name, info.get("entity_id"))
             if kind == "period":
@@ -734,6 +749,7 @@ class CardProductionMixin:
                 "job": "job_ids",
                 "technology": "employed_technology_ids",
                 "employment": "employment_ids",
+                "recipe": "recipe_ids",
             }
             if field_name in relation_fields:
                 card["production_input_active"] = False
@@ -818,6 +834,8 @@ class CardProductionMixin:
             current_y = start_year_rect.bottom + 4
             requirements_rect = pygame.Rect(content_left + 34, current_y, max(120, text_width - 52), 24)
             current_y = requirements_rect.bottom + row_gap
+            recipe_rect = pygame.Rect(content_left + 18, current_y, max(120, text_width - 36), 24)
+            current_y = recipe_rect.bottom + 4
             job_rect = pygame.Rect(content_left + 18, current_y, max(120, text_width - 36), 24)
             current_y = job_rect.bottom + 4
             technology_rect = pygame.Rect(content_left + 18, current_y, max(120, text_width - 36), 24)
@@ -836,6 +854,7 @@ class CardProductionMixin:
                         {"kind": "period", "line_index": line_index, "rect": period_rect},
                         {"kind": "start_year_input", "line_index": line_index, "rect": start_year_rect},
                         {"kind": "end_year_input", "line_index": line_index, "rect": end_year_rect},
+                        {"kind": "recipe_input", "line_index": line_index, "rect": recipe_rect},
                         {"kind": "job_input", "line_index": line_index, "rect": job_rect},
                         {"kind": "technology_input", "line_index": line_index, "rect": technology_rect},
                         {"kind": "employment_input", "line_index": line_index, "rect": employment_rect},
@@ -856,9 +875,10 @@ class CardProductionMixin:
             if requirement_chips:
                 current_y = max(current_y, chip_y + 24 + row_gap)
             active_relation_field = card.get("production_active_field")
-            if card.get("production_input_active") and card.get("production_active_line") == line_index and active_relation_field in {"location", "job", "technology", "employment"}:
+            if card.get("production_input_active") and card.get("production_active_line") == line_index and active_relation_field in {"location", "recipe", "job", "technology", "employment"}:
                 anchor = {
                     "location": location_rect,
+                    "recipe": recipe_rect,
                     "job": job_rect,
                     "technology": technology_rect,
                     "employment": employment_rect,
@@ -879,6 +899,7 @@ class CardProductionMixin:
                     "start_year_rect": start_year_rect,
                     "end_year_rect": end_year_rect,
                     "requirements_rect": requirements_rect,
+                    "recipe_rect": recipe_rect,
                     "job_rect": job_rect,
                     "technology_rect": technology_rect,
                     "employment_rect": employment_rect,
@@ -1017,6 +1038,7 @@ class CardProductionMixin:
                 requirement_label = "Requires from product card" if row.get("requirement_chips") else "No product requirements set"
                 screen.blit(font.render(self._ellipsize_text(requirement_label, font, requirements_rect.width - 12), True, (176, 188, 208)), (requirements_rect.x + 6, requirements_rect.y + 4))
             relation_rows = (
+                ("recipe_rect", "recipe_ids", "Recipe", "Assign production recipe", (62, 48, 68), (180, 132, 192)),
                 ("job_rect", "job_ids", "Doctrine Jobs", "Assign doctrinal Job", (80, 68, 44), (198, 170, 104)),
                 ("technology_rect", "employed_technology_ids", "Workflow", "Assign employed technology", (42, 58, 70), (112, 170, 210)),
                 ("employment_rect", "employment_ids", "Workforce", "Assign people/pop employment", (48, 62, 50), (124, 182, 136)),

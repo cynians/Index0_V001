@@ -25,6 +25,7 @@ from simulations.world_gen.surface_exposure import derive_surface_exposure_model
 from simulations.world_gen.true_color import (
     TRUE_COLOR_MODEL_VERSION,
     derive_true_color_model,
+    true_color_model_sources_match,
 )
 from simulations.map.projection import (
     project_map_world_point,
@@ -166,6 +167,9 @@ class MapSimulation:
 
         self.context = simulation_context
         self.world_model = simulation_context.world_model
+        root_entity = self.world_model.get_entity(simulation_context.root_entity_id) or {}
+        if root_entity.get("map_coordinate_space") == "site_meters":
+            self.world_units_to_meters = 1.0
 
         self.sim_clock = Clock(base_dt=1.0)
 
@@ -179,6 +183,9 @@ class MapSimulation:
         self.min_zoom = 0.02
         self.max_zoom = 80.0
         self.preferred_zoom = 4.0
+        if root_entity.get("map_coordinate_space") == "site_meters":
+            self.min_zoom = 1.0
+            self.preferred_zoom = 7.0
 
         self._layer_cache = None
         self._cache_year = None
@@ -240,6 +247,7 @@ class MapSimulation:
         self._selection_last_click_screen_pos = None
         self._selection_last_click_target = None
         self._pending_inspector_target = None
+        self._pending_floating_card_target = None
         self.is_camera_dragging = False
         self.camera_drag_start_screen_pos = None
         self.camera_drag_start_camera_pos = None
@@ -301,6 +309,7 @@ class MapSimulation:
         self.hover_spatial_feature_id = None
         self.hover_screen_pos = None
         self._pending_inspector_target = None
+        self._pending_floating_card_target = None
         self._selection_last_click_time = None
         self._selection_last_click_screen_pos = None
         self._selection_last_click_target = None
@@ -618,6 +627,9 @@ class MapSimulation:
             bounds,
             seed_suffix=seed_suffix,
             focus_occurrence_id=focus_occurrence_id,
+            sample_dimensions=getattr(self.context, "regional_sample_dimensions", None),
+            feedback_iterations=getattr(self.context, "regional_feedback_iterations", None),
+            storage_root=getattr(self.context, "worldgen_storage_root", None),
         )
         regenerated_heightmap = (regenerated or {}).get("heightmap_model") or {}
         regenerated_grid = regenerated_heightmap.get("sample_grid") or {}
@@ -833,7 +845,10 @@ class MapSimulation:
         generation_parent["bounds"] = parent_bounds
         region = generate_refined_region(self.world_model, generation_parent, {
             "min_x": min_x, "max_x": min_x + region_width, "min_y": min_y, "max_y": min_y + region_height,
-        }, focus_occurrence_id=self.selected_material_occurrence_id)
+        }, focus_occurrence_id=self.selected_material_occurrence_id,
+        sample_dimensions=getattr(self.context, "regional_sample_dimensions", None),
+        feedback_iterations=getattr(self.context, "regional_feedback_iterations", None),
+        storage_root=getattr(self.context, "worldgen_storage_root", None))
         self._invalidate_layer_cache()
         return region
 
@@ -926,6 +941,14 @@ class MapSimulation:
         left, top = float(root_bounds["min_x"]), float(root_bounds["min_y"])
         width = max(1e-9, float(root_bounds["max_x"]) - left)
         height = max(1e-9, float(root_bounds["max_y"]) - top)
+        # A location's own generated_region descendant (refinement_parent_map_id
+        # == root_id) is the *source* the base heightmap layer is already built
+        # from, not a nested child to overlay on top of it -- descends_from()
+        # below matches it too, since that's structurally the same relationship
+        # a real nested subregion has. Compositing a region onto its own base
+        # doubles the (expensive) true-color render and can leave the result
+        # mis-sized against the destination rect. Exclude it explicitly.
+        own_generated_id = (self._own_generated_region(root) or {}).get("id")
 
         def descends_from(candidate):
             current, visited = candidate, set()
@@ -945,6 +968,8 @@ class MapSimulation:
         models = []
         for candidate in entities.values():
             if not isinstance(candidate, dict) or not candidate.get("map_detail_level") or not descends_from(candidate):
+                continue
+            if own_generated_id and candidate.get("id") == own_generated_id:
                 continue
             if root_planet_id and candidate.get("refinement_root_planet_id") != root_planet_id:
                 continue
@@ -970,12 +995,23 @@ class MapSimulation:
                 value < -0.001 or value > 1.001
                 for value in uv_bounds.values()
             ):
+                # A refinement_parent_map_id can outlive its parent: a draft
+                # id can be reused for an unrelated new region (e.g. the
+                # user deletes/redraws a region and the id allocator hands
+                # the same id to a different polygon), leaving the old
+                # generated_region entity as an orphan that still claims
+                # the reused id as its parent. Its bounds then no longer fit
+                # inside the "parent" it's compositing against at all --
+                # treat that as disqualifying rather than merely worth a
+                # warning, since compositing it in produces a wildly
+                # out-of-frame overlay.
                 logger.warn(
                     "[RegionalRefinement] Child bounds extend beyond the open "
                     f"map frame root={root_id} child={candidate.get('id')} "
                     f"root_bounds={root_bounds} child_bounds={bounds} "
                     f"normalized={uv_bounds}"
                 )
+                continue
             # A refinement covering the entire planet is not a regional LOD.
             # Older builds could create one while fully zoomed out; applying it
             # replaced the authored planet and made the map appear duplicated.
@@ -1604,6 +1640,16 @@ class MapSimulation:
         depth = self._surface_location_depth(entity)
         location_class = str((entity or {}).get("location_class") or "").lower()
         min_zoom = self._location_min_zoom_for_depth(depth, entity)
+        root = self.get_root_entity()
+        local_site_map = bool(
+            isinstance(root, dict)
+            and root.get("map_coordinate_space") == "site_meters"
+        )
+        if local_site_map:
+            # Site maps are already opened at their authored local extent.
+            # Planetary hierarchy thresholds would otherwise hide buildings
+            # until an arbitrary 12 px/m zoom and make the map look empty.
+            min_zoom = 0.0
         is_reference_country = (
             location_class == "country"
             and entity.get("bounds_source") == "natural_earth_admin_0_reference"
@@ -1614,13 +1660,14 @@ class MapSimulation:
             min_zoom = 0.0
             layer["pick_priority"] = 100
             layer["render_when_interacting_only"] = True
-        root = self.get_root_entity()
         has_reference_land_base = (
             isinstance(root, dict)
             and isinstance(root.get("reference_land_polygons"), dict)
             and bool(root.get("reference_land_polygons", {}).get("polygons"))
         )
         if (
+            not local_site_map
+            and
             area_world is not None
             and location_class not in {"continent", "ocean"}
             and depth <= 1
@@ -1641,7 +1688,9 @@ class MapSimulation:
         if area_world is not None:
             layer["area_world"] = area_world
 
-        if depth >= 2 or (float(layer.get("min_zoom") or 0.0) >= 3.4 and not is_reference_country):
+        if not local_site_map and (
+            depth >= 2 or (float(layer.get("min_zoom") or 0.0) >= 3.4 and not is_reference_country)
+        ):
             layer["outline_only"] = layer.get("shape") == "polygon"
             layer["suppress_label"] = True
             layer["pickable_min_zoom"] = layer["min_zoom"]
@@ -2004,24 +2053,57 @@ class MapSimulation:
         self._surface_model_validation_cache_key = self._surface_model_validation_key(entity)
         return changed
 
+    def _own_generated_region(self, root):
+        """Return this location's own most-recently regenerated descendant.
+
+        "Regenerate This Region" persists a full-fidelity `generated_region`
+        entity and appends it to `root["constituents"]`, but nothing
+        previously consumed it for this location's own Map tab -- rendering
+        fell through to `_inherited_surface_context`, which walks *upward*
+        past structural ancestors and never looks at a location's own
+        children. That meant the regenerated data was silently orphaned:
+        the Map tab kept showing a coarse crop of the root planet even after
+        a fresh, detailed regeneration existed one hop away.
+        """
+        if not isinstance(root, dict):
+            return None
+        entities = getattr(getattr(self.world_model, "loader", None), "entities", {}) or {}
+        best = None
+        best_revision = -1
+        for constituent_id in root.get("constituents") or []:
+            candidate = entities.get(constituent_id) if isinstance(entities, dict) else None
+            if candidate is None:
+                candidate = self.world_model.get_entity(constituent_id)
+            if not isinstance(candidate, dict) or candidate.get("location_class") != "generated_region":
+                continue
+            if not self._grid_rows(candidate.get("heightmap_model")):
+                continue
+            revision = int(candidate.get("refinement_revision", 0) or 0)
+            if revision > best_revision:
+                best_revision = revision
+                best = candidate
+        return best
+
     def _root_surface_context(self):
         root = self.get_root_entity()
         if not isinstance(root, dict):
             return None
-        if isinstance(root.get("heightmap_model"), dict):
-            star = self.world_model.get_entity(root.get("parent_body")) if root.get("parent_body") else None
+        own_generated = self._own_generated_region(root)
+        surface_root = own_generated if isinstance(own_generated, dict) else root
+        if isinstance(surface_root.get("heightmap_model"), dict):
+            star = self.world_model.get_entity(surface_root.get("parent_body")) if surface_root.get("parent_body") else None
             entities = getattr(getattr(self.world_model, "loader", None), "entities", {}) or {}
             satellites = [
                 entity for entity in entities.values()
-                if isinstance(entity, dict) and entity.get("location_class") == "moon" and entity.get("parent_body") == root.get("id")
+                if isinstance(entity, dict) and entity.get("location_class") == "moon" and entity.get("parent_body") == surface_root.get("id")
             ]
             self._ensure_surface_models_current(
-                root,
+                surface_root,
                 star=star,
                 satellites=satellites,
-                inherited_sea_level_m=(root.get("heightmap_model") or {}).get("sea_level_m") if root.get("location_class") == "generated_region" else None,
+                inherited_sea_level_m=(surface_root.get("heightmap_model") or {}).get("sea_level_m") if surface_root.get("location_class") == "generated_region" else None,
             )
-        heightmap = root.get("heightmap_model")
+        heightmap = surface_root.get("heightmap_model")
         if self._grid_rows(heightmap):
             bounds = self._entity_map_bounds(root)
             if bounds is None:
@@ -2029,10 +2111,10 @@ class MapSimulation:
             grid = heightmap.get("sample_grid") or {}
             return {
                 "root": root,
-                "source": root,
+                "source": surface_root,
                 "heightmap_model": heightmap,
-                "water_cycle_model": root.get("water_cycle_model"),
-                "coastal_geomorphology_model": root.get("coastal_geomorphology_model"),
+                "water_cycle_model": surface_root.get("water_cycle_model"),
+                "coastal_geomorphology_model": surface_root.get("coastal_geomorphology_model"),
                 "map_rect": self._surface_rect_from_bounds(
                     bounds,
                     root.get("map_canvas_width_px") or grid.get("width") or 2,
@@ -2340,7 +2422,7 @@ class MapSimulation:
         if not isinstance(root_entity, dict):
             return []
 
-        heatmap_model = root_entity.get("material_heatmap_model")
+        heatmap_model, _source_uv_bounds = self._material_heatmap_context(root_entity)
         if not isinstance(heatmap_model, dict):
             return []
 
@@ -2939,6 +3021,22 @@ class MapSimulation:
     def consume_pending_inspector_target(self):
         target = self._pending_inspector_target
         self._pending_inspector_target = None
+        return target
+
+    def open_entity_card(self, entity_id, *, mode="edit", familiarity=None):
+        """Request a floating card for entity_id -- drained by UIManager each frame."""
+        if not entity_id:
+            return False
+        self._pending_floating_card_target = {
+            "id": entity_id,
+            "mode": mode,
+            "familiarity": familiarity,
+        }
+        return True
+
+    def consume_pending_floating_card_target(self):
+        target = self._pending_floating_card_target
+        self._pending_floating_card_target = None
         return target
 
     def can_create_spatial_feature_draft(self):
@@ -3988,9 +4086,15 @@ class MapSimulation:
 
         region = self._build_draft_spatial_feature_record()
         is_location_layer = region.get("layer_kind") == self.LOCATION_LAYER_KIND
+        is_biosphere_patch = region.get("location_class") == self.BIOSPHERE_PATCH_LOCATION_CLASS
         biosphere_roster = (
             self._build_biosphere_roster_collection_record(region)
-            if region.get("location_class") == self.BIOSPHERE_PATCH_LOCATION_CLASS
+            if is_biosphere_patch
+            else None
+        )
+        biosphere_record = (
+            self._build_biosphere_record(region)
+            if is_biosphere_patch
             else None
         )
 
@@ -3998,6 +4102,8 @@ class MapSimulation:
             self._append_location_record(region)
             if biosphere_roster is not None:
                 self._append_collection_record(biosphere_roster)
+            if biosphere_record is not None:
+                self._append_biosphere_record(biosphere_record)
             parent_id = region.get("parent_location") or self.context.root_entity_id
             linked_parent = self._append_offspring_reference_to_location(parent_id, region["id"])
         except OSError as exc:
@@ -4169,6 +4275,7 @@ class MapSimulation:
             "map_context_inherited": bool(patch.get("inherits_location_context_layers", True)),
             "map_size_m": patch.get("biosphere_map_size_m") or metrics.get("map_size_m") or 10.0,
             "species_collection_id": patch.get("biosphere_species_collection") or self.BIOSPHERE_SPECIES_COLLECTION_ID,
+            "biosphere_id": patch.get("biosphere_entity_id"),
         }
 
     def finish_map_square_draft(self):
@@ -4602,6 +4709,20 @@ class MapSimulation:
                 return collection_id
             index += 1
 
+    def _allocate_biosphere_entity_id(self, patch_location_id):
+        existing_ids = self._get_existing_entity_ids()
+        patch_part = self._sanitize_identifier_part(patch_location_id)
+        base_id = f"biosphere_{patch_part}"
+        if base_id not in existing_ids:
+            return base_id
+
+        index = 2
+        while True:
+            biosphere_id = f"{base_id}_{index:03d}"
+            if biosphere_id not in existing_ids:
+                return biosphere_id
+            index += 1
+
     def _build_draft_spatial_feature_record(self):
         feature_id, index = self._allocate_spatial_feature_draft_id()
         if self._root_is_building():
@@ -4640,6 +4761,7 @@ class MapSimulation:
         if self.is_creating_biosphere_patch:
             feature_id, index = self._allocate_biosphere_patch_id()
             roster_id = self._allocate_biosphere_roster_id(feature_id)
+            biosphere_id = self._allocate_biosphere_entity_id(feature_id)
             name = f"Biosphere Patch {index:03d}"
             points = list(self.draft_spatial_feature_points)
             metrics = self._biosphere_polygon_metrics(points)
@@ -4679,6 +4801,7 @@ class MapSimulation:
                 "biosphere_map_size_m": metrics["map_size_m"],
                 "biosphere_shape": metrics["shape"],
                 "biosphere_species_collection": roster_id,
+                "biosphere_entity_id": biosphere_id,
                 "inherits_location_context_layers": True,
                 "start_year": self.year,
                 "entry_status": "draft",
@@ -4758,6 +4881,32 @@ class MapSimulation:
             "wiki_entry": (
                 f"Localized biosphere species roster for {patch_name}. "
                 "Link species into the roster buckets to make them selectable in BioSim."
+            ),
+            "start_year": self.year,
+            "entry_status": "draft",
+        }
+
+    def _build_biosphere_record(self, patch):
+        patch_id = patch.get("id")
+        biosphere_id = patch.get("biosphere_entity_id")
+        if not patch_id or not biosphere_id:
+            return None
+
+        patch_name = patch.get("name") or patch.get("pretty_name") or patch_id
+        name = f"{patch_name} Biosphere"
+        return {
+            "id": biosphere_id,
+            "pretty_name": name,
+            "name": name,
+            "type": "biosphere",
+            "_dataset": "biospheres",
+            "bioregion_subclass": "terrestrial",
+            "overlay_location": patch_id,
+            "establishment_status": "draft",
+            "wiki_entry": (
+                f"Durable Biosphere overlay for {patch_name}. Soil profile is generated from worldgen "
+                "where available; ecological-structure fields remain inert placeholders pending the "
+                "species/population/behavior-module simulation pass."
             ),
             "start_year": self.year,
             "entry_status": "draft",
@@ -4878,6 +5027,15 @@ class MapSimulation:
             raise OSError("Could not persist collection to ontology")
         return True
 
+    def _append_biosphere_record(self, biosphere):
+        if not isinstance(biosphere, dict):
+            return False
+        biosphere["type"] = "biosphere"
+        biosphere["_dataset"] = "biospheres"
+        if not self._persist_repository_entity(biosphere, "biospheres"):
+            raise OSError("Could not persist biosphere to ontology")
+        return True
+
     def _append_offspring_reference_to_location(self, parent_location_id, child_location_id):
         if not parent_location_id or not child_location_id:
             return False
@@ -4965,6 +5123,7 @@ class MapSimulation:
         self.hover_entity_id = None
         self.hover_screen_pos = None
         self._pending_inspector_target = None
+        self._pending_floating_card_target = None
         self._invalidate_layer_cache()
 
         logger.info(f"[MapSimulation] Deleted region {target_id}")
@@ -5600,6 +5759,16 @@ class MapSimulation:
         ground_material = str(feature.get("ground_material") or "").strip().lower()
         centroid_x, centroid_y = self._polygon_centroid(points)
         color_key = ground_material if feature_layer_kind == self.GROUND_MATERIALS_LAYER_KIND and ground_material else region_class or layer_kind
+        fallback_color = self._color_for_spatial_layer(color_key)
+        # The ontology already has a real per-material analytical color (the
+        # same one the Materials layer uses) -- resolve it here too instead
+        # of always falling through to the generic SPATIAL_LAYER_COLORS
+        # swatch, which only names a couple of materials.
+        resolved_color = (
+            material_geological_map_color(ground_material, fallback=fallback_color)
+            if feature_layer_kind == self.GROUND_MATERIALS_LAYER_KIND and ground_material
+            else fallback_color
+        )
 
         return {
             "shape": "polygon",
@@ -5615,7 +5784,7 @@ class MapSimulation:
             "parent_entity": feature.get("parent_location") or feature.get("parent_entity"),
             "ground_material": ground_material,
             "ground_material_intensity": feature.get("ground_material_intensity"),
-            "color": self._color_for_spatial_layer(color_key),
+            "color": resolved_color,
             "area_world": self._polygon_area(map_points),
             "resolution_m_per_pixel": feature.get("resolution_m_per_pixel"),
             "coverage_mode": feature.get("coverage_mode"),
@@ -5995,6 +6164,17 @@ class MapSimulation:
         root_entity = root_entity or self.get_root_entity()
         if not isinstance(root_entity, dict):
             return None, None
+        own_generated = self._own_generated_region(root_entity)
+        if isinstance(own_generated, dict) and isinstance(own_generated.get("material_heatmap_model"), dict):
+            # Unlike the root_planet fallback below, this raster was
+            # generated directly for this region's own full extent (see
+            # generate_material_heatmap_model in regional_refinement.py) --
+            # it is not a shared planet-wide atlas needing a UV crop. Passing
+            # the heightmap's *placement-in-parent* source_uv_bounds here
+            # would crop an already-correct, self-contained raster down to a
+            # small, wrong sub-rectangle (this is what made True Color render
+            # blank after a region regeneration).
+            return own_generated.get("material_heatmap_model"), None
         heatmap_model = root_entity.get("material_heatmap_model")
         source_uv_bounds = None
         if (
@@ -6024,7 +6204,10 @@ class MapSimulation:
         root_entity = self.get_root_entity()
         if not isinstance(root_entity, dict):
             return []
-        if root_entity.get("location_class") not in {"planet", "moon", "generated_region"}:
+        if (
+            root_entity.get("location_class") not in {"planet", "moon", "generated_region"}
+            and self._own_generated_region(root_entity) is None
+        ):
             return []
 
         heatmap_model, source_uv_bounds = self._material_heatmap_context(
@@ -6715,12 +6898,16 @@ class MapSimulation:
 
         rect = surface_context["map_rect"]
         source_entity = surface_context.get("source") or root_entity
+        # The surface source is authoritative.  For a regenerated region it
+        # is the dedicated generated_region child, not the draft/root shell;
+        # preferring root data here can pair a child heightfield with a stale
+        # parent material recipe.
         natural_material_model = (
-            root_entity.get("natural_material_model")
-            if isinstance(root_entity.get("natural_material_model"), dict)
-            else source_entity.get("natural_material_model")
+            source_entity.get("natural_material_model")
+            if isinstance(source_entity.get("natural_material_model"), dict)
+            else root_entity.get("natural_material_model")
         )
-        surface_palette = root_entity.get("surface_palette") or source_entity.get("surface_palette")
+        surface_palette = source_entity.get("surface_palette") or root_entity.get("surface_palette")
         # Existing generated worlds retain their data, but maps should still
         # render with the current material-aware palette after an application
         # update.  New generations persist this v2 palette normally.
@@ -6737,9 +6924,19 @@ class MapSimulation:
             self._material_heatmap_context(root_entity)
         )
         if not isinstance(material_heatmap_model, dict):
+            # _material_heatmap_context found nothing at all -- fall back to
+            # source_entity directly. Unlike _material_heatmap_context's own
+            # branches, this path can't tell whether the raster is a
+            # dedicated regional one or a shared planet-wide atlas, so it
+            # keeps the pre-existing behaviour of cropping by the heightmap's
+            # own placement UV. Do NOT apply this crop when
+            # _material_heatmap_context already returned a model (with or
+            # without its own uv_bounds) -- overriding a deliberate None
+            # there is what made True Color render blank: it re-cropped an
+            # already self-contained regional raster to a tiny wrong corner.
             material_heatmap_model = source_entity.get("material_heatmap_model")
-        if not isinstance(material_source_uv_bounds, dict):
-            material_source_uv_bounds = heightmap.get("source_uv_bounds")
+            if isinstance(material_heatmap_model, dict):
+                material_source_uv_bounds = heightmap.get("source_uv_bounds")
         material_layer = (
             material_heatmap_model.get("composite_layer")
             if isinstance(material_heatmap_model, dict)
@@ -6764,8 +6961,8 @@ class MapSimulation:
         atmosphere_visual = root_entity.get("atmosphere_visual_model") or source_entity.get("atmosphere_visual_model") or (source_entity.get("atmosphere_model") or {}).get("visual_model") or {}
         atmosphere_enabled = self.is_atmosphere_visible()
         surface_exposure_model = (
-            root_entity.get("surface_exposure_model")
-            or source_entity.get("surface_exposure_model")
+            source_entity.get("surface_exposure_model")
+            or root_entity.get("surface_exposure_model")
         )
         if (
             render_mode == "true_color"
@@ -6786,18 +6983,21 @@ class MapSimulation:
                     or source_entity.get("surface_geomorphology_model")
                 ),
             )
-        true_color_model = root_entity.get("true_color_model") or source_entity.get("true_color_model")
+        true_color_model = (
+            source_entity.get("true_color_model")
+            or root_entity.get("true_color_model")
+        )
         if (
             render_mode == "true_color"
-            and (
-                not isinstance(true_color_model, dict)
-                or true_color_model.get("model_version") != TRUE_COLOR_MODEL_VERSION
+            and not true_color_model_sources_match(
+                true_color_model, heightmap, material_heatmap_model
             )
         ):
             true_color_model = derive_true_color_model(
                 source_entity,
                 heightmap=heightmap,
                 natural_material_model=natural_material_model,
+                material_heatmap_model=material_heatmap_model,
                 atmosphere=source_entity.get("atmosphere_model"),
                 water_cycle=surface_context.get("water_cycle_model"),
                 surface_evolution=source_entity.get("surface_evolution_model"),
@@ -7678,6 +7878,12 @@ class MapSimulation:
             return
 
         picked_layer = self._pick_layer_at_world(world_x, world_y, camera, screen_pos)
+
+        if event.type == self.MOUSEBUTTONDOWN_EVENT_TYPE and button == 3:
+            entity_id = picked_layer.get("entity_id") if picked_layer else None
+            if entity_id:
+                self.open_entity_card(entity_id, mode="edit")
+            return
 
         if event.type == self.MOUSEBUTTONDOWN_EVENT_TYPE and button == 1:
             self._begin_camera_drag(screen_pos, camera)

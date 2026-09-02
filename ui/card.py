@@ -359,6 +359,18 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
     }
     TOOLBELT_TOOL_DEFINITIONS = [
         {
+            "match": {"materials", "material"},
+            "tools": [
+                {
+                    "id": "material_map_color",
+                    "kind": "color_picker",
+                    "color_field": "geological_map_color",
+                    "label": "Map Color",
+                    "description": "Color used for this material on the Materials/Regions map layers.",
+                },
+            ],
+        },
+        {
             "match": {"person", "people"},
             "tools": [
                 {
@@ -1119,7 +1131,10 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         colors = self.entity.get("wiki_field_colors")
         return colors if isinstance(colors, dict) else {}
 
-    def _card_color_hex(self, role="body", section_id=None):
+    def _card_color_hex(self, role="body", section_id=None, color_field=None):
+        if color_field:
+            value = str(self.entity.get(color_field) or "").strip()
+            return value if value else "#7a7e7c"
         role = str(role or "body").strip().lower()
         if role == "header":
             value = str(self.entity.get("card_header_color") or "").strip()
@@ -1165,8 +1180,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             red, green, blue = (28, 30, 38)
         return f"#{red:02x}{green:02x}{blue:02x}"
 
-    def _card_hsv(self, role="body", section_id=None):
-        red, green, blue = self._card_background_color(role=role, section_id=section_id)
+    def _card_hsv(self, role="body", section_id=None, color_field=None):
+        red, green, blue = self._card_background_color(role=role, section_id=section_id, color_field=color_field)
         return colorsys.rgb_to_hsv(red / 255.0, green / 255.0, blue / 255.0)
 
     @staticmethod
@@ -1186,8 +1201,11 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             for index in range(3)
         )
 
-    def _card_background_color(self, role="body", section_id=None):
-        return self._coerce_hex_color(self._card_color_hex(role=role, section_id=section_id), fallback=(28, 30, 38))
+    def _card_background_color(self, role="body", section_id=None, color_field=None):
+        return self._coerce_hex_color(
+            self._card_color_hex(role=role, section_id=section_id, color_field=color_field),
+            fallback=(28, 30, 38),
+        )
 
     def _card_button_palette(self, index=0, selected=False):
         role = "wiki" if int(index or 0) % 2 == 0 else "wiki_alt"
@@ -5335,6 +5353,44 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             tool_inner_w = toolbelt_rect.width - 16
             line_h = self._table_line_height(card["layout_font"])
             for tool in self._toolbelt_items():
+                if tool.get("kind") == "color_picker" and tool.get("color_field"):
+                    # A single domain-data color field (e.g. a material's map
+                    # color) has no body/header/wiki roles to switch between --
+                    # a shorter row with just the swatch and H/S/V sliders.
+                    row_h = 92
+                    row_rect = pygame.Rect(tool_inner_x, tool_y, tool_inner_w, row_h)
+                    preview_rect = pygame.Rect(row_rect.x + 6, row_rect.y + 24, 28, 28)
+                    slider_rects = []
+                    slider_x = row_rect.x + 28
+                    slider_w = row_rect.width - 36
+                    for slider_index, (channel, label) in enumerate(self.CARD_COLOR_SLIDERS):
+                        slider_rect = pygame.Rect(
+                            slider_x,
+                            row_rect.y + 56 + slider_index * 15,
+                            slider_w,
+                            10,
+                        )
+                        slider_info = dict(tool)
+                        slider_info["control"] = "slider"
+                        slider_info["channel"] = channel
+                        slider_info["slider_rect"] = slider_rect
+                        slider_rects.append({"channel": channel, "label": label, "rect": slider_rect})
+                        toolbelt_hitboxes.append((slider_info, slider_rect.inflate(6, 8)))
+
+                    toolbelt_rows.append(
+                        {
+                            "tool": tool,
+                            "row_rect": row_rect,
+                            "button_rect": None,
+                            "preview_rect": preview_rect,
+                            "role_rects": [],
+                            "slider_rects": slider_rects,
+                            "description_lines": [],
+                        }
+                    )
+                    tool_y = row_rect.bottom + 8
+                    continue
+
                 if tool.get("kind") == "color_picker":
                     row_h = 128
                     row_rect = pygame.Rect(tool_inner_x, tool_y, tool_inner_w, row_h)
@@ -5676,7 +5732,14 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         pygame.draw.rect(screen, card_color, rect)
         pygame.draw.rect(screen, card_border_color, rect, 1)
 
-        header_rect = card["header_drag_rect"]
+        # header_drag_rect is intentionally cleared by
+        # ui_manager.scrub_floating_card_hitboxes() every frame the floating
+        # entity card is open (it doubles as a drag-hitbox that feature
+        # deliberately disables) -- draw must not assume it survives that
+        # scrub, since scrub runs after relayout and before this call.
+        header_rect = card.get("header_drag_rect") or pygame.Rect(
+            rect.x + 1, rect.y + 1, rect.width - 2, self.HEADER_H,
+        )
         pygame.draw.rect(screen, card_header_color, header_rect)
         pygame.draw.line(
             screen,
@@ -6230,6 +6293,37 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             pygame.draw.rect(screen, (82, 98, 124), row_rect, 1)
 
             tool = row.get("tool", {})
+            if tool.get("kind") == "color_picker" and tool.get("color_field"):
+                color_field = tool.get("color_field")
+                label = self._ellipsize_text(tool.get("label", "Color"), font, row_rect.width - 12)
+                label_surface = font.render(label, True, (230, 236, 246))
+                screen.blit(label_surface, (row_rect.x + 6, row_rect.y + 5))
+                current_color = self._card_background_color(color_field=color_field)
+                hue, saturation, brightness = self._card_hsv(color_field=color_field)
+                preview_rect = row.get("preview_rect")
+                if preview_rect is not None:
+                    pygame.draw.rect(screen, current_color, preview_rect)
+                    pygame.draw.rect(screen, (218, 226, 240), preview_rect, 1)
+                hex_label = self._rgb_to_hex(current_color)
+                hex_surface = font.render(hex_label, True, (176, 186, 204))
+                screen.blit(hex_surface, (row_rect.x + 40, row_rect.y + 30))
+
+                values = {"h": hue, "s": saturation, "v": brightness}
+                for slider in row.get("slider_rects", []):
+                    slider_rect = slider.get("rect")
+                    channel = slider.get("channel")
+                    if slider_rect is None or channel not in values:
+                        continue
+                    label_surface = font.render(slider.get("label", channel).upper(), True, (204, 212, 228))
+                    screen.blit(label_surface, (row_rect.x + 8, slider_rect.y - 3))
+                    self._draw_color_slider_track(screen, slider_rect, channel, hue, saturation, brightness)
+                    pygame.draw.rect(screen, (28, 32, 42), slider_rect, 1)
+                    knob_x = int(slider_rect.x + values[channel] * max(0, slider_rect.width - 1))
+                    knob_rect = pygame.Rect(knob_x - 2, slider_rect.y - 3, 5, slider_rect.height + 6)
+                    pygame.draw.rect(screen, (244, 248, 255), knob_rect)
+                    pygame.draw.rect(screen, (36, 42, 54), knob_rect, 1)
+                continue
+
             if tool.get("kind") == "color_picker":
                 label = self._ellipsize_text(tool.get("label", "Color"), font, row_rect.width - 12)
                 label_surface = font.render(label, True, (230, 236, 246))

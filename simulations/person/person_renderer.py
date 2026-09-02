@@ -37,6 +37,22 @@ class PersonRenderer:
             abs(bottom_right[1] - top_left[1]),
         )
 
+    @staticmethod
+    def _color(value, fallback):
+        if isinstance(value, str):
+            text = value.strip().lstrip("#")
+            if len(text) == 6:
+                try:
+                    return tuple(int(text[index:index + 2], 16) for index in (0, 2, 4))
+                except ValueError:
+                    pass
+        if isinstance(value, (list, tuple)) and len(value) >= 3:
+            try:
+                return tuple(max(0, min(255, int(channel))) for channel in value[:3])
+            except (TypeError, ValueError):
+                pass
+        return tuple(fallback)
+
     def _draw_floor(self, screen, camera, bounds):
         floor = self._world_rect(
             camera,
@@ -61,6 +77,126 @@ class PersonRenderer:
             if start is not None and end is not None:
                 pygame.draw.line(screen, self.GRID, start, end, 1)
 
+    def _draw_site_layout(self, screen, camera, payload):
+        for zone in payload.get("terrain_zones", []):
+            if not isinstance(zone, dict):
+                continue
+            bounds = zone.get("bounds") or {}
+            rect = self._world_rect(
+                camera,
+                bounds.get("min_x", 0),
+                bounds.get("min_y", 0),
+                bounds.get("max_x", 0),
+                bounds.get("max_y", 0),
+            )
+            if rect is None:
+                continue
+            color = self._color(zone.get("color"), (43, 64, 52))
+            pygame.draw.rect(screen, color, rect)
+            label = self._text(zone.get("label") or zone.get("terrain_class") or "terrain", (159, 177, 160))
+            screen.blit(label, (rect.x + 10, rect.y + 8))
+
+        for landmark in payload.get("site_landmarks", []):
+            if not isinstance(landmark, dict):
+                continue
+            bounds = landmark.get("bounds") or {}
+            rect = self._world_rect(
+                camera,
+                bounds.get("min_x", 0),
+                bounds.get("min_y", 0),
+                bounds.get("max_x", 0),
+                bounds.get("max_y", 0),
+            )
+            if rect is None:
+                continue
+            landmark_class = str(landmark.get("landmark_class") or "").casefold()
+            color = self._color(landmark.get("color"), (82, 78, 68))
+            pygame.draw.rect(screen, color, rect, border_radius=3)
+            if landmark_class == "road":
+                pygame.draw.line(screen, (176, 166, 139), rect.midtop, rect.midbottom, max(2, rect.width // 5))
+                pygame.draw.line(screen, (218, 204, 163), rect.midtop, rect.midbottom, 1)
+            label = self._text(landmark.get("label") or landmark_class or "landmark", (215, 209, 190))
+            screen.blit(label, label.get_rect(midtop=(rect.centerx, rect.y + 5)))
+
+        for structure in payload.get("structures", []):
+            bounds = structure.get("bounds") or {}
+            rect = self._world_rect(
+                camera,
+                bounds.get("min_x", 0),
+                bounds.get("min_y", 0),
+                bounds.get("max_x", 0),
+                bounds.get("max_y", 0),
+            )
+            if rect is None:
+                continue
+            color = self._color(structure.get("color"), (59, 64, 70))
+            pygame.draw.rect(screen, color, rect)
+            label = self._text(structure.get("label") or "Building", (205, 211, 216))
+            screen.blit(label, label.get_rect(midtop=(rect.centerx, rect.y + 8)))
+
+        for start, end in payload.get("wall_segments", []):
+            screen_start = camera.world_to_screen(start)
+            screen_end = camera.world_to_screen(end)
+            if screen_start is None or screen_end is None:
+                continue
+            pygame.draw.line(screen, (12, 15, 19), screen_start, screen_end, 8)
+            pygame.draw.line(screen, (156, 163, 168), screen_start, screen_end, 3)
+
+    def _draw_site_people(self, screen, camera, payload):
+        for resident in payload.get("site_people", []):
+            if resident.get("controlled"):
+                continue
+            center = camera.world_to_screen(resident.get("position") or (0, 0))
+            if center is None:
+                continue
+            sex = str(resident.get("sex") or "").casefold()
+            detail = str(resident.get("simulation_detail") or "full").casefold()
+            presence_kind = str(resident.get("presence_kind") or "authored").casefold()
+            if presence_kind == "vehicle":
+                self._draw_vehicle_presence(screen, camera, resident, center, payload)
+                continue
+            if detail == "aggregate":
+                color = (144, 132, 101)
+                radius = 12
+            elif detail == "lightweight":
+                color = (180, 154, 98)
+                radius = 6
+            elif "representative" in presence_kind:
+                color = (116, 180, 145)
+                radius = 7
+            elif "visitor" in presence_kind:
+                color = (194, 151, 103)
+                radius = 7
+            else:
+                color = (194, 126, 151) if sex == "female" else (112, 157, 201) if sex == "male" else (157, 151, 121)
+                radius = 7
+            selected = resident.get("entity_id") == payload.get("selected_presence_id")
+            hovered = resident.get("entity_id") == payload.get("hover_presence_id")
+            if selected or hovered:
+                pygame.draw.circle(screen, (238, 209, 111) if selected else (112, 201, 230), center, radius + 6, 2)
+            pygame.draw.circle(screen, (10, 13, 18), center, radius + 3)
+            pygame.draw.circle(screen, color, center, radius)
+            if detail == "lightweight":
+                pygame.draw.circle(screen, (233, 218, 168), center, radius, 1)
+            label = self._text(resident.get("label") or "Worker", (194, 202, 211))
+            screen.blit(label, label.get_rect(midtop=(center[0], center[1] + radius + 5)))
+
+    def _draw_vehicle_presence(self, screen, camera, resident, center, payload):
+        x, y = center
+        selected = resident.get("entity_id") == payload.get("selected_presence_id")
+        hovered = resident.get("entity_id") == payload.get("hover_presence_id")
+        if selected or hovered:
+            pygame.draw.rect(
+                screen, (238, 209, 111) if selected else (112, 201, 230),
+                (x - 16, y - 10, 32, 20), 2, border_radius=3,
+            )
+        pygame.draw.rect(screen, (10, 13, 18), (x - 14, y - 8, 28, 16), border_radius=3)
+        pygame.draw.rect(screen, (149, 111, 66), (x - 12, y - 7, 24, 14), border_radius=2)
+        pygame.draw.circle(screen, (30, 33, 38), (x - 7, y + 7), 3)
+        pygame.draw.circle(screen, (30, 33, 38), (x + 7, y + 7), 3)
+        label = self._text(resident.get("label") or "Vehicle", (194, 202, 211))
+        screen.blit(label, label.get_rect(midtop=(x, y + 14)))
+
     def _draw_bed_icon(self, screen, center, color):
         x, y = center
         pygame.draw.rect(screen, color, (x - 22, y - 10, 44, 21), border_radius=3)
@@ -80,6 +216,15 @@ class PersonRenderer:
         pygame.draw.rect(screen, (32, 38, 43), (x - 8, y - 22, 16, 10), 3, border_radius=3)
         pygame.draw.line(screen, (225, 231, 225), (x - 12, y), (x + 12, y), 3)
 
+    def _draw_kitchen_icon(self, screen, center, color):
+        x, y = center
+        pygame.draw.rect(screen, color, (x - 23, y - 17, 46, 34), border_radius=4)
+        pygame.draw.rect(screen, (31, 39, 45), (x - 17, y - 11, 20, 11), border_radius=2)
+        pygame.draw.circle(screen, (220, 231, 231), (x - 7, y - 6), 3, 1)
+        pygame.draw.rect(screen, (42, 48, 54), (x + 7, y - 11, 11, 22), border_radius=2)
+        pygame.draw.circle(screen, (229, 216, 166), (x + 12, y - 5), 2)
+        pygame.draw.line(screen, (226, 235, 235), (x - 18, y + 7), (x - 3, y + 7), 2)
+
     def _draw_target_icon(self, screen, center, color):
         pygame.draw.circle(screen, color, center, 20)
         pygame.draw.circle(screen, (234, 224, 210), center, 13, 3)
@@ -98,6 +243,8 @@ class PersonRenderer:
             self._draw_food_icon(screen, center, color)
         elif point_id == "job":
             self._draw_job_icon(screen, center, color)
+        elif point_id == "kitchen":
+            self._draw_kitchen_icon(screen, center, color)
         else:
             self._draw_target_icon(screen, center, color)
 
@@ -115,18 +262,19 @@ class PersonRenderer:
         destination = payload.get("destination")
         if destination is None:
             return
-        start = camera.world_to_screen(payload["position"])
-        end = camera.world_to_screen(destination)
-        if start is None or end is None:
+        points = [payload["position"], *(payload.get("route_points") or []), destination]
+        screen_points = [camera.world_to_screen(point) for point in points]
+        screen_points = [point for point in screen_points if point is not None]
+        if len(screen_points) < 2:
             return
         route_color = (
             (104, 190, 232)
             if payload.get("control_mode") == "direct"
             else (220, 196, 108)
         )
-        pygame.draw.line(screen, (18, 21, 26), start, end, 6)
-        pygame.draw.line(screen, route_color, start, end, 2)
-        pygame.draw.circle(screen, route_color, end, 5, 2)
+        pygame.draw.lines(screen, (18, 21, 26), False, screen_points, 6)
+        pygame.draw.lines(screen, route_color, False, screen_points, 2)
+        pygame.draw.circle(screen, route_color, screen_points[-1], 5, 2)
 
     def _draw_person(self, screen, camera, payload):
         center = camera.world_to_screen(payload["position"])
@@ -151,18 +299,27 @@ class PersonRenderer:
         camera = self.app_view.camera
         payload = sim.get_person_render_payload()
         self._draw_floor(screen, camera, payload["bounds"])
+        self._draw_site_layout(screen, camera, payload)
         self._draw_route(screen, camera, payload)
         for point in payload.get("points", []):
             self._draw_point(screen, camera, point, payload)
-        self._draw_person(screen, camera, payload)
+        self._draw_site_people(screen, camera, payload)
+        if payload.get("draw_controlled_person", True):
+            self._draw_person(screen, camera, payload)
 
-        mode = "AUTONOMOUS QUEUE" if payload.get("control_mode") == "autonomous" else "DIRECT CONTROL"
+        if payload.get("site_simulation"):
+            mode = "SITE POPULATION SIMULATION"
+        else:
+            mode = "AUTONOMOUS QUEUE" if payload.get("control_mode") == "autonomous" else "DIRECT CONTROL"
         mode_surface = self._text(mode, (226, 214, 142) if mode.startswith("AUTO") else (126, 205, 235))
         screen.blit(mode_surface, mode_surface.get_rect(midtop=(screen.get_width() // 2, 48)))
-        hint = (
-            "Click a point to force it to the front of the queue"
-            if payload.get("control_mode") == "autonomous"
-            else "Click to move; click a point to move and use; right-click to cancel"
-        )
+        if payload.get("site_simulation"):
+            hint = "Click a named person to inspect or fully generate a lightweight encounter"
+        else:
+            hint = (
+                "Click a point to assign it; urgent needs or convictions may override"
+                if payload.get("control_mode") == "autonomous"
+                else "Click to move; click a point to move and use; right-click to cancel"
+            )
         hint_surface = self._text(hint, (160, 172, 187))
         screen.blit(hint_surface, hint_surface.get_rect(midtop=(screen.get_width() // 2, 68)))

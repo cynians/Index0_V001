@@ -4,6 +4,10 @@ Architecture invariants: the ontology is the sole durable source of entity and
 semantic truth; runtime projections are caches. Generated planets are not yet
 intended to persist, so worldgen changes invalidate old products and require no
 backward-compatibility accommodation.
+
+LOD contract: this is the authoritative normal pipeline for canonical LOD0.
+Later LODs must inherit the immediate parent snapshot and may only add bounded,
+scale-appropriate residual detail. See docs/worldgen_lod_mechanism_matrix_v001.md.
 """
 
 import random
@@ -332,7 +336,7 @@ class WorldGenSimulation:
         "map_seed",
     }
 
-    def __init__(self, world_model=None, planet_location_id=None, parent_system_id=None, year=2400):
+    def __init__(self, world_model=None, planet_location_id=None, parent_system_id=None, year=2400, worldgen_storage_root=None):
         from engine.clock import Clock
 
         self.render_mode = "world_gen"
@@ -343,6 +347,18 @@ class WorldGenSimulation:
 
             world_model = WorldModel()
         self.world_model = world_model
+        # Optional run-local storage used by headless/isolated generation.
+        # Interactive callers retain the existing loader/project-root policy.
+        self.worldgen_storage_root = (
+            Path(worldgen_storage_root).resolve()
+            if worldgen_storage_root is not None
+            else None
+        )
+        # Headless representative scenarios may request a bounded scientific
+        # support grid and feedback budget. The default keeps the ordinary
+        # production resolution and two-pass climate/landscape coupling.
+        self.scientific_sample_dimensions = None
+        self.worldgen_feedback_iterations = 2
         self.planet_location_id = planet_location_id
         self.planet_entity = self.world_model.get_entity(planet_location_id) if planet_location_id else None
         self.explicit_parent_system_id = parent_system_id
@@ -1958,6 +1974,9 @@ class WorldGenSimulation:
         return palette
 
     def _material_heatmap_roots(self):
+        if self.worldgen_storage_root is not None:
+            storage_root = self.worldgen_storage_root
+            return storage_root / "assets" / "maps" / "material_heatmaps", storage_root
         loader = getattr(self.world_model, "loader", None)
         entries_directory = getattr(loader, "entries_directory", None)
         if entries_directory is not None:
@@ -2018,6 +2037,7 @@ class WorldGenSimulation:
             planet,
             heightmap=heightmap,
             natural_material_model=natural_material_model,
+            material_heatmap_model=heatmap_model,
             atmosphere=planet.get("atmosphere_model"),
             water_cycle=planet.get("water_cycle_model"),
             surface_evolution=planet.get("surface_evolution_model"),
@@ -2130,7 +2150,7 @@ class WorldGenSimulation:
         atmosphere = atmosphere or self._derive_atmosphere_model(seed, physics)
         regime = regime or self._derive_interior_regime_model(seed, physics, atmosphere)
         planet = planet or self._selected_planet_entity() or {}
-        return derive_terrain_seed_model(
+        terrain = derive_terrain_seed_model(
             seed=seed,
             physics=physics,
             atmosphere=atmosphere,
@@ -2138,6 +2158,26 @@ class WorldGenSimulation:
             planet_id=planet.get("id", ""),
             system_id=self.parent_system_id,
         )
+        requested_dimensions = self.scientific_sample_dimensions
+        if isinstance(requested_dimensions, (list, tuple)) and len(requested_dimensions) == 2:
+            try:
+                sample_width, sample_height = (int(requested_dimensions[0]), int(requested_dimensions[1]))
+            except (TypeError, ValueError):
+                sample_width = sample_height = 0
+            if (
+                sample_width >= 3
+                and sample_height >= 3
+                and sample_width % 2 == 1
+                and sample_height % 2 == 1
+            ):
+                terrain = dict(terrain)
+                heightfield = dict(terrain.get("heightfield") or {})
+                heightfield["scientific_sample_dimensions"] = {
+                    "width": sample_width,
+                    "height": sample_height,
+                }
+                terrain["heightfield"] = heightfield
+        return terrain
 
     def _derive_heightmap_model(self, terrain=None, seed=None, physics=None, planet=None):
         seed = seed or self._current_seed_values()
@@ -3003,34 +3043,14 @@ class WorldGenSimulation:
                 "dominant_process": evolution.get("dominant_process"),
                 "process_means": evolution.get("process_means"),
             })
+        requested_feedback_iterations = max(
+            1,
+            min(2, int(getattr(self, "worldgen_feedback_iterations", 2) or 2)),
+        )
         if evolution.get("status") == "surface_evolution_seeded" and isinstance(evolved_heightmap, dict):
             heightmap = evolved_heightmap
             planet["heightmap_model"] = heightmap
-            model = derive_water_cycle_model(
-                terrain=terrain,
-                heightmap=heightmap,
-                atmosphere=atmosphere,
-                seed=seed or planet.get("world_gen_seed") or {},
-                planet_id=planet.get("id", ""),
-            )
-            second_evolution = derive_surface_evolution_model(
-                planet=planet,
-                terrain=terrain,
-                heightmap=heightmap,
-                water_cycle=model,
-                atmosphere=atmosphere,
-            )
-            feedback_iterations.append({
-                "iteration": 2,
-                "status": second_evolution.get("status"),
-                "dominant_process": second_evolution.get("dominant_process"),
-                "process_means": second_evolution.get("process_means"),
-            })
-            second_heightmap = second_evolution.get("heightmap") if isinstance(second_evolution, dict) else None
-            if second_evolution.get("status") == "surface_evolution_seeded" and isinstance(second_heightmap, dict):
-                heightmap = second_heightmap
-                planet["heightmap_model"] = heightmap
-                evolution = second_evolution
+            if requested_feedback_iterations >= 2:
                 model = derive_water_cycle_model(
                     terrain=terrain,
                     heightmap=heightmap,
@@ -3038,7 +3058,32 @@ class WorldGenSimulation:
                     seed=seed or planet.get("world_gen_seed") or {},
                     planet_id=planet.get("id", ""),
                 )
-        # Surface evolution changed the terrain twice.  Re-solve conserved
+                second_evolution = derive_surface_evolution_model(
+                    planet=planet,
+                    terrain=terrain,
+                    heightmap=heightmap,
+                    water_cycle=model,
+                    atmosphere=atmosphere,
+                )
+                feedback_iterations.append({
+                    "iteration": 2,
+                    "status": second_evolution.get("status"),
+                    "dominant_process": second_evolution.get("dominant_process"),
+                    "process_means": second_evolution.get("process_means"),
+                })
+                second_heightmap = second_evolution.get("heightmap") if isinstance(second_evolution, dict) else None
+                if second_evolution.get("status") == "surface_evolution_seeded" and isinstance(second_heightmap, dict):
+                    heightmap = second_heightmap
+                    planet["heightmap_model"] = heightmap
+                    evolution = second_evolution
+                    model = derive_water_cycle_model(
+                        terrain=terrain,
+                        heightmap=heightmap,
+                        atmosphere=atmosphere,
+                        seed=seed or planet.get("world_gen_seed") or {},
+                        planet_id=planet.get("id", ""),
+                    )
+        # Surface evolution may have changed the terrain once or twice. Re-solve conserved
         # water volume and rebuild all sea-level-dependent fields before the
         # final hydrology and coastal analyses consume them.
         heightmap = refresh_heightmap_derivatives(
@@ -3095,7 +3140,8 @@ class WorldGenSimulation:
                     planet_id=planet.get("id", ""),
                 )
         evolution["feedback_iterations"] = feedback_iterations
-        evolution["coupling"] = "two_bounded_climate_landscape_feedback_iterations"
+        evolution["feedback_iteration_budget"] = requested_feedback_iterations
+        evolution["coupling"] = "bounded_climate_landscape_feedback_iterations"
         planet["surface_evolution_model"] = evolution
         planet["worldgen_realism_metrics"] = derive_worldgen_realism_metrics(
             planet.get("tectonic_model"),

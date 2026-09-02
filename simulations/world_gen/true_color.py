@@ -8,6 +8,11 @@ Architecture invariants: entity semantics come only from the ontology and
 runtime mappings are disposable caches. Planetary True Color is strictly
 abiotic; vegetation is produced later by Biosphere simulation. Generated
 planets are currently disposable, so model changes invalidate older products.
+
+LOD contract: True Color is a consumer of the current LOD's heightmap,
+material exposure, geomorphology, water, and atmosphere fields. It must render
+the same causal chain at every scale and report missing parent-derived assets;
+it must not silently substitute an independent geology or vegetation layer.
 """
 
 from __future__ import annotations
@@ -33,7 +38,7 @@ except ImportError:  # pragma: no cover - exercised only by minimal installs.
     np = None
 
 
-TRUE_COLOR_MODEL_VERSION = "planet-true-color-v12-physical-rivers-no-global-vegetation"
+TRUE_COLOR_MODEL_VERSION = "planet-true-color-v13-bound-material-heightfield-no-global-vegetation"
 
 
 # These are not ten decorative noise channels.  Each entry names an
@@ -53,6 +58,51 @@ ORBITAL_APPEARANCE_INFLUENCES = (
     "impact_ejecta_and_surface_maturity",
     "water_ice_frost_and_atmospheric_scattering",
 )
+
+
+def true_color_model_sources_match(model, heightmap, material_heatmap_model):
+    """Return whether a persisted recipe belongs to the current surface data."""
+    if not isinstance(model, dict) or model.get("model_version") != TRUE_COLOR_MODEL_VERSION:
+        return False
+    bindings = model.get("source_bindings")
+    if not isinstance(bindings, dict):
+        return False
+    heightmap = heightmap if isinstance(heightmap, dict) else {}
+    heatmap = material_heatmap_model if isinstance(material_heatmap_model, dict) else {}
+    return (
+        bindings.get("heightmap_source_heightfield_fingerprint")
+        == heightmap.get("source_heightfield_fingerprint")
+        and bindings.get("material_heatmap_source_heightfield_fingerprint")
+        == heatmap.get("source_heightfield_fingerprint")
+        and bindings.get("material_heatmap_model_version")
+        == heatmap.get("model_version")
+        and bindings.get("material_layer_bindings")
+        == [
+            {
+                "material_id": layer.get("material_id"),
+                "bundle_layer_id": layer.get("bundle_layer_id") or layer.get("id"),
+                "display_color": _rgb(layer.get("display_color")),
+                "optical_profile_material_id": (
+                    (layer.get("optical_surface_profile") or {}).get("material_id")
+                    if isinstance(layer.get("optical_surface_profile"), dict)
+                    else None
+                ),
+                "optical_profile_version": (
+                    (layer.get("optical_surface_profile") or {}).get("profile_version")
+                    if isinstance(layer.get("optical_surface_profile"), dict)
+                    else None
+                ),
+                "optical_color_source": (
+                    "optical_surface_profile.visible_reflectance"
+                    if isinstance(layer.get("optical_surface_profile"), dict)
+                    and (layer.get("optical_surface_profile") or {}).get("visible_reflectance")
+                    else "material_optical_surface_profile"
+                ),
+            }
+            for layer in heatmap.get("layers") or []
+            if isinstance(layer, dict)
+        ]
+    )
 
 
 def _clamp(value, low=0.0, high=1.0):
@@ -143,6 +193,7 @@ def derive_true_color_model(
     *,
     heightmap=None,
     natural_material_model=None,
+    material_heatmap_model=None,
     atmosphere=None,
     water_cycle=None,
     surface_evolution=None,
@@ -173,6 +224,11 @@ def derive_true_color_model(
         surface_geomorphology
         if isinstance(surface_geomorphology, dict)
         else planet.get("surface_geomorphology_model") or {}
+    )
+    material_heatmap_model = (
+        material_heatmap_model
+        if isinstance(material_heatmap_model, dict)
+        else planet.get("material_heatmap_model") or {}
     )
     tags = {str(tag) for tag in natural_material_model.get("planet_tags") or []}
     pressure_bar = max(0.0, float(atmosphere.get("surface_pressure_bar", 0.0) or 0.0))
@@ -238,6 +294,29 @@ def derive_true_color_model(
         _rgb(color)
         for color in (stored_palette.get("palette") or [])[:3]
     ]
+    material_layers = [
+        layer for layer in material_heatmap_model.get("layers") or []
+        if isinstance(layer, dict)
+    ]
+    material_layer_bindings = []
+    for layer in material_layers:
+        profile = layer.get("optical_surface_profile")
+        material_layer_bindings.append({
+            "material_id": layer.get("material_id"),
+            "bundle_layer_id": layer.get("bundle_layer_id") or layer.get("id"),
+            "display_color": _rgb(layer.get("display_color")),
+            "optical_profile_material_id": (
+                profile.get("material_id") if isinstance(profile, dict) else None
+            ),
+            "optical_profile_version": (
+                profile.get("profile_version") if isinstance(profile, dict) else None
+            ),
+            "optical_color_source": (
+                "optical_surface_profile.visible_reflectance"
+                if isinstance(profile, dict) and profile.get("visible_reflectance")
+                else "material_optical_surface_profile"
+            ),
+        })
     return {
         "status": "derived",
         "model_version": TRUE_COLOR_MODEL_VERSION,
@@ -283,6 +362,25 @@ def derive_true_color_model(
             "surface_evolution": surface_evolution.get("model_version"),
             "surface_exposure": surface_exposure.get("model_version"),
             "surface_geomorphology": surface_geomorphology.get("model_version"),
+        },
+        "source_bindings": {
+            "contract": "same_heightmap_sample_grid_and_material_heatmap_layers",
+            "heightmap_source_heightfield_fingerprint": heightmap.get(
+                "source_heightfield_fingerprint"
+            ),
+            "material_heatmap_model_version": material_heatmap_model.get(
+                "model_version"
+            ),
+            "material_heatmap_source_heightfield_fingerprint": material_heatmap_model.get(
+                "source_heightfield_fingerprint"
+            ),
+            "material_color_source": (
+                "material_heatmap.layers.optical_surface_profile"
+                if material_layers
+                else "natural_material_model.optical_surface_profile"
+            ),
+            "material_layer_bindings": material_layer_bindings,
+            "missing_material_heatmap": not bool(material_heatmap_model),
         },
         "geomorphology": {
             "input_fingerprint": surface_geomorphology.get("input_fingerprint"),
@@ -836,6 +934,15 @@ def render_true_color_surface(
     source_h = len(valid_rows)
     if source_w < 2 or source_h < 2:
         return None
+    bound_heightfield = (model.get("source_bindings") or {}).get(
+        "heightmap_source_heightfield_fingerprint"
+    )
+    current_heightfield = heightmap.get("source_heightfield_fingerprint")
+    if bound_heightfield is not None and bound_heightfield != current_heightfield:
+        # A stale recipe must not make a plausible-looking image from a
+        # different terrain product.  The map/worldgen callers rederive it
+        # when this guard is reached.
+        return None
     if np is None:
         return _fallback_surface(heightmap, model)
 
@@ -1015,15 +1122,54 @@ def render_true_color_surface(
     # fabric and produced the fine rectangular scratches seen from orbit.
     meso_passes = max(3, int(round(source_cell_footprint * 1.45)))
     broad_passes = max(meso_passes + 4, int(round(source_cell_footprint * 3.4)))
-    broad_form = _neighbourhood_mean(elevation, broad_passes, wrap_x=wrap_x)
-    meso_form = _neighbourhood_mean(elevation, meso_passes, wrap_x=wrap_x)
-    broad_relief = _normalise_signed(meso_form - broad_form)
-    local_relief = _normalise_signed(elevation - meso_form)
-    curvature = _normalise_signed(
-        elevation - _neighbourhood_mean(elevation, 1, wrap_x=wrap_x)
+    # Reconstruct relief form from the saved source lattice before enlarging
+    # it. Differentiating/classifying the upsampled bilinear lattice creates
+    # false cell-edge fabric that reads as contour scratches in true color.
+    source_footprint = max(1.0, source_cell_footprint)
+    source_meso_passes = max(1, int(round(meso_passes / source_footprint)))
+    source_broad_passes = max(
+        source_meso_passes + 2,
+        int(round(broad_passes / source_footprint)),
+    )
+    source_broad_form = _neighbourhood_mean(
+        elevation_points,
+        source_broad_passes,
+        wrap_x=wrap_x,
+    )
+    source_meso_form = _neighbourhood_mean(
+        elevation_points,
+        source_meso_passes,
+        wrap_x=wrap_x,
+    )
+    broad_form = _resample_bilinear(
+        source_meso_form - source_broad_form,
+        target_h,
+        target_w,
+    )
+    local_relief = _resample_bilinear(
+        elevation_points - source_meso_form,
+        target_h,
+        target_w,
+    )
+    curvature = _resample_bilinear(
+        elevation_points - _neighbourhood_mean(
+            elevation_points,
+            1,
+            wrap_x=wrap_x,
+        ),
+        target_h,
+        target_w,
+    )
+    broad_relief = _normalise_signed(broad_form)
+    local_relief = _normalise_signed(local_relief)
+    curvature = _normalise_signed(curvature)
+    meso_render_form = _resample_bilinear(
+        source_meso_form,
+        target_h,
+        target_w,
     )
     ruggedness = geomorphology.get(
-        "ruggedness", _normalise_positive(np.abs(elevation - meso_form))
+        "ruggedness", _normalise_positive(np.abs(elevation - meso_render_form))
     )
 
     spacing_x = max(1.0, float(heightmap.get("sample_spacing_x_m") or heightmap.get("equator_resolution_m_per_px") or 1.0))
@@ -1085,9 +1231,9 @@ def render_true_color_surface(
     # but the visible streak itself is caused by terrain and aeolian activity.
     wind_sign = -1 if _stable_seed(model.get("seed", "planet")) & 1 else 1
     wind_shift = max(1, min(8, target_w // 160 + 1)) * wind_sign
-    upstream_relief = np.roll(meso_form, wind_shift, axis=1)
+    upstream_relief = np.roll(meso_render_form, wind_shift, axis=1)
     lee_index = np.clip(
-        -_normalise_signed(meso_form - upstream_relief),
+        -_normalise_signed(meso_render_form - upstream_relief),
         0.0,
         1.0,
     )
@@ -1208,6 +1354,11 @@ def render_true_color_surface(
             target_h,
             target_w,
         )
+        # np.maximum propagates NaN rather than clamping it, so a corrupted
+        # upstream climate cell would otherwise poison wetness -> land_rgb
+        # (see docs/CLAUDE_CODE_HANDOFF_2026-08-16.md). A NaN cell degrades
+        # to "dry" instead.
+        precipitation = np.nan_to_num(precipitation, nan=0.0)
         wetness = np.clip(np.log1p(np.maximum(0.0, precipitation)) / math.log(3001.0), 0.0, 1.0)
         weathering = _clamp(model.get("chemical_weathering_strength", 0.0))
         # Wet bare rock is darker and slightly less saturated. Vegetation is
@@ -1297,22 +1448,44 @@ def render_true_color_surface(
     rgb = np.where(ice[..., None], ice_rgb * ice_texture, rgb)
 
     detail_level = max(0, int(heightmap.get("map_detail_level", 0) or 0))
-    # Planetary samples average relief across roughly 100 km, so their raw
-    # gradients understate mountain-facing slopes. Use scale-aware vertical
-    # exaggeration for legibility, tapering rapidly as regional truth gains
-    # real slopes. The correctly declared sample spacing prevents this from
-    # re-amplifying the old render-grid scratches.
-    exaggeration = max(1.25, 18.0 / (2.0 ** detail_level))
-    nx = -dzdx * exaggeration
-    ny = -dzdy * exaggeration
+    # Use the same physical gradient normalization as the heightmap
+    # diagnostic. True Color keeps material hue and optical response, but its
+    # luminance must visibly follow the same terrain normals. The old formula
+    # used resampled display-pixel spacing, making regional normals too
+    # shallow and leaving LOD2 visually detached from its heightmap.
+    terrain_span = max(
+        1.0,
+        float(heightmap.get("max_elevation_m", 1.0) or 1.0)
+        - float(heightmap.get("min_elevation_m", 0.0) or 0.0),
+    )
+    source_dx = dzdx * spacing_x
+    source_dy = dzdy * spacing_y
+    diagnostic_gradient_scale = max(1.0, terrain_span * 0.018)
+    # Planetary samples average very large areas, so LOD0 gets a little more
+    # normal gain. Regional terrain already contains real slopes and tapers
+    # quickly to avoid resurrecting the old contour-scratch artifact.
+    normal_gain = max(1.0, 2.8 / (2.0 ** detail_level))
+    nx = -source_dx / diagnostic_gradient_scale * normal_gain
+    ny = -source_dy / diagnostic_gradient_scale * normal_gain
     nz = np.ones_like(nx)
     norm = np.sqrt(nx * nx + ny * ny + nz * nz)
-    illumination = np.clip((nx * -0.53 + ny * -0.39 + nz * 0.75) / norm, 0.0, 1.0)
+    light = np.asarray([-0.62, -0.48, 0.62], dtype=np.float32)
+    light /= max(1e-6, float(np.linalg.norm(light)))
+    illumination = np.clip(
+        (nx * light[0] + ny * light[1] + nz * light[2]) / norm,
+        0.0,
+        1.0,
+    )
     # Concave, rugged terrain has a smaller visible sky hemisphere.  This
     # terrain-derived ambient-occlusion proxy makes mountain structure legible
     # without changing elevation or inventing a cosmetic texture.
     sky_view = np.clip(1.0 - concavity * ruggedness * 0.24 - scarp * 0.08, 0.68, 1.0)
-    shade = (0.54 + illumination * 0.58) * sky_view
+    if detail_level >= 1:
+        # Keep a broad ambient floor while retaining enough normal contrast
+        # for mountain chains and valleys in the material-coloured surface.
+        shade = (0.54 + illumination * 0.58) * sky_view
+    else:
+        shade = (0.50 + illumination * 0.66) * sky_view
     shade *= 1.0 + convexity * ridge * 0.035
     # Keep ocean reflectance mostly independent of terrain relief.
     shade = np.where(ocean, 0.94 + illumination * 0.06, shade)

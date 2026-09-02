@@ -1,3 +1,4 @@
+import copy
 import sqlite3
 import tempfile
 import unittest
@@ -45,6 +46,29 @@ class OntologyRepositoryTests(unittest.TestCase):
             self.assertIsNone(store._load_projection_cache())
         finally:
             shutil.rmtree(temp_path, ignore_errors=True)
+
+    def test_lazy_entity_deepcopy_via_copy_avoids_lock_pickle_error(self):
+        entity = LazyEntity(
+            {"id": "planet_test", "heightmap_model": {"rows": [[1, 2]]}, "nested": {"a": [1, 2, 3]}},
+            payload_path=Path("unused"),
+            lazy_fields=(),
+        )
+
+        # Deep-copying a LazyEntity directly pickles its internal hydration
+        # RLock and fails -- this is exactly what crashed regional
+        # refinement (simulations/world_gen/regional_refinement.py) when
+        # root_planet came back from world_model.get_entity() as a
+        # LazyEntity rather than a plain dict.
+        with self.assertRaises(TypeError):
+            copy.deepcopy(entity)
+
+        # .copy() -- LazyEntity's own hydrate-then-plain-dict method -- is
+        # the fix: deep-copying its result works and preserves nested data.
+        plain = copy.deepcopy(entity.copy())
+        self.assertIs(type(plain), dict)
+        self.assertEqual(plain["heightmap_model"], {"rows": [[1, 2]]})
+        plain["nested"]["a"].append(4)
+        self.assertEqual(entity["nested"]["a"], [1, 2, 3])
 
     def test_decoded_projection_cache_rejects_corrupt_payload(self):
         temp_path = Path(__file__).resolve().parents[1] / ".cache" / f"projection-test-{uuid.uuid4().hex}"

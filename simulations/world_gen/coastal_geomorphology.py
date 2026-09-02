@@ -4,6 +4,11 @@ The planetary product is a compact shoreline graph with independent causal
 classifications.  It deliberately does not claim spectral wave modelling or
 harmonic tidal solutions; every reduced-physics estimate carries confidence
 and a rule trace.
+
+LOD contract: LOD0 stores the shoreline scaffold and causal coastal context.
+Descendants inherit shoreline identity, sea level, substrate, wave/tide
+forcing, and sediment conditions before materializing only scale-resolvable
+beaches, cliffs, deltas, wetlands, and tide-pool forms.
 """
 
 from __future__ import annotations
