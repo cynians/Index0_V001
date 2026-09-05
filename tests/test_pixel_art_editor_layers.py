@@ -70,6 +70,17 @@ class PixelArtEditorLayerTests(unittest.TestCase):
         self.assertTrue(controller.redo())
         self.assertEqual((10, 200, 120), controller.composite_color_at(4, 4))
 
+    def test_module_attachment_point_is_saved_as_metadata_not_pixels(self):
+        controller, host, illustration = self.make_editor()
+        controller.set_anchor_mode("attachment")
+        self.assertTrue(controller.set_attachment_point((70, 60)))
+        controller.set_anchor_mode("axis")
+        self.assertTrue(controller.set_growth_axis((10, 60)))
+        self.assertTrue(controller.save())
+
+        self.assertEqual([1.0, 0.8571], illustration["pixel_module_anchor"]["attachment_point"])
+        self.assertEqual([-1.0, 0.0], illustration["pixel_module_anchor"]["growth_vector"])
+
     def test_shape_tools_draw_filled_and_outline_primitives(self):
         controller, host, _ = self.make_editor()
         host.pixel_art_editor["color"] = (10, 200, 120)

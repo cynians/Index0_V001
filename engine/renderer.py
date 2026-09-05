@@ -6,6 +6,7 @@ from simulations.world_gen.world_gen_renderer import WorldGenRenderer
 from simulations.phylogeny.phylogeny_renderer import PhylogenyRenderer
 from simulations.person.person_renderer import PersonRenderer
 from simulations.formation.formation_renderer import FormationRenderer
+from simulations.species.species_renderer import SpeciesRenderer
 
 
 class Renderer:
@@ -31,6 +32,7 @@ class Renderer:
         self.phylogeny_renderer = PhylogenyRenderer(simulation)
         self.person_renderer = PersonRenderer(simulation)
         self.formation_renderer = FormationRenderer(simulation)
+        self.species_renderer = SpeciesRenderer(simulation)
 
     # --------------------------------------------------
     # MAIN ENTRY
@@ -83,6 +85,10 @@ class Renderer:
 
         if render_mode == "phylogeny":
             self.phylogeny_renderer.draw(self.screen, sim)
+            return
+
+        if render_mode == "species":
+            self.species_renderer.draw(self.screen, sim)
             return
 
         if hasattr(sim, "system"):

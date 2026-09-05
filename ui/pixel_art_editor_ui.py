@@ -6,6 +6,8 @@ import os
 
 import pygame
 
+from world.texture_sets import TextureSet, cell_key, parse_cell_key
+
 
 class PixelArtEditorUI:
     def __init__(self, host):
@@ -61,7 +63,7 @@ class PixelArtEditorUI:
         existing_size = illustration.get("depicted_size_m") or illustration.get("metric_size_m")
         size_text = "" if existing_size in (None, "") else str(existing_size)
         setup_mode = str(illustration.get("pixel_editor_mode") or "single")
-        if setup_mode not in {"single", "orthographic"}:
+        if setup_mode not in {"single", "orthographic", "texture"}:
             setup_mode = "single"
         dimension_buffers = {
             "length": str(illustration.get("depicted_length_m") or size_text),
@@ -117,9 +119,19 @@ class PixelArtEditorUI:
             "clear_rect": None,
             "reference_surface": None,
             "reference_rect": None,
+            "anchor_mode": None,
+            "attachment_point_px": None,
+            "growth_axis_px": None,
             "setup_mode_hitboxes": {},
             "dimension_hitboxes": {},
             "view_hitboxes": {},
+            "texture_grid": {"columns": 3, "rows": 3},
+            "texture_base_layers": None,
+            "texture_variants": {},
+            "texture_active_cell": None,
+            "texture_seed": int(illustration.get("texture_seed") or 17),
+            "texture_cell_hitboxes": {},
+            "texture_action_hitboxes": {},
         }
         self.painting = False
         return True
@@ -247,6 +259,8 @@ class PixelArtEditorUI:
         existing_surface = None
         loaded_layers = None
         loaded_views = None
+        loaded_texture = None
+        document = {}
         document_path = str((editor.get("illustration") or {}).get("pixel_document_path") or "").strip()
         if document_path:
             candidate = os.path.normpath(str(self.host.PROJECT_ROOT / document_path))
@@ -256,9 +270,12 @@ class PixelArtEditorUI:
                 doc_width, doc_height = int(document.get("width") or 0), int(document.get("height") or 0)
                 candidate_layers = document.get("layers")
                 candidate_views = document.get("views")
+                loaded_texture = TextureSet.from_dict(document.get("texture_set")) if mode == "texture" else None
                 if mode == "orthographic" and isinstance(candidate_views, dict) and all(key in candidate_views for key in ("front", "side", "top")):
                     loaded_views = candidate_views
-                if doc_width > 0 and doc_height > 0 and isinstance(candidate_layers, list) and candidate_layers:
+                if loaded_texture is not None:
+                    width, height, loaded_layers = loaded_texture.width, loaded_texture.height, loaded_texture.base_layers
+                elif doc_width > 0 and doc_height > 0 and isinstance(candidate_layers, list) and candidate_layers:
                     width, height, loaded_layers = doc_width, doc_height, candidate_layers
             except (OSError, ValueError, TypeError, json.JSONDecodeError):
                 loaded_layers = None
@@ -278,7 +295,7 @@ class PixelArtEditorUI:
                     color = existing_surface.get_at((x, y))
                     if color.a:
                         pixels[y][x] = (color.r, color.g, color.b)
-        if mode == "single":
+        if mode in {"single", "texture"}:
             single = views["single"]
             single["layers"] = loaded_layers or [{"name": "Layer 1", "visible": True, "opacity": 1.0, "pixels": pixels}]
             single["active_layer"] = max(0, min(int((document if loaded_layers else {}).get("active_layer", 0)), len(single["layers"]) - 1))
@@ -290,8 +307,36 @@ class PixelArtEditorUI:
         editor["active_view"] = None
         editor["dirty"] = False
         self.switch_view(initial_view)
+        if mode == "texture":
+            grid = (loaded_texture.to_dict().get("grid") if loaded_texture is not None else None) or {"columns": 3, "rows": 3}
+            editor["texture_grid"] = {
+                "columns": max(1, int(grid.get("columns") or 3)),
+                "rows": max(1, int(grid.get("rows") or 3)),
+            }
+            editor["texture_base_layers"] = self._snapshot_layers(loaded_texture.base_layers if loaded_texture is not None else editor.get("layers") or [])
+            editor["texture_variants"] = {
+                variant.key: self._snapshot_layers(variant.layers)
+                for variant in (loaded_texture.variants.values() if loaded_texture is not None else [])
+            }
+            editor["texture_seed"] = int(loaded_texture.seed if loaded_texture is not None else editor.get("texture_seed") or 17)
+            editor["texture_active_cell"] = None
+            editor["status"] = f"Texture mode — paint the base tile, then click a surrounding tile to activate it"
+        module_anchor = document.get("module_anchor") if isinstance(document, dict) else None
+        if not isinstance(module_anchor, dict):
+            module_anchor = (editor.get("illustration") or {}).get("pixel_module_anchor") or {}
+        point = module_anchor.get("attachment_point") if isinstance(module_anchor, dict) else None
+        axis = (module_anchor.get("growth_vector") or module_anchor.get("growth_axis")) if isinstance(module_anchor, dict) else None
+        if isinstance(point, (list, tuple)) and len(point) >= 2:
+            editor["attachment_point_px"] = (
+                round(max(0.0, min(1.0, float(point[0]))) * max(0, editor["canvas_width"] - 1)),
+                round(max(0.0, min(1.0, float(point[1]))) * max(0, editor["canvas_height"] - 1)),
+            )
+        if isinstance(axis, (list, tuple)) and len(axis) >= 2:
+            editor["growth_axis_px"] = (float(axis[0]), float(axis[1]))
         if loaded_views:
             editor["status"] = "Restored front, side, and top drawing views"
+        elif mode == "texture" and loaded_texture is not None:
+            editor["status"] = f"Restored texture base and {len(editor.get('texture_variants') or {})} character tiles"
         elif loaded_layers:
             editor["status"] = f"Restored {len(loaded_layers)} layers"
         elif existing_surface is not None:
@@ -342,6 +387,119 @@ class PixelArtEditorUI:
             "locked": bool(layer.get("locked", False)),
             "pixels": self._copy_pixels(layer.get("pixels") or []),
         } for layer in layers]
+
+    def _texture_mode(self):
+        editor = self.state
+        return isinstance(editor, dict) and editor.get("stage") == "canvas" and editor.get("setup_mode") == "texture"
+
+    def _texture_center(self):
+        editor = self.state
+        grid = editor.get("texture_grid") or {"columns": 3, "rows": 3}
+        return (int(grid.get("columns") or 3) // 2, int(grid.get("rows") or 3) // 2)
+
+    def _texture_store_current(self):
+        """Commit the tile currently being painted into the sparse texture state."""
+        editor = self.state
+        if not self._texture_mode():
+            return
+        snapshot = self._snapshot_layers(self._layers())
+        active = parse_cell_key(editor.get("texture_active_cell"))
+        if active is None:
+            editor["texture_base_layers"] = snapshot
+        else:
+            editor.setdefault("texture_variants", {})[cell_key(*active)] = snapshot
+
+    def _texture_layers_for_cell(self, x, y):
+        editor = self.state
+        if not self._texture_mode():
+            return []
+        active = parse_cell_key(editor.get("texture_active_cell"))
+        if active == (int(x), int(y)):
+            return self._layers()
+        if (int(x), int(y)) == self._texture_center():
+            return editor.get("texture_base_layers") or self._layers()
+        key = cell_key(x, y)
+        return (editor.get("texture_variants") or {}).get(key) or editor.get("texture_base_layers") or self._layers()
+
+    def _texture_load_cell(self, x, y):
+        editor = self.state
+        if not self._texture_mode():
+            return False
+        self.finish_stroke()
+        self._sync_active_view()
+        self._texture_store_current()
+        x, y = int(x), int(y)
+        center = self._texture_center()
+        key = cell_key(x, y)
+        newly_activated = (x, y) != center and key not in (editor.get("texture_variants") or {})
+        if newly_activated:
+            editor.setdefault("texture_variants", {})[key] = self._snapshot_layers(editor.get("texture_base_layers") or self._layers())
+        layers = self._texture_layers_for_cell(x, y)
+        editor["texture_active_cell"] = None if (x, y) == center else key
+        editor["layers"] = self._snapshot_layers(layers)
+        editor["active_layer"] = 0
+        editor["undo_stack"] = []
+        editor["redo_stack"] = []
+        editor["revision"] = int(editor.get("revision") or 0) + 1
+        editor["composite_cache"] = None
+        self._active_layer()
+        editor["dirty"] = editor.get("dirty", False) or newly_activated
+        if (x, y) == center:
+            editor["status"] = "Base tile selected — edits repeat everywhere"
+        elif newly_activated:
+            editor["status"] = f"Activated character tile {x + 1},{y + 1} — paint its unique marks"
+        else:
+            editor["status"] = f"Editing character tile {x + 1},{y + 1}"
+        return True
+
+    def deactivate_texture_cell(self):
+        editor = self.state
+        active = parse_cell_key(editor.get("texture_active_cell")) if isinstance(editor, dict) else None
+        if not self._texture_mode() or active is None:
+            return False
+        self._texture_store_current()
+        editor.setdefault("texture_variants", {}).pop(cell_key(*active), None)
+        editor["texture_active_cell"] = None
+        editor["layers"] = self._snapshot_layers(editor.get("texture_base_layers") or self._layers())
+        editor["active_layer"] = 0
+        editor["undo_stack"] = []
+        editor["redo_stack"] = []
+        editor["composite_cache"] = None
+        self._active_layer()
+        editor["dirty"] = True
+        editor["status"] = f"Deactivated character tile {active[0] + 1},{active[1] + 1} — it repeats the base again"
+        return True
+
+    def shuffle_texture_seed(self):
+        editor = self.state
+        if not self._texture_mode():
+            return False
+        editor["texture_seed"] = int(editor.get("texture_seed") or 17) + 1
+        editor["status"] = f"Shuffle preview seed {editor['texture_seed']}"
+        return True
+
+    def _texture_set(self):
+        editor = self.state
+        if not self._texture_mode():
+            return None
+        self._texture_store_current()
+        width = int(editor.get("canvas_width") or 1)
+        height = int(editor.get("canvas_height") or 1)
+        grid = editor.get("texture_grid") or {"columns": 3, "rows": 3}
+        texture = TextureSet(
+            width=width,
+            height=height,
+            base_layers=self._snapshot_layers(editor.get("texture_base_layers") or self._layers()),
+            grid_columns=max(1, int(grid.get("columns") or 3)),
+            grid_rows=max(1, int(grid.get("rows") or 3)),
+            seed=int(editor.get("texture_seed") or 17),
+            texture_id=str((editor.get("illustration") or {}).get("id") or editor.get("illustration_id") or ""),
+        )
+        for key, layers in (editor.get("texture_variants") or {}).items():
+            parsed = parse_cell_key(key)
+            if parsed is not None:
+                texture.add_variant(parsed[0], parsed[1], self._snapshot_layers(layers))
+        return texture
 
     def _mark_dirty(self):
         editor = self.state
@@ -721,6 +879,59 @@ class PixelArtEditorUI:
         pixel_y = max(0, min(height - 1, int((mouse_pos[1] - canvas_rect.y) * height / max(1, canvas_rect.height))))
         return pixel_x, pixel_y
 
+    def set_anchor_mode(self, mode):
+        editor = self.state
+        if not isinstance(editor, dict) or mode not in {None, "attachment", "axis"}:
+            return False
+        editor["anchor_mode"] = mode
+        labels = {None: "Drawing mode", "attachment": "Attachment point: click where this module joins the plant", "axis": "Growth vector: click toward the module tip"}
+        editor["status"] = labels[mode]
+        return True
+
+    def cycle_anchor_mode(self):
+        editor = self.state
+        if not isinstance(editor, dict):
+            return False
+        next_mode = {None: "attachment", "attachment": "axis", "axis": None}[editor.get("anchor_mode")]
+        return self.set_anchor_mode(next_mode)
+
+    def set_attachment_point(self, mouse_pos):
+        editor = self.state
+        pixel = self._canvas_pixel_at(mouse_pos)
+        if not isinstance(editor, dict) or pixel is None:
+            return False
+        editor["attachment_point_px"] = pixel
+        editor["anchor_mode"] = None
+        editor["status"] = f"Attachment point set at {pixel[0]}, {pixel[1]} px"
+        self._mark_dirty()
+        return True
+
+    def set_growth_axis(self, mouse_pos):
+        editor = self.state
+        pixel = self._canvas_pixel_at(mouse_pos)
+        anchor = editor.get("attachment_point_px") if isinstance(editor, dict) else None
+        if not isinstance(editor, dict) or pixel is None or not anchor:
+            return False
+        dx, dy = pixel[0] - anchor[0], pixel[1] - anchor[1]
+        length = max(1.0, (dx * dx + dy * dy) ** 0.5)
+        editor["growth_axis_px"] = (dx / length, dy / length)
+        editor["anchor_mode"] = None
+        editor["status"] = "Growth axis set"
+        self._mark_dirty()
+        return True
+
+    def _module_anchor_payload(self):
+        editor = self.state if isinstance(self.state, dict) else {}
+        width = max(1, int(editor.get("canvas_width") or 1))
+        height = max(1, int(editor.get("canvas_height") or 1))
+        point = editor.get("attachment_point_px") or (width // 2, max(0, height - 1))
+        axis = editor.get("growth_axis_px") or (0.0, -1.0)
+        return {
+            "attachment_point": [round(max(0.0, min(1.0, float(point[0]) / max(1, width - 1))), 4), round(max(0.0, min(1.0, float(point[1]) / max(1, height - 1))), 4)],
+            "growth_vector": [round(float(axis[0]), 4), round(float(axis[1]), 4)],
+            "growth_axis": [round(float(axis[0]), 4), round(float(axis[1]), 4)],
+        }
+
     @staticmethod
     def _line_cells(start, end):
         x0, y0 = start
@@ -1014,6 +1225,8 @@ class PixelArtEditorUI:
         if not isinstance(illustration, dict):
             editor["status"] = "Could not find illustration entry"
             return False
+        if editor.get("setup_mode") == "texture":
+            self._texture_store_current()
         self._sync_active_view()
         views = editor.get("views") or {}
         mode = editor.get("setup_mode", "single")
@@ -1031,6 +1244,8 @@ class PixelArtEditorUI:
             for view_id, view in views.items():
                 width, height = int(view.get("width") or 0), int(view.get("height") or 0)
                 layers = view.get("layers") or []
+                if mode == "texture":
+                    layers = editor.get("texture_base_layers") or layers
                 if width <= 0 or height <= 0 or not layers:
                     raise ValueError(f"{view_id} view is missing")
                 rel_path = self.asset_path(illustration_id, view_id)
@@ -1051,6 +1266,7 @@ class PixelArtEditorUI:
             document = {
                 "version": 2,
                 "mode": mode,
+                "module_anchor": self._module_anchor_payload(),
                 "dimensions_m": {name: self.dimension_value(name) for name in ("length", "width", "height")} if mode == "orthographic" else {"size": self.metric_size()},
                 "active_view": editor.get("active_view"),
                 "views": document_views,
@@ -1059,6 +1275,9 @@ class PixelArtEditorUI:
                 "active_layer": primary_document_view["active_layer"],
                 "layers": primary_document_view["layers"],
             }
+            if mode == "texture":
+                texture = self._texture_set()
+                document["texture_set"] = texture.to_dict() if texture is not None else None
             temporary_path = document_abs_path + ".tmp"
             with gzip.open(temporary_path, "wt", encoding="utf-8", compresslevel=6) as handle:
                 json.dump(document, handle, separators=(",", ":"))
@@ -1080,15 +1299,29 @@ class PixelArtEditorUI:
         illustration["pixel_canvas_width"] = primary_width
         illustration["pixel_canvas_height"] = primary_height
         illustration["pixel_art_source"] = "in_engine_pixel_editor"
-        illustration["pixel_layer_count"] = sum(1 for layer in primary_view["layers"] if not layer.get("reference_only"))
-        illustration["pixel_reference_layer_count"] = sum(1 for layer in primary_view["layers"] if layer.get("reference_only"))
+        primary_layers = (editor.get("texture_base_layers") or primary_view["layers"]) if mode == "texture" else primary_view["layers"]
+        illustration["pixel_layer_count"] = sum(1 for layer in primary_layers if not layer.get("reference_only"))
+        illustration["pixel_reference_layer_count"] = sum(1 for layer in primary_layers if layer.get("reference_only"))
         illustration["pixel_view_paths"] = view_paths
         illustration["pixel_view_sizes"] = {view_id: [int(view["width"]), int(view["height"])] for view_id, view in views.items()}
         illustration["pixel_document_path"] = document_rel_path
+        illustration["pixel_module_anchor"] = self._module_anchor_payload()
+        if mode == "texture":
+            texture = self._texture_set()
+            grid = editor.get("texture_grid") or {"columns": 3, "rows": 3}
+            illustration["texture_set_version"] = 1
+            illustration["texture_grid_size"] = [int(grid.get("columns") or 3), int(grid.get("rows") or 3)]
+            illustration["texture_variant_count"] = len((editor.get("texture_variants") or {}))
+            illustration["texture_seed"] = int(editor.get("texture_seed") or 17)
+            illustration["texture_runtime_policy"] = "seeded_shuffle_avoid_adjacent_repeat"
         primary_path = view_paths[primary_view_id]
         illustration["media_path"] = primary_path
         if not self.host.assign_illustration_image(illustration_id, primary_path):
             editor["status"] = "PNG saved, but illustration entry was not updated"
+            return False
+        assign_asset = getattr(self.host, "assign_plant_asset_to_parent", None)
+        if callable(assign_asset) and not assign_asset(illustration):
+            editor["status"] = "PNG saved, but the plant module link could not be updated"
             return False
         editor["dirty"] = False
         editor["confirm_close"] = False
@@ -1209,7 +1442,7 @@ class PixelArtEditorUI:
                     editor["setup_mode"] = mode
                     if mode == "orthographic" and not (editor.get("dimension_buffers") or {}).get("length"):
                         editor.setdefault("dimension_buffers", {})["length"] = str(editor.get("metric_size_buffer") or "")
-                    editor["status"] = "Enter one final size" if mode == "single" else "Enter length, width, and height"
+                    editor["status"] = "Enter one final size" if mode in {"single", "texture"} else "Enter length, width, and height"
                     return True
             for field, rect in (editor.get("dimension_hitboxes") or {}).items():
                 if rect is not None and rect.collidepoint(mouse_pos):
@@ -1217,6 +1450,18 @@ class PixelArtEditorUI:
                     return True
             return True
         if editor.get("stage") == "canvas":
+            if self._texture_mode():
+                for key, rect in (editor.get("texture_cell_hitboxes") or {}).items():
+                    if rect is not None and rect.collidepoint(mouse_pos):
+                        parsed = parse_cell_key(key)
+                        if parsed is not None:
+                            return self._texture_load_cell(*parsed)
+                for action, rect in (editor.get("texture_action_hitboxes") or {}).items():
+                    if rect is not None and rect.collidepoint(mouse_pos):
+                        if action == "texture_deactivate":
+                            return self.deactivate_texture_cell()
+                        if action == "texture_shuffle":
+                            return self.shuffle_texture_seed()
             for action, rect in (editor.get("action_hitboxes") or {}).items():
                 if rect is None or not rect.collidepoint(mouse_pos):
                     continue
@@ -1230,6 +1475,7 @@ class PixelArtEditorUI:
                     "toggle_grid": lambda: editor.__setitem__("show_grid", not editor.get("show_grid", True)) or True,
                     "toggle_mirror": lambda: editor.__setitem__("mirror_x", not editor.get("mirror_x", False)) or True,
                     "toggle_shape_fill": lambda: editor.__setitem__("shape_filled", not editor.get("shape_filled", False)) or True,
+                    "anchor_mode": self.cycle_anchor_mode,
                 }
                 return actions.get(action, lambda: False)()
             for index, rect in (editor.get("layer_hitboxes") or {}).items():
@@ -1254,6 +1500,10 @@ class PixelArtEditorUI:
                     editor["active_slider"] = slider
                     return True
             if editor.get("canvas_rect") is not None and editor["canvas_rect"].collidepoint(mouse_pos):
+                if editor.get("anchor_mode") == "attachment":
+                    return self.set_attachment_point(mouse_pos)
+                if editor.get("anchor_mode") == "axis":
+                    return self.set_growth_axis(mouse_pos)
                 editor["stroke_before"] = self._snapshot()
                 editor["stroke_changed"] = False
                 if editor.get("tool") in self._shape_tool_names():
@@ -1577,8 +1827,71 @@ class PixelArtEditorUI:
                 pygame.draw.line(screen, grid, (canvas_rect.x, py), (canvas_rect.right, py))
         if editor.get("mirror_x"):
             pygame.draw.line(screen, (97, 184, 218), (canvas_rect.centerx, canvas_rect.y), (canvas_rect.centerx, canvas_rect.bottom), 1)
+        anchor = editor.get("attachment_point_px")
+        if isinstance(anchor, (list, tuple)) and len(anchor) >= 2:
+            anchor_pos = (canvas_rect.x + round(float(anchor[0]) * scale), canvas_rect.y + round(float(anchor[1]) * scale))
+            pygame.draw.circle(screen, (255, 214, 92), anchor_pos, max(4, round(4 * min(2.0, scale))), 2)
+            pygame.draw.line(screen, (255, 214, 92), (anchor_pos[0] - 7, anchor_pos[1]), (anchor_pos[0] + 7, anchor_pos[1]), 1)
+            pygame.draw.line(screen, (255, 214, 92), (anchor_pos[0], anchor_pos[1] - 7), (anchor_pos[0], anchor_pos[1] + 7), 1)
         pygame.draw.rect(screen, (129, 151, 178), canvas_rect, 1)
         screen.set_clip(previous_clip)
+
+    def _draw_texture_overlay(self, screen, font, canvas_area):
+        """Show the repeat neighborhood and the deterministic runtime shuffle."""
+        editor = self.state
+        grid = editor.get("texture_grid") or {"columns": 3, "rows": 3}
+        columns, rows = max(1, int(grid.get("columns") or 3)), max(1, int(grid.get("rows") or 3))
+        cell_size, gap = 48, 3
+        panel_w = max(250, columns * cell_size + (columns - 1) * gap + 24)
+        panel_h = rows * cell_size + (rows - 1) * gap + 140
+        panel = pygame.Rect(canvas_area.x + 12, canvas_area.y + 12, min(panel_w, canvas_area.width - 24), min(panel_h, canvas_area.height - 24))
+        if panel.width < 150 or panel.height < 150:
+            return
+        panel_surface = pygame.Surface(panel.size, pygame.SRCALPHA)
+        panel_surface.fill((18, 24, 34, 238))
+        screen.blit(panel_surface, panel)
+        pygame.draw.rect(screen, (107, 143, 174), panel, 1, border_radius=6)
+        screen.blit(font.render("TEXTURE NEIGHBORHOOD", True, (213, 231, 243)), (panel.x + 10, panel.y + 8))
+        small_font = pygame.font.Font(None, 16)
+        screen.blit(small_font.render("center = base • click neighbor to activate", True, (142, 169, 188)), (panel.x + 10, panel.y + 29))
+
+        grid_x, grid_y = panel.x + 12, panel.y + 50
+        editor["texture_cell_hitboxes"] = {}
+        active = parse_cell_key(editor.get("texture_active_cell"))
+        center = self._texture_center()
+        for y in range(rows):
+            for x in range(columns):
+                cell_rect = pygame.Rect(grid_x + x * (cell_size + gap), grid_y + y * (cell_size + gap), cell_size, cell_size)
+                if cell_rect.right > panel.right - 8 or cell_rect.bottom > panel.bottom - 70:
+                    continue
+                layers = self._texture_layers_for_cell(x, y)
+                pygame.draw.rect(screen, (31, 38, 49), cell_rect)
+                if layers:
+                    surface = self._render_layers_surface(int(editor.get("canvas_width") or 1), int(editor.get("canvas_height") or 1), layers, include_reference=False)
+                    scaled = pygame.transform.scale(surface, (cell_size - 4, cell_size - 4))
+                    screen.blit(scaled, (cell_rect.x + 2, cell_rect.y + 2))
+                key = cell_key(x, y)
+                is_variant = key in (editor.get("texture_variants") or {}) and (x, y) != center
+                border = (100, 218, 244) if active == (x, y) else ((235, 191, 92) if is_variant else (80, 96, 116))
+                pygame.draw.rect(screen, border, cell_rect, 2 if active == (x, y) else 1)
+                editor["texture_cell_hitboxes"][key] = cell_rect
+
+        variant_count = len(editor.get("texture_variants") or {})
+        selected = "base" if active is None else f"tile {active[0] + 1},{active[1] + 1}"
+        status_y = grid_y + rows * (cell_size + gap) + 3
+        screen.blit(small_font.render(f"{variant_count} active exception(s) • editing {selected}", True, (202, 215, 227)), (panel.x + 10, status_y))
+        sample = []
+        texture = self._texture_set()
+        if texture is not None:
+            sample = texture.shuffled_variant_keys(5, int(editor.get("texture_seed") or 17))
+        sample_text = "shuffle: " + ("  ".join(sample[:3]) if sample else "base only")
+        screen.blit(small_font.render(sample_text, True, (139, 170, 187)), (panel.x + 10, status_y + 20))
+        action_y = panel.bottom - 32
+        deactivate = pygame.Rect(panel.x + 10, action_y, 94, 24)
+        shuffle = pygame.Rect(panel.right - 96, action_y, 86, 24)
+        self._button(screen, font, deactivate, "Deactivate", enabled=active is not None)
+        self._button(screen, font, shuffle, "Shuffle", active=True)
+        editor["texture_action_hitboxes"] = {"texture_deactivate": deactivate, "texture_shuffle": shuffle}
 
     def draw(self, screen, font):
         editor = self.state
@@ -1592,6 +1905,8 @@ class PixelArtEditorUI:
         editor["brush_size_hitboxes"] = {}
         editor["action_hitboxes"] = {}
         editor["layer_hitboxes"] = {}
+        editor["texture_cell_hitboxes"] = {}
+        editor["texture_action_hitboxes"] = {}
 
         if editor.get("stage") == "size":
             self._draw_size_workspace(screen, font)
@@ -1631,9 +1946,11 @@ class PixelArtEditorUI:
             ("redo", "Redo", 58, bool(editor.get("redo_stack"))),
             ("toggle_grid", "Grid", 54, True),
             ("toggle_mirror", "Mirror", 64, True),
+            ("anchor_mode", {"attachment": "Set base", "axis": "Set vector"}.get(editor.get("anchor_mode"), "Guide"), 70, True),
         ):
             rect = pygame.Rect(x, button_y, w, 30)
-            self._button(screen, font, rect, label, active=(action == "toggle_grid" and editor.get("show_grid")) or (action == "toggle_mirror" and editor.get("mirror_x")), enabled=enabled)
+            active = (action == "toggle_grid" and editor.get("show_grid")) or (action == "toggle_mirror" and editor.get("mirror_x")) or (action == "anchor_mode" and editor.get("anchor_mode"))
+            self._button(screen, font, rect, label, active=active, enabled=enabled)
             if enabled:
                 editor["action_hitboxes"][action] = rect
             x += w + 7
@@ -1672,13 +1989,16 @@ class PixelArtEditorUI:
         screen.blit(size_text, size_text.get_rect(center=(tools.centerx, y + 40)))
 
         self._draw_editor_canvas(screen, canvas_area)
+        if self._texture_mode():
+            self._draw_texture_overlay(screen, font, canvas_area)
         self._draw_properties_panel(screen, font, properties)
 
         width, height = int(editor.get("canvas_width") or 0), int(editor.get("canvas_height") or 0)
         status = str(editor.get("status") or "Ready")
         screen.blit(font.render(status, True, (172, 187, 207)), (12, bottom.y + 7))
         view_label = f"{str(editor.get('active_view')).title()}   |   " if editor.get("setup_mode") == "orthographic" else ""
-        info = f"{view_label}{width} x {height} px   |   {float(editor.get('zoom', 1.0)) * 100:.0f}%   |   [ / ] size   Ctrl+Z undo   Ctrl+S save"
+        mode_label = "   |   TEXTURE SET" if self._texture_mode() else ""
+        info = f"{view_label}{width} x {height} px{mode_label}   |   {float(editor.get('zoom', 1.0)) * 100:.0f}%   |   [ / ] size   Ctrl+Z undo   Ctrl+S save"
         info_surface = font.render(info, True, (134, 149, 169))
         screen.blit(info_surface, (bottom.right - info_surface.get_width() - 14, bottom.y + 7))
 
@@ -1694,8 +2014,10 @@ class PixelArtEditorUI:
         editor["setup_mode_hitboxes"] = {}
         editor["dimension_hitboxes"] = {}
         mode_y = panel.y + 104
-        mode_w = (panel.width - 68) // 2
-        for mode, label, x in (("single", "Single image", panel.x + 30), ("orthographic", "3D views: front / side / top", panel.x + 38 + mode_w)):
+        mode_options = (("single", "Single image"), ("texture", "Repeating texture"), ("orthographic", "3D views: front / side / top"))
+        mode_w = (panel.width - 68 - 10 * (len(mode_options) - 1)) // len(mode_options)
+        for index, (mode, label) in enumerate(mode_options):
+            x = panel.x + 30 + index * (mode_w + 10)
             rect = pygame.Rect(x, mode_y, mode_w, 38)
             self._button(screen, font, rect, label, active=editor.get("setup_mode") == mode)
             editor["setup_mode_hitboxes"][mode] = rect
@@ -1741,7 +2063,7 @@ class PixelArtEditorUI:
             pygame.draw.line(screen, (231, 239, 248), (cursor_x, input_rect.y + 10), (cursor_x, input_rect.bottom - 10))
             suggested = self._pixel_canvas_size_for_entity(editor.get("parent_entity"), self.metric_size() or 1.0)
             summary = f"Suggested canvas  {suggested[0]} x {suggested[1]} px"
-            hint = "Resolution is now 150% of the previous editor scale for finer detail."
+            hint = "This is the tile size; activated neighbors are stored as sparse exceptions."
         screen.blit(font.render(summary, True, (183, 200, 221)), (panel.x + 30, input_y + 70))
         screen.blit(font.render(hint, True, (139, 156, 178)), (panel.x + 30, input_y + 96))
         cancel = pygame.Rect(panel.right - 220, panel.bottom - 62, 86, 34)
@@ -1781,7 +2103,15 @@ class PixelArtEditorUI:
             editor["slider_hitboxes"].append({"channel": channel, "rect": slider})
             slider_y += 28
 
-        layers_y = slider_y + 12
+        anchor_y = slider_y + 8
+        screen.blit(font.render("MODULE ANCHOR", True, (137, 155, 180)), (rect.x + pad, anchor_y))
+        anchor = editor.get("attachment_point_px")
+        anchor_text = "Not set — defaults to bottom center" if not anchor else f"Attachment: {anchor[0]}, {anchor[1]} px"
+        screen.blit(font.render(anchor_text, True, (194, 207, 225)), (rect.x + pad, anchor_y + 22))
+        hint = "Guide cycles: base point, growth vector, off"
+        screen.blit(font.render(hint, True, (126, 145, 168)), (rect.x + pad, anchor_y + 42))
+
+        layers_y = anchor_y + 68
         screen.blit(font.render("LAYERS", True, (137, 155, 180)), (rect.x + pad, layers_y))
         button_y = layers_y - 5
         actions = (("add_layer", "+"), ("duplicate_layer", "Dup"), ("layer_up", "Up"), ("layer_down", "Dn"), ("delete_layer", "Del"))

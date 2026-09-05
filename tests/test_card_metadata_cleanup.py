@@ -813,10 +813,7 @@ class CardMetadataCleanupTests(unittest.TestCase):
                 "type": "species",
                 "_dataset": "species",
                 "plant_growth_form": "perennial_forb_rosette",
-                "worldgen_suitability_profile": {
-                    "soil_types": ["loam"],
-                    "moisture": {"min": 0.1, "optimum": 0.4, "max": 0.8},
-                },
+                "mature_height_class": "low",
             },
             dataset_name="species",
         )
@@ -829,7 +826,7 @@ class CardMetadataCleanupTests(unittest.TestCase):
         plant_keys = [key for key, _ in sections["Simulation / Plant Ecology"]]
 
         self.assertIn("plant_growth_form", plant_keys)
-        self.assertIn("worldgen_suitability_profile", plant_keys)
+        self.assertIn("mature_height_class", plant_keys)
 
     def test_biosphere_roster_collection_fields_are_relation_rows(self):
         card = EntityCard(

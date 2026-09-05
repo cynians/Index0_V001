@@ -16,6 +16,11 @@ from world.orbital_space_reference_models import apply_orbital_space_reference_m
 from world.periods import apply_period_reference_models
 from world.relationship_graph import TouchDegrees
 from world.schema_loader import SchemaLoader
+from world.species_inheritance import (
+    refresh_species_inheritance,
+    resolved_species_entity,
+    resolve_species_field,
+)
 from world.yearer import Yearer
 
 
@@ -35,6 +40,16 @@ class WorldModel:
     # superseded boundaries (for example 6013 vs 6034 for the start of the
     # Planetary Period), so the ideas reference is treated as the stronger
     # source here.
+    @property
+    def plant_catalogue(self):
+        return self.loader.plant_catalogue
+
+    def is_plant(self, entity_id):
+        return self.plant_catalogue.contains(entity_id)
+
+    def is_plant_species(self, entity_id):
+        return self.plant_catalogue.is_species(entity_id)
+
     MAJOR_PERIODS = [
         {
             "entity_id": "period_siderian",
@@ -247,6 +262,7 @@ class WorldModel:
         self.touch_degrees = TouchDegrees(self.loader, self.schemas)
         self.graph = self.touch_degrees
         self.yearer = Yearer(self.loader)
+        refresh_species_inheritance(self.loader, persist=False)
         self.repository_revision = 0
 
     def get_entity(self, entity_id):
@@ -297,7 +313,16 @@ class WorldModel:
         if hasattr(self.touch_degrees, "refresh"):
             self.touch_degrees.refresh()
         self.yearer = Yearer(self.loader)
+        refresh_species_inheritance(self.loader, persist=True)
         self.repository_revision += 1
+
+    def resolve_species_field(self, entity_id, field_key):
+        entity = self.get_entity(entity_id)
+        return resolve_species_field(self.loader, entity, field_key)
+
+    def resolved_species_entity(self, entity_id):
+        entity = self.get_entity(entity_id)
+        return resolved_species_entity(self.loader, entity)
 
     def get_dataset(self, dataset_name):
         if dataset_name == "systems":

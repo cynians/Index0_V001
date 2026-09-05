@@ -1,0 +1,98 @@
+{
+  "species_id": "spec_betula_pendula",
+  "simulation": "species",
+  "seed": 303,
+  "days": 5,
+  "environment": {
+    "light": 0.94,
+    "temperature": 0.62,
+    "water_available": 0.72,
+    "competition": 0.1
+  },
+  "samples": [
+    {
+      "elapsed_days": 0.0,
+      "age_days": 0.0,
+      "life_phase": "juvenile",
+      "maturity": 0.0,
+      "placement_count": 2,
+      "leaf_count": 0,
+      "leaf_cluster_count": 0,
+      "estimated_leaf_count": 0,
+      "stem_count": 1,
+      "vitality": 0.0,
+      "fecundity": 0.0,
+      "mortality_risk": 1.0
+    },
+    {
+      "elapsed_days": 1.0,
+      "age_days": 1.0,
+      "life_phase": "juvenile",
+      "maturity": 0.0027,
+      "placement_count": 2,
+      "leaf_count": 0,
+      "leaf_cluster_count": 0,
+      "estimated_leaf_count": 0,
+      "stem_count": 1,
+      "vitality": 0.0024,
+      "fecundity": 0.0,
+      "mortality_risk": 0.9976
+    },
+    {
+      "elapsed_days": 2.0,
+      "age_days": 2.0,
+      "life_phase": "juvenile",
+      "maturity": 0.0055,
+      "placement_count": 2,
+      "leaf_count": 0,
+      "leaf_cluster_count": 0,
+      "estimated_leaf_count": 0,
+      "stem_count": 1,
+      "vitality": 0.005,
+      "fecundity": 0.0,
+      "mortality_risk": 0.995
+    },
+    {
+      "elapsed_days": 3.0,
+      "age_days": 3.0,
+      "life_phase": "juvenile",
+      "maturity": 0.0082,
+      "placement_count": 2,
+      "leaf_count": 0,
+      "leaf_cluster_count": 0,
+      "estimated_leaf_count": 0,
+      "stem_count": 1,
+      "vitality": 0.0074,
+      "fecundity": 0.0,
+      "mortality_risk": 0.9926
+    },
+    {
+      "elapsed_days": 4.0,
+      "age_days": 4.0,
+      "life_phase": "juvenile",
+      "maturity": 0.011,
+      "placement_count": 2,
+      "leaf_count": 0,
+      "leaf_cluster_count": 0,
+      "estimated_leaf_count": 0,
+      "stem_count": 1,
+      "vitality": 0.01,
+      "fecundity": 0.0,
+      "mortality_risk": 0.99
+    },
+    {
+      "elapsed_days": 5.0,
+      "age_days": 5.0,
+      "life_phase": "juvenile",
+      "maturity": 0.0137,
+      "placement_count": 2,
+      "leaf_count": 0,
+      "leaf_cluster_count": 0,
+      "estimated_leaf_count": 0,
+      "stem_count": 1,
+      "vitality": 0.0124,
+      "fecundity": 0.0,
+      "mortality_risk": 0.9876
+    }
+  ]
+}

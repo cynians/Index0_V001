@@ -13,6 +13,7 @@ from simulations.world_gen.world_gen_sim import WorldGenSimulation
 from simulations.building.building_sim import BuildingSimulation
 from simulations.phylogeny.phylogeny_simulation import PhylogenySimulation
 from simulations.formation.formation_simulation import FormationSimulation
+from simulations.species.species_simulation import SpeciesSimulation
 from world.temporal import DEFAULT_SIMULATION_YEAR
 
 try:
@@ -449,6 +450,45 @@ class NavigationController:
         self.app.camera_controller.setup_for_sim(new_phylogeny_sim)
         return True
 
+    def launch_species_sim_tab(self, species_entity_id):
+        """Open the standalone biological growth lab for one species."""
+        if not species_entity_id:
+            return False
+
+        species_entity = self.app.world_model.get_entity(species_entity_id)
+        if not isinstance(species_entity, dict):
+            return False
+        if species_entity.get("_dataset") != "species" and species_entity.get("type") != "species":
+            return False
+
+        tab_key = ("species", species_entity_id)
+        if self.focus_existing_tab_by_key(tab_key):
+            self.app.knowledge_layer_active = False
+            return True
+
+        simulation = SpeciesSimulation(
+            world_model=self.app.world_model,
+            species_id=species_entity_id,
+            species_entity=species_entity,
+            seed=1,
+        )
+        label = (
+            species_entity.get("common_name")
+            or species_entity.get("binomial_name")
+            or species_entity.get("pretty_name")
+            or species_entity_id
+        )
+        new_tab = Tab(
+            SimulationInstance(simulation),
+            name=f"Species Sim: {label}",
+            tab_key=tab_key,
+        )
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+        self.app.camera_controller.setup_for_sim(simulation)
+        return True
+
     def launch_world_gen_tab(self, planet_location_id):
         """
         Open or focus a planetary world-generation workspace.
@@ -593,7 +633,8 @@ class NavigationController:
         if entity is None:
             return False
 
-        mode = launch_mode or self.launch_resolver.default_mode_for_entity(entity)
+        mode = launch_mode or self.launch_resolver.default_mode_for_entity(
+            entity, getattr(self.app.world_model, "plant_catalogue", None))
         if not mode:
             return False
 
@@ -670,6 +711,9 @@ class NavigationController:
 
         if mode == "phylogeny":
             return self.launch_phylogeny_tab(entity_id)
+
+        if mode == "species":
+            return self.launch_species_sim_tab(entity_id)
 
         return False
 
@@ -917,6 +961,9 @@ class NavigationController:
         if render_mode == "pop":
             return getattr(active_sim, "pop_entity_id", None) or self.app.repository_scope_entity_id
 
+        if render_mode == "species":
+            return getattr(active_sim, "species_id", None) or self.app.repository_scope_entity_id
+
         return self.app.repository_scope_entity_id
 
     def open_repository_workspace(self, active_sim):
@@ -1027,6 +1074,10 @@ class NavigationController:
         Route structured UI action payloads.
         """
         action_id = action.get("id")
+
+        if action_id == "launch_species_sim":
+            entity_id = action.get("entity_id") or self.app.repository_scope_entity_id
+            return self.launch_species_sim_tab(entity_id)
 
         if action_id == "activate_tab":
             tab_index = action.get("tab_index")
@@ -1218,6 +1269,31 @@ class NavigationController:
 
         if action_id == "vehicle_mode_operational" and active_sim is not None:
             return bool(getattr(active_sim, "set_view_mode", lambda mode: False)("operational"))
+
+        if action_id == "launch_species_sim":
+            entity_id = self.app.repository_scope_entity_id
+            if not entity_id:
+                entity_id = getattr(active_sim, "species_id", None)
+            return self.launch_species_sim_tab(entity_id)
+
+        if action_id == "species_sim_age_down" and active_sim is not None:
+            changed = bool(getattr(active_sim, "adjust_age", lambda _days: False)(-30.0))
+            if changed:
+                self.app.camera_controller.setup_for_sim(active_sim)
+            return changed
+
+        if action_id == "species_sim_age_up" and active_sim is not None:
+            changed = bool(getattr(active_sim, "adjust_age", lambda _days: False)(30.0))
+            if changed:
+                self.app.camera_controller.setup_for_sim(active_sim)
+            return changed
+
+        if action_id == "species_sim_lod" and active_sim is not None:
+            current_lod = int(getattr(active_sim, "lod", 0) or 0)
+            changed = bool(getattr(active_sim, "set_lod", lambda _lod: False)((current_lod + 1) % 3))
+            if changed:
+                self.app.camera_controller.setup_for_sim(active_sim)
+            return changed
 
         if action_id == "open_repository":
             return self.open_repository_workspace(active_sim)

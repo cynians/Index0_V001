@@ -1,0 +1,141 @@
+# Species Sim root architecture
+
+Implemented and compared on 2026-09-05. This is a representative structural
+growth model, not a calibrated root physiology or soil simulation.
+
+## Existing ontology candidates
+
+Candidates were selected through `PersistentOntologyStore.load_datasets()`:
+the decoded projection of the authoritative live SQLite quadstore for
+`ontology/index0.owl`. No species fields were changed.
+
+| Species | ID | Authored architecture | Authored depth class |
+|---|---|---|---|
+| English Oak | spec_quercus_robur | taproot | deep |
+| Perennial Ryegrass | spec_lolium_perenne | fibrous | shallow |
+| European White Water Lily | spec_nymphaea_alba | adventitious | shallow |
+
+All three lack `max_root_depth`. Silver Birch also has authored root traits
+(`mixed`, `intermediate`), but was not one of the three visual candidates.
+The mixed grammar is covered by automated tests.
+
+## Inputs and assumptions
+
+- `root_architecture`: taproot, fibrous, adventitious, mixed, other_unknown.
+  Missing/unknown architectures stay explicitly unresolved and generate no
+  invented root network. The existing crown marker remains.
+- `root_depth_class`: shallow = 0.35 m, intermediate = 1.0 m, deep = 2.0 m.
+  Missing/unrecognised class uses 0.6 m. These are **runtime proxy values**,
+  not measurements or botanical limits. They are never written to the ontology.
+- `max_root_depth`: a finite positive `max_m` (or `value_m`) in the structured
+  field overrides the class default. Units are explicitly metres; arbitrary
+  strings and other units are not silently interpreted. Source metadata
+  distinguishes authored maximum, depth-class default, and runtime default.
+- Root extent increases with the existing species maturity fraction. It starts
+  with a small initial root and reaches its target at structural maturity.
+  Age is inherited from the existing Species Sim life-history model; this pass
+  does not calibrate species-specific chronological growth rates.
+
+Architecture and depth remain independent: a taproot may be shallow, and a
+fibrous system may be deep. The grammar is a compact proxy for the authored
+primary architecture, not a claim that these categories are mutually exclusive
+or immutable through a plant's life. General background on primary and fibrous
+root development is provided by [RHS: How plants grow](https://www.rhs.org.uk/advice/understanding-plants/how-plants-grow).
+
+## Structure and rendering
+
+Taproot creates a dominant descending axis with attached lateral and fine
+axes. Fibrous creates several similarly sized axes from the crown. Mixed
+retains a descending main axis with a wider lateral footprint. Adventitious
+creates roots at separate supporting-stem nodes. For the aquatic grammar,
+the support is a short horizontal rhizome proxy at the existing submerged crown;
+other forms use a compact stem-base support.
+
+`root_section` represents only a root segment and reuses the optional root
+asset. `root_support` is explicitly a **stem_section** module, drawn separately
+from the roots. It is not counted as root length. This preserves the organ and
+structure separation contract. Existing shoot placements are unchanged.
+
+Root geometry uses the existing z-up 3D placement graph, parent indices and
+orientation frames. Curved axes are approximated by short tapered segments.
+All root segments descend at or below the crown; water-lily roots remain below
+its submerged crown. Snapshot bounds include all visible root endpoints.
+
+The **Roots** tab provides an enlarged view, scale bar, source label, crown or
+sediment line, depth, radial diameter, and representative root length. Individual
+and other diagnostic views use the same graph and renderer. Soil tinting is
+applied only when clearing a view, so subsequent forest individuals do not
+erase previously drawn roots.
+
+## Compact outcomes and detail budgets
+
+Snapshots expose `root_depth_m` (below the crown), `root_spread_m` (twice maximum
+horizontal distance from the crown), `root_length_m`, `root_segment_count`,
+`root_visible_segment_count`, `root_origin_z_m`, `root_depth_source`, and
+`root_model_status`. Adventitious graphs also report support-node count.
+Ecological outcomes carry depth, spread, length, source, and model status.
+These metrics do not yet alter resource uptake or mortality.
+
+Canonical geometry is bounded to fewer than 400 nodes for the current grammar.
+LOD filters branch orders with complete ancestry: 0 keeps primary axes, 1 adds
+first-order laterals, and 2 includes fine axes. Compact root metrics are computed
+from canonical geometry and stay identical across LODs. Root RNG is separate
+from shoot RNG; per-axis seeds prevent fine-root emergence from reshuffling
+pre-existing primary directions. Frozen older blueprints get compatible root
+module definitions in their snapshots. The root profile's grammar version is
+included in newly derived blueprint fingerprints.
+
+## Comparison and refinement log
+
+1. **Round 1:** Connected roots and metrics worked, but ryegrass and water lily
+   looked nearly identical. Roots started at a single point, axes were too
+   straight, and fine-root emergence consumed randomness for later axes.
+2. **Round 2:** Added independent submerged supporting-stem nodes for the water
+   lily, curved/tapered axes, stable per-axis randomness, gradual fine-root
+   elongation, and the Roots tab. A deterministic deepest primary reaches the
+   class-derived target in fibrous and adventitious systems.
+3. **Final refinement:** Increased support visibility, labelled sediment/crown,
+   added a same-scale comparison, preserved root graphs in forest drawing, and
+   checked older blueprint compatibility.
+
+Mature seed 303, final runtime results:
+
+| Candidate | Depth below crown | Radial diameter | Representative root length |
+|---|---:|---:|---:|
+| English Oak | 2.00 m | 2.43 m | 26.65 m |
+| Perennial Ryegrass | 0.35 m | 0.55 m | 9.24 m |
+| European White Water Lily | 0.35 m | 1.13 m | 8.99 m |
+
+These are simulated structural quantities, not empirical species estimates.
+The comparison is satisfactory for this architecture pass: three visibly
+different attachment strategies, consistent development, valid connected
+graphs, and explicit assumptions. Root turnover, real soil constraints,
+water/nutrient uptake, root hairs, species-specific depth/spread calibration,
+and true clonal-ramet rooting remain future work. The existing aboveground oak
+preview also needs its own separate fidelity pass.
+
+## Reproduction and verification
+
+Run `py -m tools.render_root_comparison --output artifacts/root_comparison_final`
+from the project root. `SDL_VIDEODRIVER=dummy` enables headless rendering.
+
+Outputs in `artifacts/root_comparison_final/`:
+
+- `root_comparison.png`: whole plants and enlarged root details; independent
+  scales are stated and each view has a scale bar.
+- `root_common_scale.png`: all three root systems at the same scale.
+- `root_growth_stages.png`: 10%, 40%, and 100% maturity using the same mature
+  camera bounds within each species column.
+- `spec_*_roots.png`: actual Roots-tab renderer previews.
+- `root_comparison.json`: authored inputs, resolved defaults, and stage metrics.
+- `seed_lod_audit.json`: 60 species/seed/age cases, each compared at three LODs.
+
+Automated tests cover all four known architectures, finite geometry, parent
+connectivity, bounded depth and node counts, progressive growth, seed stability,
+LOD-independent metrics, round-trip snapshot serialization, unknown traits,
+invalid numeric inputs, authored overrides, aquatic stem attachments, shoot
+independence, and older blueprint compatibility.
+
+The desktop app launched and entered its main loop, but the Windows automation
+surface did not return its window. Images are fresh Species Sim renderer
+previews, not live desktop screenshots; mouse navigation remains unverified.

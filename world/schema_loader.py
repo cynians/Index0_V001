@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from world.persistent_ontology_store import PersistentOntologyStore
+from world.plant_traits import PLANT_LEGACY_FIELDS, PLANT_TRAIT_SCHEMA_FIELDS
 
 
 class SchemaLoader:
@@ -52,6 +53,17 @@ class SchemaLoader:
         }
         schema.setdefault("schema", entity.get("schema") or entity.get("name") or entity.get("id"))
         schema.setdefault("fields", {})
+        if schema.get("schema") == "species":
+            # The species schema is intentionally code-owned for this pass.
+            # Existing ontology rows are artefacts and are not migrated.
+            fields = dict(schema.get("fields") or {})
+            fields = {
+                key: value
+                for key, value in fields.items()
+                if key not in PLANT_TRAIT_SCHEMA_FIELDS and key not in PLANT_LEGACY_FIELDS
+            }
+            fields.update({key: dict(value) for key, value in PLANT_TRAIT_SCHEMA_FIELDS.items()})
+            schema["fields"] = fields
         return schema
 
     def _schema_name_for(self, schema, entity):

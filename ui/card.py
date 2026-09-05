@@ -16,6 +16,26 @@ from ui.card_task import CardTaskMixin
 from ui.card_wiki import CardWikiRenderer
 from ui.text_editing import TextEditing
 from world.schema_loader import SchemaLoader
+from world.plant_growth_catalog import (
+    PLANT_GROWTH_BEHAVIOUR_FIELD,
+    PLANT_GROWTH_FORM_FIELD,
+    PLANT_LIFESPAN_FIELD,
+    PLANT_LIFE_CYCLE_FIELD,
+    canonical_controlled_plant_value,
+    controlled_plant_field_display_label,
+    controlled_plant_field_rows,
+)
+from world.plant_traits import (
+    PLANT_LEGACY_FIELDS,
+    PLANT_TRAIT_DROPDOWN_FIELDS,
+    PLANT_TRAIT_FIELDS,
+)
+from world.species_inheritance import (
+    INFERENCE_CONFLICTS_KEY,
+    INFERRED_FIELDS_KEY,
+    is_inheritable_species_field,
+    resolve_species_field,
+)
 from world.year_utils import parse_year
 from simulations.space.stellar import STELLAR_CLASS_HELP, is_valid_stellar_class
 
@@ -42,6 +62,13 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
     IMAGE_TOP = 86
     IMAGE_H = 110
     MEDIA_IMAGE_H = 244
+    PLANT_ASSET_QUICK_ACTIONS = (
+        ("leaf", "Leaf"),
+        ("stem", "Stem"),
+        ("branch", "Branch"),
+        ("flower", "Flower"),
+        ("fruit", "Fruit"),
+    )
     LAUNCH_H = 24
     # Reserve a full line for the related-period timeline below the main
     # timeline.  The previous 58px gap was shorter than a normal font line,
@@ -330,32 +357,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         "formation_requirements",
         "formation_contract_status",
     }
-    PLANT_ECOLOGY_SIM_FIELDS = {
-        "plant_growth_form",
-        "plant_life_cycle",
-        "plant_canopy_layer",
-        "photosynthesis_pathway",
-        "light_tolerance",
-        "moisture_tolerance",
-        "soil_texture_tolerance",
-        "soil_drainage_tolerance",
-        "soil_ph_tolerance",
-        "temperature_tolerance_c",
-        "frost_tolerance_c",
-        "disturbance_tolerance",
-        "trampling_tolerance",
-        "salinity_tolerance",
-        "altitude_tolerance_m",
-        "worldgen_suitability_profile",
-        "biosphere_growth_profile",
-        "establishment_requirements",
-        "rooting_profile",
-        "reproductive_strategy",
-        "dispersal_vectors",
-        "succession_roles",
-        "pollination_vectors",
-        "biotic_interactions",
-        "simulation_notes",
+    PLANT_ECOLOGY_SIM_FIELDS = PLANT_TRAIT_FIELDS | {
+        "plant_blueprint_ref",
+        "plant_growth_snapshot_ref",
     }
     TOOLBELT_TOOL_DEFINITIONS = [
         {
@@ -435,6 +439,58 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                     "description": "Choose a parent if needed, then open its map for placement.",
                     "action_id": "knowledge_place_location_on_parent",
                     "requires": "surface_location",
+                },
+            ],
+        },
+        {
+            "match": {"species"},
+            "tools": [
+                {
+                    "id": "species_sim_lab",
+                    "label": "Species Sim Lab",
+                    "description": "Open the individual, growth gallery, and forest diagnostic views.",
+                    "action_id": "launch_species_sim",
+                    "requires": "plant_species",
+                },
+                {
+                    "id": "plant_asset_leaf",
+                    "kind": "plant_asset_creator",
+                    "asset_role": "leaf",
+                    "label": "Create Leaf Sprite",
+                    "description": "Create or reopen this species' reusable leaf module in Pixel Studio.",
+                    "requires": "plant_species",
+                },
+                {
+                    "id": "plant_asset_stem",
+                    "kind": "plant_asset_creator",
+                    "asset_role": "stem",
+                    "label": "Create Stem Sprite",
+                    "description": "Create or reopen the reusable stem section for this species.",
+                    "requires": "plant_species",
+                },
+                {
+                    "id": "plant_asset_branch",
+                    "kind": "plant_asset_creator",
+                    "asset_role": "branch",
+                    "label": "Create Branch Sprite",
+                    "description": "Create or reopen the reusable branch section for this species.",
+                    "requires": "plant_species",
+                },
+                {
+                    "id": "plant_asset_flower",
+                    "kind": "plant_asset_creator",
+                    "asset_role": "flower",
+                    "label": "Create Flower Sprite",
+                    "description": "Create or reopen this species' reusable flower module.",
+                    "requires": "plant_species",
+                },
+                {
+                    "id": "plant_asset_fruit",
+                    "kind": "plant_asset_creator",
+                    "asset_role": "fruit",
+                    "label": "Create Fruit Sprite",
+                    "description": "Create or reopen this species' reusable fruit module.",
+                    "requires": "plant_species",
                 },
             ],
         },
@@ -1082,7 +1138,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         return tools
 
     def _launch_mode_options(self):
-        return self.LAUNCH_AFFORDANCE_RESOLVER.options_for_entity(self.entity)
+        return self.LAUNCH_AFFORDANCE_RESOLVER.options_for_entity(
+            self.entity, getattr(self.world_model, "plant_catalogue", None))
 
     def _toolbelt_tool_is_available(self, tool):
         requirement = tool.get("requires")
@@ -1111,6 +1168,10 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 "map_canvas_height_px",
             )
             return not any(bool(self.entity.get(field)) for field in map_fields)
+
+        if requirement == "plant_species":
+            from simulations.species.plant_assets import is_plant_species_entity
+            return is_plant_species_entity(self.entity, getattr(self.world_model,"plant_catalogue",None))
 
         return True
 
@@ -1988,6 +2049,64 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
     def _is_scalar_schema_type(self, field_type):
         return field_type in {None, "string", "number", "text"}
 
+    def _is_controlled_choice_field(self, field_key):
+        return self._is_species_card() and field_key in ({
+            PLANT_GROWTH_FORM_FIELD,
+            PLANT_GROWTH_BEHAVIOUR_FIELD,
+            PLANT_LIFESPAN_FIELD,
+            PLANT_LIFE_CYCLE_FIELD,
+        } | PLANT_TRAIT_DROPDOWN_FIELDS)
+
+    def controlled_choice_rows(self, field_key):
+        if not self._is_controlled_choice_field(field_key):
+            return []
+        return controlled_plant_field_rows(field_key)
+
+    def controlled_choice_display_label(self, field_key, value):
+        if self._is_controlled_choice_field(field_key):
+            return controlled_plant_field_display_label(field_key, value)
+        return str(value or "")
+
+    def _species_field_resolution(self, field_key, value=None):
+        if value is None:
+            value = self.entity.get(field_key)
+        if not is_inheritable_species_field(field_key):
+            return {"value": value, "provenance": "authored"}
+        inferred = self.entity.get(INFERRED_FIELDS_KEY)
+        if isinstance(inferred, dict) and field_key in inferred:
+            marker = inferred.get(field_key) or {}
+            return {
+                "value": value,
+                "provenance": "inferred",
+                "source_ids": marker.get("source_ids", []) if isinstance(marker, dict) else [],
+            }
+        if not self._is_species_card():
+            return {"value": value, "provenance": "authored"}
+        if self.world_model is None or not getattr(self.world_model, "loader", None):
+            return {"value": value, "provenance": "authored" if value not in (None, "", [], {}) else "unknown"}
+        return resolve_species_field(self.world_model.loader, self.entity, field_key)
+
+    def _species_field_value(self, field_key, value=None):
+        resolution = self._species_field_resolution(field_key, value)
+        resolved_value = resolution.get("value")
+        return resolved_value, resolution.get("provenance", "unknown"), resolution.get("source_ids", [])
+
+    def select_controlled_choice(self, card, choice_index):
+        field_key = card.get("active_edit_field")
+        if not self._is_controlled_choice_field(field_key):
+            return False
+        choices = self.controlled_choice_rows(field_key)
+        if not isinstance(choice_index, int) or not (0 <= choice_index < len(choices)):
+            return False
+        choice = choices[choice_index]
+        if choice.get("kind") == "heading":
+            return False
+        card["choice_picker_selected_index"] = choice_index
+        card["choice_picker_value"] = choice["value"]
+        card["edit_buffer"] = choice["value"]
+        card["last_edit_action"] = "draft"
+        return True
+
     def _is_temporal_field(self, field_key, spec=None):
         if self._simulation_section_for_key(field_key):
             return False
@@ -2128,9 +2247,11 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         handled_keys = {
             "id", "pretty_name", "name", "common_name", "binomial_name", "type", "_dataset",
             "card_color", "card_header_color", "wiki_field_colors", "wiki_link_color",
+            INFERRED_FIELDS_KEY, INFERENCE_CONFLICTS_KEY,
             self.PERSON_QUOTE_FIELD,
             self.PERSON_CONVERSATION_FIELD,
         }
+        handled_keys.update(PLANT_LEGACY_FIELDS)
         handled_keys.update(key for key, _ in classification)
         handled_keys.update(key for key, _ in overview_dims)
 
@@ -2149,7 +2270,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             ordered_keys.append(key)
 
         for key in ordered_keys:
-            value = entity.get(key)
+            raw_value = entity.get(key)
+            value, _, _ = self._species_field_value(key, raw_value)
 
             if key in {
                 "id", "pretty_name", "name", "common_name", "binomial_name", "type", "_dataset",
@@ -2859,6 +2981,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             return False
 
         value = card if field_key == self.TIMELINE_SNAPSHOT_FIELD else self.entity.get(field_key)
+        if field_key != self.TIMELINE_SNAPSHOT_FIELD:
+            value = self._species_field_resolution(field_key, value).get("value")
         schema_field_specs = self._get_schema_field_specs()
         if not self._is_field_editable(field_key, value, schema_field_specs):
             return False
@@ -2873,6 +2997,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
         card["active_edit_field"] = field_key
         card["edit_original_value"] = value
+        card["choice_picker_open"] = self._is_controlled_choice_field(field_key)
+        card["choice_picker_hitboxes"] = []
+        card["choice_picker_value"] = value if self._is_controlled_choice_field(field_key) else None
         if field_key == "tags":
             card["tag_selected_index"] = 0
         self._clear_edit_preferred_column(card)
@@ -2886,6 +3013,25 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             return True
 
         card["edit_buffer"] = self._initial_edit_buffer(field_key, value)
+        if self._is_controlled_choice_field(field_key):
+            canonical = canonical_controlled_plant_value(field_key, value)
+            card["edit_buffer"] = canonical
+            choice_rows = self.controlled_choice_rows(field_key)
+            card["choice_picker_selected_index"] = next(
+                (
+                    index
+                    for index, row in enumerate(choice_rows)
+                    if row.get("kind") != "heading" and row.get("value") == canonical
+                ),
+                next(
+                    (
+                        index
+                        for index, row in enumerate(choice_rows)
+                        if row.get("kind") != "heading"
+                    ),
+                    0,
+                ),
+            )
         card["edit_cursor"] = len(card["edit_buffer"])
         return True
 
@@ -2940,7 +3086,10 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             return True
 
         original_value = card.get("edit_original_value", self.entity.get(field_key))
-        new_value = self._coerce_edit_buffer(field_key, original_value, card.get("edit_buffer", ""))
+        if self._is_controlled_choice_field(field_key):
+            new_value = card.get("choice_picker_value") or original_value
+        else:
+            new_value = self._coerce_edit_buffer(field_key, original_value, card.get("edit_buffer", ""))
         if field_key in {"star_class", "spectral_class"} and str(new_value or "").strip():
             if not is_valid_stellar_class(new_value):
                 card["edit_validation_message"] = f"Invalid stellar class. {STELLAR_CLASS_HELP}"
@@ -2967,6 +3116,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         if isinstance(draft_buffers, dict):
             draft_buffers.pop(field_key, None)
         card["active_edit_field"] = None
+        card["choice_picker_open"] = False
+        card["choice_picker_hitboxes"] = []
+        card.pop("choice_picker_value", None)
         card["edit_buffer"] = ""
         card["edit_original_value"] = None
         card["edit_cursor"] = 0
@@ -2992,6 +3144,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         card["last_edit_action"] = "cancel"
         card.pop("edit_validation_message", None)
         card["active_edit_field"] = None
+        card["choice_picker_open"] = False
+        card["choice_picker_hitboxes"] = []
+        card.pop("choice_picker_value", None)
         card["edit_buffer"] = ""
         card["edit_original_value"] = None
         card["edit_cursor"] = 0
@@ -3023,6 +3178,30 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 card["is_edit_mode"] = False
                 return True
             return False
+
+        if self._is_controlled_choice_field(active_field) and card.get("choice_picker_open", False):
+            choice_rows = self.controlled_choice_rows(active_field)
+            choice_indices = [
+                index for index, row in enumerate(choice_rows) if row.get("kind") != "heading"
+            ]
+            if not choice_indices:
+                return True
+            selected_index = int(card.get("choice_picker_selected_index", choice_indices[0]))
+            if selected_index not in choice_indices:
+                selected_index = choice_indices[0]
+            current_choice = choice_indices.index(selected_index)
+            if event.key == pygame.K_UP:
+                card["choice_picker_selected_index"] = choice_indices[max(0, current_choice - 1)]
+                return True
+            if event.key == pygame.K_DOWN:
+                card["choice_picker_selected_index"] = choice_indices[min(len(choice_indices) - 1, current_choice + 1)]
+                return True
+            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                self.select_controlled_choice(card, card["choice_picker_selected_index"])
+                return True
+            if event.key == pygame.K_ESCAPE:
+                return self.cancel_edit_field(card)
+            return True
 
         if event.key == pygame.K_a and (event.mod & pygame.KMOD_CTRL):
             self._clear_edit_preferred_column(card)
@@ -3453,7 +3632,11 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
     def _measure_table_row(self, font, key, value, key_column_w, value_column_w):
         rendered_key = f"{self._field_display_label(key)}:"
         key_lines = self._wrap_text_lines(rendered_key, font, max(20, key_column_w - 12))
-        rendered_value = self._format_table_value(key, value)
+        rendered_value = (
+            self.controlled_choice_display_label(key, value)
+            if self._is_controlled_choice_field(key)
+            else self._format_table_value(key, value)
+        )
         wrapped_lines = self._wrap_text_lines(rendered_value, font, value_column_w)
         if self._is_material_model_field(key) and isinstance(value, dict):
             item_count = max(1, len(self._material_model_items(value)))
@@ -3471,6 +3654,51 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             "end_event": "  commentary",
             "snapshot_year": "snapshot year",
             "temporal_periods": "periods",
+            "plant_growth_form": "growth form",
+            "plant_growth_behaviour": "growth behaviour",
+            "plant_lifespan": "life-cycle behaviour",
+            "plant_life_cycle": "life-cycle behaviour",
+            "plant_life_form": "Raunkiær life form",
+            "plant_woodiness": "woodiness",
+            "mature_height": "mature height",
+            "mature_height_class": "mature height class",
+            "growth_rate": "growth rate",
+            "maturity_rate": "maturity rate",
+            "longevity_class": "longevity class",
+            "leaf_phenology": "leaf phenology",
+            "leaf_size_class": "leaf size class",
+            "leaf_structure": "leaf structure",
+            "leaf_arrangement": "leaf arrangement",
+            "leaf_attachment_pattern": "leaf attachment",
+            "leaf_clustering": "leaf clustering",
+            "succulence": "succulence",
+            "root_architecture": "root architecture",
+            "root_depth_class": "root depth class",
+            "belowground_storage": "belowground storage",
+            "max_root_depth": "maximum root depth",
+            "reproductive_mode": "reproductive mode",
+            "pollination": "pollination",
+            "dispersal": "dispersal",
+            "seed_size_class": "seed size class",
+            "clonal_spread": "clonal spread",
+            "resprouting": "resprouting",
+            "regeneration_strategy": "regeneration strategy",
+            "nitrogen_fixation": "nitrogen fixation",
+            "nutrition_mode": "nutrition mode",
+            "mycorrhizal_type": "mycorrhizal type",
+            "shade_tolerance": "shade tolerance",
+            "moisture_preference": "moisture preference",
+            "waterlogging_tolerance": "waterlogging tolerance",
+            "temperature_range": "temperature range",
+            "frost_tolerance": "frost tolerance",
+            "soil_ph_range": "soil pH range",
+            "salinity_tolerance": "salinity tolerance",
+            "plant_root_module_ref": "root sprite",
+            "plant_stem_module_ref": "stem sprite",
+            "plant_branch_module_ref": "branch sprite",
+            "plant_leaf_module_ref": "leaf sprite",
+            "plant_flower_module_ref": "flower sprite",
+            "plant_fruit_module_ref": "fruit sprite",
         }
         return labels.get(field_key, str(field_key or ""))
 
@@ -4270,6 +4498,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         subtab_hitboxes = []
         media_import_hitboxes = []
         media_pixel_art_hitboxes = []
+        media_asset_quick_hitboxes = []
         media_add_illustration_rect = None
         media_illustration_rows = []
         media_illustration_link_hitboxes = []
@@ -4404,6 +4633,16 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         if self._is_media_mode():
             media_add_illustration_rect = pygame.Rect(image_rect.right - 148, image_rect.y + 8, 136, 24)
             row_y = image_rect.y + 44
+            if card.get("is_edit_mode", False) and self._toolbelt_tool_is_available({"requires": "plant_species"}):
+                quick_y = image_rect.y + 42
+                quick_x = image_rect.x + 8
+                quick_gap = 5
+                quick_w = max(52, (image_rect.width - 16 - quick_gap * (len(self.PLANT_ASSET_QUICK_ACTIONS) - 1)) // len(self.PLANT_ASSET_QUICK_ACTIONS))
+                for asset_role, label in self.PLANT_ASSET_QUICK_ACTIONS:
+                    quick_rect = pygame.Rect(quick_x, quick_y, quick_w, 22)
+                    media_asset_quick_hitboxes.append((asset_role, quick_rect))
+                    quick_x = quick_rect.right + quick_gap
+                row_y = quick_y + 30
             row_h = 58
             row_gap = 8
             button_w = 92
@@ -4699,11 +4938,14 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                         if card.get("is_edit_mode", False) and self._is_field_editable(key, value, schema_field_specs):
                             content_editable_field_hitboxes.append((key, row_rect))
 
+                        _, provenance, inference_source_ids = self._species_field_value(key, value)
                         field_rows.append(
                             {
                                 "section": section_name,
                                 "key": key,
                                 "value": value,
+                                "inferred": provenance == "inferred",
+                                "inference_source_ids": inference_source_ids,
                                 "row_rect": row_rect,
                                 "key_rect": key_rect,
                                 "value_rect": value_rect,
@@ -4758,6 +5000,11 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             media_pixel_art_hitboxes = [
                 (illustration_id, button_rect.move(0, -scroll_y).clip(content_viewport_rect))
                 for illustration_id, button_rect in media_pixel_art_hitboxes
+                if button_rect.move(0, -scroll_y).colliderect(content_viewport_rect)
+            ]
+            media_asset_quick_hitboxes = [
+                (asset_role, button_rect.move(0, -scroll_y).clip(content_viewport_rect))
+                for asset_role, button_rect in media_asset_quick_hitboxes
                 if button_rect.move(0, -scroll_y).colliderect(content_viewport_rect)
             ]
             if media_add_illustration_rect is not None:
@@ -5095,6 +5342,11 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             media_pixel_art_hitboxes = [
                 (illustration_id, button_rect.clip(content_viewport_rect))
                 for illustration_id, button_rect in media_pixel_art_hitboxes
+                if button_rect.colliderect(content_viewport_rect)
+            ]
+            media_asset_quick_hitboxes = [
+                (asset_role, button_rect.clip(content_viewport_rect))
+                for asset_role, button_rect in media_asset_quick_hitboxes
                 if button_rect.colliderect(content_viewport_rect)
             ]
             if media_add_illustration_rect is not None:
@@ -5495,6 +5747,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         card["section_draw_rects"] = section_draw_rects
         card["media_import_hitboxes"] = media_import_hitboxes
         card["media_pixel_art_hitboxes"] = media_pixel_art_hitboxes
+        card["media_asset_quick_hitboxes"] = media_asset_quick_hitboxes
         card["media_add_illustration_rect"] = media_add_illustration_rect
         card["media_illustration_rows"] = media_illustration_rows
         card["media_illustration_link_hitboxes"] = media_illustration_link_hitboxes
@@ -6515,6 +6768,20 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             add_text = font.render("Add Illustration", True, (245, 245, 245))
             screen.blit(add_text, add_text.get_rect(center=add_rect.center))
 
+        quick_buttons = {
+            asset_role: button_rect
+            for asset_role, button_rect in card.get("media_asset_quick_hitboxes", [])
+        }
+        if quick_buttons:
+            quick_labels = dict(self.PLANT_ASSET_QUICK_ACTIONS)
+            for asset_role, button_rect in quick_buttons.items():
+                hovered = button_rect.collidepoint(pygame.mouse.get_pos())
+                fill = (68, 88, 120) if hovered else (48, 60, 82)
+                pygame.draw.rect(screen, fill, button_rect)
+                pygame.draw.rect(screen, (166, 190, 224), button_rect, 1)
+                label = font.render(quick_labels.get(asset_role, asset_role.title()), True, (242, 246, 252))
+                screen.blit(label, label.get_rect(center=button_rect.center))
+
         rows = card.get("media_illustration_rows", [])
         if not rows:
             empty_rect = pygame.Rect(image_rect.x + 8, image_rect.y + 46, image_rect.width - 16, 58)
@@ -6719,6 +6986,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             return
 
         card["relation_picker_hitboxes"] = []
+        card["choice_picker_hitboxes"] = []
         editable_hitboxes = {
             field_key: field_rect
             for field_key, field_rect in card.get("editable_field_hitboxes", [])
@@ -6727,6 +6995,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         for row in card.get("field_rows", []):
             rows_by_section.setdefault(row["section"], []).append(row)
         active_relation_anchor = None
+        active_choice_anchor = None
         section_draw_rects = card.get("section_draw_rects", card.get("section_hitboxes", []))
 
         for section_name in self._visible_sections():
@@ -6751,6 +7020,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 key = row["key"]
                 value = row.get("value")
                 row_rect = row["row_rect"]
+                is_inferred = bool(row.get("inferred", False))
                 is_active_field = key == card.get("active_edit_field")
                 is_relation_link_target = key == card.get("active_relation_link_field")
                 is_editable = key in editable_hitboxes
@@ -6759,6 +7029,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 row_border = (78, 84, 100)
                 if is_editable:
                     row_fill = (42, 47, 58)
+                if is_inferred:
+                    row_fill = (37, 55, 56)
                 if is_relation_link_target:
                     row_fill = (36, 50, 70)
                     row_border = (126, 166, 224)
@@ -6787,22 +7059,32 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                     key_y += line_h
 
                 if is_editable and not is_active_field:
-                    hint_label = "timeline" if key in self.TEMPORAL_FIELDS else "editable"
-                    hint_surface = font.render(hint_label, True, (130, 150, 185))
+                    hint_label = "inferred" if is_inferred else ("timeline" if key in self.TEMPORAL_FIELDS else "editable")
+                    hint_color = (136, 204, 190) if is_inferred else (130, 150, 185)
+                    hint_surface = font.render(hint_label, True, hint_color)
                     hint_x = row["key_rect"].right - hint_surface.get_width() - 6
                     key_text_right = row["key_rect"].x + 6 + key_text_max_w
                     if len(key_lines) == 1 and hint_x > key_text_right + 8:
                         screen.blit(hint_surface, (hint_x, row_rect.y + self.TABLE_ROW_PAD_Y))
 
                 if is_active_field and card.get("is_edit_mode", False):
+                    active_value = card.get("edit_buffer", "")
+                    if self._is_controlled_choice_field(key):
+                        active_value = self.controlled_choice_display_label(
+                            key,
+                            card.get("choice_picker_value") or active_value,
+                        ) + "  v"
                     wrapped_lines = self._wrap_text_lines(
-                        card.get("edit_buffer", ""),
+                        active_value,
                         font,
                         row["value_rect"].width,
                     )
                     value_color = (245, 245, 245)
                 else:
-                    value_color = (215, 225, 245) if is_editable else (180, 180, 180)
+                    if is_inferred:
+                        value_color = (178, 224, 207)
+                    else:
+                        value_color = (215, 225, 245) if is_editable else (180, 180, 180)
                     wrapped_lines = row["wrapped_lines"]
 
                 relation_chips = row.get("relation_chips", [])
@@ -6853,9 +7135,13 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
                 if is_active_field and card.get("relation_picker_open", False):
                     active_relation_anchor = row["value_rect"]
+                if is_active_field and card.get("choice_picker_open", False):
+                    active_choice_anchor = row["value_rect"]
 
         if active_relation_anchor is not None:
             self._draw_relation_picker(screen, font, card, active_relation_anchor)
+        if active_choice_anchor is not None:
+            self._draw_controlled_choice_picker(screen, font, card, active_choice_anchor)
 
     def _draw_general_content(self, screen, font, card):
         self._draw_tag_bar(screen, font, card)
@@ -7153,3 +7439,53 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             screen.blit(primary_surface, (row_rect.x + 8, row_rect.y + 3))
             screen.blit(secondary_surface, (row_rect.x + 8, row_rect.y + 18))
             row_y += 40
+
+    def _draw_controlled_choice_picker(self, screen, font, card, anchor_rect):
+        """Draw the nested plant-growth vocabulary as a compact dropdown."""
+
+        field_key = card.get("active_edit_field")
+        rows = card.get("card_view", self).controlled_choice_rows(field_key)
+        if not rows:
+            return
+
+        picker_w = min(420, max(300, anchor_rect.width))
+        picker_h = 30 + len(rows) * 28 + 12
+        picker_rect = pygame.Rect(anchor_rect.x, anchor_rect.bottom + 6, picker_w, picker_h)
+        screen_rect = screen.get_rect()
+        picker_rect.x = max(8, min(picker_rect.x, screen_rect.right - picker_rect.width - 8))
+        if picker_rect.bottom > screen_rect.bottom - 8:
+            picker_rect.y = max(8, anchor_rect.y - picker_rect.height - 6)
+
+        card["choice_picker_hitboxes"] = []
+        pygame.draw.rect(screen, (22, 26, 36), picker_rect)
+        pygame.draw.rect(screen, (186, 194, 210), picker_rect, 1)
+
+        title_text = self._ellipsize_text(
+            " / ".join(
+                str(row.get("label", ""))
+                for row in rows
+                if row.get("kind") == "heading"
+            ),
+            font,
+            picker_rect.width - 20,
+        )
+        title = font.render(title_text, True, (244, 244, 244))
+        screen.blit(title, (picker_rect.x + 10, picker_rect.y + 7))
+
+        selected_index = int(card.get("choice_picker_selected_index", -1))
+        row_y = picker_rect.y + 30
+        for index, row in enumerate(rows):
+            row_rect = pygame.Rect(picker_rect.x + 10, row_y, picker_rect.width - 20, 26)
+            if row.get("kind") == "heading":
+                pygame.draw.rect(screen, (36, 42, 56), row_rect)
+                label = "  " * int(row.get("depth", 0)) + str(row.get("label", ""))
+                label_surface = font.render(label, True, (170, 190, 220))
+                screen.blit(label_surface, (row_rect.x + 6, row_rect.y + 4))
+            else:
+                selected = index == selected_index
+                pygame.draw.rect(screen, (54, 64, 82) if selected else (30, 34, 44), row_rect)
+                pygame.draw.rect(screen, (194, 206, 228) if selected else (88, 96, 112), row_rect, 1)
+                label_surface = font.render(str(row.get("label", "")), True, (242, 242, 242))
+                screen.blit(label_surface, (row_rect.x + 14, row_rect.y + 4))
+                card["choice_picker_hitboxes"].append((index, row_rect))
+            row_y += 28

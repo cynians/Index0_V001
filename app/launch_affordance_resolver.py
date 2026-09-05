@@ -10,6 +10,8 @@ MAP_SURFACE_FIELDS = (
     "material_heatmap_model",
 )
 
+from simulations.species.plant_assets import is_plant_species_entity
+
 ORBITAL_LOCATION_CLASSES = {
     "star",
     "planet",
@@ -93,7 +95,7 @@ class LaunchAffordanceResolver:
     the future simulation matrix into a premature framework.
     """
 
-    def options_for_entity(self, entity):
+    def options_for_entity(self, entity, plant_catalogue=None):
         if not isinstance(entity, dict):
             return []
 
@@ -185,6 +187,11 @@ class LaunchAffordanceResolver:
             ]
 
         if dataset_name in {"cladistics", "species"} or entity.get("type") in {"cladistics", "species"}:
+            if dataset_name == "species" or entity.get("type") == "species":
+                options = [_option("phylogeny", "Phylogeny", "Open the phylogeny simulation.", 100, entity_id)]
+                if is_plant_species_entity(entity, plant_catalogue):
+                    options.insert(0, _option("species", "Species Sim", "Open the modular plant growth lab.", 110, entity_id))
+                return options
             return [_option("phylogeny", "Phylogeny", "Open the phylogeny simulation.", 100, entity_id)]
 
         if dataset_name == "systems":
@@ -198,8 +205,8 @@ class LaunchAffordanceResolver:
 
         return []
 
-    def default_mode_for_entity(self, entity):
-        options = self.options_for_entity(entity)
+    def default_mode_for_entity(self, entity, plant_catalogue=None):
+        options = self.options_for_entity(entity, plant_catalogue)
         if not options:
             return None
 

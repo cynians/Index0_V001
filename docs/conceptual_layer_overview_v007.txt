@@ -332,6 +332,80 @@ The same rolling-strip/corridor mechanism should be reused for rivers. A river s
 Terraforming should be modeled primarily as logistics plus production plus long-running environmental intervention: delivered equipment, volatile imports/exports, orbital infrastructure, site creation, energy budgets, scheduled operations, and durable planetary state changes.
 Player-driven terraforming should influence volatile inventories, surface pressure, temperature, hydrology, atmospheric chemistry, and biosphere readiness through material and logistics chains rather than through one-off manual planet edits.
 
+14A. MARKET SYSTEM — CONSOLIDATED CONCEPT
+
+Markets are a coordination layer between production, inventories, consumers, actors, and logistics. Markets do not directly manufacture or move goods.
+
+The conceptual flow is:
+
+Supply + Demand + Access + Actor Intentions -> Offers / Prices / Procurement / Transactions
+
+Logistics handles physical movement when a transaction requires it.
+
+14A.1 HYBRID AGGREGATE–CORPORAL ECONOMY
+
+Markets operate at different detail levels. At low detail, supply, demand, production capacity, consumption, and trade flows may remain aggregate. As relevance increases, representative producers, consumers, merchants, vehicles, inventories, and transactions may be materialized.
+
+Corporal entities normally represent a larger aggregate process rather than a quantity removed from it. A corporal event may feed back into aggregate state according to the entity's representative weight. Aggregate and corporal state must remain reconciled and must not double-count goods, demand, throughput, or losses.
+
+14A.2 MARKET PARTICIPATION AND SCOPE
+
+Markets are primarily economic scopes, not necessarily physical places. Examples include village food markets, city industrial markets, planetary vehicle markets, military procurement markets, black markets, Transfer Hansa networks, and interstellar commodity markets.
+
+Markets may explicitly link producers, consumers, sites, merchants, institutions, and logistics actors. Runtime participation may also be inferred from location, market access, logistics reach, institutional rules, actor knowledge, and current circumstances. Explicit links describe known or intended relationships; inference allows temporary and emergent participation.
+
+Markets may overlap and nest. Physical marketplaces, exchanges, ports, warehouses, and bazaars may exist as corporal entities participating in one or more market scopes without being identical to those scopes.
+
+14A.3 DEMAND AND SUPPLY
+
+Demand may be explicit or inferred. Explicit demand comes from corporal persons, producers, factories, breweries, institutions, military bases, and other processes. Aggregate demand is inferred from population, settlement type, infrastructure, industry, living standards, and current events only where no explicit corporal source already owns that demand.
+
+Supply may likewise come from actual inventories, production lines, producers, and current throughput, or be inferred from regional productive capacity, population activity, resource availability, industrial structure, and historical context. Explicit state refines aggregate estimates.
+
+14A.4 LOCAL PRICING AND SCARCITY
+
+Prices belong primarily to individual market scopes. Aggregate supply and demand produce local price estimates or ranges. Where sufficient detail exists, individual sellers, offers, contracts, negotiations, quality, location, and seller-specific conditions may produce multiple simultaneous prices for the same good.
+
+Parent or planetary markets may expose derived prices, but do not impose those prices on child markets. Transport, shortages, accessibility, institutions, and local conditions may create regional price differences.
+
+Scarcity affects allocation and accessibility, not merely price. Goods may be unavailable, reserved by contract, rationed, institutionally prioritized, reserved for existing customers, or redirected to military or state use. Willingness to pay therefore does not guarantee access.
+
+14A.5 PROCUREMENT AND ACTOR AGENCY
+
+Trade between markets is primarily demand-driven. A consuming context searches accessible markets for suitable supply. Price differences may influence supplier selection, but speculative price-gap trading is not the fundamental driver of the economy.
+
+Supplier selection may consider price, transport cost, delivery time, reliability, risk, political relations, access restrictions, contracts, supplier relationships, quality, urgency, and logistics availability. Weighting is actor- and context-dependent.
+
+For corporal actors, the market provides information about suppliers, goods, offers, prices, conditions, access, and transaction history. The actor's own simulation decides what to do. Where no corporal actor exists, priorities are inferred from the consuming context rather than from one universal buyer profile.
+
+14A.6 MARKET ACCESS AND NETWORK MODEL
+
+The market network is the navigable economic network through which procurement searches propagate. It is distinct from physical geography and does not guarantee physical delivery.
+
+A market connection may be local, regional, planetary, interplanetary, institutional, contractual, informal, illicit, temporary, or actor-specific. Where known, a connection may describe direction, access requirements, political and institutional restrictions, logistics reach, capacity, cost, delay, reliability, risk, knowledge requirements, and temporal bounds.
+
+Procurement searches outward progressively through accessible connections:
+
+Local -> Regional -> Planetary -> Interplanetary
+
+Search is bounded by known markets, market access, physical and logistical reach, political access, institutional rules, economic relationships, actor knowledge, urgency, and acceptable cost or delay. A remote or uninformed actor cannot automatically use supply merely because it exists elsewhere in the simulation.
+
+Access resolution should return both a decision and an explanation, such as accessible, conditionally accessible, known but unreachable, reachable but restricted, unknown to the actor, temporarily closed, economically nonviable, or physically unavailable.
+
+14A.7 TRANSACTIONS AND LOGISTICS HANDOFF
+
+Procurement resolves demand, access, supply, offers, allocation, and supplier choice before creating a transaction. When corporal sites or inventories exist, a transaction creates a logistics requirement rather than making goods appear instantly. Logistics then attempts delivery and reports fulfillment, delay, loss, substitution, or failure back to the market state.
+
+Where detail is unavailable, the same trade may remain an aggregate flow.
+
+14A.8 ONTOLOGY AND RUNTIME STATE
+
+The ontology should primarily describe persistent knowledge: market scope, parent and child markets, connections, commodity scope, access rules, participants, trading mechanisms, currencies, institutional rules, and durable contracts or supplier relationships.
+
+Runtime state should contain changing conditions: supply, demand, offers, prices, shortages, procurement requests, reservations, allocations, transactions, trade flows, price history, current supplier relationships, actor-specific knowledge, and aggregate–corporal reconciliation state.
+
+Markets answer what can be traded, by whom, under what conditions, at what approximate price, and through which accessible relationships. Production determines what exists, consumers and processes determine what is needed, actors determine their own decisions, and logistics determines whether physical transfers occur.
+
 15. SIMULATION LAUNCH AND NAVIGATION MODEL
 Is-State:
 Star systems launch to root Space Simulation.
@@ -482,6 +556,10 @@ Should-Be State:
 BioSim should be modeled as a bioregion-first simulation layer with scale-dependent biological resolution. The main simulation object is a bioregion or biosphere context, while species, populations, colonies, nests, individuals, trails, and visitor events are resolved differently depending on the current simulation extent and grain.
 Rivers should be represented as a distinct bioregion type entry rather than only as map decoration or hydrology lines. The bioregion subclass should be `river`, and river bioregions should be able to launch or feed the rolling-strip river corridor mode described under logistics.
 Species representation in BioSim should depend on scale. At a 1 km2 scale, ants may be represented as nests, population patches, and foraging pressure. In a 30 x 30 m simulation, the same ant population may be resolved into trails or individual ants. Conversely, a large animal such as an anteater may not be viable as a resident of a 30 x 30 m patch, but may appear as an external visitor event if its range overlaps through a parent bioregion.
+Species Sim should be the expensive organism-level fidelity layer beneath BioSim. A BioSim patch should select a bounded, deterministic set of representative organisms for each relevant species and run them through Species Sim using the local climate, substrate, resources, season, disturbance, and interaction context. Species Sim results should feed back into population and assemblage state as rates and pressures such as growth, health, energy balance, fecundity, mortality, recruitment, resource demand, competition, predation exposure, disease pressure, dispersal, and disturbance response. The representative set is a sample or a set of archetypal individuals, not a promise to instantiate every organism in the population; sample size should vary with simulation grain, species importance, and available compute.
+Species Sim may resolve an organism internally at much finer detail than BioSim exposes, but it should stop at the cheapest detail that changes the ecological result. For plants this means a modular structural graph and cohorts of repeated organs are appropriate: a small herb may resolve leaves individually, while a mature tree should normally resolve trunk, branch orders, leaf-area cohorts, roots, litter, and representative active shoots rather than one simulated object per leaf. Architectural strategies should combine categorical grammars with normalised continuous parameters where natural variation is strong, such as branch droop, crown openness, branch-angle gradients, and leaf spacing. The visible plant can still be generated from the Species Sim growth result, but scenery maps should consume a baked or deterministic growth product and never run the expensive organism simulation themselves.
+Species-level outputs should be separated into (a) transient detailed state used while the representative organism is being evaluated, (b) compact derived summaries returned to BioSim and population systems, and (c) optional authored or narrative snapshots that become durable ontology facts only when they matter. This keeps expensive detail local to Species Sim while allowing the population as a whole to behave and fare differently as representative organisms succeed, fail, reproduce, die, compete, or alter their substrate.
+Species and clade behaviour/simulation fields should use one general directional inheritance service. A parent clade may fill an unknown field from authored offspring only when the available authored offspring agree; an inferred parent value is never treated as authored input for a higher parent. A species may use a resolved parent value as an effective fallback without mutating its own field, and the card should mark that fallback as inferred. Editing the field creates an authored child override. Conflicts remain unknown rather than being guessed.
 Biosphere should be the user-facing and ontology-facing term for a reusable viable ecological assemblage. A Biosphere may be created from a stable BioSim patch after an establishment period proves that its ecological structure is viable.
 Biospheres should be loosely hierarchical and overlap-capable. Parent biospheres may summarize child biospheres, child simulations may expand abstract parent populations into finer biological detail, and overlapping biospheres or ranges may introduce visitors, edge effects, competition, predation, disturbance events, or transient ecological pressure.
 A Biosphere card should contain full ecological structure as readable card content: producers, consumers, decomposers, predator/prey relations, symbioses, competition, nest or colony structures, population bands, seasonal pressures, stability notes, and failure modes.
@@ -498,6 +576,7 @@ Biosphere cards should carry a distinct generated soil profile that is exposed t
 Terraforming should be able to modify soil profiles through material delivery, atmospheric change, hydrology change, temperature change, engineered organisms, fertilization, irrigation, erosion control, or long-running site operations.
 Plants should mirror the animal resolution model. Plant representation depends on simulation type, scale, grain, and narrative/operational importance. Plants may appear as functional groups, vegetation layers, patches, stands, clusters, individual plants, roots, litter, or local microhabitat effects.
 BioSim should support plant functional profiles generated from clade/species inheritance, function tags, soil profile, climate, hydrology, Biosphere template, disturbance state, and terraforming state. Plant functional modules may include growth form, root profile, reproductive strategy, disturbance response, water strategy, light strategy, nutrient strategy, and succession role.
+The active plant species schema should keep practical intrinsic functional traits one abstraction level above laboratory trait databases: life history, Raunkiær life form, woodiness, mature size, growth rate, leaf phenology and placement, photosynthetic pathway, succulence, roots/storage, reproduction/dispersal, regeneration, nutrition/symbiosis, and environmental response. `plant_growth_form` stores the broad botanical body plan, while `plant_growth_behaviour` stores the modular architectural grammar used by Species Sim; both sit under Behaviour → Plant Behaviour in the card. Architecture fields such as leaf arrangement, leaf attachment pattern, leaf clustering, shoot dimorphism, leaf distribution, and normalised 0..1 refinements for droop, crown openness, branch-angle gradients, leaf spacing, and crown-depth scaling remain because they drive procedural growth. Canopy position, succession role, suitability, and growth success are derived outcomes rather than primitive traits. Existing plant ecology rows are artefacts for the schema refactor and do not require migration.
 Soil and plants should co-develop. Soil constrains vegetation, but vegetation also feeds back into soil through organic matter, litter, roots, shade, water uptake, nutrient cycling, erosion resistance, compaction effects, and microbial/fungal activity.
 Plant-to-soil feedback should use a hybrid threshold model. At large scales, plants modify aggregate soil summaries. At small scales, individual roots, litter, shade, and decomposition can affect local patches. At narrative or operational thresholds, local plant-soil changes may write upward into parent Biosphere or location summaries.
 Person-layer actions in BioSim and related simulations should be able to feed back into the parent simulation as ecological disturbance or intervention. Examples include observing species, disturbing habitat, hunting, harvesting, seeding, introducing species, removing invasive species, building paths, patrolling, burning, clearing, irrigating, collecting samples, or triggering animal flight/aggression.

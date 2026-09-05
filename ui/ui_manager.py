@@ -73,6 +73,7 @@ class UIManager:
         self.simulation_panel_tabs = []
         self.simulation_panel_active_tab_id = None
         self.simulation_panel_tab_hitboxes = []
+        self.species_diagnostic_active = False
 
         self.tab_labels = []
         self.active_tab_index = 0
@@ -205,6 +206,7 @@ class UIManager:
         self.simulation_panel_tabs = []
         self.simulation_panel_active_tab_id = None
         self.simulation_panel_tab_hitboxes = []
+        self.species_diagnostic_active = False
 
         self.map_history_timeline_visible = False
         self.map_history_timeline_rect = None
@@ -780,6 +782,53 @@ class UIManager:
             rect = pygame.Rect(x, y, tab_w, h)
             self.simulation_panel_tab_hitboxes.append((tab.get("id"), rect))
             x += tab_w + gap
+
+    def _rebuild_species_diagnostic_panel(self, active_sim, app_width, app_height):
+        """Build the lower tab strip shared by the Species Sim diagnostics."""
+        self.species_diagnostic_active = getattr(active_sim, "diagnostic_view", "individual") != "individual"
+        bar_margin = 20
+        bar_height = 116
+        self.simulation_bar_height = bar_height
+        self.simulation_bar_rect = pygame.Rect(
+            bar_margin,
+            app_height - bar_height - 20,
+            app_width - bar_margin * 2,
+            bar_height,
+        )
+        self.simulation_bar_resize_hitbox = None
+        self.simulation_bar_title = "Species Sim diagnostic suite"
+        self.simulation_panel_tabs = active_sim.get_simulation_panel_tabs()
+        self.simulation_panel_active_tab_id = active_sim.get_active_simulation_panel_tab_id()
+        self._rebuild_simulation_panel_tab_hitboxes()
+
+        summary = active_sim.get_growth_summary()
+        active_tab = self.simulation_panel_active_tab_id
+        if active_tab == "gallery":
+            self.simulation_bar_panel_lines = [
+                "20 Growth Stages",
+                "Five maturity stages × four deterministic seeds.",
+                "Use this to compare branch emergence and proportions.",
+            ]
+        elif active_tab == "forest":
+            self.simulation_bar_panel_lines = [
+                "Forest View",
+                "The same 20 individuals, shuffled into a shared ground plane.",
+                "Depth changes scale to approximate a natural grouping.",
+            ]
+        elif active_tab == "compare":
+            self.simulation_bar_panel_lines = [
+                "Comparison View",
+                "The normal mature individual is shown beside the 20-case gallery.",
+                "Use this to catch framing, orientation, and morphology drift.",
+            ]
+        else:
+            self.simulation_bar_panel_lines = [
+                "Individual viewport",
+                f"{summary.get('life_phase', 'juvenile')} • {summary.get('branch_count', 0)} branches • "
+                f"{summary.get('leaf_cluster_count', 0)} leaf clusters • "
+                f"≈{summary.get('estimated_leaf_count', 0)} leaves",
+                "Age and detail controls remain available at right.",
+            ]
 
     def _rebuild_vehicle_design_panel(self, active_sim, payload, app_width, app_height):
         blocks_by_id = {
@@ -1749,6 +1798,33 @@ class UIManager:
                 )
                 next_button_y += 40
 
+        if render_mode == "species":
+            self.scope_label = f"Scope: {active_sim.get_scope_label()}"
+            summary = active_sim.get_growth_summary()
+            self.breadcrumb_label = (
+                f"Age: {active_sim.age_days:.1f} d | "
+                f"Maturity: {float(summary.get('maturity', 0.0)) * 100:.0f}% | "
+                f"Modules: {summary.get('placement_count', 0)} | "
+                f"Branches: {summary.get('branch_count', 0)} | "
+                f"Leaf clusters: {summary.get('leaf_cluster_count', 0)} | "
+                f"Est. leaves: {summary.get('estimated_leaf_count', 0)} | "
+                f"LOD: {active_sim.lod}"
+            )
+            diagnostic_view = getattr(active_sim, "diagnostic_view", "individual")
+            if diagnostic_view == "individual":
+                self.buttons.extend([
+                    UIButton("species_sim_age_down", "Younger", pygame.Rect(button_x, button_y, button_width, button_height)),
+                    UIButton("species_sim_age_up", "Older", pygame.Rect(button_x, button_y + 40, button_width, button_height)),
+                    UIButton("species_sim_lod", "Cycle Detail", pygame.Rect(button_x, button_y + 80, button_width, button_height)),
+                ])
+                repository_y = button_y + 120
+            else:
+                repository_y = button_y
+            self.buttons.append(
+                UIButton("open_repository", "Open Repository", pygame.Rect(button_x, repository_y, button_width, button_height))
+            )
+            self._rebuild_species_diagnostic_panel(active_sim, app_width, app_height)
+
     def rebuild_for_state(
             self,
             active_sim,
@@ -2084,6 +2160,8 @@ class UIManager:
         elif self.simulation_panel_active_tab_id == "selection":
             self._draw_simulation_panel_lines(screen, font, self.simulation_bar_panel_lines)
         elif self.simulation_panel_active_tab_id == "layout":
+            self._draw_simulation_panel_lines(screen, font, self.simulation_bar_panel_lines)
+        elif self.simulation_bar_panel_lines:
             self._draw_simulation_panel_lines(screen, font, self.simulation_bar_panel_lines)
         elif self.simulation_bar_catalog_entries:
             self._draw_simulation_bar_catalog(screen, font)
@@ -3552,12 +3630,13 @@ class UIManager:
             self._draw_map_workspace(screen, font)
             return
 
-        if self.person_ui_active:
-            self._draw_person_time_strip(screen, font)
-        else:
-            self._draw_time_panel(screen, font)
+        if not self.species_diagnostic_active:
+            if self.person_ui_active:
+                self._draw_person_time_strip(screen, font)
+            else:
+                self._draw_time_panel(screen, font)
 
-        if self.time_lines and not self.person_ui_active:
+        if self.time_lines and not self.person_ui_active and not self.species_diagnostic_active:
             timeline_x = 20
             timeline_y = 135
             timeline_w = 320
@@ -3572,7 +3651,7 @@ class UIManager:
         self._draw_person_panel_icons(screen, font)
 
         info_lines = []
-        if not self.person_ui_active:
+        if not self.person_ui_active and not self.species_diagnostic_active:
             if self.scope_label:
                 info_lines.append(self.scope_label)
             if self.breadcrumb_label:

@@ -13,6 +13,7 @@ from pathlib import Path
 import logging
 from world.ontology_repository import OntologyRepository
 from world.persistent_ontology_store import PersistentOntologyStore
+from world.plant_catalogue import PlantCatalogue
 
 logger = logging.getLogger(__name__)
 
@@ -714,6 +715,8 @@ class EntityLoader:
             dataset.append(entity)
 
         self.entities[entity_id] = entity
+        if entity.get("type") in {"species", "cladistics"} or entity_id in getattr(getattr(self,"plant_catalogue",None),"entity_ids",()):
+            self.rebuild_plant_catalogue()
         if self.use_ontology:
             try:
                 if self._persistent_store is None:
@@ -789,6 +792,9 @@ class EntityLoader:
 
         if not self.use_ontology:
             self.save_changed_dataset_files({entity_id})
+            if field_names & {"parents","type","_dataset"}:
+                self.entities[entity_id] = entity
+                self.rebuild_plant_catalogue()
             return True
 
         try:
@@ -808,6 +814,9 @@ class EntityLoader:
             return False
         if persisted:
             self._clear_entity_deletion(entity_id)
+            if field_names & {"parents","type","_dataset"}:
+                self.entities[entity_id] = entity
+                self.rebuild_plant_catalogue()
         return persisted
 
     def _palette_overrides_path(self):
@@ -1048,6 +1057,7 @@ class EntityLoader:
                 self._clear_entity_deletion(entity_id)
 
         self.entities.pop(entity_id, None)
+        self.rebuild_plant_catalogue()
         for candidate_name in target_datasets:
             dataset = self.datasets.get(candidate_name)
             if not isinstance(dataset, list):
@@ -1083,6 +1093,11 @@ class EntityLoader:
                     self.entity_aliases[str(legacy_system_entity_id)] = entity_id
 
         logger.info("Total entities loaded: %s", len(self.entities))
+        self.rebuild_plant_catalogue()
+
+    def rebuild_plant_catalogue(self):
+        self.plant_catalogue = PlantCatalogue.build(self.entities)
+        return self.plant_catalogue
 
     # --------------------------------------------------
 

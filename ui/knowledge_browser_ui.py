@@ -2026,6 +2026,10 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             "relation_picker_matches": [],
             "relation_picker_selected_index": 0,
             "relation_picker_hitboxes": [],
+            "choice_picker_open": False,
+            "choice_picker_selected_index": 0,
+            "choice_picker_value": None,
+            "choice_picker_hitboxes": [],
             "phylogeny_parent_input_active": False,
             "phylogeny_parent_query": "",
             "phylogeny_parent_matches": [],
@@ -3178,6 +3182,155 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         self._rebuild_browser_hitboxes()
         self._relayout_cards()
         return illustration
+
+    def _plant_asset_definitions(self):
+        return {
+            "root": {
+                "label": "Root",
+                "module_kind": "root",
+                "target_field": "plant_root_module_ref",
+                "description": "Reusable root module for the Species Sim.",
+                "size_m": 0.30,
+            },
+            "stem": {
+                "label": "Stem",
+                "module_kind": "stem_section",
+                "target_field": "plant_stem_module_ref",
+                "description": "Reusable stem section for the Species Sim.",
+                "size_m": 0.45,
+            },
+            "branch": {
+                "label": "Branch",
+                "module_kind": "branch_section",
+                "target_field": "plant_branch_module_ref",
+                "description": "Reusable branch section for the Species Sim.",
+                "size_m": 0.30,
+            },
+            "leaf": {
+                "label": "Leaf",
+                "module_kind": "leaf",
+                "target_field": "plant_leaf_module_ref",
+                "description": "Reusable leaf module. Set its base attachment point and growth vector in Pixel Studio.",
+                "size_m": 0.18,
+            },
+            "flower": {
+                "label": "Flower",
+                "module_kind": "flower",
+                "target_field": "plant_flower_module_ref",
+                "description": "Reusable flower or inflorescence module for the Species Sim.",
+                "size_m": 0.12,
+            },
+            "fruit": {
+                "label": "Fruit",
+                "module_kind": "fruit",
+                "target_field": "plant_fruit_module_ref",
+                "description": "Reusable fruit module for the Species Sim.",
+                "size_m": 0.10,
+            },
+        }
+
+    def _create_or_open_plant_asset(self, source_card, asset_role):
+        """Open one shared Pixel Studio entry point for any plant module."""
+        if self.world_model is None or not isinstance(source_card, dict):
+            return False
+        asset_role = str(asset_role or "").strip().lower()
+        definition = self._plant_asset_definitions().get(asset_role)
+        if definition is None:
+            return False
+        parent_id = str(source_card.get("entity_id") or "").strip()
+        parent = self.world_model.get_entity(parent_id) if parent_id else None
+        if not isinstance(parent, dict) or not self._toolbelt_entity_is_plant(parent):
+            return False
+
+        existing = []
+        get_entities = getattr(self.world_model, "get_entities_by_dataset", None)
+        if callable(get_entities):
+            for idea in get_entities("ideas"):
+                if not self._is_illustration_entity(idea):
+                    continue
+                if parent_id not in self._relation_reference_values(idea.get("parents")):
+                    continue
+                existing_role = str(
+                    idea.get("plant_asset_role")
+                    or idea.get("plant_module_kind")
+                    or ""
+                ).strip().lower()
+                if existing_role == asset_role or (
+                    asset_role == "stem" and existing_role == "stem_section"
+                ) or (
+                    asset_role == "branch" and existing_role == "branch_section"
+                ):
+                    existing.append(idea)
+        existing.sort(key=lambda item: bool(str(item.get("media_path") or "")), reverse=True)
+        if existing:
+            return self._open_pixel_art_editor(existing[0].get("id"))
+
+        species_name = (
+            parent.get("common_name")
+            or parent.get("pretty_name")
+            or parent.get("name")
+            or parent_id
+        )
+        entry_name = f"{species_name} {definition['label']} module"
+        illustration = self._create_illustration_from_parent(
+            parent_id,
+            entry_name,
+            description=definition["description"],
+        )
+        if illustration is None:
+            return False
+        illustration.update(
+            {
+                "plant_asset_role": asset_role,
+                "plant_asset_kind": definition["module_kind"],
+                "plant_asset_target_field": definition["target_field"],
+                "pixel_editor_mode": "single",
+                "depicted_size_m": definition["size_m"],
+                "depicted_length_m": definition["size_m"],
+            }
+        )
+        self._persist_entity_to_repository(illustration)
+        self._rebuild_browser_hitboxes()
+        self._relayout_cards()
+        return self._open_pixel_art_editor(illustration.get("id"))
+
+    def _toolbelt_entity_is_plant(self, entity):
+        from simulations.species.plant_assets import is_plant_species_entity
+
+        return is_plant_species_entity(entity, getattr(self.world_model,"plant_catalogue",None))
+
+    def assign_plant_asset_to_parent(self, illustration):
+        """Wire a saved shared sprite back to the owning species card."""
+        if not isinstance(illustration, dict) or self.world_model is None:
+            return False
+        target_field = str(illustration.get("plant_asset_target_field") or "").strip()
+        asset_path = str(illustration.get("media_path") or "").strip()
+        if not target_field or not asset_path:
+            return True
+        if target_field not in {
+            "plant_root_module_ref",
+            "plant_stem_module_ref",
+            "plant_branch_module_ref",
+            "plant_leaf_module_ref",
+            "plant_flower_module_ref",
+            "plant_fruit_module_ref",
+        }:
+            return False
+        parent = self._parent_entity_for_illustration(illustration)
+        if not isinstance(parent, dict):
+            return False
+        parent[target_field] = asset_path
+        self._persist_entity_to_repository(parent)
+        parent_id = str(parent.get("id") or "")
+        for card in self.cards:
+            if card.get("entity_id") != parent_id:
+                continue
+            card_view = card.get("card_view")
+            if card_view is not None and isinstance(getattr(card_view, "entity", None), dict):
+                card_view.entity[target_field] = asset_path
+        self.browser_items = self._build_browser_items(self.world_model)
+        self._relayout_cards()
+        return True
 
     def _open_relation_note_prompt(self, source_card, relation_info, initial_text=""):
         return self._entry_name_prompt_controller()._open_relation_note_prompt(

@@ -26,6 +26,7 @@ class KnowledgeCanvasController:
         "timeline_snapshot_timeline_hitboxes",
         "media_import_hitboxes",
         "media_pixel_art_hitboxes",
+        "media_asset_quick_hitboxes",
         "media_illustration_link_hitboxes",
     )
     CARD_DRAG_LAYOUT_KEYS = (
@@ -1700,6 +1701,13 @@ class KnowledgeCanvasController:
                     self._relayout_cards()
                     return "__ui_consumed__"
 
+            for choice_index, choice_rect in card.get("choice_picker_hitboxes", []):
+                if choice_rect.collidepoint(mouse_pos) and card_view is not None:
+                    card_obj = self._bring_card_to_front(index)
+                    if card_obj["card_view"].select_controlled_choice(card_obj, choice_index):
+                        self._relayout_cards()
+                    return "__ui_consumed__"
+
             for relation_info, relation_rect in card.get("relation_hitboxes", []):
                 if relation_rect.collidepoint(mouse_pos) and card_view is not None:
                     card_obj = self._bring_card_to_front(index)
@@ -2012,6 +2020,10 @@ class KnowledgeCanvasController:
                         }
                         self._card_color_drag_surface_cache = {}
                         return "__ui_consumed__"
+                    if tool_info.get("kind") == "plant_asset_creator":
+                        self._create_or_open_plant_asset(card_obj, tool_info.get("asset_role"))
+                        self._relayout_cards()
+                        return "__ui_consumed__"
                     action_id = tool_info.get("action_id")
                     if action_id:
                         if action_id == "knowledge_define_stellar_neighbourhood":
@@ -2041,6 +2053,13 @@ class KnowledgeCanvasController:
                     return "__ui_consumed__"
 
             add_illustration_rect = card.get("media_add_illustration_rect")
+            for asset_role, button_rect in card.get("media_asset_quick_hitboxes", []):
+                if button_rect.collidepoint(mouse_pos):
+                    card_obj = self._bring_card_to_front(index)
+                    self._create_or_open_plant_asset(card_obj, asset_role)
+                    self._relayout_cards()
+                    return "__ui_consumed__"
+
             if add_illustration_rect is not None and add_illustration_rect.collidepoint(mouse_pos):
                 card_obj = self._bring_card_to_front(index)
                 self._open_illustration_prompt(card_obj)

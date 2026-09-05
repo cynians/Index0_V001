@@ -1,0 +1,86 @@
+{
+  "species_id": "spec_nymphaea_alba",
+  "simulation": "species",
+  "seed": 202,
+  "days": 5,
+  "environment": {
+    "water_available": 0.96,
+    "light": 0.78,
+    "temperature": 0.72,
+    "substrate": "mud"
+  },
+  "samples": [
+    {
+      "elapsed_days": 0.0,
+      "age_days": 0.0,
+      "life_phase": "juvenile",
+      "maturity": 0.0,
+      "placement_count": 9,
+      "leaf_count": 4,
+      "stem_count": 4,
+      "vitality": 0.0,
+      "fecundity": 0.0,
+      "mortality_risk": 1.0
+    },
+    {
+      "elapsed_days": 1.0,
+      "age_days": 1.0,
+      "life_phase": "juvenile",
+      "maturity": 0.0083,
+      "placement_count": 9,
+      "leaf_count": 4,
+      "stem_count": 4,
+      "vitality": 0.0066,
+      "fecundity": 0.0,
+      "mortality_risk": 0.9934
+    },
+    {
+      "elapsed_days": 2.0,
+      "age_days": 2.0,
+      "life_phase": "juvenile",
+      "maturity": 0.0167,
+      "placement_count": 9,
+      "leaf_count": 4,
+      "stem_count": 4,
+      "vitality": 0.0133,
+      "fecundity": 0.0,
+      "mortality_risk": 0.9867
+    },
+    {
+      "elapsed_days": 3.0,
+      "age_days": 3.0,
+      "life_phase": "juvenile",
+      "maturity": 0.025,
+      "placement_count": 9,
+      "leaf_count": 4,
+      "stem_count": 4,
+      "vitality": 0.0199,
+      "fecundity": 0.0,
+      "mortality_risk": 0.9801
+    },
+    {
+      "elapsed_days": 4.0,
+      "age_days": 4.0,
+      "life_phase": "juvenile",
+      "maturity": 0.0333,
+      "placement_count": 9,
+      "leaf_count": 4,
+      "stem_count": 4,
+      "vitality": 0.0266,
+      "fecundity": 0.0,
+      "mortality_risk": 0.9734
+    },
+    {
+      "elapsed_days": 5.0,
+      "age_days": 5.0,
+      "life_phase": "juvenile",
+      "maturity": 0.0417,
+      "placement_count": 9,
+      "leaf_count": 4,
+      "stem_count": 4,
+      "vitality": 0.0333,
+      "fecundity": 0.0,
+      "mortality_risk": 0.9667
+    }
+  ]
+}
