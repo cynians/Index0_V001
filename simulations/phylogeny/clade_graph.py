@@ -367,14 +367,6 @@ def build_phylogeny_parent_map(world_model):
     return phylogeny_graph_context(world_model).parents_by_child
 
 
-def clade_ancestor_chain(world_model, entity_id, limit=24):
-    return phylogeny_graph_context(world_model).ancestor_chain(entity_id, limit=limit)
-
-
-def clade_context_tree(world_model, entity_id, child_limit=8):
-    return phylogeny_graph_context(world_model).context_tree(entity_id, child_limit=child_limit)
-
-
 def species_descendant_ids(world_model, entity_id):
     return phylogeny_graph_context(world_model).species_descendant_ids(entity_id)
 
@@ -385,88 +377,6 @@ def distant_species_members(world_model, clade_id, limit=3):
 
 def closest_species_relatives(world_model, species_id, limit=4):
     return phylogeny_graph_context(world_model).closest_species_relatives(species_id, limit=limit)
-
-
-def clade_neighbor_ids(world_model, entity_id, limit=3):
-    clades = get_clade_entities(world_model)
-    phylogeny_entities = get_phylogeny_entities(world_model)
-    parents_by_child = build_phylogeny_parent_map(world_model)
-    if entity_id not in phylogeny_entities:
-        return []
-    children_by_parent = build_clade_children_map(world_model)
-    entity = phylogeny_entities.get(entity_id, {})
-    candidates = []
-
-    for parent_id in parents_by_child.get(entity_id, []):
-        if parent_id in clades:
-            candidates.append((0, parent_id))
-            for sibling_id in children_by_parent.get(parent_id, []):
-                if sibling_id != entity_id:
-                    candidates.append((1, sibling_id))
-
-    for child_id in children_by_parent.get(entity_id, []):
-        candidates.append((2, child_id))
-
-    deduped = []
-    seen = {entity_id}
-    for distance, candidate_id in sorted(
-        candidates,
-        key=lambda item: (item[0], clade_label(phylogeny_entities.get(item[1]), item[1]).lower()),
-    ):
-        if candidate_id in seen:
-            continue
-        seen.add(candidate_id)
-        deduped.append(candidate_id)
-        if len(deduped) >= limit:
-            break
-    return deduped
-
-
-def clade_local_diagram(world_model, entity_id, neighbor_limit=3):
-    clades = get_clade_entities(world_model)
-    phylogeny_entities = get_phylogeny_entities(world_model)
-    parents_by_child = build_phylogeny_parent_map(world_model)
-    if entity_id not in phylogeny_entities:
-        return []
-
-    focus_ids = [entity_id] + clade_neighbor_ids(world_model, entity_id, limit=neighbor_limit)
-    included = set()
-    for focus_id in focus_ids:
-        included.update(clade_ancestor_chain(world_model, focus_id))
-        included.add(focus_id)
-
-    children_by_parent = build_clade_children_map(world_model)
-    roots = [
-        clade_id
-        for clade_id in included
-        if not any(parent_id in included for parent_id in parents_by_child.get(clade_id, []))
-    ]
-
-    def build_node(clade_id, ancestry=None):
-        ancestry = set(ancestry or set())
-        if clade_id in ancestry:
-            return None
-        ancestry.add(clade_id)
-        children = []
-        for child_id in children_by_parent.get(clade_id, []):
-            if child_id not in included:
-                continue
-            child = build_node(child_id, ancestry)
-            if child is not None:
-                children.append(child)
-        return {
-            "id": clade_id,
-            "label": clade_label(phylogeny_entities.get(clade_id), clade_id),
-            "highlight": clade_id == entity_id,
-            "neighbor": clade_id in focus_ids[1:],
-            "species": is_species_entity(phylogeny_entities.get(clade_id)),
-            "children": children,
-        }
-
-    return [
-        node for node in (build_node(root_id) for root_id in roots)
-        if node is not None
-    ]
 
 
 def all_clade_tree_roots(world_model):
@@ -489,34 +399,6 @@ def find_clade_matches(world_model, query, limit=6):
     if world_model is None:
         return []
     return phylogeny_graph_context(world_model).find_clade_matches(query, limit=limit)
-
-
-def find_phylogeny_child_matches(world_model, query, limit=8):
-    query = str(query or "").strip().lower()
-    if not query:
-        return []
-    query_terms = [term for term in query.split() if term]
-    matches = []
-    for entity_id, entity in get_phylogeny_entities(world_model).items():
-        haystack = " ".join(
-            str(value or "")
-            for value in (
-                entity_id,
-                entity.get("pretty_name"),
-                entity.get("name"),
-                entity.get("common_name"),
-                entity.get("binomial_name"),
-            )
-        ).lower()
-        if all(term in haystack for term in query_terms):
-            matches.append(entity)
-    matches.sort(
-        key=lambda entity: (
-            0 if is_species_entity(entity) else 1,
-            clade_label(entity, entity.get("id")).lower(),
-        )
-    )
-    return matches[:limit]
 
 
 def clade_id_from_name(name):

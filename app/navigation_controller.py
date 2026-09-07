@@ -450,7 +450,7 @@ class NavigationController:
         self.app.camera_controller.setup_for_sim(new_phylogeny_sim)
         return True
 
-    def launch_species_sim_tab(self, species_entity_id):
+    def launch_species_sim_tab(self, species_entity_id, diagnostic_tab=None):
         """Open the standalone biological growth lab for one species."""
         if not species_entity_id:
             return False
@@ -460,9 +460,14 @@ class NavigationController:
             return False
         if species_entity.get("_dataset") != "species" and species_entity.get("type") != "species":
             return False
+        if not self.app.world_model.is_plant_species(species_entity_id):
+            return False
 
         tab_key = ("species", species_entity_id)
         if self.focus_existing_tab_by_key(tab_key):
+            existing = self.app.get_active_simulation()
+            if diagnostic_tab:
+                getattr(existing, "set_active_simulation_panel_tab", lambda _tab: False)(diagnostic_tab)
             self.app.knowledge_layer_active = False
             return True
 
@@ -487,7 +492,32 @@ class NavigationController:
         self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
         self.app.knowledge_layer_active = False
         self.app.camera_controller.setup_for_sim(simulation)
+        if diagnostic_tab:
+            simulation.set_active_simulation_panel_tab(diagnostic_tab)
         return True
+
+    def open_species_asset_editor(self, active_sim, entity_id, asset_role):
+        """Open a plant module in Pixel Studio directly from Species Editor."""
+        entity = self.app.world_model.get_entity(entity_id) if entity_id else None
+        if not isinstance(entity, dict):
+            return False
+        self.app.repository_scope_entity_id = entity_id
+        self.open_repository_workspace(active_sim)
+        knowledge_ui = getattr(self.app.ui_manager, "knowledge_ui", None)
+        surface = pygame.display.get_surface()
+        if knowledge_ui is None or surface is None:
+            return False
+        knowledge_ui.rebuild(
+            app_width=surface.get_width(),
+            app_height=surface.get_height(),
+            world_model=self.app.world_model,
+            repository_scope_entity_id=entity_id,
+            font=self.app.ui_manager.app_font,
+        )
+        card = next((card for card in knowledge_ui.cards if card.get("entity_id") == entity_id), None)
+        if card is None:
+            return False
+        return bool(knowledge_ui._create_or_open_plant_asset(card, asset_role))
 
     def launch_world_gen_tab(self, planet_location_id):
         """
@@ -1079,6 +1109,17 @@ class NavigationController:
             entity_id = action.get("entity_id") or self.app.repository_scope_entity_id
             return self.launch_species_sim_tab(entity_id)
 
+        if action_id == "launch_species_editor":
+            entity_id = action.get("entity_id") or self.app.repository_scope_entity_id
+            return self.launch_species_sim_tab(entity_id, diagnostic_tab="editor")
+
+        if action_id == "open_species_asset_editor":
+            return self.open_species_asset_editor(
+                active_sim,
+                action.get("entity_id") or getattr(active_sim, "species_id", None),
+                action.get("asset_role"),
+            )
+
         if action_id == "activate_tab":
             tab_index = action.get("tab_index")
             return self.activate_tab_index(tab_index)
@@ -1205,6 +1246,9 @@ class NavigationController:
         if action_id == "open_person_inspector" and active_sim is not None:
             return bool(getattr(active_sim, "open_person_inspector", lambda: False)())
 
+        if action_id == "open_person_character_editor" and active_sim is not None:
+            return bool(getattr(active_sim, "open_character_editor", lambda: False)())
+
         if action_id == "knowledge_launch_entry":
             return self.launch_entity_mode(action.get("entity_id"))
 
@@ -1254,6 +1298,9 @@ class NavigationController:
 
         if action_id == "open_person_inspector" and active_sim is not None:
             return bool(getattr(active_sim, "open_person_inspector", lambda: False)())
+
+        if action_id == "open_person_character_editor" and active_sim is not None:
+            return bool(getattr(active_sim, "open_character_editor", lambda: False)())
 
         if action_id == "person_mode_autonomous" and active_sim is not None:
             return bool(getattr(active_sim, "set_control_mode", lambda _mode: False)("autonomous"))

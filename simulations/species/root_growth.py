@@ -19,7 +19,7 @@ def root_profile(growth):
             depth, source = float(value), "authored_max_root_depth"
     return {"architecture": architecture if architecture in {"taproot", "fibrous", "adventitious", "mixed"} else "other_unknown",
             "depth_class": depth_class or "other_unknown", "target_depth_m": depth,
-            "depth_source": source, "grammar_version": 2,
+            "depth_source": source, "grammar_version": 3,
             "support": "rhizome" if growth.get("shape") == "aquatic" or growth.get("growth_behaviour") == "rhizomatous_clonal" else "stem_base"}
 
 
@@ -45,7 +45,7 @@ def build_root_graph(profile, maturity, seed):
             vertical_t = t ** 1.25 if kind == "root_section" else t
             point = tuple(start[j] + (end[j] - start[j]) * (vertical_t if j == 2 else horizontal_t) for j in range(3))
             nodes.append({"parent": parent, "position": point, "order": order,
-                          "kind": kind, "thickness": thickness * (1 - 0.65 * t)})
+                          "kind": kind, "thickness": thickness * (1 - (0.94 if kind == "root_section" else 0.65) * t)})
             parent = len(nodes) - 1
             chain.append(parent)
         return chain

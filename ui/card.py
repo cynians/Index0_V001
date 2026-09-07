@@ -391,6 +391,12 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                     "target_dataset": "people",
                     "prompt_label": "Child Person",
                 },
+                {
+                    "id": "person_character_editor",
+                    "kind": "jump_to_character_tab",
+                    "label": "Character Editor",
+                    "description": "Jump to personality, knowledge, and motivation fields.",
+                },
             ],
         },
         {
@@ -445,6 +451,13 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         {
             "match": {"species"},
             "tools": [
+                {
+                    "id": "species_visual_editor",
+                    "label": "Species Editor",
+                    "description": "Paste a temporary plant photo and tune live fields against mature side/top previews.",
+                    "action_id": "launch_species_editor",
+                    "requires": "plant_species",
+                },
                 {
                     "id": "species_sim_lab",
                     "label": "Species Sim Lab",
@@ -3197,7 +3210,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 card["choice_picker_selected_index"] = choice_indices[min(len(choice_indices) - 1, current_choice + 1)]
                 return True
             if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-                self.select_controlled_choice(card, card["choice_picker_selected_index"])
+                if self.select_controlled_choice(card, card["choice_picker_selected_index"]):
+                    self.commit_edit_field(card)
                 return True
             if event.key == pygame.K_ESCAPE:
                 return self.cancel_edit_field(card)

@@ -294,12 +294,43 @@ class PersonRenderer:
             ],
         )
 
+    def _draw_character_creation_banner(self, screen, payload):
+        if not payload.get("needs_character_creation") or payload.get("site_simulation"):
+            return
+        tier = str(payload.get("character_readiness_tier") or "sparse").upper()
+        missing = payload.get("character_readiness_missing") or []
+        message = f"CHARACTER CREATION NEEDED -- {tier} -- missing: {', '.join(missing) if missing else 'unknown'}"
+        text = self._text(message, (30, 20, 14))
+        bar = pygame.Rect(0, 0, screen.get_width(), text.get_height() + 14)
+        pygame.draw.rect(screen, (214, 168, 74), bar)
+        screen.blit(text, text.get_rect(center=bar.center))
+
+    def _draw_asset_palette(self, screen, payload):
+        palette = payload.get("asset_palette") or []
+        if not palette:
+            return
+        x, y = 16, 112
+        header = self._text("ASSET PLACER", (200, 205, 214))
+        screen.blit(header, (x, y))
+        y += header.get_height() + 4
+        selected_id = payload.get("placement_selected_asset_id")
+        for index, entry in enumerate(palette, start=1):
+            highlighted = entry["id"] == selected_id
+            color = (245, 214, 108) if highlighted else self._color(entry.get("color"), (160, 160, 160))
+            label = self._text(f"[{index}] {entry.get('label', entry['id'])}", color)
+            screen.blit(label, (x, y))
+            y += label.get_height() + 2
+        if payload.get("placement_mode"):
+            hint = self._text("Click the map to place -- Esc to cancel", (238, 209, 111))
+            screen.blit(hint, (x, y + 4))
+
     def draw(self, screen, sim):
         screen.fill(self.BACKGROUND)
         camera = self.app_view.camera
         payload = sim.get_person_render_payload()
-        self._draw_floor(screen, camera, payload["bounds"])
-        self._draw_site_layout(screen, camera, payload)
+        if not payload.get("in_void"):
+            self._draw_floor(screen, camera, payload["bounds"])
+            self._draw_site_layout(screen, camera, payload)
         self._draw_route(screen, camera, payload)
         for point in payload.get("points", []):
             self._draw_point(screen, camera, point, payload)
@@ -323,3 +354,8 @@ class PersonRenderer:
             )
         hint_surface = self._text(hint, (160, 172, 187))
         screen.blit(hint_surface, hint_surface.get_rect(midtop=(screen.get_width() // 2, 68)))
+        if payload.get("in_void") and not payload.get("site_simulation"):
+            void_surface = self._text(payload.get("site_label"), (120, 128, 142))
+            screen.blit(void_surface, void_surface.get_rect(midtop=(screen.get_width() // 2, 90)))
+            self._draw_asset_palette(screen, payload)
+        self._draw_character_creation_banner(screen, payload)

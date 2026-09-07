@@ -803,7 +803,24 @@ class UIManager:
 
         summary = active_sim.get_growth_summary()
         active_tab = self.simulation_panel_active_tab_id
-        if active_tab == "gallery":
+        if active_tab == "top_down":
+            self.simulation_bar_panel_lines = [
+                "Top-down crown view",
+                "3D x/y projection • crown spread, direction and footprint.",
+            ]
+        elif active_tab == "architecture":
+            self.simulation_bar_panel_lines = [
+                "Tree Patterns",
+                "Birch, English oak and horse chestnut at matched maturity and scale.",
+                "Front and top views expose axis continuity, branching rhythm and crown footprint.",
+            ]
+        elif active_tab == "editor":
+            self.simulation_bar_panel_lines = [
+                "Species Editor",
+                "Overlay a temporary reference; compare minimum, typical, maximum, or four seeded variants.",
+                "Grouped visual fields, confidence badges, undo/redo, and hot-reloading Pixel Studio modules.",
+            ]
+        elif active_tab == "gallery":
             self.simulation_bar_panel_lines = [
                 "20 Growth Stages",
                 "Five maturity stages × four deterministic seeds.",
@@ -812,14 +829,21 @@ class UIManager:
         elif active_tab == "forest":
             self.simulation_bar_panel_lines = [
                 "Forest View",
-                "The same 20 individuals, shuffled into a shared ground plane.",
-                "Depth changes scale to approximate a natural grouping.",
+                "A seeded woodland with irregular spacing, younger trees and clearings.",
+                "S: spacing   T: shade tolerance   V: ground-light comparison",
             ]
         elif active_tab == "compare":
+            roots = getattr(active_sim, "comparison_subject", "individual") == "roots"
             self.simulation_bar_panel_lines = [
-                "Comparison View",
-                "The normal mature individual is shown beside the 20-case gallery.",
-                "Use this to catch framing, orientation, and morphology drift.",
+                "Root Comparison" if roots else "Comparison View",
+                "Developed plants at matched maturity; missing root traits remain unresolved." if roots else "The current individual beside its growth gallery. R: compare roots across species.",
+                "S: shared / enlarged scale   Left / Right: page   R: individual comparison" if roots else "Open Roots, then Compare to compare root systems.",
+            ]
+        elif active_tab == "roots":
+            self.simulation_bar_panel_lines = [
+                "Roots",
+                "Tapered structural axes, fine branches and lighter tips.",
+                "Open Compare to see root systems across the developed plants.",
             ]
         else:
             self.simulation_bar_panel_lines = [
@@ -1609,10 +1633,14 @@ class UIManager:
                     enabled=control_mode != "direct",
                 )
             )
+            self.buttons.append(
+                UIButton("open_person_character_editor", "Character Editor",
+                         pygame.Rect(button_x, button_y + 160, button_width, button_height))
+            )
 
             icon_size = 46
             icon_x = app_width - icon_size - 20
-            icon_y = button_y + 166
+            icon_y = button_y + 206
             self.person_panel_icons = [
                 {
                     "id": "needs",

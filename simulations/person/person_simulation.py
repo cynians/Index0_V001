@@ -6,6 +6,11 @@ import pygame
 from engine.clock import Clock
 from engine.logger import logger
 from engine.simulation_manager import SimulationManager
+from simulations.person.person_assets import (
+    assess_person_readiness,
+    character_creation_prompt_lines,
+    placeable_asset_catalog,
+)
 from world.ownership_resolver import OwnershipResolver
 from world.year_utils import parse_year
 
@@ -53,7 +58,6 @@ class PersonSimulation:
     CONTROL_AUTONOMOUS = "autonomous"
     CONTROL_DIRECT = "direct"
     VALID_CONTROL_MODES = {CONTROL_AUTONOMOUS, CONTROL_DIRECT}
-    TEST_SITE_ID = "location_lumber_test_site"
 
     BIG_FIVE_AXES = (
         {
@@ -93,6 +97,18 @@ class PersonSimulation:
         "max_x": 18.0,
         "min_y": -11.0,
         "max_y": 11.0,
+    }
+
+    # No world-gen linkage exists yet to place a site-less person anywhere
+    # meaningful. Rather than defaulting them into the lumber test site's
+    # geometry (see docs/person_simulation_concept_v001.md Cycle 2), they
+    # spawn in an open, structureless void sized well past camera clamping
+    # so nothing suggests a bounded room.
+    VOID_MAP_BOUNDS = {
+        "min_x": -200.0,
+        "max_x": 200.0,
+        "min_y": -200.0,
+        "max_y": 200.0,
     }
 
     TEST_POINT_DEFINITIONS = (
@@ -189,7 +205,7 @@ class PersonSimulation:
         self.system = PersonRuntimeSystem(self)
         self.sim_manager = SimulationManager(self.sim_clock, self.system)
 
-        self.bounds = dict(self.TEST_MAP_BOUNDS)
+        self.bounds = dict(self.VOID_MAP_BOUNDS)
         self.min_zoom = 12.0
         self.max_zoom = 80.0
         self.preferred_zoom = 28.0
@@ -198,7 +214,8 @@ class PersonSimulation:
         self._pending_inspector_target = None
         self._pending_floating_card_target = None
         self.ownership = OwnershipResolver(world_model)
-        self.site_entity_id = self.TEST_SITE_ID
+        self.site_entity_id = None
+        self.in_void = True
         self.site_entity = {}
         self.site_structures = []
         self.site_people = []
@@ -252,11 +269,15 @@ class PersonSimulation:
             definition["id"]: dict(definition)
             for definition in self.TEST_POINT_DEFINITIONS
         }
+        self.asset_palette = placeable_asset_catalog(self.TEST_POINT_DEFINITIONS)
+        self.placement_mode = False
+        self.placement_selected_asset_id = None
         self._load_site_model()
         self._load_authored_inventories()
         self._refresh_job_point_label()
         self._load_authored_task_allocations()
         self._fill_autonomous_queue()
+        self._assess_character_readiness()
 
     def get_center(self):
         return 0.0, 0.0
@@ -350,7 +371,8 @@ class PersonSimulation:
                     break
         if requested_site:
             self.site_entity_id = requested_site
-        self.site_entity = self.get_person(self.site_entity_id) or {}
+        self.in_void = not bool(self.site_entity_id)
+        self.site_entity = (self.get_person(self.site_entity_id) or {}) if self.site_entity_id else {}
         site_bounds = self._bbox(self.site_entity.get("bounds"))
         if site_bounds:
             self.bounds = site_bounds
@@ -405,6 +427,72 @@ class PersonSimulation:
             })
             if person_id == self.person_entity_id and resident.get("site_position") is not None:
                 self.position[:] = [resident_position[0], resident_position[1]]
+
+    def _assess_character_readiness(self):
+        person = self.get_person() or {}
+        self.character_readiness = assess_person_readiness(person, self.world_model)
+        self.needs_character_creation = self.character_readiness["tier"] != "authored"
+
+    def _asset_palette_entry(self, asset_id):
+        return next((entry for entry in self.asset_palette if entry["id"] == asset_id), None)
+
+    def select_asset_for_placement(self, asset_id):
+        """Rudimentary asset placer: enter placement mode for a palette entry.
+
+        Scoped to the void test area for now -- authored sites keep their
+        careful hand-placed geometry untouched until wall-aware placement
+        is worth building.
+        """
+        if not self.in_void:
+            self.last_status = "Asset placement is only available in the void test area for now"
+            return False
+        entry = self._asset_palette_entry(asset_id)
+        if entry is None:
+            return False
+        self.placement_mode = True
+        self.placement_selected_asset_id = asset_id
+        self.last_status = f"Placement mode: click the map to place {entry.get('label', asset_id)}"
+        return True
+
+    def cancel_asset_placement(self):
+        self.placement_mode = False
+        self.placement_selected_asset_id = None
+
+    def place_selected_asset(self, position):
+        if not self.placement_mode or not self.placement_selected_asset_id:
+            return False
+        template = self._asset_palette_entry(self.placement_selected_asset_id)
+        if template is None:
+            return False
+        point_id = template["id"]
+        point = self.test_points.setdefault(point_id, dict(template))
+        point.update({key: value for key, value in template.items() if key != "position"})
+        point["position"] = (float(position[0]), float(position[1]))
+        point["placed"] = True
+        self.last_status = f"Placed {point.get('label', point_id)}"
+        self.placement_mode = False
+        self.placement_selected_asset_id = None
+        return True
+
+    _PLACEMENT_DIGIT_KEYS = (
+        pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5,
+        pygame.K_6, pygame.K_7, pygame.K_8, pygame.K_9,
+    )
+
+    def consumes_global_keydown(self):
+        return self.in_void
+
+    def handle_event(self, event):
+        if event.type != pygame.KEYDOWN:
+            return
+        if event.key == pygame.K_ESCAPE:
+            if self.placement_mode:
+                self.cancel_asset_placement()
+            return
+        if event.key in self._PLACEMENT_DIGIT_KEYS:
+            index = self._PLACEMENT_DIGIT_KEYS.index(event.key)
+            if index < len(self.asset_palette):
+                self.select_asset_for_placement(self.asset_palette[index]["id"])
 
     def update(self, dt):
         self.sim_manager.update(dt)
@@ -1766,7 +1854,12 @@ class PersonSimulation:
         return {
             "bounds": dict(self.bounds),
             "site_id": self.site_entity_id,
-            "site_label": self.site_entity.get("pretty_name") or self.site_entity.get("name") or "Person Test Site",
+            "in_void": self.in_void,
+            "site_label": (
+                self.site_entity.get("pretty_name")
+                or self.site_entity.get("name")
+                or ("Unbound void -- no site authored yet" if self.in_void else "Person Test Site")
+            ),
             "terrain_zones": list(self.site_entity.get("terrain_zones") or []),
             "structures": list(self.site_structures),
             "site_people": list(self.site_people),
@@ -1783,6 +1876,12 @@ class PersonSimulation:
             "hover_point_id": self.hover_point_id,
             "active_point_id": (self.active_task or {}).get("interaction_point_id") or (self.active_task or {}).get("point_id"),
             "active_phase": (self.active_task or {}).get("phase"),
+            "needs_character_creation": self.needs_character_creation,
+            "character_readiness_tier": self.character_readiness["tier"],
+            "character_readiness_missing": list(self.character_readiness["missing"]),
+            "asset_palette": list(self.asset_palette),
+            "placement_mode": self.placement_mode,
+            "placement_selected_asset_id": self.placement_selected_asset_id,
         }
 
     def _point_at_world_position(self, world_x, world_y):
@@ -1803,6 +1902,13 @@ class PersonSimulation:
 
     def handle_pointer_event(self, event, camera, screen_pos):
         if event.type != pygame.MOUSEBUTTONDOWN:
+            return
+        if self.placement_mode:
+            if event.button == 1:
+                world_x, world_y = camera.screen_to_world(screen_pos)
+                self.place_selected_asset((world_x, world_y))
+            else:
+                self.cancel_asset_placement()
             return
         if event.button == 3:
             if not self.cancel_direct_order():
@@ -1952,6 +2058,18 @@ class PersonSimulation:
         }
         return True
 
+    def open_character_editor(self):
+        """Open the full generic entity editor on this person, in edit mode.
+
+        Unlike open_person_inspector (name/notes only, see
+        save_selection_inspector_updates), this reuses the same
+        schema-driven floating-card editor the toolbelt's "Character
+        Editor" tool jumps within -- it already exposes every authored
+        field, including personality/knowledge/wishes, so no bespoke
+        field-editing UI needs to exist yet.
+        """
+        return self.open_entity_card(self.person_entity_id, mode="edit")
+
     def consume_pending_inspector_target(self):
         target = self._pending_inspector_target
         self._pending_inspector_target = None
@@ -2043,6 +2161,15 @@ class PersonSimulation:
             "active_action": active.get("action_label") or active.get("label") or "No action",
             "queue_count": len(self.task_queue),
             "status": self.last_status,
+        }
+
+    def get_character_creation_panel_model(self):
+        """Readiness tier plus what character creation would still need to fill."""
+        readiness = self.character_readiness
+        return {
+            **readiness,
+            "needs_character_creation": self.needs_character_creation,
+            "prompt_lines": character_creation_prompt_lines(readiness, self.get_person_name()),
         }
 
     @staticmethod

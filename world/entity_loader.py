@@ -715,7 +715,9 @@ class EntityLoader:
             dataset.append(entity)
 
         self.entities[entity_id] = entity
-        if entity.get("type") in {"species", "cladistics"} or entity_id in getattr(getattr(self,"plant_catalogue",None),"entity_ids",()):
+        catalogued = getattr(getattr(self, "plant_catalogue", None), "entity_ids", ())
+        if (dataset_name in {"species", "cladistics"}
+            or entity_id in catalogued or previous_entity_id in catalogued):
             self.rebuild_plant_catalogue()
         if self.use_ontology:
             try:

@@ -30,13 +30,22 @@ PLANT_TRAIT_SCHEMA_FIELDS = {
     # sit anywhere between two named extremes without inventing new labels.
     "plant_shoot_dimorphism": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_leaf_distribution": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
-    "plant_leaf_spacing_bias": {"type": "number", "section": PLANT_TRAIT_SECTION, "optional": True, "min": 0.0, "max": 1.0},
-    "plant_branch_droop": {"type": "number", "section": PLANT_TRAIT_SECTION, "optional": True, "min": 0.0, "max": 1.0},
-    "plant_branch_angle_gradient": {"type": "number", "section": PLANT_TRAIT_SECTION, "optional": True, "min": 0.0, "max": 1.0},
-    "plant_crown_openness": {"type": "number", "section": PLANT_TRAIT_SECTION, "optional": True, "min": 0.0, "max": 1.0},
-    "plant_leaf_depth_gradient": {"type": "number", "section": PLANT_TRAIT_SECTION, "optional": True, "min": 0.0, "max": 1.0},
-    "plant_fine_twig_density": {"type": "number", "section": PLANT_TRAIT_SECTION, "optional": True, "min": 0.0, "max": 1.0},
-    "plant_leaf_cluster_density": {"type": "number", "section": PLANT_TRAIT_SECTION, "optional": True, "min": 0.0, "max": 1.0},
+    # Orthogonal architectural observations. These describe how woody axes
+    # are assembled; growth_form and growth_behaviour remain the coarse
+    # body-plan/grammar selectors.
+    "plant_axis_continuity": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_branching_rhythm": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_branching_timing": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_lateral_axis_orientation": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_flowering_position": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_apical_control": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_leaf_spacing_bias": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_branch_droop": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_branch_angle_gradient": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_crown_openness": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_leaf_depth_gradient": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_fine_twig_density": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_leaf_cluster_density": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
     "photosynthesis_pathway": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "succulence": {"type": "string_list", "section": PLANT_TRAIT_SECTION, "optional": True},
     "root_architecture": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
@@ -70,6 +79,17 @@ PLANT_TRAIT_SCHEMA_FIELDS = {
 }
 
 PLANT_TRAIT_FIELDS = frozenset(PLANT_TRAIT_SCHEMA_FIELDS)
+
+PLANT_ARCHITECTURE_RANGE_FIELDS = frozenset({
+    "plant_apical_control",
+    "plant_leaf_spacing_bias",
+    "plant_branch_droop",
+    "plant_branch_angle_gradient",
+    "plant_crown_openness",
+    "plant_leaf_depth_gradient",
+    "plant_fine_twig_density",
+    "plant_leaf_cluster_density",
+})
 
 PLANT_DERIVED_FIELDS = frozenset({
     "plant_canopy_layer",
@@ -226,6 +246,38 @@ PLANT_TRAIT_CHOICES = {
         ("basal_rosette", "Basal rosette"),
         ("other_unknown", "Other / unknown"),
     ),
+    "plant_axis_continuity": _choices(
+        ("monopodial", "Monopodial"),
+        ("sympodial", "Sympodial"),
+        ("monopodial_to_sympodial", "Monopodial to sympodial"),
+        ("mixed", "Mixed"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "plant_branching_rhythm": _choices(
+        ("rhythmic", "Rhythmic"),
+        ("continuous", "Continuous"),
+        ("diffuse", "Diffuse"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "plant_branching_timing": _choices(
+        ("immediate", "Immediate / sylleptic"),
+        ("delayed", "Delayed / proleptic"),
+        ("mixed", "Mixed"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "plant_lateral_axis_orientation": _choices(
+        ("orthotropic", "Orthotropic"),
+        ("plagiotropic", "Plagiotropic"),
+        ("mixed", "Mixed"),
+        ("pendent", "Pendent"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "plant_flowering_position": _choices(
+        ("lateral", "Lateral"),
+        ("terminal", "Terminal"),
+        ("mixed", "Mixed"),
+        ("other_unknown", "Other / unknown"),
+    ),
     "photosynthesis_pathway": _choices(
         ("c3", "C3"),
         ("c4", "C4"),
@@ -356,6 +408,12 @@ PLANT_TRAIT_BEHAVIOR_PATHS = {
     "plant_leaf_spacing_bias": ("Leaf / Shoot Architecture", "Leaf Spacing Bias"),
     "plant_leaf_depth_gradient": ("Leaf / Shoot Architecture", "Leaf Depth Gradient"),
     "plant_leaf_cluster_density": ("Leaf / Shoot Architecture", "Leaf Cluster Density"),
+    "plant_axis_continuity": ("Branch Architecture", "Axis Continuity"),
+    "plant_branching_rhythm": ("Branch Architecture", "Branching Rhythm"),
+    "plant_branching_timing": ("Branch Architecture", "Branching Timing"),
+    "plant_lateral_axis_orientation": ("Branch Architecture", "Lateral Axis Orientation"),
+    "plant_flowering_position": ("Branch Architecture", "Flowering Position"),
+    "plant_apical_control": ("Branch Architecture", "Apical Control"),
     "plant_branch_droop": ("Branch Architecture", "Branch Droop"),
     "plant_branch_angle_gradient": ("Branch Architecture", "Branch Angle Gradient"),
     "plant_crown_openness": ("Branch Architecture", "Crown Openness"),
@@ -399,6 +457,43 @@ def canonical_plant_trait_value(field_key, value):
     if not text:
         return ""
     return text
+
+
+def normalised_plant_trait_range(value, default=0.5, *, default_span=0.10):
+    """Return a stable 0..1 ``min / typical / max`` calibration envelope.
+
+    Legacy scalar values remain valid and resolve to a point range. New editor
+    values carry a status so visually tuned parameters are not mistaken for
+    measured botanical observations.
+    """
+
+    def bounded(candidate, fallback):
+        try:
+            return max(0.0, min(1.0, float(candidate)))
+        except (TypeError, ValueError):
+            return max(0.0, min(1.0, float(fallback)))
+
+    fallback = bounded(default, 0.5)
+    if isinstance(value, dict):
+        typical = bounded(value.get("typical", value.get("value", fallback)), fallback)
+        minimum = bounded(value.get("min", typical - default_span), typical)
+        maximum = bounded(value.get("max", typical + default_span), typical)
+        minimum, maximum = min(minimum, maximum), max(minimum, maximum)
+        typical = max(minimum, min(maximum, typical))
+        status = str(value.get("status") or "provisional_visual_calibration")
+    else:
+        typical = bounded(value, fallback)
+        minimum = maximum = typical
+        status = "legacy_point_value" if value not in (None, "") else "runtime_default"
+    result = {
+        "min": round(minimum, 4),
+        "typical": round(typical, 4),
+        "max": round(maximum, 4),
+        "status": status,
+    }
+    if isinstance(value, dict) and value.get("source"):
+        result["source"] = str(value["source"])
+    return result
 
 
 def plant_trait_display_label(field_key, value):

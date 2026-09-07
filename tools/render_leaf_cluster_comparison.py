@@ -28,7 +28,7 @@ def main():
     body_font = pygame.font.SysFont("consolas", 13)
     small_font = pygame.font.SysFont("consolas", 11)
     screen.blit(title_font.render("Species Sim leaf-cluster comparison", True, (230, 238, 232)), (18, 18))
-    screen.blit(body_font.render("Visible leaf samples remain sparse; clusters carry the estimated canopy load.", True, (157, 181, 169)), (18, 48))
+    screen.blit(body_font.render("Foliage is stored as leaf_clusters (cohorts); rendering expands each into a canopy blob, not a leaf placement.", True, (157, 181, 169)), (18, 48))
 
     for index, species_id in enumerate(("spec_betula_pendula", "spec_quercus_robur")):
         species = loader.entities.get(species_id)
@@ -45,7 +45,7 @@ def main():
         summary = simulation.get_growth_summary()
         screen.blit(body_font.render(simulation.blueprint.display_name, True, (236, 241, 237)), (cell_x + 14, 90))
         screen.blit(small_font.render(
-            f"branches {summary['branch_count']}  •  visible samples {summary['leaf_sample_count']}  •  "
+            f"branches {summary['branch_count']}  •  leaf placements {summary['leaf_count']}  •  "
             f"clusters {summary['leaf_cluster_count']}",
             True, (201, 215, 205),
         ), (cell_x + 14, 114))

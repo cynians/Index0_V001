@@ -17,6 +17,12 @@ DEFAULT_GALLERY_STAGES = (
     ("senescent", 1.0),
 )
 
+TREE_ARCHITECTURE_SPECIES_IDS = (
+    "spec_betula_pendula",
+    "spec_quercus_robur",
+    "spec_aesculus_hippocastanum",
+)
+
 
 @dataclass
 class GrowthGalleryCase:
@@ -61,6 +67,8 @@ def _stage_age(simulation, stage, fraction):
     profile = simulation.life_history_profile
     maturity = simulation.mature_age_days
     if stage == "seedling":
+        if simulation.blueprint.growth.get("growth_behaviour") == "tussock_tillering":
+            return max(1., maturity*.05)
         return 0.0
     if stage in {"juvenile", "subadult"}:
         return max(1.0, maturity * fraction)
@@ -85,6 +93,10 @@ def build_growth_gallery(
 ) -> list[GrowthGalleryCase]:
     """Build a deterministic matrix of maturity stages and individuals."""
 
+    if stages is DEFAULT_GALLERY_STAGES and species_entity.get("plant_growth_behaviour") == "tussock_tillering":
+        # Include flowering explicitly: maturity can precede reproductive onset.
+        stages = (("seedling", .05), ("juvenile", .35), ("mature", 1.),
+                  ("reproductive", 1.), ("senescent", 1.))
     species_id = str(species_id or species_entity.get("id") or "species_preview")
     cases = []
     index = 1
@@ -100,4 +112,40 @@ def build_growth_gallery(
             simulation.set_age(_stage_age(simulation, stage, fraction))
             cases.append(GrowthGalleryCase(index, stage, int(seed), simulation.age_days, simulation))
             index += 1
+    return cases
+
+
+def build_tree_architecture_comparison(world_model=None, *, asset_store=None, seed=303):
+    """Build the fixed three-tree benchmark from live ontology entities."""
+
+    entities = []
+    if world_model is not None:
+        for species_id in TREE_ARCHITECTURE_SPECIES_IDS:
+            if hasattr(world_model, "resolved_species_entity"):
+                entity = world_model.resolved_species_entity(species_id)
+            else:
+                entity = world_model.get_entity(species_id) if hasattr(world_model, "get_entity") else None
+            if isinstance(entity, dict):
+                entities.append(entity)
+    else:
+        from pathlib import Path
+        from world.persistent_ontology_store import PersistentOntologyStore
+
+        datasets = PersistentOntologyStore(
+            Path(__file__).resolve().parents[2] / "ontology" / "index0.owl"
+        ).load_datasets()
+        by_id = {
+            entity["id"]: entity
+            for rows in datasets.values()
+            for entity in rows
+            if isinstance(entity, dict) and entity.get("id")
+        }
+        entities = [by_id[species_id] for species_id in TREE_ARCHITECTURE_SPECIES_IDS if species_id in by_id]
+
+    cases = []
+    for entity in entities:
+        simulation = SpeciesSimulation(species_entity=entity, seed=seed, asset_store=asset_store)
+        simulation.set_lod(2)
+        simulation.set_age(simulation.mature_age_days)
+        cases.append(simulation)
     return cases

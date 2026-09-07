@@ -1,5 +1,9 @@
 # Species Sim plant representation
 
+Further developments: [oak foliage and 32-pixel organ](species_sim_oak_foliage_v001.md),
+[Plantae catalogue, shade and Forest View spacing](species_sim_forest_shade_v001.md),
+and [birch/oak/horse-chestnut tree architecture](species_sim_tree_architecture_v001.md).
+
 Species Sim is a local biological growth lab for one ontology species. It is
 deliberately separate from map, bioregion, and other scenery systems.
 
@@ -46,11 +50,12 @@ Species Sim uses the pair together: form supplies the botanical body-plan
 defaults, while behaviour selects the procedural growth grammar.
 
 This is intentionally a primary strategy rather than a claim that plant growth
-forms or architectural behaviours are mutually exclusive. Determinacy,
-branching type, axis orientation, phyllotaxis, reiteration, and reproductive
-timing are orthogonal architectural traits and can become separate controlled
-fields later. Existing ontology rows are artefacts for this pass and are not
-migrated; new authored entries use the split functional fields directly.
+forms or architectural behaviours are mutually exclusive. Axis continuity,
+branching rhythm and timing, lateral-axis orientation, flowering position and
+apical control are now separate controlled fields. Phyllotaxis remains derived
+from leaf arrangement; determinacy and reiteration can be refined separately
+later. Existing ontology rows are artefacts for this pass and are not migrated;
+new authored entries use the split functional fields directly.
 
 The consolidation follows the architectural-model literature: Hallé, Oldeman,
 and Tomlinson describe modular axes, branching, axis orientation, and
@@ -234,8 +239,8 @@ so map/scenery references do not need to know how the curve was generated.
 The authored representatives intentionally cover different growth
 grammars:
 
-- *Lolium perenne* uses a graminoid, unbranched single-axis blueprint with a
-  reusable long blade and terminal spike.
+- *Lolium perenne* uses a graminoid tussock-tillering blueprint with reusable
+  long blades and per-tiller terminal spikes.
 - *Nymphaea alba* uses an aquatic, determinate-sympodial blueprint with a
   submerged rhizome, petiole-generated surface attachment points, broad
   notched floating leaves, and alternating surface flower positions.
@@ -267,3 +272,14 @@ The water-lily case is grounded in the species descriptions from [RHS](https://w
 [NParks](https://www.nparks.gov.sg/florafaunaweb/flora/2/2/2271), and [NZ Flora](https://www.nzflora.info/factsheet/Taxon/Nymphaea-alba.html).
 The authored values are simulation inputs, not a claim that every species
 trait is fully resolved by the current schema.
+
+
+Implemented Lolium tillering and trait comparisons: [implementation record](species_sim_lolium_tillering_plan_v001.md).
+
+Root tissue visuals and cross-species Compare: [root comparison record](species_sim_root_architecture_v001.md#root-visual-refinement-and-cross-species-compare-2026-09-05).
+
+Reference-image calibration, architecture ranges, and direct Pixel Studio handoff:
+[Species Editor record](species_sim_editor_v001.md).
+
+Below-ground renewal origins driven by `plant_life_form = geophyte`:
+[geophyte life-form record](species_sim_geophyte_life_form_v001.md).

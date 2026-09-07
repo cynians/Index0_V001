@@ -1,4 +1,4 @@
-"""Render the three Species Sim diagnostic views for visual QA."""
+"""Render the Species Sim diagnostic views for visual QA."""
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -35,6 +35,7 @@ def render_views(species_id="spec_betula_pendula"):
     outputs = {}
     for view, filename in (
         ("individual", "species_sim_individual_preview.png"),
+        ("top_down", "species_sim_top_down_preview.png"),
         ("gallery", "species_sim_gallery_preview.png"),
         ("forest", "species_sim_forest_preview.png"),
         ("compare", "species_sim_compare_preview.png"),

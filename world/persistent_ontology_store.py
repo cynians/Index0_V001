@@ -945,6 +945,12 @@ class PersistentOntologyStore:
         property_name = self._owl_name(property_name)
         prop = world[f"{BASE_IRI}{property_name}"]
         if prop is None:
+            # Imported stores may have a stale allocator even when updating
+            # an existing individual with a newly introduced trait property.
+            world.graph.execute(
+                "UPDATE store SET current_resource = MAX(current_resource, "
+                "(SELECT MAX(storid) FROM resources))"
+            )
             with ontology:
                 prop = types.new_class(property_name, (owlready2.DataProperty,))
         return prop

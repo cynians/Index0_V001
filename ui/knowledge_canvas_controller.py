@@ -1705,6 +1705,18 @@ class KnowledgeCanvasController:
                 if choice_rect.collidepoint(mouse_pos) and card_view is not None:
                     card_obj = self._bring_card_to_front(index)
                     if card_obj["card_view"].select_controlled_choice(card_obj, choice_index):
+                        # A click on a dropdown option is itself the confirmation:
+                        # commit the selected value immediately instead of leaving
+                        # it as an uncommitted draft that the user cannot confirm.
+                        # Controlled-choice fields never feed the timeline, so skip
+                        # the year sync / timeline rebuild that a generic commit does
+                        # - those are the expensive part and pure waste here.
+                        card_obj["card_view"].commit_edit_field(card_obj)
+                        if card_obj.get("last_edit_action") == "commit":
+                            self._persist_card_entity(card_obj)
+                        else:
+                            self._save_card_draft(card_obj)
+                        card_obj["last_edit_action"] = None
                         self._relayout_cards()
                     return "__ui_consumed__"
 
@@ -2022,6 +2034,10 @@ class KnowledgeCanvasController:
                         return "__ui_consumed__"
                     if tool_info.get("kind") == "plant_asset_creator":
                         self._create_or_open_plant_asset(card_obj, tool_info.get("asset_role"))
+                        self._relayout_cards()
+                        return "__ui_consumed__"
+                    if tool_info.get("kind") == "jump_to_character_tab":
+                        card_view.set_active_subtab("simulation", "data")
                         self._relayout_cards()
                         return "__ui_consumed__"
                     action_id = tool_info.get("action_id")

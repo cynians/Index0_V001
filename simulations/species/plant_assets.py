@@ -22,7 +22,11 @@ from world.plant_growth_catalog import (
     canonical_plant_growth_form,
     canonical_plant_life_cycle,
 )
-from world.plant_traits import PLANT_TRAIT_FIELDS
+from world.plant_traits import (
+    PLANT_ARCHITECTURE_RANGE_FIELDS,
+    PLANT_TRAIT_FIELDS,
+    normalised_plant_trait_range,
+)
 from simulations.species.root_growth import root_profile
 
 
@@ -118,10 +122,7 @@ def plant_life_history_profile(value, maturity_days):
 def normalised_plant_trait(value, default=0.5):
     """Read a continuous 0..1 plant trait without letting bad data break sim."""
 
-    try:
-        return max(0.0, min(1.0, float(value)))
-    except (TypeError, ValueError):
-        return max(0.0, min(1.0, float(default)))
+    return float(normalised_plant_trait_range(value, default)["typical"])
 
 def is_plant_species_entity(entity: dict[str, Any] | None, plant_catalogue=None) -> bool:
     """Constant-time membership in the repository's Plantae ancestry index.
@@ -445,8 +446,44 @@ class PlantBlueprint:
         leaf_depth_gradient = normalised_plant_trait(entity.get("plant_leaf_depth_gradient"), architecture_defaults[4])
         fine_twig_density = normalised_plant_trait(entity.get("plant_fine_twig_density"), architecture_defaults[5])
         leaf_cluster_density = normalised_plant_trait(entity.get("plant_leaf_cluster_density"), architecture_defaults[6])
+        apical_control = normalised_plant_trait(
+            entity.get("plant_apical_control"),
+            0.72 if shape == "tree" else 0.52,
+        )
+        architecture_ranges = {
+            field_name.removeprefix("plant_"): normalised_plant_trait_range(
+                entity.get(field_name),
+                {
+                    "plant_branch_droop": branch_droop,
+                    "plant_branch_angle_gradient": branch_angle_gradient,
+                    "plant_crown_openness": crown_openness,
+                    "plant_leaf_spacing_bias": leaf_spacing_bias,
+                    "plant_leaf_depth_gradient": leaf_depth_gradient,
+                    "plant_fine_twig_density": fine_twig_density,
+                    "plant_leaf_cluster_density": leaf_cluster_density,
+                    "plant_apical_control": apical_control,
+                }[field_name],
+            )
+            for field_name in PLANT_ARCHITECTURE_RANGE_FIELDS
+        }
+
+        def architecture_category(field_name):
+            return str(entity.get(field_name) or "other_unknown").lower().replace("-", "_").replace(" ", "_")
+
+        belowground_storage = entity.get("belowground_storage") or []
+        if isinstance(belowground_storage, str):
+            belowground_storage = [belowground_storage]
+        else:
+            belowground_storage = list(belowground_storage)
 
         growth = {
+            "clonal_spread": entity.get("clonal_spread") or "other_unknown",
+            "resprouting": entity.get("resprouting") or "other_unknown",
+            "regeneration_strategy": entity.get("regeneration_strategy") or "other_unknown",
+            "shade_tolerance": entity.get("shade_tolerance", "other_unknown"),
+            "plant_life_form": str(entity.get("plant_life_form") or "other_unknown")
+            .lower().replace("-", "_").replace(" ", "_"),
+            "belowground_storage": belowground_storage,
             "shape": shape,
             "growth_form": form,
             "growth_behaviour": behaviour,
@@ -458,7 +495,9 @@ class PlantBlueprint:
             "phyllotaxis_deg": phyllotaxis,
             "leaves_per_node": leaves_per_node,
             "leaf_arrangement": leaf_arrangement,
-            "apical_dominance": 0.72 if shape == "tree" else 0.52,
+            "apical_dominance": apical_control,
+            "apical_control": apical_control,
+            "architecture_ranges": architecture_ranges,
             "growth_rate_bias": growth_rate_bias,
             "initial_cover_bias": 0.35,
             # These are resolved copies of existing ontology fields. They let
@@ -473,6 +512,11 @@ class PlantBlueprint:
             "shoot_dimorphism": shoot_dimorphism,
             "leaf_distribution": leaf_distribution,
             "shoot_distribution_grammar": 1 if is_tree and (entity.get("plant_leaf_distribution") or entity.get("leaf_attachment_pattern") == "along_stem") else 0,
+            "axis_continuity": architecture_category("plant_axis_continuity"),
+            "branching_rhythm": architecture_category("plant_branching_rhythm"),
+            "branching_timing": architecture_category("plant_branching_timing"),
+            "lateral_axis_orientation": architecture_category("plant_lateral_axis_orientation"),
+            "flowering_position": architecture_category("plant_flowering_position"),
             "leaf_spacing_bias": leaf_spacing_bias,
             "branch_droop": branch_droop,
             "branch_angle_gradient": branch_angle_gradient,
@@ -488,7 +532,18 @@ class PlantBlueprint:
             "life_history": life_history,
         }
         growth["root_profile"] = root_profile(growth)
+        from simulations.species.root_visuals import root_visual_profile
+        growth["root_visual_profile"] = root_visual_profile(growth)
         modules = [
+            # Life-form modules are present in the portable recipe but are
+            # instantiated only when the corresponding growth grammar needs
+            # them.  A renewal organ is deliberately not called a bulb/corm:
+            # plant_life_form locates the bud, while belowground_storage names
+            # the organ when that independent field has been authored.
+            PlantModule("renewal_organ", "renewal_organ", length_m=0.015, radius_m=0.0075,
+                        sockets=("base", "renewal_bud")),
+            PlantModule("renewal_bud", "renewal_bud", length_m=0.008, radius_m=0.003,
+                        sockets=("base", "shoot")),
             PlantModule("root_support", "stem_section", length_m=0.1, radius_m=0.02),
             PlantModule("root_section", "root_section", length_m=0.1, radius_m=0.01,
                         asset_ref=str(entity.get("plant_root_module_ref") or "") or None),
@@ -659,8 +714,10 @@ class PlantAssetStore:
         return self.blueprint_root / f"{_safe_id(species_id)}.json.gz"
 
     def snapshot_path(self, snapshot: PlantGrowthSnapshot) -> Path:
+        environment = snapshot.stats.get("environment")
+        suffix = "_e" + hashlib.sha256(json.dumps(environment, sort_keys=True).encode()).hexdigest()[:12] if environment else ""
         return self.snapshot_root / _safe_id(snapshot.species_id) / (
-            f"{snapshot.blueprint_fingerprint}_s{snapshot.seed}_a{int(round(snapshot.age_days))}d_l{snapshot.lod}.json.gz"
+            f"{snapshot.blueprint_fingerprint}_s{snapshot.seed}_a{int(round(snapshot.age_days))}d_l{snapshot.lod}{suffix}.json.gz"
         )
 
     def _write(self, path: Path, payload: dict[str, Any]) -> str:

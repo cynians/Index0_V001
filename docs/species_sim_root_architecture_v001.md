@@ -139,3 +139,77 @@ independence, and older blueprint compatibility.
 The desktop app launched and entered its main loop, but the Windows automation
 surface did not return its window. Images are fresh Species Sim renderer
 previews, not live desktop screenshots; mouse navigation remains unverified.
+
+
+## Root visual refinement and cross-species Compare (2026-09-05)
+
+The earlier pixel-width conversion multiplied every root thickness proxy by
+0.04 metres (0.05 for supports), including ryegrass. This made herbaceous roots
+appear centimetres thick and gave all tissues one flat tan colour.
+
+`root_visuals.py` now supplies explicitly labelled functional-form visual
+defaults: tree radius multiplier .035 m, shrub .012 m, graminoid .0012 m,
+aquatic .002 m, other herbaceous .0028 m. These multiply the existing tapered
+axis proxy and a maturity factor; they are **not measured species diameters**.
+Woody higher-order branches are reduced further to represent fine roots.
+Brown coarse axes blend toward pale fine branches and terminal portions;
+grass roots are cream/tan, aquatic roots muted ochre, and supporting rhizomes
+remain separate stem organs. Colour is a visual cue, not a simulated root-age,
+vitality, mycorrhiza or suberization measurement. Shared traits intentionally
+produce similar roots: the two oaks are not assigned arbitrary species colours.
+
+Each root segment is drawn as a tapered polygon with rounded joins, with
+subtle highlights on coarse axes and a one-pixel visibility floor for fine
+roots. That floor means subpixel roots are exaggerated at overview scale.
+The fixed crown disc is omitted when a connected root graph exists. Explicit
+root assets retain precedence over this fallback. The root grammar version is
+3 (stronger terminal taper); a visual-profile version is included in the
+blueprint fingerprint. Snapshot graph format and physical extents are retained.
+
+Botanical basis: the large size range of woody and fine roots is discussed in
+[The Ecology of Tree Roots](https://doi.org/10.48044/jauf.1982.047).
+[McKenzie and Peterson's root-colour study](https://onlinelibrary.wiley.com/doi/full/10.1111/j.1438-8677.1995.tb00842.x)
+reports brown regions and white growing tips, while showing that browning is
+not simply synonymous with suberization. These support broad tissue distinctions,
+not the selected numeric multipliers or exact RGB values.
+
+### Comparison view
+
+Open **Roots**, then **Compare**. **R** switches between the original individual
+comparison and cross-species roots. **S** switches enlarged detail/shared physical
+scale; **Left/Right** pages through developed plants. Opening Compare refreshes
+the live candidate set; it is retained during rendering rather than traversing
+the ontology each frame.
+
+Candidates use the live quadstore plus the Plantae ancestry catalogue and an
+authored growth behaviour. Six have resolved roots: Silver Birch, Perennial
+Ryegrass, European White Water Lily, Broadleaf Plantain, Sessile Oak and English
+Oak. The other five developed plants (Century Plant, Annual Fleabane, Pussyfoot,
+Common Bracken, Woods Rose) are shown as unresolved because their root
+architecture is unauthored. No ontology values were changed to manufacture
+coverage. Each candidate is compared at 100% structural maturity, seed 303,
+LOD 2; ages differ by the existing species maturity settings.
+
+### Comparison artifacts and verification
+
+- Baseline: `artifacts/root_visuals_before/`, captured before edits using
+  `py -m tools.render_root_comparison --output artifacts/root_visuals_before`.
+- Refined three-species comparison: `artifacts/root_visuals_after/root_comparison.png`.
+- [Actual Compare view, enlarged](../artifacts/root_visuals_after/compare_detail_1.png).
+- [Actual Compare view, shared scale](../artifacts/root_visuals_after/compare_shared_1.png).
+- [Unresolved candidates](../artifacts/root_visuals_after/compare_detail_2.png).
+- Live inputs and defaults: `artifacts/root_visuals_after/functional_plants.json`.
+- Reproduce all cross-species screens: `py -m tools.render_functional_roots`.
+
+Visual inspection confirmed visible taper, coarse/fine separation, distinct grass
+and woody widths, and separate aquatic supports. A follow-up enlarged the scale
+bars for readability. The baseline candidates retain exactly equal canonical
+root depth, spread, length and segment counts. 54 tests plus 28 subtests pass
+across root visuals, root growth, Lolium, species simulation, species diagnostics
+and forest ecology. New coverage verifies width/colour ordering, age response,
+taper, catalogue eligibility, missing traits, and Compare keyboard routing.
+
+The app did not expose a targetable window on the live inspection attempt.
+These are actual-renderer previews, not proof of live mouse navigation. Real
+species-specific root diameters, root-age cohorts, soil interactions and turnover
+remain uncalibrated; the refinement improves legibility and tissue hierarchy.

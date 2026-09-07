@@ -3,8 +3,9 @@
 The literature treats plant architecture as a combination of dimensions rather
 than one universal list of mutually exclusive growth forms.  This catalog is
 therefore deliberately a *primary strategy* picker for the species card.  The
-more orthogonal traits (determinacy, branching type, axis orientation,
-phyllotaxis, and reproductive timing) can be added as separate fields later.
+orthogonal axis-continuity, branching-rhythm/timing, lateral-axis orientation,
+flowering-position and apical-control traits live in ``world.plant_traits``;
+phyllotaxis remains derived from leaf arrangement.
 """
 
 from world.plant_traits import (

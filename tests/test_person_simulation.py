@@ -94,6 +94,94 @@ class PersonSimulationTests(unittest.TestCase):
         self.assertGreaterEqual(len(self.sim.task_queue), 2)
         self.assertEqual("food", self.sim.task_queue[0]["point_id"])
 
+    def test_sparse_stub_person_is_flagged_for_character_creation(self):
+        # self.person authors identity, social, and knowledge but no
+        # personality/motivation/site data -- readiness should land as
+        # "sparse", not silently pass as a fully authored character.
+        self.assertEqual("sparse", self.sim.character_readiness["tier"])
+        self.assertTrue(self.sim.needs_character_creation)
+        payload = self.sim.get_person_render_payload()
+        self.assertTrue(payload["needs_character_creation"])
+        self.assertEqual("sparse", payload["character_readiness_tier"])
+
+    def test_site_less_person_spawns_in_void_not_the_lumber_test_site(self):
+        # self.person has no simulation_site and no associated_locations
+        # with simulation_points -- worldgen has nothing to place them in
+        # yet, so they must not silently land inside the authored lumber
+        # site's geometry.
+        self.assertTrue(self.sim.in_void)
+        self.assertIsNone(self.sim.site_entity_id)
+        self.assertEqual({}, self.sim.site_entity)
+        self.assertEqual([], self.sim.site_structures)
+        self.assertEqual([], self.sim.wall_segments)
+        self.assertEqual([], self.sim.site_people)
+        payload = self.sim.get_person_render_payload()
+        self.assertTrue(payload["in_void"])
+        self.assertEqual([], payload["structures"])
+        self.assertEqual([], payload["wall_segments"])
+
+    def test_authored_site_clears_void_state(self):
+        self.world.entities["location_authored_site"] = {
+            "id": "location_authored_site", "type": "location",
+            "bounds": {"min_x": -5, "max_x": 5, "min_y": -5, "max_y": 5},
+            "simulation_points": [{"id": "bed", "position": [1.0, 1.0]}],
+        }
+        self.person["simulation_site"] = "location_authored_site"
+        sim = PersonSimulation(self.world, self.person["id"], year=2400)
+        self.assertFalse(sim.in_void)
+        self.assertEqual("location_authored_site", sim.site_entity_id)
+
+    def test_asset_palette_excludes_duty_only_points(self):
+        # lumber_dropoff/lumber_pickup are duty-only (no tags): the rudimentary
+        # placer only ever offers the player-facing point kinds.
+        self.assertEqual(
+            {"bed", "food", "kitchen", "job", "target"},
+            {entry["id"] for entry in self.sim.asset_palette},
+        )
+        for entry in self.sim.asset_palette:
+            self.assertNotIn("position", entry)
+
+    def test_placement_mode_requires_void(self):
+        self.world.entities["location_authored_site"] = {
+            "id": "location_authored_site", "type": "location",
+            "bounds": {"min_x": -5, "max_x": 5, "min_y": -5, "max_y": 5},
+            "simulation_points": [{"id": "bed", "position": [1.0, 1.0]}],
+        }
+        self.person["simulation_site"] = "location_authored_site"
+        sim = PersonSimulation(self.world, self.person["id"], year=2400)
+        self.assertFalse(sim.select_asset_for_placement("bed"))
+        self.assertFalse(sim.placement_mode)
+
+    def test_number_key_selects_palette_entry_and_enters_placement_mode(self):
+        self.assertTrue(self.sim.in_void)
+        key_event = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_1)
+        self.sim.handle_event(key_event)
+        self.assertTrue(self.sim.placement_mode)
+        self.assertEqual(self.sim.asset_palette[0]["id"], self.sim.placement_selected_asset_id)
+
+    def test_escape_cancels_placement_mode(self):
+        self.sim.select_asset_for_placement("target")
+        self.sim.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_ESCAPE))
+        self.assertFalse(self.sim.placement_mode)
+        self.assertIsNone(self.sim.placement_selected_asset_id)
+
+    def test_left_click_while_placing_moves_the_point_there(self):
+        self.sim.select_asset_for_placement("target")
+        click_position = (33.0, -17.0)
+        event = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=click_position)
+        self.sim.handle_pointer_event(event, _IdentityCamera(), click_position)
+        self.assertFalse(self.sim.placement_mode)
+        self.assertEqual(click_position, self.sim.test_points["target"]["position"])
+        self.assertTrue(self.sim.test_points["target"]["placed"])
+
+    def test_right_click_while_placing_cancels_instead_of_opening_a_card(self):
+        self.sim.select_asset_for_placement("target")
+        original_position = tuple(self.sim.test_points["target"]["position"])
+        event = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=3, pos=(0, 0))
+        self.sim.handle_pointer_event(event, _IdentityCamera(), (0, 0))
+        self.assertFalse(self.sim.placement_mode)
+        self.assertEqual(original_position, self.sim.test_points["target"]["position"])
+
     def test_authored_wish_tag_queues_matching_internal_task(self):
         # lumber_dropoff/lumber_pickup are duty-only (no tags) -- kitchen is
         # the only personal point outside the default food/bed/job/target
@@ -524,6 +612,15 @@ class PersonSimulationTests(unittest.TestCase):
 
         self.assertIsNone(self.sim.direct_target)
         self.assertIsNone(self.sim.consume_pending_floating_card_target())
+
+    def test_open_character_editor_requests_the_full_edit_mode_card_on_self(self):
+        result = self.sim.open_character_editor()
+
+        self.assertTrue(result)
+        target = self.sim.consume_pending_floating_card_target()
+        self.assertIsNotNone(target)
+        self.assertEqual(self.person["id"], target["id"])
+        self.assertEqual("edit", target["mode"])
 
     def test_right_click_far_from_any_point_does_nothing(self):
         far_pos = (500.0, 500.0)

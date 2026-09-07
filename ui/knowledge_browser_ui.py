@@ -3246,9 +3246,16 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         get_entities = getattr(self.world_model, "get_entities_by_dataset", None)
         if callable(get_entities):
             for idea in get_entities("ideas"):
-                if not self._is_illustration_entity(idea):
+                if not (
+                    isinstance(idea, dict)
+                    and str(idea.get("type") or "").strip().lower() == "idea"
+                    and str(idea.get("idea_class") or "").strip().lower() == "illustration"
+                ):
                     continue
-                if parent_id not in self._relation_reference_values(idea.get("parents")):
+                parent_ids = idea.get("parents")
+                if isinstance(parent_ids, str):
+                    parent_ids = [parent_ids]
+                if not isinstance(parent_ids, list) or parent_id not in parent_ids:
                     continue
                 existing_role = str(
                     idea.get("plant_asset_role")
@@ -4511,6 +4518,26 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
     def _persist_card_entity(self, card):
         return self._repository_service()._persist_card_entity(card)
 
+    def _persist_committed_field(self, card, card_view):
+        """Persist a just-committed edit, skipping the timeline rebuild when the
+        committed field cannot influence the timeline.
+
+        ``_refresh_timeline_items`` re-reads every entity and relays the whole
+        timeline; for a controlled-choice field (e.g. plant growth form) that is
+        pure overhead and shows up as a visible spike on each selection.
+        """
+        committed_field = card.get("last_committed_field")
+        skips_timeline = bool(
+            committed_field
+            and card_view is not None
+            and hasattr(card_view, "_is_controlled_choice_field")
+            and card_view._is_controlled_choice_field(committed_field)
+        )
+        self._persist_card_entity(card)
+        if not skips_timeline:
+            self._sync_card_years_from_entity(card)
+            self._refresh_timeline_items()
+
     def _persist_card_palette(self, card):
         return self._repository_service()._persist_card_palette(card)
 
@@ -5528,9 +5555,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 action = card.get("last_edit_action")
                 quote_draft_action = action == "draft" and self._is_person_quote_edit_field(card)
                 if action == "commit":
-                    self._persist_card_entity(card)
-                    self._sync_card_years_from_entity(card)
-                    self._refresh_timeline_items()
+                    self._persist_committed_field(card, card_view)
                 elif action == "cancel":
                     card["last_edit_action"] = None
                 elif action == "draft":
@@ -5615,9 +5640,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 action = card.get("last_edit_action")
                 quote_draft_action = action == "draft" and self._is_person_quote_edit_field(card)
                 if action == "commit":
-                    self._persist_card_entity(card)
-                    self._sync_card_years_from_entity(card)
-                    self._refresh_timeline_items()
+                    self._persist_committed_field(card, card_view)
                 elif action == "cancel":
                     card["last_edit_action"] = None
                 elif action == "draft":

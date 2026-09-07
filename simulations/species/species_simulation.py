@@ -33,11 +33,16 @@ class SpeciesSimulation:
 
     render_mode = "species"
     min_zoom = 0.15
-    max_zoom = 8.0
+    # Was 8.0 pixels/metre, which caps a ~20-30m tree at a couple hundred
+    # pixels tall with no way to zoom in on canopy/branch detail from the
+    # main viewport. Whole-tree draws are now cached (SpeciesRenderer's
+    # per-frame draw cache) and foliage is cluster-based rather than
+    # per-leaf, so a much closer zoom no longer costs proportionally more.
+    max_zoom = 128.0
     preferred_zoom = 1.15
     HUMAN_REFERENCE_HEIGHT_M = 1.75
 
-    def __init__(self, world_model=None, species_id=None, species_entity=None, seed=1, blueprint=None, asset_store=None):
+    def __init__(self, world_model=None, species_id=None, species_entity=None, seed=1, blueprint=None, asset_store=None, environment=None):
         class _DummySystem:
             def update(self, dt):
                 pass
@@ -60,8 +65,23 @@ class SpeciesSimulation:
             else self.asset_store.load_blueprint(self.species_id)
         ) or PlantBlueprint.from_species_entity(self.species_entity, self.species_id)
         self.seed = int(seed)
+        self.environment = dict(environment or {})
+        self.forest_spacing = "medium"
+        self.forest_tolerance = None
+        self.forest_view_style = "isometric"
+        self._forest_cache = None
         self.diagnostic_view = "individual"
+        self.comparison_subject = "individual"
+        self.root_comparison_page = 0
+        self.root_comparison_common_scale = False
+        self._root_comparison_cases = None
+        self._tree_architecture_cases = None
         self._diagnostic_cases = None
+        self.species_editor = None
+        self._species_editor_preview = {}
+        self._species_editor_last_previews = None
+        self._species_editor_hitboxes = []
+        self.pending_navigation_action = None
         self.age_days = min(90.0, max(1.0, self.max_age_days * 0.5))
         self.lod = 2
         self.render_snapshot = self.generate_snapshot(self.age_days, self.lod)
@@ -74,6 +94,356 @@ class SpeciesSimulation:
     def year(self):
         return 2400
 
+    def set_forest_settings(self, spacing=None, tolerance="unchanged"):
+        if spacing is not None:
+            if spacing not in {"dense", "medium", "open"}:
+                raise ValueError("Unknown forest spacing")
+            self.forest_spacing = spacing
+        if tolerance != "unchanged":
+            if tolerance not in {None, "low", "medium", "high"}:
+                raise ValueError("Unknown shade tolerance")
+            self.forest_tolerance = tolerance
+        self._forest_cache = None
+
+    def get_forest_experiment(self):
+        from simulations.species.forest_ecology import build_forest_plan
+        key = (self.seed, self.blueprint.fingerprint(), self.forest_spacing, self.forest_tolerance)
+        if self._forest_cache and self._forest_cache[0] == key:
+            return self._forest_cache[1:]
+        plan = build_forest_plan(self.blueprint.growth, self.seed, self.forest_spacing, self.forest_tolerance)
+        cases = []
+        for tree in plan["trees"]:
+            case = SpeciesSimulation(species_entity=self.species_entity, blueprint=self.blueprint,
+                                     seed=tree["seed"], environment=tree["environment"])
+            case.lod = 1
+            case.set_age(case.mature_age_days*tree["maturity"])
+            cases.append(case)
+        self._forest_cache = (key, plan, cases)
+        return plan, cases
+
+    def handle_comparison_key(self, event):
+        import pygame
+        if self.diagnostic_view != "compare" or event.type != pygame.KEYDOWN:
+            return False
+        if event.key == pygame.K_r:
+            self.comparison_subject = "individual" if self.comparison_subject == "roots" else "roots"
+        elif self.comparison_subject == "roots" and event.key == pygame.K_s:
+            self.root_comparison_common_scale = not self.root_comparison_common_scale
+        elif self.comparison_subject == "roots" and event.key in (pygame.K_LEFT, pygame.K_RIGHT):
+            self.root_comparison_page += 1 if event.key == pygame.K_RIGHT else -1
+        else:
+            return False
+        return True
+
+    def get_root_comparison_cases(self):
+        if self._root_comparison_cases is None:
+            from simulations.species.root_comparison import build_root_comparison
+            self._root_comparison_cases = build_root_comparison()
+        return self._root_comparison_cases
+
+    def get_tree_architecture_cases(self):
+        if self._tree_architecture_cases is None:
+            from simulations.species.species_diagnostics import build_tree_architecture_comparison
+
+            self._tree_architecture_cases = build_tree_architecture_comparison(
+                self.world_model,
+                asset_store=self.asset_store,
+                seed=303,
+            )
+        return list(self._tree_architecture_cases)
+
+    def _ensure_species_editor(self):
+        if self.species_editor is None:
+            from simulations.species.species_editor import new_editor_state
+            self.species_editor = new_editor_state(self.species_entity)
+        return self.species_editor
+
+    def set_species_editor_hitboxes(self, hitboxes):
+        self._species_editor_hitboxes = list(hitboxes or [])
+
+    def _sync_species_editor_asset_refs(self):
+        """Pull freshly saved Pixel Studio references into the open preview."""
+        if self.world_model is None:
+            return False
+        live = self.world_model.get_entity(self.species_id)
+        if not isinstance(live, dict):
+            return False
+        state = self._ensure_species_editor()
+        changed = False
+        for field_name in (
+            "plant_root_module_ref",
+            "plant_stem_module_ref",
+            "plant_branch_module_ref",
+            "plant_leaf_module_ref",
+            "plant_flower_module_ref",
+            "plant_fruit_module_ref",
+        ):
+            if live.get(field_name) == state["working_entity"].get(field_name):
+                continue
+            state["working_entity"][field_name] = live.get(field_name)
+            state["original_entity"][field_name] = live.get(field_name)
+            changed = True
+        if changed:
+            self._invalidate_species_editor_preview()
+            state["status"] = "Pixel module updated in the mature preview."
+        return changed
+
+    def get_species_editor_previews(self):
+        import json
+        from simulations.species.species_editor import preview_entity
+        state = self._ensure_species_editor()
+        self._sync_species_editor_asset_refs()
+        if state.get("preview_deferred") and self._species_editor_last_previews:
+            return list(self._species_editor_last_previews)
+        signature = json.dumps(state["working_entity"], sort_keys=True, default=str)
+        mode = state.get("preview_mode", "typical")
+        count = int(state.get("variation_count", 4)) if mode == "variation" else 1
+        previews = []
+        for index in range(count):
+            key = (signature, mode, index)
+            preview = self._species_editor_preview.get(key)
+            if preview is None:
+                preview = SpeciesSimulation(
+                    species_entity=preview_entity(state, mode, index),
+                    species_id=self.species_id,
+                    seed=303 + index,
+                    asset_store=self.asset_store,
+                )
+                # Build the requested mature preview once. Calling set_lod()
+                # and then set_age() would regenerate this large tree twice.
+                preview.lod = 1 if mode == "variation" else 2
+                preview.age_days = preview.mature_age_days
+                preview.render_snapshot = preview.generate_snapshot(preview.age_days, preview.lod)
+                preview.bounds = preview._bounds_for_camera(preview.render_snapshot.bounds_m)
+                self._species_editor_preview[key] = preview
+            previews.append(preview)
+        if len(self._species_editor_preview) > 20:
+            self._species_editor_preview = {key: self._species_editor_preview[key] for key in list(self._species_editor_preview)[-12:]}
+        self._species_editor_last_previews = list(previews)
+        return previews
+
+    def get_species_editor_preview(self):
+        return self.get_species_editor_previews()[0]
+
+    def _invalidate_species_editor_preview(self):
+        self._species_editor_preview = {}
+        self._species_editor_last_previews = None
+
+    def save_species_editor(self):
+        import copy
+        state = self._ensure_species_editor()
+        entity = copy.deepcopy(state["working_entity"])
+        loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
+        if loader is not None and not loader.persist_entity(entity):
+            state["status"] = "Could not save the species to the ontology."
+            return False
+        if self.world_model is not None and hasattr(self.world_model, "mark_repository_changed"):
+            self.world_model.mark_repository_changed()
+        self.species_entity = entity
+        self.blueprint = PlantBlueprint.from_species_entity(entity, self.species_id)
+        self.age_days = self.mature_age_days
+        self.render_snapshot = self.generate_snapshot(self.age_days, self.lod)
+        self.bounds = self._bounds_for_camera(self.render_snapshot.bounds_m)
+        state["original_entity"] = copy.deepcopy(entity)
+        state["working_entity"] = copy.deepcopy(entity)
+        state["dirty"] = False
+        state["undo_stack"] = []
+        state["redo_stack"] = []
+        state["status"] = "Saved to the live species record."
+        self._invalidate_species_editor_preview()
+        return True
+
+    def revert_species_editor(self):
+        import copy
+        from simulations.species.species_editor import record_history
+        state = self._ensure_species_editor()
+        record_history(state)
+        state["working_entity"] = copy.deepcopy(state["original_entity"])
+        state["dirty"] = False
+        state["active_range"] = None
+        state["status"] = "Unsaved field changes reverted; the reference image is still local."
+        self._invalidate_species_editor_preview()
+        return True
+
+    def consume_pending_navigation_action(self):
+        action = self.pending_navigation_action
+        self.pending_navigation_action = None
+        return action
+
+    def consumes_global_keydown(self):
+        return self.diagnostic_view == "editor"
+
+    def handle_event(self, event):
+        import pygame
+        from simulations.species.species_editor import load_reference_from_clipboard, redo, undo
+        if self.diagnostic_view != "editor":
+            return False
+        state = self._ensure_species_editor()
+        if event.type == pygame.KEYDOWN:
+            modifiers = getattr(event, "mod", 0)
+            if event.key == pygame.K_v and modifiers & pygame.KMOD_CTRL:
+                return load_reference_from_clipboard(state)
+            if event.key == pygame.K_s and modifiers & pygame.KMOD_CTRL:
+                return self.save_species_editor()
+            if event.key == pygame.K_z and modifiers & pygame.KMOD_CTRL:
+                changed = redo(state) if modifiers & pygame.KMOD_SHIFT else undo(state)
+                if changed:
+                    self._invalidate_species_editor_preview()
+                return True
+            if event.key == pygame.K_y and modifiers & pygame.KMOD_CTRL:
+                changed = redo(state)
+                if changed:
+                    self._invalidate_species_editor_preview()
+                return True
+            if event.key == pygame.K_ESCAPE:
+                return self.set_active_simulation_panel_tab("individual")
+            if event.key == pygame.K_BACKSPACE:
+                state["query"] = state.get("query", "")[:-1]
+                state["scroll"] = 0
+                return True
+            text = str(getattr(event, "unicode", "") or "")
+            if text.isprintable() and not modifiers & (pygame.KMOD_CTRL | pygame.KMOD_ALT):
+                state["query"] = (state.get("query", "") + text)[:48]
+                state["scroll"] = 0
+                return True
+        if event.type == pygame.MOUSEWHEEL:
+            state["scroll"] = max(0, int(state.get("scroll", 0)) - int(event.y) * 2)
+            return True
+        return False
+
+    def _editor_hitbox_at(self, screen_pos):
+        for hitbox in reversed(self._species_editor_hitboxes):
+            rect = hitbox.get("rect")
+            if rect is not None and rect.collidepoint(screen_pos):
+                return hitbox
+        return None
+
+    def _set_editor_range_from_pointer(self, active, mouse_x):
+        from simulations.species.species_editor import set_range_handle
+        rect = active["rect"]
+        value = (float(mouse_x) - rect.x) / max(1, rect.width)
+        state = self._ensure_species_editor()
+        changed = set_range_handle(state, active["field"], active["handle"], value, record=False)
+        if changed and not state.get("preview_deferred"):
+            self._invalidate_species_editor_preview()
+        return changed
+
+    def handle_pointer_motion(self, event, camera, screen_pos):
+        if self.diagnostic_view != "editor":
+            return False
+        state = self._ensure_species_editor()
+        active = state.get("active_range")
+        if active and getattr(event, "buttons", (False,))[0]:
+            return self._set_editor_range_from_pointer(active, screen_pos[0])
+        return False
+
+    def handle_pointer_event(self, event, camera, screen_pos):
+        import pygame
+        from simulations.species.species_editor import (
+            cycle_choice, load_reference_from_clipboard, range_value, record_history, redo, undo,
+        )
+        if self.diagnostic_view != "editor" or event.button not in (1, 3):
+            return False
+        state = self._ensure_species_editor()
+        if event.type == pygame.MOUSEBUTTONUP:
+            if state.get("active_range"):
+                state["preview_deferred"] = False
+                self._invalidate_species_editor_preview()
+            state["active_range"] = None
+            return True
+        if event.type != pygame.MOUSEBUTTONDOWN:
+            return False
+        hitbox = self._editor_hitbox_at(screen_pos)
+        if hitbox is None:
+            return False
+        kind = hitbox.get("kind")
+        if kind == "paste":
+            return load_reference_from_clipboard(state)
+        if kind == "save":
+            return self.save_species_editor()
+        if kind == "revert":
+            return self.revert_species_editor()
+        if kind in {"undo", "redo"}:
+            changed = undo(state) if kind == "undo" else redo(state)
+            if changed:
+                self._invalidate_species_editor_preview()
+            return True
+        if kind == "preview_mode":
+            state["preview_mode"] = hitbox["mode"]
+            state["status"] = f"Preview mode: {hitbox['mode']}."
+            self._species_editor_last_previews = None
+            return True
+        if kind == "field_group":
+            state["field_group"] = hitbox["group"]
+            state["scroll"] = 0
+            return True
+        if kind == "preview_only":
+            state["preview_only"] = not state.get("preview_only", True)
+            state["scroll"] = 0
+            return True
+        if kind == "reference_control":
+            control = hitbox.get("control")
+            if control == "overlay":
+                state["reference_overlay"] = not state.get("reference_overlay", False)
+            elif control == "silhouette":
+                state["reference_silhouette"] = not state.get("reference_silhouette", False)
+            elif control == "opacity":
+                state["reference_opacity"] = max(.1, min(.9, state.get("reference_opacity", .35) + hitbox.get("delta", 0)))
+            elif control == "scale":
+                state["reference_scale"] = max(.35, min(2.5, state.get("reference_scale", 1.) + hitbox.get("delta", 0)))
+            elif control == "move":
+                offset = state.setdefault("reference_offset", [0., 0.])
+                if hitbox.get("center"):
+                    offset[:] = [0., 0.]
+                else:
+                    offset[0] = max(-.8, min(.8, offset[0] + hitbox.get("dx", 0)))
+                    offset[1] = max(-.8, min(.8, offset[1] + hitbox.get("dy", 0)))
+            return True
+        if kind == "asset":
+            self.pending_navigation_action = {
+                "id": "open_species_asset_editor",
+                "entity_id": self.species_id,
+                "asset_role": hitbox.get("role"),
+            }
+            return True
+        if kind == "card":
+            state["selected_field"] = hitbox.get("field")
+            state["status"] = "This field uses the full Species Card editor."
+            return True
+        if kind == "choice":
+            changed = cycle_choice(state, hitbox["field"], -1 if event.button == 3 else 1)
+            if changed:
+                self._invalidate_species_editor_preview()
+            return True
+        if kind == "range":
+            record_history(state)
+            current = range_value(state, hitbox["field"])
+            rect = hitbox["rect"]
+            value = (screen_pos[0] - rect.x) / max(1, rect.width)
+            handle = min(("min", "typical", "max"), key=lambda name: abs(float(current[name]) - value))
+            active = {"field": hitbox["field"], "handle": handle, "rect": rect}
+            state["active_range"] = active
+            state["preview_deferred"] = True
+            return self._set_editor_range_from_pointer(active, screen_pos[0])
+        return False
+
+    def handle_forest_key(self, event):
+        import pygame
+        if self.diagnostic_view != "forest" or event.type != pygame.KEYDOWN:
+            return False
+        if event.key == pygame.K_s:
+            values = ["dense", "medium", "open"]
+            self.set_forest_settings(spacing=values[(values.index(self.forest_spacing)+1)%3])
+        elif event.key == pygame.K_t:
+            values = [None, "low", "medium", "high"]
+            self.set_forest_settings(tolerance=values[(values.index(self.forest_tolerance)+1)%4])
+        elif event.key == pygame.K_v:
+            values = ["light_map", "isometric"]
+            self.forest_view_style = values[(values.index(self.forest_view_style)+1)%2]
+        else:
+            return False
+        return True
+
     @property
     def suppress_global_overlays(self):
         # Diagnostic canvases reserve their own header and footer. The global
@@ -82,6 +452,9 @@ class SpeciesSimulation:
 
     def update(self, dt):
         self.sim_manager.update(dt)
+        if self.diagnostic_view in {"forest", "architecture", "editor"}:
+            # Forest experiments use fixed ages for paired comparisons.
+            return
         # A preview advances slowly enough that a user can watch branches form.
         elapsed = max(0.0, float(dt)) * 0.5
         if self.blueprint.growth.get("shoot_distribution_grammar"):
@@ -246,9 +619,11 @@ class SpeciesSimulation:
 
     def _module_table(self, lod):
         module_ids = {self.blueprint.root_module_id, "stem_section", "root_section", "root_support"}
-        if lod >= 1:
+        if self.blueprint.growth.get("plant_life_form") == "geophyte":
+            module_ids.update({"renewal_organ", "renewal_bud"})
+        if lod >= 1 or self.blueprint.growth.get("shoot_distribution_grammar"):
             module_ids.add("branch_section")
-        if lod >= 2:
+        if lod >= 1:
             module_ids.update({"leaf", "flower", "fruit"})
         modules = {
             module.id: module.to_dict()
@@ -284,6 +659,34 @@ class SpeciesSimulation:
                 if isinstance(point, (list, tuple)) and len(point) >= 3
             ]
         return placement_index
+
+    def _growth_origin(self, placements, root_z=0.0):
+        """Create the soil anchor and return the parent for aerial shoots.
+
+        Raunkiaer life form describes renewal-bud position, not a season or an
+        organ's storage physiology.  Geophytes therefore gain a below-ground
+        renewal origin while other life forms retain the historical surface
+        origin.  ``belowground_storage`` may further name the supporting organ
+        (for example a corm), but is not inferred from geophytism alone.
+        """
+
+        crown = self._add(placements, "root", -1, 0.0, 0.0, root_z, 0.0, 1.0, 0)
+        if self.blueprint.growth.get("plant_life_form") != "geophyte":
+            return crown
+
+        max_height = max(0.1, float(self.blueprint.growth.get("max_height_m", 1.0) or 1.0))
+        # Bud depth is currently a transparent runtime default because the
+        # ontology stores the life-form class but no measured renewal depth.
+        depth = max(0.025, min(0.12, max_height * 0.08))
+        organ_scale = max(0.7, min(1.8, max_height / 0.75))
+        organ = self._add(
+            placements, "renewal_organ", crown,
+            0.0, 0.0, root_z - depth, 0.0, organ_scale, 0,
+        )
+        return self._add(
+            placements, "renewal_bud", organ,
+            0.0, 0.0, root_z - depth * 0.62, 0.0, organ_scale, 0,
+        )
 
     @staticmethod
     def _normalise_vector(vector, fallback=(0.0, 0.0, 1.0)):
@@ -384,7 +787,7 @@ class SpeciesSimulation:
         return points
 
     def _grow_rosette(self, placements, maturity, lod):
-        root = self._add(placements, "root", -1, 0.0, 0.0, 0.0, 0.0, 1.0, 0)
+        root = self._growth_origin(placements)
         count = max(3, int(round(5 + maturity * 7)))
         if lod == 0:
             count = min(count, 3)
@@ -413,7 +816,7 @@ class SpeciesSimulation:
         if lod == 0:
             frond_count = min(frond_count, 3)
         segments = min(10, max(3, int(round(4 + maturity * 6))))
-        root = self._add(placements, "root", -1, 0.0, 0.0, 0.0, 0.0, 1.0, 0)
+        root = self._growth_origin(placements)
         for frond_index in range(frond_count):
             angle = frond_index * 360.0 / frond_count + 17.0
             radians = math.radians(angle)
@@ -472,7 +875,7 @@ class SpeciesSimulation:
         leaf_count = max(5, int(round(8 + maturity * 6)))
         if lod == 0:
             leaf_count = min(leaf_count, 5)
-        root = self._add(placements, "root", -1, 0.0, 0.0, 0.0, 0.0, 1.0, 0)
+        root = self._growth_origin(placements)
         for index in range(leaf_count):
             angle = index * 137.5 + 8.0
             radians = math.radians(angle)
@@ -531,7 +934,7 @@ class SpeciesSimulation:
         shoot_count = max(6, int(round(10 + maturity * 14)))
         if lod == 0:
             shoot_count = min(shoot_count, 6)
-        root = self._add(placements, "root", -1, 0.0, 0.0, 0.0, 0.0, 1.0, 0)
+        root = self._growth_origin(placements)
         for index in range(shoot_count):
             angle = index * 137.5
             radians = math.radians(angle)
@@ -579,7 +982,7 @@ class SpeciesSimulation:
         scenery can later consume the resulting compact placement product.
         """
 
-        root = self._add(placements, "root", -1, 0.0, 0.0, -0.22, 0.0, 1.0, 0)
+        root = self._growth_origin(placements, root_z=-0.22)
         count = max(3, int(round(4 + maturity * 5)))
         if lod == 0:
             count = min(count, 3)
@@ -690,7 +1093,7 @@ class SpeciesSimulation:
         branch_angle = float(growth.get("branch_angle_deg", 28.0) or 28.0)
         phyllotaxis = float(growth.get("phyllotaxis_deg", 137.5) or 137.5)
 
-        root = self._add(placements, "root", -1, 0.0, 0.0, 0.0, 0.0, 1.0, 0)
+        root = self._growth_origin(placements)
         parent, x, y = root, 0.0, 0.0
         for generation in range(generations):
             fraction = (generation + 1) / max(1, generations)
@@ -733,7 +1136,7 @@ class SpeciesSimulation:
         internode = max(0.04, float(growth.get("internode_length_m", 0.2) or 0.2))
         nodes = min(18, max(2, int(round((length / internode) * maturity))))
         leaves_per_node = 0 if lod == 0 else 1
-        root = self._add(placements, "root", -1, 0.0, 0.0, 0.0, 0.0, 1.0, 0)
+        root = self._growth_origin(placements)
         parent, x, y = root, 0.0, 0.0
         for index in range(nodes):
             angle = 12.0 * math.sin(index * 0.8)
@@ -746,43 +1149,43 @@ class SpeciesSimulation:
             y += math.sin(math.radians(angle)) * 0.08
             parent = stem
 
-    def _grow_tussock(self, placements, maturity, lod, rng, flowering_factor=0.0):
-        """Grow several independent basal shoots from one crown."""
+    def _grow_tussock(self, placements, maturity, lod, rng, flowering_factor=0.0, attachment_points=None):
+        """Independent basal tillers; spread controls footprint, not shoot count.
 
+        Radius/drift factors are bounded qualitative defaults, not measured rates.
+        Unknown spread preserves the historical low-spread geometry.
+        """
         growth = self.blueprint.growth
         max_height = max(0.1, float(growth.get("max_height_m", 1.0) or 1.0))
         internode = max(0.03, float(growth.get("internode_length_m", 0.2) or 0.2))
         generations = min(10, max(1, int(round((max_height / internode) * maturity))))
         shoot_count = max(3, int(round(4 + 5 * maturity)))
-        if lod == 0:
-            shoot_count = min(shoot_count, 3)
-        root = self._add(placements, "root", -1, 0.0, 0.0, 0.0, 0.0, 1.0, 0)
+        spread = {"none": .12, "low": 1., "moderate": 1.6, "high": 2.4}.get(growth.get("clonal_spread"), 1.)
+        drift = 0. if growth.get("clonal_spread") == "none" else .01 * spread
+        root = self._growth_origin(placements)
+        size_factor = max(.025, math.sqrt(maturity))
+        phase = rng.uniform(0., math.tau)
         for shoot in range(shoot_count):
-            angle = shoot * 360.0 / shoot_count
+            angle = phase + shoot * math.tau / shoot_count + rng.uniform(-.12, .12)
+            height_factor = rng.uniform(.74, 1.)
+            x, y = math.cos(angle)*.04*spread*size_factor, math.sin(angle)*.04*spread*size_factor
             parent = root
-            x = math.cos(math.radians(angle)) * 0.04
-            y = math.sin(math.radians(angle)) * 0.04
             for generation in range(generations):
-                z = min(max_height * maturity, internode * (generation + 1))
-                stem = self._add(placements, "stem_section", parent, x, y, z, angle, 0.65 + 0.35 * maturity, 1)
-                if lod >= 1:
-                    leaf_angle = angle + 90.0 * (generation % 2)
-                    self._add(placements, "leaf", stem, x, y, z, leaf_angle, 0.55 + 0.45 * maturity, 2)
-                if generation == generations - 1 and lod >= 2 and flowering_factor > 0.0:
-                    self._add(
-                        placements,
-                        "flower",
-                        stem,
-                        x,
-                        y,
-                        z + 0.08,
-                        angle,
-                        0.65 + 0.35 * flowering_factor,
-                        3,
-                    )
+                z = max_height * maturity * height_factor * (generation+1)/generations
+                stem = self._add(placements, "stem_section", parent, x, y, z, 0., .65+.35*maturity, 1)
+                # Keep upper flowering culms relatively bare; leaves emerge at nodes.
+                if lod >= 1 and maturity > 0 and generation < min(3, generations):
+                    leaf_angle = (300. if math.cos(angle) < 0 else 60.) + (generation%2)*12.
+                    leaf = self._add(placements, "leaf", stem, x, y, z, leaf_angle, size_factor, 2)
+                    if attachment_points is not None:
+                        attachment_points.append({"stem_placement_index": stem, "leaf_placement_index": leaf,
+                                                  "socket": "leaf", "position_m": [round(x,4), round(y,4), round(z,4)]})
+                if generation == generations-1 and lod >= 1 and flowering_factor > 0.:
+                    # The painted spike is an organ attached exactly at the culm tip.
+                    self._add(placements, "flower", stem, x, y, z, 0., .65+.35*flowering_factor, 3)
                 parent = stem
-                x += math.cos(math.radians(angle)) * 0.01
-                y += math.sin(math.radians(angle)) * 0.01
+                x += math.cos(angle)*drift*size_factor
+                y += math.sin(angle)*drift*size_factor
 
     def _grow_single_axis(self, placements, maturity, lod, flowering_factor=0.0, attachment_points=None):
         """Grow one upright culm with alternating leaves and one terminal flower."""
@@ -791,7 +1194,7 @@ class SpeciesSimulation:
         max_height = max(0.1, float(growth.get("max_height_m", 1.0) or 1.0))
         internode = max(0.03, float(growth.get("internode_length_m", 0.2) or 0.2))
         segments = min(14, max(1, int(round((max_height / internode) * maturity))))
-        root = self._add(placements, "root", -1, 0.0, 0.0, 0.0, 0.0, 1.0, 0)
+        root = self._growth_origin(placements)
         parent = root
         x, y = 0.0, 0.0
         for index in range(segments):
@@ -834,7 +1237,7 @@ class SpeciesSimulation:
             parent = stem
             x += 0.006 * math.sin(index * 0.7)
 
-    def _grow_tree(self, placements, maturity, lod, flowering_factor=0.0, attachment_points=None, placement_paths=None, leaf_clusters=None, rng=None):
+    def _grow_tree(self, placements, maturity, lod, flowering_factor=0.0, attachment_points=None, placement_paths=None, leaf_clusters=None, rng=None, detail=False):
         """Grow a restrained woody tree from the functional plant fields.
 
         The trunk is one dominant axis. Primary branches are inserted at
@@ -847,7 +1250,7 @@ class SpeciesSimulation:
         growth = self.blueprint.growth
         if growth.get("shoot_distribution_grammar"):
             from simulations.species.tree_shoots import grow_tree_shoots
-            return grow_tree_shoots(self, placements, maturity, lod, leaf_clusters, attachment_points, placement_paths)
+            return grow_tree_shoots(self, placements, maturity, lod, leaf_clusters, attachment_points, placement_paths, flowering_factor, detail=detail)
         rng = rng or random.Random(0)
         max_height = max(0.1, float(growth.get("max_height_m", 1.0) or 1.0))
         internode = max(0.03, float(growth.get("internode_length_m", 0.2) or 0.2))
@@ -875,7 +1278,7 @@ class SpeciesSimulation:
         can_flower = reproduction in {"sexual", "both", "apomictic", ""}
 
         root_z = -0.04 if str(growth.get("root_depth_class") or "") == "shallow" else -0.08
-        root = self._add(placements, "root", -1, 0.0, 0.0, root_z, 0.0, 1.0, 0)
+        root = self._growth_origin(placements, root_z=root_z)
         parent = root
         trunk_x, trunk_y = 0.0, 0.0
         trunk_indices = []
@@ -1141,7 +1544,7 @@ class SpeciesSimulation:
         ramet_count = max(2, int(round(2 + 5 * maturity)))
         if lod == 0:
             ramet_count = min(ramet_count, 2)
-        root = self._add(placements, "root", -1, 0.0, 0.0, 0.0, 0.0, 1.0, 0)
+        root = self._growth_origin(placements)
         for index in range(ramet_count):
             angle = index * 360.0 / ramet_count
             radius = 0.12 + 0.34 * maturity
@@ -1178,7 +1581,7 @@ class SpeciesSimulation:
         elif lod == 1:
             leaves_per_node = min(1, leaves_per_node)
 
-        root = self._add(placements, "root", -1, 0.0, 0.0, 0.0, 0.0, 1.0, 0)
+        root = self._growth_origin(placements)
         # Each bud carries its horizontal growth direction. The main axis is
         # nearly vertical; lateral buds keep their own outward vector as they
         # extend, which produces a canopy rather than a stack of vertical
@@ -1293,7 +1696,7 @@ class SpeciesSimulation:
                             ))
             buds = next_buds[:max_buds]
 
-    def generate_snapshot(self, age_days=None, lod=None):
+    def generate_snapshot(self, age_days=None, lod=None, detail=False):
         age_days = self.age_days if age_days is None else max(0.0, float(age_days))
         lod = self.lod if lod is None else max(0, min(2, int(lod)))
         maturity = self._maturity(age_days)
@@ -1304,6 +1707,7 @@ class SpeciesSimulation:
         attachment_points = []
         leaf_clusters = []
         placement_paths = {}
+        structural_axis_length_m = None
         shape = str(self.blueprint.growth.get("shape") or "herb")
         behaviour = str(self.blueprint.growth.get("growth_behaviour") or "iterative_indeterminate")
         if shape == "aquatic":
@@ -1347,7 +1751,7 @@ class SpeciesSimulation:
                 attachment_points=attachment_points,
             )
         elif shape == "tree":
-            self._grow_tree(
+            growth_result = self._grow_tree(
                 placements,
                 maturity,
                 lod,
@@ -1356,7 +1760,10 @@ class SpeciesSimulation:
                 placement_paths=placement_paths,
                 leaf_clusters=leaf_clusters,
                 rng=rng,
+                detail=detail,
             )
+            if isinstance(growth_result, dict):
+                structural_axis_length_m = growth_result.get("structural_axis_length_m")
         elif behaviour == "determinate_sympodial":
             self._grow_sympodial(placements, maturity, lod, rng)
         elif behaviour == "creeping_prostrate":
@@ -1368,6 +1775,7 @@ class SpeciesSimulation:
                 lod,
                 rng,
                 flowering_factor=life_state["reproductive_factor"],
+                attachment_points=attachment_points,
             )
         elif behaviour in {"rhizomatous_clonal", "stoloniferous_clonal", "suckering_clonal"}:
             self._grow_clonal(placements, maturity, lod, rng)
@@ -1384,18 +1792,35 @@ class SpeciesSimulation:
         profile = self.blueprint.growth.get("root_profile") or root_profile(self.blueprint.growth)
         root_nodes, root_stats = build_root_graph(profile, maturity, self.seed)
         crown = next((i for i, p in enumerate(placements) if p[0] == "root" and p[1] < 0), None)
+        renewal_organ = next((i for i, p in enumerate(placements) if p[0] == "renewal_organ"), None)
+        root_growth_origin = renewal_organ if renewal_organ is not None else crown
         root_indices = {}
-        if crown is not None:
-            origin = placements[crown][2:5]
+        if root_growth_origin is not None:
+            origin = placements[root_growth_origin][2:5]
             for index, node in enumerate(root_nodes):
                 if node["order"] > lod:
                     continue
-                parent = crown if node["parent"] < 0 else root_indices[node["parent"]]
+                parent = root_growth_origin if node["parent"] < 0 else root_indices[node["parent"]]
                 point = [origin[j] + node["position"][j] for j in range(3)]
                 root_indices[index] = self._add(placements, node["kind"], parent, *point,
                                                 0.0, node["thickness"], node["order"])
         root_stats["root_visible_segment_count"] = sum(root_nodes[i]["kind"] == "root_section" for i in root_indices)
         root_stats["root_origin_z_m"] = placements[crown][4] if crown is not None else 0.0
+        root_stats["root_growth_origin_z_m"] = (
+            placements[root_growth_origin][4] if root_growth_origin is not None else 0.0
+        )
+        renewal_buds = [item for item in placements if item[0] == "renewal_bud"]
+        storage = [str(item).lower().replace("-", "_").replace(" ", "_")
+                   for item in self.blueprint.growth.get("belowground_storage", [])]
+        root_stats.update({
+            "plant_life_form": self.blueprint.growth.get("plant_life_form", "other_unknown"),
+            "renewal_bud_count": len(renewal_buds),
+            "renewal_bud_depth_m": round(
+                max(0.0, float(root_stats["root_origin_z_m"]) - min(float(item[4]) for item in renewal_buds)), 4
+            ) if renewal_buds else 0.0,
+            "renewal_bud_depth_source": "runtime_default" if renewal_buds else "not_applicable",
+            "renewal_organ_kind": storage[0] if storage else ("unresolved" if renewal_organ is not None else "none"),
+        })
 
         # Non-tree grammars still expose a uniform cluster interface. Their
         # visible leaves are already sparse enough to remain one calculative
@@ -1455,6 +1880,18 @@ class SpeciesSimulation:
             min(point[2] for point in points), max(point[2] for point in points),
         ]
         modules = self._module_table(lod)
+        tussock_stats = {}
+        if behaviour == "tussock_tillering":
+            count = max(3, int(round(4 + 5*maturity)))
+            generations = min(10, max(1, round((float(self.blueprint.growth["max_height_m"])/max(.03, float(self.blueprint.growth["internode_length_m"]))) * maturity)))
+            leaf = self.blueprint.module("leaf")
+            canonical_leaves = count * min(3, generations) if maturity > 0 else 0
+            area = max(.0005, max(.01, leaf.length_m)*max(.005, leaf.radius_m)*1.8)
+            stems = [p for p in placements if p[0] == "stem_section"]
+            tussock_stats = {"tiller_count": count,
+                             "tiller_radius_m": round(max((math.hypot(p[2],p[3]) for p in stems), default=0.), 4),
+                             "estimated_leaf_count": canonical_leaves,
+                             "leaf_area_m2": round(canonical_leaves*round(area*max(.025, math.sqrt(maturity)),6),6)}
         visible_module_count = len(placements)
         return PlantGrowthSnapshot(
             species_id=self.species_id,
@@ -1471,6 +1908,7 @@ class SpeciesSimulation:
             attachment_points=attachment_points,
             stats={
                 **root_stats,
+                "environment": dict(self.environment),
                 "maturity": round(maturity, 4),
                 "life_history": self.life_history_profile.get("class", "perennial"),
                 "life_phase": life_state["phase"],
@@ -1484,11 +1922,21 @@ class SpeciesSimulation:
                 "leaf_area_m2": round(sum(item["leaf_area_m2"] for item in leaf_clusters), 6),
                 "stem_count": sum(1 for item in placements if item[0] in {"stem_section", "branch_section"}),
                 "branch_count": sum(1 for item in placements if item[0] == "branch_section"),
+                "axis_continuity": self.blueprint.growth.get("axis_continuity", "other_unknown"),
+                "branching_rhythm": self.blueprint.growth.get("branching_rhythm", "other_unknown"),
+                "branching_timing": self.blueprint.growth.get("branching_timing", "other_unknown"),
+                "lateral_axis_orientation": self.blueprint.growth.get("lateral_axis_orientation", "other_unknown"),
+                "flowering_position": self.blueprint.growth.get("flowering_position", "other_unknown"),
+                "apical_control": round(float(self.blueprint.growth.get("apical_control", .72)), 4),
+                "structural_axis_length_m": (
+                    round(float(structural_axis_length_m), 4) if structural_axis_length_m is not None else None
+                ),
                 "curved_segment_count": len(placement_paths),
                 "model_dimensions": int((self.blueprint.model_space or PLANT_MODEL_SPACE).get("dimensions", 3)),
                 "projection": str((self.blueprint.model_space or PLANT_MODEL_SPACE).get("projection", "orthographic")),
                 "orientation_count": len(placement_orientations),
                 "representation": "module_placements_with_leaf_clusters",
+                **tussock_stats,
             },
             leaf_clusters=leaf_clusters,
         )
@@ -1529,8 +1977,11 @@ class SpeciesSimulation:
     def get_simulation_panel_tabs(self):
         return [
             {"id": "individual", "label": "Individual"},
+            {"id": "top_down", "label": "Top-down"},
             {"id": "roots", "label": "Roots"},
             {"id": "branches", "label": "Branches"},
+            {"id": "architecture", "label": "Tree Patterns"},
+            {"id": "editor", "label": "Species Editor"},
             {"id": "gallery", "label": "20 Growth Stages"},
             {"id": "forest", "label": "Forest View"},
             {"id": "compare", "label": "Compare"},
@@ -1543,6 +1994,12 @@ class SpeciesSimulation:
         valid_ids = {tab["id"] for tab in self.get_simulation_panel_tabs()}
         if tab_id not in valid_ids:
             return False
+        if tab_id == "editor":
+            self._ensure_species_editor()
+        if tab_id == "compare":
+            if self.diagnostic_view == "roots":
+                self.comparison_subject = "roots"
+            self._root_comparison_cases = None
         self.diagnostic_view = tab_id
         return True
 
@@ -1561,6 +2018,24 @@ class SpeciesSimulation:
     def get_growth_summary(self):
         return dict(self.render_snapshot.stats)
 
+    def get_detailed_snapshot(self):
+        """Full per-leaf snapshot for close-up diagnostics.
+
+        The default ``render_snapshot`` represents foliage as calculative
+        leaf_clusters so a mature crown stays cheap to simulate and render.
+        Close-up views (the Branches diagnostic tab, paired species/shoot
+        comparison renders) need authentic per-leaf geometry instead; this
+        regenerates it on demand, from the same deterministic generator, and
+        caches the result until age/lod/blueprint actually change.
+        """
+        key = (self.blueprint.fingerprint(), self.seed, round(self.age_days, 3), self.lod)
+        cached = getattr(self, "_detailed_snapshot_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        snapshot = self.generate_snapshot(self.age_days, self.lod, detail=True)
+        self._detailed_snapshot_cache = (key, snapshot)
+        return snapshot
+
     def get_ecological_outcome(self, environment=None):
         """Return the compact handoff a future BioSim cohort can aggregate.
 
@@ -1573,11 +2048,14 @@ class SpeciesSimulation:
         def clamp(value):
             return max(0.0, min(1.0, float(value)))
 
+        disturbance = clamp(environment.get("disturbance", 0.0))
+        resprouting = self.blueprint.growth.get("resprouting", "other_unknown")
+        disturbance_factor = {"absent": 1., "weak": .8, "moderate": .55, "strong": .3}.get(resprouting, 1.)
         stress_values = [
             clamp(environment.get("temperature_stress", 0.0)),
             clamp(environment.get("water_stress", 0.0)),
             clamp(environment.get("light_stress", 0.0)),
-            clamp(environment.get("disturbance", 0.0)),
+            disturbance * disturbance_factor,
             clamp(environment.get("competition", 0.0)),
             clamp(environment.get("disease_pressure", 0.0)),
         ]
@@ -1594,6 +2072,15 @@ class SpeciesSimulation:
         leaf_count = int(self.render_snapshot.stats.get("estimated_leaf_count", 0) or 0)
         leaf_area = float(self.render_snapshot.stats.get("leaf_area_m2", 0.0) or 0.0)
         stem_count = int(self.render_snapshot.stats.get("stem_count", 0) or 0)
+        # stem_count is a placement count, which for shoot-grammar trees
+        # varies with incidental render subdivision (how many segments a
+        # shoot's spine happens to be split into), not real structure.
+        # structural_axis_length_m sums only the architectural axes (trunk /
+        # primary / secondary / twig), so it stays stable regardless of
+        # render detail; fall back to stem_count for species that don't
+        # report it.
+        structural_axis_length_m = self.render_snapshot.stats.get("structural_axis_length_m")
+        stem_structural_term = float(structural_axis_length_m) if structural_axis_length_m else float(stem_count)
         return {
             "species_id": self.species_id,
             "age_days": self.render_snapshot.age_days,
@@ -1602,16 +2089,20 @@ class SpeciesSimulation:
             "growth_rate": round(vitality * growth_bias, 4),
             "fecundity": round(vitality * life_state["reproductive_factor"], 4),
             "mortality_risk": round(1.0 if life_state["phase"] == "dead" else clamp(1.0 - vitality), 4),
-            "resource_demand": round((leaf_count * 0.012) + (stem_count * 0.02), 4),
+            "resource_demand": round((leaf_count * 0.012) + (stem_structural_term * 0.02), 4),
             "leaf_area_proxy": round(leaf_area * vitality, 4),
             "estimated_leaf_count": leaf_count,
             "leaf_cluster_count": int(self.render_snapshot.stats.get("leaf_cluster_count", 0) or 0),
-            "structural_biomass_proxy": round(stem_count * 0.08 * vitality, 4),
+            "structural_biomass_proxy": round(stem_structural_term * 0.08 * vitality, 4),
             "root_depth_m": self.render_snapshot.stats.get("root_depth_m", 0.0),
             "root_spread_m": self.render_snapshot.stats.get("root_spread_m", 0.0),
             "root_length_m": self.render_snapshot.stats.get("root_length_m", 0.0),
             "root_depth_source": self.render_snapshot.stats.get("root_depth_source", "runtime_default"),
             "root_model_status": self.render_snapshot.stats.get("root_model_status", "unresolved"),
+            "disturbance_input": disturbance,
+            "disturbance_penalty": round(disturbance * disturbance_factor, 4),
+            "resprouting": resprouting,
+            "disturbance_response_status": "qualitative_runtime_default",
             "stress_index": round(stress, 4),
             "life_history": life_state,
             "detail_scope": "structural_and_repeated_organs",

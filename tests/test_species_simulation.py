@@ -5,7 +5,11 @@ import unittest
 from pathlib import Path
 
 from simulations.species.plant_assets import PlantAssetStore, is_plant_species_entity
-from simulations.species.species_renderer import SpeciesRenderer
+from simulations.species.species_renderer import (
+    SpeciesRenderer,
+    TopDownDiagnosticCamera,
+    top_down_diagnostic_bounds,
+)
 from simulations.species.species_simulation import SpeciesSimulation
 
 
@@ -47,10 +51,14 @@ class SpeciesSimulationTests(unittest.TestCase):
         self.assertGreater(first_cane[4], abs(first_cane[2]) + abs(first_cane[3]))
 
     def test_sparse_plant_rows_are_detected_but_animals_are_not(self):
-        self.assertTrue(is_plant_species_entity({"type": "species", "common_name": "Eastern White Pine"}))
-        self.assertTrue(is_plant_species_entity({"type": "species", "species_class": "natural_plant"}))
-        self.assertTrue(is_plant_species_entity({"type": "species", "plant_lifespan": "perennial"}))
-        self.assertFalse(is_plant_species_entity({"type": "species", "common_name": "Tree Sparrow"}))
+        from world.plant_catalogue import PlantCatalogue, PLANTAE_ID
+        plant = {"id":"p", "type":"species", "parents":[PLANTAE_ID]}
+        catalogue = PlantCatalogue.build({PLANTAE_ID:{"type":"cladistics"}, "p":plant})
+        self.assertTrue(is_plant_species_entity(plant, catalogue))
+        for row in ({"type":"species", "common_name":"Eastern White Pine"},
+                    {"type":"species", "plant_lifespan":"perennial"},
+                    {"type":"species", "common_name":"Tree Sparrow"}):
+            self.assertFalse(is_plant_species_entity(row, catalogue))
 
     def test_species_sim_is_independent_from_bioregion_state(self):
         sim = SpeciesSimulation(
@@ -154,15 +162,37 @@ class SpeciesSimulationTests(unittest.TestCase):
             seed=303,
         )
         self.assertEqual(
-            {"individual", "roots", "branches", "gallery", "forest", "compare"},
+            {"individual", "top_down", "roots", "branches", "architecture", "editor", "gallery", "forest", "compare"},
             {tab["id"] for tab in sim.get_simulation_panel_tabs()},
         )
+        self.assertTrue(sim.set_active_simulation_panel_tab("top_down"))
+        self.assertTrue(sim.suppress_global_overlays)
         self.assertTrue(sim.set_active_simulation_panel_tab("forest"))
         self.assertTrue(sim.suppress_global_overlays)
         self.assertFalse(sim.set_active_simulation_panel_tab("unknown"))
         sim.set_active_simulation_panel_tab("individual")
         self.assertFalse(sim.suppress_global_overlays)
         self.assertGreater(sim.get_initial_camera_zoom(1200, 800), sim.min_zoom)
+
+    def test_top_down_view_projects_model_xy_and_fits_the_live_crown(self):
+        sim = SpeciesSimulation(
+            species_entity={
+                "id": "spec_top_down",
+                "plant_growth_form": "tree",
+                "plant_growth_behaviour": "branched_woody",
+            },
+            seed=303,
+        )
+        sim.set_age(sim.mature_age_days)
+        bounds = top_down_diagnostic_bounds(sim)
+        camera = TopDownDiagnosticCamera(800, 500, bounds)
+
+        self.assertNotEqual(camera.world_to_screen_3d((0.0, 0.0, 0.0)),
+                            camera.world_to_screen_3d((1.0, 1.0, 0.0)))
+        self.assertEqual(camera.world_to_screen_3d((0.25, -0.4, 0.0)),
+                         camera.world_to_screen_3d((0.25, -0.4, 12.0)))
+        self.assertLess(bounds[0], bounds[1])
+        self.assertLess(bounds[2], bounds[3])
 
     def test_functional_traits_shape_species_growth_recipe(self):
         sim = SpeciesSimulation(
@@ -180,6 +210,68 @@ class SpeciesSimulationTests(unittest.TestCase):
         self.assertEqual(12.0, sim.blueprint.growth["max_height_m"])
         self.assertEqual(0.28, sim.blueprint.growth["growth_rate_bias"])
         self.assertEqual(180.0, sim.blueprint.growth["phyllotaxis_deg"])
+
+    def test_tree_architecture_fields_reach_blueprint_snapshot_and_topology(self):
+        base = {
+            "plant_growth_form": "tree",
+            "plant_growth_behaviour": "branched_woody",
+            "plant_lifespan": "perennial",
+            "mature_height": {"max_m": 24},
+            "plant_leaf_distribution": "terminal_cluster",
+            "plant_shoot_dimorphism": "single_shoot_system",
+            "plant_fine_twig_density": 0.4,
+            "plant_leaf_cluster_density": 0.6,
+        }
+        cases = {
+            "birch": SpeciesSimulation(species_entity={
+                **base, "id": "spec_arch_birch",
+                "plant_axis_continuity": "sympodial",
+                "plant_branching_rhythm": "diffuse",
+                "plant_branching_timing": "mixed",
+                "plant_lateral_axis_orientation": "plagiotropic",
+                "plant_flowering_position": "mixed",
+                "plant_apical_control": 0.82,
+            }, seed=303),
+            "oak": SpeciesSimulation(species_entity={
+                **base, "id": "spec_arch_oak",
+                "plant_axis_continuity": "monopodial",
+                "plant_branching_rhythm": "continuous",
+                "plant_branching_timing": "delayed",
+                "plant_lateral_axis_orientation": "plagiotropic",
+                "plant_flowering_position": "lateral",
+                "plant_apical_control": 0.42,
+            }, seed=303),
+            "chestnut": SpeciesSimulation(species_entity={
+                **base, "id": "spec_arch_chestnut", "leaf_arrangement": "opposite",
+                "plant_axis_continuity": "monopodial_to_sympodial",
+                "plant_branching_rhythm": "rhythmic",
+                "plant_branching_timing": "delayed",
+                "plant_lateral_axis_orientation": "mixed",
+                "plant_flowering_position": "terminal",
+                "plant_apical_control": 0.60,
+            }, seed=303),
+        }
+        for simulation in cases.values():
+            simulation.set_age(simulation.mature_age_days)
+
+        self.assertEqual("sympodial", cases["birch"].get_growth_summary()["axis_continuity"])
+        self.assertEqual("continuous", cases["oak"].blueprint.growth["branching_rhythm"])
+        self.assertEqual("terminal", cases["chestnut"].get_growth_summary()["flowering_position"])
+        self.assertEqual(0.6, cases["chestnut"].get_growth_summary()["apical_control"])
+
+        chestnut_placements = cases["chestnut"].render_snapshot.placements
+        trunk_indices = {index for index, placement in enumerate(chestnut_placements)
+                         if placement[0] == "stem_section"}
+        branch_hosts = {}
+        for placement in chestnut_placements:
+            if placement[0] == "branch_section" and placement[1] in trunk_indices:
+                branch_hosts[placement[1]] = branch_hosts.get(placement[1], 0) + 1
+        self.assertGreaterEqual(len(branch_hosts), 2)
+        self.assertTrue(all(count == 2 for count in branch_hosts.values()))
+        self.assertNotEqual(
+            cases["oak"].render_snapshot.placements,
+            cases["chestnut"].render_snapshot.placements,
+        )
 
     def test_authored_plant_module_references_reach_blueprint(self):
         sim = SpeciesSimulation(
@@ -328,17 +420,35 @@ class SpeciesSimulationTests(unittest.TestCase):
             seed=303,
         )
         sim.set_age(sim.mature_age_days)
-        leaves = [item for item in sim.render_snapshot.placements if item[0] == "leaf"]
+
+        # Default snapshot represents foliage as calculative cohorts rather
+        # than one placement per leaf, so a mature crown stays cheap to
+        # simulate/render (see docs/species_sim... perf notes).
+        snapshot = sim.render_snapshot
+        self.assertEqual(0, sum(1 for item in snapshot.placements if item[0] == "leaf"))
+        self.assertGreater(snapshot.stats["leaf_cluster_count"], 20)
+        self.assertGreater(snapshot.stats["estimated_leaf_count"], 100)
+        self.assertEqual(
+            snapshot.stats["estimated_leaf_count"],
+            sum(cluster["estimated_leaf_count"] for cluster in snapshot.leaf_clusters),
+        )
+        shoot_types = {cluster["shoot_type"] for cluster in snapshot.leaf_clusters}
+        self.assertIn("short", shoot_types)
+        self.assertIn("long", shoot_types)
+        self.assertEqual("mixed_long_short_shoots", sim.blueprint.growth["leaf_distribution"])
+
+        # On-demand full detail (close-up diagnostics) reruns the exact same
+        # deterministic per-leaf geometry the coarse pass now skips.
+        detailed = sim.get_detailed_snapshot()
+        leaves = [item for item in detailed.placements if item[0] == "leaf"]
         self.assertGreaterEqual(len(leaves), 20)
         self.assertGreater(len({round(item[2], 2) for item in leaves}), 6)
-        self.assertEqual(sim.render_snapshot.stats["leaf_count"], len(sim.render_snapshot.attachment_points))
-        self.assertGreater(sim.render_snapshot.stats["estimated_leaf_count"], sim.render_snapshot.stats["leaf_count"])
-        self.assertGreater(sim.render_snapshot.stats["leaf_cluster_count"], 0)
+        self.assertEqual(detailed.stats["leaf_count"], len(detailed.attachment_points))
+        self.assertGreater(detailed.stats["estimated_leaf_count"], detailed.stats["leaf_count"])
         self.assertEqual(
-            sim.render_snapshot.stats["estimated_leaf_count"],
-            sum(cluster["estimated_leaf_count"] for cluster in sim.render_snapshot.leaf_clusters),
+            detailed.stats["estimated_leaf_count"],
+            sum(cluster["estimated_leaf_count"] for cluster in detailed.leaf_clusters),
         )
-        self.assertEqual("mixed_long_short_shoots", sim.blueprint.growth["leaf_distribution"])
 
     def test_leaf_cluster_density_is_continuous_between_tree_species_profiles(self):
         base = {
@@ -361,12 +471,17 @@ class SpeciesSimulationTests(unittest.TestCase):
         )
         sparse.set_age(sparse.mature_age_days)
         dense.set_age(dense.mature_age_days)
-        self.assertEqual(sparse.render_snapshot.stats["leaf_sample_count"], dense.render_snapshot.stats["leaf_sample_count"])
         self.assertEqual(sparse.render_snapshot.stats["leaf_cluster_count"], dense.render_snapshot.stats["leaf_cluster_count"])
         self.assertLess(
             sparse.render_snapshot.stats["estimated_leaf_count"],
             dense.render_snapshot.stats["estimated_leaf_count"],
         )
+        # Visual density only changes how many samples a cluster expands to
+        # for rendering, never how many real leaf placements the generator
+        # materializes at full detail.
+        sparse_detailed = sparse.get_detailed_snapshot()
+        dense_detailed = dense.get_detailed_snapshot()
+        self.assertEqual(sparse_detailed.stats["leaf_sample_count"], dense_detailed.stats["leaf_sample_count"])
 
     def test_short_telemetry_run_reports_growth_and_ecological_state(self):
         sim = SpeciesSimulation(
@@ -452,6 +567,61 @@ class SpeciesSimulationTests(unittest.TestCase):
         self.assertEqual("perennial", sim.blueprint.growth["life_history"]["class"])
         self.assertEqual("runtime_default", sim.blueprint.growth["life_history"]["source"])
         self.assertNotIn("plant_lifespan", sim.species_entity)
+
+    def test_geophyte_life_form_moves_the_renewal_origin_below_soil(self):
+        entity = {
+            "id": "spec_geophyte_contract",
+            "plant_growth_form": "forb",
+            "plant_growth_behaviour": "determinate_sympodial",
+            "plant_life_form": "geophyte",
+            "belowground_storage": ["corm"],
+            "mature_height_class": "low",
+            "root_architecture": "adventitious",
+        }
+        sim = SpeciesSimulation(species_entity=entity, seed=303)
+        sim.set_age(sim.mature_age_days)
+        snapshot = sim.render_snapshot
+        kinds = [placement[0] for placement in snapshot.placements]
+        organ_index = kinds.index("renewal_organ")
+        bud_index = kinds.index("renewal_bud")
+        first_stem = next(placement for placement in snapshot.placements if placement[0] == "stem_section")
+
+        self.assertEqual("geophyte", sim.blueprint.growth["plant_life_form"])
+        self.assertEqual(["corm"], sim.blueprint.growth["belowground_storage"])
+        self.assertEqual(bud_index, first_stem[1])
+        self.assertTrue(any(
+            placement[1] == organ_index and placement[0] in {"root_support", "root_section"}
+            for placement in snapshot.placements
+        ))
+        self.assertLess(snapshot.placements[organ_index][4], 0.0)
+        self.assertLess(snapshot.placements[bud_index][4], 0.0)
+        self.assertEqual(1, snapshot.stats["renewal_bud_count"])
+        self.assertEqual("corm", snapshot.stats["renewal_organ_kind"])
+        self.assertEqual("runtime_default", snapshot.stats["renewal_bud_depth_source"])
+        self.assertGreater(snapshot.stats["renewal_bud_depth_m"], 0.0)
+        self.assertEqual(0.0, snapshot.stats["root_origin_z_m"])
+        self.assertLess(snapshot.stats["root_growth_origin_z_m"], 0.0)
+        self.assertIn("renewal_organ", snapshot.modules)
+        self.assertIn("renewal_bud", snapshot.modules)
+        self.assertTrue(all(parent < index for index, (_, parent, *_rest) in enumerate(snapshot.placements)
+                            if parent >= 0))
+
+        low_detail = sim.generate_snapshot(lod=0)
+        self.assertEqual(1, low_detail.stats["renewal_bud_count"])
+        self.assertEqual(snapshot.stats["renewal_bud_depth_m"], low_detail.stats["renewal_bud_depth_m"])
+
+    def test_non_geophyte_retains_surface_growth_origin(self):
+        sim = SpeciesSimulation(species_entity={
+            "id": "spec_surface_origin",
+            "plant_growth_form": "tree",
+            "plant_life_form": "phanerophyte",
+        }, seed=303)
+        sim.set_age(sim.mature_age_days)
+        snapshot = sim.render_snapshot
+        self.assertFalse(any(placement[0].startswith("renewal_") for placement in snapshot.placements))
+        self.assertEqual(0, snapshot.stats["renewal_bud_count"])
+        self.assertEqual("none", snapshot.stats["renewal_organ_kind"])
+        self.assertEqual(snapshot.stats["root_origin_z_m"], snapshot.stats["root_growth_origin_z_m"])
 
     def test_lod_reduces_leaf_detail_without_changing_species_recipe(self):
         sim = SpeciesSimulation(
