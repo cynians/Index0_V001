@@ -51,6 +51,9 @@ class OntologyRepository:
         # Computed from every person's is_employed_by by
         # EntityLoader.populate_employment_rosters() -- never hand-authored.
         "employed_people",
+        # Computed from every item/component's `categories` by
+        # EntityLoader.populate_category_members() -- never hand-authored.
+        "members",
     }
 
     DATASET_CACHE_VERSION = 1

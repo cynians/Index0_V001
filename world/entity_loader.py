@@ -638,6 +638,29 @@ class EntityLoader:
 
         return changed_entities
 
+    def populate_category_members(self):
+        """Derive each category's ``members`` list from every item/component's
+        ``categories`` relation -- the same reciprocal-projection pattern as
+        populate_offspring()/populate_employment_rosters(), so an item authors
+        its categories once rather than both sides keeping a link in sync."""
+        members_by_category = {}
+        for entity_id, entity in self.entities.items():
+            for category_id in self._relation_ids(entity.get("categories")):
+                roster = members_by_category.setdefault(category_id, [])
+                if entity_id not in roster:
+                    roster.append(entity_id)
+
+        changed_entities = set()
+        for entity_id, entity in self.entities.items():
+            if entity.get("_dataset") != "categories" and entity.get("type") != "category":
+                continue
+            members = members_by_category.get(entity_id, [])
+            if entity.get("members") != members:
+                entity["members"] = members
+                changed_entities.add(entity_id)
+
+        return changed_entities
+
     def save_changed_dataset_files(self, changed_entity_ids=None):
         if self.use_ontology:
             changed_entity_ids = set(changed_entity_ids or [])
@@ -1010,6 +1033,7 @@ class EntityLoader:
         self.build_entity_index()
         changed_entity_ids.update(self.populate_offspring())
         changed_entity_ids.update(self.populate_employment_rosters())
+        changed_entity_ids.update(self.populate_category_members())
         self.build_reference_graph()
         if persist:
             self.save_changed_dataset_files(changed_entity_ids)
@@ -1148,6 +1172,7 @@ class EntityLoader:
         self.build_entity_index()
         changed_entity_ids = self.populate_offspring()
         changed_entity_ids.update(self.populate_employment_rosters())
+        changed_entity_ids.update(self.populate_category_members())
         if auto_save_normalized:
             self.save_changed_dataset_files(changed_entity_ids)
         self.build_reference_graph()

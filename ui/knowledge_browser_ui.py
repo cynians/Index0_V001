@@ -1358,6 +1358,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
     def _template_id_prefix(self, dataset_name, entity_type=None):
         mapping = {
             "behaviors": "beh",
+            "categories": "cat",
             "cities": "city",
             "components": "comp",
             "collections": "coll",
@@ -1654,19 +1655,21 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             return ["system_class", "body_class"]
         if dataset_name == "collections":
             return ["collection_class"]
+        if dataset_name in {"items", "components", "categories"}:
+            # items/components classify through the `categories` relation, not a
+            # `*_class` discriminator string.
+            return []
 
         fields = [
             f"{self._singularize_name(dataset_name)}_class",
             f"{entity_type}_class",
             "vehicle_class",
-            "component_class",
             "idea_class",
             "faction_class",
             "producer_class",
             "institution_class",
             "city_class",
             "event_class",
-            "item_class",
             "material_class",
             "species_class",
         ]
@@ -1937,7 +1940,9 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         return getattr(self._browser_model(), "_entity_class_label")(*args, **kwargs)
 
     def _build_browser_items(self, *args, **kwargs):
-        return getattr(self._browser_model(), "_build_browser_items")(*args, **kwargs)
+        with performance_debug.measure("browser.build_items"):
+            return getattr(self._browser_model(), "_build_browser_items")(*args, **kwargs)
+
     def _build_card_from_entity(self, entity):
         if entity is None or self.layout is None:
             return None
@@ -3327,6 +3332,19 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         if not isinstance(parent, dict):
             return False
         parent[target_field] = asset_path
+
+        # Carry the module's base point / growth vector, drawn in Pixel Studio and
+        # stored on the illustration as ``pixel_module_anchor``, onto the species'
+        # ``plant_module_anchors`` map keyed by role -- this is what the plant
+        # renderer actually reads (simulations/species/plant_assets.py).
+        role_key = target_field[len("plant_"):-len("_module_ref")]
+        module_anchor = illustration.get("pixel_module_anchor")
+        updated_anchors = None
+        if role_key and isinstance(module_anchor, dict):
+            updated_anchors = dict(parent.get("plant_module_anchors") or {})
+            updated_anchors[role_key] = dict(module_anchor)
+            parent["plant_module_anchors"] = updated_anchors
+
         self._persist_entity_to_repository(parent)
         parent_id = str(parent.get("id") or "")
         for card in self.cards:
@@ -3335,6 +3353,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
             card_view = card.get("card_view")
             if card_view is not None and isinstance(getattr(card_view, "entity", None), dict):
                 card_view.entity[target_field] = asset_path
+                if updated_anchors is not None:
+                    card_view.entity["plant_module_anchors"] = dict(updated_anchors)
         self.browser_items = self._build_browser_items(self.world_model)
         self._relayout_cards()
         return True
@@ -3809,18 +3829,19 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 return entity.get("body_class")
             return entity.get("system_class") or entity.get("body_class")
 
+        if dataset_name == "categories":
+            return entity.get("category_kind") or ""
+
         candidate_fields = [
             f"{self._singularize_name(dataset_name)}_class",
             f"{class_key}_class",
             "vehicle_class",
-            "component_class",
             "idea_class",
             "faction_class",
             "producer_class",
             "institution_class",
             "city_class",
             "event_class",
-            "item_class",
             "material_class",
             "species_class",
             "person_class",
@@ -4527,16 +4548,20 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
         pure overhead and shows up as a visible spike on each selection.
         """
         committed_field = card.get("last_committed_field")
+        detail = f"field={committed_field or '?'}"
         skips_timeline = bool(
             committed_field
             and card_view is not None
             and hasattr(card_view, "_is_controlled_choice_field")
             and card_view._is_controlled_choice_field(committed_field)
         )
-        self._persist_card_entity(card)
+        with performance_debug.measure("edit.persist.card_entity", detail):
+            self._persist_card_entity(card)
         if not skips_timeline:
-            self._sync_card_years_from_entity(card)
-            self._refresh_timeline_items()
+            with performance_debug.measure("edit.persist.sync_years", detail):
+                self._sync_card_years_from_entity(card)
+            with performance_debug.measure("edit.persist.refresh_timeline", detail):
+                self._refresh_timeline_items()
 
     def _persist_card_palette(self, card):
         return self._repository_service()._persist_card_palette(card)
@@ -5454,6 +5479,53 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
 
         return False
 
+    def _dispatch_card_edit_keydown(self, card, card_view, index, event):
+        """Run an edit-mode card's keydown plus the draft/commit/relayout work
+        that follows it, timing each phase.
+
+        Both edit-mode keydown branches funnel through here so a single
+        ``[PERF] SPIKE edit.<phase> ...`` line (see ``performance_debug``)
+        pinpoints which step froze the frame: the keystroke itself, the
+        per-keystroke draft write, the field commit (entity persist + timeline
+        rebuild), or the canvas relayout.
+        """
+        active_field = (
+            card.get("active_edit_field")
+            or card.get("person_quote_active_field")
+            or "?"
+        )
+        detail = f"field={active_field}"
+
+        with performance_debug.measure("edit.handle_keydown", detail):
+            handled = card_view.handle_keydown(card, event)
+
+        if handled:
+            self._bring_card_to_front(index)
+            with performance_debug.measure("edit.pending_production_prompt", detail):
+                self._open_pending_production_site_prompt(card)
+            if not card_view.is_relation_edit_field(card.get("active_edit_field")):
+                with performance_debug.measure("edit.close_relation_picker", detail):
+                    self._close_relation_picker(card)
+
+            action = card.get("last_edit_action")
+            quote_draft_action = action == "draft" and self._is_person_quote_edit_field(card)
+            if action == "commit":
+                with performance_debug.measure("edit.persist_committed_field", detail):
+                    self._persist_committed_field(card, card_view)
+            elif action == "cancel":
+                card["last_edit_action"] = None
+            elif action == "draft":
+                if not quote_draft_action:
+                    with performance_debug.measure("edit.save_card_draft", detail):
+                        self._save_card_draft(card)
+            card["last_edit_action"] = None
+
+            if not quote_draft_action:
+                with performance_debug.measure("edit.relayout_cards", detail):
+                    self._relayout_cards()
+
+        return "__ui_consumed__"
+
     def _handle_keydown_event(self, event):
         if getattr(self, "pixel_art_editor", None) is not None:
             if self._handle_pixel_art_editor_keydown(event):
@@ -5546,29 +5618,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                 self._relayout_cards()
                 return "__ui_consumed__"
 
-            pending_production_action_opened = False
-            if card_view.handle_keydown(card, event):
-                self._bring_card_to_front(index)
-                pending_production_action_opened = self._open_pending_production_site_prompt(card)
-                if not card_view.is_relation_edit_field(card.get("active_edit_field")):
-                    self._close_relation_picker(card)
-                action = card.get("last_edit_action")
-                quote_draft_action = action == "draft" and self._is_person_quote_edit_field(card)
-                if action == "commit":
-                    self._persist_committed_field(card, card_view)
-                elif action == "cancel":
-                    card["last_edit_action"] = None
-                elif action == "draft":
-                    if not quote_draft_action:
-                        self._save_card_draft(card)
-                card["last_edit_action"] = None
-                if not quote_draft_action:
-                    self._relayout_cards()
-                if pending_production_action_opened:
-                    return "__ui_consumed__"
-                return "__ui_consumed__"
-
-            return "__ui_consumed__"
+            return self._dispatch_card_edit_keydown(card, card_view, index, event)
 
         if self.browser_search_active:
             if event.key == pygame.K_ESCAPE:
@@ -5631,27 +5681,7 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
                     self._relayout_cards()
                     return "__ui_consumed__"
 
-                pending_production_action_opened = False
-                if card_view.handle_keydown(card, event):
-                    self._bring_card_to_front(index)
-                    pending_production_action_opened = self._open_pending_production_site_prompt(card)
-                    if not card_view.is_relation_edit_field(card.get("active_edit_field")):
-                        self._close_relation_picker(card)
-                action = card.get("last_edit_action")
-                quote_draft_action = action == "draft" and self._is_person_quote_edit_field(card)
-                if action == "commit":
-                    self._persist_committed_field(card, card_view)
-                elif action == "cancel":
-                    card["last_edit_action"] = None
-                elif action == "draft":
-                    if not quote_draft_action:
-                        self._save_card_draft(card)
-                card["last_edit_action"] = None
-                if not quote_draft_action:
-                    self._relayout_cards()
-                if pending_production_action_opened:
-                    return "__ui_consumed__"
-                return "__ui_consumed__"
+                return self._dispatch_card_edit_keydown(card, card_view, index, event)
 
         return None
 
@@ -6825,6 +6855,8 @@ class KnowledgeBrowserUI(KnowledgeLinkPickerMixin, KnowledgeTemplatePickerMixin)
     def draw(self, screen, font, draw_button_fn):
         if self.layout is None:
             return
+
+        self._repository_service()._flush_card_drafts_if_dirty()
 
         header_rect = self.layout["header_rect"]
         timeline_rect = self.layout["timeline_rect"]

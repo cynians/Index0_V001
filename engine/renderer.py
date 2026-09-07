@@ -7,6 +7,7 @@ from simulations.phylogeny.phylogeny_renderer import PhylogenyRenderer
 from simulations.person.person_renderer import PersonRenderer
 from simulations.formation.formation_renderer import FormationRenderer
 from simulations.species.species_renderer import SpeciesRenderer
+from simulations.biosphere.biosphere_renderer import BiosphereBuilderRenderer
 
 
 class Renderer:
@@ -33,6 +34,10 @@ class Renderer:
         self.person_renderer = PersonRenderer(simulation)
         self.formation_renderer = FormationRenderer(simulation)
         self.species_renderer = SpeciesRenderer(simulation)
+        self.biosphere_builder_renderer = BiosphereBuilderRenderer(
+            simulation,
+            species_renderer=self.species_renderer,
+        )
 
     # --------------------------------------------------
     # MAIN ENTRY
@@ -61,6 +66,7 @@ class Renderer:
 
         if render_mode == "map":
             self.map_renderer.draw(self.screen, sim)
+            self.biosphere_builder_renderer.draw(self.screen, sim)
             return
 
         if render_mode == "space":

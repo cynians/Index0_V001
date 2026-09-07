@@ -479,8 +479,8 @@ class FormationRenderer:
             pygame.draw.rect(screen, self.PANEL, card)
             pygame.draw.rect(screen, self.BORDER_ACTIVE, card, 1)
             screen.blit(self._text(f"• {item.get('label', 'Item')}", self.TEXT, size=14, bold=True), (card.x + 12, card.y + 12))
-            item_class = str(item.get("item_class") or "item").replace("_", " ")
-            screen.blit(self._text(item_class, self.MUTED, size=12), (card.x + 12, card.y + 38))
+            category_label = str(item.get("category_label") or item.get("kind") or "item").replace("_", " ")
+            screen.blit(self._text(category_label, self.MUTED, size=12), (card.x + 12, card.y + 38))
         if not visible_items:
             screen.blit(self._text("No equipment selected for this view.", self.MUTED, size=12), (rect.x, item_top + 28))
 

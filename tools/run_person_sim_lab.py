@@ -129,16 +129,24 @@ class LabWorld:
                 "id": "component_electric_oven", "type": "component", "_dataset": "components",
                 "pretty_name": "Electric Oven",
             },
+            "cat_food_ingredient": {
+                "id": "cat_food_ingredient", "type": "category", "_dataset": "categories",
+                "pretty_name": "Food Ingredient",
+            },
+            "cat_prepared_food": {
+                "id": "cat_prepared_food", "type": "category", "_dataset": "categories",
+                "pretty_name": "Prepared Food",
+            },
             "item_food_ingredients": {
                 "id": "item_food_ingredients", "type": "item", "_dataset": "items",
-                "pretty_name": "Meal Ingredients", "item_class": "food ingredient",
-                "inventory_unit": "portion", "stackable": True,
+                "pretty_name": "Meal Ingredients", "categories": ["cat_food_ingredient"],
+                "default_unit": "portion", "storage_modes": ["stackable"],
                 "ownership_records": ["ownership_person_test_ingredients"],
             },
             "item_cooked_meal": {
                 "id": "item_cooked_meal", "type": "item", "_dataset": "items",
-                "pretty_name": "Simple Cooked Meal", "item_class": "prepared food",
-                "inventory_unit": "meal", "stackable": True,
+                "pretty_name": "Simple Cooked Meal", "categories": ["cat_prepared_food"],
+                "default_unit": "meal", "storage_modes": ["stackable"],
                 "consumable": True, "food_satiation": 58,
             },
             "recipe_simple_cooked_meal": {

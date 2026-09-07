@@ -54,6 +54,20 @@ class NavigationBuildingTests(unittest.TestCase):
         )
         return NavigationController(app)
 
+    def test_bioregion_test_launches_lod4_reference_site(self):
+        controller = self._controller([])
+
+        controller.launch_bioregion_test_tab()
+
+        tab = controller.app.tab_manager.tabs[0]
+        sim = tab.sim_instance.simulation
+        self.assertEqual("BioSim: Reference Site", tab.name)
+        self.assertEqual("map", sim.render_mode)
+        self.assertEqual("biosphere_builder", sim.simulation_mode)
+        self.assertEqual(4, sim.get_root_entity().get("map_detail_level"))
+        self.assertTrue(sim.test_forest_species_ids)
+        self.assertEqual(set(sim.test_forest_species_ids), {patch.species_id for patch in sim.ecology.patches})
+
     def test_open_region_map_routes_buildings_to_building_sim(self):
         controller = self._controller([
             {
@@ -351,6 +365,41 @@ class NavigationBuildingTests(unittest.TestCase):
         self.assertEqual(("biosphere", "loc_patch"), tab.tab_key)
         self.assertEqual("Biosphere: Patch", tab.name)
         self.assertEqual(10.0, tab.sim_instance.simulation.get_map_size())
+
+    def test_biosphere_representative_launches_exact_species_sim_state(self):
+        controller = self._controller([{
+            "id": "spec_biomasser_13b",
+            "type": "species",
+            "_dataset": "species",
+            "common_name": "Biomasser 13B",
+            "species_simulation_enabled": True,
+            "plant_growth_form": "lichen",
+        }])
+
+        handled = controller.launch_biosphere_representative_tab({
+            "representative_id": "runtime_spec_biomasser_13b_representative_01",
+            "species_id": "spec_biomasser_13b",
+            "seed": 77,
+            "age_days": 183.0,
+        })
+
+        self.assertTrue(handled)
+        tab = controller.app.tab_manager.tabs[0]
+        self.assertEqual(("biosphere_representative", "runtime_spec_biomasser_13b_representative_01"), tab.tab_key)
+        self.assertEqual(77, tab.sim_instance.simulation.seed)
+        self.assertEqual(183.0, tab.sim_instance.simulation.age_days)
+
+    def test_engineered_lichen_entity_has_species_sim_affordance(self):
+        entity = {
+            "id": "spec_biomasser_13b",
+            "type": "species",
+            "_dataset": "species",
+            "species_simulation_enabled": True,
+        }
+
+        modes = [option["mode"] for option in LaunchAffordanceResolver().options_for_entity(entity)]
+
+        self.assertEqual("species", modes[0])
 
     def test_world_gen_space_action_opens_parent_space_sim(self):
         controller = self._controller([

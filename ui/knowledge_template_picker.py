@@ -173,6 +173,7 @@ class KnowledgeTemplatePickerMixin:
             return "biogeography"
 
         if dataset_name in {
+            "categories",
             "components",
             "engineering",
             "materials",

@@ -84,8 +84,8 @@ def build_changes(datasets):
         },
         {
             "id": "item_raw_lumber", "_dataset": "items", "type": "item",
-            "name": "Raw Lumber", "pretty_name": "Raw Lumber", "item_class": "raw building material",
-            "consumable": False, "inventory_unit": "log", "stackable": True,
+            "name": "Raw Lumber", "pretty_name": "Raw Lumber", "categories": ["cat_raw_building_material"],
+            "consumable": False, "default_unit": "log", "storage_modes": ["stackable"],
             "produced_by": ["location_lumber_test_woodlot"],
             "ownership_records": ["ownership_lumber_storage_stock"],
         },

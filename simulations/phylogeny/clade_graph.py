@@ -128,6 +128,7 @@ class PhylogenyGraphContext:
         self.parents_by_child = self._build_parent_map()
         self._descendant_species_cache = {}
         self._distance_cache = {}
+        self._distances_from_cache = {}
         self._clade_search_rows = None
         self._clade_search_cache = {}
 
@@ -265,38 +266,47 @@ class PhylogenyGraphContext:
         self._descendant_species_cache[entity_id] = tuple(descendants)
         return descendants
 
+    def distances_from(self, start_id):
+        """Undirected shortest-path distance from ``start_id`` to every reachable
+        phylogeny node, computed with a single BFS and cached per start node."""
+        cached = self._distances_from_cache.get(start_id)
+        if cached is not None:
+            return cached
+
+        distances = {start_id: 0}
+        if start_id in self.phylogeny_entities:
+            queue = deque([start_id])
+            while queue:
+                current_id = queue.popleft()
+                current_distance = distances[current_id]
+                neighbors = list(self.parents_by_child.get(current_id, [])) + list(
+                    self.children_by_parent.get(current_id, [])
+                )
+                for neighbor_id in neighbors:
+                    if neighbor_id in distances or neighbor_id not in self.phylogeny_entities:
+                        continue
+                    distances[neighbor_id] = current_distance + 1
+                    queue.append(neighbor_id)
+
+        self._distances_from_cache[start_id] = distances
+        return distances
+
     def graph_distance(self, start_id, target_id, max_depth=8):
         cache_key = (start_id, target_id, max_depth)
         if cache_key in self._distance_cache:
             return self._distance_cache[cache_key]
 
-        if start_id == target_id:
-            self._distance_cache[cache_key] = 0
-            return 0
-
-        queue = deque([(start_id, 0)])
-        seen = {start_id}
-        while queue:
-            current_id, distance = queue.popleft()
-            if distance >= max_depth:
-                continue
-            neighbors = list(self.parents_by_child.get(current_id, [])) + list(self.children_by_parent.get(current_id, []))
-            for neighbor_id in neighbors:
-                if neighbor_id not in self.phylogeny_entities or neighbor_id in seen:
-                    continue
-                if neighbor_id == target_id:
-                    self._distance_cache[cache_key] = distance + 1
-                    return distance + 1
-                seen.add(neighbor_id)
-                queue.append((neighbor_id, distance + 1))
-
-        self._distance_cache[cache_key] = None
-        return None
+        distance = self.distances_from(start_id).get(target_id)
+        if distance is not None and distance > max_depth:
+            distance = None
+        self._distance_cache[cache_key] = distance
+        return distance
 
     def distant_species_members(self, clade_id, limit=3):
         candidates = []
+        distances = self.distances_from(clade_id)
         for species_id in self.species_descendant_ids(clade_id):
-            distance = self.graph_distance(clade_id, species_id, max_depth=64)
+            distance = distances.get(species_id)
             candidates.append(
                 (
                     distance if distance is not None else 0,
@@ -314,6 +324,7 @@ class PhylogenyGraphContext:
 
         relatives = []
         seen = {species_id}
+        distances = self.distances_from(species_id)
         parent_ids = [parent_id for parent_id in self.parents_by_child.get(species_id, []) if parent_id in self.phylogeny_entities]
         ancestor_id = parent_ids[0] if parent_ids else None
 
@@ -324,7 +335,7 @@ class PhylogenyGraphContext:
             for candidate_id in self.species_descendant_ids(ancestor_id):
                 if candidate_id in seen:
                     continue
-                distance = self.graph_distance(species_id, candidate_id, max_depth=64)
+                distance = distances.get(candidate_id)
                 candidates.append(
                     (
                         distance if distance is not None else 9999,

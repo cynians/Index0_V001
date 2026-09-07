@@ -211,9 +211,6 @@ class VehicleDesignController:
     def _infer_satisfies_categories_from_entity(self, entity):
         categories = set()
 
-        component_class = str(entity.get("component_class", "")).strip().lower()
-        categories.update(self.COMPONENT_CATEGORY_HINTS.get(component_class, set()))
-
         for field_name in ("functional_roles", "tags", "satisfies_categories"):
             values = entity.get(field_name, [])
             if isinstance(values, list):
@@ -224,7 +221,7 @@ class VehicleDesignController:
 
         label_text = " ".join(
             str(entity.get(key, ""))
-            for key in ("pretty_name", "name", "component_class")
+            for key in ("pretty_name", "name")
         ).lower()
 
         if "wheel" in label_text:
@@ -270,7 +267,7 @@ class VehicleDesignController:
         return {
             "id": entity.get("id"),
             "label": entity.get("pretty_name", entity.get("name", entity.get("id", "component"))),
-            "component_type": entity.get("component_class", "component"),
+            "component_type": entity.get("type", "component"),
             "entry_type": entity.get("type", "component"),
             "dimensions_m": {
                 "x": float(entity.get("dimension_length_m", 1.0)),

@@ -41,6 +41,7 @@ import unicodedata
 
 import pygame
 
+from world.item_categories import resolve_category_labels
 from world.temporal import (
     DEFAULT_SIMULATION_YEAR,
     entity_available_at,
@@ -489,7 +490,7 @@ class FormationSimulation:
             "entity_id": item_id,
             "label": self._display_label(item.get("pretty_name") or item.get("name") or item_id),
             "kind": "item",
-            "item_class": item.get("item_class") or "item",
+            "category_label": resolve_category_labels(self.world_model, item),
             "start_year": item.get("start_year"),
             "end_year": item.get("end_year"),
             "year_range": entity_year_range(item),

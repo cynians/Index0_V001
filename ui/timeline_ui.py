@@ -44,7 +44,8 @@ class TimelineUI:
     FILTER_GROUPS = [
         ("general", "General", ["all", "open_canvas", "contemporary"]),
         ("locations", "Locations", ["locations"]),
-        ("engineering", "Engineering", ["vehicles", "components", "technologies"]),
+        ("engineering", "Engineering", ["vehicles", "components"]),
+        ("technology", "Technology", ["technologies"]),
         ("human", "Human", ["pops", "people", "cultures", "factions", "institutions"]),
         ("material", "Material", ["items", "materials", "producers"]),
         ("world", "World", ["systems", "species", "events", "formations", "spatial_features"]),
@@ -52,6 +53,10 @@ class TimelineUI:
     ]
     DEFAULT_HIDDEN_DATASETS = {"animals", "cladistics", "production", "species"}
     DEFAULT_HIDDEN_ENTITY_TYPES = {"animal", "animals", "cladistics", "production", "species"}
+    # Deferred datasets are hidden by default but stay selectable as their own
+    # filter: technologies only appear once the viewer explicitly filters for them.
+    DEFERRED_DATASETS = {"technologies"}
+    DEFERRED_ENTITY_TYPES = {"technology"}
     RELATION_CLUSTER_FIELDS = (
         "parents",
         "related",
@@ -66,6 +71,8 @@ class TimelineUI:
         "constituents",
         "owner_entity",
     )
+
+    TECH_GUTTER_W = 150
 
     ZOOM_IN_FACTOR = 0.80
     ZOOM_OUT_FACTOR = 1.25
@@ -145,6 +152,10 @@ class TimelineUI:
         self.period_lane_count = 0
         self.lane_count = 1
         self.relationship_cluster_lane_ranges = []
+        self.technology_category_lane_ranges = []
+        self.technology_offscreen_left = []
+        self.technology_gutter_hitboxes = []
+        self.technology_gutter_width = 0
         self.vertical_scroll_px = 0
         self.content_rect = pygame.Rect(0, 0, 0, 0)
         self.axis_y = 0
@@ -231,6 +242,10 @@ class TimelineUI:
                 item.get("commentary"),
                 item.get("start_commentary"),
                 item.get("end_commentary"),
+                item.get("invention_year"),
+                item.get("forgotten_year"),
+                item.get("superseded_year"),
+                item.get("technology_open_ended"),
             )
             for item in items
             if isinstance(item, dict)
@@ -244,6 +259,7 @@ class TimelineUI:
             "parent_entity",
             "parent_location",
             "parent_body",
+            "parent_technology",
             "offspring",
             "constituents",
             "predecessor",
@@ -276,6 +292,7 @@ class TimelineUI:
             "parent_entity",
             "parent_location",
             "parent_body",
+            "parent_technology",
             "offspring",
             "constituents",
             "predecessor",
@@ -954,6 +971,27 @@ class TimelineUI:
             or entity_type in self.DEFAULT_HIDDEN_ENTITY_TYPES
         )
 
+    def _item_is_deferred_technology(self, item):
+        if item.get("timeline_kind") == "technology":
+            return True
+        dataset_name = str(item.get("dataset") or "").strip().lower()
+        entity_type = str(item.get("entity_type") or "").strip().lower()
+        return (
+            dataset_name in self.DEFERRED_DATASETS
+            or entity_type in self.DEFERRED_ENTITY_TYPES
+        )
+
+    def _technology_filter_active(self):
+        if self.active_filter_mode == "group":
+            group_categories = set()
+            for group_id in self.active_filter_groups:
+                group_categories.update(self._categories_for_group(group_id))
+            return group_categories == {"technologies"}
+        return self.active_category_filter == "technologies"
+
+    def _item_deferred_hidden(self, item):
+        return self._item_is_deferred_technology(item) and not self._technology_filter_active()
+
     def _draw_selected_year_marker(self, screen):
         if self.selected_year is None or not self._year_is_in_view(self.selected_year):
             return
@@ -1098,7 +1136,11 @@ class TimelineUI:
         geologic_cutoff = -1_000_000
 
         for item in self.items:
-            if item.get("timeline_kind") == "major_period" or self._item_hidden_by_default(item):
+            if (
+                item.get("timeline_kind") == "major_period"
+                or self._item_hidden_by_default(item)
+                or self._item_deferred_hidden(item)
+            ):
                 continue
             year_range = self._item_year_range(item)
             if year_range is None:
@@ -1135,7 +1177,11 @@ class TimelineUI:
         geologic_cutoff = -1_000_000
 
         for item in self.items:
-            if item.get("timeline_kind") == "major_period" or self._item_hidden_by_default(item):
+            if (
+                item.get("timeline_kind") == "major_period"
+                or self._item_hidden_by_default(item)
+                or self._item_deferred_hidden(item)
+            ):
                 continue
             year_range = self._item_year_range(item)
             if year_range is None:
@@ -1759,9 +1805,38 @@ class TimelineUI:
         for item in self.items:
             if self._item_hidden_by_default(item):
                 continue
+            if self._item_deferred_hidden(item):
+                continue
 
             raw_start = item.get("start_year")
             raw_end = item.get("end_year")
+
+            if self._item_is_deferred_technology(item):
+                invention_year = item.get("invention_year", raw_start)
+                if invention_year is None:
+                    continue
+                forgotten_year = item.get("forgotten_year")
+                # The invention is the anchor; the "availability rail" runs to
+                # the forgotten year, or off the right edge when still known.
+                terminus = forgotten_year if forgotten_year is not None else max(self.view_max_year, invention_year)
+                start = invention_year
+                end = terminus
+                if end < start:
+                    start, end = end, start
+                if end < self.view_min_year or start > self.view_max_year:
+                    continue
+                visible.append(
+                    {
+                        **item,
+                        "raw_start_year": invention_year,
+                        "raw_end_year": forgotten_year,
+                        "start_year": start,
+                        "end_year": end,
+                        "invention_year": invention_year,
+                    }
+                )
+                continue
+
             start = raw_start
             end = raw_end
 
@@ -1835,6 +1910,12 @@ class TimelineUI:
             bar_right = x1 + max(8, x2 - x1)
             label_left = max(self.content_rect.x, min(x1 + 6, self.content_rect.right - label_w))
             return min(x1, label_left), max(bar_right, label_left + label_w)
+
+        if item.get("timeline_kind") == "technology":
+            # Invention dot at x1, availability rail out to the terminus (clamped
+            # to the visible content), label sits to the right of the dot.
+            rail_right = min(max(x1, x2), self.content_rect.right)
+            return x1, max(rail_right, x1 + 8 + label_w)
 
         if start_year == end_year:
             return x1, max(x1 + 8 + label_w, x1 + 6)
@@ -2047,6 +2128,87 @@ class TimelineUI:
             })
         return layout_items, lane_offset
 
+    def _is_technology_entity(self, entity):
+        return isinstance(entity, dict) and (
+            entity.get("type") == "technology"
+            or entity.get("_dataset") == "technologies"
+        )
+
+    def _technology_category_root(self, entity_id):
+        """Walk ``parent_technology`` to the topmost technology ancestor.
+
+        A technology with no technology parent is its own category root.
+        """
+        current_id = str(entity_id or "").strip()
+        root_id = current_id
+        visited = set()
+        while current_id and current_id not in visited:
+            visited.add(current_id)
+            entity = self.entity_lookup.get(current_id)
+            if not isinstance(entity, dict):
+                break
+            parent_id = None
+            for candidate_id in self._relation_entity_ids(entity.get("parent_technology")):
+                candidate_id = str(candidate_id or "").strip()
+                if (
+                    candidate_id
+                    and candidate_id != current_id
+                    and self._is_technology_entity(self.entity_lookup.get(candidate_id))
+                ):
+                    parent_id = candidate_id
+                    break
+            if parent_id is None:
+                break
+            root_id = parent_id
+            current_id = parent_id
+        return root_id or str(entity_id or "")
+
+    def _technology_category_label(self, root_id):
+        entity = self.entity_lookup.get(str(root_id or ""))
+        return self._entity_display_label(entity, fallback=str(root_id or "Uncategorised"))
+
+    def _assign_technology_category_lanes(self, items):
+        buckets = {}
+        for item in items:
+            root_id = self._technology_category_root(item.get("entity_id"))
+            buckets.setdefault(root_id, []).append(item)
+
+        def bucket_sort_key(entry):
+            root_id, bucket_items = entry
+            earliest = min(
+                (int(bucket_item.get("start_year", 0)) for bucket_item in bucket_items),
+                default=0,
+            )
+            return (earliest, self._technology_category_label(root_id).casefold(), root_id)
+
+        layout_items = []
+        lane_offset = 0
+        self.technology_category_lane_ranges = []
+        for root_id, bucket_items in sorted(buckets.items(), key=bucket_sort_key):
+            header_lane = lane_offset
+            lane_offset += 1
+            placed_items, bucket_lane_count = self._assign_items_to_lanes(
+                sorted(bucket_items, key=self._timeline_item_stable_key)
+            )
+            bucket_lane_count = max(1, bucket_lane_count)
+            first_lane = lane_offset
+            for placed_item in placed_items:
+                placed_item["lane"] += lane_offset
+                placed_item["technology_category_root"] = root_id
+                layout_items.append(placed_item)
+            lane_offset += bucket_lane_count
+            self.technology_category_lane_ranges.append(
+                {
+                    "root_id": root_id,
+                    "label": self._technology_category_label(root_id),
+                    "header_lane": header_lane,
+                    "first_lane": first_lane,
+                    "last_lane": lane_offset - 1,
+                    "item_count": len(placed_items),
+                }
+            )
+        return layout_items, lane_offset
+
     def _timeline_parent_ids_for_item(self, entity_id, visible_ids):
         entity = self.entity_lookup.get(str(entity_id or ""))
         parent_ids = []
@@ -2164,6 +2326,26 @@ class TimelineUI:
             allow_touching=True,
         )
 
+    def _technology_item_invention_year(self, item):
+        invention_year = item.get("invention_year", item.get("raw_start_year", item.get("start_year")))
+        try:
+            return int(invention_year)
+        except (TypeError, ValueError):
+            return None
+
+    def _technology_known_before_view(self, item):
+        """A technology invented before the view and not yet forgotten by it."""
+        invention_year = self._technology_item_invention_year(item)
+        if invention_year is None or invention_year >= self.view_min_year:
+            return False
+        forgotten_year = item.get("forgotten_year")
+        if forgotten_year is None:
+            return True
+        try:
+            return int(forgotten_year) >= self.view_min_year
+        except (TypeError, ValueError):
+            return True
+
     def _assign_lanes(self, visible_items=None):
         visible_items = self._filtered_visible_items() if visible_items is None else visible_items
         timeline_items = [
@@ -2171,6 +2353,34 @@ class TimelineUI:
             for item in visible_items
             if item.get("timeline_kind") != "major_period"
         ]
+        if timeline_items and all(
+            self._item_is_deferred_technology(item) for item in timeline_items
+        ):
+            self.relationship_cluster_lane_ranges = []
+            offscreen_left = []
+            in_view = []
+            for item in timeline_items:
+                if self._technology_known_before_view(item):
+                    offscreen_left.append(item)
+                else:
+                    in_view.append(item)
+            self.technology_offscreen_left = sorted(
+                offscreen_left,
+                key=lambda item: (
+                    self._technology_category_label(
+                        self._technology_category_root(item.get("entity_id"))
+                    ).casefold(),
+                    self._technology_item_invention_year(item) or 0,
+                    str(item.get("label") or ""),
+                ),
+            )
+            self.layout_items, lane_count = self._assign_technology_category_lanes(in_view)
+            self.lane_count = max(1, lane_count)
+            return
+
+        self.technology_category_lane_ranges = []
+        self.technology_offscreen_left = []
+        self.technology_gutter_hitboxes = []
         if self.timeline_sort_mode == "offspring":
             self.relationship_cluster_lane_ranges = []
             self.layout_items, lane_count = self._assign_offspring_nested_lanes(timeline_items)
@@ -2250,13 +2460,26 @@ class TimelineUI:
             self._view_range_initialized,
         )
 
-    def rebuild_layout(self):
-        self.content_rect = pygame.Rect(
-            self.rect.x + self.LEFT_PAD,
+    def _content_rect_for_gutter(self, gutter_width):
+        return pygame.Rect(
+            self.rect.x + self.LEFT_PAD + gutter_width,
             self.rect.y + self.TOP_PAD + self.HEADER_H,
-            max(1, self.rect.width - self.LEFT_PAD - self.RIGHT_PAD),
+            max(1, self.rect.width - self.LEFT_PAD - self.RIGHT_PAD - gutter_width),
             max(1, self.rect.height - self.TOP_PAD - self.BOTTOM_PAD - self.HEADER_H),
         )
+
+    def _technology_gutter_width(self, visible_items):
+        if not self._technology_filter_active():
+            return 0
+        if not any(
+            self._item_is_deferred_technology(item) and self._technology_known_before_view(item)
+            for item in visible_items
+        ):
+            return 0
+        return min(self.TECH_GUTTER_W, max(0, self.rect.width // 3))
+
+    def rebuild_layout(self):
+        self.content_rect = self._content_rect_for_gutter(0)
         self.axis_y = self.content_rect.y + self.AXIS_H
         self._compute_full_range()
         self._ensure_view_range_initialized()
@@ -2266,6 +2489,10 @@ class TimelineUI:
 
         self._label_width_cache = {}
         visible_items = self._filtered_visible_items()
+        self.technology_gutter_width = self._technology_gutter_width(visible_items)
+        if self.technology_gutter_width:
+            self.content_rect = self._content_rect_for_gutter(self.technology_gutter_width)
+            self.axis_y = self.content_rect.y + self.AXIS_H
         self._build_coverage_segments(visible_items)
         self._assign_period_lanes(visible_items)
         self._assign_lanes(visible_items)
@@ -2976,6 +3203,17 @@ class TimelineUI:
         return self._unscrolled_period_base_y() - self.vertical_scroll_px
 
     def handle_item_click(self, mouse_pos):
+        for entity_id, hit_rect in self.technology_gutter_hitboxes:
+            if hit_rect.collidepoint(mouse_pos) and entity_id:
+                return {
+                    "kind": "open_timeline_entity",
+                    "entity_id": entity_id,
+                    "year": None,
+                    "start_year": None,
+                    "end_year": None,
+                    "changed": False,
+                }
+
         if self._vertical_viewport_rect().collidepoint(mouse_pos):
             for item in reversed(self.layout_items):
                 hit_rect = self._timeline_item_hit_rect(item)
@@ -3416,6 +3654,23 @@ class TimelineUI:
                         1,
                     )
 
+            for category_range in self.technology_category_lane_ranges:
+                header_y = lane_base_y + category_range["header_lane"] * lane_pitch
+                if header_y > vertical_viewport.bottom or header_y + lane_pitch < vertical_viewport.y:
+                    continue
+                pygame.draw.line(
+                    screen,
+                    (62, 78, 102),
+                    (axis_left, header_y),
+                    (axis_right, header_y),
+                    1,
+                )
+                header_label = self._ellipsize_text(
+                    category_range["label"], font, max(40, axis_right - axis_left)
+                )
+                header_surface = font.render(header_label, True, (170, 190, 220))
+                screen.blit(header_surface, (axis_left, header_y + 1))
+
             for item in self.layout_items:
                 lane = item["lane"]
                 start_year = item["start_year"]
@@ -3442,6 +3697,12 @@ class TimelineUI:
                 if depth:
                     label_prefix += "> "
                 render_label = f"{label_prefix}{label}"
+
+                if item.get("timeline_kind") == "technology":
+                    self._draw_technology_rail(
+                        screen, font, item, y, axis_left, axis_right, color, border_color
+                    )
+                    continue
 
                 is_snapshot = item.get("timeline_kind") in {"snapshot", "wiki_snapshot", "mentioned_wiki_snapshot"}
                 if is_point and is_snapshot:
@@ -3477,8 +3738,113 @@ class TimelineUI:
                         screen.blit(note_surface, (note_x, y + self.ITEM_H))
 
             screen.set_clip(timeline_content_clip)
+            self._draw_technology_gutter(screen, font, lane_base_y, lane_pitch)
             self._draw_vertical_scrollbar(screen)
             self._draw_working_period_boundaries(screen)
             self._draw_selected_year_marker(screen)
         finally:
             screen.set_clip(previous_clip)
+
+    def _draw_technology_rail(self, screen, font, item, y, axis_left, axis_right, color, border_color):
+        invention_year = item.get("invention_year", item.get("start_year"))
+        forgotten_year = item.get("forgotten_year")
+        superseded_year = item.get("superseded_year")
+        open_ended = bool(item.get("technology_open_ended")) and forgotten_year is None
+
+        inv_x = self._year_to_x(invention_year)
+        term_x = axis_right if open_ended else self._year_to_x(
+            forgotten_year if forgotten_year is not None else item.get("end_year", invention_year)
+        )
+        rail_left = max(inv_x, axis_left)
+        rail_right = min(term_x, axis_right)
+        rail_y = y + self.ITEM_H // 2
+        dim_color = self._mix_color(color, (18, 22, 34), 0.62)
+
+        if rail_right > rail_left:
+            split_x = rail_right
+            if superseded_year is not None:
+                split_x = max(rail_left, min(rail_right, self._year_to_x(superseded_year)))
+            if split_x > rail_left:
+                pygame.draw.line(screen, color, (rail_left, rail_y), (split_x, rail_y), 2)
+            if rail_right > split_x:
+                pygame.draw.line(screen, dim_color, (split_x, rail_y), (rail_right, rail_y), 2)
+
+        if open_ended and rail_right >= axis_right - 1:
+            pygame.draw.polygon(
+                screen,
+                dim_color if superseded_year is not None else color,
+                [
+                    (axis_right - 6, rail_y - 4),
+                    (axis_right, rail_y),
+                    (axis_right - 6, rail_y + 4),
+                ],
+            )
+        elif forgotten_year is not None and rail_right <= axis_right:
+            pygame.draw.line(screen, dim_color, (rail_right, rail_y - 4), (rail_right, rail_y + 4), 2)
+
+        if axis_left <= inv_x <= axis_right:
+            pygame.draw.line(screen, color, (inv_x, self.axis_y), (inv_x, rail_y), 1)
+            pygame.draw.circle(screen, border_color, (inv_x, rail_y), 4)
+            label_surface = font.render(str(item.get("label", item.get("entity_id", "technology"))), True, (220, 220, 220))
+            screen.blit(label_surface, (inv_x + 8, y))
+
+    def _draw_technology_gutter(self, screen, font, lane_base_y, lane_pitch):
+        self.technology_gutter_hitboxes = []
+        if not self.technology_gutter_width or not self.technology_offscreen_left:
+            return
+
+        viewport = self._vertical_viewport_rect()
+        gutter_rect = pygame.Rect(
+            self.rect.x + self.LEFT_PAD,
+            viewport.y,
+            self.technology_gutter_width - 6,
+            viewport.height,
+        )
+        clip_before = screen.get_clip()
+        screen.set_clip(clip_before.clip(gutter_rect) if clip_before is not None else gutter_rect)
+        try:
+            pygame.draw.line(
+                screen,
+                (62, 78, 102),
+                (gutter_rect.right + 2, gutter_rect.y),
+                (gutter_rect.right + 2, gutter_rect.bottom),
+                1,
+            )
+            heading = self._ellipsize_text(
+                f"Known by {self.view_min_year}", font, gutter_rect.width
+            )
+            screen.blit(font.render(heading, True, (170, 190, 220)), (gutter_rect.x, gutter_rect.y))
+
+            line_h = max(12, font.get_linesize())
+            cursor_y = gutter_rect.y + line_h + 2
+            current_category = None
+            for item in self.technology_offscreen_left:
+                if cursor_y > gutter_rect.bottom - line_h:
+                    break
+                category_label = self._technology_category_label(
+                    self._technology_category_root(item.get("entity_id"))
+                )
+                if category_label != current_category:
+                    current_category = category_label
+                    screen.blit(
+                        font.render(
+                            self._ellipsize_text(category_label, font, gutter_rect.width),
+                            True,
+                            (128, 140, 162),
+                        ),
+                        (gutter_rect.x, cursor_y),
+                    )
+                    cursor_y += line_h
+                    if cursor_y > gutter_rect.bottom - line_h:
+                        break
+                label = self._ellipsize_text(
+                    str(item.get("label", item.get("entity_id", "technology"))),
+                    font,
+                    gutter_rect.width - 8,
+                )
+                row_rect = pygame.Rect(gutter_rect.x, cursor_y, gutter_rect.width, line_h)
+                screen.blit(font.render(label, True, (210, 216, 228)), (gutter_rect.x + 8, cursor_y))
+                self.technology_gutter_hitboxes.append((item.get("entity_id"), row_rect))
+                cursor_y += line_h
+        finally:
+            screen.set_clip(clip_before)

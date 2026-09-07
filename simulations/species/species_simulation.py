@@ -1743,7 +1743,7 @@ class SpeciesSimulation:
                 lod,
                 attachment_points=attachment_points,
             )
-        elif behaviour == "moss_mat" or shape == "moss":
+        elif behaviour in {"moss_mat", "lichen_crust_radial"} or shape in {"moss", "lichen"}:
             self._grow_moss(
                 placements,
                 maturity,

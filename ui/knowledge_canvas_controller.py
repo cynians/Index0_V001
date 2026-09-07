@@ -291,9 +291,15 @@ class KnowledgeCanvasController:
                 max_bottom = max(max_bottom, card.get("canvas_y", 84) + approximate_h)
                 continue
 
+            layout_detail = None
+            if performance_debug.enabled:
+                active_tab = getattr(card_view, "active_tab", None)
+                layout_detail = f"entity={card.get('entity_id')} tab={active_tab}"
+
             auto_canvas_h = bool(card.get("auto_canvas_h", True))
             if card_view is not None and self.font_for_layout is not None:
-                minimum_h = card_view.get_minimum_height(card, self.font_for_layout)
+                with performance_debug.measure("layout.get_minimum_height", layout_detail or ""):
+                    minimum_h = card_view.get_minimum_height(card, self.font_for_layout)
             else:
                 minimum_h = 260
 
@@ -312,7 +318,8 @@ class KnowledgeCanvasController:
             if card_view is not None:
                 card["is_compact_canvas_card"] = False
                 card["layout_skipped_offscreen"] = False
-                card_view.layout_card(card, rect)
+                with performance_debug.measure("layout.layout_card", layout_detail or ""):
+                    card_view.layout_card(card, rect)
 
             final_rect = card.get("rect", rect)
             toolbelt_rect = card.get("toolbelt_rect")
@@ -325,10 +332,13 @@ class KnowledgeCanvasController:
 
         self.canvas_content_width = max(0, max_right + 24)
         self.canvas_content_height = max(0, max_bottom + 24)
-        if self.timeline_ui.set_open_canvas_entity_ids(card.get("entity_id") for card in self.cards):
-            self.timeline_ui.rebuild_layout()
-        self._layout_canvas_relation_controls()
-        self._rebuild_canvas_relation_edges()
+        with performance_debug.measure("layout.timeline_rebuild"):
+            if self.timeline_ui.set_open_canvas_entity_ids(card.get("entity_id") for card in self.cards):
+                self.timeline_ui.rebuild_layout()
+        with performance_debug.measure("layout.relation_controls"):
+            self._layout_canvas_relation_controls()
+        with performance_debug.measure("layout.relation_edges"):
+            self._rebuild_canvas_relation_edges()
 
     def _auto_card_canvas_height_limit(self, right_rect):
         viewport_h = int(getattr(right_rect, "height", 0) or 0)

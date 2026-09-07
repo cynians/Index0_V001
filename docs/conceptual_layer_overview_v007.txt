@@ -550,6 +550,7 @@ Soil profiles should derive primarily from worldgen natural materials, then be m
 20. BIOSPHERES AND BIOSIM
 Is-State:
 BioSim is not yet a mature standalone simulation, but the current map and location workflows support biosphere patches as location polygons, inherited regional/planetary context, localized species collections and roster buckets, worldgen suitability information, and parent-footprint sampling.
+The first qualitative ecological foundation now adds a deterministic LOD4 authored reference site and a closed producer/soil/water/light runtime loop with inspectable carbon, water, and nitrogen fluxes; see docs/biosphere_sim_foundation_v001.md. It is a development target and conservation-tested mechanism, not a calibrated ecosystem model.
 The current foundations remain distributed across locations, map/worldgen, ecology summaries, materials, phylogeny/species, person simulation, logistics, and entity-launched simulations. Worldgen persists environment, hydrology, ecology, material, and surface context on generated planets, and species/cladistics can launch to Phylogeny Simulation.
 
 Should-Be State:

@@ -8,15 +8,64 @@ from world.periods import (
 )
 
 
+_LOCATION_BUILDING_ONLY_FIELDS = frozenset({"building_class"})
+_LOCATION_ROOM_ONLY_FIELDS = frozenset({"room_class", "floor_index", "floor_label", "room_number"})
+_LOCATION_ORBITAL_ONLY_FIELDS = frozenset({
+    "system_role", "system_class", "star_system", "body_class", "parent_body",
+    "location_entity", "legacy_system_entity_id", "derived_from_system_body",
+    "star_class", "spectral_class", "luminosity_solar", "habitable_zone_inner_au",
+    "habitable_zone_outer_au", "stellar_neighbours", "radius_m", "semi_major_axis_m",
+    "eccentricity", "inclination_deg", "longitude_of_ascending_node_deg",
+    "argument_of_periapsis_deg", "mean_anomaly_deg_at_epoch", "display_color", "mass_kg",
+})
+_LOCATION_SURFACE_CLASSES = frozenset({
+    "continent", "country", "state", "region", "city", "quarter", "site",
+    "macro_site", "internal_passage", "island_chain", "atoll", "cluster",
+})
+_LOCATION_ORBITAL_CLASSES = frozenset({
+    "star_system", "stellar_system", "star", "planet", "moon", "dwarf_planet",
+    "asteroid", "comet", "orbital_body",
+})
+_LOCATION_SURFACE_EXCLUDED = _LOCATION_BUILDING_ONLY_FIELDS | _LOCATION_ROOM_ONLY_FIELDS | _LOCATION_ORBITAL_ONLY_FIELDS
+_LOCATION_BUILDING_EXCLUDED = _LOCATION_ROOM_ONLY_FIELDS | _LOCATION_ORBITAL_ONLY_FIELDS
+_LOCATION_ORBITAL_EXCLUDED = _LOCATION_BUILDING_ONLY_FIELDS | _LOCATION_ROOM_ONLY_FIELDS
+_LOCATION_DEFAULT_EXCLUDED = _LOCATION_BUILDING_ONLY_FIELDS | _LOCATION_ROOM_ONLY_FIELDS
+
+_SCALAR_COMPLETENESS_SKIP_FIELDS = frozenset({
+    "card_color", "card_header_color", "three_word_description",
+    "wiki_field_colors", "wiki_link_color",
+})
+_SCALAR_COMPLETENESS_TYPES = frozenset({None, "string", "number", "text"})
+
+
 class KnowledgeBrowserModel:
     def __init__(self, host):
         object.__setattr__(self, "host", host)
+        object.__setattr__(
+            self,
+            "_schema_memo",
+            {"revision": None, "resolve": {}, "collect": {}, "scalar_keys": {}},
+        )
 
     def __getattr__(self, name):
         return getattr(self.host, name)
 
     def __setattr__(self, name, value):
         setattr(self.host, name, value)
+
+    def _schema_memo_caches(self):
+        """Return ``(resolve_cache, collect_cache)`` for schema lookups during a
+        browser rebuild. Schema shape only changes on a repository mutation, so
+        the memo is keyed on ``repository_revision`` and rebuilt when it moves.
+        """
+        memo = self._schema_memo
+        revision = getattr(self.world_model, "repository_revision", 0)
+        if memo["revision"] != revision:
+            memo["revision"] = revision
+            memo["resolve"] = {}
+            memo["collect"] = {}
+            memo["scalar_keys"] = {}
+        return memo["resolve"], memo["collect"]
 
     def _is_expanded(self, entity_id, dataset_name="locations"):
         state = self.browser_tree_state.setdefault(dataset_name, {})
@@ -153,8 +202,17 @@ class KnowledgeBrowserModel:
         return items
 
     def _resolve_schema_for_entity(self, entity, dataset_name):
-        candidates = []
         entity_type = entity.get("type")
+        resolve_cache, _ = self._schema_memo_caches()
+        cache_key = (entity_type, dataset_name)
+        if cache_key in resolve_cache:
+            return resolve_cache[cache_key]
+        schema = self._resolve_schema_for_entity_uncached(entity_type, dataset_name)
+        resolve_cache[cache_key] = schema
+        return schema
+
+    def _resolve_schema_for_entity_uncached(self, entity_type, dataset_name):
+        candidates = []
         for name in (entity_type, dataset_name):
             if not name:
                 continue
@@ -179,9 +237,17 @@ class KnowledgeBrowserModel:
     def _collect_schema_fields(self, schema, seen=None):
         if not schema:
             return {}
+
+        top_level = seen is None
+        schema_name = schema.get("schema")
+        if top_level and schema_name:
+            _, collect_cache = self._schema_memo_caches()
+            cached = collect_cache.get(schema_name)
+            if cached is not None:
+                return cached
+
         if seen is None:
             seen = set()
-        schema_name = schema.get("schema")
         if schema_name in seen:
             return {}
         if schema_name:
@@ -191,9 +257,39 @@ class KnowledgeBrowserModel:
         if extends_name:
             fields.update(self._collect_schema_fields(self.schema_loader.get_schema(extends_name), seen=seen))
         fields.update(schema.get("fields", {}))
+
+        if top_level and schema_name:
+            self._schema_memo_caches()[1][schema_name] = fields
         return fields
 
     def _entity_missing_scalar_count(self, entity, dataset_name):
+        missing = 0
+        for field_key in self._scalar_completeness_field_keys(entity, dataset_name):
+            value = entity.get(field_key)
+            if value is None:
+                missing += 1
+            elif isinstance(value, str) and not value.strip():
+                missing += 1
+        return missing
+
+    def _scalar_completeness_field_keys(self, entity, dataset_name):
+        """The scalar schema fields whose emptiness counts toward an entity's
+        "incomplete" badge. Depends only on schema + dataset + (for locations)
+        the location class, so it is memoized per repository revision rather
+        than recomputed for every entity on every browser rebuild.
+        """
+        self._schema_memo_caches()  # refresh memo when the repository revision moves
+        scalar_key_cache = self._schema_memo["scalar_keys"]
+        variant = (
+            self._location_class_variant(entity)
+            if dataset_name == "locations"
+            else None
+        )
+        cache_key = (dataset_name, entity.get("type"), variant)
+        cached = scalar_key_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         schema = self._resolve_schema_for_entity(entity, dataset_name)
         field_specs = self._collect_schema_fields(schema)
         if dataset_name == "ideas":
@@ -202,109 +298,53 @@ class KnowledgeBrowserModel:
                 for key, value in field_specs.items()
                 if key in self.IDEA_GENERIC_FIELDS or key in {"id", "type"}
             }
-        if dataset_name == "species":
+        elif dataset_name == "species":
             field_specs = {
                 key: value
                 for key, value in field_specs.items()
                 if key not in {"pretty_name", "name"}
             }
-        if dataset_name == "locations":
+        elif dataset_name == "locations":
+            excluded_fields = self._location_excluded_fields_for_entity(entity)
             field_specs = {
                 key: value
                 for key, value in field_specs.items()
-                if self._is_location_field_relevant(entity, key)
+                if key not in excluded_fields
             }
-        missing = 0
-        for field_key, spec in field_specs.items():
-            if field_key in {
-                "card_color",
-                "card_header_color",
-                "three_word_description",
-                "wiki_field_colors",
-                "wiki_link_color",
-            }:
-                continue
-            field_type = spec.get("type")
-            if field_type not in {None, "string", "number", "text"}:
-                continue
-            value = entity.get(field_key)
-            if value is None:
-                missing += 1
-            elif isinstance(value, str) and not value.strip():
-                missing += 1
-        return missing
 
-    def _is_location_field_relevant(self, entity, field_key):
-        if not isinstance(entity, dict):
-            return True
+        keys = tuple(
+            field_key
+            for field_key, spec in field_specs.items()
+            if field_key not in _SCALAR_COMPLETENESS_SKIP_FIELDS
+            and spec.get("type") in _SCALAR_COMPLETENESS_TYPES
+        )
+        scalar_key_cache[cache_key] = keys
+        return keys
 
-        class_key = str(
+    def _location_class_variant(self, entity):
+        return str(
             entity.get("location_class")
             or entity.get("body_class")
             or ""
         ).strip().lower().replace(" ", "_").replace("-", "_")
-        surface_classes = {
-            "continent",
-            "country",
-            "state",
-            "region",
-            "city",
-            "quarter",
-            "site",
-            "macro_site",
-            "internal_passage",
-            "island_chain",
-            "atoll",
-            "cluster",
-        }
-        orbital_classes = {
-            "star_system",
-            "stellar_system",
-            "star",
-            "planet",
-            "moon",
-            "dwarf_planet",
-            "asteroid",
-            "comet",
-            "orbital_body",
-        }
-        building_only = {"building_class"}
-        room_only = {"room_class", "floor_index", "floor_label", "room_number"}
-        orbital_only = {
-            "system_role",
-            "system_class",
-            "star_system",
-            "body_class",
-            "parent_body",
-            "location_entity",
-            "legacy_system_entity_id",
-            "derived_from_system_body",
-            "star_class",
-            "spectral_class",
-            "luminosity_solar",
-            "habitable_zone_inner_au",
-            "habitable_zone_outer_au",
-            "stellar_neighbours",
-            "radius_m",
-            "semi_major_axis_m",
-            "eccentricity",
-            "inclination_deg",
-            "longitude_of_ascending_node_deg",
-            "argument_of_periapsis_deg",
-            "mean_anomaly_deg_at_epoch",
-            "display_color",
-            "mass_kg",
-        }
 
-        if class_key in surface_classes:
-            return field_key not in (building_only | room_only | orbital_only)
+    def _is_location_field_relevant(self, entity, field_key):
+        if not isinstance(entity, dict):
+            return True
+        return field_key not in self._location_excluded_fields_for_entity(entity)
+
+    def _location_excluded_fields_for_entity(self, entity):
+        class_key = self._location_class_variant(entity)
+
+        if class_key in _LOCATION_SURFACE_CLASSES:
+            return _LOCATION_SURFACE_EXCLUDED
         if class_key == "building":
-            return field_key not in (room_only | orbital_only)
+            return _LOCATION_BUILDING_EXCLUDED
         if class_key == "room":
-            return field_key not in orbital_only
-        if class_key in orbital_classes:
-            return field_key not in (building_only | room_only)
-        return field_key not in (building_only | room_only)
+            return _LOCATION_ORBITAL_ONLY_FIELDS
+        if class_key in _LOCATION_ORBITAL_CLASSES:
+            return _LOCATION_ORBITAL_EXCLUDED
+        return _LOCATION_DEFAULT_EXCLUDED
 
     def _location_tree_entity_matches(self, entity, dataset_name):
         if entity is None:
@@ -520,6 +560,152 @@ class KnowledgeBrowserModel:
                 and str(material_entity.get("id")) not in emitted_ids
             ):
                 add_material_subtree(material_entity, 0)
+
+        return items
+
+    def _technology_tree_entity_matches(self, entity):
+        return self._matches_browser_filters(entity, "technologies")
+
+    def _technology_hierarchy_sort_key(self, entity):
+        label = self._entity_display_label(entity, fallback=entity.get("id", "")).lower()
+        return (label, str(entity.get("id", "")))
+
+    def _technology_tree_item(self, entity, depth, expandable, expanded):
+        return self._location_tree_item(
+            entity,
+            "technologies",
+            depth,
+            expandable,
+            expanded,
+            meta_label=self._entity_class_label("technologies", entity),
+        )
+
+    def _build_technology_browser_items(self, world_model):
+        """Build the ``parent_technology`` hierarchy for the repository browser.
+
+        Mirrors :meth:`_build_material_browser_items`: one structural parent per
+        technology, cyclic / orphan entries preserved rather than dropped.
+        """
+        if world_model is None:
+            return []
+
+        technology_by_id = {
+            str(entity.get("id")): entity
+            for entity in world_model.get_entities_by_dataset("technologies")
+            if isinstance(entity, dict) and entity.get("id")
+        }
+        technology_entities = list(technology_by_id.values())
+        children_by_parent = {}
+        parent_id_by_child = {}
+
+        def relation_values(value):
+            if value is None:
+                return []
+            if isinstance(value, str):
+                return [value]
+            if isinstance(value, dict):
+                candidate = value.get("id") or value.get("entity_id") or value.get("target")
+                return [candidate] if candidate else []
+            if isinstance(value, (list, tuple, set)):
+                values = []
+                for item in value:
+                    values.extend(relation_values(item))
+                return values
+            return []
+
+        def structural_parent_id(entity):
+            entity_id = str(entity.get("id"))
+            for parent_id in relation_values(entity.get("parent_technology")):
+                parent_id = str(parent_id)
+                if parent_id and parent_id != entity_id and parent_id in technology_by_id:
+                    return parent_id
+            return None
+
+        for entity in technology_entities:
+            entity_id = str(entity.get("id"))
+            parent_id = structural_parent_id(entity)
+            if parent_id:
+                parent_id_by_child[entity_id] = parent_id
+                children_by_parent.setdefault(parent_id, []).append(entity)
+
+        for parent_id, child_list in children_by_parent.items():
+            unique_children = {str(child.get("id")): child for child in child_list}
+            child_list[:] = sorted(unique_children.values(), key=self._technology_hierarchy_sort_key)
+
+        def technology_subtree_matches(entity, ancestry=None):
+            ancestry = set(ancestry or ())
+            entity_id = str(entity.get("id"))
+            if not entity_id or entity_id in ancestry:
+                return False
+            ancestry.add(entity_id)
+            if self._technology_tree_entity_matches(entity):
+                return True
+            return any(
+                technology_subtree_matches(child, ancestry)
+                for child in children_by_parent.get(entity_id, [])
+            )
+
+        auto_reveal = bool(self.browser_search_query.strip() or self.browser_filter_incomplete_only)
+        state = self.browser_tree_state.setdefault("technologies", {})
+        emitted_ids = set()
+        items = []
+
+        def add_technology_subtree(entity, depth, ancestry=None):
+            ancestry = set(ancestry or ())
+            entity_id = str(entity.get("id"))
+            if not entity_id or entity_id in emitted_ids or entity_id in ancestry:
+                return
+            ancestry.add(entity_id)
+
+            children = children_by_parent.get(entity_id, [])
+            descendant_match = any(technology_subtree_matches(child) for child in children)
+            if not self._technology_tree_entity_matches(entity) and not descendant_match:
+                return
+
+            visible_children = [
+                child for child in children
+                if self._technology_tree_entity_matches(child) or technology_subtree_matches(child)
+            ]
+            expandable = bool(visible_children)
+            expanded = state.get(entity_id, expandable)
+            items.append(self._technology_tree_item(entity, depth, expandable, expanded))
+            emitted_ids.add(entity_id)
+
+            if expandable and (expanded or (auto_reveal and descendant_match)):
+                for child in visible_children:
+                    add_technology_subtree(child, depth + 1, ancestry)
+
+        root_technologies = sorted(
+            [
+                entity for entity in technology_entities
+                if str(entity.get("id")) not in parent_id_by_child
+            ],
+            key=self._technology_hierarchy_sort_key,
+        )
+
+        reachable_ids = set()
+
+        def collect_reachable(entity, ancestry=None):
+            ancestry = set(ancestry or ())
+            entity_id = str(entity.get("id"))
+            if not entity_id or entity_id in ancestry or entity_id in reachable_ids:
+                return
+            ancestry.add(entity_id)
+            reachable_ids.add(entity_id)
+            for child in children_by_parent.get(entity_id, []):
+                collect_reachable(child, ancestry)
+
+        for technology_entity in root_technologies:
+            collect_reachable(technology_entity)
+        for technology_entity in root_technologies:
+            add_technology_subtree(technology_entity, 0)
+
+        for technology_entity in sorted(technology_entities, key=self._technology_hierarchy_sort_key):
+            if (
+                str(technology_entity.get("id")) not in reachable_ids
+                and str(technology_entity.get("id")) not in emitted_ids
+            ):
+                add_technology_subtree(technology_entity, 0)
 
         return items
 
@@ -875,14 +1061,14 @@ class KnowledgeBrowserModel:
             return self._location_class_display_label(entity)
         if dataset_name == "vehicles":
             return entity.get("vehicle_class", entity.get("type", "entity"))
-        if dataset_name == "components":
-            return entity.get("component_class", entity.get("type", "entity"))
         if dataset_name == "ideas":
             return entity.get("idea_class", entity.get("type", "entity"))
         if dataset_name == "species":
             return entity.get("species_class", entity.get("type", "entity"))
         if dataset_name == "materials":
             return entity.get("material_subclass", entity.get("type", "material"))
+        if dataset_name == "technologies":
+            return entity.get("technology_class", entity.get("type", "technology"))
         if dataset_name == "periods":
             return entity.get("period_class", entity.get("type", "period"))
         if dataset_name == "systems":
@@ -1087,6 +1273,17 @@ class KnowledgeBrowserModel:
                 if hide_empty_sections and not dataset_items:
                     continue
                 items.append({"kind": "section", "text": "Events"})
+                items.extend(dataset_items)
+                items.append({"kind": "spacer"})
+                continue
+
+            if dataset_name == "technologies":
+                if self.browser_filter_dataset not in {"all", "technologies"}:
+                    continue
+                dataset_items = self._build_technology_browser_items(world_model)
+                if hide_empty_sections and not dataset_items:
+                    continue
+                items.append({"kind": "section", "text": "Technologies"})
                 items.extend(dataset_items)
                 items.append({"kind": "spacer"})
                 continue

@@ -220,6 +220,124 @@ class TimelineTickTests(unittest.TestCase):
         self.assertNotIn("cladistics", timeline._available_filter_categories())
         self.assertNotIn("production", timeline._available_filter_categories())
 
+    @staticmethod
+    def _tech_item(entity_id, invention_year, *, forgotten_year=None, superseded_year=None, label=None):
+        open_ended = forgotten_year is None
+        return {
+            "entity_id": entity_id,
+            "dataset": "technologies",
+            "entity_type": "technology",
+            "timeline_kind": "technology",
+            "start_year": invention_year,
+            "end_year": invention_year if open_ended else forgotten_year,
+            "invention_year": invention_year,
+            "forgotten_year": forgotten_year,
+            "superseded_year": superseded_year,
+            "technology_open_ended": open_ended,
+            "label": label or entity_id,
+        }
+
+    def _technology_timeline(self):
+        timeline = TimelineUI()
+        timeline.set_rect(pygame.Rect(0, 0, 600, 200))
+        timeline.view_min_year = 1900
+        timeline.view_max_year = 2400
+        timeline._view_range_initialized = True
+        timeline.set_items(
+            [
+                {"entity_id": "period_context", "timeline_kind": "major_period", "start_year": 1900, "end_year": 2400},
+                {"entity_id": "event_one", "dataset": "events", "start_year": 1950, "end_year": 1960},
+                self._tech_item("tech_open", 2000),
+                self._tech_item("tech_forgotten", 2010, forgotten_year=2200),
+            ]
+        )
+        return timeline
+
+    def test_technologies_are_deferred_until_filtered_for(self):
+        timeline = self._technology_timeline()
+
+        default_ids = {item["entity_id"] for item in timeline._filtered_visible_items()}
+        self.assertEqual({"period_context", "event_one"}, default_ids)
+
+        self.assertIn("technologies", timeline._available_filter_categories())
+        group_ids = {group_id for group_id, _, _ in timeline.get_filter_groups()}
+        self.assertIn("technology", group_ids)
+
+        timeline.set_active_filter_group("technology")
+        tech_items = {
+            item["entity_id"]: item
+            for item in timeline._filtered_visible_items()
+            if item.get("dataset") == "technologies"
+        }
+        self.assertEqual({"tech_open", "tech_forgotten"}, set(tech_items))
+        # Open-ended tech: availability rail runs off the right edge of the view.
+        self.assertGreaterEqual(tech_items["tech_open"]["end_year"], timeline.view_max_year)
+        # Forgotten tech: rail terminates at the forgotten year.
+        self.assertEqual(2200, tech_items["tech_forgotten"]["end_year"])
+        self.assertEqual(2010, tech_items["tech_forgotten"]["start_year"])
+
+    def test_technology_invented_offscreen_left_moves_to_gutter(self):
+        timeline = TimelineUI()
+        timeline.set_rect(pygame.Rect(0, 0, 700, 220))
+        timeline.set_font(pygame.font.Font(None, 16))
+        timeline.view_min_year = 2000
+        timeline.view_max_year = 2400
+        timeline._view_range_initialized = True
+        timeline.set_items(
+            [
+                {"entity_id": "period_context", "timeline_kind": "major_period", "start_year": 1000, "end_year": 2400},
+                self._tech_item("tech_ancient_known", 1200, label="Ancient (still known)"),
+                self._tech_item("tech_ancient_lost", 1200, forgotten_year=1500, label="Ancient (lost)"),
+                self._tech_item("tech_recent", 2100, label="Recent"),
+            ]
+        )
+        timeline.set_active_filter_group("technology")
+        timeline.rebuild_layout()
+
+        lane_ids = {item["entity_id"] for item in timeline.layout_items}
+        gutter_ids = {item["entity_id"] for item in timeline.technology_offscreen_left}
+        self.assertEqual({"tech_recent"}, lane_ids)
+        self.assertEqual({"tech_ancient_known"}, gutter_ids)  # lost-before-view drops out entirely
+
+    def test_technology_lanes_group_by_parent_technology_root(self):
+        timeline = TimelineUI()
+        timeline.set_rect(pygame.Rect(0, 0, 640, 240))
+        timeline.set_font(pygame.font.Font(None, 16))
+        timeline.view_min_year = 1900
+        timeline.view_max_year = 2600
+        timeline._view_range_initialized = True
+        timeline.set_entity_lookup(
+            {
+                "tech_root_a": {"id": "tech_root_a", "type": "technology", "pretty_name": "Root A"},
+                "tech_mid_a": {"id": "tech_mid_a", "type": "technology", "parent_technology": "tech_root_a"},
+                "tech_child_a": {"id": "tech_child_a", "type": "technology", "parent_technology": "tech_mid_a"},
+                "tech_root_b": {"id": "tech_root_b", "type": "technology", "pretty_name": "Root B"},
+            }
+        )
+        timeline.set_items(
+            [
+                {"entity_id": "period_context", "timeline_kind": "major_period", "start_year": 1900, "end_year": 2600},
+                {"entity_id": "tech_child_a", "dataset": "technologies", "entity_type": "technology",
+                 "timeline_kind": "technology", "start_year": 2400, "end_year": 2400, "label": "Child A"},
+                {"entity_id": "tech_root_b", "dataset": "technologies", "entity_type": "technology",
+                 "timeline_kind": "technology", "start_year": 2100, "end_year": 2100, "label": "Root B"},
+            ]
+        )
+        timeline.set_active_filter_group("technology")
+        timeline.rebuild_layout()
+
+        ranges = timeline.technology_category_lane_ranges
+        self.assertEqual(["tech_root_b", "tech_root_a"], [entry["root_id"] for entry in ranges])
+        self.assertEqual(["Root B", "Root A"], [entry["label"] for entry in ranges])
+        roots_by_item = {
+            item["entity_id"]: item["technology_category_root"]
+            for item in timeline.layout_items
+        }
+        self.assertEqual(
+            {"tech_child_a": "tech_root_a", "tech_root_b": "tech_root_b"},
+            roots_by_item,
+        )
+
     def test_period_filter_bar_uses_two_click_range(self):
         timeline = self._timeline(1900, 2000, width=100)
         timeline.rect = pygame.Rect(0, 0, 160, 100)

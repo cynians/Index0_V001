@@ -3,6 +3,10 @@
 This is a one-way ontology authoring utility. Runtime code resolves these
 entities from the ontology projection and does not maintain a parallel food,
 recipe, component, technology, or ownership registry.
+
+Run ``tools/author_item_component_model.py`` first: the item/component entities
+here reference ``cat_*`` category entities and the consolidated item schema it
+authors.
 """
 
 import sys
@@ -53,15 +57,7 @@ SCHEMA_EXTENSIONS = {
         "ownership_records": {"type": "entity_list", "target": "ownerships", "section": "Ownership", "optional": True},
         "inventory_items": {"type": "object_list", "section": "Inventory", "optional": True},
     },
-    "item": {
-        "ownership_records": {"type": "entity_list", "target": "ownerships", "section": "Ownership", "optional": True},
-        "inventory_items": {"type": "object_list", "section": "Inventory", "optional": True},
-        "inventory_unit": {"type": "string", "section": "Inventory", "optional": True},
-        "stackable": {"type": "boolean", "section": "Inventory", "optional": True},
-        "consumable": {"type": "boolean", "section": "Food", "optional": True},
-        "food_energy_kcal": {"type": "number", "section": "Food", "optional": True},
-        "food_satiation": {"type": "number", "section": "Food", "optional": True},
-    },
+    # The `item` schema is owned in full by tools/author_item_component_model.py.
     "location": {
         "ownership_records": {"type": "entity_list", "target": "ownerships", "section": "Ownership", "optional": True},
         "inventory_items": {"type": "object_list", "section": "Inventory", "optional": True},
@@ -155,24 +151,24 @@ def build_changes(datasets):
         },
         {
             "id": "component_kitchen_sink", "_dataset": "components", "type": "component",
-            "name": "Kitchen Sink", "pretty_name": "Kitchen Sink", "component_class": "kitchen fixture",
+            "name": "Kitchen Sink", "pretty_name": "Kitchen Sink", "categories": ["cat_kitchen_fixture"],
         },
         {
             "id": "component_electric_oven", "_dataset": "components", "type": "component",
-            "name": "Electric Oven", "pretty_name": "Electric Oven", "component_class": "cooking appliance",
-            "associated_technologies": ["tech_electric_oven"],
+            "name": "Electric Oven", "pretty_name": "Electric Oven", "categories": ["cat_cooking_appliance"],
+            "requires_technology": ["tech_electric_oven"],
         },
         {
             "id": "item_food_ingredients", "_dataset": "items", "type": "item",
-            "name": "Meal Ingredients", "pretty_name": "Meal Ingredients", "item_class": "food ingredient",
-            "consumable": False, "inventory_unit": "portion", "stackable": True,
+            "name": "Meal Ingredients", "pretty_name": "Meal Ingredients", "categories": ["cat_food_ingredient"],
+            "consumable": False, "default_unit": "portion", "storage_modes": ["stackable"],
             "ownership_records": ["ownership_person_test_ingredients"],
         },
         {
             "id": "item_cooked_meal", "_dataset": "items", "type": "item",
-            "name": "Simple Cooked Meal", "pretty_name": "Simple Cooked Meal", "item_class": "prepared food",
+            "name": "Simple Cooked Meal", "pretty_name": "Simple Cooked Meal", "categories": ["cat_prepared_food"],
             "consumable": True, "food_energy_kcal": 700, "food_satiation": 58,
-            "inventory_unit": "meal", "stackable": True,
+            "default_unit": "meal", "storage_modes": ["stackable"],
             "input_items": ["item_food_ingredients"], "produced_by": ["producer_person_test_kitchen"],
         },
         {

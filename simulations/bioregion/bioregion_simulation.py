@@ -6,6 +6,7 @@ from simulations.bioregion.geology import GeologyGenerator
 from simulations.bioregion.vegetation import VegetationController
 from simulations.bioregion.water_cycle import WaterCycle
 from simulations.bioregion.weather import WeatherController
+from simulations.bioregion.ecosystem import ProducerSoilEcosystem
 
 
 class BioregionSimulation:
@@ -61,6 +62,12 @@ class BioregionSimulation:
         "plant_species",
     ]
 
+    @classmethod
+    def reference_site(cls):
+        """Construct the deterministic LOD4 BioSim development target."""
+        from simulations.bioregion.reference_site import reference_site_launch_context
+        return cls(biosphere_context=reference_site_launch_context())
+
     def __init__(self, world_model=None, biosphere_context=None, biosphere_id=None):
         class _DummySystem:
             def update(self, dt):
@@ -87,9 +94,12 @@ class BioregionSimulation:
             )
             self.biosphere_width_m = max(0.01, self.biosphere_width_m)
             self.biosphere_height_m = max(0.01, self.biosphere_height_m)
-            self.SECTIONS_PER_SIDE = 2
+            self.SECTIONS_PER_SIDE = max(1, int(self.biosphere_context.get("sections_per_side") or 2))
             self.SECTION_SIZE_M = self.MAP_SIZE_M / self.SECTIONS_PER_SIDE
-            self.SUBSECTIONS_PER_SECTION_SIDE = 5
+            self.SUBSECTIONS_PER_SECTION_SIDE = max(
+                1,
+                int(self.biosphere_context.get("subsections_per_section_side") or 5),
+            )
             self.SUBSECTION_SIZE_M = self.SECTION_SIZE_M / self.SUBSECTIONS_PER_SECTION_SIDE
             if not self.biosphere_shape_points:
                 self.biosphere_shape_points = [
@@ -151,6 +161,12 @@ class BioregionSimulation:
 
         self.vegetation = VegetationController()
         self.vegetation.seed_grid(self.grid)
+        self.ecosystem = ProducerSoilEcosystem(
+            seconds_per_ecological_day=float(
+                self.biosphere_context.get("seconds_per_ecological_day") or 60.0
+            )
+        )
+        self.ecosystem.initialize_grid(self.grid)
         self.available_species = self._load_available_species()
         self.species_suitability = self._build_species_suitability_summary()
 
@@ -238,6 +254,11 @@ class BioregionSimulation:
         return False
 
     def _resolve_worldgen_context(self):
+        override = self.biosphere_context.get("worldgen_context")
+        if isinstance(override, dict):
+            # Reference fixtures and future external map providers enter through
+            # the same normalized adapter boundary as ontology-backed worldgen.
+            return dict(override)
         if (not self.biosphere_context and self.biosphere_entity is None) or self.world_model is None:
             return None
 
@@ -676,6 +697,15 @@ class BioregionSimulation:
             except (TypeError, ValueError):
                 sea_level = None
 
+        water_cycle = self.worldgen_context.get("water_cycle") or {}
+        climate_grid = water_cycle.get("climate_grid") if isinstance(water_cycle, dict) else {}
+        if not isinstance(climate_grid, dict):
+            climate_grid = {}
+        regolith = self.worldgen_context.get("regolith_soil") or {}
+        regolith_grid = regolith.get("grid") if isinstance(regolith, dict) else {}
+        if not isinstance(regolith_grid, dict):
+            regolith_grid = {}
+
         for cell in self.grid.iter_cells():
             elevation = None
             source_x, source_y = self._cell_source_point(cell, patch_bbox)
@@ -706,7 +736,41 @@ class BioregionSimulation:
                     cell["top_temperature"] = self._clamp(cell.get("top_temperature", 0.5) * 0.82)
             if bedrock_type:
                 cell["bedrock_type"] = bedrock_type
-            cell["soil_type"] = self._worldgen_soil_type(material_ids, is_under_water, elevation_norm)
+            porosity = self._bilinear_sample_rows(regolith_grid.get("porosity_rows"), nx, ny)
+            permeability = self._bilinear_sample_rows(regolith_grid.get("relative_permeability_rows"), nx, ny)
+            soil_depth = self._bilinear_sample_rows(regolith_grid.get("soil_depth_m_rows"), nx, ny)
+            ph = self._bilinear_sample_rows(regolith_grid.get("ph_rows"), nx, ny)
+            salinity = self._bilinear_sample_rows(regolith_grid.get("salinity_index_rows"), nx, ny)
+            if is_under_water:
+                soil_type = "heavy_clay"
+            elif permeability is not None and permeability >= 0.62:
+                soil_type = "sandy_loam"
+            elif permeability is not None and permeability <= 0.30:
+                soil_type = "heavy_clay"
+            elif permeability is not None and permeability <= 0.42:
+                soil_type = "clay_loam"
+            else:
+                soil_type = self._worldgen_soil_type(material_ids, is_under_water, elevation_norm)
+            cell["soil_type"] = soil_type
+            if soil_depth is not None:
+                cell["soil_depth_m"] = round(soil_depth, 4)
+            if porosity is not None:
+                cell["soil_porosity"] = round(porosity, 5)
+            if permeability is not None:
+                cell["relative_permeability"] = round(permeability, 5)
+            if ph is not None:
+                cell["soil_ph"] = round(ph, 4)
+            if salinity is not None:
+                cell["soil_salinity_index"] = round(salinity, 5)
+            temperature = self._bilinear_sample_rows(climate_grid.get("temperature_rows_k"), nx, ny)
+            precipitation = self._bilinear_sample_rows(climate_grid.get("annual_precipitation_rows_mm"), nx, ny)
+            solar_exposure = self._bilinear_sample_rows(climate_grid.get("surface_solar_exposure_rows"), nx, ny)
+            if temperature is not None:
+                cell["temperature_k"] = round(temperature, 4)
+            if precipitation is not None:
+                cell["annual_precipitation_mm"] = round(precipitation, 3)
+            if solar_exposure is not None:
+                cell["solar_exposure"] = round(solar_exposure, 5)
             cell["worldgen_source_entity_id"] = self.worldgen_context.get("source_entity_id")
 
     def _apply_worldgen_water_context_to_grid(self):
@@ -722,7 +786,16 @@ class BioregionSimulation:
             or hydrology.get("cycle") == "none"
             or hydrology.get("liquid_water_possible") is False
         )
+        water_cycle = self.worldgen_context.get("water_cycle") or {}
+        runoff_grid = water_cycle.get("runoff_grid") if isinstance(water_cycle, dict) else {}
+        if not isinstance(runoff_grid, dict):
+            runoff_grid = {}
+        patch_bbox = self._points_bbox(self._source_bounds_points())
         for cell in self.grid.iter_cells():
+            source_x, source_y = self._cell_source_point(cell, patch_bbox)
+            nx, ny = self._normalise_source_point(source_x, source_y)
+            channel_presence = self._bilinear_sample_rows(runoff_grid.get("channel_presence_rows"), nx, ny)
+            wetness_index = self._bilinear_sample_rows(runoff_grid.get("wetness_index_rows"), nx, ny)
             elevation = cell.get("elevation_m")
             sea_level = None
             heightmap = self.worldgen_context.get("heightmap")
@@ -736,8 +809,15 @@ class BioregionSimulation:
                 cell["top_moisture"] = max(cell["top_moisture"], 0.72)
                 cell["deep_moisture"] = max(cell["deep_moisture"], 0.82)
                 cell["habitat_type"] = "shallow_water"
+            elif channel_presence is not None and channel_presence >= 0.40:
+                cell["surface_water"] = max(cell["surface_water"], self._clamp(channel_presence * 0.72))
+                cell["top_moisture"] = max(cell["top_moisture"], 0.62 + 0.25 * self._clamp(channel_presence))
+                cell["deep_moisture"] = max(cell["deep_moisture"], 0.72)
+                cell["habitat_type"] = "riparian_channel"
             elif active_water and not dry_world:
                 wetness = 1.0 - self._clamp(cell.get("altitude", 0.5))
+                if wetness_index is not None:
+                    wetness = self._clamp(wetness * 0.35 + wetness_index * 0.65)
                 cell["top_moisture"] = self._clamp(cell["top_moisture"] + wetness * 0.12)
                 cell["deep_moisture"] = self._clamp(cell["deep_moisture"] + wetness * 0.10)
             elif dry_world:
@@ -803,7 +883,7 @@ class BioregionSimulation:
     def get_scope_label(self):
         if self.biosphere_context:
             patch_name = self.biosphere_context.get("patch_name") or "Biosphere Patch"
-            return f"{patch_name} | 10 m x 10 m"
+            return f"{patch_name} | {self.biosphere_width_m:g} m x {self.biosphere_height_m:g} m"
         return "Bioregion Test Map | 10 km x 10 km"
 
     def get_bioregion_hierarchy_breadcrumb(self):
@@ -971,11 +1051,36 @@ class BioregionSimulation:
             dt=dt,
             rain_input_rate=self.weather.get_rain_input_rate(),
         )
-        self.vegetation.update_grid(
-            grid=self.grid,
-            dt=dt,
-        )
+        self.ecosystem.update_grid(self.grid, dt)
+        for cell in self.grid.iter_cells():
+            cell["habitat_type"] = self.vegetation.classify_habitat(cell)
         self._log_environment_summary()
+
+    def advance_ecology(self, days):
+        """Advance ecological time directly for experiments and diagnostics."""
+        result = self.ecosystem.step_grid(self.grid, days=days)
+        for cell in self.grid.iter_cells():
+            cell["habitat_type"] = self.vegetation.classify_habitat(cell)
+        return result
+
+    def get_ecosystem_summary(self):
+        cells = list(self.grid.iter_cells())
+        if not cells:
+            return {"cell_count": 0, "model_version": self.ecosystem.MODEL_VERSION}
+        average = lambda key: sum(float(cell.get(key, 0.0) or 0.0) for cell in cells) / len(cells)
+        return {
+            "model_version": self.ecosystem.MODEL_VERSION,
+            "cell_count": len(cells),
+            "elapsed_days": round(self.ecosystem.elapsed_days, 4),
+            "mean_biomass_kg_m2": round(average("plant_biomass_kg_m2"), 6),
+            "mean_leaf_area_index": round(average("leaf_area_index"), 6),
+            "mean_litter_kg_m2": round(average("litter_kg_m2"), 6),
+            "mean_soil_organic_matter_kg_m2": round(average("soil_organic_matter_kg_m2"), 6),
+            "mean_available_nitrogen_g_m2": round(average("available_nitrogen_g_m2"), 6),
+            "mean_ground_light_fraction": round(average("canopy_ground_light_fraction"), 6),
+            "last_flux_totals": dict(self.ecosystem.last_flux_totals),
+            "source_kind": "authored_reference_fixture" if self.biosphere_context.get("reference_fixture") else "worldgen_or_prototype",
+        }
 
     def get_center(self):
         return self.MAP_SIZE_M / 2.0, self.MAP_SIZE_M / 2.0

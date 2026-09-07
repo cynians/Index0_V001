@@ -3058,7 +3058,14 @@ class MapRenderer:
                         crosshair=False,
                     )
                 else:
-                    pygame.draw.rect(screen, (220, 220, 220), rect, 2)
+                    border_width = max(0, int(layer.get("border_width", 2) or 0))
+                    if border_width:
+                        pygame.draw.rect(
+                            screen,
+                            layer.get("border_color", (220, 220, 220)),
+                            rect,
+                            border_width,
+                        )
 
                 if is_hovered and not is_selected:
                     hover_rect = rect.inflate(6, 6)

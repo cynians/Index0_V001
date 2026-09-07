@@ -330,30 +330,80 @@ class CardWikiRenderer:
 
         return wrapped_lines or [""]
 
-    @staticmethod
-    def wrap_edit_lines(text, font, max_width):
+    _WRAP_EDIT_CACHE = {}
+    _WRAP_EDIT_CACHE_LIMIT = 12
+
+    @classmethod
+    def wrap_edit_lines(cls, text, font, max_width):
         text = str(text or "")
         max_width = max(20, int(max_width))
+
+        cache_key = (id(font), font.get_height(), max_width, text)
+        cached = cls._WRAP_EDIT_CACHE.get(cache_key)
+        if cached is not None:
+            return [dict(line) for line in cached]
+
+        lines = cls._wrap_edit_lines_uncached(text, font, max_width)
+
+        cache = cls._WRAP_EDIT_CACHE
+        if len(cache) >= cls._WRAP_EDIT_CACHE_LIMIT:
+            cache.pop(next(iter(cache)), None)
+        cache[cache_key] = [dict(line) for line in lines]
+        return lines
+
+    @staticmethod
+    def _wrap_edit_lines_uncached(text, font, max_width):
+        """Word-wrap ``text`` into edit lines, each ``{"text", "start", "end"}``
+        where ``text == full_text[start:end]``.
+
+        Wraps on whitespace boundaries (matching the read-only wiki renderer)
+        and only falls back to per-character splitting for a single token that
+        is itself wider than ``max_width``. This keeps the cost proportional to
+        the token count rather than one ``font.size`` call per character, which
+        made editing long entries (e.g. planet descriptions) extremely slow.
+        """
+        measure = font.size
         lines = []
-        line = ""
-        line_start = 0
+        text_len = len(text)
+        para_start = 0
 
-        for index, char in enumerate(text):
-            if char == "\n":
-                lines.append({"text": line, "start": line_start, "end": index})
-                line = ""
-                line_start = index + 1
-                continue
+        while True:
+            newline_pos = text.find("\n", para_start)
+            para_end = text_len if newline_pos == -1 else newline_pos
 
-            candidate = line + char
-            if line and font.size(candidate)[0] > max_width:
-                lines.append({"text": line, "start": line_start, "end": index})
-                line = char
-                line_start = index
-            else:
-                line = candidate
+            line_start = para_start
+            cursor = para_start
+            while cursor < para_end:
+                token_start = cursor
+                is_space = text[cursor] == " "
+                while cursor < para_end and (text[cursor] == " ") == is_space:
+                    cursor += 1
+                token_end = cursor
 
-        lines.append({"text": line, "start": line_start, "end": len(text)})
+                if token_start > line_start and measure(text[line_start:token_end])[0] > max_width:
+                    lines.append({"text": text[line_start:token_start], "start": line_start, "end": token_start})
+                    line_start = token_start
+
+                if line_start == token_start and measure(text[line_start:token_end])[0] > max_width:
+                    chunk_start = token_start
+                    pos = token_start + 1
+                    while pos < token_end:
+                        if measure(text[chunk_start:pos + 1])[0] > max_width:
+                            lines.append({"text": text[chunk_start:pos], "start": chunk_start, "end": pos})
+                            chunk_start = pos
+                        pos += 1
+                    line_start = chunk_start
+
+            lines.append({"text": text[line_start:para_end], "start": line_start, "end": para_end})
+
+            if newline_pos == -1:
+                break
+            para_start = newline_pos + 1
+            if para_start > text_len:
+                break
+
+        if not lines:
+            lines.append({"text": "", "start": 0, "end": 0})
         return lines
 
     @classmethod
@@ -630,13 +680,28 @@ class CardWikiRenderer:
                 lines.append(str(block.get("text", "")))
         return "\n\n".join(line for line in lines if line)
 
+    _MEASURE_CONTENT_CACHE = {}
+    _MEASURE_CONTENT_CACHE_LIMIT = 64
+
     @classmethod
     def measure_content(cls, wiki_text, font, rect, resolve_link_label=None):
+        cache_key = (id(font), font.get_height(), int(rect.width), str(wiki_text or ""))
+        cached = cls._MEASURE_CONTENT_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+
         probe_rect = pygame.Rect(0, 0, rect.width, rect.height)
         layouts = cls._section_layout(wiki_text, font, probe_rect, resolve_link_label=resolve_link_label)
         if not layouts:
-            return 20
-        return layouts[-1]["section_rect"].bottom - probe_rect.y + 5
+            result = 20
+        else:
+            result = layouts[-1]["section_rect"].bottom - probe_rect.y + 5
+
+        cache = cls._MEASURE_CONTENT_CACHE
+        if len(cache) >= cls._MEASURE_CONTENT_CACHE_LIMIT:
+            cache.pop(next(iter(cache)), None)
+        cache[cache_key] = result
+        return result
 
     @classmethod
     def link_hitboxes(cls, wiki_text, font, rect, resolve_link_label=None, scroll_y=0):

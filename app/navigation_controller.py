@@ -4,7 +4,7 @@ from engine.simulation_instance import SimulationInstance
 from engine.tab import Tab
 from simulations.space.space_simulation import SpaceSimulation
 from simulations.map.map_simulation import MapSimulation
-from simulations.bioregion.bioregion_simulation import BioregionSimulation
+from simulations.biosphere.biosphere_simulation import BiosphereSimulation
 from simulations.vehicle.vehicle_design_simulation import VehicleDesignSimulation
 from simulations.person.person_simulation import PersonSimulation
 from simulations.person.site_simulation import SiteSimulation
@@ -156,18 +156,19 @@ class NavigationController:
 
     def launch_bioregion_test_tab(self):
         """
-        Open or focus the prototype bioregion simulation tab.
+        Open or focus the deterministic BioSim reference site.
         """
-        tab_key = ("bioregion", "test")
+        tab_key = ("biosphere_builder", "test")
 
         if self.focus_existing_tab_by_key(tab_key):
             self.app.knowledge_layer_active = False
             return
 
-        new_bioregion_sim = BioregionSimulation()
+        new_bioregion_sim = BiosphereSimulation.reference_site(self.app.world_model)
+        new_bioregion_sim.plant_asset_test_forest()
         new_tab = Tab(
             SimulationInstance(new_bioregion_sim),
-            name="Bioregion: Test",
+            name="BioSim: Reference Site",
             tab_key=tab_key
         )
 
@@ -193,7 +194,7 @@ class NavigationController:
             self.app.knowledge_layer_active = False
             return True
 
-        new_bioregion_sim = BioregionSimulation(
+        new_bioregion_sim = BiosphereSimulation(
             world_model=self.app.world_model,
             biosphere_context=context,
             biosphere_id=context.get("biosphere_id"),
@@ -256,8 +257,20 @@ class NavigationController:
             "species_collection_id": location.get("biosphere_species_collection"),
             "biosphere_id": biosphere_id,
         }
+        roster = self.app.world_model.get_entity(context.get("species_collection_id")) or {}
+        roster_species = []
+        for field_name in ("includes", "species", "plant_species", "seeded_species", "established_species"):
+            value = roster.get(field_name)
+            if isinstance(value, str):
+                roster_species.append(value)
+            elif isinstance(value, (list, tuple, set)):
+                roster_species.extend(value)
+        context["bootstrap_lifeless"] = not bool(roster_species)
+        context["initial_extent_m"] = float(location.get("biosphere_initial_extent_m") or 10.0)
+        context["founding_point_source"] = location.get("biosphere_founding_point_source")
+        context["founding_point_local_m"] = location.get("biosphere_founding_point_local_m")
 
-        new_bioregion_sim = BioregionSimulation(
+        new_bioregion_sim = BiosphereSimulation(
             world_model=self.app.world_model,
             biosphere_context=context,
             biosphere_id=biosphere_id,
@@ -460,7 +473,10 @@ class NavigationController:
             return False
         if species_entity.get("_dataset") != "species" and species_entity.get("type") != "species":
             return False
-        if not self.app.world_model.is_plant_species(species_entity_id):
+        if (
+            not self.app.world_model.is_plant_species(species_entity_id)
+            and not species_entity.get("species_simulation_enabled")
+        ):
             return False
 
         tab_key = ("species", species_entity_id)
@@ -494,6 +510,42 @@ class NavigationController:
         self.app.camera_controller.setup_for_sim(simulation)
         if diagnostic_tab:
             simulation.set_active_simulation_panel_tab(diagnostic_tab)
+        return True
+
+    def launch_biosphere_representative_tab(self, context):
+        """Open the exact runtime organism selected in a Biosphere population."""
+        if not isinstance(context, dict):
+            return False
+        representative_id = context.get("representative_id")
+        species_id = context.get("species_id")
+        species_entity = self.app.world_model.get_entity(species_id)
+        if not representative_id or not isinstance(species_entity, dict):
+            return False
+        tab_key = ("biosphere_representative", representative_id)
+        if self.focus_existing_tab_by_key(tab_key):
+            self.app.knowledge_layer_active = False
+            return True
+        simulation = context.get("simulation")
+        if not isinstance(simulation, SpeciesSimulation):
+            simulation = SpeciesSimulation(
+                world_model=self.app.world_model,
+                species_id=species_id,
+                species_entity=species_entity,
+                seed=int(context.get("seed", 1) or 1),
+                environment=context.get("environment") or {},
+            )
+            simulation.lod = 1
+            simulation.set_age(float(context.get("age_days", 1.0) or 1.0))
+        label = species_entity.get("common_name") or species_entity.get("pretty_name") or species_id
+        new_tab = Tab(
+            SimulationInstance(simulation),
+            name=f"Representative: {label}",
+            tab_key=tab_key,
+        )
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+        self.app.camera_controller.setup_for_sim(simulation)
         return True
 
     def open_species_asset_editor(self, active_sim, entity_id, asset_role):
@@ -1487,6 +1539,48 @@ class NavigationController:
         if str(action_id).startswith("biosphere_toggle_species:") and active_sim is not None:
             species_id = str(action_id).split(":", 1)[1]
             return bool(getattr(active_sim, "toggle_species_selection", lambda _species_id: False)(species_id))
+
+        if str(action_id).startswith("biosphere_select_species:") and active_sim is not None:
+            species_id = str(action_id).split(":", 1)[1]
+            return bool(getattr(active_sim, "select_species", lambda _species_id: False)(species_id))
+
+        if action_id == "biosphere_open_species_picker" and active_sim is not None:
+            return bool(getattr(active_sim, "open_species_picker", lambda: False)())
+
+        if action_id == "biosphere_close_species_picker" and active_sim is not None:
+            return bool(getattr(active_sim, "close_species_picker", lambda: False)())
+
+        if str(action_id).startswith("biosphere_picker_focus:") and active_sim is not None:
+            species_id = str(action_id).split(":", 1)[1]
+            return bool(getattr(active_sim, "focus_species_picker_item", lambda _species_id: False)(species_id))
+
+        if action_id == "biosphere_picker_confirm" and active_sim is not None:
+            return bool(getattr(active_sim, "confirm_species_picker_selection", lambda: False)())
+
+        if action_id == "biosphere_picker_previous" and active_sim is not None:
+            return bool(getattr(active_sim, "change_species_picker_page", lambda _delta: False)(-1))
+
+        if action_id == "biosphere_picker_next" and active_sim is not None:
+            return bool(getattr(active_sim, "change_species_picker_page", lambda _delta: False)(1))
+
+        if str(action_id).startswith("biosphere_set_speed:") and active_sim is not None:
+            scale = float(str(action_id).split(":", 1)[1])
+            return bool(getattr(active_sim, "set_builder_time_scale", lambda _scale: False)(scale))
+
+        if str(action_id).startswith("biosphere_select_representative:") and active_sim is not None:
+            representative_id = str(action_id).split(":", 1)[1]
+            return bool(getattr(active_sim, "select_representative", lambda _representative_id: False)(representative_id))
+
+        if action_id == "biosphere_launch_representative" and active_sim is not None:
+            context = getattr(active_sim, "get_selected_representative_launch_context", lambda: None)()
+            return self.launch_biosphere_representative_tab(context)
+
+        if action_id == "biosphere_advance_season" and active_sim is not None:
+            getattr(active_sim, "advance_seasons", lambda _seasons=1: None)(1)
+            return True
+
+        if action_id == "biosphere_toggle_running" and active_sim is not None:
+            return bool(getattr(active_sim, "toggle_builder_running", lambda: False)())
 
         if action_id == "new_map_selection" and active_sim is not None:
             if (

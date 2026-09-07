@@ -189,7 +189,7 @@ class LaunchAffordanceResolver:
         if dataset_name in {"cladistics", "species"} or entity.get("type") in {"cladistics", "species"}:
             if dataset_name == "species" or entity.get("type") == "species":
                 options = [_option("phylogeny", "Phylogeny", "Open the phylogeny simulation.", 100, entity_id)]
-                if is_plant_species_entity(entity, plant_catalogue):
+                if is_plant_species_entity(entity, plant_catalogue) or entity.get("species_simulation_enabled"):
                     options.insert(0, _option("species", "Species Sim", "Open the modular plant growth lab.", 110, entity_id))
                 return options
             return [_option("phylogeny", "Phylogeny", "Open the phylogeny simulation.", 100, entity_id)]

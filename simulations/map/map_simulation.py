@@ -7,7 +7,9 @@ invalidate old maps without compatibility code.
 """
 
 import copy
+import hashlib
 import math
+import random
 import re
 import shutil
 import time
@@ -4260,6 +4262,16 @@ class MapSimulation:
         patch = self.get_location(self.selected_entity_id)
         root = self.get_root_entity() or {}
         metrics = self._biosphere_polygon_metrics(self._get_geometry_points(patch.get("bounds") or patch.get("geometry") or {}))
+        roster_id = patch.get("biosphere_species_collection") or self.BIOSPHERE_SPECIES_COLLECTION_ID
+        roster = self.world_model.get_entity(roster_id) or {}
+        roster_species = []
+        for key in ("includes", "species", "plant_species", "seeded_species", "established_species"):
+            value = roster.get(key)
+            if isinstance(value, str):
+                roster_species.append(value)
+            elif isinstance(value, (list, tuple, set)):
+                roster_species.extend(value)
+        founding = self._biosphere_founding_point(patch, metrics)
         return {
             "patch_location_id": patch.get("id"),
             "patch_name": patch.get("name") or patch.get("pretty_name") or patch.get("id"),
@@ -4274,8 +4286,12 @@ class MapSimulation:
             "biosphere_height_m": patch.get("biosphere_height_m") or metrics.get("height_m"),
             "map_context_inherited": bool(patch.get("inherits_location_context_layers", True)),
             "map_size_m": patch.get("biosphere_map_size_m") or metrics.get("map_size_m") or 10.0,
-            "species_collection_id": patch.get("biosphere_species_collection") or self.BIOSPHERE_SPECIES_COLLECTION_ID,
+            "species_collection_id": roster_id,
             "biosphere_id": patch.get("biosphere_entity_id"),
+            "bootstrap_lifeless": not bool(roster_species),
+            "initial_extent_m": 10.0,
+            "founding_point_source": patch.get("biosphere_founding_point_source") or founding["source"],
+            "founding_point_local_m": patch.get("biosphere_founding_point_local_m") or founding["local"],
         }
 
     def finish_map_square_draft(self):
@@ -4608,6 +4624,29 @@ class MapSimulation:
             },
         }
 
+    def _biosphere_founding_point(self, patch, metrics=None):
+        """Pick one reproducible interior point for a new lifeless biosphere."""
+        points = self._get_geometry_points(patch.get("bounds") or patch.get("geometry") or {})
+        if len(points) < 3:
+            return {"source": [0.0, 0.0], "local": [5.0, 5.0]}
+        xs = [float(point[0]) for point in points]
+        ys = [float(point[1]) for point in points]
+        seed_text = f"{patch.get('id')}:{','.join(f'{value:.6f}' for point in points for value in point[:2])}"
+        seed = int.from_bytes(hashlib.sha256(seed_text.encode("utf-8")).digest()[:8], "big")
+        rng = random.Random(seed)
+        source = None
+        for _ in range(256):
+            candidate = (rng.uniform(min(xs), max(xs)), rng.uniform(min(ys), max(ys)))
+            if self._point_in_polygon_points(candidate[0], candidate[1], points):
+                source = candidate
+                break
+        if source is None:
+            source = self._polygon_centroid(points)
+        return {
+            "source": [round(source[0], 6), round(source[1], 6)],
+            "local": [round(source[0] - min(xs), 6), round(source[1] - min(ys), 6)],
+        }
+
     def _get_existing_entity_ids(self):
         loader = getattr(self.world_model, "loader", None)
         entities = getattr(loader, "entities", None)
@@ -4765,6 +4804,10 @@ class MapSimulation:
             name = f"Biosphere Patch {index:03d}"
             points = list(self.draft_spatial_feature_points)
             metrics = self._biosphere_polygon_metrics(points)
+            founding = self._biosphere_founding_point({
+                "id": feature_id,
+                "bounds": {"type": "polygon", "points": points},
+            }, metrics)
             notes = (
                 f"Draft biosphere design patch selected under {root_name}. "
                 "The source polygon remains on the location map while BioSim resolves "
@@ -4802,6 +4845,9 @@ class MapSimulation:
                 "biosphere_shape": metrics["shape"],
                 "biosphere_species_collection": roster_id,
                 "biosphere_entity_id": biosphere_id,
+                "biosphere_founding_point_source": founding["source"],
+                "biosphere_founding_point_local_m": founding["local"],
+                "biosphere_initial_extent_m": 10.0,
                 "inherits_location_context_layers": True,
                 "start_year": self.year,
                 "entry_status": "draft",

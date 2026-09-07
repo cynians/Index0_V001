@@ -183,6 +183,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         "cladistics": ["general", "overview", "phylogeny", "relations", "temporal", "location", "media"],
         "species": ["general", "overview", "phylogeny", "relations", "temporal", "location", "simulation", "media"],
         "components": ["general", "overview", "temporal", "location", "relations", "operational", "simulation", "media"],
+        "categories": ["general", "overview", "relations", "media"],
         "producers": ["general", "overview", "production", "temporal", "location", "relations", "media"],
         "jobs": ["general", "overview", "temporal", "location", "relations", "media"],
         "employments": ["general", "overview", "temporal", "location", "relations", "media"],
@@ -261,11 +262,22 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         "year_number",
         "start_year",
         "end_year",
+        "forgotten_year",
         "snapshot_year",
         "effective_year",
         "temporal_periods",
         "end_condition",
         "era",
+    }
+    # Species measurement fields stored as a small numeric ``dict``. They have no
+    # controlled vocabulary, so the card edits them as ``key: value`` lines. The
+    # tuple is the key template offered when the field is still empty.
+    SPECIES_MEASUREMENT_DICT_FIELDS = {
+        "mature_height": ("min_m", "max_m"),
+        "max_root_depth": ("min_m", "max_m"),
+        "temperature_range": ("min_c", "max_c"),
+        "frost_tolerance": ("min_c",),
+        "soil_ph_range": ("min", "max"),
     }
     MEDIA_FIELDS = {
         "media_path",
@@ -487,6 +499,14 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                     "asset_role": "branch",
                     "label": "Create Branch Sprite",
                     "description": "Create or reopen the reusable branch section for this species.",
+                    "requires": "plant_species",
+                },
+                {
+                    "id": "plant_asset_root",
+                    "kind": "plant_asset_creator",
+                    "asset_role": "root",
+                    "label": "Create Root Sprite",
+                    "description": "Create or reopen the reusable root module for this species.",
                     "requires": "plant_species",
                 },
                 {
@@ -2062,6 +2082,27 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
     def _is_scalar_schema_type(self, field_type):
         return field_type in {None, "string", "number", "text"}
 
+    def _is_species_measurement_dict_field(self, field_key):
+        return self._is_species_card() and field_key in self.SPECIES_MEASUREMENT_DICT_FIELDS
+
+    def _parse_measurement_dict(self, buffer_text):
+        """Parse ``key: number`` lines into a numeric dict; drop blank / bad lines."""
+        result = {}
+        for line in str(buffer_text or "").splitlines():
+            if ":" not in line:
+                continue
+            key, _, raw = line.partition(":")
+            key = key.strip()
+            raw = raw.strip().replace(",", ".")
+            if not key or not raw:
+                continue
+            try:
+                number = float(raw)
+            except ValueError:
+                continue
+            result[key] = int(number) if number.is_integer() else number
+        return result or None
+
     def _is_controlled_choice_field(self, field_key):
         return self._is_species_card() and field_key in ({
             PLANT_GROWTH_FORM_FIELD,
@@ -2165,6 +2206,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         if field_key in {"name", "common_name"}:
             return True
 
+        if self._is_species_measurement_dict_field(field_key):
+            return value is None or isinstance(value, dict)
+
         spec = self._normalize_field_spec(schema_field_specs.get(field_key, {}))
         field_type = spec.get("type")
 
@@ -2204,7 +2248,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
         classification_keys = [
             "vehicle_class",
-            "component_class",
+            "category_kind",
             "collection_class",
             "idea_class",
             "location_class",
@@ -2300,6 +2344,15 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             if key in {"description", "notes"}:
                 continue
 
+            # `component` is a subclass of `item`; the food/inventory facets it
+            # inherits are noise on an installed part unless explicitly authored.
+            if (
+                self._is_component_card()
+                and section_name in {"food", "inventory"}
+                and key not in entity
+            ):
+                continue
+
             if key in media_keys:
                 media_values.append((key, value))
                 continue
@@ -2327,6 +2380,10 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
             if section_name == "class relations":
                 class_relation_values.append((key, value))
+                continue
+
+            if key == "categories" or section_name == "classification":
+                relation_values.append((key, value))
                 continue
 
             if section_name == "biosphere species roster":
@@ -2671,6 +2728,10 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
     def _initial_edit_buffer(self, field_key, value):
         if field_key == "tags":
             return ""
+        if self._is_species_measurement_dict_field(field_key):
+            if isinstance(value, dict) and value:
+                return "\n".join(f"{key}: {item}" for key, item in value.items())
+            return "\n".join(f"{key}: " for key in self.SPECIES_MEASUREMENT_DICT_FIELDS[field_key])
         if field_key == self.TIMELINE_SNAPSHOT_FIELD:
             return self._timeline_snapshot_text(value if isinstance(value, dict) else None)
         if field_key == "wiki_entry" and not (isinstance(value, str) and value.strip()):
@@ -2884,6 +2945,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
         if field_key == "temporal_periods":
             return self._parse_temporal_periods(text)
+
+        if self._is_species_measurement_dict_field(field_key):
+            return self._parse_measurement_dict(text)
 
         if self._is_year_value_field(field_key):
             parsed_year = parse_year(text)

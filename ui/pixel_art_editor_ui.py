@@ -134,7 +134,28 @@ class PixelArtEditorUI:
             "texture_action_hitboxes": {},
         }
         self.painting = False
+        # If this illustration already has saved pixel art, skip the size/setup
+        # step and drop straight onto the canvas in edit mode. begin_canvas is a
+        # safe no-op (it leaves stage == "size") when the setup is incomplete.
+        if self._illustration_has_saved_art(illustration):
+            self.begin_canvas()
         return True
+
+    def _illustration_has_saved_art(self, illustration):
+        """True when a saved pixel document or rendered image exists on disk."""
+        if not isinstance(illustration, dict):
+            return False
+        for key in ("pixel_document_path", "media_path"):
+            rel_path = str(illustration.get(key) or "").strip()
+            if not rel_path:
+                continue
+            try:
+                candidate = os.path.normpath(str(self.host.PROJECT_ROOT / rel_path))
+            except (TypeError, ValueError):
+                continue
+            if os.path.isfile(candidate):
+                return True
+        return False
 
     def close(self):
         self.state = None

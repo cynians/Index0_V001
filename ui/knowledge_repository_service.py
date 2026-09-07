@@ -1,11 +1,34 @@
 import copy
 import json
 import os
+import time
+
+from engine.performance_debug import performance_debug
+
+# The draft cache is a lightweight crash-recovery buffer for in-progress text
+# edits, not an entity backup. Generated worldgen model blobs (heightmaps,
+# climate models, ...) can each be tens of MB; snapshotting them into every
+# draft turned card_drafts.json into a 400MB file that was rewritten on every
+# keystroke. Fields whose serialized form exceeds this are left out of the
+# snapshot and restored from the live (repository-loaded) entity on apply.
+_DRAFT_FIELD_MAX_BYTES = 96 * 1024
+
+# Coalesce the per-keystroke draft writes: mark dirty and flush at most this
+# often from the draw loop. Commits and card closes still flush immediately.
+_DRAFT_WRITE_MIN_INTERVAL_S = 1.0
+
+# A healthy draft cache (edit buffers + small fields for a few hundred entries)
+# is well under a megabyte. Anything vastly larger is a bloated/corrupt file
+# from the pre-cap era; parsing it blocks startup for tens of seconds, so it is
+# set aside instead.
+_DRAFT_FILE_MAX_BYTES = 48 * 1024 * 1024
 
 
 class KnowledgeRepositoryService:
     def __init__(self, host):
         object.__setattr__(self, "host", host)
+        object.__setattr__(self, "_card_drafts_dirty", False)
+        object.__setattr__(self, "_card_drafts_last_write", 0.0)
 
     def __getattr__(self, name):
         return getattr(self.host, name)
@@ -14,27 +37,131 @@ class KnowledgeRepositoryService:
         setattr(self.host, name, value)
 
     def _load_card_drafts(self):
+        draft_path = getattr(self, "DRAFT_CACHE_PATH", None)
+        if not draft_path:
+            return {}
+        # Sweep leftover temp files from writes that were interrupted before the
+        # atomic rename (these were multi-hundred-MB in the pre-cap era).
         try:
-            with open(self.DRAFT_CACHE_PATH, "r", encoding="utf-8") as f:
+            draft_dir = os.path.dirname(str(draft_path)) or "."
+            base = os.path.basename(str(draft_path))
+            for name in os.listdir(draft_dir):
+                if name.startswith(f"{base}.") and name.endswith(".tmp"):
+                    try:
+                        os.unlink(os.path.join(draft_dir, name))
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+
+        try:
+            file_size = os.path.getsize(draft_path)
+        except OSError:
+            file_size = 0
+        if file_size > _DRAFT_FILE_MAX_BYTES:
+            set_aside = f"{draft_path}.oversized"
+            try:
+                os.replace(draft_path, set_aside)
+                print(
+                    f"[drafts] card_drafts.json was {file_size / 1024 / 1024:.0f} MB; "
+                    f"set aside as {set_aside} and starting with an empty draft cache"
+                )
+            except OSError:
+                pass
+            return {}
+        try:
+            with open(draft_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-        except (OSError, json.JSONDecodeError):
+        except (OSError, json.JSONDecodeError, MemoryError, ValueError):
             return {}
 
         if not isinstance(data, dict):
             return {}
         drafts = data.get("drafts", data)
-        return drafts if isinstance(drafts, dict) else {}
+        if not isinstance(drafts, dict):
+            return {}
+
+        # Repair caches bloated by earlier versions that snapshotted multi-MB
+        # generated fields: drop oversized fields and record them as elided so
+        # the next write is small and the file stops growing.
+        oversized_found = False
+        for draft in drafts.values():
+            if not isinstance(draft, dict):
+                continue
+            entity_snapshot = draft.get("entity")
+            if not isinstance(entity_snapshot, dict):
+                continue
+            elided = list(draft.get("elided_fields") or [])
+            for key in list(entity_snapshot.keys()):
+                value = entity_snapshot[key]
+                if value is None or isinstance(value, (int, float, bool)):
+                    continue
+                if isinstance(value, str):
+                    too_big = len(value) > _DRAFT_FIELD_MAX_BYTES
+                else:
+                    too_big = self._value_exceeds_draft_limit(value)
+                if too_big:
+                    del entity_snapshot[key]
+                    if key not in elided:
+                        elided.append(key)
+                    oversized_found = True
+            if elided:
+                draft["elided_fields"] = elided
+        if oversized_found:
+            object.__setattr__(self, "_card_drafts_dirty", True)
+        return drafts
 
     def _write_card_drafts(self):
-        draft_path = str(self.DRAFT_CACHE_PATH)
+        """Write the draft cache now.
+
+        Compact JSON, no fsync: the atomic rename still protects against a
+        torn/corrupt file, and losing at most the last second of an in-progress
+        text edit on a hard power cut is an acceptable trade for not stalling
+        the UI. Called directly on commit / card close; keystroke edits go
+        through :meth:`_schedule_card_drafts_write`.
+        """
+        object.__setattr__(self, "_card_drafts_dirty", False)
+        object.__setattr__(self, "_card_drafts_last_write", time.perf_counter())
+        draft_path = getattr(self, "DRAFT_CACHE_PATH", None)
+        if not draft_path:
+            return
+        draft_path = str(draft_path)
         os.makedirs(os.path.dirname(draft_path), exist_ok=True)
         payload = {"drafts": self.card_drafts}
         temporary_path = f"{draft_path}.{os.getpid()}.tmp"
-        with open(temporary_path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2, sort_keys=True)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(temporary_path, draft_path)
+        try:
+            with open(temporary_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, separators=(",", ":"), default=str)
+            os.replace(temporary_path, draft_path)
+        except OSError:
+            try:
+                os.unlink(temporary_path)
+            except OSError:
+                pass
+
+    def _schedule_card_drafts_write(self):
+        """Mark the draft cache dirty; flush only if enough time has passed.
+
+        A pending flush is completed by :meth:`_flush_card_drafts_if_dirty`
+        (driven from the draw loop) or by any immediate ``_write_card_drafts``.
+        """
+        object.__setattr__(self, "_card_drafts_dirty", True)
+        last_write = getattr(self, "_card_drafts_last_write", 0.0)
+        if time.perf_counter() - last_write >= _DRAFT_WRITE_MIN_INTERVAL_S:
+            with performance_debug.measure(
+                "draft.write_card_drafts", f"drafts={len(self.card_drafts)}"
+            ):
+                self.host._write_card_drafts()
+
+    def _flush_card_drafts_if_dirty(self):
+        if not getattr(self, "_card_drafts_dirty", False):
+            return
+        if time.perf_counter() - getattr(self, "_card_drafts_last_write", 0.0) < _DRAFT_WRITE_MIN_INTERVAL_S:
+            return
+        with performance_debug.measure(
+            "draft.write_card_drafts", f"drafts={len(self.card_drafts)}"
+        ):
+            self.host._write_card_drafts()
 
     def _entity_for_card(self, card):
         if card is None:
@@ -50,10 +177,72 @@ class KnowledgeRepositoryService:
             return self.world_model.get_entity(card.get("entity_id"))
         return None
 
+    _DRAFT_LIMIT_MAX_CHILDREN = 4000
+
+    @classmethod
+    def _value_exceeds_draft_limit(cls, value, budget=_DRAFT_FIELD_MAX_BYTES):
+        """Cheap bounded size estimate: return True as soon as the rough encoded
+        size passes the limit, without walking the rest of a huge structure.
+
+        A container with more than ``_DRAFT_LIMIT_MAX_CHILDREN`` direct entries
+        is treated as over-limit immediately (``len`` is O(1)), so a multi-MB
+        generated model never gets iterated element by element.
+        """
+        max_children = cls._DRAFT_LIMIT_MAX_CHILDREN
+        stack = [value]
+        while stack:
+            item = stack.pop()
+            if item is None or isinstance(item, bool):
+                budget -= 5
+            elif isinstance(item, str):
+                budget -= len(item) + 2
+            elif isinstance(item, (int, float)):
+                budget -= 12
+            elif isinstance(item, dict):
+                if len(item) > max_children:
+                    return True
+                budget -= 2
+                for key, nested in item.items():
+                    budget -= len(str(key)) + 4
+                    stack.append(nested)
+            elif isinstance(item, (list, tuple, set)):
+                if len(item) > max_children:
+                    return True
+                budget -= 2 + len(item)
+                stack.extend(item)
+            else:
+                budget -= len(str(item)) + 2
+            if budget < 0:
+                return True
+        return False
+
     def _draft_entity_snapshot(self, entity):
+        """Return ``(snapshot, elided_field_keys)``.
+
+        Scalar fields are always kept. Large container fields (generated
+        worldgen models and similar) are left out and listed in
+        ``elided_field_keys`` so :meth:`_apply_cached_draft_to_card` can restore
+        them from the live entity rather than bloating every draft write.
+        """
         if not isinstance(entity, dict):
-            return {}
-        return {key: value for key, value in entity.items() if not key.startswith("_")}
+            return {}, []
+        snapshot = {}
+        elided = []
+        for key, value in entity.items():
+            if key.startswith("_"):
+                continue
+            if value is None or isinstance(value, (int, float, bool)):
+                snapshot[key] = value
+            elif isinstance(value, str):
+                if len(value) > _DRAFT_FIELD_MAX_BYTES:
+                    elided.append(key)
+                else:
+                    snapshot[key] = value
+            elif self._value_exceeds_draft_limit(value):
+                elided.append(key)
+            else:
+                snapshot[key] = value
+        return snapshot, elided
 
     def _replace_entity_id_reference_value(self, value, old_entity_id, new_entity_id):
         if isinstance(value, str):
@@ -162,7 +351,8 @@ class KnowledgeRepositoryService:
         return changed_entities
 
     def _save_card_draft(self, card):
-        self._sync_species_identity(card)
+        with performance_debug.measure("draft.sync_species_identity"):
+            self._sync_species_identity(card)
         entity = self._entity_for_card(card)
         if not isinstance(entity, dict) or not entity.get("id"):
             return False
@@ -181,7 +371,9 @@ class KnowledgeRepositoryService:
 
         active_field = card.get("active_edit_field")
         draft = dict(self.card_drafts.get(entity_id, {}))
-        draft["entity"] = self._draft_entity_snapshot(entity)
+        snapshot, elided_fields = self._draft_entity_snapshot(entity)
+        draft["entity"] = snapshot
+        draft["elided_fields"] = elided_fields
         draft["dataset"] = entity.get("_dataset", entity.get("type", ""))
         draft["is_new_entry"] = bool(card.get("is_draft_entity", False) or draft.get("is_new_entry", False))
 
@@ -195,7 +387,7 @@ class KnowledgeRepositoryService:
         draft["edit_buffers"] = edit_buffers
         self.card_drafts[entity_id] = draft
         card["has_unsaved_draft"] = True
-        self.host._write_card_drafts()
+        self._schedule_card_drafts_write()
         return True
 
     def _remove_card_draft(self, entity_id):
@@ -222,9 +414,17 @@ class KnowledgeRepositoryService:
                 for key, value in entity.items()
                 if str(key).startswith("_")
             }
+            # Large fields left out of the snapshot are kept from the live
+            # (repository-loaded) entity rather than dropped.
+            preserved = {
+                key: entity[key]
+                for key in draft.get("elided_fields", [])
+                if isinstance(key, str) and key in entity and key not in draft_entity
+            }
             entity.clear()
             entity.update(runtime_values)
             entity.update(copy.deepcopy(draft_entity))
+            entity.update(preserved)
             entity["id"] = str(entity_id)
 
         edit_buffers = draft.get("edit_buffers", {})
@@ -263,11 +463,26 @@ class KnowledgeRepositoryService:
         loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
         if loader is None or not hasattr(loader, "persist_entity"):
             return False
-        persisted = loader.persist_entity(entity, previous_entity_id=previous_entity_id)
+        with performance_debug.measure(
+            "persist.loader_persist_entity", f"entity={entity.get('id')}"
+        ):
+            persisted = loader.persist_entity(entity, previous_entity_id=previous_entity_id)
         if persisted:
+            changed_entity_ids = {
+                entity_id
+                for entity_id in (str(entity.get("id") or ""), str(previous_entity_id or ""))
+                if entity_id
+            }
             mark_changed = getattr(self.world_model, "mark_repository_changed", None)
             if callable(mark_changed):
-                mark_changed()
+                with performance_debug.measure(
+                    "persist.mark_repository_changed",
+                    f"entity={entity.get('id')} n={len(changed_entity_ids)}",
+                ):
+                    try:
+                        mark_changed(changed_entity_ids)
+                    except TypeError:
+                        mark_changed()
             else:
                 self.world_model.repository_revision = getattr(self.world_model, "repository_revision", 0) + 1
         return persisted
@@ -400,7 +615,10 @@ class KnowledgeRepositoryService:
                 loader.build_reference_graph()
             mark_changed = getattr(self.world_model, "mark_repository_changed", None)
             if callable(mark_changed):
-                mark_changed()
+                try:
+                    mark_changed(set(changed_entity_ids))
+                except TypeError:
+                    mark_changed()
             else:
                 self.world_model.repository_revision = getattr(self.world_model, "repository_revision", 0) + 1
             self._refresh_timeline_items()
@@ -411,12 +629,15 @@ class KnowledgeRepositoryService:
         if card is None:
             return False
 
-        self._sync_species_identity(card)
-        self._sync_card_wiki_mentions(card)
+        with performance_debug.measure("persist.sync_species_identity"):
+            self._sync_species_identity(card)
+        with performance_debug.measure("persist.sync_wiki_mentions"):
+            self._sync_card_wiki_mentions(card)
         entity = self._entity_for_card(card)
         if not isinstance(entity, dict):
             return False
-        self._sync_stellar_class_profile(card, entity)
+        with performance_debug.measure("persist.sync_stellar_class"):
+            self._sync_stellar_class_profile(card, entity)
         card.pop("last_committed_field", None)
 
         id_change = card.get("pending_entity_id_change")
@@ -467,7 +688,9 @@ class KnowledgeRepositoryService:
             if isinstance(remaining_buffers, dict) and remaining_buffers:
                 entity_id = str(entity.get("id"))
                 draft = dict(self.card_drafts.get(entity_id, {}))
-                draft["entity"] = self._draft_entity_snapshot(entity)
+                snapshot, elided_fields = self._draft_entity_snapshot(entity)
+                draft["entity"] = snapshot
+                draft["elided_fields"] = elided_fields
                 draft["dataset"] = entity.get("_dataset", entity.get("type", ""))
                 draft["is_new_entry"] = False
                 draft["edit_buffers"] = remaining_buffers
@@ -485,7 +708,11 @@ class KnowledgeRepositoryService:
         if isinstance(entity, dict) and callable(fast_persist) and fast_persist(entity):
             mark_changed = getattr(self.world_model, "mark_repository_changed", None)
             if callable(mark_changed):
-                mark_changed()
+                palette_changed_ids = {str(entity.get("id") or "")} - {""}
+                try:
+                    mark_changed(palette_changed_ids)
+                except TypeError:
+                    mark_changed()
             else:
                 self.world_model.repository_revision = getattr(self.world_model, "repository_revision", 0) + 1
             self._refresh_material_catalog_if_needed(entity)

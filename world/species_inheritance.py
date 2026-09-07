@@ -128,17 +128,33 @@ def _descendant_ids(loader, parent_id, children):
     return result
 
 
-def _source_values(loader, target_id, field_key, children):
-    values = []
-    source_ids = []
+def _eligible_source_entities(loader, target_id, children):
+    """Descendant entities that may author an inheritable field for ``target_id``.
+
+    The descendant walk and species/parent eligibility filter only depend on
+    the target, so this is computed once per target rather than once per
+    (target, field) pair.
+    """
+    entities = _entities(loader)
+    eligible = []
     for entity_id in _descendant_ids(loader, target_id, children):
-        entity = _entities(loader).get(entity_id)
+        entity = entities.get(entity_id)
         if not _is_species(entity) and not children.get(entity_id):
             continue
+        eligible.append((entity_id, entity))
+    return eligible
+
+
+def _source_values(eligible_sources, field_key):
+    values = []
+    source_ids = []
+    seen_keys = set()
+    for entity_id, entity in eligible_sources:
         if not is_authored_field(entity, field_key):
             continue
         key = _value_key(entity[field_key])
-        if key not in {existing[0] for existing in values}:
+        if key not in seen_keys:
+            seen_keys.add(key)
             values.append((key, deepcopy(entity[field_key])))
         source_ids.append(entity_id)
     return values, source_ids
@@ -149,6 +165,26 @@ def _persist_derived(loader, entity):
     if callable(persist):
         return bool(persist(entity))
     return True
+
+
+def _persist_derived_batch(loader, changed_ids):
+    """Persist all re-derived entities in one transaction.
+
+    Committing them one at a time opens and saves the ontology quadstore once
+    per entity, which turns a species edit that re-derives a deep clade chain
+    into a multi-second stall.
+    """
+    if not changed_ids:
+        return
+    save_batch = getattr(loader, "save_changed_dataset_files", None)
+    if callable(save_batch):
+        save_batch(set(changed_ids))
+        return
+    entities = _entities(loader)
+    for entity_id in changed_ids:
+        entity = entities.get(entity_id)
+        if isinstance(entity, dict):
+            _persist_derived(loader, entity)
 
 
 def refresh_species_inheritance(loader, *, persist=False):
@@ -184,8 +220,10 @@ def refresh_species_inheritance(loader, *, persist=False):
         conflicts = {}
         target_changed = False
 
+        eligible_sources = _eligible_source_entities(loader, target_id, children)
+
         for field_key in sorted(SPECIES_INHERITABLE_FIELDS):
-            values, source_ids = _source_values(loader, target_id, field_key, children)
+            values, source_ids = _source_values(eligible_sources, field_key)
             currently_inferred = field_key in inferred
 
             if is_authored_field(target, field_key):
@@ -232,8 +270,9 @@ def refresh_species_inheritance(loader, *, persist=False):
 
         if target_changed:
             changed_ids.add(target_id)
-            if persist:
-                _persist_derived(loader, target)
+
+    if persist:
+        _persist_derived_batch(loader, changed_ids)
 
     return changed_ids
 

@@ -6,7 +6,7 @@ from tools.author_person_food_ownership_model import build_changes
 class AuthorPersonFoodOwnershipModelTests(unittest.TestCase):
     def test_authors_recipe_ownership_and_kitchen_semantics(self):
         schema_names = (
-            "vehicle", "item", "location", "person", "pop", "faction",
+            "vehicle", "location", "person", "pop", "faction",
             "institution", "producer", "technology",
         )
         datasets = {
@@ -23,8 +23,8 @@ class AuthorPersonFoodOwnershipModelTests(unittest.TestCase):
         self.assertIn("schema_ownership", by_id)
         self.assertIn("ownership_records", by_id["schema_vehicle"]["fields"])
         self.assertIn("inventory_items", by_id["schema_vehicle"]["fields"])
-        self.assertIn("ownership_records", by_id["schema_item"]["fields"])
-        self.assertIn("inventory_items", by_id["schema_item"]["fields"])
+        # schema_item is owned in full by tools/author_item_component_model.py
+        self.assertNotIn("schema_item", by_id)
         self.assertIn("ownership_records", by_id["schema_location"]["fields"])
         self.assertIn("openings", by_id["schema_location"]["fields"])
         self.assertIn("resident_people", by_id["schema_location"]["fields"])

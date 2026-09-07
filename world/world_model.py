@@ -14,6 +14,7 @@ from world.component_host import apply_component_host_schema
 from world.earth_reference_models import apply_earth_reference_models
 from world.orbital_space_reference_models import apply_orbital_space_reference_models
 from world.periods import apply_period_reference_models
+from world.technology_schema import apply_technology_schema
 from world.relationship_graph import TouchDegrees
 from world.schema_loader import SchemaLoader
 from world.species_inheritance import (
@@ -255,6 +256,7 @@ class WorldModel:
         apply_orbital_space_reference_models(self.loader)
         apply_period_reference_models(self.loader, self.MAJOR_PERIODS)
         apply_component_host_schema(self.loader)
+        apply_technology_schema(self.loader)
         # Reuse schemas already decoded by EntityLoader. Parsing the complete
         # ontology a second time is especially costly once generated maps are
         # persisted in the repository.
@@ -301,20 +303,46 @@ class WorldModel:
         apply_orbital_space_reference_models(self.loader)
         apply_period_reference_models(self.loader, self.MAJOR_PERIODS)
         apply_component_host_schema(self.loader)
+        apply_technology_schema(self.loader)
         if hasattr(self.touch_degrees, "refresh"):
             self.touch_degrees.refresh()
         self.yearer = Yearer(self.loader)
         self.repository_revision += 1
 
-    def mark_repository_changed(self):
+    def mark_repository_changed(self, changed_entity_ids=None):
         apply_orbital_space_reference_models(self.loader)
         apply_period_reference_models(self.loader, self.MAJOR_PERIODS)
         apply_component_host_schema(self.loader)
+        apply_technology_schema(self.loader)
         if hasattr(self.touch_degrees, "refresh"):
             self.touch_degrees.refresh()
         self.yearer = Yearer(self.loader)
-        refresh_species_inheritance(self.loader, persist=True)
+        if self._change_may_affect_species_inheritance(changed_entity_ids):
+            refresh_species_inheritance(self.loader, persist=True)
         self.repository_revision += 1
+
+    def _change_may_affect_species_inheritance(self, changed_entity_ids):
+        """Species inheritance only derives fields for species/cladistics
+        entities from their cladistic descendants. Editing any other entity
+        (a planet, vehicle, idea, ...) cannot change it, so the full
+        tree-wide re-derivation — which is very expensive — can be skipped.
+
+        ``None`` means "caller does not know what changed"; stay safe and
+        refresh.
+        """
+        if changed_entity_ids is None:
+            return True
+        entities = getattr(self.loader, "entities", {})
+        for entity_id in changed_entity_ids:
+            entity = entities.get(entity_id)
+            if not isinstance(entity, dict):
+                # Deleted/renamed/unknown: cannot rule it out.
+                return True
+            dataset = entity.get("_dataset")
+            entity_type = entity.get("type")
+            if dataset in {"species", "cladistics"} or entity_type in {"species", "cladistics"}:
+                return True
+        return False
 
     def resolve_species_field(self, entity_id, field_key):
         entity = self.get_entity(entity_id)
@@ -448,6 +476,45 @@ class WorldModel:
 
         return items
 
+    def _is_technology_entity(self, entity):
+        return isinstance(entity, dict) and (
+            entity.get("_dataset") == "technologies" or entity.get("type") == "technology"
+        )
+
+    def _technology_supersede_years(self):
+        """Map ``technology_id -> earliest successor invention year``.
+
+        A technology is superseded once the technology that replaces it is
+        invented. Edges come from either direction: this entity's ``successor``
+        / ``successors``, or another technology naming this one in its
+        ``predecessor`` / ``predecessors``.
+        """
+        successors_by_tech = {}
+        invention_year_by_tech = {}
+        for entity_id, entity in self.loader.entities.items():
+            if not self._is_technology_entity(entity):
+                continue
+            invention_year_by_tech[entity_id] = self.yearer.normalize_year(entity.get("start_year"))
+            for field_key in ("successor", "successors"):
+                for successor_id in self.loader._relation_ids(entity.get(field_key)):
+                    if successor_id and successor_id != entity_id:
+                        successors_by_tech.setdefault(entity_id, set()).add(successor_id)
+            for field_key in ("predecessor", "predecessors"):
+                for predecessor_id in self.loader._relation_ids(entity.get(field_key)):
+                    if predecessor_id and predecessor_id != entity_id:
+                        successors_by_tech.setdefault(predecessor_id, set()).add(entity_id)
+
+        supersede_years = {}
+        for tech_id, successor_ids in successors_by_tech.items():
+            years = [
+                invention_year_by_tech.get(successor_id)
+                for successor_id in successor_ids
+            ]
+            years = [year for year in years if year is not None]
+            if years:
+                supersede_years[tech_id] = min(years)
+        return supersede_years
+
     def get_timeline_items(self):
         """
         Collect repository entities that define temporal information.
@@ -459,6 +526,7 @@ class WorldModel:
         * keep output flat and UI-friendly
         """
         items = self._get_major_period_timeline_items()
+        technology_supersede_years = self._technology_supersede_years()
 
         for entity_id, entity in self.loader.entities.items():
             start_year = self.yearer.normalize_year(entity.get("start_year"))
@@ -481,6 +549,23 @@ class WorldModel:
                 continue
             if end_year is None:
                 end_year = start_year
+
+            is_technology = dataset_name == "technologies" or entity.get("type") == "technology"
+            forgotten_year = None
+            superseded_year = None
+            technology_open_ended = False
+            if is_technology:
+                # A technology's start_year is its invention date. It stays
+                # available (an "availability rail") until it is forgotten;
+                # being superseded dims the rail but does not end it.
+                forgotten_year = self.yearer.normalize_year(entity.get("forgotten_year"))
+                superseded_year = technology_supersede_years.get(entity_id)
+                if forgotten_year is not None:
+                    end_year = forgotten_year
+                else:
+                    end_year = start_year
+                    technology_open_ended = True
+
             start_commentary = str(entity.get("start_commentary") or "").strip()
             end_commentary = str(entity.get("end_commentary") or "").strip()
             commentary_parts = []
@@ -489,21 +574,26 @@ class WorldModel:
             if end_commentary:
                 commentary_parts.append(f"End: {end_commentary}")
 
-            items.append(
-                {
-                    "entity_id": entity_id,
-                    "label": str(label),
-                    "dataset": dataset_name,
-                    "entity_type": entity.get("type", "entity"),
-                    "start_year": start_year,
-                    "end_year": end_year,
-                    "is_point": start_year == end_year,
-                    "card_color": card_color,
-                    "commentary": " / ".join(commentary_parts),
-                    "start_commentary": start_commentary,
-                    "end_commentary": end_commentary,
-                }
-            )
+            item = {
+                "entity_id": entity_id,
+                "label": str(label),
+                "dataset": dataset_name,
+                "entity_type": entity.get("type", "entity"),
+                "start_year": start_year,
+                "end_year": end_year,
+                "is_point": start_year == end_year,
+                "card_color": card_color,
+                "commentary": " / ".join(commentary_parts),
+                "start_commentary": start_commentary,
+                "end_commentary": end_commentary,
+            }
+            if is_technology:
+                item["timeline_kind"] = "technology"
+                item["invention_year"] = start_year
+                item["forgotten_year"] = forgotten_year
+                item["superseded_year"] = superseded_year
+                item["technology_open_ended"] = technology_open_ended
+            items.append(item)
 
         return items
 
@@ -565,6 +655,7 @@ class WorldModel:
         apply_orbital_space_reference_models(self.loader)
         apply_period_reference_models(self.loader, self.MAJOR_PERIODS)
         apply_component_host_schema(self.loader)
+        apply_technology_schema(self.loader)
         self.schemas = SchemaLoader(schema_entities=self.loader.get_dataset("schemas"))
         self.touch_degrees.schemas = self.schemas
         self.touch_degrees.refresh()

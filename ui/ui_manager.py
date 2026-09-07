@@ -139,6 +139,8 @@ class UIManager:
         self.app_font = pygame.font.SysFont("consolas", 16)
         self._text_surface_cache = {}
         self._text_surface_cache_limit = 512
+        self._biosphere_preview_cache = {}
+        self._biosphere_species_renderer = None
 
     def is_text_input_active(self):
         return self.selection_inspector.is_text_input_active()
@@ -227,6 +229,15 @@ class UIManager:
         self.map_context_rect = None
         self.map_layer_selector_rect = None
         self.map_layer_selector_items = []
+        self.biosphere_ui_active = False
+        self.biosphere_active_sim = None
+        self.biosphere_dashboard = None
+        self.biosphere_picker_model = None
+        self.biosphere_picker_open = False
+        self.biosphere_top_bar_rect = None
+        self.biosphere_population_rect = None
+        self.biosphere_tool_dock_rect = None
+        self.biosphere_picker_rect = None
 
         self.tab_labels = []
         self.active_tab_index = 0
@@ -558,6 +569,54 @@ class UIManager:
     def _rebuild_ecosystem_controls(self, active_sim, x, y, width=226):
         button_height = 28
         y += 8
+        if getattr(active_sim, "simulation_mode", None) == "biosphere_builder":
+            running = not bool(getattr(active_sim, "builder_paused", True))
+            run_button = UIButton(
+                "biosphere_toggle_running",
+                "Pause Succession" if running else "Run Succession",
+                pygame.Rect(x, y, width, button_height),
+            )
+            run_button.map_layer_active = running
+            self.buttons.append(run_button)
+            y += 36
+            self.buttons.append(UIButton(
+                "biosphere_advance_season",
+                "Advance One Season",
+                pygame.Rect(x, y, width, button_height),
+            ))
+            y += 40
+            items = list(getattr(active_sim, "get_species_palette_items", lambda: [])() or [])
+            columns = 2 if width >= 220 else 1
+            gap = 6
+            item_width = (width - gap) // columns
+            for index, item in enumerate(items):
+                col = index % columns
+                row = index // columns
+                species_button = UIButton(
+                    f"biosphere_select_species:{item.get('id')}",
+                    item.get("label") or item.get("id"),
+                    pygame.Rect(x + col * (item_width + gap), y + row * (button_height + gap), item_width, button_height),
+                    enabled=bool(item.get("enabled", True)),
+                )
+                species_button.map_layer_active = bool(item.get("selected"))
+                self.buttons.append(species_button)
+            if items:
+                y += ((len(items) + columns - 1) // columns) * (button_height + gap) + 6
+            representatives = list(getattr(active_sim, "get_representative_ui_items", lambda: [])() or [])
+            if representatives:
+                y = self._append_map_sidebar_section("DEEP REPRESENTATIVES", x, y, width)
+                for item in representatives[:8]:
+                    state = "" if item.get("alive", True) else " (dead)"
+                    representative_button = UIButton(
+                        f"biosphere_select_representative:{item.get('id')}",
+                        f"{item.get('label')}{state}",
+                        pygame.Rect(x, y, width, button_height),
+                    )
+                    representative_button.map_layer_active = bool(item.get("selected"))
+                    self.buttons.append(representative_button)
+                    y += 34
+            return y
+
         can_create_biosphere_patch = bool(
             getattr(active_sim, "can_create_biosphere_patch_draft", lambda: False)()
         )
@@ -582,6 +641,148 @@ class UIManager:
             y += 40
 
         return y
+
+    @staticmethod
+    def _set_button_active(button, active):
+        button.map_layer_active = bool(active)
+        return button
+
+    @staticmethod
+    def _mark_biosphere_modal(button):
+        button.biosphere_modal = True
+        return button
+
+    def _rebuild_biosphere_builder_ui(self, active_sim, app_width, app_height):
+        """Lay out BioSim as a city-builder HUD rather than a map debug sidebar."""
+        self.biosphere_ui_active = True
+        self.biosphere_active_sim = active_sim
+        self.biosphere_dashboard = getattr(active_sim, "get_biosphere_dashboard_model", lambda: {})()
+        self.biosphere_picker_model = getattr(active_sim, "get_species_picker_model", lambda: {"open": False})()
+        self.biosphere_picker_open = bool(self.biosphere_picker_model.get("open"))
+        self.map_context_lines = []
+        self.map_status_lines = []
+        self.map_sidebar_rect = None
+        self.map_layer_selector_rect = None
+        self.map_layer_selector_items = []
+        self.map_sidebar_sections = []
+        self.map_empty_state_lines = []
+        self.map_location_browser_items = []
+        self.map_legend_items = []
+
+        margin = 18
+        top_y = 42
+        top_h = 76
+        dock_h = 86
+        dock_y = max(top_y + top_h + 160, app_height - dock_h - 18)
+        population_w = min(286, max(240, app_width // 5))
+        self.biosphere_top_bar_rect = pygame.Rect(margin, top_y, app_width - margin * 2, top_h)
+        self.biosphere_population_rect = pygame.Rect(margin, top_y + top_h + 12, population_w, max(190, dock_y - top_y - top_h - 24))
+        self.biosphere_tool_dock_rect = pygame.Rect(population_w + margin * 2, dock_y, app_width - population_w - margin * 3, dock_h)
+
+        population = self.biosphere_population_rect
+        catalogue_button = UIButton(
+            "biosphere_open_species_picker",
+            "+  Species Catalogue",
+            pygame.Rect(population.x + 12, population.y + 42, population.width - 24, 42),
+        )
+        catalogue_button.city_builder_primary = True
+        self.buttons.append(catalogue_button)
+
+        representative_y = population.y + 142
+        for item in list(getattr(active_sim, "get_representative_ui_items", lambda: [])() or [])[:8]:
+            label = f"{item.get('label')}{'' if item.get('alive', True) else ' · deceased'}"
+            button = UIButton(
+                f"biosphere_select_representative:{item.get('id')}",
+                label,
+                pygame.Rect(population.x + 12, representative_y, population.width - 24, 30),
+            )
+            self._set_button_active(button, item.get("selected"))
+            self.buttons.append(button)
+            representative_y += 35
+
+        dock = self.biosphere_tool_dock_rect
+        selected_label = self.biosphere_dashboard.get("selected_species") or "Choose species"
+        species_button = UIButton(
+            "biosphere_open_species_picker",
+            f"PLANT  ·  {selected_label}",
+            pygame.Rect(dock.x + 14, dock.y + 28, min(330, dock.width // 3), 42),
+        )
+        species_button.city_builder_primary = True
+        self.buttons.append(species_button)
+
+        time_state = self.biosphere_dashboard.get("time") or {}
+        controls = ((0.0, "Pause"), (1.0, "1×"), (4.0, "4×"), (16.0, "16×"))
+        control_w = 62
+        gap = 7
+        total_w = len(controls) * control_w + (len(controls) - 1) * gap
+        start_x = dock.right - total_w - 14
+        for index, (scale, label) in enumerate(controls):
+            button = UIButton(
+                f"biosphere_set_speed:{scale:g}",
+                label,
+                pygame.Rect(start_x + index * (control_w + gap), dock.y + 28, control_w, 42),
+            )
+            self._set_button_active(button, float(time_state.get("scale", 0.0) or 0.0) == scale)
+            self.buttons.append(button)
+
+        self.buttons.append(UIButton(
+            "open_repository",
+            "Repository",
+            pygame.Rect(self.biosphere_top_bar_rect.right - 142, self.biosphere_top_bar_rect.y + 19, 126, 36),
+        ))
+
+        if not self.biosphere_picker_open:
+            return
+
+        modal_margin_x = max(32, app_width // 30)
+        modal_margin_y = 54
+        self.biosphere_picker_rect = pygame.Rect(
+            modal_margin_x,
+            modal_margin_y,
+            app_width - modal_margin_x * 2,
+            app_height - modal_margin_y - 28,
+        )
+        modal = self.biosphere_picker_rect
+        close = self._mark_biosphere_modal(UIButton(
+            "biosphere_close_species_picker", "Close  Esc", pygame.Rect(modal.right - 126, modal.y + 18, 106, 34)
+        ))
+        self.buttons.append(close)
+
+        list_x = modal.x + 20
+        list_y = modal.y + 78
+        list_w = min(316, max(250, modal.width // 4))
+        row_h = max(48, min(58, (modal.height - 160) // 8))
+        for index, item in enumerate(self.biosphere_picker_model.get("items") or []):
+            button = self._mark_biosphere_modal(UIButton(
+                f"biosphere_picker_focus:{item.get('id')}",
+                item.get("label") or item.get("id"),
+                pygame.Rect(list_x, list_y + index * (row_h + 5), list_w, row_h),
+                enabled=True,
+            ))
+            button.catalog_species_item = item
+            self._set_button_active(button, item.get("focused"))
+            self.buttons.append(button)
+
+        page = int(self.biosphere_picker_model.get("page", 0))
+        page_count = int(self.biosphere_picker_model.get("page_count", 1))
+        nav_y = modal.bottom - 56
+        previous = self._mark_biosphere_modal(UIButton(
+            "biosphere_picker_previous", "‹", pygame.Rect(list_x, nav_y, 44, 34), enabled=page > 0
+        ))
+        next_button = self._mark_biosphere_modal(UIButton(
+            "biosphere_picker_next", "›", pygame.Rect(list_x + list_w - 44, nav_y, 44, 34), enabled=page + 1 < page_count
+        ))
+        self.buttons.extend((previous, next_button))
+
+        focused = self.biosphere_picker_model.get("focused") or {}
+        confirm = self._mark_biosphere_modal(UIButton(
+            "biosphere_picker_confirm",
+            "Select for planting" if focused.get("enabled") else focused.get("unlock_label", "Locked"),
+            pygame.Rect(modal.right - 250, modal.bottom - 58, 230, 38),
+            enabled=bool(focused.get("enabled")),
+        ))
+        confirm.city_builder_primary = True
+        self.buttons.append(confirm)
 
     def _rebuild_map_authoring_controls(self, active_sim, x, y, width=226, button_height=32, enabled=True):
         polygon_options = list(getattr(active_sim, "get_location_draft_options", lambda: [])() or [])
@@ -1337,6 +1538,10 @@ class UIManager:
                     self.breadcrumb_label = draft_status_line
 
             self.map_context_lines = ["Map Workspace"]
+            if getattr(active_sim, "simulation_mode", None) == "biosphere_builder":
+                self.map_context_lines = list(
+                    getattr(active_sim, "get_biosphere_builder_summary_lines", lambda: ["Biological City Builder"])()
+                )
             if root_name:
                 self.map_context_lines.append(f"Scope: {root_name}")
             if layer_label:
@@ -1355,6 +1560,10 @@ class UIManager:
                 self.map_status_lines.append(draft_status_line)
             if map_mouse_label:
                 self.map_status_lines.append(map_mouse_label)
+
+            if getattr(active_sim, "simulation_mode", None) == "biosphere_builder":
+                self._rebuild_biosphere_builder_ui(active_sim, app_width, app_height)
+                return
 
             parent_root_entity_id = active_sim.get_parent_root_entity_id() if hasattr(active_sim,
                                                                                       "get_parent_root_entity_id") else None
@@ -1397,65 +1606,63 @@ class UIManager:
             next_button_y = map_control_y + 30
             next_button_y = self._rebuild_map_layer_menu(active_sim, map_control_x, map_control_y, width=map_control_w) + 12
 
-            can_author_locations = bool(
-                getattr(active_sim, "can_create_location_draft", lambda: False)()
-            ) and not is_editing_map_selection
-            next_button_y = self._append_map_sidebar_section("LOCATION TOOLS", map_control_x, next_button_y, map_control_w)
-            self.buttons.append(
-                UIButton("link_existing_map_location", "Link Existing Location",
-                         pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
-                         enabled=not is_editing_map_selection)
-            )
-            next_button_y += 40
-            next_button_y = self._rebuild_map_authoring_controls(
-                active_sim,
-                map_control_x,
-                next_button_y,
-                width=map_control_w,
-                button_height=button_height,
-                enabled=can_author_locations,
-            )
-
-            can_regenerate_current_region = bool(
-                getattr(active_sim, "can_regenerate_current_region", lambda: False)()
-            )
-            can_regenerate_visible_region = bool(
-                getattr(active_sim, "can_regenerate_region", lambda: False)()
-            )
-            if can_regenerate_current_region or can_regenerate_visible_region:
-                next_button_y = self._append_map_sidebar_section("DETAIL GENERATION", map_control_x, next_button_y, map_control_w)
-            # When both actions are available they target the same visible
-            # scope, but only the lower action advances to the next detail
-            # level. Keep the fixed-footprint rerun as a fallback at the
-            # refinement floor instead of presenting two regenerate buttons.
-            if can_regenerate_current_region and not can_regenerate_visible_region:
-                current_region_label = getattr(
+            is_biosphere_builder = getattr(active_sim, "simulation_mode", None) == "biosphere_builder"
+            if not is_biosphere_builder:
+                can_author_locations = bool(
+                    getattr(active_sim, "can_create_location_draft", lambda: False)()
+                ) and not is_editing_map_selection
+                next_button_y = self._append_map_sidebar_section("LOCATION TOOLS", map_control_x, next_button_y, map_control_w)
+                self.buttons.append(
+                    UIButton("link_existing_map_location", "Link Existing Location",
+                             pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
+                             enabled=not is_editing_map_selection)
+                )
+                next_button_y += 40
+                next_button_y = self._rebuild_map_authoring_controls(
                     active_sim,
-                    "get_current_region_regeneration_label",
-                    lambda: "Regenerate This Region",
-                )()
-                self.buttons.append(UIButton(
-                    "regenerate_current_region",
-                    current_region_label,
-                    pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
-                ))
-                next_button_y += 40
-            if can_regenerate_visible_region:
-                detail_label = getattr(active_sim, "get_next_detail_level_label", lambda: "Regenerate Region")()
-                self.buttons.append(UIButton(
-                    "regenerate_visible_region",
-                    detail_label,
-                    pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
-                ))
-                next_button_y += 40
+                    map_control_x,
+                    next_button_y,
+                    width=map_control_w,
+                    button_height=button_height,
+                    enabled=can_author_locations,
+                )
 
-            if bool(getattr(active_sim, "can_reset_planet_view", lambda: False)()):
-                self.buttons.append(UIButton(
-                    "reset_planet_map_view",
-                    "Reset Equatorial View",
-                    pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
-                ))
-                next_button_y += 40
+                can_regenerate_current_region = bool(
+                    getattr(active_sim, "can_regenerate_current_region", lambda: False)()
+                )
+                can_regenerate_visible_region = bool(
+                    getattr(active_sim, "can_regenerate_region", lambda: False)()
+                )
+                if can_regenerate_current_region or can_regenerate_visible_region:
+                    next_button_y = self._append_map_sidebar_section("DETAIL GENERATION", map_control_x, next_button_y, map_control_w)
+                if can_regenerate_current_region and not can_regenerate_visible_region:
+                    current_region_label = getattr(
+                        active_sim,
+                        "get_current_region_regeneration_label",
+                        lambda: "Regenerate This Region",
+                    )()
+                    self.buttons.append(UIButton(
+                        "regenerate_current_region",
+                        current_region_label,
+                        pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
+                    ))
+                    next_button_y += 40
+                if can_regenerate_visible_region:
+                    detail_label = getattr(active_sim, "get_next_detail_level_label", lambda: "Regenerate Region")()
+                    self.buttons.append(UIButton(
+                        "regenerate_visible_region",
+                        detail_label,
+                        pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
+                    ))
+                    next_button_y += 40
+
+                if bool(getattr(active_sim, "can_reset_planet_view", lambda: False)()):
+                    self.buttons.append(UIButton(
+                        "reset_planet_map_view",
+                        "Reset Equatorial View",
+                        pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
+                    ))
+                    next_button_y += 40
 
             next_button_y = self._append_map_sidebar_section("WORKSPACE", map_control_x, next_button_y, map_control_w)
             self.buttons.append(
@@ -1480,7 +1687,12 @@ class UIManager:
                 )
                 next_button_y += 40
             else:
-                next_button_y = self._append_map_sidebar_section("ENVIRONMENT", map_control_x, next_button_y, map_control_w)
+                next_button_y = self._append_map_sidebar_section(
+                    "BIOSPHERE BUILDER" if is_biosphere_builder else "ENVIRONMENT",
+                    map_control_x,
+                    next_button_y,
+                    map_control_w,
+                )
                 next_button_y = self._rebuild_ecosystem_controls(
                     active_sim,
                     map_control_x,
@@ -2330,7 +2542,10 @@ class UIManager:
 
     def _draw_button(self, screen, font, button):
         is_map_layer_active = bool(getattr(button, "map_layer_active", False))
-        if is_map_layer_active and button.enabled:
+        if getattr(button, "city_builder_primary", False) and button.enabled:
+            fill_color = (46, 89, 58)
+            border_color = (170, 214, 132)
+        elif is_map_layer_active and button.enabled:
             fill_color = (68, 78, 110)
             border_color = (232, 218, 154)
         else:
@@ -2893,7 +3108,184 @@ class UIManager:
             row_y += row_h
         return rect.height
 
+    def _draw_biosphere_stat(self, screen, font, rect, label, value):
+        pygame.draw.rect(screen, (24, 31, 29), rect, border_radius=4)
+        pygame.draw.rect(screen, (67, 88, 73), rect, 1, border_radius=4)
+        screen.blit(self._render_text(font, str(label).upper(), (136, 156, 145)), (rect.x + 10, rect.y + 7))
+        screen.blit(self._render_text(font, str(value), (142, 204, 126)), (rect.x + 10, rect.y + 29))
+
+    def _draw_wrapped_lines(self, screen, font, text, rect, color, max_lines=6):
+        words = str(text or "").split()
+        lines, current = [], ""
+        for word in words:
+            candidate = f"{current} {word}".strip()
+            if current and font.size(candidate)[0] > rect.width:
+                lines.append(current)
+                current = word
+            else:
+                current = candidate
+        if current:
+            lines.append(current)
+        y = rect.y
+        for line in lines[:max_lines]:
+            screen.blit(self._render_text(font, line, color), (rect.x, y))
+            y += font.get_height() + 3
+        return y
+
+    def _biosphere_preview_surface(self, sim, species_id, size):
+        preview = sim.get_species_preview_simulation(species_id) if species_id else None
+        if preview is None:
+            return None
+        width, height = max(80, int(size[0])), max(80, int(size[1]))
+        key = (species_id, width, height, preview.blueprint.fingerprint(), round(float(preview.age_days), 2))
+        cached = self._biosphere_preview_cache.get(key)
+        if cached is not None:
+            return cached
+
+        from simulations.species.species_renderer import DiagnosticCamera, SpeciesRenderer, diagnostic_cell_bounds
+
+        if self._biosphere_species_renderer is None:
+            self._biosphere_species_renderer = SpeciesRenderer(self)
+        surface = pygame.Surface((width, height))
+        camera = DiagnosticCamera(width, height, diagnostic_cell_bounds(preview.render_snapshot))
+        self._biosphere_species_renderer._draw_individual(
+            surface, preview, camera=camera, clear=True, cache=True,
+            draw_ground_line=True, foliage_sample_cap=10,
+        )
+        self._biosphere_preview_cache[key] = surface
+        while len(self._biosphere_preview_cache) > 24:
+            self._biosphere_preview_cache.pop(next(iter(self._biosphere_preview_cache)))
+        return surface
+
+    def _draw_biosphere_builder_workspace(self, screen, font):
+        dashboard = self.biosphere_dashboard or {}
+        top = self.biosphere_top_bar_rect
+        population = self.biosphere_population_rect
+        dock = self.biosphere_tool_dock_rect
+        if top is None or population is None or dock is None:
+            return
+
+        panel_fill, panel_border = (16, 23, 22), (80, 105, 88)
+        for rect in (top, population, dock):
+            pygame.draw.rect(screen, panel_fill, rect, border_radius=5)
+            pygame.draw.rect(screen, panel_border, rect, 1, border_radius=5)
+
+        screen.blit(self._render_text(font, dashboard.get("title", "BIOSPHERE COMMAND"), (226, 236, 220)), (top.x + 14, top.y + 8))
+        stat_x, stat_gap = top.x + 200, 8
+        stat_w = max(112, (top.width - 340) // 4 - stat_gap)
+        representatives = dashboard.get("representatives") or {}
+        stats = (
+            ("Living biomass", f"{float(dashboard.get('biomass_kg', 0.0)):.1f} kg"),
+            ("Colonised area", f"{float(dashboard.get('footprint_m2', 0.0)):.1f} m²"),
+            ("Populations", str(int(dashboard.get("species_count", 0)))),
+            ("Deep lives", f"{int(representatives.get('alive', 0))} active"),
+        )
+        for index, (label, value) in enumerate(stats):
+            self._draw_biosphere_stat(
+                screen, font, pygame.Rect(stat_x + index * (stat_w + stat_gap), top.y + 10, stat_w, 55), label, value
+            )
+
+        screen.blit(self._render_text(font, "BUILD ECOLOGY", (209, 226, 205)), (population.x + 12, population.y + 12))
+        selected = dashboard.get("selected_species") or "None"
+        screen.blit(self._render_text(font, f"Active placement: {selected}", (159, 180, 164)), (population.x + 12, population.y + 92))
+        unlock = "Pioneers available" if dashboard.get("pioneers_unlocked") else f"Pioneers at {dashboard.get('unlock_biomass_kg', 0):g} kg"
+        screen.blit(self._render_text(font, unlock, (184, 171, 112)), (population.x + 12, population.y + 114))
+        screen.blit(self._render_text(font, "POPULATION REPRESENTATIVES", (125, 153, 132)), (population.x + 12, population.y + 126))
+
+        screen.blit(self._render_text(font, "BUILD TOOL", (125, 153, 132)), (dock.x + 14, dock.y + 7))
+        time_state = dashboard.get("time") or {}
+        clock = f"YEAR {time_state.get('year', 1)}  ·  {str(time_state.get('season', 'Spring')).upper()}  DAY {time_state.get('day', 1)}"
+        clock_surface = self._render_text(font, clock, (213, 222, 205))
+        screen.blit(clock_surface, (dock.right - clock_surface.get_width() - 14, dock.y + 7))
+        progress_x = dock.x + min(355, dock.width // 3 + 25)
+        progress_rect = pygame.Rect(progress_x, dock.y + 64, max(80, dock.right - progress_x - 294), 5)
+        pygame.draw.rect(screen, (34, 45, 40), progress_rect)
+        fill = progress_rect.copy()
+        fill.width = int(progress_rect.width * float(time_state.get("progress", 0.0) or 0.0))
+        pygame.draw.rect(screen, (100, 173, 103), fill)
+
+        for button in self.buttons:
+            if button.visible and not getattr(button, "biosphere_modal", False):
+                self._draw_button(screen, font, button)
+
+        if self.biosphere_picker_open and self.biosphere_picker_rect is not None:
+            self._draw_biosphere_picker(screen, font)
+
+    def _draw_biosphere_picker(self, screen, font):
+        shade = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        shade.fill((3, 8, 7, 218))
+        screen.blit(shade, (0, 0))
+        modal = self.biosphere_picker_rect
+        pygame.draw.rect(screen, (18, 25, 24), modal, border_radius=7)
+        pygame.draw.rect(screen, (119, 153, 124), modal, 2, border_radius=7)
+        screen.blit(self._render_text(font, "SPECIES CATALOGUE", (231, 239, 225)), (modal.x + 20, modal.y + 17))
+        screen.blit(self._render_text(font, "Inspect a SpeciesSim organism, then deploy it as a population.", (148, 170, 153)), (modal.x + 20, modal.y + 42))
+
+        list_w = min(316, max(250, modal.width // 4))
+        divider_x = modal.x + 20 + list_w + 18
+        detail_w = min(330, max(270, modal.width // 4))
+        detail_x = modal.right - detail_w - 20
+        preview_rect = pygame.Rect(divider_x + 12, modal.y + 82, max(100, detail_x - divider_x - 28), modal.height - 164)
+        detail_rect = pygame.Rect(detail_x, modal.y + 78, detail_w, modal.height - 152)
+        pygame.draw.rect(screen, (12, 18, 17), preview_rect, border_radius=4)
+        pygame.draw.rect(screen, (52, 75, 60), preview_rect, 1, border_radius=4)
+        pygame.draw.rect(screen, (23, 31, 29), detail_rect, border_radius=4)
+        pygame.draw.rect(screen, (65, 86, 71), detail_rect, 1, border_radius=4)
+
+        focused = (self.biosphere_picker_model or {}).get("focused") or {}
+        preview_surface = self._biosphere_preview_surface(self.biosphere_active_sim, focused.get("id"), preview_rect.size)
+        if preview_surface is not None:
+            screen.blit(preview_surface, preview_rect)
+
+        tx, ty = detail_rect.x + 16, detail_rect.y + 15
+        screen.blit(self._render_text(font, focused.get("label", "Select a species"), (231, 237, 226)), (tx, ty))
+        ty += 24
+        screen.blit(self._render_text(font, focused.get("scientific_name", ""), (149, 173, 154)), (tx, ty))
+        ty += 28
+        badge_color = (116, 188, 112) if focused.get("enabled") else (190, 151, 82)
+        screen.blit(self._render_text(font, focused.get("unlock_label", ""), badge_color), (tx, ty))
+        ty += 29
+        ty = self._draw_wrapped_lines(
+            screen, font, focused.get("description", ""), pygame.Rect(tx, ty, detail_rect.width - 32, 96),
+            (194, 205, 194), max_lines=4,
+        ) + 12
+        screen.blit(self._render_text(font, "ECOLOGICAL TRAITS", (128, 158, 135)), (tx, ty))
+        ty += 25
+        for line in focused.get("trait_lines", []):
+            if ty + font.get_height() > detail_rect.bottom - 8:
+                break
+            screen.blit(self._render_text(font, line, (204, 215, 202)), (tx, ty))
+            ty += 21
+
+        page = int((self.biosphere_picker_model or {}).get("page", 0)) + 1
+        page_count = int((self.biosphere_picker_model or {}).get("page_count", 1))
+        page_label = self._render_text(font, f"PAGE {page} / {page_count}", (145, 164, 149))
+        screen.blit(page_label, (modal.x + 20 + (list_w - page_label.get_width()) // 2, modal.bottom - 48))
+        for button in self.buttons:
+            if not button.visible or not getattr(button, "biosphere_modal", False):
+                continue
+            self._draw_button(screen, font, button)
+            item = getattr(button, "catalog_species_item", None)
+            if item:
+                swatch = pygame.Rect(button.rect.x + 8, button.rect.centery - 6, 12, 12)
+                pygame.draw.rect(screen, item.get("color", (100, 140, 100)), swatch)
+                if not item.get("enabled"):
+                    locked = self._render_text(font, "LOCKED", (195, 154, 88))
+                    screen.blit(locked, (button.rect.right - locked.get_width() - 8, button.rect.bottom - locked.get_height() - 4))
+
     def _draw_map_workspace(self, screen, font):
+        if self.biosphere_ui_active:
+            self._draw_biosphere_builder_workspace(screen, font)
+            self.selection_inspector.draw(screen, font)
+            self._draw_system_menu(screen, font)
+            self._draw_repository_return_confirm(screen, font)
+            return
+        if self.biosphere_ui_active:
+            self._draw_biosphere_builder_workspace(screen, font)
+            self.selection_inspector.draw(screen, font)
+            self._draw_system_menu(screen, font)
+            self._draw_repository_return_confirm(screen, font)
+            return
         context_lines = list(self.map_context_lines)
         if self.map_status_lines:
             if context_lines:
@@ -3481,7 +3873,7 @@ class UIManager:
             quantity = f"x{entry.get('quantity', 0)}"
             quantity_surface = self._render_text(font, quantity, (224, 195, 130))
             screen.blit(quantity_surface, (card.right - quantity_surface.get_width() - 13, card.y + 9))
-            detail = str(entry.get("item_class") or "item")
+            detail = str(entry.get("category_label") or "item")
             if entry.get("consumable"):
                 detail += f"  |  food +{entry.get('food_satiation', 0)}"
             detail = self._ellipsize_text(detail, font, card.width - 26)
@@ -3951,6 +4343,20 @@ class UIManager:
         if self.menu_active:
             return self.knowledge_ui.handle_event(event)
 
+        if self.biosphere_picker_open:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                for button in self.buttons:
+                    if (
+                        getattr(button, "biosphere_modal", False)
+                        and button.visible
+                        and button.enabled
+                        and button.rect.collidepoint(event.pos)
+                    ):
+                        return button.id
+                return "__ui_consumed__"
+            if event.type in (pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL, pygame.KEYDOWN):
+                return "__ui_consumed__"
+
         if (
             event.type == pygame.KEYDOWN
             and event.key == pygame.K_ESCAPE
@@ -4093,6 +4499,16 @@ class UIManager:
                         "id": "select_map_location",
                         "entity_id": entity_id,
                     }
+
+            if self.biosphere_ui_active and any(
+                rect is not None and rect.collidepoint(mouse_pos)
+                for rect in (
+                    self.biosphere_top_bar_rect,
+                    self.biosphere_population_rect,
+                    self.biosphere_tool_dock_rect,
+                )
+            ):
+                return "__ui_consumed__"
 
             return None
 

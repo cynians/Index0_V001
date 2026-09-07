@@ -11,6 +11,7 @@ from simulations.person.person_assets import (
     character_creation_prompt_lines,
     placeable_asset_catalog,
 )
+from world.item_categories import resolve_category_labels
 from world.ownership_resolver import OwnershipResolver
 from world.year_utils import parse_year
 
@@ -2227,7 +2228,7 @@ class PersonSimulation:
             return "Work & organizations"
         if entity_type in {"idea", "ideas", "culture", "cultural_aspect", "religion", "ideology", "worldview"}:
             return "Worldviews & ideas"
-        if entity_type in {"technology", "technologies", "item", "component", "vehicle", "recipe", "recipes"}:
+        if entity_type in {"technology", "technologies", "item", "component", "vehicle", "recipe", "recipes", "category", "categories"}:
             return "Things & techniques"
         if entity_type in {"event", "events", "period", "conflict"}:
             return "Events & history"
@@ -2342,10 +2343,10 @@ class PersonSimulation:
         return {
             "item_id": item_id,
             "label": item.get("pretty_name") or item.get("name") or item_id,
-            "item_class": item.get("item_class") or "item",
+            "category_label": resolve_category_labels(self.world_model, item),
             "quantity": self._clean_quantity(quantity),
-            "unit": item.get("inventory_unit") or "unit",
-            "stackable": bool(item.get("stackable", True)),
+            "unit": item.get("default_unit") or "unit",
+            "stackable": "stackable" in (item.get("storage_modes") or []),
             "consumable": bool(item.get("consumable", False)),
             "food_satiation": item.get("food_satiation"),
             "holder": holder,
