@@ -9,7 +9,10 @@ contracts invalidate prior products rather than requiring compatibility paths.
 
 import math
 
-from simulations.world_gen.crust import crust_composition_from_seed
+from simulations.world_gen.volatile_budget import budget_from as volatile_budget_from
+
+from simulations.world_gen.crust import crust_composition_from_seed, default_crust_composition
+from simulations.world_gen import material_chemistry
 from simulations.world_gen.material_affinities import (
     material_affinity_profile,
     material_distribution_role,
@@ -29,6 +32,7 @@ NATURAL_MATERIAL_CATALOG_VERSION = "natural-materials-v9-ontology-runtime-cache"
 _MATERIAL_CATALOG = ()
 MATERIAL_BY_ID = {}
 GAS_MATERIAL_BY_MOLECULE = {}
+_REFERENCE_CACHE = {}
 
 
 
@@ -72,6 +76,8 @@ def material_geological_map_color(material_id, fallback=None):
 def configure_material_catalog(materials):
     """Build the process-local material cache from ontology-loaded entries."""
     global _MATERIAL_CATALOG, MATERIAL_BY_ID, GAS_MATERIAL_BY_MOLECULE
+    _REFERENCE_CACHE.clear()
+    _OXIDIZED_FAMILY_CACHE.clear()
     entries = tuple(
         material
         for material in (materials or [])
@@ -429,20 +435,40 @@ def atmospheric_band_palette(atmosphere):
     return {"base_color": base, "bands": bands}
 
 
-def _element_abundance_map(crust_composition):
-    composition = crust_composition_from_seed({"crust_composition": crust_composition})
-    abundances = {}
-    for group_name in ("major_elements", "trace_elements"):
-        for element in composition.get(group_name) or []:
-            symbol = str(element.get("symbol") or "").strip()
-            if not symbol:
+def reference_crust_percent():
+    """Reference crustal abundance per element (mass %) from the ontology element cards."""
+    if "reference" not in _REFERENCE_CACHE:
+        reference = {}
+        for material in _MATERIAL_CATALOG:
+            if material.get("material_subclass") != "element":
                 continue
+            symbol = str(material.get("element_symbol") or "").strip()
             try:
-                abundance = float(element.get("abundance_percent", 0.0) or 0.0)
+                ppm = float(material.get("earth_upper_crust_abundance_ppm") or 0.0)
             except (TypeError, ValueError):
-                abundance = 0.0
-            abundances[symbol] = max(abundances.get(symbol, 0.0), abundance)
-    return abundances
+                ppm = 0.0
+            if symbol and ppm > 0.0:
+                reference[symbol] = ppm / 1e4
+        _REFERENCE_CACHE["reference"] = reference
+    return _REFERENCE_CACHE["reference"]
+
+
+def reference_element_distribution():
+    """The default Earth-like crust run through the same distribution as a planet."""
+    if "earth" not in _REFERENCE_CACHE:
+        _REFERENCE_CACHE["earth"] = material_chemistry.planet_element_distribution(
+            default_crust_composition(), reference_crust_percent(),
+        )
+    return _REFERENCE_CACHE["earth"]
+
+
+def _element_abundance_map(crust_composition):
+    """The planet's full element distribution (mass %).
+
+    Listed elements as set; unlisted elements at an Earth-like background
+    within the trace reserve (see ``material_chemistry.planet_element_distribution``).
+    """
+    return material_chemistry.planet_element_distribution(crust_composition, reference_crust_percent())
 
 
 def derive_planet_material_tags(seed, atmosphere=None, regime=None, terrain=None, crust_type="unknown"):
@@ -474,8 +500,14 @@ def derive_planet_material_tags(seed, atmosphere=None, regime=None, terrain=None
         tags.add("sulfur_bearing_crust")
 
     hydrology = surface.get("hydrologic_cycle") or terrain.get("hydrology", {}).get("cycle")
-    if hydrology in {"active", "limited"}:
+    budget = volatile_budget_from(atmosphere, seed)
+    if budget is not None:
+        _add_volatile_budget_tags(tags, budget, composition)
+    elif hydrology in {"active", "limited"}:
         tags.update({"active_hydrology", "weathered_surface", "hydrated_crust"})
+    if seed.get("planet_id") == EARTH_PLANET_ID or seed.get("biosphere_history") is True:
+        # Only Earth carries a biosphere history (coal, chalk, shell beds...).
+        tags.add("biosphere_history")
     if terrain.get("hydrology", {}).get("target_ocean_fraction", 0.0) or seed.get("water_fraction", 0.0):
         try:
             if float(seed.get("water_fraction", 0.0) or 0.0) >= 0.35:
@@ -486,7 +518,7 @@ def derive_planet_material_tags(seed, atmosphere=None, regime=None, terrain=None
         tags.add("aeolian_surface")
     if surface.get("crater_retention") == "high" or terrain.get("cratering", {}).get("density", 0.0) >= 0.4:
         tags.update({"cratered_regolith", "impact_gardening"})
-    if atmosphere.get("surface_pressure_bar", 1.0) < 0.01:
+    if (budget or atmosphere).get("surface_pressure_bar", 1.0) < 0.01:
         tags.add("airless_regolith")
     if interior.get("volcanic_activity") in {"low", "moderate", "high"}:
         tags.add("volcanic_surface")
@@ -497,14 +529,15 @@ def derive_planet_material_tags(seed, atmosphere=None, regime=None, terrain=None
     if crust_type_key in {"mafic", "metal-rich"} or "mafic_crust" in tags:
         tags.add("basaltic_surface")
 
-    composition_rows = atmosphere.get("composition") if isinstance(atmosphere.get("composition"), list) else []
-    gases = {row.get("molecule"): float(row.get("fraction", 0.0) or 0.0) for row in composition_rows if isinstance(row, dict)}
-    if gases.get("CO2", 0.0) >= 0.05:
-        tags.add("co2_bearing_atmosphere")
-    if gases.get("O2", 0.0) >= 0.01 or "active_hydrology" in tags:
-        tags.add("oxidizing_surface")
-    if "active_hydrology" in tags and "co2_bearing_atmosphere" in tags and composition.get("Ca", 0.0) >= 1.0:
-        tags.add("carbonate_favorable")
+    if budget is None:
+        composition_rows = atmosphere.get("composition") if isinstance(atmosphere.get("composition"), list) else []
+        gases = {row.get("molecule"): float(row.get("fraction", 0.0) or 0.0) for row in composition_rows if isinstance(row, dict)}
+        if gases.get("CO2", 0.0) >= 0.05:
+            tags.add("co2_bearing_atmosphere")
+        if gases.get("O2", 0.0) >= 0.01 or "active_hydrology" in tags:
+            tags.add("oxidizing_surface")
+        if "active_hydrology" in tags and "co2_bearing_atmosphere" in tags and composition.get("Ca", 0.0) >= 1.0:
+            tags.add("carbonate_favorable")
     credible_aqueous_reservoir = (
         "active_hydrology" in tags
         or (
@@ -519,9 +552,54 @@ def derive_planet_material_tags(seed, atmosphere=None, regime=None, terrain=None
         and credible_aqueous_reservoir
     ):
         tags.add("evaporite_favorable")
-    if seed.get("volatile_inventory") in {"dry", "thin"}:
+    if budget is None and seed.get("volatile_inventory") in {"dry", "thin"}:
         tags.add("arid_surface")
     return sorted(tags)
+
+
+EARTH_PLANET_ID = "planet_earth"
+# Atmospheric CO2 over open water that still feeds carbonate sediments (bar).
+CARBONATE_MIN_CO2_BAR = 1e-4
+
+
+def _add_volatile_budget_tags(tags, budget, composition):
+    """Surface-environment tags from the element distribution's volatile budget.
+
+    Liquid, redox, carbonate and ice conditions come from the budget instead
+    of from a hydrology flag, so methane rain does not weather rock into
+    clays and a reducing world does not rust.
+    """
+    tags.add("volatile_budget_model")
+    derived = budget.get("derived_seed") or {}
+    speciation = budget.get("speciation") or {}
+    redox = str(speciation.get("redox_state") or "")
+    liquid_depth = float(derived.get("surface_liquid_depth_m", 0.0) or 0.0)
+    fluid = str(derived.get("surface_fluid") or "water") if liquid_depth > 0.0 else ""
+    pressure = float(budget.get("surface_pressure_bar", 0.0) or 0.0)
+    gases = budget.get("composition") or {}
+    if fluid == "water":
+        tags.update({"active_hydrology", "weathered_surface", "hydrated_crust"})
+    elif fluid:
+        tags.add("active_hydrology")
+        tags.add("hydrocarbon_liquid_surface" if "methane" in fluid else "exotic_liquid_surface")
+    else:
+        tags.add("arid_surface")
+    if redox == "oxidized":
+        tags.add("oxidizing_surface")
+    elif redox == "reducing":
+        tags.add("reducing_surface")
+    else:
+        tags.add("intermediate_redox_surface")
+    if gases.get("CO2", 0.0) >= 0.05:
+        tags.add("co2_bearing_atmosphere")
+    carbonate_source = (
+        float(budget.get("carbonate_locked_co2_kg", 0.0) or 0.0) > 0.0
+        or (fluid == "water" and pressure * gases.get("CO2", 0.0) >= CARBONATE_MIN_CO2_BAR)
+    )
+    if carbonate_source and redox != "reducing" and composition.get("Ca", 0.0) >= 1.0:
+        tags.add("carbonate_favorable")
+    for species in budget.get("surface_ice_species") or []:
+        tags.add(f"volatile_ice_{str(species).lower()}")
 
 
 def _threshold_score(elements, thresholds):
@@ -547,20 +625,124 @@ def _group_score(elements, groups):
     return sum(scores) / len(scores) if scores else 1.0
 
 
+# Availability left to a fully oxidized phase (carbonate, sulfate, ferric
+# oxide) on a reducing world.
+REDUCED_OXIDIZED_PHASE_FLOOR = 0.02
+# A rock with at least this share of oxidized phases is defined by them.
+OXIDIZED_DEFINING_FRACTION = 0.15
+_OXIDIZED_FAMILY_CACHE = {}
+_OXIDIZED_FORMULA_MARKERS = ("CO3", "SO4", "Fe2O3", "FeO(OH)", "FeOOH", "Fe(OH)3")
+
+
+def _formula_is_oxidized(material):
+    formula = " ".join(
+        str(material.get(field) or "")
+        for field in ("computational_formula", "chemical_formula")
+    )
+    for endmember in material.get("composition_endmembers") or []:
+        if isinstance(endmember, dict):
+            formula += " " + str(endmember.get("formula") or "")
+    return any(marker in formula for marker in _OXIDIZED_FORMULA_MARKERS)
+
+
+def oxidized_family_fraction(material):
+    """Mass share of a material in oxidized phases (carbonate, sulfate, ferric iron).
+
+    Minerals: 1 if their formula is one; rocks, sediments and regolith: the
+    share of such minerals in their modal mineralogy.
+    """
+    material_id = str((material or {}).get("id") or "")
+    if material_id in _OXIDIZED_FAMILY_CACHE:
+        return _OXIDIZED_FAMILY_CACHE[material_id]
+    modal = (material or {}).get("modal_mineralogy_wt")
+    if isinstance(modal, dict) and modal:
+        catalog = {entry.get("id"): entry for entry in natural_material_entries()}
+        total = sum(max(0.0, float(value or 0.0)) for value in modal.values()) or 1.0
+        fraction = sum(
+            max(0.0, float(value or 0.0))
+            for mineral_id, value in modal.items()
+            if _formula_is_oxidized(catalog.get(mineral_id) or {})
+        ) / total
+    else:
+        fraction = 1.0 if _formula_is_oxidized(material or {}) else 0.0
+    _OXIDIZED_FAMILY_CACHE[material_id] = fraction
+    return fraction
+
+
+# A material joins the roster at this share of its Earth availability.
+ROSTER_MIN_AVAILABILITY = 0.12
+# A mineral defined by an element that is minor in Earth's crust but makes up
+# this much of this crust (carbon, sulfur) becomes a foundational
+# (planetary-scale) lithology, unless it only forms as bounded deposits
+# (diamond pipes, sulfide ore bodies).
+FOUNDATIONAL_ELEMENT_PERCENT = 5.0
+FOUNDATIONAL_AVAILABILITY = 5.0
+
+
+def _chemistry_confidence(availability, tag_score):
+    return round(min(0.98, (1.0 - math.exp(-2.5 * max(0.0, availability))) * (0.8 + 0.2 * tag_score)), 3)
+
+
 def derive_natural_material_model(crust_composition, planet_tags):
+    """The planet's material roster, decided by its element distribution.
+
+    Materials with an ontology ``elemental_composition_wt`` are ranked by
+    their availability relative to an Earth-like crust
+    (``material_chemistry.material_availability``); the rest fall back to
+    their ``required_element_thresholds`` gate.  ``relative_abundance`` is the
+    ontology's Earth abundance times the availability.
+    """
     elements = _element_abundance_map(crust_composition)
+    reference_elements = reference_element_distribution()
     tag_set = {str(tag) for tag in planet_tags or []}
     candidates = []
+    budget_tags = "volatile_budget_model" in tag_set
+    redox_strength = 1.0 if "reducing_surface" in tag_set else (0.5 if "intermediate_redox_surface" in tag_set else 0.0)
     for material in natural_material_entries():
         if material.get("material_subclass") in {"atmospheric_gas", "element"}:
             continue
-        chemistry_score = _threshold_score(elements, material.get("required_element_thresholds"))
-        group_score = _group_score(elements, material.get("required_element_groups"))
-        if chemistry_score <= 0.0 or group_score <= 0.0:
+        if material.get("biogenic_origin") and "biosphere_history" not in tag_set:
+            # Made of (fossil) life: Earth only.
+            continue
+        phase_molecule = (SURFACE_PHASE_PROPERTIES.get(material.get("id")) or {}).get("molecule")
+        if budget_tags and phase_molecule and f"volatile_ice_{str(phase_molecule).lower()}" not in tag_set:
+            # A volatile ice needs that volatile to condense somewhere on the planet.
             continue
         favorable = [tag for tag in material.get("favorable_planet_tags", []) if tag in tag_set]
         tag_score = min(1.0, len(favorable) / max(1, min(3, len(material.get("favorable_planet_tags", [])))))
-        confidence = round(min(0.98, chemistry_score * 0.68 + group_score * 0.12 + tag_score * 0.20), 3)
+        composition = material.get("elemental_composition_wt")
+        availability = None
+        limiting_element = None
+        limiting_kind = None
+        if isinstance(composition, dict) and composition:
+            availability, limiting_element, limiting_kind = material_chemistry.material_availability_detail(
+                {str(key): float(value) for key, value in composition.items()}, elements, reference_elements,
+            )
+            if redox_strength > 0.0:
+                oxidized = oxidized_family_fraction(material)
+                if oxidized > 0.0:
+                    # Carbonate, sulfate and ferric-iron phases need oxidized
+                    # carbon, sulfur and iron; a reducing inventory keeps them
+                    # as methane/graphite, sulfide and ferrous iron.  A rock
+                    # defined by such phases cannot form at all.
+                    if redox_strength >= 1.0 and oxidized >= OXIDIZED_DEFINING_FRACTION:
+                        continue
+                    availability *= 1.0 - redox_strength * oxidized * (1.0 - REDUCED_OXIDIZED_PHASE_FLOOR)
+                    limiting_kind = limiting_kind or "reduced"
+            if budget_tags and phase_molecule:
+                # A condensed volatile's ice exists because the budget
+                # condenses it, not because of crust chemistry.
+                availability = max(availability, 1.0)
+                limiting_element = limiting_kind = None
+            if availability < ROSTER_MIN_AVAILABILITY:
+                continue
+            confidence = _chemistry_confidence(availability, tag_score)
+        else:
+            chemistry_score = _threshold_score(elements, material.get("required_element_thresholds"))
+            group_score = _group_score(elements, material.get("required_element_groups"))
+            if chemistry_score <= 0.0 or group_score <= 0.0:
+                continue
+            confidence = round(min(0.98, chemistry_score * 0.68 + group_score * 0.12 + tag_score * 0.20), 3)
         if confidence < 0.28:
             continue
         if confidence >= 0.75:
@@ -581,14 +763,13 @@ def derive_natural_material_model(crust_composition, planet_tags):
             0.0,
             min(
                 1.0,
-                float((affinity_profile or {}).get("abundance", 0.35) or 0.0),
+                float((affinity_profile or {}).get("abundance", 0.35) or 0.0)
+                * (availability if availability is not None else 1.0),
             ),
         )
         profile_id = str((affinity_profile or {}).get("profile_id") or "")
-        # Fixed profile abundance describes the usual world, but strongly
-        # non-terrestrial bulk chemistry must be allowed to change which
-        # substrate wins the limited planetary layer budget.
-        if "ultramafic_tendency" in tag_set:
+        if availability is None and "ultramafic_tendency" in tag_set:
+            # Materials without authored chemistry keep the old tag heuristic.
             if profile_id == "ultramafic_bedrock":
                 relative_abundance = min(1.0, relative_abundance * 1.72)
             elif (
@@ -596,6 +777,8 @@ def derive_natural_material_model(crust_composition, planet_tags):
                 and material.get("material_subclass") == "rock"
             ):
                 relative_abundance *= 0.72
+        # Fresh lava is a process, not chemistry: a resurfacing world shows
+        # its current basalt flows over older provinces.
         if "active_volcanism" in tag_set:
             if material.get("id") == "mat_basalt":
                 relative_abundance = 1.0
@@ -606,7 +789,20 @@ def derive_natural_material_model(crust_composition, planet_tags):
         minimum_detail_level = int(
             (affinity_profile or {}).get("minimum_map_detail_level", 0) or 0
         )
+        # A mineral of an element that makes up a large share of the crust
+        # (graphite on a carbon world, pyrite on a sulfur-iron world) is a
+        # planetary lithology, not a scattered deposit.
         carbon_rich_foundation = (
+            material.get("material_subclass") == "mineral"
+            and formation.get("spatial_representation") != "bounded_deposit"
+            and availability >= FOUNDATIONAL_AVAILABILITY
+            and any(
+                float(elements.get(element, 0.0) or 0.0) >= FOUNDATIONAL_ELEMENT_PERCENT
+                for element in material_chemistry.defining_minor_elements(
+                    {str(key): float(value) for key, value in composition.items()}, reference_elements,
+                )
+            )
+        ) if availability is not None else (
             material.get("id") == "mat_graphite"
             and elements.get("C", 0.0) >= 8.0
         )
@@ -641,6 +837,9 @@ def derive_natural_material_model(crust_composition, planet_tags):
                 explicit=material.get("optical_surface_profile"),
             ),
             "confidence": confidence,
+            "availability_vs_earth": None if availability is None else round(availability, 3),
+            "limiting_element": limiting_element,
+            "limiting_kind": limiting_kind,
             "relative_abundance": relative_abundance,
             "prevalence_score": prevalence_score,
             "occurrence": occurrence,

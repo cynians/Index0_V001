@@ -19,14 +19,19 @@ import math
 import time
 from pathlib import Path
 
+import numpy as np
+
 from engine.logger import logger
+from simulations.world_gen.regional_landforms import apply_regional_landforms
 from simulations.world_gen.heightmap import (
     _clamp, _crater_height_adjustment_m, _crater_spatial_index, _fbm_noise,
     _ensure_heightmap_tectonic_model, _heightmap_tectonic_model,
     _nearby_boundary_segments, _orogen_forcing_at, _wrapped_point_segment_distance,
     _wave_height,
+    crustal_freeboard_shift_at,
     refresh_heightmap_derivatives,
 )
+from simulations.world_gen.array_noise import seed_int
 from simulations.world_gen.geological_noise import branching_mountain_relief_m, fractal_noise_m
 from simulations.world_gen.coastal_geomorphology import (
     coastal_summary,
@@ -39,6 +44,7 @@ from simulations.world_gen.coastal_geomorphology import (
 from simulations.world_gen.map_seed import seed_range
 from simulations.world_gen.material_heatmaps import generate_material_heatmap_model
 from simulations.world_gen.regional_materials import derive_regional_material_model
+from simulations.world_gen.regolith_soils import derive_regolith_soil_model
 from simulations.world_gen.surface_evolution import derive_surface_evolution_model
 from simulations.world_gen.surface_exposure import derive_surface_exposure_model
 from simulations.world_gen.surface_geomorphology import (
@@ -52,7 +58,10 @@ from simulations.world_gen.water_cycle import derive_water_cycle_model
 MIN_REFINED_EXTENT_M = 10.0
 MIN_TERRAIN_SAMPLE_SPACING_M = 0.10
 MIN_TERRAIN_PROCESS_WAVELENGTH_M = 0.50
-PARENT_EDGE_FADE_FRACTION = 0.055
+# Child detail fades to zero over this fraction of the tile at its edges, so
+# a child meets its parent (and its siblings) exactly on the boundary.  At
+# 5.5 % the untextured band read as a frame around every regional map.
+PARENT_EDGE_FADE_FRACTION = 0.018
 SURFACE_DETAIL_CONTRACT_VERSION = "surface-detail-contract-v1"
 
 
@@ -251,6 +260,245 @@ def _parent_coastal_context(parent_entity, center_uv):
     }
 
 
+# LOD1 creates most of the sub-parent relief (hundreds of metres); deeper
+# levels add metres and inherit LOD1's valleys.
+FLUVIAL_DISSECTION_MIN_LEVEL = 1
+def _fluvial_dissection(rows, inherited_rows, *, sea_level, spacing_x_m, spacing_y_m, parent_spacing_m, level, seed=0, inflow=None):
+    """Organise a child's new relief by its drainage (stream-power incision).
+
+    The detail band adds relief below the parent's resolution as isotropic
+    noise, which reads as egg-crate bumps.  ``fluvial_relief`` erodes it with
+    the stream-power law along the drainage tree plus hillslope diffusion, so
+    valleys with concave profiles and sloping walls replace the bumps.  The
+    change is then made zero-mean at the parent's sample spacing (the
+    material removed from valleys is returned to the surrounding surface), so
+    the child still box-filters to its parent; it fades out at tile edges
+    like the rest of the detail, and land never drops below sea level, so the
+    inherited coastline is kept.
+    """
+    from simulations.world_gen.fluvial_relief import conserve_parent_scale, stream_power_relief
+
+    if int(level) < FLUVIAL_DISSECTION_MIN_LEVEL or not rows or not rows[0]:
+        return rows, {"applied": False}
+    elevation = np.asarray(rows, dtype=np.float64)
+    inherited = np.asarray(inherited_rows, dtype=np.float64)
+    land = elevation >= float(sea_level) if sea_level is not None else np.ones(elevation.shape, dtype=bool)
+    detail = (elevation - inherited)[land]
+    if detail.size < 64:
+        return rows, {"applied": False}
+    relief = float(np.percentile(detail, 95.0) - np.percentile(detail, 5.0))
+    if relief <= 1.0:
+        return rows, {"applied": False}
+    radius = max(1, int(round(parent_spacing_m / max(spacing_x_m, spacing_y_m, 1e-6) * 0.5)))
+    from simulations.world_gen.material_routing import box_mean
+
+    detail_field = np.where(land, elevation - inherited, 0.0)
+    # Local amplitude of the new relief (about p95 - p5 when normal).
+    local_relief = 3.3 * np.sqrt(np.maximum(box_mean(detail_field * detail_field, radius), 0.0))
+    from simulations.world_gen.material_routing import inflow_grid
+
+    eroded, solver = stream_power_relief(
+        elevation, land, dx=spacing_x_m, dy=spacing_y_m, seed=seed, detail_relief=local_relief,
+        inflow_cells=inflow_grid(elevation.shape, inflow, spacing_x_m * spacing_y_m),
+    )
+    restored = conserve_parent_scale(elevation, eroded, land, radius)
+    height, width = elevation.shape
+    local_u = np.arange(width) / max(1, width - 1)
+    local_v = np.arange(height) / max(1, height - 1)
+    edge = np.minimum(np.minimum(local_u, 1.0 - local_u)[None, :], np.minimum(local_v, 1.0 - local_v)[:, None])
+    fade = np.clip(edge / PARENT_EDGE_FADE_FRACTION, 0.0, 1.0)
+    fade = fade * fade * (3.0 - 2.0 * fade)
+    result = elevation + (restored - elevation) * fade
+    if sea_level is not None:
+        result = np.where(land, np.maximum(result, float(sea_level) + 0.5), elevation)
+    change = result - elevation
+    return np.round(result, 2).tolist(), {
+        "applied": True,
+        "model": "stream_power_incision_v1",
+        "detail_relief_m": round(relief, 1),
+        "max_incision_m": round(float(-change.min()), 1),
+        "max_raise_m": round(float(change.max()), 1),
+        "mean_change_m": round(float(change[land].mean()) if land.any() else 0.0, 3),
+        "conservation_radius_cells": radius,
+        **solver,
+    }
+
+
+def _regional_ice_mask(parent_ice_rows, rows, *, parent_wrap_x, parent_bounds, parent_spacing_m, spacing_m, seed):
+    """Inherit the parent's ice mask with margins that follow local terrain.
+
+    The child used to threshold a bilinear sample of the parent's binary mask,
+    so ice margins traced the parent's 78 km cells as straight-edged polygons.
+    Coverage is now a smooth B-spline of the parent mask; inside the margin
+    zone, ice is favoured on ground above its local mean (ice caps sit on
+    highs, valleys below them melt out) and a little noise breaks the
+    remaining regularity.  Both terms fade at the tile edge, so the child
+    mask still meets the parent's there.
+    """
+    from simulations.world_gen.array_noise import fbm
+    from simulations.world_gen.material_routing import box_mean
+
+    elevation = np.asarray(rows, dtype=np.float64)
+    height, width = elevation.shape
+    u0, u1, v0, v1 = parent_bounds
+    local_u = (np.arange(width) / max(1, width - 1))[None, :]
+    local_v = (np.arange(height) / max(1, height - 1))[:, None]
+    coverage_rows = np.asarray([[1.0 if value else 0.0 for value in row] for row in parent_ice_rows], dtype=np.float64)
+    coverage = np.broadcast_to(
+        _sample_bicubic_grid(coverage_rows, u0 + (u1 - u0) * local_u, v0 + (v1 - v0) * local_v, wrap_x=parent_wrap_x),
+        elevation.shape,
+    )
+    radius = max(2, int(round(parent_spacing_m / max(spacing_m, 1e-6) * 0.5))) if parent_spacing_m > 0.0 else 4
+    local_mean = box_mean(elevation, radius)
+    local_spread = np.sqrt(np.maximum(box_mean((elevation - local_mean) ** 2, radius), 0.0))
+    terrain = np.tanh((elevation - local_mean) / np.maximum(50.0, 1.5 * local_spread))
+    noise = (fbm(local_u * 24.0 + np.zeros(elevation.shape), local_v * 24.0 + np.zeros(elevation.shape), seed, octaves=3) - 0.5) * 2.0
+    edge = np.minimum(np.minimum(local_u, 1.0 - local_u), np.minimum(local_v, 1.0 - local_v))
+    fade = np.clip(edge / PARENT_EDGE_FADE_FRACTION, 0.0, 1.0)
+    fade = fade * fade * (3.0 - 2.0 * fade)
+    margin = np.clip(1.0 - np.abs(2.0 * coverage - 1.0), 0.0, 1.0)
+    adjusted = coverage + (terrain * 0.30 + noise * 0.10) * margin * fade
+    ice = adjusted >= 0.5
+    return ice.tolist(), {
+        "applied": True,
+        "model": "terrain_following_ice_margin_v1",
+        "ice_fraction": round(float(ice.mean()), 4),
+        "margin_cell_fraction": round(float((margin > 0.05).mean()), 4),
+    }
+
+
+def _center_detail_at_parent_scale(rows, inherited_rows, *, sea_level, spacing_x_m, spacing_y_m, parent_spacing_m):
+    """Remove the parent-scale mean of the new detail.
+
+    Belt uplift and the production residual had a positive mean over whole
+    tiles, while the tile edge is locked to the parent: the interior stood
+    hundreds of metres above its rim, which rendered as a bevelled frame and
+    broke lineage (a child should box-filter to its parent).  The detail's
+    mean over a parent cell is subtracted (faded like the detail, so the
+    boundary still equals the parent), and every cell stays on its side of sea
+    level so the inherited coastline does not move.
+    """
+    from simulations.world_gen.material_routing import box_mean
+
+    if not rows or not rows[0] or parent_spacing_m <= 0.0:
+        return rows, {"applied": False}
+    elevation = np.asarray(rows, dtype=np.float64)
+    inherited = np.asarray(inherited_rows, dtype=np.float64)
+    detail = elevation - inherited
+    radius = max(1, int(round(parent_spacing_m / max(spacing_x_m, spacing_y_m, 1e-6) * 0.5)))
+    offset = box_mean(detail, radius)
+    height, width = elevation.shape
+    local_u = np.arange(width) / max(1, width - 1)
+    local_v = np.arange(height) / max(1, height - 1)
+    edge = np.minimum(np.minimum(local_u, 1.0 - local_u)[None, :], np.minimum(local_v, 1.0 - local_v)[:, None])
+    fade = np.clip(edge / PARENT_EDGE_FADE_FRACTION, 0.0, 1.0)
+    fade = fade * fade * (3.0 - 2.0 * fade)
+    if sea_level is not None:
+        # Land only, fading in from the coast: raising sea floor by the
+        # offset clamped it just under sea level (a false shelf with a step),
+        # and shifting shore cells clamped them flat along the coastline.
+        fade = fade * np.clip((inherited - float(sea_level)) / 250.0, 0.0, 1.0)
+    result = elevation - offset * fade
+    if sea_level is not None:
+        sea = float(sea_level)
+        land = elevation >= sea
+        result = np.where(land, np.maximum(result, sea + 0.5), np.minimum(result, sea - 0.5))
+    return np.round(result, 2).tolist(), {
+        "applied": True,
+        "model": "parent_scale_zero_mean_detail_v1",
+        "radius_cells": radius,
+        "mean_offset_removed_m": round(float(np.mean(offset * fade)), 2),
+        "max_offset_removed_m": round(float(np.max(np.abs(offset * fade))), 2),
+    }
+
+
+def _parent_boundary_inflow(parent_heightmap, parent_rows, parent_wrap_x, sea_level, child_rows, child_bounds, parent_width_m, parent_height_m):
+    """Where rivers enter the child tile, and how much catchment they bring.
+
+    Routes the parent heightfield (with the parent's own boundary inflow, so
+    the chain continues) and hands the crossings to
+    ``material_routing.boundary_inflow``.  Spherical parents weight cells by
+    their latitude area.
+    """
+    from simulations.world_gen.material_routing import boundary_inflow, inflow_grid
+
+    if not parent_rows or not child_rows:
+        return {"cells": []}
+    parent = np.asarray([row[:min(len(r) for r in parent_rows)] for row in parent_rows], dtype=np.float64)
+    parent_height, parent_width = parent.shape
+    land = parent >= float(sea_level) if sea_level is not None else np.ones(parent.shape, dtype=bool)
+    bounds = parent_heightmap.get("source_uv_bounds") if isinstance(parent_heightmap.get("source_uv_bounds"), dict) else {}
+    parent_bounds = {
+        "min_u": float(bounds.get("min_u", 0.0)), "max_u": float(bounds.get("max_u", 1.0)),
+        "min_v": float(bounds.get("min_v", 0.0)), "max_v": float(bounds.get("max_v", 1.0)),
+    }
+    dx = max(1.0, float(parent_width_m) / max(1, parent_width - 1))
+    dy = max(1.0, float(parent_height_m) / max(1, parent_height - 1))
+    spherical = str(parent_heightmap.get("coverage") or "full_planet") == "full_planet" and bool(parent_wrap_x)
+    if spherical:
+        latitude = (0.5 - np.arange(parent_height) / max(1, parent_height - 1)) * math.pi
+        cell_area = (dx * dy * np.maximum(0.01, np.cos(latitude)))[:, None] * np.ones((1, parent_width))
+    else:
+        cell_area = dx * dy
+    parent_inflow = inflow_grid(parent.shape, parent_heightmap.get("boundary_inflow"), 1.0)
+    return boundary_inflow(
+        parent, land, parent_bounds, cell_area, np.asarray(child_rows, dtype=np.float64), child_bounds,
+        parent_wrap_x=bool(parent_wrap_x), parent_inflow=parent_inflow, parent_dx=dx, parent_dy=dy,
+    )
+
+
+FLOODPLAIN_MIN_LEVEL = 3
+
+
+def _floodplain_flattening(rows, *, sea_level, spacing_x_m, spacing_y_m, parent_spacing_m, level, inflow=None):
+    """Give local valleys flat floors (LOD3+).
+
+    Rivers plane their valley floors laterally and fill them with sediment,
+    so at local scale a valley is a flat floodplain beside a channel, not a
+    V.  Along the channel belts of ``material_routing.channel_belts`` the
+    ground is pulled to the nearest bed elevation plus half a metre and a
+    0.4 % rise away from the channel, weighted by belt cover (full at the
+    channel, half at the belt edge).  Like the dissection, the change is made
+    zero-mean at the parent's spacing, fades at tile edges and keeps the
+    coastline.
+    """
+    from simulations.world_gen.fluvial_relief import conserve_parent_scale
+    from simulations.world_gen.material_routing import channel_belts, inflow_grid
+
+    if int(level) < FLOODPLAIN_MIN_LEVEL or not rows or not rows[0]:
+        return rows, {"applied": False}
+    elevation = np.asarray(rows, dtype=np.float64)
+    land = elevation >= float(sea_level) if sea_level is not None else np.ones(elevation.shape, dtype=bool)
+    if land.sum() < 64:
+        return rows, {"applied": False}
+    belts = channel_belts(
+        elevation, land, dx=spacing_x_m, dy=spacing_y_m,
+        inflow_cells=inflow_grid(elevation.shape, inflow, spacing_x_m * spacing_y_m),
+    )
+    distance = np.where(np.isfinite(belts["distance_m"]), belts["distance_m"], 0.0)
+    floor = belts["bed_elevation_m"] + 0.5 + 0.004 * distance
+    floor = np.where(belts["channel"], belts["bed_elevation_m"], floor)
+    flattened = elevation + (floor - elevation) * belts["belt"]
+    radius = max(1, int(round(parent_spacing_m / max(spacing_x_m, spacing_y_m, 1e-6) * 0.5)))
+    restored = conserve_parent_scale(elevation, flattened, land, radius)
+    height, width = elevation.shape
+    local_u = np.arange(width) / max(1, width - 1)
+    local_v = np.arange(height) / max(1, height - 1)
+    edge = np.minimum(np.minimum(local_u, 1.0 - local_u)[None, :], np.minimum(local_v, 1.0 - local_v)[:, None])
+    fade = np.clip(edge / PARENT_EDGE_FADE_FRACTION, 0.0, 1.0)
+    fade = fade * fade * (3.0 - 2.0 * fade)
+    result = elevation + (restored - elevation) * fade
+    if sea_level is not None:
+        result = np.where(land, np.maximum(result, float(sea_level) + 0.5), elevation)
+    return np.round(result, 2).tolist(), {
+        "applied": True,
+        "model": "channel_belt_floodplains_v1",
+        "channel_cell_fraction": round(float(belts["channel"][land].mean()), 4),
+        "floodplain_cell_fraction": round(float((belts["belt"] > 0)[land].mean()), 4),
+        "max_half_width_m": round(float(belts["half_width_m"].max()), 1),
+    }
+
+
 def _scale_appropriate_relief(rows, sea_level, width_m, height_m, coastal_context):
     """Bound inherited relief by footprint and the parent coastal system."""
     if not rows or not rows[0]:
@@ -398,6 +646,332 @@ def _sample_bicubic(rows, u, v, *, wrap_x=True):
         row_values.append(spline(*values, tx))
     value = spline(*row_values, ty)
     return _clamp(value, min(support), max(support))
+
+
+def _sample_bilinear_grid(values, u, v, *, wrap_x=True):
+    """Array form of ``_sample_bilinear`` for broadcast ``u``/``v`` arrays."""
+    height, width = values.shape
+    normalized_u = np.mod(u, 1.0) if wrap_x else np.clip(u, 0.0, 1.0)
+    px = normalized_u * max(1, width - 1)
+    py = np.clip(v, 0.0, 1.0) * max(1, height - 1)
+    x0 = np.floor(px).astype(np.int64)
+    y0 = np.floor(py).astype(np.int64)
+    x1 = (x0 + 1) % width if wrap_x else np.minimum(width - 1, x0 + 1)
+    y1 = np.minimum(height - 1, y0 + 1)
+    tx = px - x0
+    ty = py - y0
+    x0, y0 = np.broadcast_arrays(x0, y0)
+    x1, y1 = np.broadcast_arrays(x1, y1)
+    top = values[y0, x0] * (1.0 - tx) + values[y0, x1] * tx
+    bottom = values[y1, x0] * (1.0 - tx) + values[y1, x1] * tx
+    return top * (1.0 - ty) + bottom * ty
+
+
+def _sample_bicubic_grid(values, u, v, *, wrap_x=True):
+    """Array form of ``_sample_bicubic`` (same B-spline and support clamp)."""
+    height, width = values.shape
+    if height < 4 or width < 4:
+        return _sample_bilinear_grid(values, u, v, wrap_x=wrap_x)
+    normalized_u = np.mod(u, 1.0) if wrap_x else np.clip(u, 0.0, 1.0)
+    px = normalized_u * max(1, width - 1)
+    py = np.clip(v, 0.0, 1.0) * max(1, height - 1)
+    x1 = np.floor(px).astype(np.int64)
+    y1 = np.floor(py).astype(np.int64)
+    tx = px - x1
+    ty = py - y1
+
+    def weights(t):
+        t2 = t * t
+        t3 = t2 * t
+        return (
+            (1.0 - 3.0 * t + 3.0 * t2 - t3) / 6.0,
+            (4.0 - 6.0 * t2 + 3.0 * t3) / 6.0,
+            (1.0 + 3.0 * t + 3.0 * t2 - 3.0 * t3) / 6.0,
+            t3 / 6.0,
+        )
+
+    wx = weights(tx)
+    wy = weights(ty)
+    value = 0.0
+    support_min = None
+    support_max = None
+    for row_offset in range(4):
+        yy = np.clip(y1 + row_offset - 1, 0, height - 1)
+        row_value = 0.0
+        for column_offset in range(4):
+            xx = x1 + column_offset - 1
+            xx = xx % width if wrap_x else np.clip(xx, 0, width - 1)
+            yy_b, xx_b = np.broadcast_arrays(yy, xx)
+            sample = values[yy_b, xx_b]
+            row_value = row_value + sample * wx[column_offset]
+            support_min = sample if support_min is None else np.minimum(support_min, sample)
+            support_max = sample if support_max is None else np.maximum(support_max, sample)
+        value = value + row_value * wy[row_offset]
+    return np.clip(value, support_min, support_max)
+
+
+# The whole-grid relief synthesis below reproduces the per-cell loop in
+# ``generate_refined_region``; the loop remains for crater-free fallbacks
+# without a production residual grid and for parity checks.
+VECTORISED_REGIONAL_RELIEF = True
+
+
+def _parent_topology_certainty_grid(values, u, v, sea_level, *, wrap_x=True):
+    """Array form of ``_parent_topology_certainty`` (-1 ocean, +1 land, 0 coast)."""
+    shape = np.broadcast_shapes(np.shape(u), np.shape(v))
+    if sea_level is None:
+        return np.zeros(shape, dtype=np.int64)
+    height, width = values.shape
+    normalized_u = np.mod(u, 1.0) if wrap_x else np.clip(u, 0.0, 1.0)
+    px = normalized_u * max(1, width - 1)
+    py = np.clip(v, 0.0, 1.0) * max(1, height - 1)
+    x0 = np.floor(px).astype(np.int64)
+    y0 = np.floor(py).astype(np.int64)
+    x1 = (x0 + 1) % width if wrap_x else np.minimum(width - 1, x0 + 1)
+    y1 = np.minimum(height - 1, y0 + 1)
+    land = values >= float(sea_level)
+    corners = [
+        land[np.broadcast_arrays(yy, xx)]
+        for xx, yy in ((x0, y0), (x1, y0), (x0, y1), (x1, y1))
+    ]
+    all_land = corners[0] & corners[1] & corners[2] & corners[3]
+    all_ocean = ~(corners[0] | corners[1] | corners[2] | corners[3])
+    return np.where(all_land, 1, np.where(all_ocean, -1, 0)).astype(np.int64)
+
+
+def _parent_structure_context_grid(values, u, v, relief_span, *, wrap_x=True):
+    """Array form of ``_parent_structure_context``."""
+    height, width = values.shape
+    du = 1.0 / max(1, width - 1)
+    dv = 1.0 / max(1, height - 1)
+    center = _sample_bicubic_grid(values, u, v, wrap_x=wrap_x)
+    west = _sample_bicubic_grid(values, u - du, v, wrap_x=wrap_x)
+    east = _sample_bicubic_grid(values, u + du, v, wrap_x=wrap_x)
+    north = _sample_bicubic_grid(values, u, v - dv, wrap_x=wrap_x)
+    south = _sample_bicubic_grid(values, u, v + dv, wrap_x=wrap_x)
+    high = np.maximum.reduce([center, west, east, north, south])
+    low = np.minimum.reduce([center, west, east, north, south])
+    local_range = high - low
+    ruggedness = np.clip(local_range / max(1.0, float(relief_span) * 0.02), 0.0, 1.0)
+    neighbour_mean = (west + east + north + south) * 0.25
+    curvature_fraction = np.abs(center - neighbour_mean) / np.maximum(0.25, local_range)
+    anchor = np.sqrt(np.clip((curvature_fraction - 0.055) / 0.30, 0.0, 1.0))
+    return ruggedness, anchor
+
+
+def _sample_orogen_structural_grid_arrays(grid, global_u, global_v, shape):
+    keys = (
+        "mountain_influence", "core_influence", "arc_influence", "shoulder_influence",
+        "forearc_influence", "trench_influence", "mountain_belt_envelope",
+        "mountain_belt_cross_range", "mountain_belt_axis_x", "mountain_belt_axis_y",
+    )
+    if not isinstance(grid, dict):
+        return {key: np.zeros(shape, dtype=np.float64) for key in keys}
+    bounds = grid.get("source_uv_bounds") or {}
+    u0, u1 = float(bounds.get("min_u", 0.0)), float(bounds.get("max_u", 1.0))
+    v0, v1 = float(bounds.get("min_v", 0.0)), float(bounds.get("max_v", 1.0))
+    u = np.clip((global_u - u0) / max(1e-12, u1 - u0), 0.0, 1.0)
+    v = np.clip((global_v - v0) / max(1e-12, v1 - v0), 0.0, 1.0)
+    return _axis_from_doubled_angle({
+        key: np.broadcast_to(
+            _sample_bilinear_grid(np.asarray(rows, dtype=np.float64), u, v, wrap_x=False), shape,
+        )
+        for key, rows in (grid.get("channels") or {}).items()
+    })
+
+
+def _synthesize_regional_relief_arrays(
+    *,
+    parent_rows,
+    parent_heightmap,
+    parent_mountain_rows,
+    parent_wrap_x,
+    production_residual_grid,
+    orogen_structural_grid,
+    sample_width,
+    sample_height,
+    u0, u1, v0, v1,
+    source_u0, source_u1, source_v0, source_v1,
+    sea_level,
+    relief_span,
+    amplitude,
+    level,
+    detail_band,
+    root_surface_seed,
+    planet_circumference,
+    broad_wavelength_m,
+    fine_wavelength_m,
+    fold_wavelength_m,
+    ridge_phase,
+    crater_detail,
+    tile_frame=None,
+):
+    """Whole-grid relief synthesis; numerically the per-cell loop's body.
+
+    ``crater_detail(y, x, source_u, source_v, local_u, local_v, global_u,
+    global_v)`` returns the (rare) crater height adjustment for a cell, or is
+    None when no crater model applies.
+    """
+    from simulations.world_gen.geological_noise import (
+        branching_mountain_relief_grid,
+        fractal_noise_grid,
+    )
+
+    shape = (sample_height, sample_width)
+    local_u = (np.arange(sample_width, dtype=np.float64) / max(1, sample_width - 1))[None, :]
+    local_v = (np.arange(sample_height, dtype=np.float64) / max(1, sample_height - 1))[:, None]
+    source_u = u0 + (u1 - u0) * local_u
+    source_v = v0 + (v1 - v0) * local_v
+    global_u = source_u0 + (source_u1 - source_u0) * local_u
+    global_v = source_v0 + (source_v1 - source_v0) * local_v
+    parent_width = min(len(row) for row in parent_rows)
+    parent_values = np.asarray([row[:parent_width] for row in parent_rows], dtype=np.float64)
+    inherited_wrap = bool(parent_heightmap.get("wrap_x", True))
+    inherited = np.broadcast_to(_sample_bicubic_grid(parent_values, source_u, source_v, wrap_x=inherited_wrap), shape)
+    topology = np.broadcast_to(_parent_topology_certainty_grid(parent_values, source_u, source_v, sea_level, wrap_x=inherited_wrap), shape)
+    residual = np.broadcast_to(_sample_bicubic_grid(
+        np.asarray(production_residual_grid["residual_rows"], dtype=np.float64),
+        local_u, local_v, wrap_x=False,
+    ), shape)
+    production_height = inherited + residual
+    world_x_m = np.broadcast_to(global_u * planet_circumference, shape)
+    world_y_m = np.broadcast_to(global_v * planet_circumference * 0.5, shape)
+    if detail_band:
+        broad = fractal_noise_grid(
+            root_surface_seed, "regional-broad-relief", world_x_m, world_y_m,
+            broad_wavelength_m, octaves=2, gain=0.50, period_x_m=planet_circumference,
+        )
+        fine = fractal_noise_grid(
+            root_surface_seed, "regional-fine-relief", world_x_m, world_y_m,
+            fine_wavelength_m, octaves=2, gain=0.44, period_x_m=planet_circumference,
+        )
+    else:
+        broad = fine = np.zeros(shape)
+    if parent_mountain_rows:
+        mountain_width = min(len(row) for row in parent_mountain_rows)
+        mountain_values = np.asarray([row[:mountain_width] for row in parent_mountain_rows], dtype=np.float64)
+        mountain_factor = np.clip(_sample_bicubic_grid(mountain_values, source_u, source_v, wrap_x=parent_wrap_x), 0.0, 1.0)
+    else:
+        mountain_factor = np.zeros(shape)
+    if parent_rows and parent_rows[0]:
+        ruggedness, anchor = _parent_structure_context_grid(parent_values, source_u, source_v, relief_span, wrap_x=parent_wrap_x)
+    else:
+        ruggedness = anchor = np.zeros(shape)
+    orogen = _sample_orogen_structural_grid_arrays(orogen_structural_grid, global_u, global_v, shape)
+
+    def channel(key):
+        return orogen.get(key, np.zeros(shape))
+
+    orogen_factor = np.array(orogen["mountain_influence"], dtype=np.float64)
+    envelope = np.clip(channel("mountain_belt_envelope"), 0.0, 1.0)
+    if sea_level is not None:
+        land_gate = np.clip((inherited - float(sea_level)) / max(1.0, relief_span * 0.08), 0.0, 1.0)
+        orogen_factor = np.where(inherited <= float(sea_level), 0.0, orogen_factor * (0.30 + 0.70 * land_gate))
+    structural_factor = np.maximum(
+        mountain_factor * ruggedness * anchor * (0.30 + 0.70 * envelope),
+        orogen_factor * (0.34 + 0.66 * ruggedness) * (0.48 + 0.52 * anchor) * (0.28 + 0.72 * envelope),
+    )
+    belt_uplift = amplitude * structural_factor * envelope * (0.28 if level == 1 else 0.10)
+    fold_relief = (
+        branching_mountain_relief_grid(
+            root_surface_seed, "regional-branching-mountains", world_x_m, world_y_m,
+            fold_wavelength_m, period_x_m=planet_circumference,
+        )
+        if detail_band else np.zeros(shape)
+    )
+    ridge_valley_signal = np.zeros(shape)
+    active = envelope > 0.08
+    if detail_band and active.any():
+        wavelength = max(1.0, float(fold_wavelength_m))
+        x = world_x_m[active]
+        y = world_y_m[active]
+        if tile_frame is not None:
+            (axis_x, axis_y), (origin_x, origin_y) = tile_frame
+        else:
+            origin_x = origin_y = 0.0
+            axis_x = channel("mountain_belt_axis_x")[active]
+            axis_y = channel("mountain_belt_axis_y")[active]
+            axis_length = np.hypot(axis_x, axis_y)
+            degenerate = axis_length < 1e-6
+            axis_x = np.where(degenerate, 1.0, axis_x / np.where(degenerate, 1.0, axis_length))
+            axis_y = np.where(degenerate, 0.0, axis_y / np.where(degenerate, 1.0, axis_length))
+        along_m = (x - origin_x) * axis_x + (y - origin_y) * axis_y
+        across_m = -(x - origin_x) * axis_y + (y - origin_y) * axis_x
+        cross_warp = fractal_noise_grid(
+            root_surface_seed, "regional-ridge-cross-warp", x, y, wavelength * 2.8,
+            octaves=2, gain=0.52, period_x_m=planet_circumference,
+        )
+        along_warp = fractal_noise_grid(
+            root_surface_seed, "regional-ridge-along-warp", x, y, wavelength * 3.6,
+            octaves=3, gain=0.48, period_x_m=planet_circumference,
+        )
+        anchored_phase = (
+            math.tau * (channel("mountain_belt_cross_range")[active] * 0.34 + cross_warp * 0.18)
+            + ridge_phase
+            + along_warp * 1.15
+        )
+        branching = branching_mountain_relief_grid(
+            root_surface_seed, "regional-boundary-branching-ridges", along_m, across_m,
+            wavelength * 0.92, period_x_m=planet_circumference,
+        )
+        ridge_valley_signal[active] = np.clip(
+            np.sin(anchored_phase) * 0.28
+            + np.sin(anchored_phase * 1.83 + along_warp * 2.4) * 0.14
+            + branching * 0.58,
+            -1.0,
+            1.0,
+        )
+    ridge_valley_amplitude = np.clip(
+        0.18
+        + channel("core_influence") * 0.28
+        + channel("arc_influence") * 0.18
+        + channel("shoulder_influence") * 0.08
+        - channel("forearc_influence") * 0.10,
+        0.08,
+        0.52,
+    )
+    detail = (
+        broad * amplitude * (0.06 + structural_factor * 0.07)
+        + fine * amplitude * (0.035 + structural_factor * 0.05)
+        + belt_uplift
+        + fold_relief * amplitude * structural_factor * (0.30 + channel("core_influence") * 0.10)
+        + ridge_valley_signal * amplitude * structural_factor * ridge_valley_amplitude
+    )
+    detail = detail + residual
+    if sea_level is not None and level >= 4:
+        detail = np.where(inherited < float(sea_level), detail * 0.22, detail)
+    if crater_detail is not None:
+        detail = np.array(detail)
+        for y in range(sample_height):
+            for x in range(sample_width):
+                detail[y, x] += crater_detail(
+                    float(source_u[0, x]), float(source_v[y, 0]),
+                    float(local_u[0, x]), float(local_v[y, 0]),
+                    float(global_u[0, x]), float(global_v[y, 0]),
+                )
+    edge_distance = np.minimum(np.minimum(local_u, 1.0 - local_u), np.minimum(local_v, 1.0 - local_v))
+    edge_fade = np.clip(edge_distance / PARENT_EDGE_FADE_FRACTION, 0.0, 1.0)
+    edge_fade = edge_fade * edge_fade * (3.0 - 2.0 * edge_fade)
+    detail = detail * edge_fade
+    profile_keys = ("core_influence", "arc_influence", "shoulder_influence", "forearc_influence")
+    return {
+        "rows": np.round(inherited + detail, 2).tolist(),
+        "inherited_rows": inherited.tolist(),
+        "topology_rows": topology.tolist(),
+        "production_height_min": float(production_height.min()),
+        "production_height_max": float(production_height.max()),
+        "production_height_sum": float(production_height.sum()),
+        "production_height_count": int(production_height.size),
+        "production_residual_min": float(residual.min()),
+        "production_residual_max": float(residual.max()),
+        "production_residual_sum": float(residual.sum()),
+        "mountain_belt_envelope_sum": float(envelope.sum()),
+        "mountain_belt_envelope_max": float(envelope.max()),
+        "orogen_influence_sum": float(orogen_factor.sum()),
+        "orogen_influence_max": float(orogen_factor.max()),
+        "orogen_localized_cell_count": int((orogen_factor >= 0.18).sum()),
+        "orogen_profile_sums": {key: float(channel(key).sum()) for key in profile_keys},
+    }
 
 
 def _refinement_detail_band(
@@ -630,19 +1204,86 @@ def _orogen_belt_context(nx, ny, tectonic_model):
         else:
             center = 0.0
         envelope = math.exp(-(((signed_distance - center) / 1.15) ** 2))
+        axis_angle = math.atan2(tangent_y, tangent_x)
         best = {
             "score": score,
             "mountain_belt_envelope": _clamp(envelope * score, 0.0, 1.0),
             "mountain_belt_cross_range": signed_distance,
             "mountain_belt_axis_x": tangent_x / tangent_length,
             "mountain_belt_axis_y": tangent_y / tangent_length,
+            # Belt orientation as a doubled angle: segments of one boundary
+            # are stored in either direction, and the axis vectors (1, 0) and
+            # (-1, 0) name the same belt but interpolate to zero.
+            "mountain_belt_axis_c2": math.cos(2.0 * axis_angle),
+            "mountain_belt_axis_s2": math.sin(2.0 * axis_angle),
         }
     return {
-        "mountain_belt_envelope": float((best or {}).get("mountain_belt_envelope", 0.0)),
-        "mountain_belt_cross_range": float((best or {}).get("mountain_belt_cross_range", 0.0)),
-        "mountain_belt_axis_x": float((best or {}).get("mountain_belt_axis_x", 0.0)),
-        "mountain_belt_axis_y": float((best or {}).get("mountain_belt_axis_y", 0.0)),
+        key: float((best or {}).get(key, 0.0))
+        for key in (
+            "mountain_belt_envelope",
+            "mountain_belt_cross_range",
+            "mountain_belt_axis_x",
+            "mountain_belt_axis_y",
+            "mountain_belt_axis_c2",
+            "mountain_belt_axis_s2",
+        )
     }
+
+
+def _tile_belt_frame(orogen_structural_grid, source_u0, source_u1, source_v0, source_v1, planet_circumference):
+    """One belt orientation and a rotation origin for a whole child tile.
+
+    Branching ridges are evaluated in coordinates rotated to the belt axis.
+    Rotating world coordinates (about 1e7 m from the origin) by a per-sample
+    axis turned any axis change between samples into a jump of kilometres
+    in noise space, which rendered as stair-stepped streaks.  The tile uses
+    the envelope-weighted mean orientation (doubled angle, so opposite
+    segment directions agree) about its own centre instead.
+    """
+    origin = (
+        (float(source_u0) + float(source_u1)) * 0.5 * float(planet_circumference),
+        (float(source_v0) + float(source_v1)) * 0.5 * float(planet_circumference) * 0.5,
+    )
+    channels = (orogen_structural_grid or {}).get("channels") if isinstance(orogen_structural_grid, dict) else None
+    if not channels or "mountain_belt_axis_c2" not in channels:
+        return (1.0, 0.0), origin
+    weight_sum = cos_sum = sin_sum = 0.0
+    for envelope_row, c2_row, s2_row in zip(
+        channels.get("mountain_belt_envelope") or [],
+        channels["mountain_belt_axis_c2"],
+        channels["mountain_belt_axis_s2"],
+    ):
+        for envelope, c2, s2 in zip(envelope_row, c2_row, s2_row):
+            weight = max(0.0, float(envelope))
+            weight_sum += weight
+            cos_sum += weight * float(c2)
+            sin_sum += weight * float(s2)
+    if weight_sum <= 1e-9 or math.hypot(cos_sum, sin_sum) <= 1e-9 * weight_sum:
+        return (1.0, 0.0), origin
+    angle = 0.5 * math.atan2(sin_sum, cos_sum)
+    return (math.cos(angle), math.sin(angle)), origin
+
+
+def _axis_from_doubled_angle(context):
+    """Replace interpolated axis vectors by the doubled-angle orientation.
+
+    Works on scalars and arrays; keeps the axis zero where no belt applies.
+    """
+    c2 = context.get("mountain_belt_axis_c2")
+    s2 = context.get("mountain_belt_axis_s2")
+    if c2 is None or s2 is None:
+        return context
+    if np is not None and (isinstance(c2, np.ndarray) or isinstance(s2, np.ndarray)):
+        strength = np.hypot(c2, s2)
+        angle = 0.5 * np.arctan2(s2, c2)
+        context["mountain_belt_axis_x"] = np.cos(angle) * strength
+        context["mountain_belt_axis_y"] = np.sin(angle) * strength
+    else:
+        strength = math.hypot(float(c2), float(s2))
+        angle = 0.5 * math.atan2(float(s2), float(c2))
+        context["mountain_belt_axis_x"] = math.cos(angle) * strength
+        context["mountain_belt_axis_y"] = math.sin(angle) * strength
+    return context
 
 
 def _build_orogen_structural_grid(
@@ -680,6 +1321,8 @@ def _build_orogen_structural_grid(
             "mountain_belt_cross_range",
             "mountain_belt_axis_x",
             "mountain_belt_axis_y",
+            "mountain_belt_axis_c2",
+            "mountain_belt_axis_s2",
         )
     }
     for row in range(grid_height):
@@ -727,10 +1370,10 @@ def _sample_orogen_structural_grid(grid, nx, ny):
     v0, v1 = float(bounds.get("min_v", 0.0)), float(bounds.get("max_v", 1.0))
     u = _clamp((float(nx) - u0) / max(1e-12, u1 - u0), 0.0, 1.0)
     v = _clamp((float(ny) - v0) / max(1e-12, v1 - v0), 0.0, 1.0)
-    return {
+    return _axis_from_doubled_angle({
         key: _sample_bilinear(rows, u, v, wrap_x=False)
         for key, rows in (grid.get("channels") or {}).items()
-    }
+    })
 
 
 def _boundary_anchored_ridge_valley_signal(
@@ -742,6 +1385,7 @@ def _boundary_anchored_ridge_valley_signal(
     ridge_phase,
     *,
     period_x_m=None,
+    tile_frame=None,
 ):
     """Build branching relief while retaining the parent belt's position.
 
@@ -750,18 +1394,23 @@ def _boundary_anchored_ridge_valley_signal(
     belt-anchored trunk with rotated branching noise and along-belt warping.
     The boundary-derived cross-range remains the placement anchor; the
     branching terms decide where ridges merge, split, and terminate.
+    ``tile_frame`` (``_tile_belt_frame``) fixes the rotation for the tile.
     """
     wavelength = max(1.0, float(wavelength_m))
-    axis_x = float(orogen_context.get("mountain_belt_axis_x", 0.0) or 0.0)
-    axis_y = float(orogen_context.get("mountain_belt_axis_y", 0.0) or 0.0)
-    axis_length = math.hypot(axis_x, axis_y)
-    if axis_length < 1e-6:
-        axis_x, axis_y = 1.0, 0.0
+    if tile_frame is not None:
+        (axis_x, axis_y), (origin_x, origin_y) = tile_frame
     else:
-        axis_x /= axis_length
-        axis_y /= axis_length
-    along_m = float(x_m) * axis_x + float(y_m) * axis_y
-    across_m = -float(x_m) * axis_y + float(y_m) * axis_x
+        origin_x = origin_y = 0.0
+        axis_x = float(orogen_context.get("mountain_belt_axis_x", 0.0) or 0.0)
+        axis_y = float(orogen_context.get("mountain_belt_axis_y", 0.0) or 0.0)
+        axis_length = math.hypot(axis_x, axis_y)
+        if axis_length < 1e-6:
+            axis_x, axis_y = 1.0, 0.0
+        else:
+            axis_x /= axis_length
+            axis_y /= axis_length
+    along_m = (float(x_m) - origin_x) * axis_x + (float(y_m) - origin_y) * axis_y
+    across_m = -(float(x_m) - origin_x) * axis_y + (float(y_m) - origin_y) * axis_x
     cross_range = float(orogen_context.get("mountain_belt_cross_range", 0.0) or 0.0)
     cross_warp = fractal_noise_m(
         seed,
@@ -1147,7 +1796,9 @@ def _production_height_at(nx, ny, terrain, root_heightmap, tectonic_model):
         crater_spatial_index=None,
         map_seed=str(root_heightmap.get("map_seed") or terrain.get("map_seed") or ""),
     )
-    return midpoint + raw * half_range
+    # The planet's isostatic contrast calibration applies here too, or the
+    # regional residual would carry the whole correction over the oceans.
+    return midpoint + raw * half_range + crustal_freeboard_shift_at(nx, ny, tectonic_model, root_heightmap)
 
 
 def _build_production_residual_grid(
@@ -1335,11 +1986,26 @@ def generate_refined_region(
     sample_dimensions=None,
     feedback_iterations=None,
     storage_root=None,
+    progress_callback=None,
 ):
     started_at = time.perf_counter()
     last_stage_at = started_at
 
-    def report_stage(stage, **details):
+    def emit_progress(progress, detail, preview=None):
+        if not callable(progress_callback):
+            return
+        try:
+            progress_callback(
+                max(0.0, min(1.0, float(progress))),
+                str(detail or "Refining regional map"),
+                preview,
+            )
+        except Exception:
+            # Progress reporting is diagnostic and must never invalidate a
+            # scientifically valid refinement.
+            return
+
+    def report_stage(stage, *, progress=None, message=None, preview=None, **details):
         nonlocal last_stage_at
         now = time.perf_counter()
         detail_text = " ".join(
@@ -1352,6 +2018,8 @@ def generate_refined_region(
             f"total_s={now - started_at:.2f} {detail_text}".rstrip()
         )
         last_stage_at = now
+        if progress is not None:
+            emit_progress(progress, message or str(stage).replace("_", " ").capitalize(), preview)
 
     parent_heightmap = parent_entity.get("heightmap_model") if isinstance(parent_entity, dict) else None
     parent_grid = parent_heightmap.get("sample_grid") if isinstance(parent_heightmap, dict) else None
@@ -1422,6 +2090,8 @@ def generate_refined_region(
             sample_height = requested_height
     report_stage(
         "request_resolved",
+        progress=0.03,
+        message=f"Preparing LOD {level} regional boundary conditions",
         parent=parent_entity.get("id"),
         level=level,
         requested_bounds={key: round(float(bounds[key]), 6) for key in ("min_x", "max_x", "min_y", "max_y")},
@@ -1505,6 +2175,7 @@ def generate_refined_region(
         sample_width,
         sample_height,
     )
+    emit_progress(0.05, "Sampling parent relief and tectonic boundary conditions")
     production_residual_grid = _build_production_residual_grid(
         parent_rows,
         root_terrain,
@@ -1565,6 +2236,14 @@ def generate_refined_region(
     regional_crater_model = _combined_child_crater_model(
         parent_crater_model, new_crater_model, u0, u1, v0, v1,
         region_width_m, region_height_m,
+    )
+    emit_progress(
+        0.08,
+        "Resolving regional terrain, structural detail, and readable impacts",
+        {
+            "tectonic_model": regional_tectonic_model,
+            "crater_model": regional_crater_model,
+        },
     )
     rows = []
     inherited_rows = []
@@ -1647,7 +2326,109 @@ def generate_refined_region(
         sample_width=sample_width,
         sample_height=sample_height,
     )
-    for y in range(sample_height):
+    tile_frame = _tile_belt_frame(
+        orogen_structural_grid, source_u0, source_u1, source_v0, source_v1, planet_circumference,
+    )
+
+    def partial_heightmap_preview(completed_rows):
+        preview_rows = [list(values) for values in rows]
+        preview_rows.extend(
+            [[None] * sample_width for _index in range(max(0, sample_height - len(preview_rows)))]
+        )
+        return {
+            "status": "regional_heightmap_building",
+            "projection": "local_equirectangular",
+            "coverage": "regional_patch",
+            "wrap_x": False,
+            "wrap_y": False,
+            "sea_level_m": sea_level,
+            "min_elevation_m": min_parent,
+            "max_elevation_m": max_parent,
+            "preview_completed_rows": completed_rows,
+            "sample_grid": {
+                "width": sample_width,
+                "height": sample_height,
+                "wrap_x": False,
+                "wrap_y": False,
+                "rows": preview_rows,
+            },
+        }
+
+    crater_detail = None
+    if global_crater_grid is not None or parent_crater_grid is not None or isinstance(new_crater_model, dict):
+        crater_parent_wrap = bool(parent_heightmap.get("wrap_x", True))
+
+        def crater_detail(source_u, source_v, local_u, local_v, global_u, global_v):
+            adjustment = 0.0
+            if global_crater_grid is not None:
+                adjustment += _crater_height_adjustment_m(
+                    global_u, global_v, explicit_root_crater_model, global_crater_index,
+                ) - _sample_bilinear(global_crater_grid, source_u, source_v, wrap_x=crater_parent_wrap)
+            if parent_crater_grid is not None:
+                adjustment += _local_crater_adjustment_m(source_u, source_v, parent_crater_model) - _sample_bilinear(
+                    parent_crater_grid, source_u, source_v, wrap_x=False,
+                )
+            if isinstance(new_crater_model, dict):
+                adjustment += _local_crater_adjustment_m(local_u, local_v, new_crater_model)
+            return adjustment
+
+    vectorised_relief = VECTORISED_REGIONAL_RELIEF and production_residual_grid is not None
+    if vectorised_relief:
+        relief = _synthesize_regional_relief_arrays(
+            parent_rows=parent_rows,
+            parent_heightmap=parent_heightmap,
+            parent_mountain_rows=parent_mountain_rows,
+            parent_wrap_x=parent_wrap_x,
+            production_residual_grid=production_residual_grid,
+            orogen_structural_grid=orogen_structural_grid,
+            sample_width=sample_width,
+            sample_height=sample_height,
+            u0=u0, u1=u1, v0=v0, v1=v1,
+            source_u0=source_u0, source_u1=source_u1,
+            source_v0=source_v0, source_v1=source_v1,
+            sea_level=sea_level,
+            relief_span=relief_span,
+            amplitude=amplitude,
+            level=level,
+            detail_band=detail_band,
+            root_surface_seed=root_surface_seed,
+            planet_circumference=planet_circumference,
+            broad_wavelength_m=broad_wavelength_m,
+            fine_wavelength_m=fine_wavelength_m,
+            fold_wavelength_m=fold_wavelength_m,
+            ridge_phase=ridge_phase,
+            crater_detail=crater_detail,
+            tile_frame=tile_frame,
+        )
+        rows = relief["rows"]
+        inherited_rows = relief["inherited_rows"]
+        parent_topology_rows = relief["topology_rows"]
+        production_height_min = relief["production_height_min"]
+        production_height_max = relief["production_height_max"]
+        production_height_sum = relief["production_height_sum"]
+        production_height_count = relief["production_height_count"]
+        production_residual_min = relief["production_residual_min"]
+        production_residual_max = relief["production_residual_max"]
+        production_residual_sum = relief["production_residual_sum"]
+        mountain_belt_envelope_sum = relief["mountain_belt_envelope_sum"]
+        mountain_belt_envelope_max = relief["mountain_belt_envelope_max"]
+        orogen_influence_sum = relief["orogen_influence_sum"]
+        orogen_influence_max = relief["orogen_influence_max"]
+        orogen_localized_cell_count = relief["orogen_localized_cell_count"]
+        orogen_profile_sums.update(relief["orogen_profile_sums"])
+        emit_progress(
+            0.32,
+            "Regional relief resolved",
+            {
+                "heightmap_model": partial_heightmap_preview(sample_height),
+                "tectonic_model": regional_tectonic_model,
+                "crater_model": regional_crater_model,
+            },
+        )
+
+    # Per-cell reference path (fallback when no production residual grid
+    # exists); it is skipped entirely when the whole-grid path ran.
+    for y in range(0 if vectorised_relief else sample_height):
         local_v = y / max(1, sample_height - 1)
         source_v = v0 + (v1 - v0) * local_v
         row = []
@@ -1671,7 +2452,10 @@ def generate_refined_region(
             global_u = source_u0 + (source_u1 - source_u0) * local_u
             global_v = source_v0 + (source_v1 - source_v0) * local_v
             if production_residual_grid is not None:
-                production_residual = _sample_bilinear(
+                # B-spline, not bilinear: the compact residual grid is
+                # coarse, and bilinear facets showed as grid-aligned
+                # rectangles and stair-stepped coasts in hillshade.
+                production_residual = _sample_bicubic(
                     production_residual_grid["residual_rows"],
                     local_u,
                     local_v,
@@ -1828,6 +2612,7 @@ def generate_refined_region(
                     orogen_context,
                     ridge_phase,
                     period_x_m=planet_circumference,
+                    tile_frame=tile_frame,
                 )
             ridge_valley_amplitude = _clamp(
                 0.18
@@ -1882,7 +2667,55 @@ def generate_refined_region(
         rows.append(row)
         inherited_rows.append(inherited_row)
         parent_topology_rows.append(topology_row)
+        if y == sample_height - 1 or y % max(1, sample_height // 12) == 0:
+            fraction = (y + 1) / max(1, sample_height)
+            emit_progress(
+                0.09 + fraction * 0.23,
+                f"Refining regional relief row {y + 1} of {sample_height}",
+                {
+                    "heightmap_model": partial_heightmap_preview(y + 1),
+                    "tectonic_model": regional_tectonic_model,
+                    "crater_model": regional_crater_model,
+                },
+            )
 
+    rows, detail_centering = _center_detail_at_parent_scale(
+        rows,
+        inherited_rows,
+        sea_level=sea_level,
+        spacing_x_m=region_width_m / max(1, sample_width - 1),
+        spacing_y_m=region_height_m / max(1, sample_height - 1),
+        parent_spacing_m=float((detail_band or {}).get("parent_sample_spacing_m") or 0.0),
+    )
+    boundary_inflow = _parent_boundary_inflow(
+        parent_heightmap,
+        parent_rows,
+        bool(parent_heightmap.get("wrap_x", True)),
+        sea_level,
+        rows,
+        {"min_u": source_u0, "max_u": source_u1, "min_v": source_v0, "max_v": source_v1},
+        parent_physical_width_m,
+        parent_physical_height_m,
+    )
+    rows, fluvial_dissection = _fluvial_dissection(
+        rows,
+        inherited_rows,
+        sea_level=sea_level,
+        spacing_x_m=region_width_m / max(1, sample_width - 1),
+        spacing_y_m=region_height_m / max(1, sample_height - 1),
+        parent_spacing_m=float((detail_band or {}).get("parent_sample_spacing_m") or 0.0),
+        level=level,
+        inflow=boundary_inflow,
+    )
+    rows, floodplains = _floodplain_flattening(
+        rows,
+        sea_level=sea_level,
+        spacing_x_m=region_width_m / max(1, sample_width - 1),
+        spacing_y_m=region_height_m / max(1, sample_height - 1),
+        parent_spacing_m=float((detail_band or {}).get("parent_sample_spacing_m") or 0.0),
+        level=level,
+        inflow=boundary_inflow,
+    )
     rows, relief_limiter = _scale_appropriate_relief(
         rows,
         sea_level,
@@ -1890,36 +2723,39 @@ def generate_refined_region(
         region_height_m,
         parent_coastal_context,
     )
+    # Landforms that become complete at this level (volcanic arcs, ...):
+    # physically sized residuals the parent-height contract bounds around.
+    rows, landform_residual, regional_landforms = apply_regional_landforms(
+        rows,
+        inherited_rows,
+        level=level,
+        sea_level=sea_level,
+        source_bounds={"min_u": source_u0, "max_u": source_u1, "min_v": source_v0, "max_v": source_v1},
+        spacing_x_m=region_width_m / max(1, sample_width - 1),
+        spacing_y_m=region_height_m / max(1, sample_height - 1),
+        parent_spacing_m=float((detail_band or {}).get("parent_sample_spacing_m") or 0.0),
+        root_planet=parent_entity if parent_level == 0 else None,
+        parent_entity=parent_entity,
+    )
+    contract_reference_rows = [
+        [float(inherited) + float(extra) for inherited, extra in zip(inherited_row, residual_row)]
+        for inherited_row, residual_row in zip(inherited_rows, landform_residual)
+    ]
     min_elevation = min(min(row) for row in rows)
     max_elevation = max(max(row) for row in rows)
     ice_parent = ((parent_heightmap.get("surface_masks") or {}).get("ice_rows") or [])
     ice_rows = [[False for _x in range(sample_width)] for _y in range(sample_height)]
+    ice_margin = {"applied": False}
     if ice_parent:
-        parent_wrap_x = bool(parent_heightmap.get("wrap_x", True))
-        ice_coverage_rows = [[1.0 if value else 0.0 for value in row] for row in ice_parent]
-        for y in range(sample_height):
-            for x in range(sample_width):
-                local_u = x / max(1, sample_width - 1)
-                local_v = y / max(1, sample_height - 1)
-                sample_u = u0 + (u1 - u0) * local_u
-                sample_v = v0 + (v1 - v0) * local_v
-                coverage = _sample_bilinear(
-                    ice_coverage_rows, sample_u, sample_v, wrap_x=parent_wrap_x,
-                )
-                if 0.02 < coverage < 0.98:
-                    edge_distance = min(local_u, 1.0 - local_u, local_v, 1.0 - local_v)
-                    edge_fade = _clamp(edge_distance / PARENT_EDGE_FADE_FRACTION, 0.0, 1.0)
-                    edge_fade = edge_fade * edge_fade * (3.0 - 2.0 * edge_fade)
-                    boundary_noise = _fbm_noise(
-                        map_seed, "regional_ice_margin",
-                        local_u, local_v,
-                        base_cells=18 + level * 5, octaves=3, gain=0.48,
-                    )
-                    # Child detail must converge exactly to the inherited mask
-                    # at every patch edge.  Without this fade, an ice margin
-                    # becomes a conspicuous rectangular or triangular seam.
-                    coverage += boundary_noise * 0.12 * edge_fade
-                ice_rows[y][x] = coverage >= 0.5
+        ice_rows, ice_margin = _regional_ice_mask(
+            ice_parent,
+            rows,
+            parent_wrap_x=bool(parent_heightmap.get("wrap_x", True)),
+            parent_bounds=(u0, u1, v0, v1),
+            parent_spacing_m=float((detail_band or {}).get("parent_sample_spacing_m") or 0.0),
+            spacing_m=max(region_width_m / max(1, sample_width - 1), region_height_m / max(1, sample_height - 1)),
+            seed=seed_int(map_seed, f"regional_ice_margin_lod{level}"),
+        )
 
     heightmap = {
         "status": "regional_heightmap_refined",
@@ -1931,6 +2767,7 @@ def generate_refined_region(
             for key, value in (detail_band or {}).items()
         },
         "mountain_detail_localization": "parent_ridge_valley_plus_inherited_orogen_belt_geometry",
+        "regional_landforms": regional_landforms,
         "detail_level_spec": detail_level_spec(level),
         "projection": "local_equirectangular",
         "coverage": "regional_patch",
@@ -1957,6 +2794,11 @@ def generate_refined_region(
         "surface_masks": {"ice_rows": ice_rows},
         "regional_crater_model": regional_crater_model,
         "scale_appropriate_relief": relief_limiter,
+        "fluvial_dissection": fluvial_dissection,
+        "floodplains": floodplains,
+        "boundary_inflow": boundary_inflow,
+        "detail_centering": detail_centering,
+        "ice_margin": ice_margin,
         "continuous_surface_recipe": {
             "model": "production_tectonic_heightfield_plus_parent_anchored_branching_geology_v4",
             "coordinate_frame": "immediate_parent_physical_metres",
@@ -2073,6 +2915,13 @@ def generate_refined_region(
     )
     report_stage(
         "heightfield_ready",
+        progress=0.38,
+        message="Regional relief and terrain derivatives ready",
+        preview={
+            "heightmap_model": heightmap,
+            "tectonic_model": regional_tectonic_model,
+            "crater_model": regional_crater_model,
+        },
         elevation_m=(heightmap.get("min_elevation_m"), heightmap.get("max_elevation_m")),
         source_uv=heightmap.get("source_uv_bounds"),
     )
@@ -2117,6 +2966,11 @@ def generate_refined_region(
             children.append(region_id)
             parent["constituents"] = children
             loader.persist_entity(parent)
+        emit_progress(
+            0.99,
+            "Regional terrain preview persisted",
+            {"heightmap_model": heightmap, "tectonic_model": regional_tectonic_model},
+        )
         return region
     terrain = copy.deepcopy(parent_entity.get("terrain_seed_model") or {})
     hydrology = terrain.setdefault("hydrology", {})
@@ -2131,6 +2985,13 @@ def generate_refined_region(
     )
     report_stage(
         "initial_hydrology_ready",
+        progress=0.50,
+        message="Initial regional climate and drainage ready",
+        preview={
+            "heightmap_model": heightmap,
+            "tectonic_model": regional_tectonic_model,
+            "water_cycle_model": water_cycle,
+        },
         rivers=len(water_cycle.get("rivers") or []),
         lakes=len(water_cycle.get("lakes") or []),
     )
@@ -2168,6 +3029,9 @@ def generate_refined_region(
         )
         report_stage(
             f"surface_evolution_{iteration}_ready",
+            progress=0.52 + iteration * 0.06,
+            message=f"Landscape evolution pass {iteration} ready",
+            preview={"heightmap_model": heightmap, "water_cycle_model": water_cycle},
             status=surface_evolution.get("status"),
             dominant=surface_evolution.get("dominant_process"),
         )
@@ -2205,6 +3069,9 @@ def generate_refined_region(
         )
         report_stage(
             f"hydrology_feedback_{iteration}_ready",
+            progress=0.55 + iteration * 0.06,
+            message=f"Climate and drainage feedback pass {iteration} ready",
+            preview={"heightmap_model": heightmap, "water_cycle_model": water_cycle},
             rivers=len(water_cycle.get("rivers") or []),
             lakes=len(water_cycle.get("lakes") or []),
         )
@@ -2230,6 +3097,9 @@ def generate_refined_region(
         )
     report_stage(
         "landscape_feedback_ready",
+        progress=0.70,
+        message="Regional landscape and drainage feedback complete",
+        preview={"heightmap_model": heightmap, "water_cycle_model": water_cycle},
         iterations=len(feedback_history),
         rivers=len(water_cycle.get("rivers") or []),
         lakes=len(water_cycle.get("lakes") or []),
@@ -2292,7 +3162,7 @@ def generate_refined_region(
     # changes cannot add up to a replacement landscape.
     heightmap, parent_height_contract = _enforce_parent_height_contract(
         heightmap,
-        inherited_rows,
+        contract_reference_rows,
         parent_topology_rows,
         amplitude,
     )
@@ -2302,6 +3172,9 @@ def generate_refined_region(
     coastal_refinement["parent_height_contract"] = parent_height_contract
     report_stage(
         "coastal_refinement_ready",
+        progress=0.79,
+        message="Regional coasts and parent-edge continuity ready",
+        preview={"heightmap_model": heightmap, "water_cycle_model": water_cycle},
         segments=len(coastal_model.get("segments") or []),
         changed_cells=(
             int(pre_coastal_topology.get("flipped_cell_count", 0) or 0)
@@ -2379,6 +3252,13 @@ def generate_refined_region(
         and isinstance(parent_entity.get("natural_material_model"), dict)
         else {}
     )
+    from simulations.world_gen.geochemical_placement import regional_material_inventory
+    root_material_model = regional_material_inventory(
+        root_material_model,
+        (root_planet or {}).get("geochemical_material_model") or {},
+        {"min_u": source_u0, "max_u": source_u1,
+         "min_v": source_v0, "max_v": source_v1},
+    )
     regional_material_model = derive_regional_material_model(
         root_material_model,
         heightmap,
@@ -2401,6 +3281,9 @@ def generate_refined_region(
     )
     report_stage(
         "regional_materials_ready",
+        progress=0.85,
+        message="Selecting regional material occurrences",
+        preview={"heightmap_model": heightmap, "water_cycle_model": water_cycle},
         occurrences=len(regional_material_model.get("occurrences") or []),
     )
     if focus_occurrence_id:
@@ -2500,6 +3383,20 @@ def generate_refined_region(
         tectonic_model=(root_planet or {}).get("tectonic_model"),
     )
     material_generation_context["surface_geomorphology_model"] = surface_geomorphology_model
+    regolith_soil_model = derive_regolith_soil_model(
+        material_generation_context,
+        heightmap,
+        water_cycle,
+        surface_evolution,
+        root_material_model,
+    )
+    regolith_soil_model["generated_truth_lineage"] = copy.deepcopy(truth_lineage)
+    try:
+        regional_strike_degrees = dominant_structural_strike_degrees(
+            (root_planet or {}).get("tectonic_model"), heightmap, seed=map_seed,
+        )
+    except Exception:
+        regional_strike_degrees = 0.0
     material_heatmap_model = generate_material_heatmap_model(
         material_generation_context,
         root_material_model,
@@ -2510,13 +3407,20 @@ def generate_refined_region(
         surface_geomorphology=surface_geomorphology_model,
         output_root=storage_root / "assets" / "maps" / "material_heatmaps",
         storage_root=storage_root,
-        image_size=(
-            320,
-            max(64, min(320, int(round(320 / region_aspect)))),
-        ),
+        parent_material_model=parent_entity.get("material_heatmap_model"),
+        tectonic_model=(root_planet or {}).get("tectonic_model"),
+        strike_degrees=regional_strike_degrees,
+        occurrences=regional_material_model.get("occurrences"),
     )
     report_stage(
         "material_rasters_ready",
+        progress=0.93,
+        message="Regional material rasters ready",
+        preview={
+            "heightmap_model": heightmap,
+            "water_cycle_model": water_cycle,
+            "material_heatmap_model": material_heatmap_model,
+        },
         layers=len(material_heatmap_model.get("layers") or []),
         bundle=(material_heatmap_model.get("composite_layer") or {}).get("raster_bundle_path"),
     )
@@ -2539,7 +3443,16 @@ def generate_refined_region(
         surface_exposure=surface_exposure_model,
         surface_geomorphology=surface_geomorphology_model,
     )
-    report_stage("surface_render_models_ready")
+    report_stage(
+        "surface_render_models_ready",
+        progress=0.97,
+        message="Surface exposure and true-color models ready",
+        preview={
+            "heightmap_model": heightmap,
+            "water_cycle_model": water_cycle,
+            "material_heatmap_model": material_heatmap_model,
+        },
+    )
     detail_contract = surface_detail_contract(heightmap)
 
     spec = detail_level_spec(level)
@@ -2601,6 +3514,7 @@ def generate_refined_region(
         "material_heatmap_model": material_heatmap_model,
         "surface_exposure_model": surface_exposure_model,
         "surface_geomorphology_model": surface_geomorphology_model,
+        "regolith_soil_model": regolith_soil_model,
         "true_color_model": true_color_model,
         "regional_material_occurrences": list(
             regional_material_model.get("occurrences") or []
@@ -2627,12 +3541,25 @@ def generate_refined_region(
         "constituents": [],
         "tags": ["generated_map_refinement", f"map_lod_{level}", spec["id"]],
     }
+    from simulations.world_gen.geochemical_placement import occurrence_entity
+    occurrence_cards = [
+        occurrence_entity(region_id, occurrence)
+        for occurrence in region["regional_material_occurrences"]
+        if isinstance(occurrence, dict) and occurrence.get("id")
+    ]
+    region["constituents"] = [card["id"] for card in occurrence_cards]
     loader = world_model.loader
     existing = world_model.get_entity(region_id)
     if isinstance(existing, dict):
         existing.update(region)
         region = existing
     loader.persist_entity(region)
+    if occurrence_cards:
+        if hasattr(loader, "persist_entities"):
+            loader.persist_entities(occurrence_cards)
+        else:
+            for card in occurrence_cards:
+                loader.persist_entity(card)
     parent = world_model.get_entity(parent_entity["id"]) or parent_entity
     children = list(parent.get("constituents") or [])
     if region_id not in children:
@@ -2641,6 +3568,15 @@ def generate_refined_region(
         loader.persist_entity(parent)
     report_stage(
         "persisted",
+        progress=0.99,
+        message="Regional refinement persisted",
+        preview={
+            "heightmap_model": heightmap,
+            "tectonic_model": regional_tectonic_model,
+            "crater_model": regional_crater_model,
+            "water_cycle_model": water_cycle,
+            "material_heatmap_model": material_heatmap_model,
+        },
         entity=region_id,
         revision=refinement_revision,
         bounds=region.get("bounds"),

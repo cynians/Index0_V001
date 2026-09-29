@@ -65,6 +65,13 @@ class PlantGrowthCatalogTests(unittest.TestCase):
         self.assertIn("plant_lifespan", fields)
         self.assertIn("plant_growth_behaviour", fields)
         self.assertIn("leaf_arrangement", fields)
+        self.assertEqual("number", fields["leaf_fascicle_size"]["type"])
+        for field_key in (
+            "leaf_length", "leaflet_count", "leaflet_length", "leaflet_width", "leaf_cluster_size",
+        ):
+            self.assertEqual("dict", fields[field_key]["type"])
+        self.assertEqual("number", fields["leaf_division_order"]["type"])
+        self.assertEqual("dict", fields["frond_stipe_fraction"]["type"])
         self.assertIn("leaf_structure", fields)
         self.assertIn("root_architecture", fields)
         self.assertNotIn("plant_life_cycle", fields)

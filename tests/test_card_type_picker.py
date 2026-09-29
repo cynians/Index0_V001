@@ -66,6 +66,32 @@ class CardTypePickerTests(unittest.TestCase):
             roster_template["initial_fields"],
         )
 
+    def test_conversion_templates_include_name_collection_subclass(self):
+        ui = KnowledgeBrowserUI()
+        ui.schema_entry_templates = [
+            {
+                "dataset_name": "collections",
+                "entity_type": "collections",
+                "label": "Collection",
+                "id_prefix": "coll",
+            }
+        ]
+        ui.world_model = None
+
+        templates = ui._conversion_templates()
+        name_collection_template = next(
+            template
+            for template in templates
+            if template.get("subclass_field") == "collection_class"
+            and template.get("subclass_value") == "name_collection"
+        )
+
+        self.assertEqual("Name Collection", name_collection_template["label"])
+        self.assertEqual(
+            {"collection_class": "name_collection"},
+            name_collection_template["initial_fields"],
+        )
+
     def test_card_type_picker_scrolls_past_first_eight_templates(self):
         ui = KnowledgeBrowserUI()
         templates = [

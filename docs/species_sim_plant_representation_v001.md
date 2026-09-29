@@ -2,7 +2,13 @@
 
 Further developments: [oak foliage and 32-pixel organ](species_sim_oak_foliage_v001.md),
 [Plantae catalogue, shade and Forest View spacing](species_sim_forest_shade_v001.md),
-and [birch/oak/horse-chestnut tree architecture](species_sim_tree_architecture_v001.md).
+[birch/oak/horse-chestnut tree architecture](species_sim_tree_architecture_v001.md),
+[Palhinhaea stoloniferous clonal growth](species_sim_palhinhaea_stoloniferous_v001.md),
+[Broadleaf Plantain rosette and spike calibration](species_sim_plantago_major_v001.md),
+[vine support search and tree climbing](species_sim_vine_climbing_v001.md),
+[pixel-solid vine and tree interactions](species_sim_pixel_solid_interactions_v001.md),
+[structural rods and helical vine ascent](species_sim_rod_support_v001.md),
+and [Eastern white pine needle fascicles](species_sim_pinus_fascicles_v001.md).
 
 Species Sim is a local biological growth lab for one ontology species. It is
 deliberately separate from map, bioregion, and other scenery systems.
@@ -96,6 +102,12 @@ nutrition/symbiosis, and environmental response. Architecture-relevant fields
 such as `leaf_arrangement`, `leaf_attachment_pattern`, and `leaf_clustering`
 remain in the ecology schema because they affect procedural organ placement;
 purely cosmetic leaf appearance belongs to the visual plant model.
+
+`leaf_fascicle_size` is an optional integer trait for fascicled leaves. It is
+kept separate from `plant_leaf_cluster_density`: fascicle size is an organ
+count, while cluster density remains a continuous renderer/canopy-fullness
+calibration. The shared tree-shoot grammar can therefore represent two-,
+three-, and five-needle pines without a species-ID branch.
 
 The first continuous architecture refinements are normalised 0..1 fields:
 `plant_branch_droop`, `plant_branch_angle_gradient`, `plant_crown_openness`,
@@ -196,6 +208,8 @@ Root architecture now drives a separate bounded belowground graph and a
 dedicated **Roots** diagnostic tab. See
 [Root architecture implementation and comparison](species_sim_root_architecture_v001.md)
 for the ontology candidates, runtime assumptions, validation, and refinement log.
+Clonal environmental context is covered separately in
+[Neighbour-root influence and clonal avoidance](species_sim_neighbour_root_influence_v001.md).
 
 Reusable pixel modules are authored as single organs on transparent canvases.
 The Pixel Studio **Guide** tool records a normalized `attachment_point` and a
@@ -273,6 +287,10 @@ The water-lily case is grounded in the species descriptions from [RHS](https://w
 The authored values are simulation inputs, not a claim that every species
 trait is fully resolved by the current schema.
 
+Flower, inflorescence, fruit, and cone rendering now has a fixed six-species
+before-state and an ordered refinement plan: [reproductive-organ visual
+baseline](species_sim_reproductive_organs_v001.md).
+
 
 Implemented Lolium tillering and trait comparisons: [implementation record](species_sim_lolium_tillering_plan_v001.md).
 
@@ -283,3 +301,22 @@ Reference-image calibration, architecture ranges, and direct Pixel Studio handof
 
 Below-ground renewal origins driven by `plant_life_form = geophyte`:
 [geophyte life-form record](species_sim_geophyte_life_form_v001.md).
+
+Plant Species Gradual Improvement for a trunkless rhizomatous palm, including
+quantitative compound-frond fields and reusable terminal crowns:
+[Nipa palm terminal-frond record](species_sim_nypa_terminal_fronds_v001.md).
+
+Plant Species Gradual Improvement for rhizomatous ferns, including one-leaf-per-frond
+semantics, hierarchical pinnae/pinnules, and distributed root sockets:
+[Common bracken fern-frond record](species_sim_pteridium_fern_fronding_v001.md).
+
+Factorial composition of two existing fields, with the graminoid culm grammar
+mounted at generic rhizomatous-clonal ramet sockets:
+[African alpine bamboo field-composition record](species_sim_oldeania_field_composition_v001.md).
+
+Tree plus suckering-clonal composition:
+[Coast redwood field-composition record](species_sim_sequoia_field_composition_v001.md).
+
+Plant Species Gradual Improvement for a compact giant fern, including reusable
+alternate primary pinnae and scale-separated frond hierarchy:
+[Horse shoe fern primary-pinna record](species_sim_ptisana_pinna_arrangement_v001.md).

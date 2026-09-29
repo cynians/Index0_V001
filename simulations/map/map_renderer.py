@@ -25,7 +25,7 @@ from simulations.world_gen.heightmap import (
     display_contour_interval_m,
     height_marker_interval_m,
 )
-from simulations.map.projection import project_normalized_point
+from simulations.map.projection import project_normalized_point, _to_uv
 
 
 class MapRenderer:
@@ -701,6 +701,67 @@ class MapRenderer:
         return project_normalized_point(
             nx, ny, layer.get("projection_focus_x", 0.0), layer.get("projection_focus_y", 0.0)
         )
+
+    def _draw_live_aircraft(self, screen, sim, camera, root_map_layer):
+        """
+        Draw live AircraftFlightSimulation instances on top of every surface
+        style. Aircraft track true lon/lat under an arbitrary globe focus, so
+        (unlike the flat camera.world_to_screen marker path) this goes through
+        the same spherical-warp pipeline as the equator/hydrology overlays --
+        project_normalized_point against the root map_rect layer's own screen
+        rect and projection focus, not a shape=="marker" layer.
+        """
+        if root_map_layer is None:
+            return
+        aircraft_list = sim.get_live_aircraft_presence()
+        if not aircraft_list:
+            return
+
+        center = camera.world_to_screen((root_map_layer.get("x", 0.0), root_map_layer.get("y", 0.0)))
+        if center is None:
+            return
+        pixel_w = max(1, int(float(root_map_layer.get("width_world", 1.0) or 1.0) * camera.zoom))
+        pixel_h = max(1, int(float(root_map_layer.get("height_world", 1.0) or 1.0) * camera.zoom))
+        rect = pygame.Rect(int(center[0] - pixel_w / 2), int(center[1] - pixel_h / 2), pixel_w, pixel_h)
+        if not rect.colliderect(screen.get_rect()):
+            return
+
+        focus_x = float(getattr(sim, "map_projection_focus_x", 0.0) or 0.0)
+        focus_y = float(getattr(sim, "map_projection_focus_y", 0.0) or 0.0)
+
+        for aircraft in aircraft_list:
+            nx, ny = _to_uv(aircraft["lon_deg"], aircraft["lat_deg"])
+            projected_nx, projected_ny = project_normalized_point(nx, ny, focus_x, focus_y)
+            point = (
+                int(round(rect.x + projected_nx * rect.width)),
+                int(round(rect.y + projected_ny * rect.height)),
+            )
+            if not rect.collidepoint(point):
+                continue
+            self._draw_aircraft_icon(screen, point, aircraft)
+
+    def _draw_aircraft_icon(self, screen, point, aircraft):
+        heading_rad = math.radians(aircraft.get("heading_deg", 0.0))
+        size = 9
+        # Nose points toward heading (0 deg = north/up on the projected view).
+        nose = (point[0] + math.sin(heading_rad) * size, point[1] - math.cos(heading_rad) * size)
+        left = (
+            point[0] + math.sin(heading_rad + 2.4) * size * 0.7,
+            point[1] - math.cos(heading_rad + 2.4) * size * 0.7,
+        )
+        right = (
+            point[0] + math.sin(heading_rad - 2.4) * size * 0.7,
+            point[1] - math.cos(heading_rad - 2.4) * size * 0.7,
+        )
+        piloted = bool(aircraft.get("piloted"))
+        fill_color = (255, 224, 130) if piloted else (200, 220, 240)
+        border_color = (255, 236, 176) if piloted else (140, 160, 190)
+        pygame.draw.polygon(screen, fill_color, [nose, left, right])
+        pygame.draw.polygon(screen, border_color, [nose, left, right], 1)
+
+        label = f"{aircraft.get('label', 'aircraft')}  {aircraft.get('altitude_m', 0.0):.0f}m"
+        text = self._render_text(label, (232, 238, 246) if piloted else (196, 206, 222))
+        screen.blit(text, (point[0] + size + 3, point[1] - 8))
 
     def _draw_planet_equator(self, screen, rect, layer):
         if not layer.get("show_planet_equator") or rect.width < 8 or rect.height < 8:
@@ -1586,6 +1647,40 @@ class MapRenderer:
                 )
 
     def _true_color_surface_for_layer(self, layer, heightmap):
+        reference = heightmap.get("reference_orthophoto")
+        if reference:
+            from pathlib import Path
+            import hashlib
+            key=("reference_orthophoto",reference["sha256"],tuple(reference["uv_bounds"]))
+            surface=self._true_color_surface_cache.get(key)
+            if surface is None:
+                root=Path(__file__).resolve().parents[2]
+                path=(root/reference["path"]).resolve()
+                if not path.is_relative_to(root/"assets/maps/reference"):
+                    raise ValueError("Orthophoto path escapes reference assets")
+                if hashlib.sha256(path.read_bytes()).hexdigest()!=reference["sha256"]:
+                    raise ValueError("Orthophoto checksum mismatch")
+                surface=pygame.image.load(str(path))
+                u0,v0,u1,v1=reference["uv_bounds"]
+                rect=pygame.Rect(round(u0*surface.get_width()),round(v0*surface.get_height()),
+                    max(1,round((u1-u0)*surface.get_width())),max(1,round((v1-v0)*surface.get_height())))
+                surface=surface.subsurface(rect).copy()
+                self._cache_put(self._true_color_surface_cache,key,surface,limit=8)
+            return surface
+        # Optional authored abiotic atlas: vegetation remains a Biosphere overlay.
+        rows = heightmap.get("abiotic_rgb_rows")
+        if rows:
+            key = ("authored_abiotic", id(rows), heightmap.get("input_fingerprint"))
+            surface = self._true_color_surface_cache.get(key)
+            if surface is None:
+                surface = pygame.Surface((len(rows[0]), len(rows)))
+                for j, row in enumerate(rows):
+                    for i, color in enumerate(row):
+                        surface.set_at((i, j), color)
+                if len(self._true_color_surface_cache) >= 8:
+                    self._true_color_surface_cache.pop(next(iter(self._true_color_surface_cache)))
+                self._true_color_surface_cache[key] = surface
+            return surface
         material_layer = layer.get("surface_material_layer")
         material_surface = None
         if isinstance(material_layer, dict):
@@ -1662,6 +1757,16 @@ class MapRenderer:
     def _heightmap_surface_for_layer(self, layer, heightmap, rows):
         if layer.get("render_mode") == "true_color":
             return self._true_color_surface_for_layer(layer, heightmap)
+        relief = heightmap.get("reference_relief_rgb_rows")
+        if relief:
+            key = ("measured_reference_relief", id(heightmap), id(relief))
+            surface = self._heightmap_surface_cache.get(key)
+            if surface is None:
+                import numpy as np
+                pixels = np.asarray(relief,dtype=np.uint8)
+                surface = pygame.surfarray.make_surface(pixels.transpose(1,0,2))
+                self._cache_put(self._heightmap_surface_cache,key,surface,limit=16)
+            return surface
         cell_cols = max(1, min(len(row) for row in rows) - 1)
         cell_rows = max(1, len(rows) - 1)
         masks = heightmap.get("surface_masks") if isinstance(heightmap.get("surface_masks"), dict) else {}
@@ -2888,6 +2993,21 @@ class MapRenderer:
             screen.blit(text, (label_rect.x + padding, label_rect.y + padding))
 
     def draw(self, screen, sim):
+        regional_loading = getattr(
+            sim,
+            "get_regional_loading_state",
+            lambda: {"active": False},
+        )()
+        if regional_loading.get("active"):
+            shared_renderer = getattr(
+                getattr(self.app_view, "renderer", None),
+                "world_gen_renderer",
+                None,
+            )
+            if shared_renderer is not None:
+                shared_renderer._draw_worldgen_loading_screen(screen, regional_loading)
+                return
+
         view = self.app_view
         camera = view.camera
         visible_world_bounds = self._visible_world_bounds(camera)
@@ -3156,3 +3276,13 @@ class MapRenderer:
             preview = sim.get_map_square_preview()
             if preview is not None:
                 self._draw_square_preview(screen, preview, camera)
+
+        if hasattr(sim, "context") and getattr(sim, "world_model", None) is not None:
+            from simulations.building.blueprint_placement import draw_placed_blueprints
+            draw_placed_blueprints(screen, sim, camera)
+        placement = getattr(sim, "blueprint_placement", None)
+        if placement is not None:
+            placement.draw(screen, camera)
+
+        if hasattr(sim, "get_live_aircraft_presence"):
+            self._draw_live_aircraft(screen, sim, camera, root_map_layer)

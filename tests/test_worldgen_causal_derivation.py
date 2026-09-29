@@ -54,7 +54,9 @@ class WorldgenCausalDerivationTests(unittest.TestCase):
         self.assertNotAlmostEqual(shallow_level, deep_level)
         self.assertIsNone(sea_level_for_equivalent_water_depth(shallow_basins, 0.0))
 
-    def test_first_screen_water_becomes_inventory_depth(self):
+    def test_budget_surface_liquid_becomes_inventory_depth(self):
+        # The volatile budget (element distribution) decides the global
+        # liquid layer; the hypsometry decides how much of the map it floods.
         regime = {
             "interior": {"internal_heat_w_m2": 0.087, "tectonic_regime": "mobile_lid"},
             "surface_processes": {
@@ -66,9 +68,16 @@ class WorldgenCausalDerivationTests(unittest.TestCase):
             },
         }
         terrain = derive_terrain_seed_model(
-            {"map_seed": "causal-water", "water_fraction": 0.71},
+            {"map_seed": "causal-water"},
             {"radius_earth": 1.0, "radius_m": 6_371_000.0, "surface_gravity_g": 1.0},
-            {"surface_pressure_bar": 1.0, "estimated_surface_temperature_k": 288.0},
+            {
+                "surface_pressure_bar": 1.0,
+                "estimated_surface_temperature_k": 288.0,
+                "volatile_budget": {"derived_seed": {
+                    "water_fraction": 0.71, "surface_fluid": "water",
+                    "surface_liquid_depth_m": 2700.0, "frozen_ocean_depth_m": 0.0,
+                }},
+            },
             regime,
         )
         hydrology = terrain["hydrology"]

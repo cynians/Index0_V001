@@ -24,6 +24,23 @@ class VehicleDesignController:
     CATALOG_HEADER_H = 28
     CATALOG_PADDING = 10
 
+    ORTHOGRAPHIC_VIEWS = {
+        "right": {"label": "RIGHT SIDE", "axes": ("x", "z"), "opposite": "left", "flip_x": False},
+        "left": {"label": "LEFT SIDE", "axes": ("x", "z"), "opposite": "right", "flip_x": True},
+        "front": {"label": "FRONT", "axes": ("y", "z"), "opposite": "rear", "flip_x": True},
+        "rear": {"label": "REAR", "axes": ("y", "z"), "opposite": "front", "flip_x": False},
+        "top": {"label": "TOP", "axes": ("x", "y"), "opposite": "bottom", "flip_x": False},
+        "bottom": {"label": "BOTTOM", "axes": ("x", "y"), "opposite": "top", "flip_x": False},
+    }
+    # 50% more linear detail than the original six-cell prototype. Persisted
+    # silhouettes are resampled on load, preserving their overall form.
+    HULL_PIXELS_PER_METER = 9
+    # Liveries are authored on a separate micro-pixel raster. Four times the
+    # linear hull resolution yields sixteen times the paint detail while the
+    # hull remains a light-weight geometric mask.
+    LIVERY_PIXELS_PER_METER = 36
+    MAX_PAINT_AXIS_PIXELS = 1024
+
     VEHICLE_CLASS_PARENTS = {
         "vehicle": [],
         "ground_vehicle": ["vehicle"],
@@ -97,6 +114,130 @@ class VehicleDesignController:
         "marine_drive_component": {"propulsion_marine"},
         "jet_engine_component": {"propulsion_air", "powertrain"},
         "drive_system_component": {"propulsion_road", "powertrain"},
+        "fuel_tank_component": {"fuel_storage"},
+        "battery_component": {"electrical_storage"},
+    }
+
+    # Small controlled vocabulary of resource types a component port can carry.
+    RESOURCE_TYPES = {
+        "mechanical_power", "electrical_power", "fuel", "coolant",
+        "thrust", "lift", "control_signal", "cargo_mass", "crew_capacity",
+    }
+
+    # Default input/output ports by component_type, used when a catalog entry
+    # (real ontology entity or embedded fixture literal) does not declare its
+    # own `inputs`/`outputs`. Purely structural component types (body, hull,
+    # frame, landing gear, ...) carry no ports -- they aren't part of a
+    # resource-flow graph.
+    COMPONENT_TYPE_DEFAULT_PORTS = {
+        "engine_component": {
+            "inputs": [{"resource_type": "fuel", "label": "Fuel"}],
+            "outputs": [{"resource_type": "mechanical_power", "label": "Shaft Power"}],
+        },
+        "motor_component": {
+            "inputs": [{"resource_type": "electrical_power", "label": "Electric Supply"}],
+            "outputs": [{"resource_type": "mechanical_power", "label": "Shaft Power"}],
+        },
+        "drive_system_component": {
+            "inputs": [{"resource_type": "mechanical_power", "label": "Drive Power"}],
+            "outputs": [{"resource_type": "thrust", "label": "Traction"}],
+        },
+        "wheel_component": {
+            "inputs": [{"resource_type": "mechanical_power", "label": "Drive Power"}],
+            "outputs": [{"resource_type": "thrust", "label": "Traction"}],
+        },
+        "performance_wheel_component": {
+            "inputs": [{"resource_type": "mechanical_power", "label": "Drive Power"}],
+            "outputs": [{"resource_type": "thrust", "label": "Traction"}],
+        },
+        "track_component": {
+            "inputs": [{"resource_type": "mechanical_power", "label": "Drive Power"}],
+            "outputs": [{"resource_type": "thrust", "label": "Traction"}],
+        },
+        "marine_drive_component": {
+            "inputs": [{"resource_type": "mechanical_power", "label": "Drive Power"}],
+            "outputs": [{"resource_type": "thrust", "label": "Thrust"}],
+        },
+        "jet_engine_component": {
+            "inputs": [{"resource_type": "fuel", "label": "Fuel"}],
+            "outputs": [{"resource_type": "thrust", "label": "Thrust"}],
+        },
+        "thruster_component": {
+            "inputs": [{"resource_type": "fuel", "label": "Propellant"}],
+            "outputs": [{"resource_type": "thrust", "label": "Thrust"}],
+        },
+        "reactor_component": {
+            "outputs": [
+                {"resource_type": "electrical_power", "label": "Electric Power"},
+                {"resource_type": "mechanical_power", "label": "Shaft Power"},
+            ],
+        },
+        "aero_surface_component": {
+            "inputs": [{"resource_type": "control_signal", "label": "Control Input"}],
+            "outputs": [{"resource_type": "lift", "label": "Lift"}],
+        },
+        "control_component": {
+            "outputs": [{"resource_type": "control_signal", "label": "Control Signal"}],
+        },
+        "cockpit_component": {
+            "outputs": [{"resource_type": "control_signal", "label": "Control Signal"}],
+        },
+        "fuel_tank_component": {
+            "outputs": [{"resource_type": "fuel", "label": "Fuel"}],
+        },
+        "battery_component": {
+            "outputs": [{"resource_type": "electrical_power", "label": "Electric Power"}],
+        },
+        "cargo_component": {
+            "outputs": [{"resource_type": "cargo_mass", "label": "Cargo Capacity"}],
+        },
+    }
+
+    # Real ontology-authored component entities carry a generic `type`
+    # ("component"/"assembly") rather than the fine-grained component_type
+    # strings above -- fall back to their declared `satisfies_categories`
+    # when COMPONENT_TYPE_DEFAULT_PORTS has no entry for the entity's type.
+    CATEGORY_DEFAULT_PORTS = {
+        "propulsion_road": {
+            "inputs": [{"resource_type": "fuel", "label": "Fuel"}],
+            "outputs": [{"resource_type": "mechanical_power", "label": "Shaft Power"}],
+        },
+        "propulsion_air": {
+            "inputs": [{"resource_type": "fuel", "label": "Fuel"}],
+            "outputs": [{"resource_type": "thrust", "label": "Thrust"}],
+        },
+        "propulsion_marine": {
+            "inputs": [{"resource_type": "mechanical_power", "label": "Drive Power"}],
+            "outputs": [{"resource_type": "thrust", "label": "Thrust"}],
+        },
+        "propulsion_space": {
+            "inputs": [{"resource_type": "fuel", "label": "Propellant"}],
+            "outputs": [{"resource_type": "thrust", "label": "Thrust"}],
+        },
+        "wheels": {
+            "inputs": [{"resource_type": "mechanical_power", "label": "Drive Power"}],
+            "outputs": [{"resource_type": "thrust", "label": "Traction"}],
+        },
+        "tracks": {
+            "inputs": [{"resource_type": "mechanical_power", "label": "Drive Power"}],
+            "outputs": [{"resource_type": "thrust", "label": "Traction"}],
+        },
+        "flight_surfaces": {
+            "inputs": [{"resource_type": "control_signal", "label": "Control Input"}],
+            "outputs": [{"resource_type": "lift", "label": "Lift"}],
+        },
+        "control": {
+            "outputs": [{"resource_type": "control_signal", "label": "Control Signal"}],
+        },
+        "fuel_storage": {
+            "outputs": [{"resource_type": "fuel", "label": "Fuel"}],
+        },
+        "electrical_storage": {
+            "outputs": [{"resource_type": "electrical_power", "label": "Electric Power"}],
+        },
+        "cargo_handling": {
+            "outputs": [{"resource_type": "cargo_mass", "label": "Cargo Capacity"}],
+        },
     }
 
     REQUIREMENT_TO_OPERATIONAL_GROUP = {
@@ -155,6 +296,26 @@ class VehicleDesignController:
         self.vehicle_entity = vehicle_entity
 
         self.vehicle_dimensions_m = self._load_vehicle_dimensions_m(vehicle_entity)
+        self.specification_metadata = self._load_specification_metadata(vehicle_entity)
+        self.vehicle_specifications = self._load_specification_rows(
+            vehicle_entity.get("vehicle_specifications", []) if isinstance(vehicle_entity, dict) else [],
+            "characteristic",
+        )
+        self.design_requirements = self._load_specification_rows(
+            vehicle_entity.get("design_requirements", []) if isinstance(vehicle_entity, dict) else [],
+            "requirement",
+        )
+        self.structural_features = copy.deepcopy(
+            vehicle_entity.get("structural_features", []) if isinstance(vehicle_entity, dict) else []
+        )
+        self.hull_silhouettes = self._load_hull_silhouettes(vehicle_entity)
+        self.detail_layers = self._load_color_layers(
+            vehicle_entity.get("vehicle_detail_layers", {}) if isinstance(vehicle_entity, dict) else {}
+        )
+        self.liveries = self._load_liveries(vehicle_entity)
+        self.active_livery_id = self.liveries[0]["id"]
+        self.paint_revision = 0
+        self.paint_dirty_regions = {}
         self.component_catalog = self._load_component_catalog(world_model, vehicle_entity)
         self.placed_components = self._load_placed_components(world_model, vehicle_entity)
 
@@ -173,6 +334,7 @@ class VehicleDesignController:
                     "satisfies_categories": list(first_entry.get("satisfies_categories", [])),
                     "operational_groups": list(first_entry.get("operational_groups", [])),
                     "subsystem_labels": list(first_entry.get("subsystem_labels", [])),
+                    "slot_category": (first_entry.get("satisfies_categories") or [None])[0],
                     "local_rect_m": {
                         "x": 0.8,
                         "y": 1.4,
@@ -182,6 +344,7 @@ class VehicleDesignController:
                 }
             ]
 
+        self.manual_routes = self._load_manual_routes(vehicle_entity)
         self.next_component_index = self._infer_next_component_index()
 
         self.hover_component_id = None
@@ -193,6 +356,455 @@ class VehicleDesignController:
         self.dragging_catalog_component_id = None
         self.drag_pointer_offset_local_m = None
         self.drag_preview_local_rect_m = None
+
+        self.component_axis_drag = None
+
+    @staticmethod
+    def _load_specification_metadata(vehicle_entity):
+        entity = vehicle_entity if isinstance(vehicle_entity, dict) else {}
+        return {
+            "name": str(entity.get("name", "")),
+            "vehicle_class": str(entity.get("vehicle_class", "")),
+            "manufacturer_name": str(entity.get("manufacturer_name", entity.get("manufacturer", ""))),
+            "description": str(entity.get("description", "")),
+        }
+
+    @staticmethod
+    def _load_specification_rows(raw_rows, row_kind):
+        rows = []
+        if not isinstance(raw_rows, list):
+            return rows
+        defaults = (
+            {"label": "", "value": "", "unit": "", "category": ""}
+            if row_kind == "characteristic"
+            else {"label": "", "target": "", "unit": "", "priority": "", "notes": ""}
+        )
+        used_ids = set()
+        for index, raw in enumerate(raw_rows, 1):
+            if not isinstance(raw, dict):
+                continue
+            row = {key: str(raw.get(key, "")) for key in defaults}
+            candidate = str(raw.get("id") or f"{row_kind}_{index:03d}")
+            while candidate in used_ids:
+                candidate = f"{row_kind}_{index:03d}_{len(used_ids) + 1}"
+            row["id"] = candidate
+            used_ids.add(candidate)
+            rows.append(row)
+        return rows
+
+    def get_specification_payload(self):
+        return {
+            "metadata": dict(self.specification_metadata),
+            "characteristics": copy.deepcopy(self.vehicle_specifications),
+            "requirements": copy.deepcopy(self.design_requirements),
+        }
+
+    def _next_specification_row_id(self, row_kind):
+        rows = self.vehicle_specifications if row_kind == "characteristic" else self.design_requirements
+        existing = {row.get("id") for row in rows}
+        index = 1
+        while f"{row_kind}_{index:03d}" in existing:
+            index += 1
+        return f"{row_kind}_{index:03d}"
+
+    def add_specification_row(self, row_kind):
+        if row_kind == "characteristic":
+            row = {"id": self._next_specification_row_id(row_kind), "label": "", "value": "", "unit": "", "category": ""}
+            self.vehicle_specifications.append(row)
+        elif row_kind == "requirement":
+            row = {"id": self._next_specification_row_id(row_kind), "label": "", "target": "", "unit": "", "priority": "", "notes": ""}
+            self.design_requirements.append(row)
+        else:
+            return None
+        return row["id"]
+
+    def remove_specification_row(self, row_kind, row_id):
+        if row_kind == "characteristic":
+            rows = self.vehicle_specifications
+        elif row_kind == "requirement":
+            rows = self.design_requirements
+        else:
+            return False
+        for index, row in enumerate(rows):
+            if row.get("id") == row_id:
+                del rows[index]
+                return True
+        return False
+
+    def update_specification_value(self, row_kind, row_id, field_name, value):
+        value = str(value)
+        if row_kind == "metadata":
+            if field_name not in self.specification_metadata:
+                return False
+            self.specification_metadata[field_name] = value
+            return True
+        if row_kind == "characteristic":
+            rows = self.vehicle_specifications
+            allowed = {"label", "value", "unit", "category"}
+        elif row_kind == "requirement":
+            rows = self.design_requirements
+            allowed = {"label", "target", "unit", "priority", "notes"}
+        else:
+            return False
+        if field_name not in allowed:
+            return False
+        for row in rows:
+            if row.get("id") == row_id:
+                row[field_name] = value
+                return True
+        return False
+
+    def _view_grid_size(self, view_id):
+        view = self.ORTHOGRAPHIC_VIEWS[view_id]
+        horizontal_axis, vertical_axis = view["axes"]
+        return (
+            max(4, int(round(self.vehicle_dimensions_m[horizontal_axis] * self.HULL_PIXELS_PER_METER))),
+            max(4, int(round(self.vehicle_dimensions_m[vertical_axis] * self.HULL_PIXELS_PER_METER))),
+        )
+
+    def _empty_hull_grid(self, view_id):
+        width, height = self._view_grid_size(view_id)
+        return [[False for _ in range(width)] for _ in range(height)]
+
+    def _empty_color_grid(self, view_id):
+        width, height = self._view_grid_size(view_id)
+        return [[None for _ in range(width)] for _ in range(height)]
+
+    def _paint_grid_size(self, layer_kind, view_id):
+        if layer_kind != "liveries":
+            return self._view_grid_size(view_id)
+        horizontal_axis, vertical_axis = self.ORTHOGRAPHIC_VIEWS[view_id]["axes"]
+        return (
+            max(4, min(self.MAX_PAINT_AXIS_PIXELS, int(round(self.vehicle_dimensions_m[horizontal_axis] * self.LIVERY_PIXELS_PER_METER)))),
+            max(4, min(self.MAX_PAINT_AXIS_PIXELS, int(round(self.vehicle_dimensions_m[vertical_axis] * self.LIVERY_PIXELS_PER_METER)))),
+        )
+
+    @staticmethod
+    def _resample_value_grid(source, target_width, target_height, default=None):
+        source_height = len(source) if isinstance(source, list) else 0
+        source_width = max((len(row) for row in source if isinstance(row, list)), default=0) if source_height else 0
+        if source_width <= 0 or source_height <= 0:
+            return [[default for _ in range(target_width)] for _ in range(target_height)]
+        result = []
+        for target_y in range(target_height):
+            source_y = min(source_height - 1, int(target_y * source_height / target_height))
+            source_row = source[source_y] if isinstance(source[source_y], list) else []
+            row = []
+            for target_x in range(target_width):
+                source_x = min(source_width - 1, int(target_x * source_width / target_width))
+                row.append(copy.deepcopy(source_row[source_x]) if source_x < len(source_row) else default)
+            result.append(row)
+        return result
+
+    def _load_color_layers(self, raw_layers, layer_kind="details"):
+        layers = {}
+        for view_id in self.ORTHOGRAPHIC_VIEWS:
+            width, height = self._paint_grid_size(layer_kind, view_id)
+            source = raw_layers.get(view_id, []) if isinstance(raw_layers, dict) else []
+            layers[view_id] = self._resample_value_grid(source, width, height)
+        return layers
+
+    def _load_liveries(self, vehicle_entity):
+        raw_liveries = vehicle_entity.get("vehicle_liveries", []) if isinstance(vehicle_entity, dict) else []
+        liveries = []
+        if isinstance(raw_liveries, list):
+            for index, raw in enumerate(raw_liveries):
+                if not isinstance(raw, dict):
+                    continue
+                livery_id = str(raw.get("id") or f"livery_{index + 1:03d}")
+                liveries.append({
+                    "id": livery_id,
+                    "name": str(raw.get("name") or f"Livery {index + 1}"),
+                    "layers": self._load_color_layers(raw.get("layers", {}), "liveries"),
+                })
+        if not liveries:
+            liveries.append({
+                "id": "livery_001",
+                "name": "Base Livery",
+                "layers": self._load_color_layers({}, "liveries"),
+            })
+        return liveries
+
+    def _load_hull_silhouettes(self, vehicle_entity):
+        raw = vehicle_entity.get("hull_silhouettes", {}) if isinstance(vehicle_entity, dict) else {}
+        result = {}
+        for view_id in self.ORTHOGRAPHIC_VIEWS:
+            width, height = self._view_grid_size(view_id)
+            source = raw.get(view_id) if isinstance(raw, dict) else None
+            if not isinstance(source, list) or not source:
+                result[view_id] = [[False for _ in range(width)] for _ in range(height)]
+                continue
+            result[view_id] = self._resample_boolean_grid(source, width, height)
+        return result
+
+    @staticmethod
+    def _resample_boolean_grid(source, target_width, target_height):
+        source_height = len(source)
+        source_width = max((len(row) for row in source if isinstance(row, list)), default=0)
+        if source_width <= 0 or source_height <= 0:
+            return [[False for _ in range(target_width)] for _ in range(target_height)]
+        result = []
+        for target_y in range(target_height):
+            source_y = min(source_height - 1, int(target_y * source_height / target_height))
+            source_row = source[source_y] if isinstance(source[source_y], list) else []
+            row = []
+            for target_x in range(target_width):
+                source_x = min(source_width - 1, int(target_x * source_width / target_width))
+                row.append(bool(source_row[source_x]) if source_x < len(source_row) else False)
+            result.append(row)
+        return result
+
+    def set_vehicle_dimension_m(self, axis, value):
+        if axis not in {"x", "y", "z"}:
+            return False
+        value = max(0.5, min(200.0, round(float(value), 2)))
+        if self.vehicle_dimensions_m.get(axis) == value:
+            return False
+        self.vehicle_dimensions_m[axis] = value
+        for view_id in self.ORTHOGRAPHIC_VIEWS:
+            width, height = self._view_grid_size(view_id)
+            self.hull_silhouettes[view_id] = self._resample_boolean_grid(
+                self.hull_silhouettes.get(view_id, []), width, height,
+            )
+            self.detail_layers[view_id] = self._resample_value_grid(
+                self.detail_layers.get(view_id, []), width, height,
+            )
+            for livery in self.liveries:
+                livery_width, livery_height = self._paint_grid_size("liveries", view_id)
+                livery["layers"][view_id] = self._resample_value_grid(
+                    livery.get("layers", {}).get(view_id, []), livery_width, livery_height,
+                )
+        self.paint_revision += 1
+        for component in self.placed_components:
+            position = self._ensure_component_position(component)
+            position[axis] = self._clamp_component_axis_position(component, axis, position.get(axis, value / 2.0))
+        return True
+
+    def _component_dimensions(self, component):
+        catalog = self.get_component_catalog_entry(component.get("catalog_id")) or {}
+        dimensions = dict(catalog.get("dimensions_m", {}))
+        rect = component.get("local_rect_m", {})
+        dimensions.setdefault("x", rect.get("width", 1.0))
+        dimensions.setdefault("y", rect.get("height", 1.0))
+        dimensions.setdefault("z", 1.0)
+        return {axis: max(0.0, float(dimensions.get(axis, 0.0))) for axis in ("x", "y", "z")}
+
+    def _clamp_component_axis_position(self, component, axis, value):
+        hull_extent = float(self.vehicle_dimensions_m[axis])
+        half_extent = min(hull_extent / 2.0, self._component_dimensions(component)[axis] / 2.0)
+        return max(half_extent, min(hull_extent - half_extent, float(value)))
+
+    def get_hull_silhouettes(self):
+        return {view_id: [list(row) for row in grid] for view_id, grid in self.hull_silhouettes.items()}
+
+    def paint_hull_cell(self, view_id, column, row, filled=True, brush_radius=0):
+        grid = self.hull_silhouettes.get(view_id)
+        if grid is None or not grid:
+            return False
+        changed = False
+        radius = max(0, int(brush_radius))
+        for grid_y in range(max(0, row - radius), min(len(grid), row + radius + 1)):
+            for grid_x in range(max(0, column - radius), min(len(grid[grid_y]), column + radius + 1)):
+                if (grid_x - column) ** 2 + (grid_y - row) ** 2 > radius ** 2:
+                    continue
+                if grid[grid_y][grid_x] != bool(filled):
+                    grid[grid_y][grid_x] = bool(filled)
+                    changed = True
+        return changed
+
+    def clear_hull_silhouettes(self):
+        self.hull_silhouettes = {
+            view_id: self._empty_hull_grid(view_id)
+            for view_id in self.ORTHOGRAPHIC_VIEWS
+        }
+
+    def get_effective_hull_grid(self, view_id):
+        grid = self.hull_silhouettes.get(view_id, [])
+        if grid and any(any(row) for row in grid):
+            return grid
+        opposite_id = self.ORTHOGRAPHIC_VIEWS[view_id]["opposite"]
+        opposite = self.hull_silhouettes.get(opposite_id, [])
+        if not opposite:
+            return grid
+        return [list(reversed(row)) for row in opposite]
+
+    def get_paint_layer(self, layer_kind, view_id):
+        if layer_kind == "details":
+            return self.detail_layers.get(view_id, [])
+        if layer_kind == "liveries":
+            for livery in self.liveries:
+                if livery.get("id") == self.active_livery_id:
+                    return livery.get("layers", {}).get(view_id, [])
+        return []
+
+    def get_paint_mask(self, layer_kind, view_id):
+        hull_mask = self.get_effective_hull_grid(view_id)
+        target_width, target_height = self._paint_grid_size(layer_kind, view_id)
+        if not hull_mask:
+            return [[False for _ in range(target_width)] for _ in range(target_height)]
+        if len(hull_mask) == target_height and len(hull_mask[0]) == target_width:
+            return hull_mask
+        return self._resample_boolean_grid(hull_mask, target_width, target_height)
+
+    def paint_color_cell(self, layer_kind, view_id, column, row, color, brush_radius=0):
+        layer = self.get_paint_layer(layer_kind, view_id)
+        mask = self.get_paint_mask(layer_kind, view_id)
+        if not layer or not mask:
+            return False
+        changed = False
+        radius = max(0, int(brush_radius))
+        for grid_y in range(max(0, row - radius), min(len(layer), row + radius + 1)):
+            for grid_x in range(max(0, column - radius), min(len(layer[grid_y]), column + radius + 1)):
+                if (grid_x - column) ** 2 + (grid_y - row) ** 2 > radius ** 2:
+                    continue
+                if grid_y >= len(mask) or grid_x >= len(mask[grid_y]) or not mask[grid_y][grid_x]:
+                    continue
+                value = None if color is None else str(color)
+                if layer[grid_y][grid_x] != value:
+                    layer[grid_y][grid_x] = value
+                    changed = True
+        if changed:
+            self.paint_revision += 1
+            region = (
+                max(0, column - radius), max(0, row - radius),
+                min(len(layer[0]) - 1, column + radius), min(len(layer) - 1, row + radius),
+            )
+            self._mark_paint_dirty(layer_kind, view_id, region)
+            opposite_id = self.ORTHOGRAPHIC_VIEWS[view_id]["opposite"]
+            opposite_layer = self.get_paint_layer(layer_kind, opposite_id)
+            if opposite_layer and opposite_layer[0]:
+                opposite_width = len(opposite_layer[0])
+                mirrored = (
+                    max(0, opposite_width - 1 - region[2]), region[1],
+                    min(opposite_width - 1, opposite_width - 1 - region[0]), region[3],
+                )
+                self._mark_paint_dirty(layer_kind, opposite_id, mirrored)
+        return changed
+
+    def _mark_paint_dirty(self, layer_kind, view_id, region):
+        key = (layer_kind, view_id, self.active_livery_id if layer_kind == "liveries" else None)
+        existing = self.paint_dirty_regions.get(key)
+        if existing is None:
+            self.paint_dirty_regions[key] = tuple(region)
+        else:
+            self.paint_dirty_regions[key] = (
+                min(existing[0], region[0]), min(existing[1], region[1]),
+                max(existing[2], region[2]), max(existing[3], region[3]),
+            )
+
+    def consume_paint_dirty_region(self, layer_kind, view_id):
+        key = (layer_kind, view_id, self.active_livery_id if layer_kind == "liveries" else None)
+        return self.paint_dirty_regions.pop(key, None)
+
+    def get_livery_summaries(self):
+        return [{"id": item["id"], "name": item["name"]} for item in self.liveries]
+
+    def select_livery(self, livery_id):
+        if not any(item.get("id") == livery_id for item in self.liveries):
+            return False
+        self.active_livery_id = livery_id
+        return True
+
+    def copy_active_livery(self):
+        for item in self.liveries:
+            if item.get("id") == self.active_livery_id:
+                return copy.deepcopy(item)
+        return None
+
+    def paste_livery(self, copied_livery):
+        if not isinstance(copied_livery, dict):
+            return None
+        existing_ids = {item.get("id") for item in self.liveries}
+        index = 1
+        while f"livery_{index:03d}" in existing_ids:
+            index += 1
+        pasted = copy.deepcopy(copied_livery)
+        pasted["id"] = f"livery_{index:03d}"
+        pasted["name"] = f"{copied_livery.get('name', 'Livery')} Copy"
+        pasted["layers"] = self._load_color_layers(pasted.get("layers", {}), "liveries")
+        self.liveries.append(pasted)
+        self.active_livery_id = pasted["id"]
+        self.paint_revision += 1
+        return pasted["id"]
+
+    def _ensure_component_position(self, component):
+        position = component.get("position_m")
+        if not isinstance(position, dict):
+            rect = component.get("local_rect_m", {})
+            dims = self.get_vehicle_dimensions_m()
+            position = {
+                "x": float(rect.get("x", 0.0)) + float(rect.get("width", 1.0)) / 2.0,
+                "y": float(rect.get("y", 0.0)) + float(rect.get("height", 1.0)) / 2.0,
+                "z": dims["z"] / 2.0,
+            }
+            component["position_m"] = position
+        return position
+
+    def get_component_position_m(self, component):
+        return dict(self._ensure_component_position(component))
+
+    def get_orthographic_component_blocks(self, view_id):
+        view = self.ORTHOGRAPHIC_VIEWS[view_id]
+        horizontal_axis, vertical_axis = view["axes"]
+        blocks = []
+        for component in self.placed_components:
+            position = self._ensure_component_position(component)
+            catalog = self.get_component_catalog_entry(component.get("catalog_id")) or {}
+            component_dims = catalog.get("dimensions_m", {})
+            if not component_dims:
+                rect = component.get("local_rect_m", {})
+                component_dims = {"x": rect.get("width", 1.0), "y": rect.get("height", 1.0), "z": 1.0}
+            blocks.append({
+                "id": component.get("instance_id"),
+                "label": component.get("label", "component"),
+                "catalog_id": component.get("catalog_id"),
+                "position_m": dict(position),
+                "undefined_axis": component.get("undefined_axis"),
+                "u": float(position.get(horizontal_axis, 0.0)),
+                "v": float(position.get(vertical_axis, 0.0)),
+                "width": float(component_dims.get(horizontal_axis, 1.0)),
+                "height": float(component_dims.get(vertical_axis, 1.0)),
+            })
+        return blocks
+
+    def place_component_in_orthographic_view(self, catalog_id, view_id, u, v):
+        catalog = self.get_component_catalog_entry(catalog_id)
+        if catalog is None or view_id not in self.ORTHOGRAPHIC_VIEWS:
+            return None
+        axes = self.ORTHOGRAPHIC_VIEWS[view_id]["axes"]
+        missing_axis = next(axis for axis in ("x", "y", "z") if axis not in axes)
+        position = {axis: self.vehicle_dimensions_m[axis] / 2.0 for axis in ("x", "y", "z")}
+        position[axes[0]] = max(0.0, min(self.vehicle_dimensions_m[axes[0]], float(u)))
+        position[axes[1]] = max(0.0, min(self.vehicle_dimensions_m[axes[1]], float(v)))
+        dims = catalog.get("dimensions_m", {})
+        local_rect = {
+            "x": position["x"] - float(dims.get("x", 1.0)) / 2.0,
+            "y": position["y"] - float(dims.get("y", 1.0)) / 2.0,
+            "width": float(dims.get("x", 1.0)),
+            "height": float(dims.get("y", 1.0)),
+        }
+        component = self._make_component_instance(catalog, local_rect)
+        component["position_m"] = {
+            axis: self._clamp_component_axis_position(component, axis, position[axis])
+            for axis in ("x", "y", "z")
+        }
+        component["undefined_axis"] = missing_axis
+        self.placed_components.append(component)
+        self.selected_component_id = component["instance_id"]
+        return component["instance_id"]
+
+    def move_component_axis(self, component_id, axis, value):
+        component = self._get_component_by_instance_id(component_id)
+        if component is None or axis not in {"x", "y", "z"}:
+            return False
+        position = self._ensure_component_position(component)
+        position[axis] = self._clamp_component_axis_position(component, axis, value)
+        rect = component.get("local_rect_m", {})
+        if axis == "x":
+            rect["x"] = position["x"] - float(rect.get("width", 1.0)) / 2.0
+        elif axis == "y":
+            rect["y"] = position["y"] - float(rect.get("height", 1.0)) / 2.0
+        return True
 
     def _load_vehicle_dimensions_m(self, vehicle_entity):
         if vehicle_entity:
@@ -257,6 +869,48 @@ class VehicleDesignController:
 
         return sorted(categories)
 
+    @staticmethod
+    def _normalize_ports(raw_ports):
+        ports = []
+        for index, raw in enumerate(raw_ports or []):
+            if not isinstance(raw, dict):
+                continue
+            resource_type = str(raw.get("resource_type") or "").strip().lower()
+            if not resource_type:
+                continue
+            ports.append({
+                "port_id": str(raw.get("port_id") or f"port_{index}_{resource_type}"),
+                "resource_type": resource_type,
+                "label": str(raw.get("label") or resource_type.replace("_", " ").title()),
+            })
+        return ports
+
+    def _resolve_ports(self, raw_inputs, raw_outputs, component_type, categories=None):
+        inputs = self._normalize_ports(raw_inputs)
+        outputs = self._normalize_ports(raw_outputs)
+        if inputs or outputs:
+            return inputs, outputs
+        defaults = self.COMPONENT_TYPE_DEFAULT_PORTS.get(component_type)
+        if not defaults:
+            for category in categories or []:
+                defaults = self.CATEGORY_DEFAULT_PORTS.get(str(category).strip().lower())
+                if defaults:
+                    break
+        defaults = defaults or {}
+        return self._normalize_ports(defaults.get("inputs")), self._normalize_ports(defaults.get("outputs"))
+
+    def _ensure_catalog_entry_ports(self, entry):
+        if not isinstance(entry, dict):
+            return entry
+        inputs, outputs = self._resolve_ports(
+            entry.get("inputs"), entry.get("outputs"), entry.get("component_type", "component"),
+            categories=entry.get("satisfies_categories"),
+        )
+        entry = dict(entry)
+        entry["inputs"] = inputs
+        entry["outputs"] = outputs
+        return entry
+
     def _build_catalog_entry_from_component_entity(self, entity):
         raw_operational_groups = entity.get("operational_groups", [])
         operational_groups = [str(v).strip() for v in raw_operational_groups if str(v).strip()]
@@ -264,10 +918,16 @@ class VehicleDesignController:
         raw_subsystem_labels = entity.get("subsystem_labels", [])
         subsystem_labels = [str(v).strip() for v in raw_subsystem_labels if str(v).strip()]
 
+        component_type = entity.get("type", "component")
+        satisfies_categories = self._infer_satisfies_categories_from_entity(entity)
+        inputs, outputs = self._resolve_ports(
+            entity.get("inputs"), entity.get("outputs"), component_type, categories=satisfies_categories,
+        )
+
         return {
             "id": entity.get("id"),
             "label": entity.get("pretty_name", entity.get("name", entity.get("id", "component"))),
-            "component_type": entity.get("type", "component"),
+            "component_type": component_type,
             "entry_type": entity.get("type", "component"),
             "dimensions_m": {
                 "x": float(entity.get("dimension_length_m", 1.0)),
@@ -276,9 +936,11 @@ class VehicleDesignController:
             },
             "mass_kg": float(entity.get("mass_kg", 0.0)),
             "power_kw": float(entity.get("power_kw", 0.0)),
-            "satisfies_categories": self._infer_satisfies_categories_from_entity(entity),
+            "satisfies_categories": satisfies_categories,
             "operational_groups": operational_groups,
             "subsystem_labels": subsystem_labels,
+            "inputs": inputs,
+            "outputs": outputs,
         }
 
     def _default_component_catalog(self):
@@ -307,6 +969,18 @@ class VehicleDesignController:
                 "operational_groups": ["Powertrain"],
                 "subsystem_labels": ["road propulsion"],
             },
+            {
+                "id": "comp_fuel_tank_standard",
+                "label": "Fuel Tank",
+                "component_type": "fuel_tank_component",
+                "entry_type": "component",
+                "dimensions_m": {"x": 1.0, "y": 0.8, "z": 0.6},
+                "mass_kg": 60.0,
+                "power_kw": 0.0,
+                "satisfies_categories": ["fuel_storage"],
+                "operational_groups": ["Powertrain"],
+                "subsystem_labels": ["fuel storage"],
+            },
         ]
 
     def _load_component_catalog(self, world_model, vehicle_entity):
@@ -333,9 +1007,9 @@ class VehicleDesignController:
                 if isinstance(component_entity, dict):
                     catalog.append(self._build_catalog_entry_from_component_entity(component_entity))
                 elif raw_entry.get("dimensions_m"):
-                    catalog.append(copy.deepcopy(raw_entry))
+                    catalog.append(self._ensure_catalog_entry_ports(raw_entry))
             return catalog
-        return self._default_component_catalog()
+        return [self._ensure_catalog_entry_ports(entry) for entry in self._default_component_catalog()]
 
     def _load_placed_components(self, world_model, vehicle_entity):
         if not isinstance(vehicle_entity, dict):
@@ -354,8 +1028,25 @@ class VehicleDesignController:
             component.setdefault("satisfies_categories", [])
             component.setdefault("operational_groups", [])
             component.setdefault("subsystem_labels", [])
+            if not component.get("slot_category"):
+                categories = component.get("satisfies_categories") or []
+                component["slot_category"] = categories[0] if categories else None
             placed.append(component)
         return placed
+
+    def _load_manual_routes(self, vehicle_entity):
+        raw_routes = vehicle_entity.get("manual_routes", []) if isinstance(vehicle_entity, dict) else []
+        routes = []
+        if not isinstance(raw_routes, list):
+            return routes
+        for raw in raw_routes:
+            if not isinstance(raw, dict):
+                continue
+            required = ("from_slot_id", "from_port_id", "to_slot_id", "to_port_id")
+            if not all(raw.get(key) for key in required):
+                continue
+            routes.append({key: str(raw[key]) for key in required})
+        return routes
 
     def _infer_next_component_index(self):
         max_index = 0
@@ -605,24 +1296,59 @@ class VehicleDesignController:
     def get_requirement_status_list(self):
         required = self.get_resolved_class_requirements()
         placed = self.get_placed_components()
+        wiring_status = self.get_component_wiring_status()
 
         placed_category_map = {}
+        reserved_category_map = {}
         for component in placed:
-            categories = self._get_component_satisfaction_categories(component)
-            for category in categories:
-                placed_category_map.setdefault(category, []).append(component)
+            if component.get("catalog_id"):
+                categories = self._get_component_satisfaction_categories(component)
+                for category in categories:
+                    placed_category_map.setdefault(category, []).append(component)
+            else:
+                slot_category = str(component.get("slot_category") or "").strip().lower()
+                if slot_category:
+                    reserved_category_map.setdefault(slot_category, []).append(component)
+
+        structural_category_map = {}
+        for feature in self.structural_features:
+            if not isinstance(feature, dict):
+                continue
+            for raw_category in feature.get("satisfies_categories", []):
+                category = str(raw_category).strip().lower()
+                if category:
+                    structural_category_map.setdefault(category, []).append(feature)
 
         results = []
         for requirement in required:
             category = requirement["category"]
             matching_components = placed_category_map.get(category, [])
+            matching_structures = structural_category_map.get(category, [])
+            reserved_slots = reserved_category_map.get(category, [])
+            is_satisfied = bool(matching_components or matching_structures)
+            matching_component_ids = [c.get("instance_id") for c in matching_components]
+            fully_wired = all(
+                wiring_status.get(instance_id, {"fully_wired": True})["fully_wired"]
+                for instance_id in matching_component_ids
+            )
+            if is_satisfied:
+                state = "installed" if fully_wired else "installed_unwired"
+            elif reserved_slots:
+                state = "reserved"
+            else:
+                state = "missing"
             results.append(
                 {
                     "category": category,
                     "source_class": requirement["source_class"],
-                    "is_satisfied": bool(matching_components),
-                    "matching_component_ids": [c.get("instance_id") for c in matching_components],
+                    "is_satisfied": is_satisfied,
+                    "state": state,
+                    "is_wired": fully_wired,
+                    "reserved_slot_ids": [c.get("instance_id") for c in reserved_slots],
+                    "matching_component_ids": matching_component_ids,
                     "matching_component_labels": [c.get("label", c.get("instance_id", "component")) for c in matching_components],
+                    "matching_structure_ids": [item.get("id") for item in matching_structures],
+                    "matching_structure_labels": [item.get("label", item.get("id", "structure")) for item in matching_structures],
                 }
             )
 
@@ -655,7 +1381,13 @@ class VehicleDesignController:
 
             is_satisfied = bool(entry.get("is_satisfied"))
             matching_component_labels = list(entry.get("matching_component_labels", []))
-            child_status = "active" if is_satisfied else "missing"
+            state = entry.get("state", "active" if is_satisfied else "missing")
+            child_status = {
+                "installed": "active",
+                "installed_unwired": "unwired",
+                "reserved": "reserved",
+                "missing": "missing",
+            }.get(state, "active" if is_satisfied else "missing")
 
             bucket["children"].append(
                 {
@@ -856,6 +1588,63 @@ class VehicleDesignController:
             "height": local_rect.get("height", 1.0),
         }
 
+    # A component's diagram column is its primary operational group, ordered
+    # the same way the operational status view already orders its groups.
+    DIAGRAM_GROUP_ORDER = {
+        "Structure": 0,
+        "Crew & Control": 1,
+        "Powertrain": 2,
+        "Mobility": 3,
+        "Cargo": 4,
+        "Sensors & Comms": 5,
+        "Weapons": 6,
+        "Control Surfaces": 7,
+        "General Systems": 8,
+    }
+
+    def get_system_diagram_payload(self):
+        """
+        Lay out every slot (installed or reserved-but-empty) as a node in an
+        abstract grid -- columns by operational group, independent of the
+        slot's physical position in the hull -- with edges from
+        ``compute_system_wiring`` connecting matched output/input ports.
+        """
+        columns = {}
+        for component in self.placed_components:
+            raw_groups = component.get("operational_groups") or []
+            group_name = str(raw_groups[0]).strip() if raw_groups else "General Systems"
+            columns.setdefault(group_name, []).append(component)
+
+        group_order = sorted(columns.keys(), key=lambda name: (self.DIAGRAM_GROUP_ORDER.get(name, 99), name))
+
+        wiring_status = self.get_component_wiring_status()
+        column_width, row_height, node_gap = 1.0, 1.0, 0.25
+        nodes = []
+        for column_index, group_name in enumerate(group_order):
+            for row_index, component in enumerate(columns[group_name]):
+                instance_id = component.get("instance_id")
+                nodes.append({
+                    "id": instance_id,
+                    "label": component.get("label", instance_id or "slot"),
+                    "group": group_name,
+                    "slot_category": component.get("slot_category"),
+                    "installed": bool(component.get("catalog_id")),
+                    "fully_wired": wiring_status.get(instance_id, {"fully_wired": True})["fully_wired"],
+                    "x": column_index * (column_width + node_gap),
+                    "y": row_index * (row_height + node_gap),
+                    "width": column_width,
+                    "height": row_height,
+                    "inputs": self._instance_ports(component, "inputs"),
+                    "outputs": self._instance_ports(component, "outputs"),
+                })
+
+        return {
+            "nodes": nodes,
+            "group_order": group_order,
+            "edges": self.compute_system_wiring(),
+            "wiring_status": wiring_status,
+        }
+
     def get_design_payload(self, vehicle_position):
         return {
             "base_rect": self.get_world_base_rect(vehicle_position),
@@ -872,6 +1661,15 @@ class VehicleDesignController:
             "dragging_component_id": self.dragging_component_id,
             "dragging_catalog_component_id": self.dragging_catalog_component_id,
             "requirement_status": self.get_requirement_status_list(),
+            "system_diagram": self.get_system_diagram_payload(),
+            "orthographic_views": {
+                view_id: {
+                    **dict(view),
+                    "grid": [list(row) for row in self.hull_silhouettes.get(view_id, [])],
+                    "components": self.get_orthographic_component_blocks(view_id),
+                }
+                for view_id, view in self.ORTHOGRAPHIC_VIEWS.items()
+            },
         }
 
     def component_at_world_position(self, vehicle_position, world_x, world_y):
@@ -911,6 +1709,7 @@ class VehicleDesignController:
             "satisfies_categories": list(catalog_entry.get("satisfies_categories", [])),
             "operational_groups": list(catalog_entry.get("operational_groups", [])),
             "subsystem_labels": list(catalog_entry.get("subsystem_labels", [])),
+            "slot_category": (catalog_entry.get("satisfies_categories") or [None])[0],
             "local_rect_m": self._clamp_local_rect_to_hull(local_rect),
         }
 
@@ -919,6 +1718,188 @@ class VehicleDesignController:
             if component.get("instance_id") == instance_id:
                 return component
         return None
+
+    # ------------------------------------------------------------------
+    # Slot / installed-part split: a slot is a reserved rect + declared
+    # category that a catalog part can be installed into and swapped out
+    # of, independent of the rect itself moving or resizing.
+    # ------------------------------------------------------------------
+
+    def get_compatible_catalog_entries_for_slot(self, instance_id):
+        slot = self._get_component_by_instance_id(instance_id)
+        if slot is None:
+            return []
+        slot_category = slot.get("slot_category")
+        if not slot_category:
+            return list(self.component_catalog)
+        return [
+            entry for entry in self.component_catalog
+            if slot_category in (entry.get("satisfies_categories") or [])
+        ]
+
+    def install_component_in_slot(self, instance_id, catalog_id):
+        slot = self._get_component_by_instance_id(instance_id)
+        catalog_entry = self.get_component_catalog_entry(catalog_id)
+        if slot is None or catalog_entry is None:
+            return False
+        slot["catalog_id"] = catalog_entry["id"]
+        slot["label"] = catalog_entry["label"]
+        slot["component_type"] = catalog_entry["component_type"]
+        slot["entry_type"] = catalog_entry.get("entry_type", "component")
+        slot["satisfies_categories"] = list(catalog_entry.get("satisfies_categories", []))
+        slot["operational_groups"] = list(catalog_entry.get("operational_groups", []))
+        slot["subsystem_labels"] = list(catalog_entry.get("subsystem_labels", []))
+        if not slot.get("slot_category"):
+            slot["slot_category"] = (catalog_entry.get("satisfies_categories") or [None])[0]
+        return True
+
+    def uninstall_component_from_slot(self, instance_id):
+        slot = self._get_component_by_instance_id(instance_id)
+        if slot is None or not slot.get("catalog_id"):
+            return False
+        slot["catalog_id"] = None
+        slot["label"] = f"Empty {slot.get('slot_category') or 'slot'}"
+        slot["component_type"] = "empty_slot"
+        slot["entry_type"] = "empty_slot"
+        slot["satisfies_categories"] = []
+        slot["operational_groups"] = []
+        slot["subsystem_labels"] = []
+        return True
+
+    # ------------------------------------------------------------------
+    # System diagram: auto-wire installed components' ports by resource
+    # type, with manual overrides recorded in ``manual_routes``.
+    # ------------------------------------------------------------------
+
+    def _installed_components(self):
+        return [component for component in self.placed_components if component.get("catalog_id")]
+
+    def _instance_ports(self, component, direction):
+        catalog = self.get_component_catalog_entry(component.get("catalog_id")) or {}
+        return catalog.get(direction, [])
+
+    def compute_system_wiring(self):
+        installed = self._installed_components()
+        output_ports = []
+        input_ports = []
+        for component in installed:
+            instance_id = component.get("instance_id")
+            for port in self._instance_ports(component, "outputs"):
+                output_ports.append((instance_id, port))
+            for port in self._instance_ports(component, "inputs"):
+                input_ports.append((instance_id, port))
+
+        edges = []
+        claimed_outputs = set()
+        manual_targets = set()
+        for route in self.manual_routes:
+            source_key = (route["from_slot_id"], route["from_port_id"])
+            target_key = (route["to_slot_id"], route["to_port_id"])
+            source_port = next((p for iid, p in output_ports if (iid, p["port_id"]) == source_key), None)
+            target_exists = any((iid, p["port_id"]) == target_key for iid, p in input_ports)
+            if source_port is None or not target_exists:
+                continue
+            edges.append({**route, "resource_type": source_port["resource_type"], "manual": True})
+            claimed_outputs.add(source_key)
+            manual_targets.add(target_key)
+
+        component_by_id = {component["instance_id"]: component for component in installed}
+        for target_instance_id, port in input_ports:
+            target_key = (target_instance_id, port["port_id"])
+            if target_key in manual_targets:
+                continue
+            candidates = [
+                (source_instance_id, source_port)
+                for source_instance_id, source_port in output_ports
+                if source_port["resource_type"] == port["resource_type"]
+                and (source_instance_id, source_port["port_id"]) not in claimed_outputs
+                and source_instance_id != target_instance_id
+            ]
+            if not candidates:
+                continue
+
+            target_groups = set(component_by_id.get(target_instance_id, {}).get("operational_groups", []))
+
+            def _score(candidate, target_groups=target_groups):
+                source_instance_id, _source_port = candidate
+                source_groups = set(component_by_id.get(source_instance_id, {}).get("operational_groups", []))
+                return 0 if source_groups & target_groups else 1
+
+            best_source_instance_id, best_source_port = min(candidates, key=_score)
+            claimed_outputs.add((best_source_instance_id, best_source_port["port_id"]))
+            edges.append({
+                "from_slot_id": best_source_instance_id,
+                "from_port_id": best_source_port["port_id"],
+                "to_slot_id": target_instance_id,
+                "to_port_id": port["port_id"],
+                "resource_type": port["resource_type"],
+                "manual": False,
+            })
+        return edges
+
+    def get_component_wiring_status(self):
+        edges = self.compute_system_wiring()
+        wired_targets = {(edge["to_slot_id"], edge["to_port_id"]) for edge in edges}
+        status = {}
+        for component in self._installed_components():
+            instance_id = component.get("instance_id")
+            required_inputs = self._instance_ports(component, "inputs")
+            missing = [port for port in required_inputs if (instance_id, port["port_id"]) not in wired_targets]
+            status[instance_id] = {"fully_wired": not missing, "missing_inputs": missing}
+        return status
+
+    def cycle_input_port_route(self, instance_id, port_id):
+        """
+        Manually override which output port feeds a given input port,
+        cycling through compatible candidates plus a final "auto" option
+        that clears the override and reverts to type-matched auto-wiring.
+        """
+        target_component = self._get_component_by_instance_id(instance_id)
+        if target_component is None:
+            return False
+        target_port = next(
+            (port for port in self._instance_ports(target_component, "inputs") if port["port_id"] == port_id),
+            None,
+        )
+        if target_port is None:
+            return False
+
+        candidates = []
+        for component in self._installed_components():
+            if component.get("instance_id") == instance_id:
+                continue
+            for port in self._instance_ports(component, "outputs"):
+                if port["resource_type"] == target_port["resource_type"]:
+                    candidates.append((component["instance_id"], port["port_id"]))
+        if not candidates:
+            return False
+
+        existing_index = next(
+            (
+                index for index, route in enumerate(self.manual_routes)
+                if route["to_slot_id"] == instance_id and route["to_port_id"] == port_id
+            ),
+            None,
+        )
+        current = None
+        if existing_index is not None:
+            existing = self.manual_routes[existing_index]
+            current = (existing["from_slot_id"], existing["from_port_id"])
+
+        options = candidates + [None]
+        next_index = (options.index(current) + 1) % len(options) if current in options else 0
+        chosen = options[next_index]
+
+        if existing_index is not None:
+            del self.manual_routes[existing_index]
+        if chosen is not None:
+            self.manual_routes.append({
+                "from_slot_id": chosen[0],
+                "from_port_id": chosen[1],
+                "to_slot_id": instance_id,
+                "to_port_id": port_id,
+            })
+        return True
 
     def _build_local_rect_from_pointer(self, width, height, local_x, local_y, pointer_offset):
         offset_x = 0.0

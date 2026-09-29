@@ -51,7 +51,17 @@ class HeadlessWorldGenRuntimeTests(unittest.TestCase):
             CANONICAL_LOD0_SAMPLE_WIDTH,
             heightmap["resolution_contract"]["scientific_sample_dimensions"]["width"],
         )
-        self.assertLess(heightmap["sample_spacing_x_m"], 50_000.0)
+        contract = heightmap["resolution_contract"]
+        self.assertEqual(
+            {"width": 257, "height": 129},
+            contract["causal_evaluation_dimensions"],
+        )
+        self.assertEqual(
+            "province_and_surface_detail_deferred_to_regional_regeneration",
+            contract["detail_ownership"],
+        )
+        self.assertTrue(contract["interpolation"].startswith("bilinear_"))
+        self.assertLess(heightmap["sample_spacing_x_m"], 100_000.0)
 
     def test_representative_region_bounds_are_seeded_and_physical(self):
         runner = HeadlessWorldGenRunner(Path("representative-test"))
@@ -338,6 +348,19 @@ class HeadlessWorldGenRuntimeTests(unittest.TestCase):
                 float((planet.get("surface_evolution_model") or {}).get("surface_pressure_bar", 0.0)),
                 0.0,
             )
+
+
+
+class HeadlessIsolationTests(unittest.TestCase):
+    def test_headless_runs_never_write_the_live_ontology(self):
+        from simulations.world_gen.headless_runner import HeadlessWorldGenConfig, HeadlessWorldGenRunner, RunLocalOntologySink
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runner = HeadlessWorldGenRunner(Path(temp_dir) / "isolated")
+            world, sim = runner._new_runtime(HeadlessWorldGenConfig(name="Isolation Probe", render_outputs=False))
+            self.assertIsInstance(world.loader._persistent_store, RunLocalOntologySink)
+            planet = sim._selected_planet_entity()
+            self.assertIsNotNone(planet, "entities still persist into the run's own loader")
 
 
 if __name__ == "__main__":

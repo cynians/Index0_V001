@@ -28,8 +28,16 @@ from simulations.world_gen.material_optics import (
     reflectance_triplet,
 )
 from simulations.world_gen.surface_exposure import derive_surface_exposure_fields
+from simulations.world_gen.true_color_physics import (
+    alter_surface,
+    appearance_environment,
+    apply_atmosphere,
+    direct_illumination_share,
+    dust_aerosol_tau,
+)
 from simulations.world_gen.surface_geomorphology import (
     derive_surface_geomorphology_fields,
+    wrapped_gradient,
 )
 
 try:
@@ -38,7 +46,24 @@ except ImportError:  # pragma: no cover - exercised only by minimal installs.
     np = None
 
 
-TRUE_COLOR_MODEL_VERSION = "planet-true-color-v13-bound-material-heightfield-no-global-vegetation"
+TRUE_COLOR_MODEL_VERSION = "planet-true-color-v15-saltation-dust-and-direct-light-shading"
+
+# Diffuse attenuation of light in the liquid (1/m): the bed shows through
+# as exp(-2 K z), so beyond a few tens of metres a sea shows only its own
+# colour.  Clear coastal water ~0.05; liquid hydrocarbons absorb weakly in
+# the visible.
+LIQUID_DIFFUSE_ATTENUATION_PER_M = {"water": 0.05, "brine": 0.05, "methane_ethane": 0.01}
+# Hydraulic geometry: channel width ~2.7 Q^0.5 m (Leopold & Maddock).
+RIVER_WIDTH_COEFFICIENT_M = 2.7
+# Local maps (LOD3 and finer, cells of about 50 m or less) shade relief
+# physically instead of normalising it to the tile's own span.
+LOCAL_RELIEF_MIN_LEVEL = 3
+# Hillshade vertical exaggeration at 50 m cells; scales with sqrt(cell size),
+# so 4x at LOD3 (49 m) and 1.5x at LOD4 (7 m).
+LOCAL_RELIEF_SHADE_MAX_EXAGGERATION = 4.0
+# Grain texture reaches full contrast only when its relief amplitude is at
+# least this slope across one cell (0.035 is about 2 degrees).
+LOCAL_TEXTURE_REFERENCE_SLOPE = 0.035
 
 
 # These are not ten decorative noise channels.  Each entry names an
@@ -317,9 +342,15 @@ def derive_true_color_model(
                 else "material_optical_surface_profile"
             ),
         })
+    appearance_physics = appearance_environment(
+        atmosphere,
+        seed=planet.get("world_gen_seed") if isinstance(planet.get("world_gen_seed"), dict) else {},
+        natural_material_model=natural_material_model,
+    )
     return {
         "status": "derived",
         "model_version": TRUE_COLOR_MODEL_VERSION,
+        "appearance_physics": appearance_physics,
         "projection": str(heightmap.get("projection") or "equirectangular"),
         "product": "surface_and_atmosphere_true_color",
         "truth_state": "derived_visualization",
@@ -513,7 +544,13 @@ def river_true_color_rgb(river):
     return tuple(int(round(float(channel))) for channel in color)
 
 
-def _true_color_river_overlay(water_cycle, size):
+def _true_color_river_overlay(water_cycle, size, pixel_m=None):
+    """River water drawn over the land.
+
+    With ``pixel_m`` (physical rendering) a channel covers only its width's
+    share of a pixel -- about 2.7 Q^0.5 m wide, so rivers vanish from
+    planetary-scale true colour, as they do from orbit.
+    """
     water_cycle = water_cycle if isinstance(water_cycle, dict) else {}
     rivers = [river for river in water_cycle.get("rivers") or [] if isinstance(river, dict)]
     if not rivers:
@@ -533,7 +570,14 @@ def _true_color_river_overlay(water_cycle, size):
             continue
         discharge = max(0.0, float(river.get("estimated_discharge_m3_s", 0.0) or 0.0))
         line_width = 1 + int(discharge >= 450.0) + int(discharge >= 6000.0)
-        color = (*river_true_color_rgb(river), 224)
+        alpha = 224
+        if pixel_m:
+            channel_m = RIVER_WIDTH_COEFFICIENT_M * math.sqrt(discharge)
+            line_width = max(1, int(channel_m / float(pixel_m)))
+            alpha = int(round(224 * _clamp(channel_m / float(pixel_m))))
+            if alpha < 6:
+                continue
+        color = (*river_true_color_rgb(river), alpha)
         if line_width > 1:
             pygame.draw.lines(overlay, color, False, points, line_width)
         pygame.draw.aalines(overlay, color, False, points)
@@ -703,6 +747,116 @@ def _color_driver_fraction(profile, exposure, bedrock_modulation):
     return np.clip(driver_value * response * bedrock_modulation, 0.0, 0.62)
 
 
+AREAL_FRACTION_SEMANTICS = "areal_surface_fraction"
+_AREAL_PROPERTY_KEYS = (
+    "wet_darkening_factor",
+    "oxidation_response",
+    "hydration_response",
+    "space_weathering_response",
+    "grain_size_sensitivity",
+    "fracture_darkening_factor",
+    "surface_fabric_strength",
+)
+
+
+_MATERIAL_IRON_CACHE = {}
+
+
+def _material_iron_percent(material_id):
+    """Oxidizable iron (wt%) of a material from its ontology chemistry, None if unknown.
+
+    Only iron not already bound in oxidized phases can still weather into
+    new ferric pigment: limonite (53 % Fe, nearly all ferric) already shows
+    its colour through its own reflectance and adds no fresh stain.
+    """
+    key = str(material_id or "")
+    if key not in _MATERIAL_IRON_CACHE:
+        value = None
+        try:
+            from simulations.world_gen.natural_materials import natural_material_entries, oxidized_family_fraction
+
+            for entry in natural_material_entries():
+                if entry.get("id") == key:
+                    composition = entry.get("elemental_composition_wt")
+                    if isinstance(composition, dict) and composition:
+                        value = float(composition.get("Fe", 0.0) or 0.0) * (1.0 - oxidized_family_fraction(entry))
+                    break
+        except Exception:
+            value = None
+        _MATERIAL_IRON_CACHE[key] = value
+    return _MATERIAL_IRON_CACHE[key]
+
+
+def _mix_areal_endmembers(components, fallback_reflectance, exposure, size):
+    """Linear areal mixture of material endmembers.
+
+    Each layer's alpha is the visible areal fraction of one material (cover
+    already included), so reflectance is the fraction-weighted mean of every
+    material's own fresh/weathered endpoint blend.  Coatings keep their
+    material-specific colouring power.
+    """
+    width, height = size
+    shape = (height, width)
+    base = np.asarray(fallback_reflectance, dtype=np.float32)
+    bedrock_exposure = exposure.get("bedrock_exposure", np.full(shape, 0.35, dtype=np.float32))
+    bedrock_modulation = 0.28 + bedrock_exposure * 0.72
+    accumulated = np.zeros((*shape, 3), dtype=np.float32)
+    total = np.zeros(shape, dtype=np.float32)
+    iron_sum = np.zeros(shape, dtype=np.float32)
+    iron_weight = np.zeros(shape, dtype=np.float32)
+    property_sum = {key: np.zeros(shape, dtype=np.float32) for key in _AREAL_PROPERTY_KEYS}
+    fabric_sum = {
+        "bedded_fraction": np.zeros(shape, dtype=np.float32),
+        "foliated_fraction": np.zeros(shape, dtype=np.float32),
+        "volcanic_flow_fraction": np.zeros(shape, dtype=np.float32),
+    }
+    for component in components:
+        fraction = _surface_to_alpha_array(component.get("surface"), size)
+        if fraction is None:
+            continue
+        profile = material_optical_surface_profile(
+            component.get("material_id"),
+            formation_category=component.get("formation_category"),
+            material_subclass=component.get("material_subclass"),
+            display_color=component.get("display_color"),
+            explicit=component.get("optical_surface_profile"),
+        )
+        fresh = np.asarray(reflectance_triplet(profile), dtype=np.float32)
+        weathered_profile = profile.get("weathered_visible_reflectance") or profile.get("visible_reflectance") or {}
+        weathered = np.asarray([
+            _clamp(weathered_profile.get("red_650nm", fresh[0])),
+            _clamp(weathered_profile.get("green_550nm", fresh[1])),
+            _clamp(weathered_profile.get("blue_450nm", fresh[2])),
+        ], dtype=np.float32)
+        color_fraction = _color_driver_fraction(profile, exposure, bedrock_modulation)
+        blended = fresh[None, None, :] * (1.0 - color_fraction[..., None]) + weathered[None, None, :] * color_fraction[..., None]
+        weight = fraction
+        if str(profile.get("mixing_mode") or "") == "coating":
+            weight = _optical_mixture_fraction(fraction, profile, 1.0)
+        accumulated += weight[..., None] * blended
+        total += weight
+        iron_percent = _material_iron_percent(component.get("material_id"))
+        if iron_percent is not None:
+            iron_sum += weight * iron_percent
+            iron_weight += weight
+        for key in _AREAL_PROPERTY_KEYS:
+            property_sum[key] += weight * _clamp(profile.get(key, 0.0))
+        fabric = str(profile.get("surface_fabric") or "massive")
+        for key, expected in (("bedded_fraction", "bedded"), ("foliated_fraction", "foliated"), ("volcanic_flow_fraction", "volcanic_flow")):
+            if fabric == expected:
+                fabric_sum[key] += weight
+    has_material = total > 1e-4
+    mixed = np.where(
+        has_material[..., None],
+        accumulated / np.maximum(total[..., None], 1e-6),
+        np.broadcast_to(base, (*shape, 3)),
+    )
+    properties = {key: values / np.maximum(total, 1e-3) for key, values in property_sum.items()}
+    properties.update({key: values / np.maximum(total, 1e-3) for key, values in fabric_sum.items()})
+    properties["iron_wt_percent"] = np.where(iron_weight > 1e-4, iron_sum / np.maximum(iron_weight, 1e-6), np.nan).astype(np.float32)
+    return np.clip(mixed, 0.002, 0.98), properties
+
+
 def _mix_material_endmembers(
     material_components,
     fallback_reflectance,
@@ -713,6 +867,11 @@ def _mix_material_endmembers(
     wrap_x=False,
 ):
     """Mix optical endmembers within substrate, constituent and cover strata."""
+    components = [item for item in material_components or [] if isinstance(item, dict)]
+    if components and all(
+        item.get("fraction_semantics") == AREAL_FRACTION_SEMANTICS for item in components
+    ):
+        return _mix_areal_endmembers(components, fallback_reflectance, exposure, size)
     width, height = size
     shape = (height, width)
     base = np.asarray(fallback_reflectance, dtype=np.float32)
@@ -912,6 +1071,37 @@ def _fallback_surface(heightmap, model):
     return surface
 
 
+# True-colour seas by surface liquid: (shallow, deep, coastal sediment) RGB.
+# Water is blue-black; Titan's methane-ethane seas are among the darkest
+# surfaces in the Solar System (radar-dark, near-black and brownish under the
+# orange haze); liquid nitrogen, CO2 and argon are clear and pale; ammonia
+# solutions are faintly yellow; molten rock glows.
+SURFACE_LIQUID_COLORS = {
+    "water": ((38.0, 94.0, 119.0), (7.0, 24.0, 43.0), (71.0, 105.0, 105.0)),
+    "brine": ((52.0, 104.0, 118.0), (10.0, 30.0, 46.0), (96.0, 112.0, 104.0)),
+    "methane_ethane": ((48.0, 38.0, 26.0), (12.0, 10.0, 8.0), (82.0, 62.0, 38.0)),
+    "liquid_nitrogen": ((150.0, 162.0, 170.0), (92.0, 104.0, 118.0), (150.0, 140.0, 128.0)),
+    "liquid_carbon_dioxide": ((118.0, 132.0, 138.0), (58.0, 70.0, 80.0), (126.0, 120.0, 108.0)),
+    "argon": ((140.0, 150.0, 160.0), (84.0, 94.0, 108.0), (140.0, 132.0, 122.0)),
+    "carbon_monoxide": ((136.0, 146.0, 150.0), (80.0, 90.0, 100.0), (136.0, 128.0, 118.0)),
+    "ammonia": ((96.0, 104.0, 82.0), (38.0, 42.0, 34.0), (116.0, 110.0, 84.0)),
+    "sulfur_dioxide": ((112.0, 104.0, 70.0), (46.0, 42.0, 28.0), (130.0, 116.0, 76.0)),
+    "hydrogen_sulfide": ((92.0, 90.0, 70.0), (36.0, 36.0, 28.0), (112.0, 104.0, 78.0)),
+    "silicate_magma": ((236.0, 118.0, 36.0), (122.0, 30.0, 12.0), (70.0, 40.0, 30.0)),
+}
+
+
+def surface_liquid_colors(surface_fluid):
+    fluid = str(surface_fluid or "water").strip().lower()
+    if fluid in SURFACE_LIQUID_COLORS:
+        return SURFACE_LIQUID_COLORS[fluid]
+    if "methane" in fluid or "ethane" in fluid:
+        return SURFACE_LIQUID_COLORS["methane_ethane"]
+    if "magma" in fluid or "lava" in fluid:
+        return SURFACE_LIQUID_COLORS["silicate_magma"]
+    return SURFACE_LIQUID_COLORS["water"]
+
+
 def render_true_color_surface(
     heightmap,
     model,
@@ -1070,9 +1260,10 @@ def render_true_color_surface(
         "space_weathering_response",
         np.full((target_h, target_w), 0.15, dtype=np.float32),
     )
-    linear_surface *= (
-        1.0 - wetness[..., None] * wet_factor[..., None] * 0.72
-    )
+    # Annual-mean soil moisture darkens humid ground by roughly a tenth; the
+    # full wet-darkening factor applies only to surfaces that stay wet.
+    if not model.get("appearance_physics"):
+        linear_surface *= 1.0 - wetness[..., None] * wet_factor[..., None] * 0.72
     # The fresh/weathered blend now happens per-material, inside
     # _mix_material_endmembers, along each material's own colour driver
     # (see color_driver on the optical profile). What remains here is a
@@ -1080,17 +1271,73 @@ def render_true_color_surface(
     # isn't already carried by a material's own weathered endpoint; it is
     # kept deliberately weak so it doesn't double up with that per-material
     # range on materials such as laterite/ferric crusts.
+    appearance_physics = model.get("appearance_physics") if isinstance(model.get("appearance_physics"), dict) else None
+    alteration = {}
+    if appearance_physics is not None:
+        # Physical alteration (true_color_physics): ferric staining, dust,
+        # space weathering and organic fallout from the planet's chemistry,
+        # climate, UV and time -- replaces the fixed residual tints below.
+        climate_temperature_rows = _grid_rows(water_cycle or {}, ("temperature_rows_k",))
+        temperature_field = (
+            np.nan_to_num(
+                _resample_bilinear(np.asarray(climate_temperature_rows, dtype=np.float32), target_h, target_w),
+                nan=float(appearance_physics.get("surface_temperature_k", 288.0) or 288.0),
+            )
+            if climate_temperature_rows else None
+        )
+        if appearance_physics.get("ice_is_bedrock") and bool(ice.any()):
+            # An ice-rich crust's water ice is bedrock: it weathers and is
+            # buried like rock (Titan's organics), so it joins the altered
+            # land instead of being painted on as a clean ice sheet.
+            ice_linear = np.asarray(
+                appearance_physics.get("water_ice_rgb") or (0.78, 0.86, 0.92),
+                dtype=np.float32,
+            )
+            linear_surface = np.where(ice[..., None], ice_linear, linear_surface)
+            ice = np.zeros_like(ice)
+        runoff_rows = _grid_rows(water_cycle or {}, ("annual_runoff_rows_mm",))
+        runoff_field = (
+            np.nan_to_num(_resample_bilinear(np.asarray(runoff_rows, dtype=np.float32), target_h, target_w), nan=0.0)
+            if runoff_rows else None
+        )
+        gradient_spacing_x = max(1.0, float(heightmap.get("sample_spacing_x_m") or heightmap.get("equator_resolution_m_per_px") or 1.0)) * max(1.0, cell_w / target_w)
+        gradient_spacing_y = max(1.0, float(heightmap.get("sample_spacing_y_m") or heightmap.get("sample_spacing_x_m") or heightmap.get("equator_resolution_m_per_px") or 1.0)) * max(1.0, cell_h / target_h)
+        gradient_y, gradient_x = wrapped_gradient(
+            elevation, gradient_spacing_y, gradient_spacing_x, wrap_x=bool(heightmap.get("wrap_x", False)),
+        )
+        linear_surface, alteration = alter_surface(
+            linear_surface,
+            appearance_physics,
+            {
+                "temperature_k": temperature_field,
+                "wetness": wetness,
+                "aridity": exposure.get("aridity"),
+                "weathering": exposure.get("weathering"),
+                "age": exposure.get("age"),
+                "deposition": exposure.get("deposition"),
+                "slope": exposure.get("slope"),
+                "bedrock": exposure.get("bedrock_exposure"),
+                "elevation_m": elevation,
+                "gradient": np.hypot(gradient_x, gradient_y),
+                "runoff_mm": runoff_field,
+                "iron_wt_percent": optical_properties.get("iron_wt_percent"),
+            },
+            ~ocean,
+        )
+        # The top layer (soil, dust or organics) is what gets wet: damp
+        # ground is darker by roughly a tenth in the annual mean.
+        linear_surface *= 1.0 - wetness[..., None] * wet_factor[..., None] * 0.40
     ferric = np.asarray([0.31, 0.075, 0.038], dtype=np.float32)
     ferric_fraction = np.clip(
         oxidation * oxidation_response * 0.16,
         0.0,
         0.20,
-    )
+    ) * (0.0 if appearance_physics is not None else 1.0)
     linear_surface = (
         linear_surface * (1.0 - ferric_fraction[..., None])
         + ferric * ferric_fraction[..., None]
     )
-    if str(model.get("surface_regime") or "") == "airless_regolith":
+    if appearance_physics is None and str(model.get("surface_regime") or "") == "airless_regolith":
         weather_fraction = np.clip(
             space_weathering * space_response * 0.38,
             0.0,
@@ -1105,6 +1352,12 @@ def render_true_color_surface(
             + weathered * weather_fraction[..., None]
         )
     land_rgb = _linear_array_to_srgb(linear_surface)
+    luma_weights = np.asarray([0.2126, 0.7152, 0.0722], dtype=np.float32)
+    physical_land = ~ocean & ~ice
+    reference_land_luma = (
+        float(np.sum(linear_surface[physical_land] * luma_weights, axis=-1).mean())
+        if appearance_physics is not None and bool(physical_land.any()) else None
+    )
     base = np.asarray(_rgb(model.get("base_reflectance_rgb")), dtype=np.float32)
 
     # Derive the visible texture from the same topography that the height
@@ -1174,9 +1427,21 @@ def render_true_color_surface(
 
     spacing_x = max(1.0, float(heightmap.get("sample_spacing_x_m") or heightmap.get("equator_resolution_m_per_px") or 1.0))
     spacing_y = max(1.0, float(heightmap.get("sample_spacing_y_m") or spacing_x))
+    relief_visibility = 1.0
+    if detail_level >= LOCAL_RELIEF_MIN_LEVEL:
+        # local_relief and curvature are normalised to this tile's own range,
+        # so on a flat tile sub-metre generator noise became full-contrast
+        # grain (the LOD3 'orange peel').  Scale them by how much relief the
+        # texture really has: its amplitude in metres against a gentle slope
+        # across one cell.
+        texture_amplitude_m = float(np.percentile(np.abs(elevation_points - source_meso_form), 96.0))
+        reference_m = max(spacing_x, spacing_y) * LOCAL_TEXTURE_REFERENCE_SLOPE
+        relief_visibility = float(np.clip(texture_amplitude_m / max(1e-6, reference_m), 0.15, 1.0))
+        local_relief = local_relief * relief_visibility
+        curvature = curvature * relief_visibility
     scale_x = spacing_x * max(1.0, cell_w / target_w)
     scale_y = spacing_y * max(1.0, cell_h / target_h)
-    dzdy, dzdx = np.gradient(elevation, scale_y, scale_x)
+    dzdy, dzdx = wrapped_gradient(elevation, scale_y, scale_x, wrap_x=wrap_x)
     if geomorphology:
         dzdx = geomorphology["dzdx"]
         dzdy = geomorphology["dzdy"]
@@ -1425,19 +1690,36 @@ def render_true_color_surface(
     impact_relief = np.clip((np.abs(curvature) * 0.65 + ruggedness * 0.35) * age, 0.0, 1.0)
     impact_contrast = impact_relief * crater_retention * (1.0 - crater_degradation * 0.86)
     terrain_albedo += (impact_contrast - impact_contrast.mean()) * 0.038
+    mantle_cover = alteration.get("mantle_cover")
+    if mantle_cover is not None:
+        # These are bare-rock brightness contrasts; a loose mantle (Titan's
+        # organic blanket, Martian dust) hides them.
+        terrain_albedo = terrain_albedo * (1.0 - np.asarray(mantle_cover, dtype=np.float32))
 
     land_rgb *= 1.0 + np.clip(terrain_albedo, -0.18, 0.18)[..., None]
 
-    # True-colour oceans are dark reflectors; shallow shelves receive sediment
-    # colour while deep water approaches blue-black.
-    ocean_shallow = np.asarray([38.0, 94.0, 119.0], dtype=np.float32)
-    ocean_deep = np.asarray([7.0, 24.0, 43.0], dtype=np.float32)
+    # True-colour seas are dark reflectors; shallow shelves receive sediment
+    # colour while deep liquid approaches the liquid's own deep colour
+    # (blue-black water, near-black methane).
+    shallow_color, deep_color, sediment_color = surface_liquid_colors((water_cycle or {}).get("surface_fluid"))
+    ocean_shallow = np.asarray(shallow_color, dtype=np.float32)
+    ocean_deep = np.asarray(deep_color, dtype=np.float32)
+    shelf = 1.0 - depth
+    if appearance_physics is not None and has_ocean:
+        fluid_name = str(((water_cycle or {}).get("surface_fluid")) or "water").strip().lower()
+        attenuation = LIQUID_DIFFUSE_ATTENUATION_PER_M.get(
+            "methane_ethane" if ("methane" in fluid_name or "ethane" in fluid_name) else fluid_name, 0.05,
+        )
+        water_depth_m = np.maximum(0.0, sea - elevation)
+        depth = 1.0 - np.exp(-2.0 * attenuation * water_depth_m)
+        # Suspended sediment stays over the shelf (~100 m).
+        shelf = np.exp(-water_depth_m / 100.0)
     ocean_rgb = ocean_shallow[None, None, :] * (1.0 - depth[..., None]) + ocean_deep[None, None, :] * depth[..., None]
     # Shelf depth and delivered sediment, rather than random blue mottling,
     # create orbital-scale variation in water colour.
-    coastal_sediment = np.clip(deposition * (1.0 - depth) * 0.18, 0.0, 0.18)
+    coastal_sediment = np.clip(deposition * shelf * 0.18, 0.0, 0.18)
     ocean_rgb = ocean_rgb * (1.0 - coastal_sediment[..., None]) + np.asarray(
-        [71.0, 105.0, 105.0], dtype=np.float32
+        sediment_color, dtype=np.float32
     ) * coastal_sediment[..., None]
     rgb = np.where(ocean[..., None], ocean_rgb, land_rgb)
 
@@ -1465,6 +1747,19 @@ def render_true_color_surface(
     # normal gain. Regional terrain already contains real slopes and tapers
     # quickly to avoid resurrecting the old contour-scratch artifact.
     normal_gain = max(1.0, 2.8 / (2.0 ** detail_level))
+    if detail_level >= LOCAL_RELIEF_MIN_LEVEL or (appearance_physics is not None and detail_level <= 0):
+        # (Also at planetary scale in the physical model: span-normalised
+        # shading gave every world the same relief contrast however deep
+        # its craters or high its mountains -- ~1600x on a cratered Mars.)
+        # Span-normalised shading exaggerates a flat tile without bound: a
+        # 107 m-relief LOD3 plateau was shaded about 25x, which turned
+        # sub-metre synthesis noise into an orange-peel texture.  Cap the
+        # vertical exaggeration by cell size (cartographic z-factors grow
+        # with pixel size as sub-cell relief averages out).  Tiles with real
+        # relief stay under the cap and keep the diagnostic-matched shading.
+        cell_m = max(spacing_x, spacing_y)
+        max_exaggeration = LOCAL_RELIEF_SHADE_MAX_EXAGGERATION * math.sqrt(cell_m / 50.0)
+        diagnostic_gradient_scale = max(diagnostic_gradient_scale, cell_m * normal_gain / max_exaggeration)
     nx = -source_dx / diagnostic_gradient_scale * normal_gain
     ny = -source_dy / diagnostic_gradient_scale * normal_gain
     nz = np.ones_like(nx)
@@ -1479,24 +1774,66 @@ def render_true_color_surface(
     # Concave, rugged terrain has a smaller visible sky hemisphere.  This
     # terrain-derived ambient-occlusion proxy makes mountain structure legible
     # without changing elevation or inventing a cosmetic texture.
-    sky_view = np.clip(1.0 - concavity * ruggedness * 0.24 - scarp * 0.08, 0.68, 1.0)
-    if detail_level >= 1:
+    sky_view = np.clip(1.0 - concavity * ruggedness * 0.24 * relief_visibility - scarp * 0.08, 0.68, 1.0)
+    if appearance_physics is not None:
+        # Sky-view factor of a tilted surface under an isotropic sky,
+        # (1 + cos slope) / 2, from the same (exaggerated) normals as the
+        # shading -- not the concavity/scarp indices, which drew their
+        # detection lines on worlds lit mostly by skylight.
+        sky_view = 0.5 * (1.0 + nz / norm)
+    flat_illumination = float(light[2])
+    dust_tau = 0.0
+    if appearance_physics is not None:
+        dust_tau = dust_aerosol_tau(
+            appearance_physics,
+            float(alteration.get("dry_land_fraction", 0.0) or 0.0),
+            float(alteration.get("wet_fraction", 0.0) or 0.0),
+        )
+    if model.get("appearance_physics"):
+        # A flat surface seen from nadir shows its albedo; slopes brighten or
+        # darken around it (the former ambient-plus-diffuse mix darkened all
+        # flat ground by ~18 % in linear light).  Only the direct beam
+        # shades relief: under Titan's haze or Venus's clouds skylight
+        # lights every slope alike.
+        slope_gain = 0.58 if detail_level >= 1 else 0.66
+        direct_share = direct_illumination_share(appearance_physics, dust_tau, flat_illumination)
+        shade = (direct_share * (1.0 + (illumination - flat_illumination) * slope_gain) + (1.0 - direct_share)) * sky_view
+    elif detail_level >= 1:
         # Keep a broad ambient floor while retaining enough normal contrast
         # for mountain chains and valleys in the material-coloured surface.
         shade = (0.54 + illumination * 0.58) * sky_view
     else:
         shade = (0.50 + illumination * 0.66) * sky_view
-    shade *= 1.0 + convexity * ridge * 0.035
-    # Keep ocean reflectance mostly independent of terrain relief.
-    shade = np.where(ocean, 0.94 + illumination * 0.06, shade)
+    if appearance_physics is None:
+        shade *= 1.0 + convexity * ridge * 0.035 * relief_visibility
+    # Keep ocean reflectance mostly independent of terrain relief (fully,
+    # physically: the sea surface does not show its bed's slopes).
+    shade = np.where(ocean, 1.0 if appearance_physics is not None else 0.94 + illumination * 0.06, shade)
     rgb *= shade[..., None]
+    if reference_land_luma is not None:
+        # Relief shading and texture show landform, not albedo: keep the
+        # land's mean (linear) luminance at the altered surface's value.
+        rendered_land = _srgb_array_to_linear(np.clip(rgb[physical_land], 0.0, 255.0))
+        rendered_luma = float(np.sum(rendered_land * luma_weights, axis=-1).mean())
+        if rendered_luma > 1e-6:
+            gain = reference_land_luma / rendered_luma
+            linear_land = _srgb_array_to_linear(np.clip(rgb, 0.0, 255.0)) * gain
+            rgb = np.where(physical_land[..., None], _linear_array_to_srgb(np.clip(linear_land, 0.0, 1.0)), rgb)
 
     atmosphere = atmosphere if isinstance(atmosphere, dict) else {}
     visual = atmosphere.get("visual_model") if isinstance(atmosphere.get("visual_model"), dict) else {}
     pressure = max(0.0, float(model.get("surface_pressure_bar", 0.0) or 0.0))
-    if pressure >= 0.0015 and atmosphere and visual.get("visible", True):
+    if appearance_physics is not None:
+        # Rayleigh scattering and aerosols from the column (true_color_physics).
+        linear_rgb = _srgb_array_to_linear(np.clip(rgb, 0.0, 255.0))
+        linear_rgb = apply_atmosphere(linear_rgb, appearance_physics, dust_tau=dust_tau)
+        rgb = _linear_array_to_srgb(linear_rgb)
+    elif pressure >= 0.0015 and atmosphere and visual.get("visible", True):
         tint = np.asarray(_rgb(visual.get("tint_color"), fallback=(170, 184, 198)), dtype=np.float32)
         haze = min(0.18, 0.018 + math.log1p(pressure) * 0.055)
+        # Optically thick hazes and cloud decks (Titan's orange tholin haze,
+        # Venus's sulfuric deck) tint the whole disc by their own opacity.
+        haze = max(haze, min(0.6, float(visual.get("opacity", 0.0) or 0.0)) if float(visual.get("opacity", 0.0) or 0.0) >= 0.3 else 0.0)
         rgb = rgb * (1.0 - haze) + tint * haze
 
     rgb = np.clip(rgb, 0.0, 255.0).astype(np.uint8)
@@ -1504,7 +1841,11 @@ def render_true_color_surface(
     # Rivers are water surfaces and therefore belong in True Color. Their
     # color is derived from hydrology and suspended/mineral load proxies;
     # planetary rendering intentionally has no vegetation contribution.
-    river_overlay = _true_color_river_overlay(water_cycle, surface.get_size())
+    river_overlay = _true_color_river_overlay(
+        water_cycle,
+        surface.get_size(),
+        pixel_m=(spacing_x * max(1.0, cell_w / target_w)) if appearance_physics is not None else None,
+    )
     if river_overlay is not None:
         surface = surface.convert_alpha()
         surface.blit(river_overlay, (0, 0))

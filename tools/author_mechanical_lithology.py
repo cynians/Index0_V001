@@ -31,33 +31,91 @@ PROFILES = {
 }
 
 
+# Formation categories -> mechanical class.  Substring matching on ids and
+# tags classified pumice and siliceous sinter as ice ("pum-ice", "sil-ice-ous"),
+# sulfides as jointed volcanic rock (their ``volcanic_surface`` tag) and
+# sandstone and shale as regolith ("sand"), so classes now follow the
+# material's subclass and formation category.
+MINERAL_CATEGORY_CLASSES = {
+    "volatile_ice": "massive_ice",
+    "evaporite_basin": "weak_evaporite_rock",
+    "sulfur_surface": "weak_evaporite_rock",
+    "carbonate_sedimentary_basin": "strong_carbonate_rock",
+    "weathering_clay": "regolith_or_weathering_mantle",
+    "residual_bauxite": "regolith_or_weathering_mantle",
+    "iron_weathering": "regolith_or_weathering_mantle",
+    "nickel_laterite": "regolith_or_weathering_mantle",
+    "hydrated_alteration": "weak_sedimentary_rock",
+}
+ROCK_CATEGORY_CLASSES = {
+    "igneous_extrusive_mafic": "jointed_volcanic_rock",
+    "igneous_extrusive_intermediate": "jointed_volcanic_rock",
+    "igneous_extrusive_felsic": "jointed_volcanic_rock",
+    "igneous_hypabyssal_mafic": "jointed_volcanic_rock",
+    "pyroclastic_deposit": "jointed_volcanic_rock",
+    "volcanic_glass": "jointed_volcanic_rock",
+    "igneous_intrusive_felsic": "massive_crystalline_rock",
+    "igneous_intrusive_intermediate": "massive_crystalline_rock",
+    "igneous_intrusive_alkaline": "massive_crystalline_rock",
+    "igneous_mafic": "massive_crystalline_rock",
+    "igneous_ultramafic": "massive_crystalline_rock",
+    "kimberlite_pipe": "massive_crystalline_rock",
+    "magmatic_carbonatite": "strong_carbonate_rock",
+    "late_stage_pegmatite": "massive_crystalline_rock",
+    "regional_metamorphism": "foliated_metamorphic_rock",
+    "contact_metasomatic_skarn": "massive_crystalline_rock",
+    "hydrated_alteration": "foliated_metamorphic_rock",
+    "carbonate_sedimentary_basin": "strong_carbonate_rock",
+    "spring_carbonate": "strong_carbonate_rock",
+    "clastic_sedimentary_basin": "weak_sedimentary_rock",
+    "evaporite_basin": "weak_evaporite_rock",
+}
+# Hard chain silicates filed under hydrated alteration.
+MINERAL_CLASS_OVERRIDES = {
+    "mat_amphibole": "massive_crystalline_rock",
+    "mat_hornblende": "massive_crystalline_rock",
+    "mat_epidote": "massive_crystalline_rock",
+}
+# Rocks whose mechanics differ from their formation category.
+ROCK_CLASS_OVERRIDES = {
+    "mat_marble": "strong_carbonate_rock",
+    "mat_lapis_lazuli_marble": "strong_carbonate_rock",
+    "mat_quartzite": "massive_crystalline_rock",
+    "mat_hornfels": "massive_crystalline_rock",
+    "mat_granulite": "massive_crystalline_rock",
+    "mat_eclogite": "massive_crystalline_rock",
+    "mat_anthracite": "weak_sedimentary_rock",
+    "mat_chert": "massive_crystalline_rock",
+    "mat_radiolarite": "massive_crystalline_rock",
+    "mat_banded_iron_formation": "massive_crystalline_rock",
+    "mat_chalk": "weak_sedimentary_rock",
+    "mat_phosphorite": "weak_sedimentary_rock",
+    "mat_diatomite": "weak_sedimentary_rock",
+}
+
+
 def _mechanical_class(entity):
     material_id = str(entity.get("id") or "").lower()
     subclass = str(entity.get("material_subclass") or "").lower()
     category = str(entity.get("formation_category") or "").lower()
-    classification = str(entity.get("scientific_classification") or "").lower()
-    tags = {str(tag).lower() for tag in (entity.get("tags") or [])}
-    text = " ".join((material_id, subclass, category, classification, " ".join(tags)))
-    if "ice" in text or "frost" in text:
+    if subclass == "ice" or category == "volatile_ice":
         return "massive_ice"
-    if subclass in {"sediment", "soil", "regolith"} or any(word in text for word in ("sand", "silt", "clay", "gravel", "mud", "talus", "colluv", "alluv")):
-        return "unconsolidated_sediment" if subclass == "sediment" else "regolith_or_weathering_mantle"
-    if any(word in text for word in ("evaporite", "halite", "gypsum", "anhydrite")):
-        return "weak_evaporite_rock"
-    if any(word in text for word in ("limestone", "dolostone", "carbonate_rock", "marble")):
-        return "strong_carbonate_rock"
-    if any(word in text for word in ("metamorphic", "gneiss", "schist", "phyllite", "slate", "quartzite", "amphibolite")):
-        return "foliated_metamorphic_rock"
-    if any(word in text for word in ("volcanic", "basalt", "andesite", "rhyolite", "dacite", "diabase", "gabbro", "tuff", "lava")):
-        return "jointed_volcanic_rock"
-    if any(word in text for word in ("sedimentary", "sandstone", "shale", "mudstone", "siltstone", "conglomerate", "breccia")):
-        return "weak_sedimentary_rock"
-    if subclass in {"rock", "mineral"} or any(word in text for word in ("plutonic", "igneous", "granite", "diorite", "tonalite", "syenite", "monzonite")):
-        return "massive_crystalline_rock"
+    if subclass == "sediment":
+        return "unconsolidated_sediment"
+    if subclass in {"regolith", "soil"}:
+        return "regolith_or_weathering_mantle"
+    if subclass == "mineral":
+        if material_id in MINERAL_CLASS_OVERRIDES:
+            return MINERAL_CLASS_OVERRIDES[material_id]
+        return MINERAL_CATEGORY_CLASSES.get(category, "massive_crystalline_rock")
+    if subclass == "rock":
+        if material_id in ROCK_CLASS_OVERRIDES:
+            return ROCK_CLASS_OVERRIDES[material_id]
+        return ROCK_CATEGORY_CLASSES.get(category, "massive_crystalline_rock")
     return "unresolved_geologic_material"
 
 
-def author():
+def author(export=False):
     store = PersistentOntologyStore(ONTOLOGY_PATH)
     datasets = store.load_datasets()
     records = []
@@ -73,11 +131,16 @@ def author():
         raise RuntimeError("No natural geological material records found")
     if not store.persist_entities(records):
         raise RuntimeError("Could not persist mechanical lithology properties")
-    store.export_rdfxml(ONTOLOGY_PATH)
+    if export:
+        store.export_rdfxml(ONTOLOGY_PATH)
     return records
 
 
 if __name__ == "__main__":
-    changed = author()
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--export", action="store_true", help="Also rewrite the ontology .owl checkpoint.")
+    changed = author(export=parser.parse_args().export)
     unresolved = sum(item.get("mechanical_class") == "unresolved_geologic_material" for item in changed)
     print(f"Authored mechanical lithology for {len(changed)} ontology materials ({unresolved} unresolved).")

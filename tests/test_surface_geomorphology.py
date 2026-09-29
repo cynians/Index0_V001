@@ -126,5 +126,26 @@ class SurfaceGeomorphologyTests(unittest.TestCase):
         self.assertGreaterEqual(float(np.min(total)), 0.99999)
 
 
+    def test_flat_local_tile_does_not_promote_decimetre_bumps_to_landforms(self):
+        rng = np.random.default_rng(5)
+        bumps = rng.normal(0.0, 0.1, (60, 80))
+
+        def ridge_p90(level, amplitude):
+            heightmap = _heightmap((3200.0 + bumps * amplitude).tolist())
+            heightmap.update({"map_detail_level": level, "sample_spacing_x_m": 50.0, "sample_spacing_y_m": 50.0})
+            fields = derive_surface_geomorphology_fields(heightmap, target_size=(80, 60))
+            return float(np.percentile(fields["ridge"], 90)), float(np.percentile(fields["ruggedness"], 90))
+
+        # LOD3, 10 cm bumps on 50 m cells: weak landforms, not full-strength ridges.
+        local_ridge, local_rugged = ridge_p90(3, 1.0)
+        self.assertLess(local_ridge, 0.2)
+        self.assertLess(local_rugged, 0.2)
+        # The same metres-scale relief (x 200) is a real landform and keeps full strength.
+        real_ridge, _real_rugged = ridge_p90(3, 200.0)
+        self.assertGreater(real_ridge, 0.5)
+        # Coarser levels keep tile-relative landforms.
+        coarse_ridge, _coarse_rugged = ridge_p90(1, 1.0)
+        self.assertGreater(coarse_ridge, 0.5)
+
 if __name__ == "__main__":
     unittest.main()

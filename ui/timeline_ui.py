@@ -1,7 +1,7 @@
 import math
 import random
 import re
-from collections import deque
+from collections import deque, Counter
 
 import pygame
 
@@ -18,18 +18,14 @@ class TimelineUI:
     * support wheel-based zoom on the visible year range
     """
 
-    HEADER_H = 84
+    HEADER_H = 100
     AXIS_H = 22
-    PERIOD_FILTER_H = 10
-    PERIOD_FILTER_GAP = 8
-    COVERAGE_H = 8
-    COVERAGE_GAP = 8
-    PERIOD_H = 12
-    PERIOD_GAP = 4
-    ITEM_H = 14
-    LANE_GAP = 4
-    PERIOD_SECTION_GAP = 10
-    LANE_PIXEL_GAP = 14
+    PERIOD_H = 10
+    PERIOD_GAP = 2
+    ITEM_H = 12
+    LANE_GAP = 2
+    PERIOD_SECTION_GAP = 6
+    LANE_PIXEL_GAP = 8
     TOP_PAD = 8
     BOTTOM_PAD = 8
     LEFT_PAD = 12
@@ -72,6 +68,34 @@ class TimelineUI:
         "owner_entity",
     )
 
+    # "Actor" = an organised body that can own the timeline focus: a faction, an
+    # institution, a producer, or any comparable dataset added later. The seed
+    # datasets always qualify; the exclusion list keeps out entity kinds that
+    # happen to carry a parents/offspring hierarchy but are not organisations.
+    ACTOR_SEED_DATASETS = frozenset({"factions", "institutions", "producers"})
+    NON_ACTOR_DATASETS = frozenset({
+        "locations", "location", "people", "person", "species", "cladistics",
+        "materials", "material", "periods", "period", "year", "years", "schemas",
+        "schema", "tags", "tag", "components", "component", "items", "item",
+        "technologies", "technology", "ideas", "idea", "vehicles", "vehicle",
+        "categories", "category", "tasks", "task", "biospheres", "biosphere",
+        "behaviors", "behavior", "recipes", "recipe", "collections", "collection",
+    })
+    ACTOR_FOCUS_REFERENCE_FIELDS = (
+        "related",
+        "parents",
+        "operated_by",
+        "employers",
+        "owner_entities",
+        "owner_entity",
+        "permitted_users",
+        "is_employed_by",
+        "affiliated_institutions",
+        "associated_producers",
+        "production_context",
+        "employed_people",
+    )
+
     TECH_GUTTER_W = 150
 
     ZOOM_IN_FACTOR = 0.80
@@ -95,14 +119,16 @@ class TimelineUI:
         self._label_width_cache = {}
         self.period_layout_items = []
         self.layout_items = []
-        self.coverage_segments = []
-        self.coverage_max_density = 0
         self.layout_font = None
         self.active_category_filter = "all"
         self.active_filter_group = "general"
         self.active_filter_groups = {"general"}
         self.active_filter_mode = "category"
         self.timeline_sort_mode = "relations"
+        # Ordered list of entity ids whose canvas card has (T) locked. Each one
+        # gets a focus block pinned to the top of the timeline, its linked
+        # entries ranked by relevance beneath it.
+        self.timeline_focus_entity_ids = []
         self.selected_year_filter_mode = "contemporary"
         self.open_canvas_entity_ids = set()
         self.filter_hitboxes = []
@@ -111,6 +137,9 @@ class TimelineUI:
         self.selected_year_filter_hitboxes = []
         self.period_filter_range = None
         self.period_filter_pending_start = None
+        # No longer drawn as its own row in the timeline (see
+        # handle_period_filter_click); kept as a callable method/rect for
+        # driving the browser-list period filter from elsewhere.
         self.period_filter_rect = pygame.Rect(0, 0, 0, 0)
         self.picker_target_label = None
         self.picker_preview_year = None
@@ -140,6 +169,19 @@ class TimelineUI:
         self.location_focus_selected_index = 0
         self.location_focus_keyboard_active = False
         self.location_focus_suggestion_hitboxes = []
+        self.actor_focus_enabled = False
+        self.actor_focus_id = None
+        self.actor_focus_label = None
+        self.actor_focus_buffer = ""
+        self.actor_focus_active = False
+        self.actor_focus_invalid = False
+        self.actor_focus_rect = pygame.Rect(0, 0, 0, 0)
+        self.random_actor_focus_rect = pygame.Rect(0, 0, 0, 0)
+        self.reset_actor_focus_rect = pygame.Rect(0, 0, 0, 0)
+        self.actor_focus_matches = []
+        self.actor_focus_selected_index = 0
+        self.actor_focus_keyboard_active = False
+        self.actor_focus_suggestion_hitboxes = []
         self.entity_lookup = {}
 
         self.full_min_year = 0
@@ -152,6 +194,7 @@ class TimelineUI:
         self.period_lane_count = 0
         self.lane_count = 1
         self.relationship_cluster_lane_ranges = []
+        self.focus_lane_ranges = []
         self.technology_category_lane_ranges = []
         self.technology_offscreen_left = []
         self.technology_gutter_hitboxes = []
@@ -159,6 +202,8 @@ class TimelineUI:
         self.vertical_scroll_px = 0
         self.content_rect = pygame.Rect(0, 0, 0, 0)
         self.axis_y = 0
+        self.keyboard_focus = False
+        self._continuous_nav_last_tick_ms = None
 
     def set_rect(self, rect):
         rect = pygame.Rect(rect)
@@ -212,6 +257,22 @@ class TimelineUI:
             self._layout_cache_key = None
             self._filter_hitbox_cache_key = None
         self._refresh_location_focus_matches()
+        self._refresh_actor_focus_matches()
+        return changed
+
+    def set_timeline_focus_entity_ids(self, entity_ids):
+        ordered = []
+        seen = set()
+        for entity_id in entity_ids or []:
+            entity_id = str(entity_id or "").strip()
+            if entity_id and entity_id not in seen:
+                seen.add(entity_id)
+                ordered.append(entity_id)
+        changed = ordered != self.timeline_focus_entity_ids
+        self.timeline_focus_entity_ids = ordered
+        if changed:
+            self._layout_cache_key = None
+            self._filter_hitbox_cache_key = None
         return changed
 
     def set_open_canvas_entity_ids(self, entity_ids):
@@ -339,6 +400,15 @@ class TimelineUI:
             self.location_focus_rect = pygame.Rect(0, 0, 0, 0)
             self.random_location_focus_rect = pygame.Rect(0, 0, 0, 0)
             self.location_focus_suggestion_hitboxes = []
+
+    def set_actor_focus_enabled(self, enabled):
+        self.actor_focus_enabled = bool(enabled)
+        if not self.actor_focus_enabled:
+            self.actor_focus_active = False
+            self.actor_focus_rect = pygame.Rect(0, 0, 0, 0)
+            self.random_actor_focus_rect = pygame.Rect(0, 0, 0, 0)
+            self.reset_actor_focus_rect = pygame.Rect(0, 0, 0, 0)
+            self.actor_focus_suggestion_hitboxes = []
 
     def set_working_year(self, year, focus=False):
         old_year = self.working_year
@@ -584,6 +654,151 @@ class TimelineUI:
         self.location_focus_selected_index = index
         self.location_focus_keyboard_active = False
         return self.set_location_focus(match.get("id"))
+
+    def _is_actor_entity(self, entity):
+        if not isinstance(entity, dict):
+            return False
+        dataset = str(entity.get("_dataset") or entity.get("type") or "").strip()
+        if dataset in self.ACTOR_SEED_DATASETS:
+            return True
+        if dataset in self.NON_ACTOR_DATASETS:
+            return False
+        return bool(
+            entity.get("parents")
+            or entity.get("offspring")
+            or entity.get("employed_people")
+            or entity.get("constituents")
+        )
+
+    def set_actor_focus(self, actor_value):
+        old_actor_id = self.actor_focus_id
+        if actor_value is None or str(actor_value).strip() == "":
+            self.actor_focus_id = None
+            self.actor_focus_label = None
+            self.actor_focus_buffer = ""
+            self.actor_focus_active = False
+            self.actor_focus_invalid = False
+            self.actor_focus_matches = []
+            self.actor_focus_suggestion_hitboxes = []
+            self.rebuild_layout()
+            return old_actor_id is not None
+
+        resolved = self._resolve_actor_focus(actor_value)
+        if resolved is None:
+            self.actor_focus_invalid = True
+            return False
+
+        actor_id, actor_label = resolved
+        changed = actor_id != self.actor_focus_id
+        self.actor_focus_id = actor_id
+        self.actor_focus_label = actor_label
+        self.actor_focus_buffer = actor_label
+        self.actor_focus_active = False
+        self.actor_focus_invalid = False
+        self.actor_focus_matches = []
+        self.actor_focus_suggestion_hitboxes = []
+        self.rebuild_layout()
+        return changed
+
+    def get_actor_focus(self):
+        return self.actor_focus_id
+
+    def _resolve_actor_focus(self, actor_value):
+        query = str(actor_value or "").strip()
+        if not query:
+            return None
+        query_folded = query.casefold()
+
+        matches = self._build_actor_focus_matches(query, limit=12)
+        exact_matches = [
+            match
+            for match in matches
+            if match["id"].casefold() == query_folded or str(match["label"]).casefold() == query_folded
+        ]
+        if len(exact_matches) == 1:
+            return exact_matches[0]["id"], exact_matches[0]["label"]
+        if len(matches) == 1:
+            return matches[0]["id"], matches[0]["label"]
+        return None
+
+    def _build_actor_focus_matches(self, query_text, limit=7):
+        query = str(query_text or "").strip().casefold()
+        matches = []
+
+        for entity_id, entity in self.entity_lookup.items():
+            if not self._is_actor_entity(entity):
+                continue
+
+            label = self._entity_display_label(entity, fallback=entity_id)
+            actor_class = str(entity.get("_dataset") or entity.get("type") or "actor")
+            haystack = " ".join(
+                [
+                    str(entity_id),
+                    str(label),
+                    str(entity.get("pretty_name", "")),
+                    str(entity.get("name", "")),
+                    str(entity.get("short_name", "")),
+                    str(actor_class),
+                ]
+            ).casefold()
+            if query and not self._query_matches_text(query, haystack):
+                continue
+
+            label_folded = str(label).casefold()
+            id_folded = str(entity_id).casefold()
+            if query and (label_folded == query or id_folded == query):
+                rank = 0
+            elif query and (label_folded.startswith(query) or id_folded.startswith(query)):
+                rank = 1
+            elif query:
+                rank = 2
+            else:
+                rank = 3
+            subtitle = f"{actor_class.replace('_', ' ').title()} | {entity_id}"
+            matches.append(
+                {
+                    "id": str(entity_id),
+                    "label": str(label),
+                    "subtitle": subtitle,
+                    "rank": rank,
+                    "card_color": entity.get("card_color", ""),
+                }
+            )
+
+        matches.sort(key=lambda item: (item["rank"], item["label"].casefold(), item["id"]))
+        return matches[:limit]
+
+    def _refresh_actor_focus_matches(self):
+        if not self.actor_focus_enabled or not self.actor_focus_active:
+            self.actor_focus_matches = []
+            self.actor_focus_selected_index = 0
+            self.actor_focus_keyboard_active = False
+            self.actor_focus_suggestion_hitboxes = []
+            return
+
+        matches = self._build_actor_focus_matches(self.actor_focus_buffer)
+        self.actor_focus_matches = matches
+        self.actor_focus_suggestion_hitboxes = []
+        if not matches:
+            self.actor_focus_selected_index = 0
+            self.actor_focus_keyboard_active = False
+            return
+        self.actor_focus_selected_index = max(
+            0,
+            min(int(self.actor_focus_selected_index or 0), len(matches) - 1),
+        )
+
+    def _select_actor_focus_match(self, index=None):
+        matches = self.actor_focus_matches or []
+        if not matches:
+            return False
+        if index is None:
+            index = self.actor_focus_selected_index
+        index = max(0, min(int(index or 0), len(matches) - 1))
+        match = matches[index]
+        self.actor_focus_selected_index = index
+        self.actor_focus_keyboard_active = False
+        return self.set_actor_focus(match.get("id"))
 
     @staticmethod
     def _parse_working_year_token(value):
@@ -891,6 +1106,11 @@ class TimelineUI:
             return self.location_focus_buffer
         return self.location_focus_label or ""
 
+    def _format_actor_focus_display_value(self):
+        if self.actor_focus_active:
+            return self.actor_focus_buffer
+        return self.actor_focus_label or ""
+
     def _format_working_year_display_value(self):
         if self.working_year_active:
             return self.working_year_buffer
@@ -1030,8 +1250,10 @@ class TimelineUI:
             )
 
     def _filtered_visible_items(self):
-        visible_items = self._location_focus_visible_items(
-            self._working_year_visible_items(self._visible_items())
+        visible_items = self._actor_focus_visible_items(
+            self._location_focus_visible_items(
+                self._working_year_visible_items(self._visible_items())
+            )
         )
         if self.active_filter_mode == "group":
             group_categories = set()
@@ -1316,6 +1538,51 @@ class TimelineUI:
             "changed": changed,
         }
 
+    def _random_extant_actor_ids(self):
+        filter_range = self.working_year_range
+        if filter_range is None:
+            return sorted(
+                entity_id
+                for entity_id, entity in self.entity_lookup.items()
+                if self._is_actor_entity(entity)
+            )
+        filter_start_year, filter_end_year = filter_range
+        actor_ids = set()
+        for item in self.items:
+            if item.get("timeline_kind") == "major_period":
+                continue
+            entity_id = str(item.get("entity_id") or "").strip()
+            if not entity_id:
+                continue
+            entity = self.entity_lookup.get(entity_id)
+            if not self._is_actor_entity(entity):
+                continue
+            if self._item_extant_in_period(item, filter_start_year, filter_end_year):
+                actor_ids.add(entity_id)
+        return sorted(actor_ids)
+
+    def set_random_actor_focus(self):
+        actor_ids = self._random_extant_actor_ids()
+        if not actor_ids:
+            return None
+        picked_actor_id = random.choice(actor_ids)
+        changed = self.set_actor_focus(picked_actor_id)
+        return {
+            "kind": "random_actor_focus_changed",
+            "actor_id": self.actor_focus_id,
+            "label": self.actor_focus_label,
+            "changed": changed,
+        }
+
+    def reset_actor_focus(self):
+        changed = self.set_actor_focus(None)
+        return {
+            "kind": "actor_focus_reset",
+            "actor_id": None,
+            "label": None,
+            "changed": changed,
+        }
+
     def _relation_entity_ids(self, value):
         if value is None:
             return []
@@ -1447,6 +1714,97 @@ class TimelineUI:
         # entry that IS in that chain -- one hop only, so a card connected
         # to a card connected to a neighbouring star system's location does
         # not leak in transitively.
+        included_ids = {str(item.get("entity_id") or "") for item in directly_included}
+        explicitly_mentioned = []
+        for item in candidate_pool:
+            entity = self.entity_lookup.get(str(item.get("entity_id") or ""))
+            relation_ids = {str(relation_id) for relation_id in self._entity_relation_target_ids(entity)}
+            if relation_ids & included_ids:
+                explicitly_mentioned.append(item)
+        return directly_included + explicitly_mentioned
+
+    def _actor_parent_ids(self, entity):
+        if not isinstance(entity, dict):
+            return []
+        entity_id = str(entity.get("id") or "")
+        parent_ids = []
+        for field_key in ("parents", "parent_entity"):
+            for parent_id in self._relation_entity_ids(entity.get(field_key)):
+                if parent_id != entity_id and self._is_actor_entity(self.entity_lookup.get(parent_id)):
+                    parent_ids.append(parent_id)
+        for candidate_id, candidate in self.entity_lookup.items():
+            if candidate_id == entity_id or not self._is_actor_entity(candidate):
+                continue
+            if entity_id in self._relation_entity_ids(candidate.get("offspring")):
+                parent_ids.append(candidate_id)
+        return parent_ids
+
+    def _actor_id_is_in_focus(self, actor_id, focus_id=None, visited=None):
+        if not actor_id:
+            return False
+        actor_id = str(actor_id)
+        focus_id = str(focus_id or self.actor_focus_id or "")
+        if not focus_id:
+            return True
+        if actor_id == focus_id:
+            return True
+
+        if visited is None:
+            visited = set()
+        if actor_id in visited:
+            return False
+        visited.add(actor_id)
+
+        actor_entity = self.entity_lookup.get(actor_id)
+        if not self._is_actor_entity(actor_entity):
+            return False
+        return any(
+            self._actor_id_is_in_focus(parent_id, focus_id=focus_id, visited=visited)
+            for parent_id in self._actor_parent_ids(actor_entity)
+        )
+
+    def _entity_actor_reference_ids(self, entity):
+        if not isinstance(entity, dict):
+            return []
+        actor_ids = []
+        for field_key in self.ACTOR_FOCUS_REFERENCE_FIELDS:
+            for candidate_id in self._relation_entity_ids(entity.get(field_key)):
+                if self._is_actor_entity(self.entity_lookup.get(candidate_id)):
+                    actor_ids.append(candidate_id)
+        return actor_ids
+
+    def _entity_is_in_actor_focus(self, entity_id):
+        if self.actor_focus_id is None:
+            return True
+
+        entity = self.entity_lookup.get(str(entity_id or ""))
+        if not isinstance(entity, dict):
+            return False
+
+        if self._is_actor_entity(entity):
+            return self._actor_id_is_in_focus(entity.get("id") or entity_id)
+
+        return any(
+            self._actor_id_is_in_focus(actor_id)
+            for actor_id in self._entity_actor_reference_ids(entity)
+        )
+
+    def _actor_focus_visible_items(self, visible_items):
+        if self.actor_focus_id is None:
+            return visible_items
+        directly_included = []
+        candidate_pool = []
+        for item in visible_items:
+            if item.get("timeline_kind") == "major_period":
+                directly_included.append(item)
+                continue
+            if self._entity_is_in_actor_focus(item.get("entity_id")):
+                directly_included.append(item)
+            else:
+                candidate_pool.append(item)
+        # Same one-hop "explicit mention" rule as location focus: an entry that
+        # is not itself affiliated with the focused actor still shows if it
+        # directly names an entry that is.
         included_ids = {str(item.get("entity_id") or "") for item in directly_included}
         explicitly_mentioned = []
         for item in candidate_pool:
@@ -2128,6 +2486,169 @@ class TimelineUI:
             })
         return layout_items, lane_offset
 
+    # ------------------------------------------------------------------
+    # (T) focus stacking
+    # ------------------------------------------------------------------
+
+    def _focus_relation_adjacency(self, entity_ids):
+        """``id -> Counter(neighbour_id -> shared relation edge count)``.
+
+        Built from the same relationship fields the "Links" sort clusters on,
+        so an entry that names the focus (or is named by it) through several
+        fields ranks as more relevant than one connected by a single field.
+        """
+        entity_ids = set(entity_ids)
+        adjacency = {entity_id: Counter() for entity_id in entity_ids}
+        for entity_id in entity_ids:
+            entity = self.entity_lookup.get(entity_id)
+            if not isinstance(entity, dict):
+                continue
+            for field_key in self.RELATION_CLUSTER_FIELDS:
+                for target_id in self._relation_entity_ids(entity.get(field_key)):
+                    target_id = str(target_id or "").strip()
+                    if target_id in entity_ids and target_id != entity_id:
+                        adjacency[entity_id][target_id] += 1
+                        adjacency[target_id][entity_id] += 1
+        return adjacency
+
+    def _entity_year_midpoint(self, entity_id):
+        entity = self.entity_lookup.get(str(entity_id or ""))
+        if not isinstance(entity, dict):
+            return None
+        years = []
+        for field_key in ("start_year", "end_year", "year", "year_number"):
+            try:
+                years.append(int(entity.get(field_key)))
+            except (TypeError, ValueError):
+                continue
+        if not years:
+            return None
+        return (min(years) + max(years)) / 2.0
+
+    def _focus_ranked_linked_ids(self, focus_id, adjacency, visible_ids, exclude):
+        """Linked entities in descending relevance to ``focus_id``.
+
+        Relevance = graph distance first (direct links beat indirect), then the
+        strength of the direct connection, then temporal closeness to the focus.
+        """
+        distance = {focus_id: 0}
+        frontier = [focus_id]
+        while frontier:
+            next_frontier = []
+            for node in frontier:
+                for neighbour in adjacency.get(node, ()):  # Counter iterates keys
+                    if neighbour not in distance:
+                        distance[neighbour] = distance[node] + 1
+                        next_frontier.append(neighbour)
+            frontier = next_frontier
+
+        focus_mid = self._entity_year_midpoint(focus_id)
+        direct = adjacency.get(focus_id, Counter())
+
+        def relevance_key(entity_id):
+            other_mid = self._entity_year_midpoint(entity_id)
+            if focus_mid is None or other_mid is None:
+                temporal_gap = float("inf")
+            else:
+                temporal_gap = abs(focus_mid - other_mid)
+            return (
+                distance.get(entity_id, 1_000_000),
+                -int(direct.get(entity_id, 0)),
+                temporal_gap,
+                str(entity_id),
+            )
+
+        candidates = [
+            entity_id
+            for entity_id, dist in distance.items()
+            if dist > 0 and entity_id in visible_ids and entity_id not in exclude
+        ]
+        candidates.sort(key=relevance_key)
+        return candidates
+
+    def _assign_focus_stacked_lanes(self, items):
+        items_by_entity = {}
+        for item in items:
+            entity_id = str(item.get("entity_id") or "").strip()
+            if entity_id:
+                items_by_entity.setdefault(entity_id, []).append(item)
+
+        visible_ids = set(items_by_entity)
+        focus_ids = []
+        seen = set()
+        for raw_id in self.timeline_focus_entity_ids:
+            focus_id = str(raw_id or "").strip()
+            if focus_id and focus_id not in seen:
+                seen.add(focus_id)
+                focus_ids.append(focus_id)
+
+        adjacency = self._focus_relation_adjacency(visible_ids | set(focus_ids))
+
+        layout_items = []
+        lane_offset = 0
+        consumed = set()
+        self.focus_lane_ranges = []
+
+        def place_entity(entity_id, role, focus_root):
+            nonlocal lane_offset
+            entity_items = items_by_entity.get(entity_id, [])
+            if not entity_items:
+                return 0
+            placed, _ = self._assign_items_to_lanes(
+                sorted(entity_items, key=self._timeline_item_stable_key),
+                allow_touching=True,
+            )
+            for placed_item in placed:
+                placed_item["lane"] = lane_offset
+                placed_item["focus_root_id"] = focus_root
+                placed_item["focus_role"] = role
+                layout_items.append(placed_item)
+            lane_offset += 1
+            consumed.add(entity_id)
+            return len(placed)
+
+        for focus_id in focus_ids:
+            header_lane = lane_offset
+            lane_offset += 1
+            first_lane = lane_offset
+            placed_count = place_entity(focus_id, "focus", focus_id)
+
+            ranked_ids = self._focus_ranked_linked_ids(
+                focus_id, adjacency, visible_ids, exclude=consumed | {focus_id}
+            )
+            for linked_id in ranked_ids:
+                if linked_id in consumed:
+                    continue
+                placed_count += place_entity(linked_id, "linked", focus_id)
+
+            self.focus_lane_ranges.append(
+                {
+                    "focus_id": focus_id,
+                    "label": self._entity_display_label(
+                        self.entity_lookup.get(focus_id), fallback=focus_id
+                    ),
+                    "header_lane": header_lane,
+                    "first_lane": first_lane,
+                    "last_lane": max(first_lane, lane_offset - 1),
+                    "item_count": placed_count,
+                    "has_bar": focus_id in consumed and bool(items_by_entity.get(focus_id)),
+                }
+            )
+
+        remaining = [
+            item
+            for item in items
+            if str(item.get("entity_id") or "").strip() not in consumed
+        ]
+        if remaining:
+            placed, remaining_lane_count = self._assign_items_to_lanes(remaining)
+            for placed_item in placed:
+                placed_item["lane"] += lane_offset
+                layout_items.append(placed_item)
+            lane_offset += remaining_lane_count
+
+        return layout_items, max(1, lane_offset)
+
     def _is_technology_entity(self, entity):
         return isinstance(entity, dict) and (
             entity.get("type") == "technology"
@@ -2357,6 +2878,7 @@ class TimelineUI:
             self._item_is_deferred_technology(item) for item in timeline_items
         ):
             self.relationship_cluster_lane_ranges = []
+            self.focus_lane_ranges = []
             offscreen_left = []
             in_view = []
             for item in timeline_items:
@@ -2381,57 +2903,21 @@ class TimelineUI:
         self.technology_category_lane_ranges = []
         self.technology_offscreen_left = []
         self.technology_gutter_hitboxes = []
-        if self.timeline_sort_mode == "offspring":
+        if self.timeline_focus_entity_ids:
+            self.relationship_cluster_lane_ranges = []
+            self.layout_items, lane_count = self._assign_focus_stacked_lanes(timeline_items)
+        elif self.timeline_sort_mode == "offspring":
+            self.focus_lane_ranges = []
             self.relationship_cluster_lane_ranges = []
             self.layout_items, lane_count = self._assign_offspring_nested_lanes(timeline_items)
         elif self.timeline_sort_mode == "relations":
+            self.focus_lane_ranges = []
             self.layout_items, lane_count = self._assign_relationship_clustered_lanes(timeline_items)
         else:
+            self.focus_lane_ranges = []
             self.relationship_cluster_lane_ranges = []
             self.layout_items, lane_count = self._assign_items_to_lanes(timeline_items)
         self.lane_count = max(1, lane_count)
-
-    def _build_coverage_segments(self, visible_items=None):
-        visible_items = self._filtered_visible_items() if visible_items is None else visible_items
-        delta_by_year = {}
-
-        for item in visible_items:
-            if item.get("timeline_kind") == "major_period":
-                continue
-
-            start_year = item["start_year"]
-            end_year = item["end_year"]
-            if end_year < start_year:
-                start_year, end_year = end_year, start_year
-
-            delta_by_year[start_year] = delta_by_year.get(start_year, 0) + 1
-            delta_by_year[end_year + 1] = delta_by_year.get(end_year + 1, 0) - 1
-
-        self.coverage_segments = []
-        self.coverage_max_density = 0
-
-        if not delta_by_year:
-            return
-
-        running_density = 0
-        sorted_years = sorted(delta_by_year.keys())
-
-        for index, year in enumerate(sorted_years[:-1]):
-            running_density += delta_by_year[year]
-            next_year = sorted_years[index + 1]
-            segment_end = next_year - 1
-
-            if running_density <= 0 or segment_end < year:
-                continue
-
-            self.coverage_segments.append(
-                {
-                    "start_year": year,
-                    "end_year": segment_end,
-                    "density": running_density,
-                }
-            )
-            self.coverage_max_density = max(self.coverage_max_density, running_density)
 
     def _layout_state_key(self):
         font_key = None
@@ -2447,12 +2933,12 @@ class TimelineUI:
             self.active_category_filter,
             tuple(sorted(self.active_filter_groups)),
             self.timeline_sort_mode,
+            tuple(self.timeline_focus_entity_ids),
             self.selected_year_filter_mode,
-            self.period_filter_range,
-            self.period_filter_pending_start,
             self.selected_year,
             self.working_year_range,
             self.location_focus_id,
+            self.actor_focus_id,
             self.view_min_year,
             self.view_max_year,
             self.full_min_year,
@@ -2493,7 +2979,6 @@ class TimelineUI:
         if self.technology_gutter_width:
             self.content_rect = self._content_rect_for_gutter(self.technology_gutter_width)
             self.axis_y = self.content_rect.y + self.AXIS_H
-        self._build_coverage_segments(visible_items)
         self._assign_period_lanes(visible_items)
         self._assign_lanes(visible_items)
         self._clamp_vertical_scroll()
@@ -2522,6 +3007,8 @@ class TimelineUI:
             self._format_working_year_display_value(),
             self.location_focus_enabled,
             self._format_location_focus_display_value(),
+            self.actor_focus_enabled,
+            self._format_actor_focus_display_value(),
             tuple(filter_groups),
             filter_categories,
             self.selected_year,
@@ -2536,10 +3023,13 @@ class TimelineUI:
         self.selected_year_filter_hitboxes = []
         self._layout_working_year_rect(self.layout_font)
         self._layout_location_focus_rect(self.layout_font)
+        self._layout_actor_focus_rect(self.layout_font)
         self._layout_random_working_year_rect(self.layout_font)
         self._layout_random_location_focus_rect(self.layout_font)
+        self._layout_random_actor_focus_rect(self.layout_font)
         self._layout_reset_working_year_rect(self.layout_font)
         self._layout_reset_location_focus_rect(self.layout_font)
+        self._layout_reset_actor_focus_rect(self.layout_font)
         self._layout_sort_mode_hitboxes(self.layout_font)
         self._layout_selected_year_filter_hitboxes(self.layout_font)
         x = self.rect.x + 180
@@ -2562,7 +3052,7 @@ class TimelineUI:
             x = chip_rect.right + gap
 
         x = self.rect.x + 180
-        y = self.rect.y + 58
+        y = self.rect.y + 78
         for category_name, label in filter_categories:
             chip_w = self.layout_font.size(label)[0] + 16
             chip_rect = pygame.Rect(x, y, chip_w, chip_h)
@@ -2620,6 +3110,22 @@ class TimelineUI:
             24,
         )
 
+    def _layout_actor_focus_rect(self, font):
+        if not self.actor_focus_enabled or font is None:
+            self.actor_focus_rect = pygame.Rect(0, 0, 0, 0)
+            return
+
+        label_w = font.size("Actor")[0]
+        value_w = max(font.size("Some Long Producer Name")[0], font.size(self._format_actor_focus_display_value())[0])
+        width = max(200, label_w + value_w + 34)
+        width = min(width, max(140, self.rect.width - 36))
+        self.actor_focus_rect = pygame.Rect(
+            self.rect.centerx - width // 2,
+            self.rect.y + 55,
+            width,
+            20,
+        )
+
     def _layout_working_year_rect(self, font):
         if not self.working_year_enabled or font is None:
             self.working_year_rect = pygame.Rect(0, 0, 0, 0)
@@ -2672,6 +3178,17 @@ class TimelineUI:
             font,
         )
 
+    def _layout_random_actor_focus_rect(self, font):
+        if not self.actor_focus_enabled:
+            self.random_actor_focus_rect = pygame.Rect(0, 0, 0, 0)
+            self.reset_actor_focus_rect = pygame.Rect(0, 0, 0, 0)
+            return
+        self.random_actor_focus_rect = self._layout_button_next_to_rect(
+            self.actor_focus_rect,
+            "Random Actor",
+            font,
+        )
+
     def _layout_reset_next_to_random(self, anchor_rect, random_rect, font):
         if (
             anchor_rect is None or random_rect is None
@@ -2698,6 +3215,11 @@ class TimelineUI:
     def _layout_reset_location_focus_rect(self, font):
         self.reset_location_focus_rect = self._layout_reset_next_to_random(
             self.location_focus_rect, self.random_location_focus_rect, font,
+        )
+
+    def _layout_reset_actor_focus_rect(self, font):
+        self.reset_actor_focus_rect = self._layout_reset_next_to_random(
+            self.actor_focus_rect, self.random_actor_focus_rect, font,
         )
 
     def _draw_working_year_input(self, screen, font, layout=True):
@@ -2805,6 +3327,61 @@ class TimelineUI:
         self._draw_small_button(screen, font, self.random_location_focus_rect, "Random Loc")
         self._draw_small_button(screen, font, self.reset_location_focus_rect, "Reset")
 
+    def _draw_actor_focus_input(self, screen, font, layout=True):
+        if not self.actor_focus_enabled:
+            return
+
+        if layout:
+            self._layout_actor_focus_rect(font)
+            self._layout_random_actor_focus_rect(font)
+            self._layout_reset_actor_focus_rect(font)
+        if self.actor_focus_rect.width <= 0:
+            return
+
+        if self.actor_focus_invalid:
+            border = (220, 112, 112)
+        elif self.actor_focus_active:
+            border = (232, 210, 148)
+        else:
+            border = (96, 108, 130)
+        fill = (36, 44, 61) if self.actor_focus_active else (24, 30, 43)
+        pygame.draw.rect(screen, fill, self.actor_focus_rect)
+        pygame.draw.rect(screen, border, self.actor_focus_rect, 1)
+
+        label_surface = font.render("Actor", True, (178, 188, 208))
+        label_x = self.actor_focus_rect.x + 8
+        label_y = self.actor_focus_rect.y + (self.actor_focus_rect.height - label_surface.get_height()) // 2
+        screen.blit(label_surface, (label_x, label_y))
+
+        value = self._format_actor_focus_display_value()
+        if value:
+            value_color = (245, 242, 226)
+        else:
+            value = "Any"
+            value_color = (112, 124, 146)
+        max_value_w = max(20, self.actor_focus_rect.right - (label_x + label_surface.get_width() + 22))
+        value = self._ellipsize_text(value, font, max_value_w)
+        value_surface = font.render(value, True, value_color)
+        value_x = max(
+            label_x + label_surface.get_width() + 12,
+            self.actor_focus_rect.right - value_surface.get_width() - 10,
+        )
+        value_y = self.actor_focus_rect.y + (self.actor_focus_rect.height - value_surface.get_height()) // 2
+        screen.blit(value_surface, (value_x, value_y))
+
+        if self.actor_focus_active:
+            cursor_x = min(self.actor_focus_rect.right - 7, value_x + value_surface.get_width() + 2)
+            pygame.draw.line(
+                screen,
+                (245, 242, 226),
+                (cursor_x, self.actor_focus_rect.y + 5),
+                (cursor_x, self.actor_focus_rect.bottom - 5),
+                1,
+            )
+
+        self._draw_small_button(screen, font, self.random_actor_focus_rect, "Random Actor")
+        self._draw_small_button(screen, font, self.reset_actor_focus_rect, "Reset")
+
     def _draw_small_button(self, screen, font, rect, label):
         if rect is None or rect.width <= 0 or rect.height <= 0:
             return
@@ -2834,6 +3411,37 @@ class TimelineUI:
         for index, match in enumerate(matches[:max_rows]):
             row_rect = pygame.Rect(self.location_focus_rect.x, row_y + index * row_h, self.location_focus_rect.width, row_h)
             self.location_focus_suggestion_hitboxes.append((index, row_rect))
+            selected = index == selected_index
+            fill = (52, 64, 86) if selected else (31, 36, 48)
+            border = (138, 164, 206) if selected else (72, 82, 104)
+            pygame.draw.rect(screen, fill, row_rect)
+            pygame.draw.rect(screen, border, row_rect, 1)
+
+            label = self._ellipsize_text(match.get("label", ""), font, row_rect.width - 128)
+            subtitle = self._ellipsize_text(match.get("subtitle", ""), font, 112)
+            label_color = (240, 244, 250) if selected else (188, 198, 216)
+            subtitle_color = (176, 188, 208)
+            screen.blit(font.render(label, True, label_color), (row_rect.x + 6, row_rect.y + 3))
+            if subtitle:
+                subtitle_surface = font.render(subtitle, True, subtitle_color)
+                screen.blit(subtitle_surface, (row_rect.right - subtitle_surface.get_width() - 6, row_rect.y + 3))
+
+    def _draw_actor_focus_suggestions(self, screen, font):
+        self.actor_focus_suggestion_hitboxes = []
+        if not self.actor_focus_enabled or not self.actor_focus_active:
+            return
+
+        matches = self.actor_focus_matches or []
+        if not matches:
+            return
+
+        selected_index = max(0, min(int(self.actor_focus_selected_index or 0), len(matches) - 1))
+        row_y = self.actor_focus_rect.bottom + 4
+        row_h = 22
+        max_rows = 6
+        for index, match in enumerate(matches[:max_rows]):
+            row_rect = pygame.Rect(self.actor_focus_rect.x, row_y + index * row_h, self.actor_focus_rect.width, row_h)
+            self.actor_focus_suggestion_hitboxes.append((index, row_rect))
             selected = index == selected_index
             fill = (52, 64, 86) if selected else (31, 36, 48)
             border = (138, 164, 206) if selected else (72, 82, 104)
@@ -2968,20 +3576,11 @@ class TimelineUI:
     def _period_base_y(self):
         return self.axis_y + 28
 
-    def _period_filter_y(self):
+    def _unscrolled_period_base_y(self):
         if self.period_lane_count <= 0:
             return self.axis_y + 10
         period_rows_h = max(0, self._period_section_height() - self.PERIOD_SECTION_GAP)
         return self._period_base_y() + period_rows_h + 22
-
-    def _unscrolled_period_base_y(self):
-        return (
-            self._period_filter_y()
-            + self.PERIOD_FILTER_H
-            + self.PERIOD_FILTER_GAP
-            + self.COVERAGE_H
-            + self.COVERAGE_GAP
-        )
 
     def _vertical_viewport_rect(self):
         top = self._unscrolled_period_base_y()
@@ -3033,12 +3632,105 @@ class TimelineUI:
 
         return False
 
+    def set_keyboard_focus(self, focused):
+        focused = bool(focused)
+        changed = focused != self.keyboard_focus
+        self.keyboard_focus = focused
+        if not focused:
+            self._continuous_nav_last_tick_ms = None
+        return changed
+
+    def has_keyboard_focus(self):
+        return self.keyboard_focus
+
+    NAVIGATION_KEYS = (
+        pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN,
+        pygame.K_a, pygame.K_d, pygame.K_w, pygame.K_s,
+    )
+    KEYBOARD_PAN_PX_PER_SEC = 900.0
+    KEYBOARD_VERTICAL_PAN_PX_PER_SEC = 700.0
+    _CONTINUOUS_NAV_MAX_DT = 0.25
+
+    def _handle_navigation_keydown(self, event):
+        if getattr(event, "mod", 0) & (pygame.KMOD_CTRL | pygame.KMOD_ALT | pygame.KMOD_META):
+            return None
+        if event.key in self.NAVIGATION_KEYS:
+            # Actual panning happens every frame in update_continuous_navigation
+            # (driven by held-key state) so the motion is smooth rather than a
+            # single fixed-size jump per keypress; this only claims the event
+            # so it doesn't leak into an active wiki text field.
+            return {"kind": "timeline_navigation_key", "changed": False}
+        return None
+
+    def update_continuous_navigation(self, pressed_keys=None, mods=None, now_ms=None):
+        """Poll held WASD/arrow keys once per frame for smooth timeline panning.
+
+        Call this every frame the timeline is visible (it no-ops instantly
+        when the timeline doesn't have keyboard focus).
+        """
+        if not self.keyboard_focus:
+            self._continuous_nav_last_tick_ms = None
+            return False
+
+        if now_ms is None:
+            now_ms = pygame.time.get_ticks()
+        if self._continuous_nav_last_tick_ms is None:
+            self._continuous_nav_last_tick_ms = now_ms
+            return False
+        dt = (now_ms - self._continuous_nav_last_tick_ms) / 1000.0
+        self._continuous_nav_last_tick_ms = now_ms
+        if dt <= 0:
+            return False
+        dt = min(dt, self._CONTINUOUS_NAV_MAX_DT)
+
+        if mods is None:
+            try:
+                mods = pygame.key.get_mods()
+            except pygame.error:
+                return False
+        if mods & (pygame.KMOD_CTRL | pygame.KMOD_ALT | pygame.KMOD_META):
+            return False
+
+        if pressed_keys is None:
+            try:
+                pressed_keys = pygame.key.get_pressed()
+            except pygame.error:
+                return False
+
+        horizontal = 0
+        if pressed_keys[pygame.K_LEFT] or pressed_keys[pygame.K_a]:
+            horizontal -= 1
+        if pressed_keys[pygame.K_RIGHT] or pressed_keys[pygame.K_d]:
+            horizontal += 1
+        vertical = 0
+        if pressed_keys[pygame.K_UP] or pressed_keys[pygame.K_w]:
+            vertical -= 1
+        if pressed_keys[pygame.K_DOWN] or pressed_keys[pygame.K_s]:
+            vertical += 1
+
+        changed = False
+        if horizontal:
+            if self.pan_by_pixels(horizontal * self.KEYBOARD_PAN_PX_PER_SEC * dt):
+                changed = True
+        if vertical:
+            if self.pan_vertical_by_pixels(vertical * self.KEYBOARD_VERTICAL_PAN_PX_PER_SEC * dt):
+                changed = True
+        return changed
+
     def handle_keydown(self, event):
         if self.location_focus_enabled and self.location_focus_active:
             return self._handle_location_focus_keydown(event)
 
+        if self.actor_focus_enabled and self.actor_focus_active:
+            return self._handle_actor_focus_keydown(event)
+
         if self.working_year_enabled and self.working_year_active:
             return self._handle_working_year_keydown(event)
+
+        if self.keyboard_focus:
+            navigation_action = self._handle_navigation_keydown(event)
+            if navigation_action is not None:
+                return navigation_action
 
         return None
 
@@ -3141,7 +3833,92 @@ class TimelineUI:
 
         return {"kind": "location_focus_editing", "changed": False}
 
+    def _handle_actor_focus_keydown(self, event):
+        matches = self.actor_focus_matches or []
+        if event.key == pygame.K_UP and matches:
+            self.actor_focus_selected_index = (
+                int(self.actor_focus_selected_index or 0) - 1
+            ) % len(matches)
+            self.actor_focus_keyboard_active = True
+            return {"kind": "actor_focus_editing", "changed": False}
+
+        if event.key == pygame.K_DOWN and matches:
+            self.actor_focus_selected_index = (
+                int(self.actor_focus_selected_index or 0) + 1
+            ) % len(matches)
+            self.actor_focus_keyboard_active = True
+            return {"kind": "actor_focus_editing", "changed": False}
+
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            value = self.actor_focus_buffer.strip()
+            if matches and (value or self.actor_focus_keyboard_active):
+                changed = self._select_actor_focus_match()
+            else:
+                changed = self.set_actor_focus(value if value else None)
+            if value and self.actor_focus_invalid:
+                return {
+                    "kind": "actor_focus_invalid",
+                    "actor_id": None,
+                    "changed": False,
+                }
+            return {
+                "kind": "actor_focus_changed",
+                "actor_id": self.actor_focus_id,
+                "label": self.actor_focus_label,
+                "changed": changed,
+            }
+
+        if event.key == pygame.K_ESCAPE:
+            self.actor_focus_active = False
+            self.actor_focus_invalid = False
+            self.actor_focus_buffer = self.actor_focus_label or ""
+            return {"kind": "actor_focus_cancelled", "changed": False}
+
+        if event.key == pygame.K_BACKSPACE:
+            self.actor_focus_buffer = self.actor_focus_buffer[:-1]
+            self.actor_focus_invalid = False
+            self.actor_focus_keyboard_active = False
+            self._refresh_actor_focus_matches()
+            return {"kind": "actor_focus_editing", "changed": False}
+
+        if event.key == pygame.K_DELETE:
+            self.actor_focus_buffer = ""
+            self.actor_focus_invalid = False
+            self.actor_focus_keyboard_active = False
+            self._refresh_actor_focus_matches()
+            return {"kind": "actor_focus_editing", "changed": False}
+
+        text = getattr(event, "unicode", "")
+        if text and text.isprintable():
+            self.actor_focus_buffer += text
+            self.actor_focus_invalid = False
+            self.actor_focus_keyboard_active = False
+            self._refresh_actor_focus_matches()
+            return {"kind": "actor_focus_editing", "changed": False}
+
+        return {"kind": "actor_focus_editing", "changed": False}
+
     def handle_click(self, mouse_pos):
+        immediate_action = self.handle_immediate_click(mouse_pos)
+        if immediate_action is not None:
+            return immediate_action
+
+        item_action = self.handle_item_click(mouse_pos)
+        if item_action is not None:
+            return item_action
+
+        if self.year_selection_enabled:
+            return self.select_year_from_pos(mouse_pos)
+
+        return None
+
+    def handle_immediate_click(self, mouse_pos):
+        """Click handling for controls (buttons/inputs/filters/chips) that
+        should react on press. Item/period bar clicks are deliberately kept
+        out of this -- callers defer those to release-without-drag so the
+        timeline can still be dragged by pressing down on top of a bar; see
+        `handle_item_click`.
+        """
         random_action = self.handle_random_button_click(mouse_pos)
         if random_action is not None:
             return random_action
@@ -3149,6 +3926,10 @@ class TimelineUI:
         location_focus_action = self.handle_location_focus_click(mouse_pos)
         if location_focus_action is not None:
             return location_focus_action
+
+        actor_focus_action = self.handle_actor_focus_click(mouse_pos)
+        if actor_focus_action is not None:
+            return actor_focus_action
 
         working_year_action = self.handle_working_year_click(mouse_pos)
         if working_year_action is not None:
@@ -3161,13 +3942,6 @@ class TimelineUI:
         period_filter_action = self.handle_period_filter_click(mouse_pos)
         if period_filter_action is not None:
             return period_filter_action
-
-        item_action = self.handle_item_click(mouse_pos)
-        if item_action is not None:
-            return item_action
-
-        if self.year_selection_enabled:
-            return self.select_year_from_pos(mouse_pos)
 
         return None
 
@@ -3305,6 +4079,44 @@ class TimelineUI:
 
         return None
 
+    def handle_actor_focus_click(self, mouse_pos):
+        if not self.actor_focus_enabled:
+            return None
+
+        for match_index, hitbox in self.actor_focus_suggestion_hitboxes:
+            if hitbox.collidepoint(mouse_pos):
+                changed = self._select_actor_focus_match(match_index)
+                return {
+                    "kind": "actor_focus_changed",
+                    "actor_id": self.actor_focus_id,
+                    "label": self.actor_focus_label,
+                    "changed": changed,
+                }
+
+        if self.actor_focus_rect.collidepoint(mouse_pos):
+            self.actor_focus_active = False
+            self.working_year_active = False
+            self.location_focus_active = False
+            self.actor_focus_invalid = False
+            self.actor_focus_buffer = self.actor_focus_label or ""
+            self.actor_focus_keyboard_active = False
+            self.actor_focus_matches = []
+            self.actor_focus_suggestion_hitboxes = []
+            return {
+                "kind": "actor_focus_browse",
+                "actor_id": self.actor_focus_id,
+                "changed": False,
+            }
+
+        if self.actor_focus_active:
+            self.actor_focus_active = False
+            self.actor_focus_invalid = False
+            self.actor_focus_buffer = self.actor_focus_label or ""
+            self.actor_focus_matches = []
+            self.actor_focus_suggestion_hitboxes = []
+
+        return None
+
     def handle_filter_click(self, mouse_pos):
         for mode, _, hitbox in self.sort_mode_hitboxes:
             if hitbox.collidepoint(mouse_pos):
@@ -3361,6 +4173,20 @@ class TimelineUI:
             self.location_focus_invalid = False
             return self.set_random_location_focus()
 
+        if self.actor_focus_enabled and self.reset_actor_focus_rect.collidepoint(mouse_pos):
+            self.working_year_active = False
+            self.location_focus_active = False
+            self.actor_focus_active = False
+            self.actor_focus_invalid = False
+            return self.reset_actor_focus()
+
+        if self.actor_focus_enabled and self.random_actor_focus_rect.collidepoint(mouse_pos):
+            self.working_year_active = False
+            self.location_focus_active = False
+            self.actor_focus_active = False
+            self.actor_focus_invalid = False
+            return self.set_random_actor_focus()
+
         return None
 
     def handle_period_filter_click(self, mouse_pos):
@@ -3408,6 +4234,37 @@ class TimelineUI:
             "changed": changed,
         }
 
+    def handle_period_filter_click(self, mouse_pos):
+        """Click handling for the browser-list period filter.
+
+        No longer has a visible row of its own in the timeline (the strip
+        used to live just below the period bars), so `period_filter_rect`
+        stays at its zero-sized default and this never actually fires from
+        the timeline UI today. Kept as a callable method -- along with
+        `set_period_filter`/`period_filter_range`/`period_filter_pending_start`
+        -- for `KnowledgeBrowserUI`'s existing period-filter plumbing
+        (`browser_period_filter`) and any future UI entry point.
+        """
+        if self.period_filter_rect is None or not self.period_filter_rect.collidepoint(mouse_pos):
+            return None
+        year = int(round(self._x_to_year(mouse_pos[0])))
+        if self.period_filter_pending_start is None:
+            self.set_period_filter(pending_start=year)
+            return {
+                "kind": "period_filter_started",
+                "year": year,
+                "changed": True,
+            }
+
+        start_year = self.period_filter_pending_start
+        self.set_period_filter(start_year, year)
+        return {
+            "kind": "period_filter_changed",
+            "start_year": min(start_year, year),
+            "end_year": max(start_year, year),
+            "changed": True,
+        }
+
     def pick_year_from_pos(self, mouse_pos):
         if not self.rect.collidepoint(mouse_pos):
             return None
@@ -3439,7 +4296,6 @@ class TimelineUI:
         return int(round(self._x_to_year(mouse_pos[0])))
 
     def get_minimum_height(self):
-        coverage_h = self.PERIOD_FILTER_H + self.PERIOD_FILTER_GAP + self.COVERAGE_H + self.COVERAGE_GAP
         period_h = 0
         if self.period_lane_count > 0:
             period_h = (
@@ -3449,7 +4305,7 @@ class TimelineUI:
             )
 
         lanes_h = self.lane_count * self._lane_pitch()
-        total = self.TOP_PAD + self.HEADER_H + self.AXIS_H + 10 + coverage_h + period_h + lanes_h + self.BOTTOM_PAD
+        total = self.TOP_PAD + self.HEADER_H + self.AXIS_H + 10 + period_h + lanes_h + self.BOTTOM_PAD
         return max(70, total)
 
     def _draw_vertical_scrollbar(self, screen):
@@ -3468,6 +4324,7 @@ class TimelineUI:
         pygame.draw.rect(screen, (104, 126, 160), thumb)
 
     def draw(self, screen, font):
+        self.update_continuous_navigation()
         pygame.draw.rect(screen, (14, 18, 30), self.rect)
         pygame.draw.rect(screen, (200, 200, 200), self.rect, 1)
 
@@ -3480,6 +4337,7 @@ class TimelineUI:
             screen.blit(title, (self.rect.x + 12, self.rect.y + 8))
             self._draw_working_year_input(screen, font, layout=False)
             self._draw_location_focus_input(screen, font, layout=False)
+            self._draw_actor_focus_input(screen, font, layout=False)
 
             for mode, label, chip_rect in self.sort_mode_hitboxes:
                 selected = mode == self.timeline_sort_mode
@@ -3527,6 +4385,7 @@ class TimelineUI:
                 screen.blit(chip_text, chip_text_rect)
 
             self._draw_location_focus_suggestions(screen, font)
+            self._draw_actor_focus_suggestions(screen, font)
 
             if self.picker_target_label:
                 picker_text = f"Pick year for {self.picker_target_label}"
@@ -3586,52 +4445,6 @@ class TimelineUI:
                 label_x = max(axis_left, min(bar_rect.x + 6, axis_right - label_surface.get_width()))
                 screen.blit(label_surface, (label_x, y - 2))
 
-            period_filter_y = self._period_filter_y()
-            period_filter_label = font.render("Period Filter", True, (166, 174, 190))
-            screen.blit(period_filter_label, (axis_left, period_filter_y - 16))
-            self.period_filter_rect = pygame.Rect(axis_left, period_filter_y, self.content_rect.width, self.PERIOD_FILTER_H)
-            pygame.draw.rect(screen, (22, 26, 38), self.period_filter_rect)
-            pygame.draw.rect(screen, (82, 90, 110), self.period_filter_rect, 1)
-            if self.period_filter_range is not None:
-                start_year, end_year = self.period_filter_range
-                x1 = self._year_to_x(start_year)
-                x2 = self._year_to_x(end_year)
-                selected_rect = pygame.Rect(min(x1, x2), period_filter_y + 1, max(2, abs(x2 - x1)), max(1, self.PERIOD_FILTER_H - 2))
-                pygame.draw.rect(screen, (92, 128, 176), selected_rect)
-                pygame.draw.line(screen, (230, 238, 252), (x1, period_filter_y - 3), (x1, self.period_filter_rect.bottom + 3), 1)
-                pygame.draw.line(screen, (230, 238, 252), (x2, period_filter_y - 3), (x2, self.period_filter_rect.bottom + 3), 1)
-            elif self.period_filter_pending_start is not None:
-                pending_x = self._year_to_x(self.period_filter_pending_start)
-                pygame.draw.line(screen, (232, 210, 148), (pending_x, period_filter_y - 3), (pending_x, self.period_filter_rect.bottom + 3), 2)
-            else:
-                hint_surface = font.render("click start, click end", True, (116, 126, 146))
-                if hint_surface.get_width() < self.period_filter_rect.width - 8:
-                    screen.blit(hint_surface, (self.period_filter_rect.x + 6, self.period_filter_rect.y - 2))
-
-            coverage_y = self.period_filter_rect.bottom + self.PERIOD_FILTER_GAP
-            coverage_label = font.render("Coverage", True, (166, 174, 190))
-            screen.blit(coverage_label, (axis_left, coverage_y - 16))
-
-            coverage_rect = pygame.Rect(axis_left, coverage_y, self.content_rect.width, self.COVERAGE_H)
-            pygame.draw.rect(screen, (26, 30, 42), coverage_rect)
-            pygame.draw.rect(screen, (72, 78, 96), coverage_rect, 1)
-
-            if self.coverage_max_density > 0:
-                for segment in self.coverage_segments:
-                    x1 = self._year_to_x(segment["start_year"])
-                    x2 = self._year_to_x(segment["end_year"])
-                    if x2 < axis_left or x1 > axis_right:
-                        continue
-                    bar_w = max(2, x2 - x1 + 1)
-                    density_ratio = segment["density"] / float(self.coverage_max_density)
-                    fill_color = (
-                        int(60 + 70 * density_ratio),
-                        int(92 + 78 * density_ratio),
-                        int(118 + 90 * density_ratio),
-                    )
-                    segment_rect = pygame.Rect(x1, coverage_y + 1, bar_w, max(1, self.COVERAGE_H - 2))
-                    pygame.draw.rect(screen, fill_color, segment_rect)
-
             timeline_content_clip = screen.get_clip()
             vertical_viewport = self._vertical_viewport_rect()
             screen.set_clip(timeline_content_clip.clip(vertical_viewport))
@@ -3653,6 +4466,27 @@ class TimelineUI:
                         (axis_right, separator_y),
                         1,
                     )
+
+            for focus_range in self.focus_lane_ranges:
+                header_y = lane_base_y + focus_range["header_lane"] * lane_pitch
+                block_bottom = lane_base_y + (focus_range["last_lane"] + 1) * lane_pitch
+                if block_bottom < vertical_viewport.y or header_y > vertical_viewport.bottom:
+                    continue
+                pygame.draw.line(
+                    screen,
+                    (214, 176, 96),
+                    (axis_left, header_y),
+                    (axis_right, header_y),
+                    1,
+                )
+                prefix = "> " if focus_range.get("has_bar") else "> (no date) "
+                header_label = self._ellipsize_text(
+                    prefix + str(focus_range["label"]),
+                    font,
+                    max(40, axis_right - axis_left),
+                )
+                header_surface = font.render(header_label, True, (232, 208, 150))
+                screen.blit(header_surface, (axis_left, header_y + 1))
 
             for category_range in self.technology_category_lane_ranges:
                 header_y = lane_base_y + category_range["header_lane"] * lane_pitch

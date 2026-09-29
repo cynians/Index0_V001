@@ -759,6 +759,48 @@ class EntityLoader:
                     self._clear_entity_deletion(previous_entity_id)
         return True
 
+    def persist_entities(self, entities):
+        """Persist generated location cards in one ontology transaction."""
+        entities = [
+            entity for entity in (entities or [])
+            if isinstance(entity, dict) and str(entity.get("id") or "").strip()
+        ]
+        if not entities:
+            return False
+        if any(str(entity.get("_dataset") or entity.get("type") or "") != "locations"
+               for entity in entities):
+            return all(self.persist_entity(entity) for entity in entities)
+        if self.use_ontology:
+            try:
+                if self._persistent_store is None:
+                    self._persistent_store = PersistentOntologyStore(self.ontology_path)
+                if not self._persistent_store.persist_entities(entities):
+                    return False
+            except (OSError, sqlite3.Error) as exc:
+                logger.error("Could not persist generated locations to ontology: %s", exc)
+                return False
+        dataset = self.datasets.setdefault("locations", [])
+        index_by_id = {
+            str(existing.get("id")): index
+            for index, existing in enumerate(dataset)
+            if isinstance(existing, dict) and existing.get("id")
+        }
+        deletion_ids = self._load_deletion_overrides() if self.use_ontology else None
+        for entity in entities:
+            entity["_dataset"] = "locations"
+            entity_id = str(entity["id"])
+            if entity_id in index_by_id:
+                dataset[index_by_id[entity_id]] = entity
+            else:
+                index_by_id[entity_id] = len(dataset)
+                dataset.append(entity)
+            self.entities[entity_id] = entity
+            if deletion_ids is not None:
+                deletion_ids.discard(entity_id)
+        if deletion_ids is not None:
+            self._write_deletion_overrides(deletion_ids)
+        return True
+
     def persist_entity_palette(self, entity):
         """Journal palette literals atomically without rebuilding the full OWL graph."""
         if not self.use_ontology or not isinstance(entity, dict):

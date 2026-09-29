@@ -7,6 +7,7 @@ from simulations.world_gen.drainage import (
     _spatially_diverse_segments,
     _terrain_flow_directions,
     derive_drainage_network,
+    derive_surface_hydrology_grids,
     inherit_parent_drainage,
 )
 from simulations.world_gen.surface_evolution import _apply_channel_incision
@@ -363,6 +364,92 @@ class DrainageRealismTests(unittest.TestCase):
 
         self.assertEqual(1, inherited["river_segment_count"])
         self.assertEqual(1, inherited["suppressed_duplicate_local_reach_count"])
+
+    def test_parent_lake_identity_and_child_shoreline_survive_refinement(self):
+        parent = {
+            "detail_level": 1,
+            "rivers": [],
+            "lakes": [{
+                "id": "lake_major",
+                "area_fraction": 0.04,
+                "surface_elevation_m": 42.0,
+                "bounds": {"min_x": 0.35, "max_x": 0.65, "min_y": 0.35, "max_y": 0.65},
+            }],
+        }
+        child = {
+            "detail_level": 2,
+            "rivers": [],
+            "lakes": [{
+                "id": "lake_local",
+                "surface_elevation_m": 41.8,
+                "bounds": {"min_x": 0.2, "max_x": 0.8, "min_y": 0.2, "max_y": 0.8},
+                "cells": [[2, 2], [3, 2]],
+            }],
+        }
+        inherited = inherit_parent_drainage(
+            parent,
+            child,
+            {"min_u": 0.4, "max_u": 0.6, "min_v": 0.4, "max_v": 0.6},
+            {"min_u": 0.0, "max_u": 1.0, "min_v": 0.0, "max_v": 1.0},
+        )
+        self.assertEqual(1, inherited["inherited_parent_lake_count"])
+        self.assertEqual(1, inherited["refined_parent_lake_count"])
+        self.assertEqual("refined_parent_lake", inherited["lakes"][0]["network_role"])
+        self.assertEqual("generated_lod_1:lake_major", inherited["lakes"][0]["origin_lake_id"])
+        self.assertEqual([[2, 2], [3, 2]], inherited["lakes"][0]["cells"])
+
+    def test_local_tributary_snaps_to_inherited_parent_trunk(self):
+        parent = {
+            "detail_level": 0,
+            "rivers": [{
+                "id": "river_main", "stream_order": 4, "flow": 0.9,
+                "points": [{"x": 0.1, "y": 0.5}, {"x": 0.9, "y": 0.5}],
+            }],
+        }
+        child = {
+            "detail_level": 1,
+            "grid_width": 201,
+            "grid_height": 201,
+            "lakes": [],
+            "rivers": [{
+                "id": "river_local", "stream_order": 2, "flow": 0.4,
+                "points": [{"x": 0.2, "y": 0.1}, {"x": 0.52, "y": 0.492}],
+            }],
+        }
+        inherited = inherit_parent_drainage(
+            parent,
+            child,
+            {"min_u": 0.4, "max_u": 0.6, "min_v": 0.4, "max_v": 0.6},
+            {"min_u": 0.0, "max_u": 1.0, "min_v": 0.0, "max_v": 1.0},
+        )
+        tributary = next(river for river in inherited["rivers"] if river["id"] == "river_local")
+        self.assertEqual("snapped_to_inherited_trunk", tributary["cross_lod_connection"])
+        self.assertEqual("confluence", tributary["mouth"])
+        self.assertAlmostEqual(0.5, tributary["points"][-1]["y"])
+
+    def test_surface_hydrology_grids_expose_water_channels_and_wetness(self):
+        rows = [[10.0 - y for _x in range(7)] for y in range(7)]
+        ocean = [[False] * 7 for _y in range(7)]
+        network = {
+            "rivers": [{
+                "points": [{"x": 0.5, "y": 0.0}, {"x": 0.5, "y": 1.0}],
+                "flow_regime": "perennial", "estimated_discharge_m3_s": 8.0,
+                "average_width_m": 12.0,
+            }],
+            "ephemeral_channels": [],
+            "lakes": [],
+            "flow_accumulation_rows": [[1.0] * 7 for _y in range(7)],
+        }
+        runoff_grid, surface_grid = derive_surface_hydrology_grids(
+            rows, ocean, network, region_width_m=600.0, region_height_m=600.0,
+            runoff_rows=[[250.0] * 7 for _y in range(7)],
+            precipitation_rows=[[700.0] * 7 for _y in range(7)],
+            potential_evaporation_rows=[[500.0] * 7 for _y in range(7)],
+        )
+        self.assertEqual(1.0, runoff_grid["channel_presence_rows"][3][3])
+        self.assertTrue(surface_grid["water_presence_rows"][3][3])
+        self.assertGreater(surface_grid["water_depth_m_rows"][3][3], 0.0)
+        self.assertGreater(runoff_grid["wetness_index_rows"][3][3], runoff_grid["wetness_index_rows"][3][0])
 
 
 if __name__ == "__main__":

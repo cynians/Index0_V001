@@ -29,19 +29,8 @@ MOLECULES = {
 from simulations.world_gen.material_catalog import ATMOSPHERE_MOLECULES as MOLECULES
 
 
-VOLATILE_PRESSURE_BAR = {
-    "none": 0.0,
-    "dry": 0.025,
-    "thin": 0.12,
-    "earthlike": 1.0,
-    "wet": 1.4,
-    "dense": 4.0,
-}
-
-EXPLICIT_AIRLESS_SURFACE_CLASSES = {
-    "airless_rocky",
-    "cratered_airless",
-}
+# Sputtered/solar-wind exosphere of an airless body (Moon, Mercury).
+EXOSPHERE_MIX = {"O": 0.36, "Na": 0.25, "H": 0.16, "He": 0.12, "K": 0.07, "Ar": 0.015}
 
 
 def equilibrium_temperature_k(luminosity_solar, semi_major_axis_au, bond_albedo=0.30, eccentricity=0.0):
@@ -80,11 +69,6 @@ def retention_factor(escape_velocity, exobase_temperature_k, molecule):
     return 0.0, ratio, "lost"
 
 
-def _volatile_pressure(seed):
-    inventory = str(seed.get("volatile_inventory") or "earthlike").strip().lower()
-    return VOLATILE_PRESSURE_BAR.get(inventory, VOLATILE_PRESSURE_BAR["earthlike"])
-
-
 def _clamp(value, low, high):
     return max(low, min(high, float(value)))
 
@@ -101,128 +85,9 @@ def _normalized_mix(raw_mix):
     return {symbol: amount / total for symbol, amount in positive.items()}
 
 
-MOLECULE_ELEMENTS = {
-    "H": {"H": 1}, "H2": {"H": 2}, "He": {"He": 1}, "Ne": {"Ne": 1},
-    "O": {"O": 1}, "Na": {"Na": 1}, "K": {"K": 1},
-    "H2O": {"H": 2, "O": 1}, "NH3": {"N": 1, "H": 3},
-    "CH4": {"C": 1, "H": 4}, "CO": {"C": 1, "O": 1},
-    "N2": {"N": 2}, "O2": {"O": 2}, "CO2": {"C": 1, "O": 2},
-    "Ar": {"Ar": 1}, "SO2": {"S": 1, "O": 2}, "H2S": {"H": 2, "S": 1},
-}
-
-ELEMENT_REFERENCE_PERCENT = {
-    "H": 0.15, "He": 0.02, "C": 0.20, "N": 0.08, "O": 12.0,
-    "Na": 0.30, "K": 0.10, "S": 0.20, "Ar": 0.005, "Ne": 0.002,
-}
-
-
-def _element_profile(seed):
-    composition = seed.get("crust_composition") or {}
-    profile = {}
-    for group in ("major_elements", "trace_elements"):
-        for row in composition.get(group, []) if isinstance(composition, dict) else []:
-            symbol = str(row.get("symbol") or "").strip()
-            if symbol:
-                profile[symbol] = profile.get(symbol, 0.0) + max(0.0, float(row.get("abundance_percent", 0.0) or 0.0))
-    if isinstance(composition, dict):
-        reserve = max(0.0, float(composition.get("trace_reserve_percent", 0.0) or 0.0))
-        # An unexpanded trace reserve represents volatile/noble elements that have
-        # not been individually authored yet; it must not behave like zero abundance.
-        for symbol, share in {"C": 0.20, "N": 0.12, "Ar": 0.01, "Ne": 0.002, "He": 0.005}.items():
-            profile[symbol] = max(profile.get(symbol, 0.0), reserve * share)
-        profile["H"] = max(profile.get("H", 0.0), reserve * 0.1 * _clamp(seed.get("water_fraction", 0.0), 0.0, 1.0))
-    return profile
-
-
-def _mantle_redox_model(seed):
-    """Infer a coarse outgassing redox regime from authored bulk chemistry."""
-    explicit = str(seed.get("mantle_redox_state") or "").strip().lower()
-    if explicit in {"oxidized", "intermediate", "reduced", "strongly_reduced"}:
-        score = {
-            "oxidized": 0.0,
-            "intermediate": 0.35,
-            "reduced": 0.68,
-            "strongly_reduced": 1.0,
-        }[explicit]
-        return {
-            "state": explicit,
-            "reducing_index": score,
-            "source": "authored",
-        }
-
-    profile = _element_profile(seed)
-    carbon = max(0.0, float(profile.get("C", 0.0) or 0.0))
-    oxygen = max(0.001, float(profile.get("O", 0.0) or 0.0))
-    iron = max(0.0, float(profile.get("Fe", 0.0) or 0.0))
-    sulfur = max(0.0, float(profile.get("S", 0.0) or 0.0))
-    carbon_oxygen_ratio = carbon / oxygen
-    reducing_index = _clamp(
-        carbon_oxygen_ratio / 0.65 * 0.72
-        + min(1.0, sulfur / 4.0) * 0.10
-        + min(1.0, iron / 18.0) * 0.08,
-        0.0,
-        1.0,
-    )
-    if reducing_index >= 0.82:
-        state = "strongly_reduced"
-    elif reducing_index >= 0.48:
-        state = "reduced"
-    elif reducing_index >= 0.18:
-        state = "intermediate"
-    else:
-        state = "oxidized"
-    return {
-        "state": state,
-        "reducing_index": round(reducing_index, 4),
-        "carbon_oxygen_ratio": round(carbon_oxygen_ratio, 4),
-        "source": "bulk_crust_proxy",
-        "note": "Crust chemistry is a proxy until a distinct mantle-composition editor exists.",
-    }
-
-
-def _redox_adjusted_rocky_mix(raw_mix, redox_model, atmosphere_class):
-    reducing_index = float(redox_model.get("reducing_index", 0.0) or 0.0)
-    if reducing_index < 0.35 or atmosphere_class in {
-        "runaway_co2",
-        "oxygenated_nitrogen",
-        "anoxic_nitrogen",
-        "cold_nitrogen",
-        "exosphere",
-        "rock_vapor",
-    }:
-        return raw_mix
-
-    reduced_endmember = {
-        "CO": 0.40,
-        "CO2": 0.24,
-        "CH4": 0.10,
-        "H2": 0.10,
-        "N2": 0.08,
-        "H2S": 0.035,
-        "H2O": 0.02,
-        "Ar": 0.01,
-        "SO2": 0.005,
-    }
-    blend = _clamp((reducing_index - 0.35) / 0.65, 0.0, 1.0)
-    molecules = set(raw_mix) | set(reduced_endmember)
-    return {
-        molecule: float(raw_mix.get(molecule, 0.0) or 0.0) * (1.0 - blend)
-        + reduced_endmember.get(molecule, 0.0) * blend
-        for molecule in molecules
-    }
-
-
-def _element_availability(symbol, profile):
-    if not profile:
-        return 1.0
-    requirements = MOLECULE_ELEMENTS.get(symbol, {})
-    if not requirements:
-        return 1.0
-    factors = []
-    for element in requirements:
-        reference = ELEMENT_REFERENCE_PERCENT.get(element, 0.05)
-        factors.append(_clamp(profile.get(element, 0.0) / reference, 0.0, 1.0))
-    return min(factors) if factors else 1.0
+def _exosphere_mix(seed):
+    water_fraction = _clamp(seed.get("water_fraction", 0.0), 0.0, 1.0)
+    return {**EXOSPHERE_MIX, "H2O": 0.025 * water_fraction}
 
 
 def _is_gas_giant(seed, physics):
@@ -279,185 +144,6 @@ def _gas_giant_mix(atmosphere_class, equilibrium_temp):
         "Ne": 0.002,
         "H2S": 0.001,
     }
-
-
-def _rocky_atmosphere_class(seed, equilibrium_temp, gravity_g):
-    water_fraction = max(0.0, min(1.0, float(seed.get("water_fraction", 0.5))))
-    inventory = str(seed.get("volatile_inventory") or "earthlike").strip().lower()
-    pressure = _volatile_pressure(seed)
-    radius_earth = max(0.01, float(seed.get("radius_earth", 1.0) or 1.0))
-    explicit_kind = infer_world_class(seed)
-
-    if explicit_kind in EXPLICIT_AIRLESS_SURFACE_CLASSES:
-        return "exosphere"
-
-    requested = str(seed.get("atmosphere_regime") or "").strip().lower()
-    if requested in {
-        "runaway_co2", "oxygenated_nitrogen", "anoxic_nitrogen", "cold_nitrogen",
-        "methane_nitrogen", "frozen_methane_nitrogen", "dry_co2",
-        "mixed_volcanic", "rock_vapor", "hydrogen_ocean", "temperate_nitrogen",
-    }:
-        return requested
-
-    if inventory == "none" or pressure <= 0.02 or radius_earth < 0.35 or gravity_g < 0.12:
-        return "exosphere"
-    if equilibrium_temp >= 340.0 and water_fraction >= 0.12:
-        return "steam_co2"
-    if equilibrium_temp <= 170.0:
-        return "frozen_methane_nitrogen"
-    if inventory in {"dry", "thin"} or water_fraction < 0.08:
-        return "dry_co2"
-    if inventory == "dense" and water_fraction < 0.35:
-        return "reducing_dense"
-    if 245.0 <= equilibrium_temp <= 315.0 and water_fraction >= 0.35 and inventory in {"earthlike", "wet"}:
-        return "temperate_nitrogen"
-    return "mixed_volcanic"
-
-
-def _base_outgassing_mix(seed, equilibrium_temp, atmosphere_class):
-    water_fraction = _clamp(seed.get("water_fraction", 0.5), 0.0, 1.0)
-
-    if atmosphere_class == "runaway_co2":
-        return {
-            "CO2": 0.965,
-            "N2": 0.034,
-            "SO2": 0.00055,
-            "Ar": 0.00025,
-            "H2O": 0.00012,
-            "CO": 0.00008,
-        }
-    if atmosphere_class == "oxygenated_nitrogen":
-        return {
-            "N2": 0.7808,
-            "O2": 0.2094,
-            "Ar": 0.0093,
-            "CO2": 0.00042,
-            "H2O": 0.012,
-            "CH4": 0.000002,
-        }
-    if atmosphere_class in {"anoxic_nitrogen", "cold_nitrogen"}:
-        return {"N2": 0.72, "CO2": 0.19, "H2O": 0.045, "CH4": 0.018, "Ar": 0.014, "H2": 0.008, "SO2": 0.005}
-    if atmosphere_class == "methane_nitrogen":
-        return {"N2": 0.91, "CH4": 0.065, "H2": 0.009, "Ar": 0.007, "CO": 0.005, "H2O": 0.001, "NH3": 0.003}
-    if atmosphere_class == "hydrogen_ocean":
-        return {"H2": 0.79, "He": 0.10, "H2O": 0.055, "CH4": 0.022, "N2": 0.018, "NH3": 0.009, "CO2": 0.006}
-    if atmosphere_class == "rock_vapor":
-        return {"Na": 0.35, "O": 0.25, "K": 0.12, "CO": 0.10, "SO2": 0.08, "O2": 0.05, "CO2": 0.05}
-
-    if atmosphere_class == "exosphere":
-        return {
-            "O": 0.36,
-            "Na": 0.25,
-            "H": 0.16,
-            "He": 0.12,
-            "K": 0.07,
-            "H2O": 0.025 * water_fraction,
-            "Ar": 0.015,
-        }
-    if atmosphere_class == "steam_co2":
-        return {
-            "H2O": 0.36 + water_fraction * 0.24,
-            "CO2": 0.28,
-            "N2": 0.11,
-            "SO2": 0.055,
-            "CO": 0.035,
-            "H2": 0.025,
-            "H2S": 0.012,
-            "Ar": 0.01,
-            "He": 0.006,
-        }
-    if atmosphere_class == "frozen_methane_nitrogen":
-        return {
-            "N2": 0.38,
-            "CH4": 0.24,
-            "CO": 0.12,
-            "Ar": 0.08,
-            "CO2": 0.05,
-            "NH3": 0.035,
-            "H2": 0.035,
-            "He": 0.018,
-            "H2O": 0.006,
-        }
-    if atmosphere_class == "dry_co2":
-        return {
-            "CO2": 0.55,
-            "N2": 0.22,
-            "Ar": 0.085,
-            "SO2": 0.045,
-            "CO": 0.035,
-            "H2O": 0.018 + water_fraction * 0.035,
-            "H2": 0.018,
-            "He": 0.009,
-            "CH4": 0.006,
-        }
-    if atmosphere_class == "reducing_dense":
-        return {
-            "N2": 0.34,
-            "CO2": 0.20,
-            "CH4": 0.14,
-            "NH3": 0.07,
-            "H2": 0.065,
-            "H2O": 0.055 + water_fraction * 0.06,
-            "CO": 0.035,
-            "H2S": 0.025,
-            "Ar": 0.012,
-            "He": 0.008,
-        }
-    if atmosphere_class == "temperate_nitrogen":
-        # A mature wet rocky world draws much of its early CO2 into oceans and
-        # weathered crust even before biology exists.  Keep oxygen abiotic and
-        # trace; a future biosphere stage owns Earth-like O2 abundance.
-        system_age_gyr = max(0.05, float(seed.get("system_age_gyr", 4.5) or 4.5))
-        carbon = max(0.0, float(_element_profile(seed).get("C", 0.0) or 0.0))
-        carbon_inventory = _clamp(carbon / 0.18, 0.35, 3.0)
-        weathering_drawdown = _clamp(water_fraction * min(1.0, system_age_gyr / 2.5), 0.0, 0.92)
-        co2 = _clamp(0.075 * carbon_inventory * (1.0 - weathering_drawdown * 0.88), 0.00035, 0.11)
-        oxygen = 0.0004 + water_fraction * 0.0012
-        return {
-            "N2": 0.86,
-            "CO2": co2,
-            "H2O": 0.018 + water_fraction * 0.032,
-            "O2": oxygen,
-            "Ar": 0.012,
-            "CH4": 0.0012,
-            "NH3": 0.0003,
-            "SO2": 0.0008,
-            "H2": 0.0015,
-            "He": 0.0005,
-        }
-    return {
-        "N2": 0.42,
-        "CO2": 0.27,
-        "H2O": 0.045 + water_fraction * 0.09,
-        "SO2": 0.045,
-        "CH4": 0.035,
-        "CO": 0.03,
-        "H2S": 0.018,
-        "Ar": 0.016,
-        "NH3": 0.01 if equilibrium_temp < 310.0 else 0.003,
-        "H2": 0.012,
-        "He": 0.006,
-        "O2": 0.001,
-    }
-
-
-def _atmosphere_pressure_multiplier(atmosphere_class):
-    return {
-        "exosphere": 0.0,
-        "dry_co2": 0.75,
-        "frozen_methane_nitrogen": 0.55,
-        "mixed_volcanic": 1.0,
-        "temperate_nitrogen": 1.05,
-        "steam_co2": 1.55,
-        "reducing_dense": 1.35,
-        "runaway_co2": 1.55,
-        "oxygenated_nitrogen": 1.0,
-        "anoxic_nitrogen": 1.1,
-        "cold_nitrogen": 0.8,
-        "methane_nitrogen": 1.25,
-        "hydrogen_ocean": 5.0,
-        "rock_vapor": 0.12,
-    }.get(atmosphere_class, 1.0)
 
 
 def _atmosphere_state(pressure_bar, composition, atmosphere_class):
@@ -612,7 +298,21 @@ def _visual_model(composition, pressure_bar, atmosphere_state, cloud_model=None)
     if isinstance(cloud_model, dict) and cloud_model.get("cloud_class") == "sulfuric_acid_aerosol_deck":
         tint = [202, 166, 82]
         opacity = 0.56
+    elif isinstance(cloud_model, dict) and cloud_model.get("cloud_class") == "methane_haze_and_clouds":
+        # Photochemical (tholin) haze: Titan is orange in visible light.
+        tint = [196, 138, 58]
+        opacity = max(opacity, 0.48)
     return {"tint_color": tint, "opacity": opacity, "visible": opacity > 0.005}
+
+
+def element_volatile_budget(seed, physics, stellar_luminosity_solar, semi_major_axis_au):
+    """The seed's volatile budget, reusing the one stored on it when it matches."""
+    from simulations.world_gen.volatile_budget import budget_matches_inputs, derive_volatile_budget
+
+    stored = seed.get("volatile_budget")
+    if isinstance(stored, dict) and budget_matches_inputs(stored, seed, stellar_luminosity_solar, semi_major_axis_au):
+        return stored
+    return derive_volatile_budget(seed, physics, stellar_luminosity_solar, semi_major_axis_au)
 
 
 def derive_atmosphere_model(seed, physics, stellar_luminosity_solar, semi_major_axis_au):
@@ -635,14 +335,10 @@ def derive_atmosphere_model(seed, physics, stellar_luminosity_solar, semi_major_
     escape_velocity = escape_velocity_m_s(physics.get("mass_kg"), physics.get("radius_m"))
     surface_gravity_g = max(0.03, float(physics.get("surface_gravity_g", 1.0) or 1.0))
     gas_giant = _is_gas_giant(seed, physics)
-    atmosphere_class = (
-        _gas_giant_class(seed, physics, equilibrium_temp)
-        if gas_giant else _rocky_atmosphere_class(seed, equilibrium_temp, surface_gravity_g)
-    )
-    volatile_supply_bar = (
-        max(100.0, surface_gravity_g * 120.0)
-        if gas_giant else _volatile_pressure(seed)
-    )
+    # Rocky worlds: the element distribution decides the air through the
+    # volatile budget; the class is only a label for clouds and hazes.
+    budget = None if gas_giant else element_volatile_budget(seed, physics, stellar_luminosity_solar, semi_major_axis_au)
+    atmosphere_class = _gas_giant_class(seed, physics, equilibrium_temp) if gas_giant else budget["atmosphere_class"]
 
     retained = {}
     retention_rows = []
@@ -656,63 +352,57 @@ def derive_atmosphere_model(seed, physics, stellar_luminosity_solar, semi_major_
             "status": status,
         })
 
-    mantle_redox_model = _mantle_redox_model(seed)
-    raw_mix = (
-        _gas_giant_mix(atmosphere_class, equilibrium_temp)
-        if gas_giant else _base_outgassing_mix(seed, equilibrium_temp, atmosphere_class)
-    )
-    if not gas_giant:
-        raw_mix = _redox_adjusted_rocky_mix(
-            raw_mix,
-            mantle_redox_model,
-            atmosphere_class,
+    if gas_giant or atmosphere_class == "exosphere":
+        raw_mix = _normalized_mix(
+            _gas_giant_mix(atmosphere_class, equilibrium_temp) if gas_giant else _exosphere_mix(seed)
         )
-    raw_mix = _normalized_mix(raw_mix)
-    adjusted = {}
-    elemental_profile = _element_profile(seed)
-    for symbol, amount in raw_mix.items():
-        # A giant planet's envelope is not limited by the authored rocky-core
-        # composition; its primordial hydrogen/helium inventory dominates.
-        availability = 1.0 if gas_giant else _element_availability(symbol, elemental_profile)
-        residence = retained.get(symbol, 0.0)
-        if atmosphere_class == "exosphere":
-            # Exospheres are continuously replenished by sputtering and solar wind;
-            # short-lived atoms can therefore be present even when long-term retention is poor.
-            residence = 0.45 + 0.55 * residence
-            if symbol in {"H", "He"}:
-                availability = 1.0
-        retained_amount = max(0.0, amount * residence * availability)
-        if retained_amount > 0:
-            adjusted[symbol] = retained_amount
-
-    raw_total = sum(max(0.0, amount) for amount in raw_mix.values())
-    total = sum(adjusted.values())
-    retained_column_fraction = total / raw_total if raw_total > 0 else 0.0
-    volatile_history = volatile_history_from_seed(seed, retained_column_fraction=retained_column_fraction)
-    source_total_bar = sum(float(volatile_history.get(field, 0.0) or 0.0) for field in (
-        "primordial_volatiles_bar", "outgassed_volatiles_bar", "late_delivered_volatiles_bar",
-        "terraforming_adjustment_bar",
-    ))
-    volatile_history_factor = _clamp(source_total_bar / max(0.02, volatile_supply_bar), 0.35, 2.5)
-    if gas_giant:
-        pressure_bar = max(100.0, volatile_supply_bar * retained_column_fraction)
-    elif atmosphere_class == "exosphere" and adjusted:
-        source_strength = _clamp(seed.get("exosphere_source_strength", 0.5), 0.0, 2.0)
-        stellar_flux = max(0.02, float(stellar_luminosity_solar or 1.0)) / max(0.01, float(semi_major_axis_au or 1.0)) ** 2
-        pressure_bar = 1e-14 * source_strength * min(20.0, stellar_flux) * max(0.05, retained_column_fraction)
+        adjusted = {}
+        for symbol, amount in raw_mix.items():
+            residence = retained.get(symbol, 0.0)
+            if not gas_giant:
+                # Exospheres are continuously replenished by sputtering and
+                # solar wind; short-lived atoms are present even when
+                # long-term retention is poor.
+                residence = 0.45 + 0.55 * residence
+            retained_amount = max(0.0, amount * residence)
+            if retained_amount > 0:
+                adjusted[symbol] = retained_amount
+        raw_total = sum(max(0.0, amount) for amount in raw_mix.values())
+        total = sum(adjusted.values())
+        retained_column_fraction = total / raw_total if raw_total > 0 else 0.0
+        if gas_giant:
+            volatile_supply_bar = max(100.0, surface_gravity_g * 120.0)
+            pressure_bar = max(100.0, volatile_supply_bar * retained_column_fraction)
+        else:
+            volatile_supply_bar = 0.0
+            source_strength = _clamp(seed.get("exosphere_source_strength", 0.5), 0.0, 2.0)
+            stellar_flux = max(0.02, float(stellar_luminosity_solar or 1.0)) / max(0.01, float(semi_major_axis_au or 1.0)) ** 2
+            pressure_bar = 1e-14 * source_strength * min(20.0, stellar_flux) * max(0.05, retained_column_fraction) if adjusted else 0.0
+        composition = [
+            {
+                "molecule": symbol,
+                "name": MOLECULES[symbol]["name"],
+                "fraction": amount / total if total > 0 else 0.0,
+                "percent": (amount / total) * 100.0 if total > 0 else 0.0,
+            }
+            for symbol, amount in sorted(adjusted.items(), key=lambda item: item[1], reverse=True)
+        ]
     else:
-        pressure_bar = max(0.0, volatile_supply_bar * volatile_history_factor * retained_column_fraction * surface_gravity_g * _atmosphere_pressure_multiplier(atmosphere_class))
-        pressure_bar *= max(0.05, float(seed.get("volatile_pressure_scale", 1.0) or 1.0))
-
-    composition = [
-        {
-            "molecule": symbol,
-            "name": MOLECULES[symbol]["name"],
-            "fraction": amount / total if total > 0 else 0.0,
-            "percent": (amount / total) * 100.0 if total > 0 else 0.0,
-        }
-        for symbol, amount in sorted(adjusted.items(), key=lambda item: item[1], reverse=True)
-    ]
+        pressure_bar = float(budget["surface_pressure_bar"])
+        volatile_supply_bar = pressure_bar
+        retained_column_fraction = 1.0
+        composition = [
+            {
+                "molecule": symbol,
+                "name": MOLECULES.get(symbol, {}).get("name", symbol),
+                "fraction": fraction,
+                "percent": fraction * 100.0,
+            }
+            for symbol, fraction in budget["composition"].items()
+            if fraction > 0.0
+        ]
+    volatile_history = volatile_history_from_seed(seed, retained_column_fraction=retained_column_fraction)
+    redox_state = (budget or {}).get("speciation", {}).get("redox_state") if budget else None
 
     atmosphere_state = _atmosphere_state(pressure_bar, composition, atmosphere_class)
     greenhouse_model = _greenhouse_model(
@@ -724,6 +414,15 @@ def derive_atmosphere_model(seed, physics, stellar_luminosity_solar, semi_major_
     )
     greenhouse_k = greenhouse_model["delta_k"]
     surface_temp = equilibrium_temp + greenhouse_k
+    if budget is not None:
+        surface_temp = float(budget["surface_temperature_k"])
+        greenhouse_k = surface_temp - equilibrium_temp
+        greenhouse_model = {
+            **greenhouse_model,
+            "delta_k": greenhouse_k,
+            "method": "grey_two_stream_from_volatile_budget",
+            "infrared_optical_depth": budget["optical_depth"],
+        }
     periapsis_au = max(0.001, float(semi_major_axis_au or 1.0) * (1.0 - orbital_eccentricity))
     apoapsis_au = max(periapsis_au, float(semi_major_axis_au or 1.0) * (1.0 + orbital_eccentricity))
     circular_flux = max(0.0001, float(stellar_luminosity_solar or 1.0)) / max(0.01, float(semi_major_axis_au or 1.0)) ** 2
@@ -755,8 +454,8 @@ def derive_atmosphere_model(seed, physics, stellar_luminosity_solar, semi_major_
         co2_surface = "gas_with_possible_condensed_reservoir"
 
     notes = [
-        "Atmosphere class is inferred from size, temperature, volatile inventory, gravity, and water fraction.",
-        "O2 remains trace unless conditions imply a water-rich temperate atmosphere; later biosphere stages should own abundant oxygen.",
+        "Composition, pressure and temperature come from the element distribution's volatile budget; the class is a label.",
+        "O2 remains trace (abiotic); later biosphere stages should own abundant oxygen.",
     ]
     if gas_giant:
         notes.extend([
@@ -769,15 +468,14 @@ def derive_atmosphere_model(seed, physics, stellar_luminosity_solar, semi_major_
             "Condensation is approximated for water and carbon dioxide.",
         ])
 
-    return {
+    model = {
         "climate_hierarchy": {
             "level": 0,
             "method": "global_energy_balance_with_parameterized_greenhouse_clouds_and_escape",
             "next_level": "latitude_or_spatial_climate_in_water_cycle_stage",
         },
         "atmosphere_class": atmosphere_class,
-        "mantle_redox_model": mantle_redox_model,
-        "outgassing_redox_state": mantle_redox_model.get("state"),
+        "outgassing_redox_state": redox_state,
         "atmosphere_state": atmosphere_state,
         "has_collisional_atmosphere": atmosphere_state not in {"vacuum", "exosphere"},
         "has_exosphere": atmosphere_state == "exosphere",
@@ -814,7 +512,6 @@ def derive_atmosphere_model(seed, physics, stellar_luminosity_solar, semi_major_
         "escape_velocity_m_s": escape_velocity,
         "volatile_supply_bar": volatile_supply_bar,
         "volatile_history": volatile_history,
-        "volatile_history_factor": volatile_history_factor,
         "retained_column_fraction": retained_column_fraction,
         "surface_pressure_bar": pressure_bar,
         "composition": composition,
@@ -827,3 +524,24 @@ def derive_atmosphere_model(seed, physics, stellar_luminosity_solar, semi_major_
         },
         "notes": notes,
     }
+    if budget is not None:
+        model["volatile_budget"] = budget
+        condensates = budget.get("condensates") or {}
+        water = condensates.get("H2O") or {}
+        model["volatile_phase_state"].update({
+            "H2O": (
+                "liquid_and_vapor" if water.get("phase") == "liquid"
+                else ("surface_ice_or_subsurface_liquid" if water else "trace_or_absent")
+            ),
+            "CO2": (
+                "polar_or_surface_ice" if (condensates.get("CO2") or {}).get("phase") == "ice"
+                else ("gas_with_possible_condensed_reservoir" if condensates.get("CO2") else "gas")
+            ),
+            "surface_liquid": budget.get("surface_liquid"),
+            "condensates": {
+                key: {"phase": value["phase"], "global_depth_m": round(value["global_depth_m"], 3)}
+                for key, value in condensates.items()
+            },
+            "model_level": "element_volatile_budget",
+        })
+    return model

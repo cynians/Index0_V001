@@ -11,6 +11,7 @@ from simulations.world_gen.regional_refinement import (
     _build_production_residual_grid,
     _orogen_structural_context,
     _parent_structure_context,
+    _production_height_at,
     _sample_orogen_structural_grid,
     _refinement_detail_band,
     _sample_bicubic,
@@ -84,6 +85,25 @@ class CraterSurfaceResolutionTests(unittest.TestCase):
 
 
 class ParentHeightContractTests(unittest.TestCase):
+    def test_regional_production_sampling_keeps_detailed_synthesis_enabled(self):
+        terrain = {
+            "heightfield": {"min_elevation_m": -5000.0, "max_elevation_m": 6000.0},
+            "map_seed": "regional-detail-contract",
+        }
+        root_heightmap = {"map_seed": "regional-detail-contract"}
+        tectonics = {"status": "tectonics_advanced"}
+
+        with patch(
+            "simulations.world_gen.regional_refinement._wave_height",
+            return_value=0.25,
+        ) as wave_height:
+            elevation = _production_height_at(
+                0.2, 0.4, terrain, root_heightmap, tectonics,
+            )
+
+        self.assertAlmostEqual(1875.0, elevation)
+        self.assertFalse(wave_height.call_args.kwargs.get("lod0_synthesis", False))
+
     def test_production_residual_is_resolved_on_a_compact_child_grid(self):
         parent_rows = [[float(x * 10 + y * 5) for x in range(9)] for y in range(9)]
 

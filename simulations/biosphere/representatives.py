@@ -110,7 +110,8 @@ class RepresentativePopulationManager:
             if local_abundance <= 0.003:
                 representative.alive = False
                 continue
-            environment = ecology.environment_at(representative.x, representative.y)
+            height = float(representative.simulation.render_snapshot.bounds_m[5] or 0.0)
+            environment = ecology.environment_at(representative.x, representative.y, max(0.05, height * 0.35))
             profile = ecology.profiles[representative.species_id]
             total_abundance = ecology.total_abundance_at(representative.x, representative.y)
             local_scale = max((patch.radius_m for patch in ecology.species_patches(representative.species_id)), default=0.5)
@@ -121,13 +122,17 @@ class RepresentativePopulationManager:
                 for item in alive_representatives
             )
             water_stress = _clamp(abs(environment["soil_moisture"] - profile.moisture_optimum) / profile.moisture_tolerance)
-            light_stress = _clamp((profile.light_minimum - environment["surface_solar_exposure"]) / max(0.08, profile.light_minimum))
+            light_stress = _clamp((profile.light_minimum - environment["plant_available_light"]) / max(0.08, profile.light_minimum))
             deep_environment = {
                 "water_stress": water_stress,
                 "light_stress": light_stress,
                 "competition": _clamp(max(0.0, total_abundance - local_abundance) + nearby_representatives * 0.06),
                 "disturbance": 0.0,
                 "disease_pressure": _clamp(nearby_representatives * 0.025),
+                "available_nitrogen_g_m2": environment.get("available_nitrogen_g_m2", 0.0),
+                "available_phosphorus_g_m2": environment.get("available_phosphorus_g_m2", 0.0),
+                "soil_depth_m": environment.get("soil_depth_m"),
+                "soil_ph": environment.get("soil_ph"),
             }
             representative.age_days += self.DAYS_PER_SEASON
             representative.simulation.set_age(representative.age_days)
@@ -148,6 +153,10 @@ class RepresentativePopulationManager:
             vitality = sum(float(item.get("vitality", 0.0) or 0.0) for item in outcomes) / count
             fecundity = sum(float(item.get("fecundity", 0.0) or 0.0) for item in outcomes) / count
             mortality = sum(float(item.get("mortality_risk", 0.0) or 0.0) for item in outcomes) / count
+            nitrogen_response = sum(float(item.get("nitrogen_response", 0.0) or 0.0) for item in outcomes) / count
+            phosphorus_response = sum(float(item.get("phosphorus_response", 0.0) or 0.0) for item in outcomes) / count
+            root_depth = sum(float(item.get("root_depth_m", 0.0) or 0.0) for item in outcomes) / count
+            root_spread = sum(float(item.get("root_system_span_m", 0.0) or 0.0) for item in outcomes) / count
             feedback[species_id] = {
                 "representative_count": count,
                 "mean_vitality": vitality,
@@ -156,6 +165,13 @@ class RepresentativePopulationManager:
                 "growth_multiplier": 0.68 + vitality * 0.72,
                 "dispersal_multiplier": 0.72 + fecundity * 0.72,
                 "mortality_pressure": mortality * 0.018,
+                "mean_nitrogen_response": nitrogen_response,
+                "mean_phosphorus_response": phosphorus_response,
+                "mean_nitrogen_stress": 1.0 - nitrogen_response,
+                "mean_phosphorus_stress": 1.0 - phosphorus_response,
+                "mean_root_depth_m": root_depth,
+                "mean_root_spread_m": root_spread,
+                "mean_root_exploration": _clamp((root_depth + root_spread) / 2.5),
             }
         return feedback
 

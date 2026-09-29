@@ -10,11 +10,14 @@ import re
 
 from world.entity_loader import EntityLoader
 from world.dione_reference_models import apply_dione_reference_models
+from simulations.world_gen.highest_lod_example import hydrate_entity as hydrate_survey_target
+from simulations.world_gen.generated_landscape_artifact import hydrate_entity as hydrate_generated_landscape
 from world.component_host import apply_component_host_schema
 from world.earth_reference_models import apply_earth_reference_models
 from world.orbital_space_reference_models import apply_orbital_space_reference_models
 from world.periods import apply_period_reference_models
 from world.technology_schema import apply_technology_schema
+from world.temporal_succession_fields import apply_temporal_succession_schema
 from world.relationship_graph import TouchDegrees
 from world.schema_loader import SchemaLoader
 from world.species_inheritance import (
@@ -257,6 +260,7 @@ class WorldModel:
         apply_period_reference_models(self.loader, self.MAJOR_PERIODS)
         apply_component_host_schema(self.loader)
         apply_technology_schema(self.loader)
+        apply_temporal_succession_schema(self.loader)
         # Reuse schemas already decoded by EntityLoader. Parsing the complete
         # ontology a second time is especially costly once generated maps are
         # persisted in the repository.
@@ -268,7 +272,10 @@ class WorldModel:
         self.repository_revision = 0
 
     def get_entity(self, entity_id):
-        return self.loader.get(entity_id)
+        entity = self.loader.get(entity_id)
+        if entity is None:
+            return None
+        return hydrate_generated_landscape(hydrate_survey_target(entity))
 
     def set_literal(self, entity_id, field_name, value, persist=True):
         changed_entity_ids = self.loader.set_literal(entity_id, field_name, value, persist=persist)
@@ -304,6 +311,7 @@ class WorldModel:
         apply_period_reference_models(self.loader, self.MAJOR_PERIODS)
         apply_component_host_schema(self.loader)
         apply_technology_schema(self.loader)
+        apply_temporal_succession_schema(self.loader)
         if hasattr(self.touch_degrees, "refresh"):
             self.touch_degrees.refresh()
         self.yearer = Yearer(self.loader)
@@ -314,6 +322,7 @@ class WorldModel:
         apply_period_reference_models(self.loader, self.MAJOR_PERIODS)
         apply_component_host_schema(self.loader)
         apply_technology_schema(self.loader)
+        apply_temporal_succession_schema(self.loader)
         if hasattr(self.touch_degrees, "refresh"):
             self.touch_degrees.refresh()
         self.yearer = Yearer(self.loader)
@@ -656,6 +665,7 @@ class WorldModel:
         apply_period_reference_models(self.loader, self.MAJOR_PERIODS)
         apply_component_host_schema(self.loader)
         apply_technology_schema(self.loader)
+        apply_temporal_succession_schema(self.loader)
         self.schemas = SchemaLoader(schema_entities=self.loader.get_dataset("schemas"))
         self.touch_degrees.schemas = self.schemas
         self.touch_degrees.refresh()

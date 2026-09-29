@@ -196,6 +196,19 @@ def author_blueprint(ontology_path=None):
                 "section": "Formation Sim",
                 "optional": True,
             },
+            # Squad designer (see tools/author_formation_squad_designer.py, the
+            # authoritative source for these two -- kept in sync here so the
+            # schema shape does not depend on run order).
+            "roster_slots": {
+                "type": "object_list",
+                "section": "Formation Sim",
+                "optional": True,
+            },
+            "doctrine": {
+                "type": "string",
+                "section": "Formation Sim",
+                "optional": True,
+            },
         }
     )
     schema["fields"] = fields

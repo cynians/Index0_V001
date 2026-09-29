@@ -42,8 +42,31 @@ class OntologyRepository:
         "parents": "hasParent",
         "related": "relatedTo",
     }
+    # Suffix for the companion literal property PersistentOntologyStore uses
+    # to keep a relation field's not-yet-existing targets durable (an
+    # undefined "[[wiki link]]"-style reference typed into predecessors/
+    # successors/related/...). _entity_from_individual below merges it back
+    # into the base field so callers never see the suffixed key.
+    # Single leading underscore only: _owl_name() collapses "__" to "_", so
+    # a double-underscore suffix would silently fail to round-trip and this
+    # merge would never fire.
+    UNRESOLVED_REFS_SUFFIX = "_unresolved_refs"
     SYMMETRIC_RELATION_FIELDS = {
         "related",
+    }
+    # Plain-text identity/description fields that must never be promoted to
+    # an OWL relation just because their value happens to equal some entity
+    # id (e.g. a location named after its own id). Once a relation property
+    # exists for a field, every later write of that field on every entity
+    # goes through the relation path, so one coincidence turns every name
+    # into an unresolved-reference list.
+    NON_RELATION_FIELDS = {
+        "type",
+        "name",
+        "pretty_name",
+        "three_word_description",
+        "wiki_entry",
+        "description",
     }
 
     DERIVED_FIELDS = {
@@ -54,6 +77,15 @@ class OntologyRepository:
         # Computed from every item/component's `categories` by
         # EntityLoader.populate_category_members() -- never hand-authored.
         "members",
+    }
+
+    # Entity `type` values that are a genuine OWL subclass of another type's
+    # `*_entry` class (e.g. every city is a location), distinct from schema
+    # `extends` (field inheritance only). Only single-level parents are
+    # needed today; `_create_type_classes` applies this after every
+    # `*_entry` class exists, so lookups don't depend on dict ordering.
+    TYPE_PARENTS = {
+        "city": "location",
     }
 
     DATASET_CACHE_VERSION = 1
@@ -465,6 +497,17 @@ class OntologyRepository:
             class_name = self._owl_name(f"{type_name}_entry")
             with onto:
                 type_classes[type_name] = types.new_class(class_name, (Entry,))
+
+        # Re-parent subclass types (e.g. city_entry -> location_entry) now
+        # that every `*_entry` class exists, so the parent is always
+        # available regardless of type-name iteration order.
+        for type_name, parent_type in self.TYPE_PARENTS.items():
+            child_class = type_classes.get(type_name)
+            parent_class = type_classes.get(parent_type)
+            if child_class is not None and parent_class is not None:
+                with onto:
+                    child_class.is_a = [parent_class]
+
         return type_classes
 
     def _entity_type_names(self):
@@ -503,6 +546,8 @@ class OntologyRepository:
         for entity in self.entities.values():
             for field_name, value in entity.items():
                 if field_name in {"id", "_dataset"} or field_name in self.DERIVED_FIELDS:
+                    continue
+                if field_name in self.NON_RELATION_FIELDS:
                     continue
                 if str(field_name).startswith("_"):
                     continue
@@ -634,6 +679,7 @@ class OntologyRepository:
         }
         list_fields = set(self._property_values(individual, "listFieldName"))
         json_fields = set(self._property_values(individual, "jsonFieldName"))
+        pending_unresolved_refs = {}
 
         for prop in individual.get_properties():
             property_name = prop.python_name or prop.name
@@ -666,6 +712,13 @@ class OntologyRepository:
                 continue
 
             field_name = property_name.removeprefix("field_")
+            if field_name.endswith(self.UNRESOLVED_REFS_SUFFIX):
+                base_field_name = field_name[: -len(self.UNRESOLVED_REFS_SUFFIX)]
+                unresolved_values = [str(value).strip() for value in getattr(individual, property_name) if str(value or "").strip()]
+                if unresolved_values:
+                    pending_unresolved_refs[base_field_name] = unresolved_values
+                continue
+
             values = list(getattr(individual, property_name))
             values = [
                 self._decode_json_value(value) if field_name in json_fields else value
@@ -703,6 +756,20 @@ class OntologyRepository:
         ]
         if related:
             entity["related"] = related
+
+        for base_field_name, unresolved_values in pending_unresolved_refs.items():
+            existing = entity.get(base_field_name)
+            if existing is None:
+                merged = []
+            elif isinstance(existing, list):
+                merged = list(existing)
+            else:
+                merged = [existing]
+            for value in unresolved_values:
+                if value not in merged:
+                    merged.append(value)
+            if merged:
+                entity[base_field_name] = merged
 
         return entity
 

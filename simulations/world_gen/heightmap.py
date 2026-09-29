@@ -16,7 +16,13 @@ import json
 import math
 from functools import lru_cache
 
+try:
+    import numpy as np
+except ImportError:  # pragma: no cover - supported fallback for minimal installs
+    np = None
+
 from simulations.world_gen.map_seed import resolved_map_seed, seed_range as _uncached_seed_range
+from simulations.world_gen.seafloor_spreading import plate_cooling_subsidence_m, seafloor_age_myr
 from simulations.world_gen.mechanical_lithology import terrain_response_factors
 from simulations.world_gen.terrain_seed import (
     PLANETARY_CANVAS_HEIGHT_PX,
@@ -27,14 +33,13 @@ _NOISE_CORNER_CACHE = {}
 
 DEFORMATION_STATE_MODEL_VERSION = "planetary-deformation-v1-reduced-flexure"
 
-# LOD0 is the canonical full-planet scientific surface.  The display canvas
-# remains 8192x4096, but the scientific grid must be materially finer than a
-# display-independent 385x193 fallback: downstream climate, coast, materials,
-# and all future child LODs inherit this grid as planetary truth.
-CANONICAL_LOD0_SAMPLE_WIDTH = 1025
-CANONICAL_LOD0_SAMPLE_HEIGHT = 513
-CANONICAL_LOD0_BENCHMARK_DIMENSIONS = (2049, 1025)
-CANONICAL_LOD0_RESOLUTION_VERSION = "lod0-canonical-grid-v1"
+# LOD0 carries only the global causal scaffold needed by climate, coast,
+# materials, and child LODs. Province-scale geometry and high-frequency
+# relief are regenerated below LOD0 from this parent truth.
+CANONICAL_LOD0_SAMPLE_WIDTH = 513
+CANONICAL_LOD0_SAMPLE_HEIGHT = 257
+CANONICAL_LOD0_BENCHMARK_DIMENSIONS = (1025, 513)
+CANONICAL_LOD0_RESOLUTION_VERSION = "lod0-global-scaffold-v2"
 
 
 def _heightmap_sample_dimensions(canvas, heightfield):
@@ -59,6 +64,89 @@ def _heightmap_sample_dimensions(canvas, heightfield):
         if width >= 3 and height >= 3 and width % 2 == 1 and height % 2 == 1:
             return width, height, "explicit"
     return CANONICAL_LOD0_SAMPLE_WIDTH, CANONICAL_LOD0_SAMPLE_HEIGHT, "canonical_lod0"
+
+
+def _lod0_evaluation_dimensions(sample_width, sample_height, resolution_mode):
+    """Use half-resolution causal synthesis for the global scaffold.
+
+    LOD0 retains a 513x257 consumer grid, but expensive procedural geology is
+    evaluated on 257x129 anchors. Regional regeneration owns wavelengths below
+    that support and never inherits invented high-frequency global detail.
+    """
+    if resolution_mode != "canonical_lod0":
+        return sample_width, sample_height
+    return (sample_width - 1) // 2 + 1, (sample_height - 1) // 2 + 1
+
+
+def _clamped_cubic_axis(values, positions, *, periodic):
+    """Catmull-Rom along the last axis at fractional ``positions``.
+
+    ``periodic`` rows repeat their first sample as the last (the longitude
+    seam), so the period is ``n - 1``.  Results are clamped between the two
+    samples that bracket each position.
+    """
+    values = np.asarray(values, dtype=np.float64)
+    count = values.shape[-1]
+    positions = np.asarray(positions, dtype=np.float64)
+    base = np.floor(positions).astype(np.int64)
+    fraction = positions - base
+    if periodic and count > 2:
+        period = count - 1
+        index = [np.mod(base + offset, period) for offset in (-1, 0, 1, 2)]
+    else:
+        index = [np.clip(base + offset, 0, count - 1) for offset in (-1, 0, 1, 2)]
+    p0, p1, p2, p3 = (values[..., item] for item in index)
+    t = fraction
+    cubic = 0.5 * (
+        2.0 * p1
+        + (-p0 + p2) * t
+        + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t * t
+        + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t * t * t
+    )
+    return np.clip(cubic, np.minimum(p1, p2), np.maximum(p1, p2))
+
+
+def _resample_height_rows(rows, target_width, target_height):
+    if not rows or not rows[0]:
+        return rows
+    source_height = len(rows)
+    source_width = min(len(row) for row in rows)
+    if (source_width, source_height) == (target_width, target_height):
+        return [list(row[:source_width]) for row in rows]
+    if np is not None:
+        # Clamped Catmull-Rom, not linear: linear interpolation of the
+        # 257 x 129 causal anchors gave every anchor cell flat facets, which
+        # hillshade rendered as stacked blocks along ranges and terraces on
+        # plateaus.  The cubic is C1 between anchors and is held within the
+        # two neighbouring anchors, so steep margins cannot ring.
+        source = np.asarray([row[:source_width] for row in rows], dtype=np.float64)
+        horizontal = _clamped_cubic_axis(
+            source, (source_width - 1) * np.arange(target_width) / max(1, target_width - 1), periodic=True,
+        )
+        result = _clamped_cubic_axis(
+            horizontal.T, (source_height - 1) * np.arange(target_height) / max(1, target_height - 1), periodic=False,
+        ).T
+        result[:, -1] = result[:, 0]
+        return [[round(float(value), 1) for value in row] for row in result]
+
+    result = []
+    for target_y in range(target_height):
+        source_y = target_y * (source_height - 1) / max(1, target_height - 1)
+        y0 = int(math.floor(source_y))
+        y1 = min(source_height - 1, y0 + 1)
+        ty = source_y - y0
+        row = []
+        for target_x in range(target_width):
+            source_x = target_x * (source_width - 1) / max(1, target_width - 1)
+            x0 = int(math.floor(source_x))
+            x1 = min(source_width - 1, x0 + 1)
+            tx = source_x - x0
+            top = float(rows[y0][x0]) * (1.0 - tx) + float(rows[y0][x1]) * tx
+            bottom = float(rows[y1][x0]) * (1.0 - tx) + float(rows[y1][x1]) * tx
+            row.append(round(top * (1.0 - ty) + bottom * ty, 1))
+        row[-1] = row[0]
+        result.append(row)
+    return result
 
 
 @lru_cache(maxsize=4096)
@@ -264,9 +352,50 @@ def _continental_process_model(map_seed):
             "island_chains": tuple(island_chains)}
 
 
-def _continent_signal(nx, ny, map_seed="", tectonic_model=None):
+def _continent_signal(
+    nx,
+    ny,
+    map_seed="",
+    tectonic_model=None,
+    lod0_synthesis=False,
+    lithosphere_sample=None,
+):
     """Continental crust assembled from cratons, terranes, sutures and rifts."""
     model = _continental_process_model(str(map_seed or ""))
+    if lod0_synthesis:
+        broad_noise = _fbm_noise(
+            map_seed,
+            "lod0_continental_scaffold",
+            nx,
+            ny,
+            base_cells=5,
+            octaves=2,
+            gain=0.48,
+        )
+        if isinstance(tectonic_model, dict) and tectonic_model.get("plates"):
+            continental = _clamp(
+                (lithosphere_sample or _sample_lithosphere(tectonic_model, nx, ny)).get("continental_fraction", 0.5),
+                0.0,
+                1.0,
+            )
+            signal = -0.56 + continental * 0.92 + broad_noise * 0.10
+        else:
+            # A dozen broad nuclei are sufficient to anchor a credible global
+            # silhouette. Sutures, rifts, embayments, and coast roughness are
+            # intentionally deferred to regional regeneration.
+            cratons = model["cratons"]
+            stride = max(1, len(cratons) // 12)
+            lithosphere = 0.0
+            for cx, cy, width, height, angle, strength in cratons[::stride][:12]:
+                dx, dy = _wrapped_delta(nx, cx), ny - cy
+                rx = dx * math.cos(angle) - dy * math.sin(angle)
+                ry = dx * math.sin(angle) + dy * math.cos(angle)
+                distance = (rx / max(0.06, width * 1.8)) ** 2 + (ry / max(0.05, height * 1.8)) ** 2
+                lithosphere = max(lithosphere, math.exp(-(distance * 0.72)) * strength)
+            signal = -0.56 + lithosphere * 0.92 + broad_noise * 0.10
+        latitude_taper = 1.0 - max(0.0, abs(ny - 0.5) * 2.0 - 0.84) * 1.15
+        return _clamp(signal * max(0.42, latitude_taper), -0.9, 1.0)
+
     warp_x = _fbm_noise(map_seed, "continental_warp_x", nx, ny, base_cells=4, octaves=3) * 0.035
     warp_y = _fbm_noise(map_seed, "continental_warp_y", nx, ny, base_cells=4, octaves=3) * 0.025
     wx, wy = (nx + warp_x) % 1.0, _clamp(ny + warp_y, 0.0, 1.0)
@@ -334,8 +463,13 @@ def _continental_mask(signal):
 
 
 def _ridge_belt(nx, ny, phase, latitude_center, amplitude, width):
-    center = latitude_center + amplitude * math.sin(math.tau * (nx + phase))
-    center += amplitude * 0.45 * math.sin(math.tau * (nx * 2.1 - phase))
+    """A sinuous belt around the planet whose centreline wanders with seamless noise.
+
+    (Formerly sine curves in longitude, which drew one regular diagonal wave
+    across the map and broke at the date line.)
+    """
+    wander = sphere_signed_table(f"belt:{float(phase):.6f}", "centreline", nx, 0.5, features=1.3, octaves=3)
+    center = latitude_center + amplitude * 1.6 * wander
     distance = abs(ny - center)
     return math.exp(-((distance / max(0.001, width)) ** 2))
 
@@ -419,6 +553,81 @@ def _sample_lithosphere(tectonic_model, nx, ny):
         "continental_fraction": continental_fraction,
         "oceanic_fraction": 1.0 - continental_fraction,
     }
+
+
+# Isostatic contrast between the median continental-crust surface and the
+# median oceanic-crust floor.  Earth's hypsometric peaks sit about 4.6 km
+# apart (+0.1 km and -4.5 km); crustal thickness and density set it, not the
+# water inventory.  The water then decides where sea level falls.
+CRUSTAL_CONTRAST_TARGET_M = 4600.0
+
+
+def ocean_crust_weight(continental_fraction):
+    """0 on continental crust, 1 on oceanic crust (smoothstep in between)."""
+    fraction = continental_fraction
+    if np is not None and isinstance(fraction, np.ndarray):
+        fraction = np.clip(fraction, 0.0, 1.0)
+    else:
+        fraction = _clamp(fraction, 0.0, 1.0)
+    return 1.0 - fraction * fraction * (3.0 - 2.0 * fraction)
+
+
+def _crustal_freeboard_calibration(rows, width, height, tectonic_model):
+    """Measure the continent/ocean contrast of freshly sampled LOD0 relief.
+
+    The relief generator stacks several continental and oceanic terms and is
+    then stretched onto the planet's elevation range, which left continental
+    crust about 8 km above the oceanic floor (Earth: about 4.6 km).  With any
+    realistic water inventory that stranded coastlines at the foot of the
+    continental slope and continents kilometres above sea level.  Oceanic
+    crust is raised to the Earth contrast; continents and all relief within
+    the ocean (ridges, abyssal plains, trenches) keep their shape.  Only an
+    excess is removed; a smaller contrast is left alone.
+    """
+    if np is None or not rows or not isinstance(tectonic_model, dict):
+        return {}
+    u_values = np.asarray([0.0 if col == width - 1 else col / max(1, width - 1) for col in range(width)])
+    v_values = np.arange(height, dtype=np.float64) / max(1, height - 1)
+    continental, _age, _oceanic = _sample_lithosphere_grid(tectonic_model, u_values[None, :], v_values[:, None])
+    weight = ocean_crust_weight(continental)
+    elevation = np.asarray(rows, dtype=np.float64)
+    continental_cells = elevation[weight < 0.1]
+    oceanic_cells = elevation[weight > 0.9]
+    minimum_cells = max(8, int(0.02 * elevation.size))
+    if continental_cells.size < minimum_cells or oceanic_cells.size < minimum_cells:
+        return {}
+    contrast = float(np.median(continental_cells) - np.median(oceanic_cells))
+    return {
+        "model": "isostatic_crustal_contrast_v1",
+        "measured_contrast_m": round(contrast, 1),
+        "target_contrast_m": CRUSTAL_CONTRAST_TARGET_M,
+        "ocean_shift_m": round(max(0.0, contrast - CRUSTAL_CONTRAST_TARGET_M), 1),
+    }
+
+
+def _apply_crustal_freeboard_calibration(rows, width, height, tectonic_model, calibration, *, min_elevation, max_elevation):
+    shift = float(calibration.get("ocean_shift_m") or 0.0)
+    u_values = np.asarray([0.0 if col == width - 1 else col / max(1, width - 1) for col in range(width)])
+    v_values = np.arange(height, dtype=np.float64) / max(1, height - 1)
+    continental, _age, _oceanic = _sample_lithosphere_grid(tectonic_model, u_values[None, :], v_values[:, None])
+    raised = np.asarray(rows, dtype=np.float64) + ocean_crust_weight(continental) * shift
+    raised = np.clip(np.round(raised, 1), min_elevation, max_elevation)
+    return raised.tolist()
+
+
+def crustal_freeboard_shift_at(nx, ny, tectonic_model, root_heightmap):
+    """Calibration offset at one planet UV point (regional production heights)."""
+    calibration = (root_heightmap or {}).get("crustal_freeboard_calibration") if isinstance(root_heightmap, dict) else None
+    shift = float((calibration or {}).get("ocean_shift_m") or 0.0)
+    if shift <= 0.0 or not isinstance(tectonic_model, dict):
+        return 0.0
+    continental = _sample_lithosphere(tectonic_model, nx, ny).get("continental_fraction", 0.5)
+    return float(ocean_crust_weight(continental)) * shift
+
+
+# Lifts oceanic crust from the crustal base (-3.92 km) to a ridge crest ~3 km
+# below the continental end member (+0.98 + 0.78 + 0.36 km).
+OCEANIC_CREST_OFFSET_M = 3040.0
 
 
 def _continuous_crustal_base_height_m(continental_fraction):
@@ -635,7 +844,9 @@ def _orogen_segment_forcing(nx, ny, segment, system, signed_normal_distance, inf
     elif mechanism == "oceanic_spreading":
         ridge = _cross_range_band(signed_normal_distance, 0.0, width * 0.92)
         axial_valley = _cross_range_band(signed_normal_distance, 0.0, width * 0.22)
-        response["rock_uplift_m"] = peak_uplift * ridge * continuity
+        # The ridge's elevation is thermal: it comes from the age-depth law
+        # on its own segmented axis, not from a band along the boundary.
+        response["rock_uplift_m"] = 0.0
         response["tectonic_subsidence_m"] = peak_subsidence * axial_valley
         response["divergent_influence"] = ridge
     elif mechanism in {"transpressional_strike_slip", "transtensional_strike_slip", "strike_slip"}:
@@ -722,6 +933,413 @@ def _orogen_forcing_at(nx, ny, tectonic_model):
     return total
 
 
+_OROGEN_FORCING_SUM_KEYS = (
+    "rock_uplift_m",
+    "tectonic_subsidence_m",
+    "volcanic_construction_m",
+    "outer_bulge_m",
+)
+_OROGEN_FORCING_MAX_KEYS = (
+    "crustal_thickening_index",
+    "cumulative_strain_index",
+    "convergent_influence",
+    "divergent_influence",
+    "trench_influence",
+    "transform_influence",
+)
+
+
+def _np_smoothstep(values):
+    values = np.clip(values, 0.0, 1.0)
+    return values * values * (3.0 - 2.0 * values)
+
+
+def _np_band(signed_distance, center, width):
+    width = max(1e-6, float(width))
+    return np.exp(-(((signed_distance - float(center)) / width) ** 2))
+
+
+def _np_segment_forcing(segment, system, signed_distance, influence):
+    """Array form of ``_orogen_segment_forcing`` for one segment."""
+    profile = system.get("forcing_profile") if isinstance(system.get("forcing_profile"), dict) else {}
+    sides = system.get("sides") if isinstance(system.get("sides"), dict) else {}
+    mechanism = str(system.get("mechanism") or "")
+    width = _clamp(
+        segment.get("influence_width", profile.get("reference_width", 0.028)),
+        0.012,
+        0.05,
+    )
+    segment_activity = _clamp(segment.get("activity_scale", 1.0), 0.25, 1.35)
+    variation = profile.get("along_strike_variation") if isinstance(profile.get("along_strike_variation"), dict) else {}
+    continuity_floor = _clamp(variation.get("minimum_continuity", 0.66), 0.45, 0.90)
+    continuity = continuity_floor + (1.0 - continuity_floor) * _clamp((segment_activity - 0.25) / 1.10, 0.0, 1.0)
+    peak_uplift = max(0.0, float(profile.get("rock_uplift_peak_m", 0.0) or 0.0))
+    peak_subsidence = max(0.0, float(profile.get("tectonic_subsidence_peak_m", 0.0) or 0.0))
+    peak_volcanic = max(0.0, float(profile.get("volcanic_construction_peak_m", 0.0) or 0.0))
+    peak_outer_bulge = max(0.0, float(profile.get("outer_bulge_peak_m", 0.0) or 0.0))
+    zero = np.zeros_like(signed_distance)
+    response = {
+        "rock_uplift_m": zero,
+        "tectonic_subsidence_m": zero,
+        "volcanic_construction_m": zero,
+        "outer_bulge_m": zero,
+        "convergent_influence": zero,
+        "divergent_influence": zero,
+        "trench_influence": zero,
+        "transform_influence": zero,
+    }
+    if mechanism == "continental_collision":
+        hinterland_side = 1.0 if int(sides.get("hinterland_normal_side", 1) or 1) >= 0 else -1.0
+        foreland_side = -hinterland_side
+        core = _np_band(signed_distance, hinterland_side * width * 0.24, width * 0.68)
+        fold_thrust = _np_band(signed_distance, foreland_side * width * 0.52, width * 0.72)
+        foreland = _np_band(signed_distance, foreland_side * width * 1.48, width * 0.52)
+        outer_bulge = _np_band(signed_distance, foreland_side * width * 2.22, width * 0.58)
+        response["rock_uplift_m"] = np.minimum(peak_uplift * 1.08, peak_uplift * (core * 0.76 + fold_thrust * 0.38)) * continuity
+        response["tectonic_subsidence_m"] = peak_subsidence * foreland * continuity
+        response["outer_bulge_m"] = peak_outer_bulge * outer_bulge
+        response["convergent_influence"] = np.maximum(np.maximum(influence, core), fold_thrust)
+    elif mechanism in {"ocean_continent_subduction", "island_arc_subduction"}:
+        overriding_side = 1.0 if int(sides.get("overriding_normal_side", 1) or 1) >= 0 else -1.0
+        trench = _np_band(signed_distance, -overriding_side * width * 0.62, width * 0.34)
+        accretionary_margin = _np_band(signed_distance, -overriding_side * width * 0.10, width * 0.38)
+        forearc = _np_band(signed_distance, overriding_side * width * 0.44, width * 0.46)
+        arc = _np_band(signed_distance, overriding_side * width * 1.24, width * 0.58)
+        backarc = _np_band(signed_distance, overriding_side * width * 2.08, width * 0.72)
+        segment_x1 = float(segment.get("x1", 0.0) or 0.0)
+        segment_x2 = float(segment.get("x2", 0.0) or 0.0)
+        midpoint_x = (segment_x1 + _wrapped_delta(segment_x2, segment_x1) * 0.5) % 1.0
+        midpoint_y = (float(segment.get("y1", 0.5) or 0.5) + float(segment.get("y2", 0.5) or 0.5)) * 0.5
+        phase = float(variation.get("phase", 0.0) or 0.0)
+        frequency = float(variation.get("frequency", 4.0) or 4.0)
+        arc_pulse = max(0.0, math.sin(math.tau * frequency * (midpoint_x + midpoint_y * 0.618) + phase)) ** 4
+        response["rock_uplift_m"] = peak_uplift * (arc * 0.72 + accretionary_margin * 0.22) * continuity
+        response["tectonic_subsidence_m"] = peak_subsidence * (trench + forearc * 0.10 + backarc * 0.18)
+        response["volcanic_construction_m"] = peak_volcanic * arc * (0.28 + arc_pulse * 0.72)
+        response["convergent_influence"] = np.maximum(np.maximum(influence, arc), accretionary_margin)
+        response["trench_influence"] = trench
+    elif mechanism == "continental_rift":
+        rift_axis = _np_band(signed_distance, 0.0, width * 0.42)
+        shoulder_a = _np_band(signed_distance, width * 0.92, width * 0.48)
+        shoulder_b = _np_band(signed_distance, -width * 0.92, width * 0.48)
+        shoulders = np.maximum(shoulder_a, shoulder_b)
+        response["rock_uplift_m"] = peak_uplift * shoulders * continuity
+        response["tectonic_subsidence_m"] = peak_subsidence * rift_axis
+        response["divergent_influence"] = np.maximum(rift_axis, shoulders)
+    elif mechanism == "oceanic_spreading":
+        ridge = _np_band(signed_distance, 0.0, width * 0.92)
+        axial_valley = _np_band(signed_distance, 0.0, width * 0.22)
+        # Thermal ridge elevation comes from the age-depth law (see scalar form).
+        response["rock_uplift_m"] = ridge * 0.0
+        response["tectonic_subsidence_m"] = peak_subsidence * axial_valley
+        response["divergent_influence"] = ridge
+    elif mechanism in {"transpressional_strike_slip", "transtensional_strike_slip", "strike_slip"}:
+        fault_zone = _np_band(signed_distance, 0.0, width * 0.40)
+        if mechanism == "transpressional_strike_slip":
+            response["rock_uplift_m"] = peak_uplift * fault_zone * continuity
+            response["tectonic_subsidence_m"] = peak_subsidence * fault_zone * 0.15
+        elif mechanism == "transtensional_strike_slip":
+            response["rock_uplift_m"] = peak_uplift * fault_zone * 0.22
+            response["tectonic_subsidence_m"] = peak_subsidence * fault_zone * continuity
+        else:
+            response["rock_uplift_m"] = peak_uplift * fault_zone * 0.42
+            response["tectonic_subsidence_m"] = peak_subsidence * fault_zone * 0.28
+        response["transform_influence"] = fault_zone
+    return response
+
+
+def iter_orogen_segment_geometry(u_values, v_values, tectonic_model, *, cell_mask=None):
+    """Yield the exact per-segment geometry used by ``_orogen_forcing_at``.
+
+    Segments are grouped by orogen system.  Each yielded item carries the
+    row/column slices a segment can reach, the validity mask (inside the
+    3.2-width cutoff and ``cell_mask``), the signed normal distance and the
+    activity-weighted influence, all as arrays over that sub-grid.
+    """
+    u_values = np.asarray(u_values, dtype=np.float64)
+    v_values = np.asarray(v_values, dtype=np.float64)
+    tectonic_model = tectonic_model if isinstance(tectonic_model, dict) else {}
+    orogen_lookup = tectonic_model.get("_heightmap_orogen_system_lookup")
+    if not isinstance(orogen_lookup, dict):
+        orogen_model = tectonic_model.get("orogen_system_model") if isinstance(tectonic_model.get("orogen_system_model"), dict) else {}
+        orogen_lookup = {
+            str(system.get("id")): system
+            for system in (orogen_model.get("systems") or [])
+            if isinstance(system, dict) and system.get("id")
+        }
+    mask = None if cell_mask is None else np.asarray(cell_mask, dtype=bool)
+    segments_by_system = {}
+    for segment in tectonic_model.get("boundary_segments") or []:
+        if not isinstance(segment, dict):
+            continue
+        system_id = str(segment.get("orogen_system_id") or "")
+        if isinstance(orogen_lookup.get(system_id), dict):
+            segments_by_system.setdefault(system_id, []).append(segment)
+    for system_id, segments in segments_by_system.items():
+        system = orogen_lookup[system_id]
+        for segment in segments:
+            x1 = float(segment.get("x1", 0.0) or 0.0)
+            y1 = float(segment.get("y1", 0.0) or 0.0)
+            x2 = float(segment.get("x2", 0.0) or 0.0)
+            y2 = float(segment.get("y2", 0.0) or 0.0)
+            unwrapped_x2 = x2
+            if unwrapped_x2 - x1 > 0.5:
+                unwrapped_x2 -= 1.0
+            elif unwrapped_x2 - x1 < -0.5:
+                unwrapped_x2 += 1.0
+            influence_width = _clamp(segment.get("influence_width", 0.028), 0.012, 0.05)
+            cutoff = influence_width * 3.2
+            row_hits = np.nonzero(
+                (v_values >= min(y1, y2) - cutoff) & (v_values <= max(y1, y2) + cutoff)
+            )[0]
+            if row_hits.size == 0:
+                continue
+            column_reach = np.zeros(u_values.size, dtype=bool)
+            active_shifts = []
+            for shift in (-2.0, -1.0, 0.0, 1.0, 2.0):
+                shifted = u_values + shift
+                reach = (
+                    (shifted >= min(x1, unwrapped_x2) - cutoff)
+                    & (shifted <= max(x1, unwrapped_x2) + cutoff)
+                )
+                if reach.any():
+                    active_shifts.append(shift)
+                    column_reach |= reach
+            column_hits = np.nonzero(column_reach)[0]
+            if column_hits.size == 0:
+                continue
+            rows = slice(int(row_hits[0]), int(row_hits[-1]) + 1)
+            columns = slice(int(column_hits[0]), int(column_hits[-1]) + 1)
+            pu = u_values[columns][None, :]
+            pv = v_values[rows][:, None]
+            dx = unwrapped_x2 - x1
+            dy = y2 - y1
+            length_sq = dx * dx + dy * dy
+            distance = None
+            # Only wrap copies that can reach the grid can be nearest within
+            # the cutoff; every other copy is farther than the cutoff.
+            for shift in active_shifts:
+                px = pu + shift
+                if length_sq <= 1e-12:
+                    candidate = np.hypot(px - x1, pv - y1)
+                else:
+                    t = np.clip(((px - x1) * dx + (pv - y1) * dy) / length_sq, 0.0, 1.0)
+                    candidate = np.hypot(px - (x1 + t * dx), pv - (y1 + t * dy))
+                distance = candidate if distance is None else np.minimum(distance, candidate)
+            valid = distance <= cutoff
+            if mask is not None:
+                valid &= mask[rows, columns]
+            if not valid.any():
+                continue
+            influence = np.exp(-((distance / influence_width) ** 2)) ** 1.18 * _clamp(
+                segment.get("activity_scale", 1.0), 0.25, 1.35
+            )
+            normal_x = float(segment.get("normal_x", 0.0) or 0.0)
+            normal_y = float(segment.get("normal_y", 0.0) or 0.0)
+            midpoint_x = (x1 + _wrapped_delta(x2, x1) * 0.5) % 1.0
+            midpoint_y = (y1 + y2) * 0.5
+            delta_u = pu - midpoint_x
+            delta_u = np.where(delta_u > 0.5, delta_u - 1.0, np.where(delta_u < -0.5, delta_u + 1.0, delta_u))
+            signed_distance = np.broadcast_to(
+                delta_u * normal_x + (pv - midpoint_y) * normal_y,
+                valid.shape,
+            )
+            yield {
+                "system_id": system_id,
+                "system": system,
+                "segment": segment,
+                "rows": rows,
+                "columns": columns,
+                "valid": valid,
+                "distance": distance,
+                "signed_distance": signed_distance,
+                "influence": influence,
+                "influence_width": influence_width,
+            }
+
+
+def orogen_forcing_grid(u_values, v_values, tectonic_model, *, cell_mask=None):
+    """Evaluate ``_orogen_forcing_at`` for a whole grid of global UV samples.
+
+    ``u_values`` are column coordinates and ``v_values`` row coordinates.  The
+    per-system combination in the scalar path is an iterated L6 norm, which is
+    order independent, so segments can be accumulated as ``sum(v**6)`` and
+    finalised once per system.  Each segment only touches the rows and columns
+    inside its own influence cutoff.
+    """
+    u_values = np.asarray(u_values, dtype=np.float64)
+    v_values = np.asarray(v_values, dtype=np.float64)
+    shape = (v_values.size, u_values.size)
+    totals = {key: np.zeros(shape, dtype=np.float64) for key in (*_OROGEN_FORCING_SUM_KEYS, *_OROGEN_FORCING_MAX_KEYS)}
+    response_keys = (*_OROGEN_FORCING_SUM_KEYS, *_OROGEN_FORCING_MAX_KEYS)
+
+    def finalise(sixth_powers):
+        for key in _OROGEN_FORCING_SUM_KEYS:
+            totals[key] += sixth_powers[key] ** (1.0 / 6.0)
+        for key in _OROGEN_FORCING_MAX_KEYS:
+            np.maximum(totals[key], sixth_powers[key] ** (1.0 / 6.0), out=totals[key])
+
+    current_system = None
+    sixth_powers = None
+    for item in iter_orogen_segment_geometry(u_values, v_values, tectonic_model, cell_mask=cell_mask):
+        if item["system_id"] != current_system:
+            if sixth_powers is not None:
+                finalise(sixth_powers)
+            current_system = item["system_id"]
+            sixth_powers = {key: np.zeros(shape, dtype=np.float64) for key in response_keys}
+        system = item["system"]
+        valid = item["valid"]
+        all_valid = bool(valid.all())
+        response = _np_segment_forcing(item["segment"], system, item["signed_distance"], item["influence"])
+        thickening = float((system.get("forcing_profile") or {}).get("crustal_thickening_index", 0.0) or 0.0)
+        response["crustal_thickening_index"] = thickening * response["convergent_influence"]
+        response["cumulative_strain_index"] = np.maximum(
+            np.maximum(response["convergent_influence"], response["divergent_influence"]),
+            response["transform_influence"],
+        )
+        rows, columns = item["rows"], item["columns"]
+        for key in response_keys:
+            value = response[key]
+            if not np.any(value):
+                continue
+            values = np.broadcast_to(value, valid.shape)
+            if not all_valid:
+                values = np.where(valid, values, 0.0)
+            # Repeated products instead of ``** 6.0``: a regional tile sits
+            # inside every nearby segment's cutoff, and pow dominated the cost.
+            square = values * values
+            sixth_powers[key][rows, columns] += square * square * square
+    if sixth_powers is not None:
+        finalise(sixth_powers)
+    return totals
+
+
+_OROGEN_FORCING_CACHE_SIZE = 2
+_orogen_forcing_cache = []
+
+
+def cached_orogen_forcing_grid(u_values, v_values, tectonic_model):
+    """Unmasked ``orogen_forcing_grid`` memoised per tectonic model and grid.
+
+    Regional refinement refreshes a tile's derivatives several times with the
+    same footprint and tectonic model; only the heightfield changes.  The key
+    is the identity of the boundary segments and orogen systems, not of the
+    model dict, because ``_ensure_heightmap_tectonic_model`` wraps a raw model
+    in a new dict on every call.  Entries keep the model alive so those ids
+    cannot be reused while cached.  Arrays are read-only because callers share
+    them.
+    """
+    u_values = np.ascontiguousarray(u_values, dtype=np.float64)
+    v_values = np.ascontiguousarray(v_values, dtype=np.float64)
+    tectonic_model = tectonic_model if isinstance(tectonic_model, dict) else {}
+    key = (
+        u_values.tobytes(),
+        v_values.tobytes(),
+        tuple(id(segment) for segment in tectonic_model.get("boundary_segments") or ()),
+        id(tectonic_model.get("orogen_system_model")),
+    )
+    for _entry_model, entry_key, result in _orogen_forcing_cache:
+        if entry_key == key:
+            return result
+    result = orogen_forcing_grid(u_values, v_values, tectonic_model)
+    for array in result.values():
+        array.flags.writeable = False
+    _orogen_forcing_cache.insert(0, (tectonic_model, key, result))
+    del _orogen_forcing_cache[_OROGEN_FORCING_CACHE_SIZE:]
+    return result
+
+
+def _mountain_morphology_mask_array(
+    rows,
+    land_rows,
+    cell_spacing_m,
+    *,
+    wrap_x=False,
+    tectonic_model=None,
+    source_uv_bounds=None,
+    sea_level=None,
+):
+    """NumPy implementation of ``_mountain_morphology_mask`` (same contract)."""
+    height = len(rows)
+    width = min(len(row) for row in rows)
+    unique_width = width - 1 if wrap_x and width > 1 else width
+    radius = 2 if min(height, unique_width) >= 9 else 1
+    relief_threshold_m = _clamp(float(cell_spacing_m) * 0.006, 140.0, 900.0)
+    elevation = np.asarray([row[:unique_width] for row in rows], dtype=np.float64)
+    land = np.asarray([row[:unique_width] for row in land_rows[:height]], dtype=bool)
+    row_index = np.arange(height)
+    column_index = np.arange(unique_width)
+
+    def shifted_columns(offset):
+        if wrap_x:
+            return (column_index + offset) % unique_width
+        return np.clip(column_index + offset, 0, unique_width - 1)
+
+    local_max = np.full(elevation.shape, -np.inf)
+    local_min = np.full(elevation.shape, np.inf)
+    land_count = np.zeros(elevation.shape, dtype=np.int32)
+    for oy in range(-radius, radius + 1):
+        source_rows = np.clip(row_index + oy, 0, height - 1)
+        for ox in range(-radius, radius + 1):
+            source_columns = shifted_columns(ox)
+            window_elevation = elevation[source_rows][:, source_columns]
+            window_land = land[source_rows][:, source_columns]
+            local_max = np.where(window_land, np.maximum(local_max, window_elevation), local_max)
+            local_min = np.where(window_land, np.minimum(local_min, window_elevation), local_min)
+            land_count += window_land
+    resolved = land & (land_count >= 4)
+    relief = np.where(resolved, local_max - local_min, 0.0)
+    relative_height = np.where(resolved, elevation - local_min, 0.0)
+    relief_score = _np_smoothstep((relief - relief_threshold_m) / max(1.0, relief_threshold_m * 1.35))
+    position_score = _np_smoothstep(
+        (relative_height - relief_threshold_m * 0.12) / max(1.0, relief_threshold_m * 0.72)
+    )
+    raw = np.where(resolved, relief_score * (0.42 + 0.58 * position_score), 0.0)
+
+    if source_uv_bounds and isinstance(tectonic_model, dict):
+        min_u = float(source_uv_bounds.get("min_u", 0.0) or 0.0)
+        max_u = float(source_uv_bounds.get("max_u", 1.0) or 1.0)
+        min_v = float(source_uv_bounds.get("min_v", 0.0) or 0.0)
+        max_v = float(source_uv_bounds.get("max_v", 1.0) or 1.0)
+        u_values = min_u + (max_u - min_u) * column_index / max(1, unique_width - 1)
+        v_values = min_v + (max_v - min_v) * row_index / max(1, height - 1)
+        # Unmasked and cached: only land cells are read below, and their
+        # values do not depend on the mask, so repeated refreshes of one tile
+        # reuse a single evaluation.
+        forcing = cached_orogen_forcing_grid(u_values, v_values, tectonic_model)
+        uplift = np.clip(forcing["rock_uplift_m"] / 1800.0, 0.0, 1.0)
+        volcanic = np.clip(forcing["volcanic_construction_m"] / 2400.0, 0.0, 1.0)
+        convergence = np.clip(forcing["convergent_influence"] / 2.0, 0.0, 1.0)
+        tectonic_score = np.clip(uplift * 0.52 + volcanic * 0.28 + convergence * 0.20, 0.0, 1.0)
+        if sea_level is not None:
+            standing = _np_smoothstep((elevation - float(sea_level) - 250.0) / 1000.0)
+            tectonic_score = tectonic_score * (0.30 + 0.70 * standing)
+        tectonic_support = np.where(land, np.round(tectonic_score, 4), 0.0)
+        raw = np.maximum(raw, tectonic_support * 0.82)
+
+    smoothed = raw
+    west_columns = shifted_columns(-1)
+    east_columns = shifted_columns(1)
+    north_rows = np.clip(row_index - 1, 0, height - 1)
+    south_rows = np.clip(row_index + 1, 0, height - 1)
+    for _pass in range(2):
+        value = (
+            smoothed * 4.0
+            + smoothed[:, west_columns]
+            + smoothed[:, east_columns]
+            + smoothed[north_rows, :]
+            + smoothed[south_rows, :]
+        ) / 8.0
+        smoothed = np.where(
+            land & (value >= 0.035),
+            np.round(np.clip(value, 0.0, 1.0), 4),
+            0.0,
+        )
+    if width > unique_width:
+        smoothed = np.concatenate([smoothed, smoothed[:, :1]], axis=1)
+    return smoothed.tolist(), relief_threshold_m
+
+
 def _smooth_wrapped_rows(rows, passes=1):
     current = [list(row) for row in rows]
     height = len(current)
@@ -744,7 +1362,28 @@ def _smooth_wrapped_rows(rows, passes=1):
     return current
 
 
-def derive_planetary_deformation_state(terrain, tectonic_model, mechanical_lithology_model=None, width=97, height=49):
+def _emit_heightmap_progress(progress_callback, fraction, detail, preview=None):
+    if not callable(progress_callback):
+        return
+    try:
+        progress_callback(
+            max(0.0, min(1.0, float(fraction))),
+            str(detail or "Building global relief"),
+            preview,
+        )
+    except Exception:
+        # Diagnostics must never make generation fail.
+        return
+
+
+def derive_planetary_deformation_state(
+    terrain,
+    tectonic_model,
+    mechanical_lithology_model=None,
+    width=97,
+    height=49,
+    progress_callback=None,
+):
     """Materialize persistent reduced-physics deformation and load fields."""
     if not isinstance(tectonic_model, dict) or not tectonic_model.get("plates"):
         return None
@@ -797,6 +1436,12 @@ def derive_planetary_deformation_state(terrain, tectonic_model, mechanical_litho
             if row_fields[key]:
                 row_fields[key][-1] = row_fields[key][0]
             fields[key].append(row_fields[key])
+        if row_index == height - 1 or row_index % max(1, height // 10) == 0:
+            _emit_heightmap_progress(
+                progress_callback,
+                (row_index + 1) / max(1, height),
+                f"Resolving tectonic deformation row {row_index + 1} of {height}",
+            )
     net_load_rows = [
         [
             fields["rock_uplift_m"][y][x] * 0.24
@@ -884,23 +1529,40 @@ def _sample_deformation_state(model, nx, ny):
     return sampled
 
 
-def _tectonic_height_m(nx, ny, terrain, tectonic_model):
+def _tectonic_height_m(
+    nx,
+    ny,
+    terrain,
+    tectonic_model,
+    *,
+    continent_signal=None,
+    lod0_synthesis=False,
+    lithosphere_sample=None,
+):
     plates = tectonic_model.get("plates") or []
     if not plates:
         return None
-    lithosphere = _sample_lithosphere(tectonic_model, nx, ny)
+    lithosphere = lithosphere_sample or _sample_lithosphere(tectonic_model, nx, ny)
     crust_fraction = float(lithosphere.get("continental_fraction", 0.5) or 0.0)
     oceanic_fraction = _clamp(lithosphere.get("oceanic_fraction", 1.0 - crust_fraction), 0.0, 1.0)
-    ocean_floor_age_myr = lithosphere["age_myr"] * oceanic_fraction
+    ocean_floor_age_myr = lithosphere["age_myr"]
+    if oceanic_fraction > 0.0:
+        # Crust ages away from its own ridge segment at the half-spreading
+        # rate; segment offsets make fracture zones (seafloor_spreading).
+        spreading_age = seafloor_age_myr(tectonic_model.get("seafloor_spreading_model"), nx, ny)
+        if spreading_age is not None:
+            ocean_floor_age_myr = spreading_age
     base = _continuous_crustal_base_height_m(crust_fraction)
 
     map_seed = str(tectonic_model.get("map_seed") or terrain.get("map_seed") or "")
-    continent_signal = _continent_signal(
-        nx,
-        ny,
-        map_seed=map_seed,
-        tectonic_model=tectonic_model,
-    )
+    if continent_signal is None:
+        continent_signal = _continent_signal(
+            nx,
+            ny,
+            map_seed=map_seed,
+            tectonic_model=tectonic_model,
+            lod0_synthesis=lod0_synthesis,
+        )
     assembled_crust = _continental_mask(continent_signal)
     # The causal lithosphere field owns continentality. Procedural cratons and
     # terranes perturb its margins, but cannot impose a categorical plate-wide
@@ -910,11 +1572,27 @@ def _tectonic_height_m(nx, ny, terrain, tectonic_model):
         0.0,
         1.0,
     )
-    rugged_noise = _fbm_noise(map_seed, "rugged_relief", nx, ny, base_cells=18, octaves=4)
-    shield_noise = _fbm_noise(map_seed, "cratonic_shields", nx, ny, base_cells=8, octaves=3)
-    basin_noise = _fbm_noise(map_seed, "sedimentary_basins", nx, ny, base_cells=11, octaves=3)
-    intracontinental_basin = _intracontinental_basin_signal(nx, ny, map_seed=map_seed)
-    island_signal = _oceanic_island_signal(nx, ny, map_seed=map_seed)
+    rugged_noise = _fbm_noise(
+        map_seed, "rugged_relief", nx, ny,
+        base_cells=12 if lod0_synthesis else 18,
+        octaves=2 if lod0_synthesis else 4,
+    )
+    shield_noise = _fbm_noise(
+        map_seed, "cratonic_shields", nx, ny,
+        base_cells=6 if lod0_synthesis else 8,
+        octaves=2 if lod0_synthesis else 3,
+    )
+    basin_noise = _fbm_noise(
+        map_seed, "sedimentary_basins", nx, ny,
+        base_cells=7 if lod0_synthesis else 11,
+        octaves=2 if lod0_synthesis else 3,
+    )
+    intracontinental_basin = (
+        max(0.0, -basin_noise) * 0.55
+        if lod0_synthesis
+        else _intracontinental_basin_signal(nx, ny, map_seed=map_seed)
+    )
+    island_signal = 0.0 if lod0_synthesis else _oceanic_island_signal(nx, ny, map_seed=map_seed)
     # Major interior relief comes from explicit cratons, failed rifts and
     # intracratonic basins below. Retain only a low-amplitude residual instead
     # of continent-scale sine domes.
@@ -925,32 +1603,40 @@ def _tectonic_height_m(nx, ny, terrain, tectonic_model):
     # exposed continents: young dense oceanic lithosphere forms deep basins,
     # while buoyant differentiated continental crust retains freeboard.
     height += continent_mask * 360.0
-    height += (1.0 - continent_mask) * (-2850.0 + basin_noise * 360.0)
+    # Oceanic crust: the ridge crest sits ~3 km below the median continental
+    # surface (Earth: -2.6 km vs +0.3 km); the seafloor deepens from there
+    # with age (plate cooling, below).  The former -2.85 km term put even
+    # zero-age crust ~9 km below the continents, so all but the youngest
+    # seafloor fell below the planet's minimum elevation and was clamped
+    # flat -- no ridges, no fracture zones, no deep basins.
+    height += (1.0 - continent_mask) * (OCEANIC_CREST_OFFSET_M + basin_noise * 360.0)
     if oceanic_fraction > 0.0:
         # Young ridge crust is hot and buoyant; cooling lithosphere subsides
-        # approximately with the square root of age until subduction recycles it.
-        height -= min(1450.0, math.sqrt(max(0.0, ocean_floor_age_myr)) * 105.0) * oceanic_fraction
+        # with the square root of age, then flattens (GDH1 plate cooling:
+        # ridge crest ~2.6 km, 20 Myr ~4.2 km, old basins ~5.6 km deep).
+        height -= plate_cooling_subsidence_m(ocean_floor_age_myr) * oceanic_fraction
     # Subsidence within stable crust creates sedimentary and endorheic basins.
     height -= intracontinental_basin * continent_mask * 1150.0
-    province_model = tectonic_model.get("continental_province_model") if isinstance(tectonic_model.get("continental_province_model"), dict) else {}
-    for craton in province_model.get("cratons") or []:
-        dx = _wrapped_delta(nx, float(craton.get("center_x", 0.0) or 0.0)) / max(0.01, float(craton.get("width", 0.08) or 0.08))
-        dy = (ny - float(craton.get("center_y", 0.5) or 0.5)) / max(0.01, float(craton.get("height", 0.06) or 0.06))
-        shield = math.exp(-((dx * dx + dy * dy) * 1.15))
-        height += shield * (420.0 if craton.get("state") == "exposed_shield" else 120.0)
-    for rift in province_model.get("failed_rifts") or []:
-        distance = _wrapped_point_segment_distance(
-            nx, ny,
-            float(rift.get("x1", 0.0) or 0.0), float(rift.get("y1", 0.5) or 0.5),
-            float(rift.get("x2", 0.0) or 0.0), float(rift.get("y2", 0.5) or 0.5),
-        )
-        height -= math.exp(-((distance / 0.014) ** 2)) * float(rift.get("subsidence_m", 0.0) or 0.0) * continent_mask
-    for basin in province_model.get("intracratonic_basins") or []:
-        distance = math.hypot(
-            _wrapped_delta(nx, float(basin.get("center_x", 0.0) or 0.0)),
-            ny - float(basin.get("center_y", 0.5) or 0.5),
-        ) / max(0.01, float(basin.get("radius", 0.05) or 0.05))
-        height -= math.exp(-(distance ** 2)) * min(1250.0, float(basin.get("sediment_capacity_m", 0.0) or 0.0) * 0.16) * continent_mask
+    if not lod0_synthesis:
+        province_model = tectonic_model.get("continental_province_model") if isinstance(tectonic_model.get("continental_province_model"), dict) else {}
+        for craton in province_model.get("cratons") or []:
+            dx = _wrapped_delta(nx, float(craton.get("center_x", 0.0) or 0.0)) / max(0.01, float(craton.get("width", 0.08) or 0.08))
+            dy = (ny - float(craton.get("center_y", 0.5) or 0.5)) / max(0.01, float(craton.get("height", 0.06) or 0.06))
+            shield = math.exp(-((dx * dx + dy * dy) * 1.15))
+            height += shield * (420.0 if craton.get("state") == "exposed_shield" else 120.0)
+        for rift in province_model.get("failed_rifts") or []:
+            distance = _wrapped_point_segment_distance(
+                nx, ny,
+                float(rift.get("x1", 0.0) or 0.0), float(rift.get("y1", 0.5) or 0.5),
+                float(rift.get("x2", 0.0) or 0.0), float(rift.get("y2", 0.5) or 0.5),
+            )
+            height -= math.exp(-((distance / 0.014) ** 2)) * float(rift.get("subsidence_m", 0.0) or 0.0) * continent_mask
+        for basin in province_model.get("intracratonic_basins") or []:
+            distance = math.hypot(
+                _wrapped_delta(nx, float(basin.get("center_x", 0.0) or 0.0)),
+                ny - float(basin.get("center_y", 0.5) or 0.5),
+            ) / max(0.01, float(basin.get("radius", 0.05) or 0.05))
+            height -= math.exp(-(distance ** 2)) * min(1250.0, float(basin.get("sediment_capacity_m", 0.0) or 0.0) * 0.16) * continent_mask
     effects = tectonic_model.get("surface_effects") if isinstance(tectonic_model.get("surface_effects"), dict) else {}
     uplift_gain = 0.7 + float(effects.get("orogenic_uplift", 0.0) or 0.0) * 0.9
     erosion = float(effects.get("erosion_progress", 0.0) or 0.0)
@@ -1062,26 +1748,24 @@ def _tectonic_height_m(nx, ny, terrain, tectonic_model):
         height += rugged_noise * (180.0 + continent_mask * 380.0 + convergent_influence * 950.0)
     # Mantle plumes leave volcanic chains primarily on oceanic lithosphere.
     height += island_signal * (1.0 - continent_mask) * _lerp(2300.0, 4100.0, oceanic_fraction)
-    hotspot_model = tectonic_model.get("hotspot_model") if isinstance(tectonic_model.get("hotspot_model"), dict) else {}
-    for hotspot in hotspot_model.get("hotspots") or []:
-        for point in hotspot.get("track") or []:
-            distance = math.hypot(
-                _wrapped_delta(nx, float(point.get("x", 0.0) or 0.0)),
-                ny - float(point.get("y", 0.5) or 0.5),
-            )
-            # Older track points have subsided/eroded longer: wider and
-            # softer than just shorter, independent of the buoyancy-driven
-            # amplitude decay already carried by relative_volume.
-            erosion_softening = _clamp(float(point.get("erosion_softening", 0.0) or 0.0), 0.0, 1.0)
-            radius = (0.008 + float(point.get("relative_volume", 0.0) or 0.0) * 0.010) * (1.0 + erosion_softening * 0.9)
-            if distance < radius * 2.5:
-                height += (
-                    math.exp(-((distance / radius) ** 2))
-                    * 2600.0
-                    * float(point.get("relative_volume", 0.0) or 0.0)
-                    * (1.0 - continent_mask * 0.55)
-                    * (1.0 - erosion_softening * 0.35)
+    if not lod0_synthesis:
+        hotspot_model = tectonic_model.get("hotspot_model") if isinstance(tectonic_model.get("hotspot_model"), dict) else {}
+        for hotspot in hotspot_model.get("hotspots") or []:
+            for point in hotspot.get("track") or []:
+                distance = math.hypot(
+                    _wrapped_delta(nx, float(point.get("x", 0.0) or 0.0)),
+                    ny - float(point.get("y", 0.5) or 0.5),
                 )
+                erosion_softening = _clamp(float(point.get("erosion_softening", 0.0) or 0.0), 0.0, 1.0)
+                radius = (0.008 + float(point.get("relative_volume", 0.0) or 0.0) * 0.010) * (1.0 + erosion_softening * 0.9)
+                if distance < radius * 2.5:
+                    height += (
+                        math.exp(-((distance / radius) ** 2))
+                        * 2600.0
+                        * float(point.get("relative_volume", 0.0) or 0.0)
+                        * (1.0 - continent_mask * 0.55)
+                        * (1.0 - erosion_softening * 0.35)
+                    )
 
     if height > 1000.0:
         erosion_factor = 1.0
@@ -1230,11 +1914,16 @@ def condition_crater_model_to_surface(crater_model, terrain, base_rows, sea_leve
         1.0
         - erosion_strength * 0.58
         - atmosphere_degradation * 0.24
-        - resurfacing * 0.52
         - ice_fraction * 0.36,
         0.06,
         1.0,
     )
+    # Volcanic resurfacing floods from the bottom up: lava ponds in the
+    # lowest terrain first (lunar maria in basins, Mars's northern plains),
+    # so the resurfaced fraction of the area is the part below a flood level.
+    flood_level = _area_quantile(base_rows, resurfacing) if resurfacing > 0.0 else None
+    map_seed = str(crater_model.get("map_seed") or "")
+    flooded_count = 0
     # Near-airless inactive surfaces should retain their original morphology.
     if pressure_bar < 0.01 and erosion_strength < 0.08 and resurfacing < 0.05:
         global_preservation = max(global_preservation, 0.94)
@@ -1277,6 +1966,22 @@ def condition_crater_model_to_surface(crater_model, terrain, base_rows, sea_leve
         preservation = _clamp(
             global_preservation * marine_transmission, 0.0, 1.0
         )
+        relief_m = max(1.0, float(crater.get("rim_height_m", 0.0) or 0.0) + 0.5 * float(crater.get("depth_m", 0.0) or 0.0))
+        # Buried share: 1 well inside the flooded lowland (a resurfaced
+        # surface is one whose old craters are gone), 1/2 for a crater
+        # sitting at the flood level, 0 a half crater-relief above it --
+        # the ghost rings of the plains' margins.
+        burial = (
+            _clamp(0.5 + (flood_level - center_elevation) / relief_m, 0.0, 1.0)
+            if flood_level is not None and water_depth_m <= 0.0 else 0.0
+        )
+        if burial > 0.0 and seed_range(
+            map_seed, f"{crater.get('id')}:post_flood", 0.0, 1.0,
+        ) >= FLOOD_PLAINS_CRATER_SHARE:
+            # Formed before the flooding (the rest are younger impacts on
+            # the new plains and keep their shape).
+            preservation *= (1.0 - burial) ** 2
+            flooded_count += int(burial >= 0.5)
         crater["target_environment"] = "marine" if water_depth_m > 0.0 else "subaerial"
         crater["target_water_depth_m"] = round(water_depth_m, 1)
         crater["marine_crater_transmission"] = round(marine_transmission, 4)
@@ -1285,6 +1990,8 @@ def condition_crater_model_to_surface(crater_model, terrain, base_rows, sea_leve
     crater_model["craters"] = conditioned
     crater_model["surface_morphology_preservation"] = round(global_preservation, 4)
     crater_model["marine_target_model"] = "water_depth_to_projectile_scale_v1"
+    crater_model["volcanic_flood_level_m"] = round(flood_level, 1) if flood_level is not None else None
+    crater_model["flooded_crater_count"] = flooded_count
     audit = {
         "status": "resolved",
         "global_preservation": round(global_preservation, 4),
@@ -1292,8 +1999,40 @@ def condition_crater_model_to_surface(crater_model, terrain, base_rows, sea_leve
         "strongly_suppressed_marine_crater_count": suppressed_count,
         "pressure_bar": round(pressure_bar, 5),
         "erosion_strength": round(erosion_strength, 4),
+        "volcanic_flood_level_m": crater_model["volcanic_flood_level_m"],
+        "flooded_crater_count": flooded_count,
     }
     return crater_model, audit
+
+
+# Share of a flooded plain's craters that formed after the flooding: the
+# impact record is dominated by early bombardment, so ~3.6 Gyr plains carry
+# about a fifth of the crater density of ~4.1 Gyr highlands (Neukum
+# chronology; Mars's Hesperian plains vs. Noachian highlands).
+FLOOD_PLAINS_CRATER_SHARE = 0.2
+
+
+def _area_quantile(rows, fraction):
+    """Elevation below which ``fraction`` of the sphere's area lies (equirectangular rows)."""
+    values, weights = [], []
+    height = len(rows)
+    for index, row in enumerate(rows):
+        if not isinstance(row, list) or not row:
+            continue
+        weight = math.cos((0.5 - (index + 0.5) / max(1, height)) * math.pi)
+        for value in row[:-1] if len(row) > 1 else row:
+            values.append(float(value))
+            weights.append(weight)
+    if not values:
+        return None
+    order = sorted(range(len(values)), key=values.__getitem__)
+    target = _clamp(fraction, 0.0, 1.0) * sum(weights)
+    running = 0.0
+    for position in order:
+        running += weights[position]
+        if running >= target:
+            return values[position]
+    return values[order[-1]]
 
 
 def _plume_lid_feature_signal(nx, ny, terrain):
@@ -1340,7 +2079,16 @@ def _plume_lid_feature_signal(nx, ny, terrain):
     return signal
 
 
-def _wave_height(nx, ny, terrain, tectonic_model=None, crater_model=None, crater_spatial_index=None, map_seed=""):
+def _wave_height(
+    nx,
+    ny,
+    terrain,
+    tectonic_model=None,
+    crater_model=None,
+    crater_spatial_index=None,
+    map_seed="",
+    lod0_synthesis=False,
+):
     heightfield = terrain.get("heightfield") if isinstance(terrain.get("heightfield"), dict) else {}
     tectonics = terrain.get("tectonics") if isinstance(terrain.get("tectonics"), dict) else {}
     cratering = terrain.get("cratering") if isinstance(terrain.get("cratering"), dict) else {}
@@ -1357,16 +2105,25 @@ def _wave_height(nx, ny, terrain, tectonic_model=None, crater_model=None, crater
     phase_a = seed_range(map_seed, "wave_phase_a", 0.0, math.tau)
     phase_b = seed_range(map_seed, "wave_phase_b", 0.0, math.tau)
     phase_c = seed_range(map_seed, "wave_phase_c", 0.0, math.tau)
-    basin_a = seed_range(map_seed, "basin_freq_a", 0.75, 1.55)
-    basin_b = seed_range(map_seed, "basin_freq_b", 1.25, 2.25)
-    basin_c = seed_range(map_seed, "basin_freq_c", 2.35, 3.75)
-    broad_basins = (
-        0.16 * math.sin(longitude * basin_a + 0.7 * math.sin(latitude + phase_a))
-        + 0.11 * math.cos(longitude * basin_b - latitude * 1.2 + phase_b)
-        + 0.07 * math.sin(longitude * basin_c + latitude * 0.7 + phase_c)
-    )
+    # Planet-scale basins and swells: seamless noise on the sphere (the
+    # former three map-space sinusoids drew tilted sine-curve basins that
+    # broke at the date line).  Spread ~0.14, like the sinusoid sum it
+    # replaces.
+    broad_basins = sphere_signed_table(map_seed, "broad_basins", nx, ny, features=1.1, octaves=3) * 0.34
     icy_surface = terrain.get("surface_regime") == "cratered_ice_shell"
-    continents = _continent_signal(nx, ny, map_seed=map_seed)
+    lod0_lithosphere = (
+        _sample_lithosphere(tectonic_model, nx, ny)
+        if lod0_synthesis and isinstance(tectonic_model, dict) and tectonic_model.get("plates")
+        else None
+    )
+    continents = _continent_signal(
+        nx,
+        ny,
+        map_seed=map_seed,
+        tectonic_model=tectonic_model,
+        lod0_synthesis=lod0_synthesis,
+        lithosphere_sample=lod0_lithosphere,
+    )
     lowland_bias = -0.12 - water_smoothing * 0.22
     plume_lid_surface = terrain.get("surface_regime") == "plume_lid_volcanic"
     if icy_surface:
@@ -1381,8 +2138,9 @@ def _wave_height(nx, ny, terrain, tectonic_model=None, crater_model=None, crater
     else:
         value = lowland_bias + broad_basins * (0.7 + roughness * 0.35)
         value += continents * (0.26 + roughness * 0.14)
-        value -= _intracontinental_basin_signal(nx, ny, map_seed=map_seed) * _continental_mask(continents) * 0.11
-        value += _oceanic_island_signal(nx, ny, map_seed=map_seed) * (1.0 - _continental_mask(continents)) * 0.34
+        if not lod0_synthesis:
+            value -= _intracontinental_basin_signal(nx, ny, map_seed=map_seed) * _continental_mask(continents) * 0.11
+            value += _oceanic_island_signal(nx, ny, map_seed=map_seed) * (1.0 - _continental_mask(continents)) * 0.34
 
     # Regime-specific morphology is added before tectonic/crater features. It
     # gives dry, volatile, volcanic, and rifted worlds recognisably different
@@ -1406,7 +2164,7 @@ def _wave_height(nx, ny, terrain, tectonic_model=None, crater_model=None, crater
         value = value * 0.66 + batholiths * 0.13 + max(dome_a, dome_b * 0.88) * 0.18
     elif geologic_style == "aeolian_dune_seas":
         dune_wavelength = seed_range(map_seed, "dune_wavelength", 13.0, 22.0)
-        dunes = math.sin(longitude * dune_wavelength + latitude * 2.8 + phase_a) * 0.028
+        dunes = sphere_signed_table(map_seed, "dune_seas", nx, ny, features=4.0 + dune_wavelength * 0.1, octaves=2) * 0.028
         yardang_belts = _ridge_belt(nx, ny, seed_range(map_seed, "yardang_belt", 0.0, 1.0), 0.52, 0.12, 0.035)
         value = value * 0.58 + dunes + yardang_belts * 0.08
     elif geologic_style == "evaporite_basins":
@@ -1427,7 +2185,15 @@ def _wave_height(nx, ny, terrain, tectonic_model=None, crater_model=None, crater
 
     tectonic_height = None
     if isinstance(tectonic_model, dict) and tectonic_model.get("status") == "tectonics_advanced":
-        tectonic_height = _tectonic_height_m(nx, ny, terrain, tectonic_model)
+        tectonic_height = _tectonic_height_m(
+            nx,
+            ny,
+            terrain,
+            tectonic_model,
+            continent_signal=continents,
+            lod0_synthesis=lod0_synthesis,
+            lithosphere_sample=lod0_lithosphere,
+        )
 
     if tectonic_height is not None:
         min_elevation = float(heightfield.get("min_elevation_m", -5000.0) or -5000.0)
@@ -1449,9 +2215,11 @@ def _wave_height(nx, ny, terrain, tectonic_model=None, crater_model=None, crater
         )
         value += ridge_strength * (0.72 + roughness * 0.24)
         value -= trench_strength * 0.28
-        value += math.sin(longitude * 9.0 + latitude * 2.4) * ridge_strength * 0.07
+        value += sphere_signed_table(map_seed, "ridge_texture", nx, ny, features=6.0, octaves=2) * ridge_strength * 0.07
     else:
-        shield_wave = math.sin(longitude * seed_range(map_seed, "shield_freq", 1.4, 2.7) - latitude + phase_a) * math.cos(latitude * 2.0 + phase_b)
+        # Broad volcanic shields and swells of a plate-less lid (seamless on
+        # the sphere; formerly a tilted map-space sinusoid).
+        shield_wave = sphere_signed_table(map_seed, "shield_swells", nx, ny, features=1.5, octaves=2)
         value += shield_wave * 0.12 * roughness
 
     if crater_gain > 0.12 and not isinstance(crater_model, dict):
@@ -1470,20 +2238,23 @@ def _wave_height(nx, ny, terrain, tectonic_model=None, crater_model=None, crater
 
 
 def _ice_score(nx, ny, elevation, min_elevation, max_elevation, map_seed=""):
+    """Rank cells for the pre-climate ice quota by how cold they are.
+
+    Annual-mean temperature falls with latitude and, through the 6.5 K/km
+    lapse rate, with height.  In latitude units (Earth's ~48 K
+    pole-to-equator contrast spans one unit) a kilometre of elevation is
+    worth ~0.14: a 6 km equatorial peak is as cold as ~75 degrees latitude,
+    which is why equatorial summits carry glaciers.  A little seamless
+    sphere noise keeps the quota edge from being a pure parallel.  (The old
+    map-space sinusoids drew a tilted sine-curve ice edge.)
+    """
     latitude_polarity = abs(ny - 0.5) * 2.0
-    elevation_norm = (float(elevation) - float(min_elevation)) / max(1.0, float(max_elevation) - float(min_elevation))
-    ridge_noise = (
-        math.sin(nx * math.tau * seed_range(map_seed, "ice_freq_a", 1.2, 2.8) + seed_range(map_seed, "ice_phase_a", 0.0, math.tau))
-        + math.cos((nx + ny) * math.tau * seed_range(map_seed, "ice_freq_b", 0.8, 1.9) + seed_range(map_seed, "ice_phase_b", 0.0, math.tau))
-    ) * 0.08
-    # Elevation can push the snow line toward the equator, but only where
-    # latitude has already brought it into plausible range -- gating it by
-    # latitude_polarity instead of adding it flat. A flat additive elevation
-    # term let the top-N quota selection below outrank genuine polar cells
-    # with merely-tall equatorial terrain, glaciating mountains at the
-    # equator purely to fill the planet's target ice fraction.
-    elevation_bonus = elevation_norm * latitude_polarity * 0.34
-    return latitude_polarity * 0.66 + elevation_bonus + ridge_noise
+    lapse_equivalent = max(0.0, float(elevation)) * 0.0065 / 48.0
+    noise = sphere_signed_table(map_seed, "ice_quota", nx, ny, features=3.0, octaves=2) * 0.03
+    return latitude_polarity + lapse_equivalent + noise
+
+
+from simulations.world_gen.sphere_noise import sphere_signed_table  # noqa: E402
 
 
 def sea_level_for_equivalent_water_depth(rows, equivalent_depth_m, wrap_x=True):
@@ -1493,6 +2264,26 @@ def sea_level_for_equivalent_water_depth(rows, equivalent_depth_m, wrap_x=True):
     height = len(rows)
     width = min(len(row) for row in rows)
     unique_width = max(1, width - 1) if wrap_x and width > 1 else width
+    if np is not None:
+        elevation = np.asarray([row[:unique_width] for row in rows], dtype=np.float64).ravel()
+        weights = np.repeat(
+            [max(1e-6, math.cos((0.5 - y / max(1, height - 1)) * math.pi)) for y in range(height)],
+            unique_width,
+        )
+        total_weight = float(weights.sum())
+        if total_weight <= 0.0:
+            return None
+        target_depth = float(equivalent_depth_m)
+        low = float(elevation.min())
+        high = float(elevation.max()) + target_depth
+        for _iteration in range(52):
+            candidate = (low + high) * 0.5
+            stored_depth = float(np.dot(np.maximum(0.0, candidate - elevation), weights)) / total_weight
+            if stored_depth < target_depth:
+                low = candidate
+            else:
+                high = candidate
+        return (low + high) * 0.5
     weighted_cells = []
     total_weight = 0.0
     for y, row in enumerate(rows):
@@ -1617,9 +2408,161 @@ def _materialize_shallow_margin_bathymetry(rows, sea_level, tectonic_model=None,
     }
 
 
-def _shelf_and_sediment_model(rows, sea_level, tectonic_model=None):
+VECTORISED_SHELF_MODEL = True
+
+
+def _uv_axes(width, height, source_uv_bounds=None):
+    """Global UV of each column/row; regional grids map through their bounds."""
+    u_values = np.arange(width, dtype=np.float64) / max(1, width - 1)
+    v_values = np.arange(height, dtype=np.float64) / max(1, height - 1)
+    if source_uv_bounds:
+        min_u = float(source_uv_bounds.get("min_u", 0.0) or 0.0)
+        max_u = float(source_uv_bounds.get("max_u", 1.0) or 1.0)
+        min_v = float(source_uv_bounds.get("min_v", 0.0) or 0.0)
+        max_v = float(source_uv_bounds.get("max_v", 1.0) or 1.0)
+        u_values = min_u + (max_u - min_u) * u_values
+        v_values = min_v + (max_v - min_v) * v_values
+    return u_values, v_values
+
+
+def _np_catmull_rom(p0, p1, p2, p3, t):
+    # Same operation order as ``_sample_lithosphere.cubic`` for bit parity.
+    return 0.5 * (
+        2.0 * p1
+        + (-p0 + p2) * t
+        + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t * t
+        + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t * t * t
+    )
+
+
+def _sample_lithosphere_grid(tectonic_model, nx, ny):
+    """Array form of ``_sample_lithosphere``.
+
+    Returns ``(continental_fraction, age_myr, oceanic_fraction)`` for the
+    broadcast ``nx``/``ny`` points.  Without a crust grid the scalar sampler
+    omits ``oceanic_fraction``; callers that default it to zero get zeros here.
+    """
+    nx, ny = np.broadcast_arrays(np.asarray(nx, dtype=np.float64), np.asarray(ny, dtype=np.float64))
+    grid = tectonic_model.get("lithosphere_grid") if isinstance(tectonic_model.get("lithosphere_grid"), dict) else {}
+    crust_rows = grid.get("crust_type_rows") or []
+    age_rows = grid.get("ocean_floor_age_rows_myr") or []
+    fraction_rows = grid.get("continental_fraction_rows") or []
+    if not crust_rows or not crust_rows[0]:
+        return np.full(nx.shape, 0.5), np.zeros(nx.shape), np.zeros(nx.shape)
+    height = len(crust_rows)
+    width = min(len(row) for row in crust_rows)
+    x = np.rint(nx * max(1, width - 1)).astype(np.int64) % width
+    y = np.clip(np.rint(ny * max(1, height - 1)).astype(np.int64), 0, height - 1)
+    nearest_age = np.zeros((height, width))
+    for row_index, row in enumerate(age_rows[:height]):
+        values = [float(value) for value in row[:width]]
+        nearest_age[row_index, :len(values)] = values
+    age = nearest_age[y, x]
+
+    def sample_continuous(rows, default):
+        if not rows or len(rows) < 2 or not rows[0]:
+            return np.asarray(default, dtype=np.float64) + np.zeros(nx.shape)
+        grid_height = len(rows)
+        grid_width = min(len(row) for row in rows)
+        values = np.asarray([[float(value) for value in row[:grid_width]] for row in rows], dtype=np.float64)
+        fx = np.mod(nx, 1.0) * max(1, grid_width - 1)
+        fy = np.clip(ny, 0.0, 1.0) * max(1, grid_height - 1)
+        x1 = np.floor(fx).astype(np.int64)
+        y1 = np.floor(fy).astype(np.int64)
+        tx, ty = fx - x1, fy - y1
+        columns = [(x1 + offset) % grid_width for offset in (-1, 0, 1, 2)]
+        low = np.full(nx.shape, np.inf)
+        high = np.full(nx.shape, -np.inf)
+        interpolated = []
+        for offset in (-1, 0, 1, 2):
+            source_rows = np.clip(y1 + offset, 0, grid_height - 1)
+            support = [values[source_rows, column] for column in columns]
+            for item in support:
+                low = np.minimum(low, item)
+                high = np.maximum(high, item)
+            interpolated.append(_np_catmull_rom(*support, tx))
+        value = _np_catmull_rom(*interpolated, ty)
+        return np.maximum(low, np.minimum(high, value))
+
+    if fraction_rows and fraction_rows[0]:
+        continental_fraction = np.clip(sample_continuous(fraction_rows, 0.5), 0.0, 1.0)
+        age = np.maximum(0.0, sample_continuous(age_rows, age)) if age_rows else age
+    else:
+        continental = np.zeros((height, width), dtype=bool)
+        for row_index, row in enumerate(crust_rows):
+            continental[row_index] = [value in {"continental", "continental_fragment"} for value in row[:width]]
+        continental_fraction = continental[y, x].astype(np.float64)
+    return continental_fraction, age, 1.0 - continental_fraction
+
+
+def _grid_l1_distance(mask, *, wrap_x, cap):
+    """4-neighbour grid distance to the nearest ``mask`` cell, capped at ``cap``.
+
+    Every cell is passable, so the breadth-first distance equals the L1
+    distance (wrapped in x when ``wrap_x``) and separates into two 1-D sweeps.
+    """
+    height, width = mask.shape
+    tiled = np.concatenate([mask, mask, mask], axis=1) if wrap_x else mask
+    columns = np.where(tiled, 0, cap).astype(np.int64).T.copy()
+    for index in range(1, columns.shape[0]):
+        np.minimum(columns[index], columns[index - 1] + 1, out=columns[index])
+    for index in range(columns.shape[0] - 2, -1, -1):
+        np.minimum(columns[index], columns[index + 1] + 1, out=columns[index])
+    distance = columns.T[:, width:2 * width] if wrap_x else columns.T
+    distance = np.ascontiguousarray(distance)
+    for index in range(1, height):
+        np.minimum(distance[index], distance[index - 1] + 1, out=distance[index])
+    for index in range(height - 2, -1, -1):
+        np.minimum(distance[index], distance[index + 1] + 1, out=distance[index])
+    return np.minimum(distance, cap)
+
+
+def _shelf_and_sediment_model_array(rows, sea_level, tectonic_model, *, wrap_x, source_uv_bounds):
+    elevation = np.asarray(rows, dtype=np.float64)
+    height, width = elevation.shape
+    sea_level = float(sea_level)
+    land = elevation >= sea_level
+    distance = _grid_l1_distance(land, wrap_x=wrap_x, cap=999)
+    depth = np.maximum(0.0, sea_level - elevation)
+    ocean = depth > 0.0
+    shelf = ocean & (depth <= 420.0) & (distance <= 7)
+    u_values, v_values = _uv_axes(width, height, source_uv_bounds)
+    ocean_rows, ocean_columns = np.nonzero(ocean)
+    _continental, age, oceanic = _sample_lithosphere_grid(
+        tectonic_model or {}, u_values[ocean_columns], v_values[ocean_rows]
+    )
+    oceanic = np.clip(oceanic, 0.0, 1.0)
+    age_myr = age * oceanic + 800.0 * (1.0 - oceanic)
+    # Integer distances, so a math.exp table keeps parity with the scalar path.
+    wedge_table = np.asarray([3600.0 * math.exp(-step / 3.2) for step in range(1000)])
+    pelagic = np.minimum(1600.0, np.maximum(0.0, age_myr) * 7.0)
+    sediment = np.zeros((height, width))
+    sediment[ocean_rows, ocean_columns] = np.minimum(
+        7200.0, wedge_table[distance[ocean_rows, ocean_columns]] + pelagic
+    )
+    shelf_count = int(np.count_nonzero(shelf))
+    return {
+        "model": "passive_margin_shelf_and_sediment_wedge_v1",
+        "shelf_rows": shelf.tolist(),
+        "sediment_thickness_rows_m": [[round(value, 1) for value in row] for row in sediment.tolist()],
+        "shelf_fraction": round(shelf_count / max(1, width * height), 4),
+        "shelf_depth_limit_m": 420.0,
+        "sediment_loading_causes_subsidence": True,
+    }
+
+
+def _shelf_and_sediment_model(rows, sea_level, tectonic_model=None, *, wrap_x=True, source_uv_bounds=None):
+    """Shelf mask and sediment thickness from the resolved heightfield.
+
+    ``source_uv_bounds`` maps a regional grid to planetary UV so ocean-floor
+    age is read where the tile actually is; ``wrap_x`` is false for tiles.
+    """
     if sea_level is None or not rows or not rows[0]:
         return {"shelf_rows": [], "sediment_thickness_rows_m": [], "shelf_fraction": 0.0}
+    if np is not None and VECTORISED_SHELF_MODEL:
+        return _shelf_and_sediment_model_array(
+            rows, sea_level, tectonic_model, wrap_x=wrap_x, source_uv_bounds=source_uv_bounds,
+        )
     height, width = len(rows), len(rows[0])
     distance = [[999 for _x in range(width)] for _y in range(height)]
     frontier = []
@@ -1633,18 +2576,27 @@ def _shelf_and_sediment_model(rows, sea_level, tectonic_model=None):
         x, y = frontier[cursor]
         cursor += 1
         next_distance = distance[y][x] + 1
-        for nx, ny in (((x - 1) % width, y), ((x + 1) % width, y), (x, y - 1), (x, y + 1)):
-            if ny < 0 or ny >= height or next_distance >= distance[ny][nx]:
+        if wrap_x:
+            neighbors = (((x - 1) % width, y), ((x + 1) % width, y), (x, y - 1), (x, y + 1))
+        else:
+            neighbors = ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1))
+        for nx, ny in neighbors:
+            if nx < 0 or nx >= width or ny < 0 or ny >= height or next_distance >= distance[ny][nx]:
                 continue
             distance[ny][nx] = next_distance
             frontier.append((nx, ny))
+    u_values = [x / max(1, width - 1) for x in range(width)]
+    v_values = [y / max(1, height - 1) for y in range(height)]
+    if source_uv_bounds and np is not None:
+        u_array, v_array = _uv_axes(width, height, source_uv_bounds)
+        u_values, v_values = u_array.tolist(), v_array.tolist()
     shelf_rows, sediment_rows = [], []
     shelf_count = 0
     for y, row in enumerate(rows):
         shelf_row, sediment_row = [], []
         for x, elevation in enumerate(row):
             depth = max(0.0, float(sea_level) - float(elevation))
-            lithosphere = _sample_lithosphere(tectonic_model or {}, x / max(1, width - 1), y / max(1, height - 1))
+            lithosphere = _sample_lithosphere(tectonic_model or {}, u_values[x], v_values[y])
             passive_margin_distance = distance[y][x]
             shelf = depth > 0.0 and depth <= 420.0 and passive_margin_distance <= 7
             if shelf:
@@ -1689,6 +2641,38 @@ def _mountain_morphology_mask(
     Ocean depths are excluded from the neighbourhood range so coastlines do
     not masquerade as mountain fronts.
     """
+    if np is not None:
+        return _mountain_morphology_mask_array(
+            rows,
+            land_rows,
+            cell_spacing_m,
+            wrap_x=wrap_x,
+            tectonic_model=tectonic_model,
+            source_uv_bounds=source_uv_bounds,
+            sea_level=sea_level,
+        )
+    return _mountain_morphology_mask_python(
+        rows,
+        land_rows,
+        cell_spacing_m,
+        wrap_x=wrap_x,
+        tectonic_model=tectonic_model,
+        source_uv_bounds=source_uv_bounds,
+        sea_level=sea_level,
+    )
+
+
+def _mountain_morphology_mask_python(
+    rows,
+    land_rows,
+    cell_spacing_m,
+    *,
+    wrap_x=False,
+    tectonic_model=None,
+    source_uv_bounds=None,
+    sea_level=None,
+):
+    """Pure-Python reference path, used when NumPy is unavailable."""
     height = len(rows)
     width = min(len(row) for row in rows)
     unique_width = width - 1 if wrap_x and width > 1 else width
@@ -1808,7 +2792,36 @@ def _heightfield_fingerprint(rows, sea_level):
     return hashlib.sha256(payload).hexdigest()
 
 
-def refresh_heightmap_derivatives(heightmap, *, tectonic_model=None, inherited_sea_level_m=None):
+def _neighbour_indices(height, unique_width, wrap_x):
+    """West/east columns and north/south rows of the 4-neighbour stencil.
+
+    Non-wrapping grids clamp at the edge, so an edge cell's outside neighbour
+    is itself (it never differs from itself).
+    """
+    columns = np.arange(unique_width)
+    rows = np.arange(height)
+    if wrap_x:
+        west, east = (columns - 1) % unique_width, (columns + 1) % unique_width
+    else:
+        west, east = np.clip(columns - 1, 0, unique_width - 1), np.clip(columns + 1, 0, unique_width - 1)
+    north, south = np.clip(rows - 1, 0, height - 1), np.clip(rows + 1, 0, height - 1)
+    return west, east, north, south
+
+
+def _with_seam(core, width):
+    """Pad a unique-column field to ``width`` by repeating column 0 (the seam)."""
+    if core.shape[1] >= width:
+        return core
+    return np.concatenate([core, core[:, :width - core.shape[1]]], axis=1)
+
+
+def refresh_heightmap_derivatives(
+    heightmap,
+    *,
+    tectonic_model=None,
+    inherited_sea_level_m=None,
+    progress_callback=None,
+):
     """Rebuild every derivative that depends on the evolved heightfield.
 
     Full planets conserve their equivalent global water depth and solve a new
@@ -1818,10 +2831,16 @@ def refresh_heightmap_derivatives(heightmap, *, tectonic_model=None, inherited_s
     """
     if not isinstance(heightmap, dict):
         return {}
-    refreshed = copy.deepcopy(heightmap)
+    # Masks and the shelf model are rebuilt below; copying them first only
+    # to overwrite them cost about half a second per regional refresh.
+    rebuilt_keys = {"surface_masks", "shelf_sediment_model"}
+    refreshed = {key: copy.deepcopy(value) for key, value in heightmap.items() if key not in rebuilt_keys}
+    _emit_heightmap_progress(progress_callback, 0.05, "Copying the resolved heightfield")
     grid = refreshed.get("sample_grid") if isinstance(refreshed.get("sample_grid"), dict) else {}
     rows = grid.get("rows") if isinstance(grid.get("rows"), list) else []
     if not rows or not rows[0]:
+        for key in rebuilt_keys & set(heightmap):
+            refreshed[key] = copy.deepcopy(heightmap[key])
         return refreshed
     height = len(rows)
     width = min(len(row) for row in rows)
@@ -1844,55 +2863,54 @@ def refresh_heightmap_derivatives(heightmap, *, tectonic_model=None, inherited_s
         sea_level = refreshed.get("sea_level_m")
         sea_level = None if sea_level is None else float(sea_level)
         sea_level_resolution = refreshed.get("sea_level_resolution") or ("dry_surface" if sea_level is None else "preserved_datum")
+    _emit_heightmap_progress(progress_callback, 0.16, "Solving the planetary sea-level datum")
 
-    land_rows = [[False] * width for _ in range(height)]
-    ocean_rows = [[False] * width for _ in range(height)]
-    coastal_rows = [[False] * width for _ in range(height)]
+    elevation = np.asarray([row[:width] for row in rows], dtype=np.float64)
+    core = elevation[:, :unique_width]
+    row_weights = [
+        max(1e-6, math.cos((0.5 - y / max(1, height - 1)) * math.pi)) if not regional else 1.0
+        for y in range(height)
+    ]
+    land = np.ones(core.shape, dtype=bool) if sea_level is None else core >= sea_level
+    land_per_row = np.count_nonzero(land, axis=1).tolist()
     weighted_land = weighted_ocean = total_weight = 0.0
-    values = []
-    for y in range(height):
-        latitude = (0.5 - y / max(1, height - 1)) * math.pi
-        area_weight = max(1e-6, math.cos(latitude)) if not regional else 1.0
-        for x in range(unique_width):
-            elevation = float(rows[y][x])
-            values.append(elevation)
-            land = sea_level is None or elevation >= sea_level
-            land_rows[y][x] = land
-            ocean_rows[y][x] = not land
-            weighted_land += area_weight * int(land)
-            weighted_ocean += area_weight * int(not land)
-            total_weight += area_weight
-        if wrap_x and width > unique_width:
-            land_rows[y][-1] = land_rows[y][0]
-            ocean_rows[y][-1] = ocean_rows[y][0]
-
+    for weight, land_count in zip(row_weights, land_per_row):
+        weighted_land += weight * land_count
+        weighted_ocean += weight * (unique_width - land_count)
+        total_weight += weight * unique_width
+    west, east, north, south = _neighbour_indices(height, unique_width, wrap_x)
     if sea_level is not None:
-        for y in range(height):
-            for x in range(unique_width):
-                land = land_rows[y][x]
-                neighbors = [((x - 1) % unique_width, y), ((x + 1) % unique_width, y)] if wrap_x else []
-                if not wrap_x:
-                    neighbors.extend([(max(0, x - 1), y), (min(unique_width - 1, x + 1), y)])
-                neighbors.extend([(x, max(0, y - 1)), (x, min(height - 1, y + 1))])
-                coastal_rows[y][x] = any(land_rows[ny][nx] != land for nx, ny in neighbors)
-            if wrap_x and width > unique_width:
-                coastal_rows[y][-1] = coastal_rows[y][0]
+        coastal = (
+            (land[:, west] != land)
+            | (land[:, east] != land)
+            | (land[north, :] != land)
+            | (land[south, :] != land)
+        )
+    else:
+        coastal = np.zeros(core.shape, dtype=bool)
+    land_rows = _with_seam(land, width).tolist()
+    ocean_rows = _with_seam(~land, width).tolist()
+    coastal_rows = _with_seam(coastal, width).tolist()
+    _emit_heightmap_progress(progress_callback, 0.36, "Classifying land, ocean, and coast cells")
 
-    prior_masks = refreshed.get("surface_masks") if isinstance(refreshed.get("surface_masks"), dict) else {}
+    prior_masks = heightmap.get("surface_masks") if isinstance(heightmap.get("surface_masks"), dict) else {}
     ice_rows = copy.deepcopy(prior_masks.get("ice_rows") or [[False] * width for _ in range(height)])
     if len(ice_rows) != height or any(len(row) < width for row in ice_rows):
         ice_rows = [[False] * width for _ in range(height)]
-    ice_adjacency_rows = [[False] * width for _ in range(height)]
-    for y in range(height):
-        for x in range(unique_width):
-            neighbors = [((x - 1) % unique_width, y), ((x + 1) % unique_width, y)] if wrap_x else [(max(0, x - 1), y), (min(unique_width - 1, x + 1), y)]
-            neighbors.extend([(x, max(0, y - 1)), (x, min(height - 1, y + 1))])
-            ice_adjacency_rows[y][x] = bool(ice_rows[y][x]) or any(bool(ice_rows[ny][nx]) for nx, ny in neighbors)
-        if wrap_x and width > unique_width:
-            ice_adjacency_rows[y][-1] = ice_adjacency_rows[y][0]
+    ice = np.asarray([[bool(value) for value in row[:unique_width]] for row in ice_rows], dtype=bool)
+    ice_adjacency = ice | ice[:, west] | ice[:, east] | ice[north, :] | ice[south, :]
+    ice_adjacency_rows = _with_seam(ice_adjacency, width).tolist()
+    _emit_heightmap_progress(progress_callback, 0.46, "Resolving ice adjacency")
 
-    shelf_model = _shelf_and_sediment_model(rows, sea_level, indexed_tectonic_model)
-    prior_shelf_model = refreshed.get("shelf_sediment_model")
+    shelf_model = _shelf_and_sediment_model(
+        rows,
+        sea_level,
+        indexed_tectonic_model,
+        wrap_x=wrap_x,
+        source_uv_bounds=refreshed.get("source_uv_bounds") if regional else None,
+    )
+    _emit_heightmap_progress(progress_callback, 0.59, "Resolving shelves and sediment wedges")
+    prior_shelf_model = heightmap.get("shelf_sediment_model")
     if isinstance(prior_shelf_model, dict) and isinstance(
         prior_shelf_model.get("bathymetry_materialization"), dict
     ):
@@ -1936,38 +2954,34 @@ def refresh_heightmap_derivatives(heightmap, *, tectonic_model=None, inherited_s
         source_uv_bounds=refreshed.get("source_uv_bounds") if regional else None,
         sea_level=sea_level,
     )
+    _emit_heightmap_progress(progress_callback, 0.78, "Resolving mountain morphology")
     mountain_support_source = (
         "resolved_relief_plus_production_orogen"
         if regional and isinstance(tectonic_model, dict)
         else "resolved_relief"
     )
-    coastal_gradients = []
-    shelf_cell_count = 0
-    for y in range(height):
-        for x in range(unique_width):
-            if shelf_rows and shelf_rows[y][x]:
-                shelf_cell_count += 1
-            if not coastal_rows[y][x]:
-                continue
-            left = float(rows[y][(x - 1) % unique_width if wrap_x else max(0, x - 1)])
-            right = float(rows[y][(x + 1) % unique_width if wrap_x else min(unique_width - 1, x + 1)])
-            up = float(rows[max(0, y - 1)][x])
-            down = float(rows[min(height - 1, y + 1)][x])
-            coastal_gradients.append(math.hypot(right - left, down - up) / max(1.0, 2.0 * cell_spacing_m))
+    coastal_y, coastal_x = np.nonzero(coastal)
+    gradient_x = (core[coastal_y, east[coastal_x]] - core[coastal_y, west[coastal_x]]).tolist()
+    gradient_y = (core[south[coastal_y], coastal_x] - core[north[coastal_y], coastal_x]).tolist()
+    gradient_scale = max(1.0, 2.0 * cell_spacing_m)
+    coastal_gradients = [math.hypot(dx, dy) / gradient_scale for dx, dy in zip(gradient_x, gradient_y)]
+    shelf_cell_count = (
+        int(np.count_nonzero(np.asarray([row[:unique_width] for row in shelf_rows], dtype=bool)))
+        if shelf_rows else 0
+    )
 
     land_fraction = weighted_land / max(1e-9, total_weight)
     ocean_fraction = weighted_ocean / max(1e-9, total_weight)
     ice_weight = 0.0
-    for y in range(height):
-        weight = max(1e-6, math.cos((0.5 - y / max(1, height - 1)) * math.pi)) if not regional else 1.0
-        ice_weight += sum(bool(ice_rows[y][x]) for x in range(unique_width)) * weight
+    for weight, ice_count in zip(row_weights, np.count_nonzero(ice, axis=1).tolist()):
+        ice_weight += ice_count * weight
     ice_fraction = ice_weight / max(1e-9, total_weight)
-    sample_count = max(1, len(values))
+    sample_count = max(1, core.size)
     hypsometry = dict(refreshed.get("hypsometry_summary") or {})
     hypsometry.update({
-        "broad_plain_fraction": round(sum(-2000.0 <= value <= 1000.0 for value in values) / sample_count, 3),
-        "mountain_fraction_above_2000m": round(sum(value > 2000.0 for value in values) / sample_count, 3),
-        "deep_basin_fraction_below_minus_2000m": round(sum(value < -2000.0 for value in values) / sample_count, 3),
+        "broad_plain_fraction": round(int(np.count_nonzero((core >= -2000.0) & (core <= 1000.0))) / sample_count, 3),
+        "mountain_fraction_above_2000m": round(int(np.count_nonzero(core > 2000.0)) / sample_count, 3),
+        "deep_basin_fraction_below_minus_2000m": round(int(np.count_nonzero(core < -2000.0)) / sample_count, 3),
         "land_fraction": round(land_fraction, 4),
         "ocean_fraction": round(ocean_fraction, 4),
         "ice_fraction": round(ice_fraction, 4),
@@ -1977,16 +2991,21 @@ def refresh_heightmap_derivatives(heightmap, *, tectonic_model=None, inherited_s
     })
     shelf_model["morphology_summary"] = {
         "mean_coastal_gradient": round(sum(coastal_gradients) / max(1, len(coastal_gradients)), 6),
-        "mean_resolved_shelf_width_km": round(shelf_cell_count * cell_spacing_m / max(1, sum(sum(bool(v) for v in row[:unique_width]) for row in coastal_rows)) / 1000.0, 2),
+        "mean_resolved_shelf_width_km": round(shelf_cell_count * cell_spacing_m / max(1, int(np.count_nonzero(coastal))) / 1000.0, 2),
         "coastal_sample_count": len(coastal_gradients),
     }
+    mountain = np.asarray([row[:unique_width] for row in mountain_rows], dtype=np.float64)
+    replaced_masks = {
+        "land_rows", "ocean_rows", "coastal_rows", "ice_rows", "ice_adjacency_rows",
+        "continental_shelf_rows", "mountain_rows",
+    }
     refreshed.update({
-        "min_elevation_m": round(min(values), 1),
-        "max_elevation_m": round(max(values), 1),
+        "min_elevation_m": round(float(core.min()), 1),
+        "max_elevation_m": round(float(core.max()), 1),
         "sea_level_m": None if sea_level is None else round(sea_level, 2),
         "sea_level_resolution": sea_level_resolution,
         "surface_masks": {
-            **prior_masks,
+            **{key: copy.deepcopy(value) for key, value in prior_masks.items() if key not in replaced_masks},
             "land_rows": land_rows,
             "ocean_rows": ocean_rows,
             "coastal_rows": coastal_rows,
@@ -2003,8 +3022,7 @@ def refresh_heightmap_derivatives(heightmap, *, tectonic_model=None, inherited_s
             "relief_threshold_m": round(mountain_relief_threshold_m, 2),
             "support_source": mountain_support_source,
             "mountain_cell_fraction": round(
-                sum(mountain_rows[y][x] >= 0.35 for y in range(height) for x in range(unique_width))
-                / max(1, height * unique_width),
+                int(np.count_nonzero(mountain >= 0.35)) / max(1, height * unique_width),
                 4,
             ),
             "purpose": "localize_subgrid_orogenic_relief_to_resolved_mountain_terrain",
@@ -2016,6 +3034,7 @@ def refresh_heightmap_derivatives(heightmap, *, tectonic_model=None, inherited_s
         "source_heightfield_fingerprint": refreshed["source_heightfield_fingerprint"],
         "status": "current",
     }
+    _emit_heightmap_progress(progress_callback, 1.0, "Heightmap derivatives complete")
     return refreshed
 
 
@@ -2033,7 +3052,17 @@ def heightmap_derivatives_are_current(heightmap):
     )
 
 
-def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tectonic_model=None, crater_model=None, mechanical_lithology_model=None):
+def derive_heightmap_model(
+    terrain,
+    seed=None,
+    physics=None,
+    planet_id="",
+    tectonic_model=None,
+    crater_model=None,
+    mechanical_lithology_model=None,
+    geochemical_material_model=None,
+    progress_callback=None,
+):
     terrain = terrain if isinstance(terrain, dict) else {}
     heightfield = terrain.get("heightfield") if isinstance(terrain.get("heightfield"), dict) else {}
     canvas = terrain.get("map_canvas") if isinstance(terrain.get("map_canvas"), dict) else {}
@@ -2069,12 +3098,40 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         midpoint = float(datum_center)
     half_range = max(1.0, (max_elevation - min_elevation) * 0.5)
     sampled_tectonic_model = _heightmap_tectonic_model(tectonic_model)
+    local_material_provinces = (
+        geochemical_material_model.get("provinces") or []
+        if isinstance(geochemical_material_model, dict)
+        else []
+    )
+    # Rock strength varies continuously with lithotectonic composition; the
+    # substrate prior/province model carries it as a global raster.
+    relief_retention_rows = (
+        geochemical_material_model.get("relief_retention_rows")
+        if isinstance(geochemical_material_model, dict)
+        else None
+    )
+    relief_retention_grid = None
+    if relief_retention_rows and np is not None:
+        relief_retention_grid = np.asarray(relief_retention_rows, dtype=np.float64)
+        local_material_provinces = []
+    if local_material_provinces:
+        from simulations.world_gen.tectonics import _nearest_plate_index
     deformation_state_model = None
     if isinstance(sampled_tectonic_model, dict) and sampled_tectonic_model.get("plates"):
+        _emit_heightmap_progress(progress_callback, 0.02, "Preparing tectonic deformation fields")
+
+        def deformation_progress(fraction, detail, _preview=None):
+            _emit_heightmap_progress(
+                progress_callback,
+                0.02 + float(fraction) * 0.14,
+                detail,
+            )
+
         deformation_state_model = derive_planetary_deformation_state(
             terrain,
             sampled_tectonic_model,
             mechanical_lithology_model=mechanical_lithology_model,
+            progress_callback=deformation_progress,
         )
         sampled_tectonic_model["deformation_state_model"] = deformation_state_model
     explicit_crater_model = isinstance(crater_model, dict)
@@ -2086,20 +3143,85 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
     sample_width, sample_height, resolution_mode = _heightmap_sample_dimensions(
         canvas, heightfield,
     )
+    evaluation_width, evaluation_height = _lod0_evaluation_dimensions(
+        sample_width,
+        sample_height,
+        resolution_mode,
+    )
     rows = []
     sample_values = []
     sample_positions = []
-    for row in range(sample_height):
-        ny = row / max(1, sample_height - 1)
+
+    def partial_preview(completed_rows):
+        if not rows:
+            return None
+        current_width = len(rows[0])
+        current_height = (
+            sample_height
+            if len(rows) == sample_height and current_width == sample_width
+            else evaluation_height
+        )
+        preview_rows = [list(values) for values in rows]
+        preview_rows.extend(
+            [[None] * current_width for _index in range(max(0, current_height - len(preview_rows)))]
+        )
+        return {
+            "status": "heightmap_building",
+            "projection": canvas.get("projection", "equirectangular"),
+            "sea_level_m": None if sea_level is None else float(sea_level),
+            "min_elevation_m": min_elevation,
+            "max_elevation_m": max_elevation,
+            "preview_completed_rows": completed_rows,
+            "sample_grid": {
+                "width": current_width,
+                "height": current_height,
+                "wrap_x": True,
+                "wrap_y": False,
+                "rows": preview_rows,
+            },
+        }
+
+    _emit_heightmap_progress(progress_callback, 0.17, "Sampling base planetary relief")
+    for row in range(evaluation_height):
+        ny = row / max(1, evaluation_height - 1)
         row_values = []
-        for col in range(sample_width):
-            nx = 0.0 if col == sample_width - 1 else col / max(1, sample_width - 1)
+        for col in range(evaluation_width):
+            nx = 0.0 if col == evaluation_width - 1 else col / max(1, evaluation_width - 1)
             # Explicit impacts are applied in a second pass after the
             # pre-impact sea level is known.  Passing an empty catalogue here
             # also disables the legacy generic crater stamp without changing
             # dry worlds that do not use an explicit crater model.
             wave_craters = {} if explicit_crater_model else crater_model
-            normalized = _wave_height(nx, ny, terrain, tectonic_model=sampled_tectonic_model, crater_model=wave_craters, crater_spatial_index=None, map_seed=map_seed)
+            normalized = _wave_height(
+                nx,
+                ny,
+                terrain,
+                tectonic_model=sampled_tectonic_model,
+                crater_model=wave_craters,
+                crater_spatial_index=None,
+                map_seed=map_seed,
+                lod0_synthesis=resolution_mode == "canonical_lod0",
+            )
+            if relief_retention_grid is not None:
+                grid_height, grid_width = relief_retention_grid.shape
+                fx = (float(nx) % 1.0) * (grid_width - 1)
+                fy = _clamp(ny, 0.0, 1.0) * (grid_height - 1)
+                gx0, gy0 = int(fx), int(fy)
+                gx1, gy1 = min(grid_width - 1, gx0 + 1), min(grid_height - 1, gy0 + 1)
+                tx, ty = fx - gx0, fy - gy0
+                retention = (
+                    (relief_retention_grid[gy0, gx0] * (1.0 - tx) + relief_retention_grid[gy0, gx1] * tx) * (1.0 - ty)
+                    + (relief_retention_grid[gy1, gx0] * (1.0 - tx) + relief_retention_grid[gy1, gx1] * tx) * ty
+                )
+                normalized *= _clamp(retention, 0.94, 1.06)
+            elif local_material_provinces:
+                province = local_material_provinces[
+                    _nearest_plate_index(nx, ny, local_material_provinces)
+                ]
+                retention = float(
+                    (province.get("terrain_response") or {}).get("relief_retention", 1.0)
+                )
+                normalized *= _clamp(retention, 0.94, 1.06)
             elevation = midpoint + normalized * half_range
             elevation = round(_clamp(elevation, min_elevation, max_elevation), 1)
             row_values.append(elevation)
@@ -2108,6 +3230,26 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
             row_values[-1] = row_values[0]
         sample_values.extend(row_values)
         rows.append(row_values)
+        if row == evaluation_height - 1 or row % max(1, evaluation_height // 12) == 0:
+            row_fraction = (row + 1) / max(1, evaluation_height)
+            _emit_heightmap_progress(
+                progress_callback,
+                0.17 + row_fraction * 0.36,
+                f"Sampling relief row {row + 1} of {evaluation_height}",
+                partial_preview(row + 1),
+            )
+
+    crustal_calibration = _crustal_freeboard_calibration(rows, evaluation_width, evaluation_height, sampled_tectonic_model)
+    if crustal_calibration.get("ocean_shift_m"):
+        rows = _apply_crustal_freeboard_calibration(
+            rows, evaluation_width, evaluation_height, sampled_tectonic_model, crustal_calibration,
+            min_elevation=min_elevation, max_elevation=max_elevation,
+        )
+        sample_values = [value for row in rows for value in row]
+        sample_positions = [
+            (col, row_index, nx, ny, rows[row_index][col])
+            for col, row_index, nx, ny, _elevation in sample_positions
+        ]
 
     equivalent_global_water_depth_m = max(
         0.0,
@@ -2137,14 +3279,15 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
 
     crater_surface_audit = {"status": "not_applicable"}
     if explicit_crater_model:
+        _emit_heightmap_progress(progress_callback, 0.56, "Conditioning impacts to the generated surface")
         crater_model, crater_surface_audit = condition_crater_model_to_surface(
             crater_model, terrain, rows, preliminary_sea_level,
         )
         crater_spatial_index = _crater_spatial_index(crater_model)
-        for row_index in range(sample_height):
-            ny = row_index / max(1, sample_height - 1)
-            for col_index in range(sample_width):
-                nx = 0.0 if col_index == sample_width - 1 else col_index / max(1, sample_width - 1)
+        for row_index in range(evaluation_height):
+            ny = row_index / max(1, evaluation_height - 1)
+            for col_index in range(evaluation_width):
+                nx = 0.0 if col_index == evaluation_width - 1 else col_index / max(1, evaluation_width - 1)
                 rows[row_index][col_index] = round(
                     _clamp(
                         rows[row_index][col_index]
@@ -2157,6 +3300,35 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
                     1,
             )
             rows[row_index][-1] = rows[row_index][0]
+            if row_index == evaluation_height - 1 or row_index % max(1, evaluation_height // 10) == 0:
+                row_fraction = (row_index + 1) / max(1, evaluation_height)
+                _emit_heightmap_progress(
+                    progress_callback,
+                    0.58 + row_fraction * 0.13,
+                    f"Carving impact relief row {row_index + 1} of {evaluation_height}",
+                    partial_preview(row_index + 1),
+                )
+        sample_values = [value for row_values in rows for value in row_values]
+        sample_positions = [
+            (
+                col,
+                row,
+                0.0 if col == evaluation_width - 1 else col / max(1, evaluation_width - 1),
+                row / max(1, evaluation_height - 1),
+                rows[row][col],
+            )
+            for row in range(evaluation_height)
+            for col in range(evaluation_width)
+        ]
+
+    if (evaluation_width, evaluation_height) != (sample_width, sample_height):
+        _emit_heightmap_progress(
+            progress_callback,
+            0.72,
+            f"Interpolating global scaffold to {sample_width} x {sample_height}",
+            partial_preview(evaluation_height),
+        )
+        rows = _resample_height_rows(rows, sample_width, sample_height)
         sample_values = [value for row_values in rows for value in row_values]
         sample_positions = [
             (
@@ -2179,6 +3351,7 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
     # behavior so fixtures and regional products are not silently changed.
     bathymetry_materialization = {"status": "not_applicable"}
     if resolution_mode == "canonical_lod0" and preliminary_sea_level is not None:
+        _emit_heightmap_progress(progress_callback, 0.73, "Materializing shallow continental margins")
         bathymetry_materialization = _materialize_shallow_margin_bathymetry(
             rows,
             preliminary_sea_level,
@@ -2236,6 +3409,7 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
     ice_fraction = ice_count / sample_count
     shelf_model = _shelf_and_sediment_model(rows, sea_level_value, sampled_tectonic_model)
     shelf_model["bathymetry_materialization"] = bathymetry_materialization
+    _emit_heightmap_progress(progress_callback, 0.82, "Resolving water, ice, and shelf coverage", partial_preview(sample_height))
 
     model = {
         "status": "heightmap_seeded",
@@ -2268,6 +3442,7 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         "max_elevation_m": round(max_elevation, 1),
         "sea_level_m": None if sea_level is None else round(float(sea_level), 1),
         "equivalent_global_water_depth_m": round(equivalent_global_water_depth_m, 2),
+        "crustal_freeboard_calibration": dict(crustal_calibration),
         "sea_level_resolution": (
             "volume_balance_against_generated_hypsometry"
             if equivalent_global_water_depth_m > 0.0
@@ -2300,7 +3475,7 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         },
         "shelf_sediment_model": shelf_model,
         "geology_model": {
-            "model_version": "physiographic-heightmap-v8-canonical-lod0",
+            "model_version": "physiographic-heightmap-v9-global-scaffold",
             "surface_regime": terrain.get("surface_regime", "rocky_surface"),
             "continental_lithosphere": None if terrain.get("surface_regime") == "cratered_ice_shell" else "assembled_cratons_accreted_terranes_rifted_margins",
             "oceanic_lithosphere": None if terrain.get("surface_regime") == "cratered_ice_shell" else "abyssal_plains_ridges_trenches",
@@ -2328,6 +3503,10 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
                 "width": sample_width,
                 "height": sample_height,
             },
+            "causal_evaluation_dimensions": {
+                "width": evaluation_width,
+                "height": evaluation_height,
+            },
             "render_canvas_dimensions": {
                 "width": width_px,
                 "height": height_px,
@@ -2336,7 +3515,11 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
                 "width": CANONICAL_LOD0_BENCHMARK_DIMENSIONS[0],
                 "height": CANONICAL_LOD0_BENCHMARK_DIMENSIONS[1],
             },
-            "resolution_source": "explicit_scientific_grid_not_render_pixels",
+            "resolution_source": "global_causal_anchors_interpolated_to_consumer_grid",
+            "detail_ownership": "province_and_surface_detail_deferred_to_regional_regeneration",
+            "interpolation": (
+                "bilinear_numpy" if np is not None else "bilinear_python"
+            ) if (evaluation_width, evaluation_height) != (sample_width, sample_height) else "none",
         },
         "storage": {
             "kind": "chunked_heightfield_seed",
@@ -2370,7 +3553,19 @@ def derive_heightmap_model(terrain, seed=None, physics=None, planet_id="", tecto
         "deformation_state_model": deformation_state_model,
         "crater_surface_resolution": crater_surface_audit,
     }
-    return refresh_heightmap_derivatives(model, tectonic_model=sampled_tectonic_model)
+    def derivative_progress(fraction, detail, _preview=None):
+        _emit_heightmap_progress(
+            progress_callback,
+            0.84 + float(fraction) * 0.16,
+            detail,
+            model,
+        )
+
+    return refresh_heightmap_derivatives(
+        model,
+        tectonic_model=sampled_tectonic_model,
+        progress_callback=derivative_progress,
+    )
 
 
 def contour_levels_for_heightmap(heightmap, interval_m, max_levels=24):

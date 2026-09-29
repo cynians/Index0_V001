@@ -9,11 +9,13 @@ independent generation of the same place.
 
 ## Immediate findings
 
-The current canonical planet has an 8192 x 4096 render canvas but only a
-385 x 193 scientific height grid. On an Earth-sized body this is about 108 km
-between samples. The previous 100 km first child therefore covered roughly
-one parent cell and mostly inherited a smooth interpolated slope. Its large
-render grid did not create new parent-scale geographic information.
+The canonical planet has an 8192 x 4096 render canvas, a 513 x 257 retained
+scientific grid, and a 257 x 129 causal synthesis grid. On an Earth-sized body
+the retained grid is about 78 km between samples. This is intentionally a
+global scaffold, not stored regional terrain: it fixes plates, continental
+masses, ocean basins, major relief envelopes, and global environmental
+boundary conditions. Finer geography is regenerated only for the selected
+child footprint.
 
 The current refinement code also samples the root production tectonic field
 again for every child. That preserves some broad truth, but it violates the
@@ -24,13 +26,18 @@ deliberately when that snapshot changes.
 
 ## Target physical scale contract
 
+The authored [highest-detail landscape target](highest_lod_example_map.md) is a
+6 × 6km tiled real-data benchmark with local native-detail windows; it is not
+generated parent lineage. A 30m LOD3 abstraction/reconstruction experiment now
+tests which causal structure must survive before adjacent-level integration.
+
 The ranges are defaults for an Earth-sized body and should be expressed as a
 scale profile, not hard-coded rectangles. A UI zoom selects a footprint inside
 the profile. The 100 km diagnostic window belongs at LOD2, not LOD1.
 
 | LOD | Name | Typical footprint | Scientific sample spacing | Complete features that should read here |
 |---|---|---:|---:|---|
-| 0 | Planet | full body | 10–40 km; 1025 x 513 baseline, 2049 x 1025 benchmark | plates, continents, ocean basins, major mountain systems, global climate, major rivers and lakes |
+| 0 | Planet | full body | 513 x 257 retained grid from 257 x 129 causal anchors; about 78 km retained spacing on Earth | plates, continents, ocean basins, major mountain envelopes, global climate inputs, and drainage boundary conditions; no stored province or surface texture |
 | 1 | Macroregion | 500–2,000 km | 1–10 km | continental margins, mountain ranges, forelands, large basins, principal river networks, regional climate |
 | 2 | Region | 50–250 km; 100 km default test | 100–500 m | range segments, valleys, tributaries, medium lakes, shelves, coast assemblages, material provinces |
 | 3 | Local | 5–30 km | 10–100 m | local ridges, gullies, streams, floodplains, beaches, wetlands, dunes, cliffs, local climate |
@@ -109,24 +116,24 @@ resolved as a meaningful map feature, not merely stored as a global summary.
 | Deformation, flexure, and isostatic response | Separate coarse uplift, subsidence, strain, loads, flexural and isostatic fields | 0 | Remains an inherited field; its complete broad response is not expected below LOD2 |
 | Mechanical lithology | Material-derived planetary mechanical classes and relief response | 0 | Broad relief retention at LOD0; differential slopes and exposures become visible at LOD2–4 |
 | Crater field and impact gardening | Explicit craters, size filtering, atmospheric/water preservation, degradation | 0 | Large basins at LOD0–1; regional craters at LOD2–4; microcraters only at LOD5–7 on airless surfaces |
-| Primary heightfield | Production tectonic height sampler, crustal fields, bounded noise, craters | 0 | Broad elevation must be inherited at every level; added wavelengths belong only to the child scale |
-| Mountain relief | Boundary profiles, orogen forcing, branching/fractal detail, relief limits | 0 | Complete mountain ranges at LOD0–1; segments/ridges at LOD2–4; only slopes, ledges, and microrelief at LOD6–7 |
+| Primary heightfield | Production tectonic height sampler, crustal fields, bounded noise, craters; LOD0 calibrates the continent/ocean contrast to Earth's ~4.6 km (`heightmap.CRUSTAL_CONTRAST_TARGET_M`, re-applied by the regional production evaluator); LOD0 anchors are upsampled with a clamped cubic; regional residuals are sampled with B-splines; new regional detail is zero-mean at the parent's spacing and fades out over the outer 1.8 % of a tile | 0 | Broad elevation must be inherited at every level; added wavelengths belong only to the child scale |
+| Mountain relief | Boundary profiles, orogen forcing, branching/fractal detail (belt-aligned per tile about its centre), relief limits; LOD1+ stream-power incision organises new detail into valleys (`fluvial_relief.py`), zero-mean at the parent's spacing; flow is routed by slope-weighted random receivers so channels on uniform ramps merge instead of running as parallel grid lines | 0 | Complete mountain ranges at LOD0–1; segments/ridges at LOD2–4; only slopes, ledges, and microrelief at LOD6–7 |
 | Ocean volume and sea level | Water inventory, hypsometry, sea-level solve, ocean/land masks, shelves | 0 | Coast and shelf remain inherited; complete ocean basins disappear below LOD1 |
-| Ice and snow | Inventory-ranked ice mask, seasonal snow, ice-albedo feedback, glacial proxy | 0 | Ice caps at LOD0; glacier regions at LOD1–2; snowfields and ice margins at LOD3–5 |
+| Ice and snow | Inventory-ranked ice mask, seasonal snow, ice-albedo feedback, glacial proxy; regional tiles inherit a B-spline of the parent mask whose margins follow local highs and lows | 0 | Ice caps at LOD0; glacier regions at LOD1–2; snowfields and ice margins at LOD3–5 |
 | Orbital and seasonal climate | Latitude, insolation, atmosphere, temperature, seasonality, circulation proxies | 0 | Climate zones at LOD0–1; regional climate at LOD2; microclimate at LOD3–4 |
 | Ocean heat and wind/moisture forcing | Ocean circulation and climate-grid transport proxies | 0 | Large circulation belongs at LOD0–1; local windward/rain-shadow effects at LOD2–4 |
 | Drainage and watersheds | Priority-flood routing, flow directions, accumulation, basins, catchments | 0 | Major basins at LOD0–1; tributary networks at LOD1–2; channels and microdrainage at LOD3–7 |
 | Lakes and outlets | Water-balance-constrained lakes, spillways, endorheic state | 0 | Great lakes at LOD0–1; regional lakes at LOD2–3; ponds and pools at LOD4–7 |
-| Rivers and sediment routing | Branching rivers, stream order, discharge, deltas, distributaries, sediment proxies | 0 | Major rivers at LOD0; principal networks at LOD1; tributaries at LOD2–3; channels/banks at LOD4–7 |
+| Rivers and sediment routing | Branching rivers, stream order, discharge, deltas, distributaries, sediment proxies; channel belts with floodplain widths from an area power law (`material_routing.channel_belts`) flatten valley floors at LOD3+ and carry the alluvium; rivers crossing into a regional tile bring their parent catchment (`boundary_inflow`) | 0 | Major rivers at LOD0; principal networks at LOD1; tributaries at LOD2–3; channels/banks at LOD4–7 |
 | Surface evolution | Fluvial, chemical, aeolian, glacial, hillslope, crater degradation, deposition, incision | 0 | Global process fields at LOD0; landform-producing feedback at LOD1–3; local forms at LOD4–7 |
 | Coastal geomorphology | Shoreline graph, wave/tide proxies, relative sea level, sediment budgets, gated landforms | 0 | Shorelines/shelves at LOD0–1; coast assemblages at LOD2–3; beaches, cliffs, deltas at LOD3–5; tide pools at LOD7 |
 | Surface geomorphology | Ridges, valleys, scarps, incised valleys, talus, alluvium, mantled plains, exposure | 0 | Broad interpretation at LOD0; complete regional landforms at LOD1–3; local exposure/talus at LOD4–7 |
 | Natural material formation | Ontology materials inferred from crust, tags, atmosphere, regime, water, temperature | 0 | Material identity persists everywhere; only spatial exposure becomes finer with LOD |
-| Material provinces and heatmaps | Affinity layers, compact raster bundles, regional occurrence selection | 0 | Provinces at LOD0–1; regional mixtures at LOD2–4; surface exposure/soil at LOD4–7 |
+| Material provinces and heatmaps | Lithotectonic settings x ontology recipes give areal rock composition; children draw purity-weighted mapped units (sized on the planet's circumference) from the smoothed parent composition by exponential race; process cover and bounded occurrences overlay it; D8 routing on each level's own heightfield carries upstream rock into alluvium, rockfall into talus aprons and fines into wet hollows ([plan](worldgen_material_lod_plan_v001.md)) | 0 | Settings/provinces at LOD0; mapped units and alluvium provenance at LOD1; bed stacks cut by topography at LOD2+; fault offsets, catena and talus at LOD3+; channel-bed sorting by stream power at LOD4+ |
 | Mineralization potential | Tectonic/mineralization proxy and regional occurrences | 0 | Broad potential at LOD0–1; deposits become meaningful at LOD2–5; mine geometry is not yet present |
-| Regolith and soils | Material-, climate-, hydrology-, and terrain-conditioned soil model | 0 | Planetary soil tendency at LOD0; profiles and transitions at LOD3–6; organic horizons are future |
+| Regolith and soils | Vectorised material-, climate-, hydrology- and terrain-conditioned soil model; parent chemistry from the LOD0 province raster | 0 | Planetary soil tendency at LOD0; profiles and transitions at LOD3–6; organic horizons are future |
 | Specialized abiotic landforms | Desert morphology, duricrust, karst, periglacial ground, playa/evaporite basins, plume-lid features | 0 | Regime/province summaries at LOD0–1; complete landforms at LOD2–5; grains and objects are future |
-| True Color and material optics | Heightmap, exposure, geomorphology, material endmembers, weathering, water and atmosphere | 0 | Must render at every LOD from the immediate parent-derived height/material fields; it must not invent independent geology |
+| True Color and material optics | Linear areal mixture of per-material visible fractions with ontology optical profiles, then weathering, water, relief shading and atmosphere; from LOD3 down relief shading and landform texture are physical (exaggeration capped by cell size), so flat ground reads flat | 0 | Must render at every LOD from the immediate parent-derived height/material fields; a child box-filtered to its parent reproduces the parent colour within the Delta-E budget of `material_lineage.py`; it must not invent independent geology |
 | Diagnostic map layers | Heightmap hillshade, True Color, surface materials, climate/rivers, coastal geomorphology, temperature, precipitation, chemical weathering | 0 | Visibility changes with scale; each layer must report inherited inputs and missing assets rather than silently fall back |
 
 ## Mechanisms required but not yet complete

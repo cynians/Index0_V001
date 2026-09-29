@@ -101,8 +101,17 @@ def infer_world_class(seed, physics=None):
         return "icy_satellite"
     if is_airless_surface(seed):
         return "airless_rocky"
+    fluid = str(seed.get("surface_fluid") or "water").strip().lower()
+    try:
+        liquid_depth_m = float(seed.get("surface_liquid_depth_m", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        liquid_depth_m = 0.0
+    if fluid != "water" and liquid_depth_m > 0.0 and ("methane" in fluid or "ethane" in fluid):
+        return "hydrocarbon_world"
     if water_fraction >= 0.72:
         return "ocean_world"
-    if water_fraction <= 0.08 and inventory in {"dry", "thin", "dense"}:
+    # A world without seas is a desert whatever its air pressure (the
+    # volatile label is derived from pressure, not from water).
+    if water_fraction <= 0.08 and inventory in {"dry", "thin", "earthlike", "wet", "dense"}:
         return "desert_terrestrial"
     return "terrestrial"

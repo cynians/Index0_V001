@@ -1,6 +1,7 @@
 """Render the real Species Editor view with a deterministic mature plant."""
 
 import argparse
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -11,13 +12,32 @@ from simulations.species.species_simulation import SpeciesSimulation
 from world.persistent_ontology_store import PersistentOntologyStore
 
 
-def render(output_path, species_id="spec_betula_pendula"):
+def render(
+    output_path,
+    species_id="spec_betula_pendula",
+    reproductive_age_offset_days=None,
+    overrides=None,
+):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     pygame.init()
     pygame.display.set_mode((1, 1))
     species = PersistentOntologyStore(Path("ontology/index0.owl")).load_datasets()["species"]
-    entity = next(row for row in species if row.get("id") == species_id)
+    entity = dict(next(row for row in species if row.get("id") == species_id))
+    if overrides:
+        entity.update(overrides)
     simulation = SpeciesSimulation(species_entity=entity, seed=303)
+    if reproductive_age_offset_days is not None:
+        age = (
+            simulation.blueprint.growth["life_history"]["reproductive_start_days"]
+            + float(reproductive_age_offset_days)
+        )
+        simulation.set_age(age)
+        # The editor owns separate fixed-seed preview simulations and normally
+        # pins them to exact maturity. Prime the typical preview at the same
+        # requested reproductive age so the evidence image actually shows
+        # reproductive organs whose factor is zero at exact maturity.
+        for preview in simulation.get_species_editor_previews():
+            preview.set_age(age)
     simulation.set_active_simulation_panel_tab("editor")
     simulation.species_editor["query"] = "branch"
     surface = pygame.Surface((1680, 1000))
@@ -42,5 +62,16 @@ if __name__ == "__main__":
         default=Path("artifacts/species_editor_v001/species_editor_birch.png"),
     )
     parser.add_argument("--species", default="spec_betula_pendula")
+    parser.add_argument(
+        "--reproductive-age-offset-days",
+        type=float,
+        help="Render this many days after the authored reproductive phase begins.",
+    )
+    parser.add_argument(
+        "--overrides-json",
+        type=json.loads,
+        default=None,
+        help="Experimental in-memory field overrides; never persisted.",
+    )
     args = parser.parse_args()
-    render(args.output, args.species)
+    render(args.output, args.species, args.reproductive_age_offset_days, args.overrides_json)

@@ -162,6 +162,7 @@ def _reference_entry(record):
         "favorable_planet_tags", "atmosphere_molecule", "band_color",
         "surface_affinity_profile",
         "mechanical_class", "mechanical_rock_profile",
+        "lithotectonic_setting_weights",
     ):
         if record.get(field) is not None:
             entry[field] = record[field]

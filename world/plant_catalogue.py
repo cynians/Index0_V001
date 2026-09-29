@@ -11,12 +11,16 @@ class PlantCatalogue:
     entity_ids: frozenset
     species_ids: frozenset
     root_id: str = PLANTAE_ID
+    leaf_species_ids: frozenset = frozenset()
 
     def contains(self, entity_id):
         return entity_id in self.entity_ids
 
     def is_species(self, entity_id):
         return entity_id in self.species_ids
+
+    def is_leaf_species(self, entity_id):
+        return entity_id in self.leaf_species_ids
 
     @classmethod
     def build(cls, entities, root_id=PLANTAE_ID):
@@ -42,4 +46,8 @@ class PlantCatalogue:
             seen.add(eid)
             pending.extend(children[eid])
         species = {eid for eid in seen if taxa[eid].get("type") == "species" or taxa[eid].get("_dataset") == "species"}
-        return cls(frozenset(seen),frozenset(species),root_id)
+        # A leaf descendant is a species with no cladistic/species child of
+        # its own recorded in the live taxonomy graph, i.e. an actual
+        # terminal taxon rather than an intermediate clade.
+        leaves = {eid for eid in species if not children.get(eid)}
+        return cls(frozenset(seen), frozenset(species), root_id, frozenset(leaves))

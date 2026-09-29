@@ -35,6 +35,8 @@ class WorldGenRenderer:
         self._water_cycle_preview_cache = {}
         self._material_preview_surface_cache = {}
         self._true_color_preview_cache = {}
+        self._worldgen_loading_preview_cache = {}
+        self._worldgen_loading_fonts = None
 
     def _coerce_rgb(self, value, fallback=(122, 176, 232)):
         if isinstance(value, (list, tuple)) and len(value) >= 3:
@@ -473,60 +475,281 @@ class WorldGenRenderer:
         text = self.app_view.default_font.render(label, True, (244, 226, 172))
         screen.blit(text, (int(center[0]) + 14, int(center[1]) - 8))
 
+    def _draw_loading_relief(self, surface, heightmap):
+        grid = heightmap.get("sample_grid") if isinstance(heightmap, dict) else {}
+        rows = grid.get("rows") if isinstance(grid, dict) else []
+        rows = rows if isinstance(rows, list) else []
+        valid_rows = [row for row in rows if isinstance(row, list) and row]
+        if len(valid_rows) < 2:
+            return False
+        row_count = min(len(rows), int(grid.get("height", len(rows)) or len(rows)))
+        col_count = min(len(row) for row in valid_rows[:row_count])
+        if row_count < 2 or col_count < 2:
+            return False
+
+        sea_value = heightmap.get("sea_level_m")
+        has_ocean = sea_value is not None
+        sea_level = float(sea_value or 0.0)
+        low = float(heightmap.get("min_elevation_m", sea_level - 4000.0) or sea_level - 4000.0)
+        high = float(heightmap.get("max_elevation_m", sea_level + 4000.0) or sea_level + 4000.0)
+        land_span = max(1.0, high - sea_level)
+        ocean_span = max(1.0, sea_level - low)
+        masks = heightmap.get("surface_masks") if isinstance(heightmap.get("surface_masks"), dict) else {}
+        ice_rows = masks.get("ice_rows") if isinstance(masks.get("ice_rows"), list) else []
+        source = pygame.Surface((col_count, row_count))
+        for row_index, row in enumerate(rows[:row_count]):
+            if not isinstance(row, list):
+                continue
+            for col_index, raw_value in enumerate(row[:col_count]):
+                if raw_value is None:
+                    source.set_at((col_index, row_index), (5, 9, 14))
+                    continue
+                try:
+                    elevation = float(raw_value)
+                except (TypeError, ValueError):
+                    elevation = sea_level
+                icy = (
+                    row_index < len(ice_rows)
+                    and isinstance(ice_rows[row_index], list)
+                    and col_index < len(ice_rows[row_index])
+                    and bool(ice_rows[row_index][col_index])
+                )
+                if icy:
+                    color = (202, 222, 230)
+                elif has_ocean and elevation < sea_level:
+                    depth = min(1.0, (sea_level - elevation) / ocean_span)
+                    color = self._mix_rgb((34, 103, 148), (8, 24, 48), depth)
+                else:
+                    altitude = min(1.0, max(0.0, (elevation - sea_level) / land_span))
+                    if altitude < 0.55:
+                        color = self._mix_rgb((48, 92, 70), (135, 126, 82), altitude / 0.55)
+                    else:
+                        color = self._mix_rgb((135, 126, 82), (218, 216, 205), (altitude - 0.55) / 0.45)
+                source.set_at((col_index, row_index), color)
+        surface.blit(pygame.transform.smoothscale(source, surface.get_size()), (0, 0))
+        return True
+
+    def _draw_loading_impacts(self, surface, crater_model):
+        if not isinstance(crater_model, dict):
+            return False
+        craters = [item for item in (crater_model.get("craters") or []) if isinstance(item, dict)]
+        if not craters:
+            return False
+        width, height = surface.get_size()
+        surface.fill((20, 17, 20))
+        for col in range(13):
+            x = int(col * width / 12)
+            pygame.draw.line(surface, (48, 40, 45), (x, 0), (x, height), 1)
+        for row in range(7):
+            y = int(row * height / 6)
+            pygame.draw.line(surface, (48, 40, 45), (0, y), (width, y), 1)
+
+        radius_km = max(1.0, float(crater_model.get("radius_m", 1.0) or 1.0) / 1000.0)
+        circumference_km = math.tau * radius_km
+        # Small events first so major basins remain legible above the field.
+        for crater in sorted(craters, key=lambda item: float(item.get("diameter_km", 0.0) or 0.0)):
+            cx = int((float(crater.get("x", 0.0) or 0.0) % 1.0) * width)
+            cy = int(max(0.0, min(1.0, float(crater.get("y", 0.5) or 0.5))) * height)
+            diameter_px = float(crater.get("diameter_km", 1.0) or 1.0) / circumference_km * width
+            radius = max(1, min(max(width, height) // 4, int(round(diameter_px * 0.5))))
+            complex_basin = crater.get("morphology") == "complex_or_basin"
+            fill = (54, 38, 42) if complex_basin else (41, 32, 36)
+            rim = (180, 128, 103) if complex_basin else (116, 84, 78)
+            for draw_x in (cx - width, cx, cx + width):
+                if draw_x + radius < 0 or draw_x - radius >= width:
+                    continue
+                pygame.draw.circle(surface, fill, (draw_x, cy), radius)
+                pygame.draw.circle(surface, rim, (draw_x, cy), radius, 1)
+                if complex_basin and radius >= 4:
+                    pygame.draw.circle(surface, (101, 68, 65), (draw_x, cy), max(1, radius // 3), 1)
+        return True
+
+    def _worldgen_loading_preview_surface(self, loading, size, font):
+        planet = loading.get("preview_planet") if isinstance(loading.get("preview_planet"), dict) else {}
+        mode = str(loading.get("preview_mode") or "forming")
+        field_by_mode = {
+            "relief": "heightmap_model",
+            "tectonics": "tectonic_model",
+            "impacts": "crater_model",
+            "materials": "material_heatmap_model",
+            "climate": "water_cycle_model",
+        }
+        model = planet.get(field_by_mode.get(mode)) if field_by_mode.get(mode) else None
+        rows = ((model or {}).get("sample_grid") or {}).get("rows") if isinstance(model, dict) else None
+        cache_key = (mode, id(model), id(rows), int(size[0]), int(size[1]))
+        cached = self._worldgen_loading_preview_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        preview = pygame.Surface(size)
+        preview.fill((9, 14, 20))
+        rendered = False
+        try:
+            if mode == "relief" and isinstance(model, dict):
+                rendered = self._draw_loading_relief(preview, model)
+            elif mode == "tectonics" and isinstance(model, dict):
+                self._draw_tectonic_map(preview, font, preview.get_rect(), model)
+                rendered = True
+            elif mode == "impacts" and isinstance(model, dict):
+                rendered = self._draw_loading_impacts(preview, model)
+            elif mode == "materials" and isinstance(model, dict):
+                material_surface = self._material_preview_surface(model)
+                if material_surface is not None:
+                    preview.blit(pygame.transform.smoothscale(material_surface, size), (0, 0))
+                    rendered = True
+            elif mode == "climate" and isinstance(model, dict):
+                self._draw_water_cycle_preview(preview, preview.get_rect(), model)
+                rendered = True
+        except (IndexError, KeyError, OSError, TypeError, ValueError, pygame.error):
+            rendered = False
+
+        if not rendered:
+            for x in range(0, size[0], 44):
+                pygame.draw.line(preview, (20, 31, 43), (x, 0), (x, size[1]), 1)
+            for y in range(0, size[1], 44):
+                pygame.draw.line(preview, (20, 31, 43), (0, y), (size[0], y), 1)
+            center = (size[0] // 2, size[1] // 2)
+            radius = max(24, min(size) // 4)
+            pygame.draw.circle(preview, (52, 82, 106), center, radius, 1)
+            pygame.draw.ellipse(preview, (40, 66, 90), pygame.Rect(center[0] - radius, center[1] - radius // 3, radius * 2, radius * 2 // 3), 1)
+            note = font.render("Waiting for the first publishable grid", True, (104, 136, 164))
+            preview.blit(note, note.get_rect(center=(center[0], center[1] + radius + 30)))
+
+        if len(self._worldgen_loading_preview_cache) >= 16:
+            self._worldgen_loading_preview_cache.clear()
+        self._worldgen_loading_preview_cache[cache_key] = preview
+        return preview
+
     def _draw_worldgen_loading_screen(self, screen, loading):
-        width = screen.get_width()
-        height = screen.get_height()
-        screen.fill((8, 10, 15))
+        width, height = screen.get_size()
+        screen.fill((6, 9, 14))
+        if self._worldgen_loading_fonts is None:
+            self._worldgen_loading_fonts = (
+                pygame.font.SysFont("consolas", 22, bold=True),
+                pygame.font.SysFont("consolas", 16),
+                pygame.font.SysFont("consolas", 14),
+                pygame.font.SysFont("consolas", 12),
+            )
+        label_font, text_font, small_font, tiny_font = self._worldgen_loading_fonts
 
-        center_x = width // 2
-        center_y = height // 2
-        title_font = pygame.font.SysFont("consolas", 52, bold=True)
-        label_font = pygame.font.SysFont("consolas", 22)
-        text_font = pygame.font.SysFont("consolas", 16)
-        small_font = pygame.font.SysFont("consolas", 14)
-
-        progress = max(0.0, min(0.96, float(loading.get("progress", 0.0) or 0.0)))
+        progress = max(0.0, min(1.0, float(loading.get("progress", 0.0) or 0.0)))
         elapsed = max(0.0, float(loading.get("elapsed_seconds", 0.0) or 0.0))
         label = str(loading.get("label") or "World generation")
         detail = str(loading.get("detail") or "Building planetary geology")
+        modes = [str(mode) for mode in (loading.get("preview_modes") or ["forming"])]
+        active_mode = str(loading.get("preview_mode") or modes[0])
+        reveal = max(0.0, min(1.0, float(loading.get("preview_reveal_fraction", 0.0) or 0.0)))
 
-        title = title_font.render("Index 0", True, (238, 242, 248))
-        screen.blit(title, title.get_rect(center=(center_x, center_y - 128)))
+        margin = 32
+        header_h = 84
+        gap = 20
+        sidebar_w = min(350, max(270, width // 4))
+        content = pygame.Rect(margin, header_h, width - margin * 2, max(240, height - header_h - 42))
+        preview_panel = pygame.Rect(content.x, content.y, max(260, content.width - sidebar_w - gap), content.height)
+        sidebar = pygame.Rect(preview_panel.right + gap, content.y, sidebar_w, content.height)
 
-        label_surface = label_font.render(label, True, (218, 228, 242))
-        screen.blit(label_surface, label_surface.get_rect(center=(center_x, center_y - 70)))
+        assembly_title = str(loading.get("assembly_title") or "INDEX 0 / LIVE WORLD ASSEMBLY")
+        screen.blit(label_font.render(assembly_title, True, (220, 232, 244)), (margin, 22))
+        live_rect = pygame.Rect(width - margin - 116, 22, 116, 28)
+        pygame.draw.rect(screen, (20, 52, 49), live_rect, border_radius=4)
+        pygame.draw.rect(screen, (76, 176, 142), live_rect, 1, border_radius=4)
+        pygame.draw.circle(screen, (98, 224, 174), (live_rect.x + 14, live_rect.centery), 4)
+        screen.blit(tiny_font.render("BUILDING", True, (160, 234, 204)), (live_rect.x + 26, live_rect.y + 7))
 
-        detail_surface = text_font.render(detail, True, (154, 170, 194))
-        screen.blit(detail_surface, detail_surface.get_rect(center=(center_x, center_y - 38)))
+        pygame.draw.rect(screen, (10, 15, 22), preview_panel)
+        pygame.draw.rect(screen, (61, 78, 96), preview_panel, 1)
+        tab_y = preview_panel.y + 14
+        tab_x = preview_panel.x + 16
+        for mode in modes:
+            title = mode.upper()
+            tab_w = small_font.size(title)[0] + 24
+            rect = pygame.Rect(tab_x, tab_y, tab_w, 25)
+            selected = mode == active_mode
+            pygame.draw.rect(screen, (36, 73, 96) if selected else (17, 25, 34), rect, border_radius=3)
+            pygame.draw.rect(screen, (90, 164, 204) if selected else (53, 69, 84), rect, 1, border_radius=3)
+            screen.blit(tiny_font.render(title, True, (198, 228, 244) if selected else (109, 130, 148)), (rect.x + 12, rect.y + 6))
+            tab_x = rect.right + 8
 
-        bar_w = min(680, max(360, width // 2))
-        bar_h = 18
-        bar_rect = pygame.Rect(center_x - bar_w // 2, center_y + 10, bar_w, bar_h)
-        fill_w = int((bar_w - 4) * progress)
-        pygame.draw.rect(screen, (22, 27, 38), bar_rect)
-        pygame.draw.rect(screen, (108, 122, 148), bar_rect, 1)
-        if fill_w > 0:
-            pygame.draw.rect(
-                screen,
-                (118, 168, 220),
-                pygame.Rect(bar_rect.x + 2, bar_rect.y + 2, fill_w, bar_h - 4),
-            )
+        available_w = preview_panel.width - 32
+        available_h = preview_panel.height - 86
+        preview_aspect = max(0.5, min(3.0, float(loading.get("preview_aspect_ratio", 2.0) or 2.0)))
+        map_w = available_w
+        map_h = max(1, int(round(map_w / preview_aspect)))
+        if map_h > available_h:
+            map_h = available_h
+            map_w = max(1, int(round(map_h * preview_aspect)))
+        map_rect = pygame.Rect(0, 0, map_w, map_h)
+        map_rect.center = (preview_panel.centerx, preview_panel.y + 55 + available_h // 2)
+        pygame.draw.rect(screen, (4, 7, 11), map_rect)
 
-        sweep_w = max(32, bar_w // 7)
-        sweep_range = max(1, bar_w - sweep_w - 4)
-        sweep_x = bar_rect.x + 2 + int((elapsed * 90.0) % sweep_range)
-        sweep = pygame.Surface((sweep_w, bar_h - 4), pygame.SRCALPHA)
-        sweep.fill((198, 224, 252, 62))
-        screen.blit(sweep, (sweep_x, bar_rect.y + 2))
+        preview = self._worldgen_loading_preview_surface(loading, map_rect.size, small_font)
+        chunk_cols, chunk_rows = 12, 6
+        chunks = [(row, col) for row in range(chunk_rows) for col in range(chunk_cols)]
+        chunks.sort(key=lambda cell: ((cell[1] * 29 + cell[0] * 47) % 73, cell[0], cell[1]))
+        visible_count = min(len(chunks), max(1, int(math.ceil(reveal * len(chunks)))))
+        for row, col in chunks[:visible_count]:
+            x0 = int(col * map_rect.width / chunk_cols)
+            x1 = int((col + 1) * map_rect.width / chunk_cols)
+            y0 = int(row * map_rect.height / chunk_rows)
+            y1 = int((row + 1) * map_rect.height / chunk_rows)
+            area = pygame.Rect(x0, y0, max(1, x1 - x0), max(1, y1 - y0))
+            screen.blit(preview, (map_rect.x + x0, map_rect.y + y0), area)
+            pygame.draw.rect(screen, (42, 70, 88), pygame.Rect(map_rect.x + x0, map_rect.y + y0, area.width, area.height), 1)
+        if visible_count < len(chunks):
+            row, col = chunks[visible_count]
+            x0 = int(col * map_rect.width / chunk_cols)
+            x1 = int((col + 1) * map_rect.width / chunk_cols)
+            y0 = int(row * map_rect.height / chunk_rows)
+            y1 = int((row + 1) * map_rect.height / chunk_rows)
+            pygame.draw.rect(screen, (104, 190, 222), pygame.Rect(map_rect.x + x0, map_rect.y + y0, max(1, x1 - x0), max(1, y1 - y0)), 2)
+        pygame.draw.rect(screen, (91, 117, 138), map_rect, 1)
+        snapshot_label = str(loading.get("snapshot_label") or "LATEST SAFE SNAPSHOT")
+        status_text = f"{snapshot_label} / {active_mode.upper()} / TILE {visible_count:02d} OF {len(chunks):02d}"
+        screen.blit(tiny_font.render(status_text, True, (116, 151, 174)), (map_rect.x, map_rect.bottom + 10))
 
-        percent_surface = small_font.render(f"{int(progress * 100)}%", True, (178, 198, 222))
-        screen.blit(percent_surface, percent_surface.get_rect(midleft=(bar_rect.right + 14, bar_rect.centery)))
+        pygame.draw.rect(screen, (12, 18, 26), sidebar)
+        pygame.draw.rect(screen, (61, 78, 96), sidebar, 1)
+        x = sidebar.x + 18
+        y = sidebar.y + 18
+        screen.blit(tiny_font.render("CURRENT PASS", True, (100, 132, 154)), (x, y))
+        y += 23
+        for line in self._wrap_text(label, text_font, sidebar.width - 36)[:2]:
+            screen.blit(text_font.render(line, True, (226, 234, 242)), (x, y))
+            y += 21
+        y += 8
+        for line in self._wrap_text(detail, small_font, sidebar.width - 36)[:4]:
+            screen.blit(small_font.render(line, True, (154, 176, 195)), (x, y))
+            y += 19
 
-        elapsed_surface = small_font.render(f"Elapsed {int(elapsed)}s", True, (138, 154, 178))
-        screen.blit(elapsed_surface, elapsed_surface.get_rect(center=(center_x, center_y + 56)))
+        y += 14
+        pygame.draw.line(screen, (45, 59, 72), (x, y), (sidebar.right - 18, y), 1)
+        y += 17
+        phase_text = f"PHASE {int(round(progress * 100)):02d}%"
+        screen.blit(text_font.render(phase_text, True, (116, 202, 226)), (x, y))
+        elapsed_text = f"{int(elapsed // 60):02d}:{int(elapsed % 60):02d} ELAPSED"
+        elapsed_surface = tiny_font.render(elapsed_text, True, (116, 139, 158))
+        screen.blit(elapsed_surface, (sidebar.right - 18 - elapsed_surface.get_width(), y + 3))
+        y += 36
+        screen.blit(tiny_font.render("COMPLETED CHECKPOINTS", True, (100, 132, 154)), (x, y))
+        y += 22
+        phases = [item for item in (loading.get("phases") or []) if isinstance(item, dict)]
+        for item in phases[-6:]:
+            item_progress = float(item.get("progress", 0.0) or 0.0)
+            item_elapsed = max(0.0, float(item.get("elapsed_seconds", 0.0) or 0.0))
+            color = (102, 190, 154) if item_progress < progress else (105, 151, 180)
+            pygame.draw.circle(screen, color, (x + 4, y + 7), 3)
+            stamp = f"{int(item_elapsed // 60):02d}:{int(item_elapsed % 60):02d}"
+            screen.blit(tiny_font.render(stamp, True, (96, 119, 138)), (x + 15, y))
+            lines = self._wrap_text(item.get("detail", ""), tiny_font, sidebar.width - 94)
+            for line in lines[:2]:
+                screen.blit(tiny_font.render(line, True, (150, 168, 184)), (x + 58, y))
+                y += 16
+            y += 7
+            if y > sidebar.bottom - 36:
+                break
 
-        note = small_font.render("The app is generating planetary geology. This can take a couple of minutes.", True, (118, 132, 154))
-        screen.blit(note, note.get_rect(center=(center_x, center_y + 88)))
+        footer = str(loading.get("footer") or "Published grids rotate automatically; the simulation continues in the worker thread.")
+        screen.blit(tiny_font.render(footer, True, (91, 111, 128)), (margin, height - 25))
 
     def _draw_candidate_orbit(self, screen, camera, model, payload=None):
         if not model.get("orbit_valid"):
@@ -795,7 +1018,10 @@ class WorldGenRenderer:
         percent_w = 78
         slider_x = panel.x + label_w + 32
         slider_w = max(220, panel.width - label_w - percent_w - 300)
-        row_h = 34
+        # Rows tighten when the inventory lists many elements (volatiles
+        # included) so the Possible Materials panel keeps its room.
+        rows_space = panel.height - 70 - 94 - 230
+        row_h = max(22, min(34, rows_space // max(1, len(elements))))
         target = float(payload.get("crust_target_percent") or 99.0)
 
         for element in elements:
@@ -806,7 +1032,7 @@ class WorldGenRenderer:
             except (TypeError, ValueError):
                 abundance = 0.0
 
-            row_rect = pygame.Rect(panel.x + 14, y - 6, panel.width - 320, 28)
+            row_rect = pygame.Rect(panel.x + 14, y - 6, panel.width - 320, row_h - 6)
             pygame.draw.rect(screen, (29, 33, 44), row_rect)
             label = font.render(f"{name} ({symbol})", True, (216, 224, 238))
             screen.blit(label, (panel.x + 22, y))
@@ -824,7 +1050,7 @@ class WorldGenRenderer:
             y += row_h
 
         summary_x = panel.right - 280
-        summary = pygame.Rect(summary_x, panel.y + 70, 250, 418)
+        summary = pygame.Rect(summary_x, panel.y + 70, 250, max(418, panel.height - 180))
         pygame.draw.rect(screen, (25, 29, 40), summary)
         pygame.draw.rect(screen, (96, 108, 132), summary, 1)
         physics = payload.get("derived_planet_physics") or {}
@@ -879,6 +1105,12 @@ class WorldGenRenderer:
                 label_text = label_text[:18]
             label = font.render(label_text, True, (176, 188, 208))
             screen.blit(label, (summary.x + 12, sy + 4))
+            if field.get("derived"):
+                # Derived from the element distribution: read-only.
+                value = f"{field.get('text') or '-'} (derived)"
+                screen.blit(font.render(value, True, (150, 170, 150)), (summary.x + 148, sy + 4))
+                sy += 30
+                continue
             input_rect = pygame.Rect(summary.x + 142, sy, 92, 24)
             seed_field_rects[field_id] = input_rect
             fill = (38, 48, 68) if field.get("active") else (30, 34, 44)
@@ -889,6 +1121,9 @@ class WorldGenRenderer:
             value_surface = font.render(value or "value", True, (238, 238, 238) if value else (128, 138, 154))
             screen.blit(value_surface, (input_rect.x + 6, input_rect.y + 4))
             sy += 30
+        for line in payload.get("volatile_summary") or []:
+            screen.blit(font.render(str(line)[:30], True, (150, 170, 150)), (summary.x + 12, sy))
+            sy += 20
 
         material_top = max(y + 12, panel.y + 346)
         material_bottom = panel.bottom - 94
@@ -989,6 +1224,42 @@ class WorldGenRenderer:
             screen.blit(font.render(text, True, (245, 230, 174) if active else (210, 219, 234)), (rect.x + 7, rect.y + 6))
         return popup, option_rects
 
+    @staticmethod
+    def _material_availability_label(item):
+        """Panel text and colour for one roster entry.
+
+        Chemistry-derived entries show their availability relative to an
+        Earth-like crust and, when scarcer than on Earth, the element that
+        limits them; enriched materials read green, scarce ones amber.
+        """
+        name = str(item.get("name") or item.get("material_id") or "material")
+        availability = item.get("availability_vs_earth")
+        if availability is None:
+            occurrence = str(item.get("occurrence") or "possible")
+            confidence = float(item.get("confidence", 0.0) or 0.0)
+            label = f"{name} | {occurrence} {confidence * 100:.0f}%"
+            tone = (206, 216, 230)
+        else:
+            availability = float(availability)
+            label = f"{name} | x{availability:.2g} Earth"
+            limiting = item.get("limiting_element")
+            if limiting and item.get("limiting_kind") == "diluted":
+                label = f"{label}, diluted by {limiting}"
+            elif limiting:
+                label = f"{label}, {limiting}-limited"
+            if item.get("foundational_lithology"):
+                label = f"{label}, foundational"
+            if availability >= 1.5:
+                tone = (170, 226, 170)
+            elif availability <= 0.67:
+                tone = (232, 196, 128)
+            else:
+                tone = (206, 216, 230)
+        formula = str(item.get("chemical_formula") or "")
+        if formula and " " not in formula:
+            label = f"{label} | {formula}"
+        return label, tone
+
     def _draw_crust_material_candidates(self, screen, font, rect, payload):
         pygame.draw.rect(screen, (18, 21, 30), rect)
         pygame.draw.rect(screen, (76, 86, 106), rect, 1)
@@ -1029,26 +1300,27 @@ class WorldGenRenderer:
                 continue
             screen.blit(font.render(subclass, True, (192, 204, 224)), (x, y))
             y += 22
-            for item in sorted(items, key=lambda candidate: -float(candidate.get("confidence", 0.0) or 0.0))[:5]:
+            ranked = sorted(
+                items,
+                key=lambda candidate: (
+                    -float(candidate.get("relative_abundance", 0.0) or 0.0),
+                    -float(candidate.get("confidence", 0.0) or 0.0),
+                ),
+            )
+            for item in ranked[:5]:
                 if y + 22 > bottom:
                     break
                 swatch = pygame.Rect(x, y + 4, 12, 12)
                 color = self._coerce_rgb(item.get("display_color"), fallback=(142, 136, 122))
                 pygame.draw.rect(screen, color, swatch)
                 pygame.draw.rect(screen, (42, 46, 58), swatch, 1)
-                name = str(item.get("name") or item.get("material_id") or "material")
-                formula = str(item.get("chemical_formula") or "")
-                occurrence = str(item.get("occurrence") or "possible")
-                confidence = float(item.get("confidence", 0.0) or 0.0)
-                label = f"{name} | {occurrence} {confidence * 100:.0f}%"
-                if formula:
-                    label = f"{label} | {formula}"
+                label, tone = self._material_availability_label(item)
                 clipped = label
                 while font.size(clipped)[0] > column_w - 20 and len(clipped) > 12:
                     clipped = clipped[:-2]
                 if clipped != label:
                     clipped = f"{clipped}."
-                screen.blit(font.render(clipped, True, (206, 216, 230)), (x + 18, y))
+                screen.blit(font.render(clipped, True, tone), (x + 18, y))
                 y += 20
             y_positions[column] = y + 10
             group_index += 1
@@ -1106,6 +1378,110 @@ class WorldGenRenderer:
 
         return popup, element_rects
 
+    ATMOSPHERE_MOLECULE_TINTS = {
+        "H": (218, 210, 190), "H2": (218, 207, 178), "He": (224, 216, 195),
+        "O": (172, 194, 214), "Na": (218, 176, 92), "K": (190, 132, 198),
+        "N2": (145, 173, 207), "O2": (132, 173, 216), "CO2": (188, 156, 112),
+        "H2O": (190, 215, 232), "CH4": (72, 151, 184), "SO2": (194, 174, 88),
+        "NH3": (216, 204, 142), "Ar": (160, 156, 170), "CO": (176, 172, 164),
+        "H2S": (154, 142, 82), "Ne": (190, 160, 178),
+    }
+
+    def _atmosphere_band_tint(self, band):
+        composition = band.get("composition") or []
+        total = sum(max(0.0, float(row.get("fraction", 0.0) or 0.0)) for row in composition)
+        if total <= 0.0:
+            return (120, 130, 148)
+        channels = [0.0, 0.0, 0.0]
+        for row in composition:
+            weight = max(0.0, float(row.get("fraction", 0.0) or 0.0)) / total
+            color = self.ATMOSPHERE_MOLECULE_TINTS.get(row.get("molecule"), (150, 158, 172))
+            for index in range(3):
+                channels[index] += weight * color[index]
+        return tuple(int(round(value)) for value in channels)
+
+    def _draw_atmosphere_view_toggle(self, screen, font, panel, payload):
+        view_mode = payload.get("atmosphere_view_mode", "summary")
+        rect = pygame.Rect(panel.right - 200, panel.y + 12, 184, 26)
+        label = "View: Layer Profile ›" if view_mode == "summary" else "View: Summary ›"
+        self._draw_panel_button(screen, font, rect, label)
+        return rect
+
+    def _draw_atmosphere_layers_panel(self, screen, sim, payload, panel, font, toggle_rect):
+        selected_planet = payload.get("selected_planet") or {}
+        profile = payload.get("atmosphere_layers") or {}
+        bands = list(profile.get("bands") or [])
+
+        subtitle = (
+            "Vertical layer profile, approximated from the global atmosphere model via a barometric "
+            "scale-height model -- not an independent radiative simulation."
+        )
+        screen.blit(font.render(subtitle, True, (158, 170, 190)), (panel.x + 16, panel.y + 34))
+
+        body = pygame.Rect(panel.x + 16, panel.y + 70, panel.width - 32, panel.height - 150)
+        pygame.draw.rect(screen, (25, 29, 40), body)
+        pygame.draw.rect(screen, (96, 108, 132), body, 1)
+
+        if not bands:
+            message = "No collisional atmosphere -- there is no vertical structure to model."
+            screen.blit(font.render(message, True, (170, 178, 192)), (body.x + 14, body.y + 14))
+        else:
+            stack = pygame.Rect(body.x + 16, body.y + 14, 210, body.height - 28)
+            row_height = stack.height / len(bands)
+            detail_x = stack.right + 26
+            detail_width = body.right - detail_x - 14
+
+            # Outermost band at the top of the stack, surface at the bottom.
+            for index, band in enumerate(reversed(bands)):
+                row = pygame.Rect(stack.x, int(stack.y + index * row_height), stack.width, max(2, int(row_height) - 2))
+                pygame.draw.rect(screen, self._atmosphere_band_tint(band), row)
+                pygame.draw.rect(screen, (18, 20, 26), row, 1)
+                label = font.render(band.get("name", "").replace("_", " "), True, (18, 20, 26))
+                screen.blit(label, label.get_rect(center=row.center))
+
+                detail_y = row.y
+                top_altitude = band.get("top_altitude_km")
+                altitude_text = (
+                    f"{band.get('base_altitude_km', 0.0):.1f}-{top_altitude:.1f} km" if top_altitude is not None
+                    else f"{band.get('base_altitude_km', 0.0):.1f} km +"
+                )
+                lines = [
+                    f"{band.get('name', '').replace('_', ' ').title()}  ({altitude_text})",
+                    f"Pressure: {band.get('base_pressure_bar', 0.0):.3g} -> {band.get('top_pressure_bar', 0.0):.3g} bar",
+                    f"Temperature: {band.get('base_temperature_k', 0.0):.0f} -> {band.get('top_temperature_k', 0.0):.0f} K",
+                    f"Density: {band.get('density_kg_m3', 0.0):.3g} kg/m3   Scale height: {band.get('scale_height_km', 0.0):.1f} km",
+                ]
+                dominant = ", ".join(
+                    f"{row.get('molecule')} {row.get('fraction', 0.0) * 100.0:.1f}%"
+                    for row in (band.get("composition") or [])[:4]
+                )
+                if dominant:
+                    lines.append(f"Composition: {dominant}")
+                for line_index, line in enumerate(lines):
+                    if detail_y + 18 > row.bottom and line_index > 0:
+                        break
+                    color = (232, 238, 246) if line_index == 0 else (186, 198, 216)
+                    for wrapped in self._wrap_text(line, font, max(80, detail_width)):
+                        screen.blit(font.render(wrapped, True, color), (detail_x, detail_y))
+                        detail_y += 17
+
+            surface_scale_height = profile.get("surface_scale_height_km", 0.0)
+            footer = f"Surface scale height: {surface_scale_height:.2f} km   Mixture molar mass: {profile.get('mixture_molar_mass_kg_mol', 0.0) * 1000.0:.1f} g/mol"
+            screen.blit(font.render(footer, True, (154, 166, 188)), (body.x + 14, body.bottom - 22))
+
+        back_rect = pygame.Rect(panel.x + 16, panel.bottom - 48, 92, 30)
+        save_rect = pygame.Rect(back_rect.right + 12, panel.bottom - 48, 164, 30)
+        self._draw_panel_button(screen, font, back_rect, "Back")
+        self._draw_panel_button(screen, font, save_rect, "Save Atmosphere", primary=True)
+        space_rect = self._draw_space_jump_button(screen, font, panel)
+        hint = font.render("Model a layer profile of the atmosphere by altitude. Esc exits selected planet.", True, (142, 152, 170))
+        screen.blit(hint, (panel.x + 16, panel.bottom - 76))
+
+        sim.set_crust_ui_rects(save_rect=save_rect, back_rect=back_rect, space_rect=space_rect)
+        sim.set_seed_field_rects({})
+        sim.set_control_panel_rect(panel)
+        sim.set_atmosphere_view_toggle_rect(toggle_rect)
+
     def _draw_atmosphere_panel(self, screen, sim, payload):
         font = self.app_view.default_font
         panel = pygame.Rect(34, 74, screen.get_width() - 68, screen.get_height() - 130)
@@ -1119,6 +1495,12 @@ class WorldGenRenderer:
             f"{selected_planet.get('name', selected_planet.get('id', 'Planet'))} Atmosphere"
         )
         screen.blit(font.render(title, True, (244, 244, 244)), (panel.x + 16, panel.y + 12))
+        toggle_rect = self._draw_atmosphere_view_toggle(screen, font, panel, payload)
+
+        if payload.get("atmosphere_view_mode") == "layers":
+            self._draw_atmosphere_layers_panel(screen, sim, payload, panel, font, toggle_rect)
+            return
+
         subtitle = "Atmosphere is constrained by stellar flux, gravity, molecule mass, volatile inventory, and condensation."
         screen.blit(font.render(subtitle, True, (158, 170, 190)), (panel.x + 16, panel.y + 34))
 
@@ -1211,6 +1593,7 @@ class WorldGenRenderer:
         sim.set_crust_ui_rects(save_rect=save_rect, complete_rect=complete_rect, back_rect=back_rect, space_rect=space_rect)
         sim.set_seed_field_rects({})
         sim.set_control_panel_rect(panel)
+        sim.set_atmosphere_view_toggle_rect(toggle_rect)
 
     def _draw_status_row(self, screen, font, rect, label, value, color=(196, 210, 228)):
         screen.blit(font.render(str(label), True, (154, 166, 188)), (rect.x, rect.y))

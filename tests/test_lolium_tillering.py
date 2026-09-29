@@ -61,7 +61,13 @@ def test_tiller_geometry_attachments_and_ecology_are_deterministic_and_lod_stabl
         for i, p in enumerate(snapshot.placements):
             assert p[1] < i and p[0] in snapshot.modules
             assert all(math.isfinite(v) for v in p[2:])
-            if p[0] in ('leaf', 'flower'):
+            if p[0] == 'leaf':
+                path = snapshot.placement_paths.get(str(i), [])
+                if path:
+                    assert p[2:5] == pytest.approx(path[-1])
+                else:
+                    assert p[2:5] == snapshot.placements[p[1]][2:5]
+            elif p[0] == 'flower':
                 assert p[2:5] == snapshot.placements[p[1]][2:5]
     assert any(p[0] == 'flower' for p in snapshots[1].placements)
     assert len(snapshots[1].attachment_points) == snapshots[1].stats['estimated_leaf_count']
@@ -76,6 +82,61 @@ def test_tussock_gallery_includes_flowering_and_real_seedling():
     reproductive = [c for c in cases if c.stage == 'reproductive']
     assert len(reproductive) == 4
     assert all(any(p[0] == 'flower' for p in c.snapshot.placements) for c in reproductive)
+
+
+def test_basal_leaf_attachment_clusters_blades_at_the_tussock_base():
+    # Every basal/tufted graminoid (real tussock grasses) used to get one
+    # short leaf at each of nodes 0/1/2 up its otherwise-bare flowering
+    # culm, at a fixed near-horizontal angle -- rendering as rigid
+    # horizontal "rungs" on a ladder rather than a tuft of basal blades.
+    # leaf_attachment_pattern="basal" now clusters the same leaf count at
+    # the base instead, as a small fan.
+    basal = make(leaf_attachment_pattern='basal', leaf_clustering='tufted')
+    spread = make()  # no leaf_attachment_pattern authored -> old per-node behaviour
+
+    def hosting_stems_per_tiller(sim):
+        # Each tiller's own culm nodes are a chain of "stem_section"
+        # placements; count how many distinct nodes within that chain carry
+        # at least one leaf.
+        placements = sim.render_snapshot.placements
+        parents = [p[1] for p in placements if p[0] == 'leaf']
+        return len(set(parents)), sim.render_snapshot.stats['tiller_count']
+
+    basal_hosts, basal_tillers = hosting_stems_per_tiller(basal)
+    spread_hosts, spread_tillers = hosting_stems_per_tiller(spread)
+    assert basal_hosts == basal_tillers, (
+        "basal leaves should all cluster on one (the lowest) node per tiller, "
+        f"got {basal_hosts} hosting nodes across {basal_tillers} tillers"
+    )
+    assert spread_hosts > spread_tillers, "the unauthored/default case should keep the original multi-node spread"
+
+    basal_leaf_count = sum(1 for p in basal.render_snapshot.placements if p[0] == 'leaf')
+    spread_leaf_count = sum(1 for p in spread.render_snapshot.placements if p[0] == 'leaf')
+    assert basal_leaf_count == spread_leaf_count, (
+        "repositioning basal leaves must not silently change the ecological leaf count"
+    )
+
+
+def test_spike_reproductive_structure_is_distinct_from_flower_and_cone():
+    # A grass spike (ryegrass, etc.) is a narrow, petal-less inflorescence --
+    # nothing like an angiosperm flower's colourful signal, and visually
+    # distinct from a woody cone too. See Plant_Design_Process.md's
+    # reproductive-structure fix (flower/cone) and its "spike" follow-up.
+    from types import SimpleNamespace
+    from simulations.species.species_renderer import SpeciesRenderer
+
+    renderer = SpeciesRenderer(SimpleNamespace(camera=None))
+    flower_sim = make()
+    cone_sim = make(plant_reproductive_structure='cone')
+    spike_sim = make(plant_reproductive_structure='spike')
+
+    flower_color = renderer._color('flower', flower_sim)
+    cone_color = renderer._color('flower', cone_sim)
+    spike_color = renderer._color('flower', spike_sim)
+    assert len({flower_color, cone_color, spike_color}) == 3, (
+        "flower/cone/spike must each get their own colour treatment"
+    )
+    assert spike_sim.blueprint.growth.get('reproductive_structure') == 'spike'
 
 
 @pytest.fixture

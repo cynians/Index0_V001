@@ -563,12 +563,48 @@ def derive_regional_material_model(
     if "carbonate_favorable" in tags:
         available_host_categories.add("carbonate_sedimentary_basin")
 
+    # Drop candidates whose planet-level prerequisites (tags, host rocks,
+    # volcanic or carbonate context) can never be met here before the
+    # evaluation budget is spent: a planet's roster includes trace-element
+    # minerals at background levels, and without this filter ores that need a
+    # volcanic setting crowded plausible materials out of the top candidates.
+    planet_context = {
+        "volcanic": volcanic,
+        "resurfacing": volcanic * 0.55,
+        "carbonate": 1.0 if "carbonate_favorable" in tags else 0.0,
+        "wet_oxidizing_surface": wet_oxidizing,
+        "active_hydrology": "active_hydrology" in tags,
+        "active_volcanism": "active_volcanism" in tags,
+    }
+
+    def can_form_on_this_planet(candidate):
+        formation = candidate.get("formation_contract") or {}
+        optimistic = {
+            feature: planet_context.get(feature, 1.0)
+            for feature in (formation.get("local_minimums") or {})
+        }
+        optimistic["planet_tags"] = tags
+        return formation_suitability(formation, optimistic, available_host_categories) > 0.0
+
+    prerequisite_rejections = [
+        {
+            "material_id": str(candidate.get("material_id") or ""),
+            "best_score": 0.0,
+            "formation_category": (candidate.get("formation_contract") or {}).get("category_id"),
+            "spatial_representation": (candidate.get("formation_contract") or {}).get("spatial_representation"),
+            "rejected": "planet_prerequisites",
+        }
+        for candidate in candidates
+        if not can_form_on_this_planet(candidate)
+    ]
+    candidates = [candidate for candidate in candidates if can_form_on_this_planet(candidate)]
+
     occurrences = _parent_occurrences_in_bounds(
         parent_regional_material_model,
         source_bounds,
     )
     inherited_occurrence_count = len(occurrences)
-    evaluations = []
+    evaluations = list(prerequisite_rejections)
     sample_count = 14
     truth_seed = str(root_map_seed or map_seed)
     bounds_salt = (

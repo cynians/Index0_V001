@@ -77,6 +77,14 @@ class InputRouter:
         """
         if event.type == pygame.KEYDOWN:
             active_sim = self.app.get_active_simulation()
+            if (
+                active_sim is not None
+                and not getattr(self.app, "knowledge_layer_active", False)
+                and not getattr(self.app, "system_menu_active", False)
+                and hasattr(active_sim, "handle_specification_key")
+                and active_sim.handle_specification_key(event)
+            ):
+                return True
             if (active_sim is not None
                 and not getattr(self.app, "knowledge_layer_active", False)
                 and not getattr(self.app, "system_menu_active", False)

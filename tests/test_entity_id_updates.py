@@ -85,6 +85,12 @@ class KnowledgeBrowserHarness(KnowledgeBrowserUI):
         self.active_card_color_slider = None
         self.active_timeline_resize = False
         self.active_timeline_pan = False
+        self.active_left_panel_resize = False
+        self.left_panel_resize_start_mouse_x = None
+        self.left_panel_resize_start_width = None
+        self.left_panel_width = None
+        self.left_panel_splitter_rect = None
+        self.browser_font_for_layout = None
         self.timeline_resize_start_mouse_y = None
         self.timeline_resize_start_height = None
         self.timeline_splitter_click_pending = False
@@ -203,6 +209,8 @@ class EntityIdUpdateTests(unittest.TestCase):
             ui.clear_canvas_button,
             ui.random_entry_button,
             ui.random_task_button,
+            ui.random_link_button,
+            ui.random_untimed_button,
             ui.new_entry_button,
         ):
             checkbox_width = 22 if getattr(button, "check_button", False) else 0
@@ -514,6 +522,7 @@ class EntityIdUpdateTests(unittest.TestCase):
                 ui.new_entry_button,
                 ui.random_task_button,
                 ui.random_entry_button,
+                ui.random_link_button,
                 ui.clear_canvas_button,
             )
             if button is not None
@@ -1656,6 +1665,356 @@ class EntityIdUpdateTests(unittest.TestCase):
         self.assertEqual(["idea_existing", "old_derived", "old_wiki", "entry_123"], source["related"])
         self.assertNotIn("wiki_mentions", source)
         self.assertNotIn("derived_from", source)
+
+    def test_uncreated_wiki_links_lists_unresolved_link_refs_by_source(self):
+        entities = {
+            "idea_source": {
+                "id": "idea_source",
+                "type": "idea",
+                "_dataset": "ideas",
+                "wiki_entry": "See [[Existing Entry]] and [[Missing Entry]].",
+            },
+            "idea_existing": {
+                "id": "idea_existing",
+                "type": "idea",
+                "_dataset": "ideas",
+                "name": "Existing Entry",
+            },
+            "idea_other": {
+                "id": "idea_other",
+                "type": "idea",
+                "_dataset": "ideas",
+                "wiki_entry": "References [[Missing Entry]] again.",
+            },
+        }
+        ui = KnowledgeBrowserHarness(entities)
+
+        links = ui._uncreated_wiki_links()
+
+        self.assertEqual(
+            [
+                {"source_entity_id": "idea_source", "ref": "Missing Entry"},
+                {"source_entity_id": "idea_other", "ref": "Missing Entry"},
+            ],
+            links,
+        )
+
+    def test_random_link_button_opens_source_card_and_highlights_missing_link(self):
+        entities = {
+            "idea_source": {
+                "id": "idea_source",
+                "type": "idea",
+                "_dataset": "ideas",
+                "name": "Source",
+                "wiki_entry": "See [[Missing Entry]].",
+            },
+        }
+        ui = KnowledgeBrowserHarness(entities)
+        opened_cards = []
+
+        class FakeCardView:
+            def __init__(self):
+                self.active_tab = "relations"
+
+            def set_active_tab(self, name):
+                self.active_tab = name
+
+        def fake_ensure_card(entity, relayout=True, bring_to_front=True):
+            card = {"entity_id": entity["id"], "card_view": FakeCardView()}
+            opened_cards.append(card)
+            ui.cards.append(card)
+            return card
+
+        ui._ensure_card = fake_ensure_card
+        ui._relayout_single_card = lambda card: True
+
+        self.assertTrue(ui._create_random_uncreated_link_card())
+
+        self.assertEqual(1, len(opened_cards))
+        self.assertEqual("idea_source", opened_cards[0]["entity_id"])
+        self.assertEqual("general", opened_cards[0]["card_view"].active_tab)
+        self.assertFalse(opened_cards[0]["is_edit_mode"])
+        self.assertEqual("Missing Entry", opened_cards[0]["highlight_wiki_link_ref"])
+
+    def test_random_link_button_is_noop_when_no_uncreated_links_exist(self):
+        entities = {
+            "idea_a": {
+                "id": "idea_a",
+                "type": "idea",
+                "_dataset": "ideas",
+                "wiki_entry": "No links here.",
+            },
+        }
+        ui = KnowledgeBrowserHarness(entities)
+        ui._ensure_card = lambda *args, **kwargs: self.fail("should not open a card when nothing is unresolved")
+
+        self.assertFalse(ui._create_random_uncreated_link_card())
+
+    def test_uncreated_relation_links_lists_unresolved_ids_by_source_and_field(self):
+        entities = {
+            "idea_real_predecessor": {
+                "id": "idea_real_predecessor",
+                "type": "idea",
+                "_dataset": "ideas",
+            },
+            "idea_source": {
+                "id": "idea_source",
+                "type": "idea",
+                "_dataset": "ideas",
+                "predecessors": ["idea_real_predecessor", "State B Successor Administration"],
+                "successors": ["Fully Undefined Successor"],
+                "parents": ["idea_source"],  # self-reference: never a "missing" link
+            },
+        }
+        ui = KnowledgeBrowserHarness(entities)
+
+        links = ui._uncreated_relation_links()
+
+        self.assertEqual(
+            [
+                {
+                    "source_entity_id": "idea_source",
+                    "ref": "State B Successor Administration",
+                    "field_key": "predecessors",
+                },
+                {
+                    "source_entity_id": "idea_source",
+                    "ref": "Fully Undefined Successor",
+                    "field_key": "successors",
+                },
+            ],
+            links,
+        )
+
+    def test_random_link_button_surfaces_missing_relation_targets_on_the_temporal_tab(self):
+        entities = {
+            "idea_source": {
+                "id": "idea_source",
+                "type": "idea",
+                "_dataset": "ideas",
+                "name": "Source",
+                "successors": ["State B Successor Administration"],
+            },
+        }
+        ui = KnowledgeBrowserHarness(entities)
+        opened_cards = []
+
+        class FakeCardView:
+            def __init__(self):
+                self.active_tab = "general"
+
+            def set_active_tab(self, name):
+                self.active_tab = name
+
+        def fake_ensure_card(entity, relayout=True, bring_to_front=True):
+            card = {"entity_id": entity["id"], "card_view": FakeCardView()}
+            opened_cards.append(card)
+            ui.cards.append(card)
+            return card
+
+        ui._ensure_card = fake_ensure_card
+        ui._relayout_single_card = lambda card: True
+
+        self.assertTrue(ui._create_random_uncreated_link_card())
+
+        self.assertEqual(1, len(opened_cards))
+        self.assertEqual("idea_source", opened_cards[0]["entity_id"])
+        self.assertEqual("temporal", opened_cards[0]["card_view"].active_tab)
+        self.assertEqual("successors", opened_cards[0]["highlight_field_key"])
+
+    def test_relation_picker_falls_back_to_typed_text_when_nothing_matches(self):
+        entity = {"id": "idea_source", "type": "idea", "_dataset": "ideas", "related": []}
+        ui = KnowledgeBrowserHarness({"idea_source": entity})
+        card_view = EntityCard(entity, dataset_name="ideas")
+        card = {
+            "entity_id": "idea_source",
+            "card_view": card_view,
+            "active_edit_field": "related",
+            "edit_buffer": "",
+            "relation_picker_query": "State B Successor Administration",
+            "relation_picker_matches": [],
+            "relation_picker_selected_index": 0,
+        }
+
+        self.assertTrue(ui._insert_relation_from_picker(card))
+
+        self.assertEqual("State B Successor Administration", card["edit_buffer"])
+        self.assertEqual("", card["relation_picker_query"])
+
+    def test_relation_picker_prefers_a_selected_match_over_typed_text(self):
+        entity = {"id": "idea_source", "type": "idea", "_dataset": "ideas", "related": []}
+        ui = KnowledgeBrowserHarness({"idea_source": entity})
+        card_view = EntityCard(entity, dataset_name="ideas")
+        card = {
+            "entity_id": "idea_source",
+            "card_view": card_view,
+            "active_edit_field": "related",
+            "edit_buffer": "",
+            "relation_picker_query": "idea_",
+            "relation_picker_matches": [{"id": "idea_existing", "label": "Existing"}],
+            "relation_picker_selected_index": 0,
+        }
+
+        self.assertTrue(ui._insert_relation_from_picker(card))
+
+        self.assertEqual("idea_existing", card["edit_buffer"])
+
+    def test_relation_picker_with_no_matches_and_blank_query_does_nothing(self):
+        entity = {"id": "idea_source", "type": "idea", "_dataset": "ideas", "related": []}
+        ui = KnowledgeBrowserHarness({"idea_source": entity})
+        card_view = EntityCard(entity, dataset_name="ideas")
+        card = {
+            "entity_id": "idea_source",
+            "card_view": card_view,
+            "active_edit_field": "related",
+            "edit_buffer": "",
+            "relation_picker_query": "   ",
+            "relation_picker_matches": [],
+            "relation_picker_selected_index": 0,
+        }
+
+        self.assertFalse(ui._insert_relation_from_picker(card))
+        self.assertEqual("", card["edit_buffer"])
+
+    def test_clicking_the_highlighted_link_clears_the_highlight(self):
+        entities = {
+            "idea_source": {
+                "id": "idea_source",
+                "type": "idea",
+                "_dataset": "ideas",
+                "wiki_entry": "See [[Missing Entry]].",
+            },
+        }
+        ui = KnowledgeBrowserHarness(entities)
+        card = {
+            "entity_id": "idea_source",
+            "is_edit_mode": False,
+            "highlight_wiki_link_ref": "Missing Entry",
+        }
+        picker_calls = []
+        ui._sync_card_wiki_mentions = lambda card: True
+        ui._open_relation_target_template_picker = lambda card, relation_info: picker_calls.append(relation_info) or True
+
+        self.assertTrue(ui._handle_wiki_link_click(card, {"ref": "Missing Entry"}))
+
+        self.assertIsNone(card["highlight_wiki_link_ref"])
+        self.assertEqual(1, len(picker_calls))
+
+    def test_untimed_entities_lists_entities_without_a_temporal_range(self):
+        entities = {
+            "idea_untimed": {"id": "idea_untimed", "type": "idea", "_dataset": "ideas"},
+            "idea_point_year": {
+                "id": "idea_point_year",
+                "type": "idea",
+                "_dataset": "ideas",
+                "year": "1850",
+            },
+            "idea_ranged": {
+                "id": "idea_ranged",
+                "type": "idea",
+                "_dataset": "ideas",
+                "start_year": "1800",
+                "end_year": "1900",
+            },
+        }
+        ui = KnowledgeBrowserHarness(entities)
+
+        untimed = ui._untimed_entities()
+
+        self.assertEqual(["idea_untimed"], [entity["id"] for entity in untimed])
+
+    def test_untimed_entities_excludes_cladistics_taxonomy_nodes(self):
+        entities = {
+            "idea_untimed": {"id": "idea_untimed", "type": "idea", "_dataset": "ideas"},
+            "cladis_untimed": {"id": "cladis_untimed", "type": "cladistics", "_dataset": "cladistics"},
+        }
+        ui = KnowledgeBrowserHarness(entities)
+
+        untimed = ui._untimed_entities()
+
+        self.assertEqual(["idea_untimed"], [entity["id"] for entity in untimed])
+
+    def test_random_untimed_button_opens_card_on_temporal_tab_and_highlights_a_field(self):
+        entities = {
+            "idea_untimed": {"id": "idea_untimed", "type": "idea", "_dataset": "ideas", "name": "Untimed"},
+        }
+        ui = KnowledgeBrowserHarness(entities)
+        opened_cards = []
+
+        class FakeCardView:
+            def __init__(self):
+                self.active_tab = "relations"
+
+            def set_active_tab(self, name):
+                self.active_tab = name
+
+        def fake_ensure_card(entity, relayout=True, bring_to_front=True):
+            card = {
+                "entity_id": entity["id"],
+                "card_view": FakeCardView(),
+                "field_rows": [
+                    {"key": "start_year", "row_rect": pygame.Rect(0, 40, 200, 20)},
+                    {"key": "end_year", "row_rect": pygame.Rect(0, 64, 200, 20)},
+                ],
+                "content_viewport_rect": pygame.Rect(0, 0, 200, 300),
+                "scroll_y": 0,
+                "scroll_max_y": 0,
+            }
+            opened_cards.append(card)
+            ui.cards.append(card)
+            return card
+
+        ui._ensure_card = fake_ensure_card
+        ui._relayout_single_card = lambda card: True
+
+        self.assertTrue(ui._create_random_untimed_card())
+
+        self.assertEqual(1, len(opened_cards))
+        self.assertEqual("idea_untimed", opened_cards[0]["entity_id"])
+        self.assertEqual("temporal", opened_cards[0]["card_view"].active_tab)
+        self.assertFalse(opened_cards[0]["is_edit_mode"])
+        self.assertEqual("start_year", opened_cards[0]["highlight_field_key"])
+
+    def test_random_untimed_button_is_noop_when_every_entity_has_a_time_period(self):
+        entities = {
+            "idea_a": {"id": "idea_a", "type": "idea", "_dataset": "ideas", "year": "1900"},
+        }
+        ui = KnowledgeBrowserHarness(entities)
+        ui._ensure_card = lambda *args, **kwargs: self.fail("should not open a card when everything is timed")
+
+        self.assertFalse(ui._create_random_untimed_card())
+
+    def test_editable_field_click_clears_highlighted_temporal_field(self):
+        entities = {
+            "idea_untimed": {"id": "idea_untimed", "type": "idea", "_dataset": "ideas"},
+        }
+        ui = KnowledgeBrowserHarness(entities)
+
+        class FakeCardView:
+            def begin_edit_field(self, card, field_key):
+                return True
+
+            def is_relation_edit_field(self, field_key):
+                return False
+
+        field_rect = pygame.Rect(0, 0, 100, 20)
+        card = {
+            "entity_id": "idea_untimed",
+            "is_edit_mode": True,
+            "highlight_field_key": "start_year",
+            "editable_field_hitboxes": [("start_year", field_rect)],
+            "card_view": FakeCardView(),
+        }
+        ui.cards = [card]
+        ui._bring_card_to_front = lambda index: card
+        ui._is_wiki_text_edit_field = lambda card_obj, field_key: False
+        ui._is_temporal_field = lambda field_key: True
+        ui._set_timeline_edit_target = lambda card_obj, field_key: None
+
+        result = ui._handle_editable_field_click(card, 0, field_rect.center)
+
+        self.assertEqual("__ui_consumed__", result)
+        self.assertIsNone(card["highlight_field_key"])
 
     def test_stellar_neighbour_distance_prompt_survives_rebuild_reset(self):
         ui = KnowledgeBrowserHarness()

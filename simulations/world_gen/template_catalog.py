@@ -10,6 +10,10 @@ finished populating the screen.
 
 ROCK = [("O", 45.0), ("Si", 26.0), ("Fe", 8.0), ("Mg", 7.0), ("Al", 6.0), ("Ca", 4.0), ("Na", 2.0), ("K", 1.0)]
 ICE = [("O", 55.0), ("H", 7.0), ("Si", 13.0), ("Fe", 7.0), ("Mg", 6.0), ("C", 3.0), ("N", 2.0), ("S", 2.0)]
+# Hycean: water-rich rock with hydrogen beyond what its oxygen binds, left
+# as an H2 envelope over the ocean (Madhusudhan et al. 2021).
+HYCEAN = [("O", 48.0), ("Si", 26.0), ("Fe", 8.0), ("Mg", 7.0), ("Al", 6.0), ("Ca", 4.0), ("Na", 2.0), ("K", 1.0),
+          ("H", 1.4), ("C", 0.2), ("N", 0.05)]
 GAS = [("H", 72.5), ("He", 24.5), ("O", 1.15), ("C", 0.78), ("N", 0.34), ("S", 0.22), ("Ne", 0.16), ("Ar", 0.08)]
 
 
@@ -171,7 +175,7 @@ ADDITIONAL_PLANET_TEMPLATES = {
         tidal_heating_w_m2_range=(.15, 1.5), description="Hot rocky world with molten silicate terrain and intense day-night contrast.",
     ),
     "hycean_world": _template(
-        "Hycean world", "hycean", category="Ocean and envelope worlds", radius=(1.6, 2.7), core=(.2, .48),
+        "Hycean world", "hycean", category="Ocean and envelope worlds", elements=HYCEAN, radius=(1.6, 2.7), core=(.2, .48),
         crust=(20, 120), water=(.72, .98), volatiles=("dense",), tectonics=("stagnant_lid",), atmosphere_regime="hydrogen_ocean",
         volatile_pressure_scale=8, ocean_fraction_target_range=(.86, .94), high_pressure_ice=True,
         description="Deep global ocean beneath a hydrogen-rich atmosphere and high-pressure ice mantle.",

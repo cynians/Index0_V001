@@ -33,10 +33,12 @@ the resolved center, each level's physical footprint,
 sample grid, sample spacing, source bounds, and image paths. The retained
 bundle includes:
 
-The runner's fast diagnostic default is 513 x 257 LOD0 scientific support;
-that is a runtime compromise, not the canonical LOD0 acceptance target. A
-conformance run should use at least 1025 x 513, with 2049 x 1025 reserved for
-the denser benchmark.
+The canonical LOD0 product is a 513 x 257 retained grid interpolated from a
+257 x 129 causal synthesis grid. This is the deliberate global-scaffold
+contract, not a low-quality substitute. Dense 1025 x 513 runs are optional
+diagnostics for comparing global fields; they are not persisted as global
+surface detail. Province boundaries, exact coastlines, range segments,
+craters, and fine terrain emerge during regional regeneration.
 
 - planet-level stage screenshots;
 - a planet-level contact sheet containing all seven layers;

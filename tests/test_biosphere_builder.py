@@ -197,14 +197,19 @@ def test_population_maintains_four_deep_representatives_and_uses_their_feedback(
     assert all(item.last_outcome.get("aggregation_scope") == "representative_organism_to_population" for item in representatives)
 
 
-def test_biomasser_biomass_unlocks_pioneer_species():
+def test_biomasser_built_organic_soil_unlocks_pioneers_before_trees():
     sim = BiosphereSimulation.reference_site()
 
     assert not sim.select_species("spec_betula_pendula")
+    assert not sim.select_species("spec_lolium_perenne")
     sim.place_selected_species(5.0, 5.0)
-    sim.advance_seasons(8)
+    sim.advance_seasons(4)
 
     assert sim.pioneers_unlocked()
+    assert sim.select_species("spec_lolium_perenne")
+    assert not sim.select_species("spec_betula_pendula")
+
+    sim.advance_seasons(12)
     assert sim.select_species("spec_betula_pendula")
 
 

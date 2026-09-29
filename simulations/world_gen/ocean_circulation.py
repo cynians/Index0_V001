@@ -119,7 +119,8 @@ def _cyclic_ocean_runs(row, wrap_x=True):
 
 
 def derive_ocean_circulation(ocean_mask, mean_surface_temperature_k=288.0, rotation_hours=24.0,
-                             wrap_x=True, source_uv_bounds=None, inherit_major_gyres=False):
+                             wrap_x=True, source_uv_bounds=None, inherit_major_gyres=False,
+                             liquid_freezing_k=273.16, contrast_factor=1.0):
     """Return wind-driven currents, basin structure, upwelling, and SST fields.
 
     This is deliberately intermediate in complexity: it resolves basin-scale
@@ -259,9 +260,15 @@ def derive_ocean_circulation(ocean_mask, mean_surface_temperature_k=288.0, rotat
             v_rows[y][x] /= max_speed
             speed = math.hypot(u_rows[y][x], v_rows[y][x])
             speed_rows[y][x] = speed
-            poleward_heat = -v_rows[y][x] * (1.0 if latitude >= 0 else -1.0) * 7.5
-            baseline = float(mean_surface_temperature_k) + 11.5 - 35.0 * (abs(latitude) ** 1.28)
-            sst_rows[y][x] = max(268.0, min(307.0, baseline + poleward_heat - upwelling[y][x] * 5.5))
+            poleward_heat = -v_rows[y][x] * (1.0 if latitude >= 0 else -1.0) * 7.5 * contrast_factor
+            baseline = float(mean_surface_temperature_k) + (11.5 - 35.0 * (abs(latitude) ** 1.28)) * contrast_factor
+            # The sea surface stays between the liquid's freezing point (sea
+            # ice below) and a warm-pool ceiling: 268-307 K for Earth's water,
+            # ~86-112 K for Titan's methane.
+            sst_rows[y][x] = max(
+                float(liquid_freezing_k) - 5.16,
+                min(float(mean_surface_temperature_k) + 19.0, baseline + poleward_heat - upwelling[y][x] * 5.5 * contrast_factor),
+            )
             subtropical_evaporation = math.exp(-(((abs(latitude) - 0.43) / 0.20) ** 2))
             equatorial_rain = math.exp(-((abs(latitude) / 0.15) ** 2))
             polar_freshening = _clamp((abs(latitude) - 0.72) / 0.28)

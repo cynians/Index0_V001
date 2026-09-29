@@ -87,8 +87,8 @@ _FEATURE_SPECS = (
         "source_models": ["material_heatmap_model.layers", "natural_material_model"],
         "first_lod": 0,
         "last_distinguishable_lod": 7,
-        "lower_lod_behavior": "inherit parent material affinities and resolve local exposure/soil weights",
-        "representation": "geologic materials, regolith, soils, weathering, and true-color inputs",
+        "lower_lod_behavior": "refine the parent areal rock composition into mapped units and resolve local cover from climate and geomorphology",
+        "representation": "lithotectonic settings, areal rock composition, process cover, bounded occurrences, soils, and true-color endmembers",
     },
     {
         "id": "geologic_history",

@@ -53,10 +53,16 @@ def main():
 
     after = BiosphereSimulation.reference_site(world_model)
     after.place_selected_species(5.0, 5.0)
-    after.advance_seasons(8)
+    after.advance_seasons(4)
+    after.select_species("spec_lolium_perenne")
+    after.place_selected_species(5.2, 5.1, propagule_pressure=0.26)
+    for _ in range(40):
+        if after.is_species_unlocked("spec_betula_pendula"):
+            break
+        after.advance_seasons(1)
     after.select_species("spec_betula_pendula")
     after.place_selected_species(7.1, 3.2, propagule_pressure=0.24)
-    after.select_species("spec_nymphaea_alba")
+    after.select_species("spec_rosa_woodsii")
     after.place_selected_species(3.0, 7.1, propagule_pressure=0.32)
     after.advance_seasons(10)
 
@@ -66,7 +72,7 @@ def main():
     output.blit(_render(after), (770, 55))
     font = pygame.font.Font(None, 30)
     output.blit(font.render("PLACED INTRODUCTION · SEASON 0", True, (225, 231, 221)), (28, 17))
-    output.blit(font.render("ESTABLISHMENT + SPREAD · SEASON 18", True, (225, 231, 221)), (788, 17))
+    output.blit(font.render(f"SOIL-BUILT SUCCESSION · SEASON {after.ecology.season}", True, (225, 231, 221)), (788, 17))
     output_path = Path("artifacts/biosphere_builder_map_preview.png")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     pygame.image.save(output, output_path)

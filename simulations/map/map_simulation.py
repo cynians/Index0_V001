@@ -13,6 +13,8 @@ import random
 import re
 import shutil
 import time
+
+import pygame
 from pathlib import Path
 
 from engine.logger import logger
@@ -70,6 +72,8 @@ class MapSimulation:
     SQUARE_HANDLE_HIT_RADIUS_PX = 10.0
     CAMERA_DRAG_THRESHOLD_PX = 4.0
     MIN_SQUARE_SIDE_WORLD = 0.001
+    # Active blueprint ghost placement (simulations/building/blueprint_placement.py).
+    blueprint_placement = None
 
     DEFAULT_PLANET_WORLD_WIDTH = 4000.0
     DEFAULT_PLANET_WORLD_HEIGHT = 2000.0
@@ -186,7 +190,9 @@ class MapSimulation:
         self.max_zoom = 80.0
         self.preferred_zoom = 4.0
         if root_entity.get("map_coordinate_space") == "site_meters":
-            self.min_zoom = 1.0
+            b = root_entity.get("bounds") or dict(min_x=0.,max_x=30.,min_y=0.,max_y=30.)
+            span = max(b["max_x"]-b["min_x"], b["max_y"]-b["min_y"])
+            self.min_zoom = min(1.0, 30.0/max(30.0, span))
             self.preferred_zoom = 7.0
 
         self._layer_cache = None
@@ -201,6 +207,9 @@ class MapSimulation:
         self.active_climate_layer_id = "koppen"
         self.atmosphere_visible = True
         self.height_contours_visible = True
+
+        self.live_aircraft = {}
+        self.piloted_aircraft_id = None
 
         self.selected_entity_id = None
         self.selected_material_occurrence_id = None
@@ -236,6 +245,15 @@ class MapSimulation:
         self.map_square_hover_pos = None
         self.map_square_target_entity_id = None
         self.last_saved_location_id = None
+        self.suppress_global_overlays = False
+        self._regional_refinement_active = False
+        self._regional_refinement_started_at = 0.0
+        self._regional_refinement_progress = 0.0
+        self._regional_refinement_label = ""
+        self._regional_refinement_detail = ""
+        self._regional_refinement_phases = []
+        self._regional_refinement_preview_models = {}
+        self._regional_refinement_preview_published_at = {}
         self.is_editing_map_square = False
         self.editing_map_square_entity_id = None
         self.editing_map_square_bounds = None
@@ -601,7 +619,126 @@ class MapSimulation:
             ),
         )
 
-    def regenerate_current_region(self):
+    def _begin_regional_refinement_loading(self, label, parent_entity):
+        self._regional_refinement_active = True
+        self.suppress_global_overlays = True
+        self._regional_refinement_started_at = time.monotonic()
+        self._regional_refinement_progress = 0.01
+        self._regional_refinement_label = str(label or "Refining regional map")
+        self._regional_refinement_detail = "Resolving the selected footprint from parent boundary conditions"
+        self._regional_refinement_phases = [{
+            "progress": 0.01,
+            "detail": self._regional_refinement_detail,
+            "elapsed_seconds": 0.0,
+        }]
+        # Do not display the full parent map as though it were the new child.
+        # The first regional terrain/tectonic publication replaces the neutral
+        # forming grid with data expressed in the selected footprint.
+        self._regional_refinement_preview_models = {}
+        self._regional_refinement_preview_published_at = {}
+        return True
+
+    def _report_regional_refinement_progress(self, progress, detail, preview=None):
+        value = max(0.01, min(0.99, float(progress or 0.0)))
+        message = str(detail or "Refining regional map")
+        self._regional_refinement_progress = max(self._regional_refinement_progress, value)
+        self._regional_refinement_detail = message
+        elapsed = max(0.0, time.monotonic() - self._regional_refinement_started_at)
+        if not self._regional_refinement_phases or self._regional_refinement_phases[-1].get("detail") != message:
+            self._regional_refinement_phases.append({
+                "progress": value,
+                "detail": message,
+                "elapsed_seconds": elapsed,
+            })
+            self._regional_refinement_phases = self._regional_refinement_phases[-8:]
+        if isinstance(preview, dict):
+            published_at = time.monotonic()
+            for field_name in (
+                "heightmap_model",
+                "tectonic_model",
+                "crater_model",
+                "material_heatmap_model",
+                "water_cycle_model",
+            ):
+                model = preview.get(field_name)
+                if not isinstance(model, dict):
+                    continue
+                previous = self._regional_refinement_preview_models.get(field_name)
+                self._regional_refinement_preview_models[field_name] = model
+                if previous is not model:
+                    self._regional_refinement_preview_published_at[field_name] = published_at
+        return True
+
+    def _finish_regional_refinement_loading(self):
+        self._regional_refinement_active = False
+        self.suppress_global_overlays = False
+
+    def get_regional_loading_state(self):
+        active = bool(self._regional_refinement_active)
+        elapsed = (
+            max(0.0, time.monotonic() - self._regional_refinement_started_at)
+            if active else 0.0
+        )
+        models = dict(self._regional_refinement_preview_models)
+        available_modes = []
+        for field_name, mode in (
+            ("heightmap_model", "relief"),
+            ("tectonic_model", "tectonics"),
+            ("crater_model", "impacts"),
+            ("material_heatmap_model", "materials"),
+            ("water_cycle_model", "climate"),
+        ):
+            if isinstance(models.get(field_name), dict):
+                available_modes.append(mode)
+        if not available_modes:
+            available_modes = ["forming"]
+        active_mode = available_modes[int(elapsed // 6.0) % len(available_modes)]
+        field_by_mode = {
+            "relief": "heightmap_model",
+            "tectonics": "tectonic_model",
+            "impacts": "crater_model",
+            "materials": "material_heatmap_model",
+            "climate": "water_cycle_model",
+        }
+        field_name = field_by_mode.get(active_mode)
+        published_at = self._regional_refinement_preview_published_at.get(field_name)
+        reveal_fraction = (
+            min(1.0, max(0.0, (time.monotonic() - published_at) / 2.8))
+            if published_at is not None else 1.0
+        )
+        active_model = models.get(field_name) if field_name else None
+        grid = active_model.get("sample_grid") if isinstance(active_model, dict) else {}
+        grid_width = int((grid or {}).get("width", 0) or 0)
+        grid_height = int((grid or {}).get("height", 0) or 0)
+        aspect_ratio = (
+            max(0.5, min(3.0, grid_width / max(1, grid_height)))
+            if grid_width and grid_height else 2.0
+        )
+        return {
+            "active": active,
+            "label": self._regional_refinement_label or "Refining regional map",
+            "detail": self._regional_refinement_detail or "Building regional terrain",
+            "elapsed_seconds": elapsed,
+            "progress": self._regional_refinement_progress if active else 1.0,
+            "phases": [dict(item) for item in self._regional_refinement_phases],
+            "preview_planet": models,
+            "preview_modes": available_modes,
+            "preview_mode": active_mode,
+            "preview_reveal_fraction": reveal_fraction,
+            "preview_aspect_ratio": aspect_ratio,
+            "assembly_title": "INDEX 0 / LIVE REGIONAL ASSEMBLY",
+            "snapshot_label": "LATEST REGIONAL SNAPSHOT",
+            "footer": "Published regional grids update as each refinement pass completes.",
+        }
+
+    def _regional_progress_bridge(self, redraw_callback=None):
+        def report(progress, detail, preview=None):
+            self._report_regional_refinement_progress(progress, detail, preview)
+            if callable(redraw_callback):
+                redraw_callback(progress, detail)
+        return report
+
+    def regenerate_current_region(self, progress_callback=None):
         """Re-run the open refinement from its parent using the same footprint."""
         if self.is_map_editor_active():
             return None
@@ -623,16 +760,24 @@ class MapSimulation:
             f"physical_m={parent_heightmap.get('region_width_m')}x"
             f"{parent_heightmap.get('region_height_m')}"
         )
-        regenerated = generate_refined_region(
-            self.world_model,
+        self._begin_regional_refinement_loading(
+            f"Refining {generation_parent.get('name') or generation_parent.get('id') or 'region'}",
             generation_parent,
-            bounds,
-            seed_suffix=seed_suffix,
-            focus_occurrence_id=focus_occurrence_id,
-            sample_dimensions=getattr(self.context, "regional_sample_dimensions", None),
-            feedback_iterations=getattr(self.context, "regional_feedback_iterations", None),
-            storage_root=getattr(self.context, "worldgen_storage_root", None),
         )
+        try:
+            regenerated = generate_refined_region(
+                self.world_model,
+                generation_parent,
+                bounds,
+                seed_suffix=seed_suffix,
+                focus_occurrence_id=focus_occurrence_id,
+                sample_dimensions=getattr(self.context, "regional_sample_dimensions", None),
+                feedback_iterations=getattr(self.context, "regional_feedback_iterations", None),
+                storage_root=getattr(self.context, "worldgen_storage_root", None),
+                progress_callback=self._regional_progress_bridge(progress_callback),
+            )
+        finally:
+            self._finish_regional_refinement_loading()
         regenerated_heightmap = (regenerated or {}).get("heightmap_model") or {}
         regenerated_grid = regenerated_heightmap.get("sample_grid") or {}
         logger.info(
@@ -804,7 +949,14 @@ class MapSimulation:
             f"{int(drainage.get('lake_count', 0) or 0)} lakes"
         )
 
-    def regenerate_visible_region(self, camera, viewport_width, viewport_height, viewport_rect=None):
+    def regenerate_visible_region(
+        self,
+        camera,
+        viewport_width,
+        viewport_height,
+        viewport_rect=None,
+        progress_callback=None,
+    ):
         if not self.can_regenerate_region() or camera is None:
             return None
         from simulations.world_gen.regional_refinement import generate_refined_region
@@ -845,12 +997,20 @@ class MapSimulation:
         min_y = max(parent_bounds["min_y"], min(parent_bounds["max_y"] - region_height, center_y - region_height * 0.5))
         generation_parent = dict(root)
         generation_parent["bounds"] = parent_bounds
-        region = generate_refined_region(self.world_model, generation_parent, {
-            "min_x": min_x, "max_x": min_x + region_width, "min_y": min_y, "max_y": min_y + region_height,
-        }, focus_occurrence_id=self.selected_material_occurrence_id,
-        sample_dimensions=getattr(self.context, "regional_sample_dimensions", None),
-        feedback_iterations=getattr(self.context, "regional_feedback_iterations", None),
-        storage_root=getattr(self.context, "worldgen_storage_root", None))
+        self._begin_regional_refinement_loading(
+            f"Refining {root.get('name') or root.get('id') or 'visible region'}",
+            generation_parent,
+        )
+        try:
+            region = generate_refined_region(self.world_model, generation_parent, {
+                "min_x": min_x, "max_x": min_x + region_width, "min_y": min_y, "max_y": min_y + region_height,
+            }, focus_occurrence_id=self.selected_material_occurrence_id,
+            sample_dimensions=getattr(self.context, "regional_sample_dimensions", None),
+            feedback_iterations=getattr(self.context, "regional_feedback_iterations", None),
+            storage_root=getattr(self.context, "worldgen_storage_root", None),
+            progress_callback=self._regional_progress_bridge(progress_callback))
+        finally:
+            self._finish_regional_refinement_loading()
         self._invalidate_layer_cache()
         return region
 
@@ -3131,14 +3291,65 @@ class MapSimulation:
             self.is_creating_point_location
             or self.is_polygon_editor_active()
             or self.is_square_editor_active()
+            or self.blueprint_placement is not None
         )
 
     def consumes_global_keydown(self):
         return self.is_map_editor_active()
 
+    def begin_blueprint_placement(self, blueprint_id):
+        """Attach a building blueprint to the cursor for placement."""
+        from simulations.building.blueprint_placement import BlueprintPlacement
+
+        root = self.get_root_entity() or {}
+        if root.get("map_coordinate_space") != "site_meters":
+            return False
+        placement = BlueprintPlacement(self, blueprint_id)
+        if not placement.valid:
+            return False
+        self._set_all_editor_modes_inactive()
+        self.active_layer_kind = self.LOCATION_LAYER_KIND
+        self.blueprint_placement = placement
+        self.selected_entity_id = None
+        self.hover_entity_id = None
+        return True
+
+    def cancel_blueprint_placement(self):
+        had_placement = self.blueprint_placement is not None
+        self.blueprint_placement = None
+        return had_placement
+
+    def finish_blueprint_placement(self):
+        placement = self.blueprint_placement
+        if placement is None:
+            return False
+        building_id = placement.place()
+        if not building_id:
+            return False
+        self.blueprint_placement = None
+        self.selected_entity_id = building_id
+        self.last_saved_location_id = building_id
+        self._notify_incremental_repository_change()
+        self._invalidate_layer_cache()
+        return True
+
+    def _handle_blueprint_placement_key(self, event):
+        key = getattr(event, "key", None)
+        if key == 27:
+            return self.cancel_blueprint_placement()
+        if key in (13, 1073741912):
+            return self.finish_blueprint_placement()
+        if key == 114:  # R
+            shift = bool(getattr(event, "mod", 0) & 0x0003)
+            return self.blueprint_placement.rotate(15.0 if shift else 90.0)
+        return True
+
     def handle_event(self, event):
         if event.type != self.KEYDOWN_EVENT_TYPE or not self.is_map_editor_active():
             return False
+
+        if self.blueprint_placement is not None:
+            return self._handle_blueprint_placement_key(event)
 
         key = getattr(event, "key", None)
         if key in (13, 1073741912):
@@ -3185,6 +3396,7 @@ class MapSimulation:
         self.editing_map_square_entity_id = None
         self.editing_map_square_bounds = None
         self._reset_square_drag_state()
+        self.blueprint_placement = None
 
     def can_finish_map_editor(self):
         if self.is_creating_point_location:
@@ -3227,6 +3439,9 @@ class MapSimulation:
         return f"{label} | {keys}" if label else keys
 
     def get_map_editor_status_label(self):
+        if self.blueprint_placement is not None:
+            return self.blueprint_placement.status_label()
+
         if self.is_creating_point_location:
             label = str(self.draft_point_location_class or "site").replace("_", " ").title()
             if self.draft_point_location_pos is None:
@@ -6302,6 +6517,37 @@ class MapSimulation:
         if isinstance(source_uv_bounds, dict):
             layers[0]["source_uv_bounds"] = dict(source_uv_bounds)
 
+        placement = root_entity.get("geochemical_material_model") or {}
+        if isinstance(placement, dict) and placement.get("status") == "generated":
+            selected_material_id = selected_layer.get("material_id")
+            left = rect["x"] - rect["width_world"] * 0.5
+            top = rect["y"] - rect["height_world"] * 0.5
+            for province in placement.get("provinces") or []:
+                if selected_material_id and selected_material_id not in {
+                    province.get("material_id"), province.get("cover_material_id")
+                }:
+                    continue
+                body_id = (
+                    province.get("cover_body_id")
+                    if selected_material_id and selected_material_id == province.get("cover_material_id")
+                    else province.get("body_id")
+                )
+                if not body_id or not self._can_open_location_inspector(body_id):
+                    continue
+                body = self.get_location(body_id) or {}
+                layers.append({
+                    "shape": "marker",
+                    "x": left + float(province.get("center_u", 0.5)) * rect["width_world"],
+                    "y": top + float(province.get("center_v", 0.5)) * rect["height_world"],
+                    "min_screen_size": 8,
+                    "name": body.get("pretty_name") or body.get("name") or "Material body",
+                    "entity_id": body_id,
+                    "color": tuple(material_display_color(selected_material_id or province.get("material_id"))[:3]),
+                    "draw_order": -899,
+                    "pickable": True,
+                    "material_occurrence": {"id": body_id},
+                })
+
         regional_model = root_entity.get("regional_material_model")
         occurrences = (
             regional_model.get("occurrences") or []
@@ -7451,7 +7697,7 @@ class MapSimulation:
         if record_click:
             target = None
             if (
-                self.active_layer_kind == self.LOCATION_LAYER_KIND
+                (self.active_layer_kind == self.LOCATION_LAYER_KIND or isinstance(occurrence, dict))
                 and self._can_open_location_inspector(self.selected_entity_id)
             ):
                 target = ("location", self.selected_entity_id)
@@ -7835,6 +8081,13 @@ class MapSimulation:
 
         world_x, world_y = self._screen_to_world(camera, screen_pos)
 
+        if self.blueprint_placement is not None:
+            self.blueprint_placement.set_cursor(self._world_point_to_map(world_x, world_y))
+            self.hover_entity_id = None
+            self.hover_spatial_feature_id = None
+            self.hover_screen_pos = screen_pos
+            return
+
         if self.is_square_editor_active():
             map_point = self._world_point_to_map(world_x, world_y)
             self._handle_square_editor_motion(map_point)
@@ -7899,6 +8152,15 @@ class MapSimulation:
         world_x, world_y = self._screen_to_world(camera, screen_pos)
         button = getattr(event, "button", None)
 
+        if self.blueprint_placement is not None:
+            if event.type == self.MOUSEBUTTONDOWN_EVENT_TYPE:
+                self.blueprint_placement.set_cursor(self._world_point_to_map(world_x, world_y))
+                if button == 1:
+                    self.finish_blueprint_placement()
+                elif button == 3:
+                    self.blueprint_placement.rotate()
+            return
+
         if self.is_square_editor_active():
             self._handle_square_editor_pointer_event(
                 event,
@@ -7957,6 +8219,16 @@ class MapSimulation:
             if self._is_map_refocus_double_click(screen_pos):
                 self._map_focus_last_click_time = None
                 self._map_focus_last_click_screen_pos = None
+                if (
+                    isinstance(picked_layer, dict)
+                    and isinstance(picked_layer.get("material_occurrence"), dict)
+                    and self._can_open_location_inspector(picked_layer.get("entity_id"))
+                ):
+                    self._select_picked_layer(picked_layer, screen_pos, record_click=False)
+                    self._pending_inspector_target = {
+                        "kind": "location", "id": picked_layer["entity_id"]
+                    }
+                    return
                 if not self._focus_material_occurrence(camera, picked_layer):
                     self._refocus_map_at_screen_point(camera, screen_pos)
                 return
@@ -7974,5 +8246,67 @@ class MapSimulation:
             (self.bounds["min_y"] + self.bounds["max_y"]) / 2,
         )
 
+    def spawn_aircraft(
+        self, vehicle_entity_id, design_entity_id=None,
+        lon_deg=0.0, lat_deg=0.0, altitude_m=1000.0, heading_deg=0.0, label=None,
+    ):
+        """Instantiate a live, ephemeral AircraftFlightSimulation on this map."""
+        from simulations.vehicle.aircraft_flight_simulation import AircraftFlightSimulation
+
+        aircraft = AircraftFlightSimulation(
+            self.world_model, vehicle_entity_id,
+            design_entity_id=design_entity_id or vehicle_entity_id,
+            lon_deg=lon_deg, lat_deg=lat_deg, altitude_m=altitude_m,
+            heading_deg=heading_deg, label=label,
+        )
+        self.live_aircraft[vehicle_entity_id] = aircraft
+        return vehicle_entity_id
+
+    def despawn_aircraft(self, vehicle_entity_id):
+        if vehicle_entity_id not in self.live_aircraft:
+            return False
+        del self.live_aircraft[vehicle_entity_id]
+        if self.piloted_aircraft_id == vehicle_entity_id:
+            self.piloted_aircraft_id = None
+        return True
+
+    def enter_aircraft_cockpit(self, vehicle_entity_id):
+        if vehicle_entity_id not in self.live_aircraft:
+            return False
+        self.piloted_aircraft_id = vehicle_entity_id
+        return True
+
+    def exit_aircraft_cockpit(self):
+        if self.piloted_aircraft_id is None:
+            return False
+        self.piloted_aircraft_id = None
+        return True
+
+    def get_live_aircraft_presence(self):
+        return [
+            {**aircraft.get_presence_payload(), "piloted": aircraft_id == self.piloted_aircraft_id}
+            for aircraft_id, aircraft in self.live_aircraft.items()
+        ]
+
+    def consumes_camera_update(self):
+        return self.piloted_aircraft_id is not None
+
+    def _piloting_controls(self):
+        keys = pygame.key.get_pressed()
+        return {
+            "throttle_delta": (1.0 if keys[pygame.K_w] else 0.0) - (1.0 if keys[pygame.K_s] else 0.0),
+            "yaw_input": (1.0 if keys[pygame.K_d] else 0.0) - (1.0 if keys[pygame.K_a] else 0.0),
+            "pitch_input": (1.0 if keys[pygame.K_UP] else 0.0) - (1.0 if keys[pygame.K_DOWN] else 0.0),
+        }
+
     def update(self, dt):
         self.sim_manager.update(dt)
+
+        if self.live_aircraft:
+            root = self.get_root_entity() or {}
+            atmosphere_layers = root.get("atmosphere_layers")
+            planet_radius_m = float(root.get("radius_m", 6_371_000.0) or 6_371_000.0)
+            piloted_controls = self._piloting_controls() if self.piloted_aircraft_id is not None else None
+            for aircraft_id, aircraft in self.live_aircraft.items():
+                controls = piloted_controls if aircraft_id == self.piloted_aircraft_id else None
+                aircraft.tick(dt, controls=controls, atmosphere_layers=atmosphere_layers, planet_radius_m=planet_radius_m)

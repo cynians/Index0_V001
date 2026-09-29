@@ -356,8 +356,10 @@ class KnowledgeBrowserModel:
         is_system_like = bool(entity.get("system_role"))
         if self.browser_filter_dataset == "systems" and not is_system_like:
             return False
+        if self.browser_filter_dataset == "cities" and entity.get("_dataset") != "cities":
+            return False
 
-        if self.browser_filter_dataset not in {"all", "locations", "systems"}:
+        if self.browser_filter_dataset not in {"all", "locations", "systems", "cities"}:
             return False
 
         if self.browser_filter_incomplete_only and not self._entity_missing_scalar_count(entity, dataset_name):
@@ -389,6 +391,18 @@ class KnowledgeBrowserModel:
     def _location_tree_auto_reveal_descendants(self):
         return bool(self.browser_search_query.strip() or self.browser_filter_incomplete_only)
 
+    @staticmethod
+    def _entity_row_palette_fields(entity):
+        """Raw card colour strings carried on a browser row so the panel can
+        paint the row's left identity band (main colour) and its
+        secondary-colour detailing -- for every entity row, complete or not."""
+        if not isinstance(entity, dict):
+            return {"card_color": None, "card_header_color": None}
+        return {
+            "card_color": entity.get("card_color") or entity.get("wiki_link_color"),
+            "card_header_color": entity.get("card_header_color"),
+        }
+
     def _location_tree_item(self, entity, dataset_name, depth, expandable, expanded, meta_label=None):
         label = self._entity_display_label(entity, fallback=entity.get("id", "unknown"))
         entity_class = meta_label or self._entity_class_label(dataset_name, entity)
@@ -401,6 +415,7 @@ class KnowledgeBrowserModel:
             "meta_text": f"[{entity_class}]",
             "missing_count": missing_count,
             "is_incomplete": missing_count > 0,
+            **self._entity_row_palette_fields(entity),
             "depth": depth,
             "expandable": expandable,
             "expanded": expanded,
@@ -709,6 +724,275 @@ class KnowledgeBrowserModel:
 
         return items
 
+    # ------------------------------------------------------------------
+    # Items -> hierarchical categories
+    # ------------------------------------------------------------------
+
+    def _item_hierarchy_sort_key(self, entity):
+        label = self._entity_display_label(entity, fallback=entity.get("id", "")).lower()
+        return (label, str(entity.get("id", "")))
+
+    def _category_meta_label(self, entity):
+        kind = str(entity.get("category_kind") or "").strip()
+        if kind:
+            return f"{kind.replace('_', ' ').title()} Category"
+        return "Category"
+
+    def _item_tree_entity_matches(self, entity, dataset_name):
+        """Search / period / incomplete gate for a node in the item-category
+        tree. Deliberately ignores the ``dataset`` filter chip: a category node
+        and its member items live in different datasets but belong to the same
+        tree, so the chip selects the *section*, not individual rows (that is
+        handled structurally in :meth:`_build_item_browser_items`)."""
+        if entity is None:
+            return False
+        if not self._entity_exists_during_browser_period(entity):
+            return False
+        if self.browser_filter_incomplete_only and not self._entity_missing_scalar_count(entity, dataset_name):
+            return False
+        query = self.browser_search_query.strip().lower()
+        if query:
+            haystack = " ".join(
+                [
+                    self._entity_display_label(entity),
+                    str(entity.get("pretty_name", "")),
+                    str(entity.get("name", "")),
+                    str(entity.get("id", "")),
+                    str(entity.get("type", "")),
+                    str(entity.get("category_kind", "")),
+                ]
+            ).lower()
+            if not self._query_matches_text(query, haystack):
+                return False
+        return True
+
+    _ITEM_LEAF_DATASETS = ("items", "components")
+
+    def _item_leaf_dataset(self, entity):
+        dataset = str(entity.get("_dataset") or "").strip()
+        if dataset in self._ITEM_LEAF_DATASETS:
+            return dataset
+        return "components" if str(entity.get("type") or "") == "component" else "items"
+
+    def _item_leaf_meta_label(self, entity):
+        return "Component" if self._item_leaf_dataset(entity) == "components" else "Item"
+
+    def _build_item_browser_items(self, world_model):
+        """Build the repository item section as a ``categories`` hierarchy with
+        each item (or component -- a subclass of item) nested beneath every
+        category it links.
+
+        Unlike :meth:`_build_material_browser_items` (one display parent), a
+        leaf or a sub-category may have several parents and is emitted once
+        under each -- the rows share an ``entity_id`` so clicking any copy opens
+        the same entry. Leaves linking no category fall under ``(Uncategorized)``.
+        """
+        if world_model is None:
+            return []
+
+        # `component` is a subclass of `item`, so the `items` view includes
+        # components; the `components` chip narrows to components alone.
+        show_items = self.browser_filter_dataset in {"all", "items"}
+        show_components = self.browser_filter_dataset in {"all", "items", "components"}
+        show_leaves = show_items or show_components
+        show_categories = self.browser_filter_dataset in {"all", "items", "categories", "components"}
+        if not show_categories:
+            return []
+
+        def relation_values(value):
+            if value is None:
+                return []
+            if isinstance(value, str):
+                text = value.strip()
+                return [text] if text else []
+            if isinstance(value, dict):
+                candidate = value.get("id") or value.get("entity_id") or value.get("target")
+                return [candidate] if candidate else []
+            if isinstance(value, (list, tuple, set)):
+                values = []
+                for item in value:
+                    values.extend(relation_values(item))
+                return values
+            return []
+
+        category_by_id = {
+            str(entity.get("id")): entity
+            for entity in world_model.get_entities_by_dataset("categories")
+            if isinstance(entity, dict) and entity.get("id")
+        }
+        leaf_entities = []
+        if show_items:
+            leaf_entities.extend(
+                entity
+                for entity in world_model.get_entities_by_dataset("items")
+                if isinstance(entity, dict) and entity.get("id")
+            )
+        if show_components:
+            leaf_entities.extend(
+                entity
+                for entity in world_model.get_entities_by_dataset("components")
+                if isinstance(entity, dict) and entity.get("id")
+            )
+
+        child_categories = {cid: [] for cid in category_by_id}
+        category_roots = []
+        for cid, entity in category_by_id.items():
+            parent_ids = [
+                str(pid)
+                for pid in relation_values(entity.get("parents"))
+                if str(pid) in category_by_id and str(pid) != cid
+            ]
+            if parent_ids:
+                for pid in parent_ids:
+                    child_categories[pid].append(entity)
+            else:
+                category_roots.append(entity)
+
+        member_items = {cid: [] for cid in category_by_id}
+        uncategorized_leaves = []
+        for entity in leaf_entities:
+            linked = [
+                str(cid)
+                for cid in relation_values(entity.get("categories"))
+                if str(cid) in category_by_id
+            ]
+            if linked:
+                for cid in linked:
+                    member_items[cid].append(entity)
+            else:
+                uncategorized_leaves.append(entity)
+
+        for child_list in child_categories.values():
+            child_list.sort(key=self._item_hierarchy_sort_key)
+        for member_list in member_items.values():
+            member_list.sort(key=self._item_hierarchy_sort_key)
+        category_roots.sort(key=self._item_hierarchy_sort_key)
+        uncategorized_leaves.sort(key=self._item_hierarchy_sort_key)
+
+        auto_reveal = bool(
+            self.browser_search_query.strip()
+            or self.browser_filter_incomplete_only
+            or self.browser_period_filter
+        )
+        state = self.browser_tree_state.setdefault("categories", {})
+        items = []
+
+        def category_subtree_matches(entity, ancestry):
+            cid = str(entity.get("id"))
+            if not cid or cid in ancestry:
+                return False
+            ancestry = ancestry | {cid}
+            if self._item_tree_entity_matches(entity, "categories"):
+                return True
+            if show_leaves and any(
+                self._item_tree_entity_matches(member, self._item_leaf_dataset(member))
+                for member in member_items.get(cid, [])
+            ):
+                return True
+            return any(
+                category_subtree_matches(child, ancestry)
+                for child in child_categories.get(cid, [])
+            )
+
+        def add_category(entity, depth, ancestry):
+            cid = str(entity.get("id"))
+            if not cid or cid in ancestry:
+                return
+            ancestry = ancestry | {cid}
+
+            visible_child_categories = [
+                child
+                for child in child_categories.get(cid, [])
+                if category_subtree_matches(child, ancestry)
+            ]
+            visible_member_items = (
+                [
+                    member
+                    for member in member_items.get(cid, [])
+                    if self._item_tree_entity_matches(member, self._item_leaf_dataset(member))
+                ]
+                if show_leaves
+                else []
+            )
+
+            if (
+                not self._item_tree_entity_matches(entity, "categories")
+                and not visible_child_categories
+                and not visible_member_items
+            ):
+                return
+
+            expandable = bool(visible_child_categories or visible_member_items)
+            expanded = state.get(cid, expandable)
+            items.append(
+                self._location_tree_item(
+                    entity,
+                    "categories",
+                    depth,
+                    expandable,
+                    expanded,
+                    meta_label=self._category_meta_label(entity),
+                )
+            )
+
+            if expandable and (expanded or auto_reveal):
+                for child in visible_child_categories:
+                    add_category(child, depth + 1, ancestry)
+                for member in visible_member_items:
+                    items.append(
+                        self._location_tree_item(
+                            member,
+                            self._item_leaf_dataset(member),
+                            depth + 1,
+                            False,
+                            False,
+                            meta_label=self._item_leaf_meta_label(member),
+                        )
+                    )
+
+        for root in category_roots:
+            add_category(root, 0, frozenset())
+
+        # Categories orphaned by a cycle or a dangling parent id would otherwise
+        # vanish from the repository -- surface them at the root.
+        emitted_category_ids = {
+            row["entity_id"] for row in items if row.get("dataset_name") == "categories"
+        }
+        for cid, entity in sorted(
+            category_by_id.items(), key=lambda kv: self._item_hierarchy_sort_key(kv[1])
+        ):
+            if cid not in emitted_category_ids and category_subtree_matches(entity, frozenset()):
+                add_category(entity, 0, frozenset())
+
+        if show_leaves:
+            visible_uncategorized = [
+                entity
+                for entity in uncategorized_leaves
+                if self._item_tree_entity_matches(entity, self._item_leaf_dataset(entity))
+            ]
+            if visible_uncategorized:
+                items.append(
+                    {
+                        "kind": "label",
+                        "text": "(Uncategorized)",
+                        "depth": 0,
+                        "location_group": True,
+                    }
+                )
+                for entity in visible_uncategorized:
+                    items.append(
+                        self._location_tree_item(
+                            entity,
+                            self._item_leaf_dataset(entity),
+                            1,
+                            False,
+                            False,
+                            meta_label=self._item_leaf_meta_label(entity),
+                        )
+                    )
+
+        return items
+
     def _canonical_location_class_key(self, entity):
         if not isinstance(entity, dict):
             return "entity"
@@ -861,7 +1145,14 @@ class KnowledgeBrowserModel:
         if world_model is None:
             return items
 
-        raw_location_entities = world_model.get_entities_by_dataset("locations")
+        # `cities` is a subclass of `locations` (schema `extends: locations`,
+        # OWL `city_entry subClassOf location_entry`): its entities nest into
+        # this same tree via their own `parent_location`, instead of getting
+        # a separate top-level section (see the `dataset_name == "cities"`
+        # skip in `_build_browser_items`).
+        raw_location_entities = list(world_model.get_entities_by_dataset("locations")) + list(
+            world_model.get_entities_by_dataset("cities")
+        )
         location_by_id = {
             entity.get("id"): entity
             for entity in raw_location_entities
@@ -958,6 +1249,12 @@ class KnowledgeBrowserModel:
         auto_reveal = self._location_tree_auto_reveal_descendants()
         emitted_ids = set()
 
+        def location_row_dataset(entity):
+            # A merged-in `cities` entity must resolve against its own
+            # schema (city-specific required fields, id prefix, template) --
+            # not the `locations` schema its rows are nested under.
+            return entity.get("_dataset") or "locations"
+
         def location_subtree_matches(location_entity, seen=None):
             if seen is None:
                 seen = set()
@@ -966,7 +1263,7 @@ class KnowledgeBrowserModel:
                 return False
             seen.add(location_id)
 
-            if self._location_tree_entity_matches(location_entity, "locations"):
+            if self._location_tree_entity_matches(location_entity, location_row_dataset(location_entity)):
                 return True
 
             for child in children_by_parent.get(location_id, []):
@@ -975,7 +1272,10 @@ class KnowledgeBrowserModel:
             return False
 
         def child_matches_for_display(child):
-            return self._location_tree_entity_matches(child, "locations") or location_subtree_matches(child)
+            return (
+                self._location_tree_entity_matches(child, location_row_dataset(child))
+                or location_subtree_matches(child)
+            )
 
         def location_supports_orbit_surface_groups(location_entity):
             if self._location_browser_domain(location_entity) != "orbit":
@@ -1000,7 +1300,10 @@ class KnowledgeBrowserModel:
 
             children = children_by_parent.get(location_id, [])
             descendant_match = any(location_subtree_matches(child) for child in children)
-            if not self._location_tree_entity_matches(location_entity, "locations") and not descendant_match:
+            if (
+                not self._location_tree_entity_matches(location_entity, location_row_dataset(location_entity))
+                and not descendant_match
+            ):
                 return
 
             visible_children = [child for child in children if child_matches_for_display(child)]
@@ -1009,7 +1312,7 @@ class KnowledgeBrowserModel:
             items.append(
                 self._location_tree_item(
                     location_entity,
-                    "locations",
+                    location_row_dataset(location_entity),
                     depth,
                     expandable,
                     expanded,
@@ -1093,6 +1396,7 @@ class KnowledgeBrowserModel:
             "meta_text": f"[{entity_class}]",
             "missing_count": missing_count,
             "is_incomplete": missing_count > 0,
+            **self._entity_row_palette_fields(entity),
             "depth": depth,
             "expandable": bool(expandable),
             "expanded": bool(expanded),
@@ -1234,19 +1538,33 @@ class KnowledgeBrowserModel:
             "ideas",
             "locations",
             "vehicles",
-            "components",
+            "items",
         ]
         ordered_names = [name for name in preferred_order if name in dataset_names]
         ordered_names += [name for name in dataset_names if name not in ordered_names]
         hide_empty_sections = bool(self.browser_search_query.strip())
+        # `items`, `components` and `categories` render as one category tree
+        # (see the branch below); emit that section only once, on the first of
+        # them the loop reaches.
+        item_section_datasets = {"items", "components", "categories"}
+        item_section_emitted = False
+        # `cities` is a subclass of `locations` (schema `extends: locations`,
+        # OWL `city_entry subClassOf location_entry`) and nests into that same
+        # tree via `_build_location_browser_items`; both dataset names fold
+        # into one section, emitted only once, mirroring the items pattern.
+        location_section_datasets = {"locations", "cities"}
+        location_section_emitted = False
 
         for dataset_name in ordered_names:
             if dataset_name == "systems":
                 continue
 
-            if dataset_name == "locations":
-                if self.browser_filter_dataset not in {"all", "locations", "systems"}:
+            if dataset_name in location_section_datasets:
+                if location_section_emitted:
                     continue
+                if self.browser_filter_dataset not in {"all", "locations", "systems", "cities"}:
+                    continue
+                location_section_emitted = True
                 dataset_items = self._build_location_browser_items(world_model)
                 if hide_empty_sections and not dataset_items:
                     continue
@@ -1284,6 +1602,24 @@ class KnowledgeBrowserModel:
                 if hide_empty_sections and not dataset_items:
                     continue
                 items.append({"kind": "section", "text": "Technologies"})
+                items.extend(dataset_items)
+                items.append({"kind": "spacer"})
+                continue
+
+            # The item section is a category hierarchy: `categories` supplies the
+            # tree; `items` and `components` (a subclass of item) are the leaves,
+            # each emitted under every category it links. All three datasets fold
+            # into this single section.
+            if dataset_name in item_section_datasets:
+                if item_section_emitted:
+                    continue
+                if self.browser_filter_dataset not in {"all", "items", "categories", "components"}:
+                    continue
+                item_section_emitted = True
+                dataset_items = self._build_item_browser_items(world_model)
+                if hide_empty_sections and not dataset_items:
+                    continue
+                items.append({"kind": "section", "text": "Items / Categories"})
                 items.extend(dataset_items)
                 items.append({"kind": "spacer"})
                 continue
@@ -1329,6 +1665,7 @@ class KnowledgeBrowserModel:
                         "text": f"  {label} [{entity_class}]",
                         "missing_count": missing_count,
                         "is_incomplete": missing_count > 0,
+                        **self._entity_row_palette_fields(entity),
                     }
                 )
 

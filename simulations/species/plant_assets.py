@@ -10,7 +10,9 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import math
 import os
+import random
 import re
 import tempfile
 from dataclasses import dataclass, field
@@ -31,6 +33,7 @@ from simulations.species.root_growth import root_profile
 
 
 PLANT_ASSET_SCHEMA_VERSION = 4
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 # Plant geometry is authored and simulated in a right-handed, z-up model
 # space.  Pixel modules remain 2D assets; the renderer projects this model
@@ -124,6 +127,51 @@ def normalised_plant_trait(value, default=0.5):
 
     return float(normalised_plant_trait_range(value, default)["typical"])
 
+
+def species_architecture_defaults(species_id, form, base_defaults):
+    """Nudge a growth form's default canopy-shape coefficients per species.
+
+    Without this, every species that hasn't authored
+    branch_droop/crown_openness/etc renders with the *exact same* floats as
+    every other species of the same growth form -- a landscape of
+    unauthored trees (or shrubs, or forbs, ...) is visually indistinguishable
+    clones differing only in height and colour. This only ever changes the
+    *default* used when a field is unauthored: an authored value is read
+    directly by ``normalised_plant_trait`` and never touches this function.
+    Rendering-level only, deterministic, bounded, never persisted -- same
+    spirit as ``SpeciesRenderer._species_tint``.
+    """
+    if not species_id or species_id == "unknown_species":
+        return base_defaults
+    rng = random.Random(sum(ord(char) for char in f"{species_id}:{form}:architecture"))
+    return tuple(
+        max(0.0, min(1.0, base + rng.uniform(-0.07, 0.07)))
+        for base in base_defaults
+    )
+
+
+def quantitative_plant_trait(value, default, minimum=0.0, maximum=None):
+    """Resolve an authored point or range to a bounded typical runtime value."""
+
+    candidate = value
+    if isinstance(value, dict):
+        candidate = value.get("typical_m", value.get("typical"))
+        if candidate is None:
+            lower = value.get("min_m", value.get("min"))
+            upper = value.get("max_m", value.get("max"))
+            try:
+                candidate = (float(lower) + float(upper)) * 0.5
+            except (TypeError, ValueError):
+                candidate = upper if upper is not None else lower
+    try:
+        result = float(candidate)
+    except (TypeError, ValueError):
+        result = float(default)
+    result = max(float(minimum), result)
+    if maximum is not None:
+        result = min(float(maximum), result)
+    return result
+
 def is_plant_species_entity(entity: dict[str, Any] | None, plant_catalogue=None) -> bool:
     """Constant-time membership in the repository's Plantae ancestry index.
 
@@ -156,6 +204,42 @@ def _tuple2(value, default=(0.5, 0.9)):
         return tuple(float(value[index]) for index in range(2))
     except (TypeError, ValueError):
         return tuple(default)
+
+
+def pixel_asset_depicted_size_m(asset_ref: str | None) -> float | None:
+    """Read the physical display size authored in a Pixel Studio document.
+
+    The PNG is the raster product; its adjacent ``.layers.json.gz`` document
+    owns the metric size.  Keep this separate from ``PlantModule.length_m``:
+    length can drive structural/physiological formulas, while depicted size is
+    only the scale of the authored reusable sprite.
+    """
+
+    if not asset_ref:
+        return None
+    asset_path = Path(str(asset_ref))
+    if not asset_path.is_absolute():
+        asset_path = _PROJECT_ROOT / asset_path
+    document_path = asset_path.with_suffix(".layers.json.gz")
+    try:
+        with gzip.open(document_path, "rt", encoding="utf-8") as handle:
+            document = json.load(handle)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return None
+    dimensions = document.get("dimensions_m") if isinstance(document, dict) else None
+    if not isinstance(dimensions, dict):
+        return None
+    candidates = [dimensions.get("size")]
+    candidates.extend(dimensions.get(key) for key in ("length", "width", "height"))
+    values = []
+    for candidate in candidates:
+        try:
+            value = float(candidate)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value) and value > 0.0:
+            values.append(value)
+    return max(values) if values else None
 
 
 @dataclass(frozen=True)
@@ -286,8 +370,19 @@ class PlantBlueprint:
         module_anchors = entity.get("plant_module_anchors") or {}
         leaf_anchor = module_anchors.get("leaf") if isinstance(module_anchors, dict) else {}
         flower_anchor = module_anchors.get("flower") if isinstance(module_anchors, dict) else {}
+        fruit_anchor = module_anchors.get("fruit") if isinstance(module_anchors, dict) else {}
         leaf_anchor = leaf_anchor if isinstance(leaf_anchor, dict) else {}
         flower_anchor = flower_anchor if isinstance(flower_anchor, dict) else {}
+        fruit_anchor = fruit_anchor if isinstance(fruit_anchor, dict) else {}
+
+        def depicted_size(anchor, asset_ref):
+            try:
+                authored = float(anchor.get("depicted_size_m"))
+            except (TypeError, ValueError):
+                authored = None
+            if authored is not None and math.isfinite(authored) and authored > 0.0:
+                return authored
+            return pixel_asset_depicted_size_m(asset_ref)
 
         is_rosette = behaviour == "rosette_short_internode"
         is_climber = behaviour == "climbing_support_dependent" or form == "vine"
@@ -372,12 +467,23 @@ class PlantBlueprint:
             max_height, internode, branch_probability = 1.2, 0.24, 0.24
 
         if mature_height is not None:
+            reference_height = max_height
             max_height = max(0.1, mature_height)
             if is_tree:
                 # The branching grammar is capped to a compact number of
                 # generations, so tall trees need longer structural units to
                 # reach their authored mature height.
                 internode = max(internode, max_height / 14.0)
+            elif max_height < reference_height:
+                # An authored mature height below the shape's reference
+                # stature (e.g. a dwarf/low shrub) otherwise keeps that
+                # shape's larger reference internode, starving branch
+                # generations toward 1-2 and rendering as a bare skeletal
+                # stick instead of a proportioned miniature of the same
+                # architecture. Scale the internode down to preserve the
+                # shape's designed generation density. Authored heights at
+                # or above the reference are left untouched.
+                internode = max(0.02, internode * (max_height / reference_height))
         leaf_arrangement = str(entity.get("leaf_arrangement") or "").lower()
         phyllotaxis = 137.5
         if leaf_arrangement == "opposite":
@@ -403,6 +509,7 @@ class PlantBlueprint:
 
         leaf_size = str(entity.get("leaf_size_class") or "").lower().replace("-", "_")
         leaf_structure = str(entity.get("leaf_structure") or "simple").lower().replace("-", "_").replace(" ", "_")
+        leaf_division_order = max(1, min(4, round(quantitative_plant_trait(entity.get("leaf_division_order"), 1, 1, 4))))
         leaf_length = {
             "very_small": 0.06,
             "small": 0.10,
@@ -410,6 +517,12 @@ class PlantBlueprint:
             "large": 0.24,
             "very_large": 0.38,
         }.get(leaf_size, 0.22)
+        leaf_length = quantitative_plant_trait(entity.get("leaf_length"), leaf_length, 0.002, 100.0)
+        leaf_cluster_size = max(1, round(quantitative_plant_trait(entity.get("leaf_cluster_size"), 3, 1, 200)))
+        leaflet_count = max(0, round(quantitative_plant_trait(entity.get("leaflet_count"), 0, 0, 2000)))
+        leaflet_length = quantitative_plant_trait(entity.get("leaflet_length"), leaf_length * 0.24, 0.001, 20.0)
+        leaflet_width = quantitative_plant_trait(entity.get("leaflet_width"), max(0.004, leaf_length * 0.05), 0.0002, 5.0)
+        frond_stipe_fraction = normalised_plant_trait(entity.get("frond_stipe_fraction"), 0.36)
         if form == "succulent":
             # Succulent blades are structural organs, not small generic
             # leaves. Their authored socket stays at the base while the
@@ -439,6 +552,7 @@ class PlantBlueprint:
             "succulent": (0.10, 0.18, 0.25, 0.48, 0.12, 0.16, 0.28),
             "aquatic": (0.06, 0.18, 0.65, 0.34, 0.18, 0.18, 0.46),
         }.get(form, (0.35, 0.35, 0.45, 0.45, 0.25, 0.35, 0.35))
+        architecture_defaults = species_architecture_defaults(species_id, form, architecture_defaults)
         branch_droop = normalised_plant_trait(entity.get("plant_branch_droop"), architecture_defaults[0])
         branch_angle_gradient = normalised_plant_trait(entity.get("plant_branch_angle_gradient"), architecture_defaults[1])
         crown_openness = normalised_plant_trait(entity.get("plant_crown_openness"), architecture_defaults[2])
@@ -450,6 +564,27 @@ class PlantBlueprint:
             entity.get("plant_apical_control"),
             0.72 if shape == "tree" else 0.52,
         )
+        # Neutral default 0.0 regardless of form/species (unlike the other
+        # architecture coefficients above) so a species that hasn't authored
+        # this renders through crown_shape's shared envelope completely
+        # unchanged -- only an explicit authored value narrows the crown.
+        crown_taper = normalised_plant_trait(entity.get("plant_crown_taper"), 0.0)
+        # Same neutral-0.0-default convention as crown_taper: unauthored
+        # species get the existing fixed height-fraction trunk radius
+        # completely unchanged.
+        trunk_girth = normalised_plant_trait(entity.get("plant_trunk_girth"), 0.0)
+        # ``fascicled`` selects the shared-socket grammar; the explicit count
+        # carries the biology.  This is deliberately independent of canopy
+        # density so two-, three-, and five-needle pines can reuse the same
+        # mechanism without species-specific code.
+        raw_fascicle_size = entity.get("leaf_fascicle_size")
+        try:
+            raw_fascicle_size = int(round(float(raw_fascicle_size)))
+        except (TypeError, ValueError):
+            raw_fascicle_size = 3
+        fascicle_size = max(1, min(12, raw_fascicle_size)) if leaf_arrangement == "fascicled" else 0
+        if fascicle_size:
+            leaves_per_node = fascicle_size
         architecture_ranges = {
             field_name.removeprefix("plant_"): normalised_plant_trait_range(
                 entity.get(field_name),
@@ -462,6 +597,8 @@ class PlantBlueprint:
                     "plant_fine_twig_density": fine_twig_density,
                     "plant_leaf_cluster_density": leaf_cluster_density,
                     "plant_apical_control": apical_control,
+                    "plant_crown_taper": crown_taper,
+                    "plant_trunk_girth": trunk_girth,
                 }[field_name],
             )
             for field_name in PLANT_ARCHITECTURE_RANGE_FIELDS
@@ -507,16 +644,28 @@ class PlantBlueprint:
             "leaf_phenology": str(entity.get("leaf_phenology") or ""),
             "leaf_size_class": leaf_size,
             "leaf_structure": leaf_structure,
+            "leaf_division_order": leaf_division_order,
+            "leaf_length_m": leaf_length,
+            "leaf_cluster_size": leaf_cluster_size,
+            "leaflet_count": leaflet_count,
+            "leaflet_length_m": leaflet_length,
+            "leaflet_width_m": leaflet_width,
+            "frond_stipe_fraction": frond_stipe_fraction,
             "leaf_attachment_pattern": str(entity.get("leaf_attachment_pattern") or ""),
             "leaf_clustering": str(entity.get("leaf_clustering") or ""),
             "shoot_dimorphism": shoot_dimorphism,
             "leaf_distribution": leaf_distribution,
             "shoot_distribution_grammar": 1 if is_tree and (entity.get("plant_leaf_distribution") or entity.get("leaf_attachment_pattern") == "along_stem") else 0,
             "axis_continuity": architecture_category("plant_axis_continuity"),
+            "self_pruning": architecture_category("plant_self_pruning"),
+            "crown_shape": architecture_category("plant_crown_shape"),
+            "crown_taper": crown_taper,
+            "trunk_girth": trunk_girth,
             "branching_rhythm": architecture_category("plant_branching_rhythm"),
             "branching_timing": architecture_category("plant_branching_timing"),
             "lateral_axis_orientation": architecture_category("plant_lateral_axis_orientation"),
             "flowering_position": architecture_category("plant_flowering_position"),
+            "reproductive_structure": architecture_category("plant_reproductive_structure"),
             "leaf_spacing_bias": leaf_spacing_bias,
             "branch_droop": branch_droop,
             "branch_angle_gradient": branch_angle_gradient,
@@ -524,16 +673,25 @@ class PlantBlueprint:
             "leaf_depth_gradient": leaf_depth_gradient,
             "fine_twig_density": fine_twig_density,
             "leaf_cluster_density": leaf_cluster_density,
+            "fascicle_size": fascicle_size,
+            "fascicle_grammar_version": 1,
             "reproductive_mode": str(entity.get("reproductive_mode") or ""),
             "root_architecture": str(entity.get("root_architecture") or ""),
             "root_depth_class": str(entity.get("root_depth_class") or ""),
             "max_root_depth": entity.get("max_root_depth"),
+            "nitrogen_fixation": str(entity.get("nitrogen_fixation") or "other_unknown"),
+            "nutrition_mode": str(entity.get("nutrition_mode") or "other_unknown"),
+            "mycorrhizal_type": str(entity.get("mycorrhizal_type") or "other_unknown"),
             "longevity_class": str(entity.get("longevity_class") or ""),
             "life_history": life_history,
         }
         growth["root_profile"] = root_profile(growth)
         from simulations.species.root_visuals import root_visual_profile
         growth["root_visual_profile"] = root_visual_profile(growth)
+        flower_asset_ref = str(entity.get("plant_flower_module_ref") or "") or None
+        fruit_asset_ref = str(entity.get("plant_fruit_module_ref") or "") or None
+        flower_depicted_size = depicted_size(flower_anchor, flower_asset_ref)
+        fruit_depicted_size = depicted_size(fruit_anchor, fruit_asset_ref)
         modules = [
             # Life-form modules are present in the portable recipe but are
             # instantiated only when the corresponding growth grammar needs
@@ -567,26 +725,57 @@ class PlantBlueprint:
                 "leaf",
                 asset_ref=str(entity.get("plant_leaf_module_ref") or "") or None,
                 length_m=leaf_length,
-                radius_m=0.06 if form == "succulent" else 0.012,
+                radius_m=(
+                    0.06 if form == "succulent"
+                    else 0.001 if leaf_structure == "needle_like"
+                    else 0.003 if leaf_structure == "scale_like"
+                    else max(0.012, min(0.08, leaflet_width * 0.35)) if leaf_structure in {"pinnately_compound", "frond_like"}
+                    else 0.012
+                ),
                 sockets=("base",),
                 attachment_point=_tuple2(leaf_anchor.get("attachment_point")),
                 growth_axis=_tuple2(leaf_anchor.get("growth_vector") or leaf_anchor.get("growth_axis"), (0.0, -1.0)),
-                visual={"leaf_structure": leaf_structure},
+                visual={
+                    "leaf_structure": leaf_structure,
+                    "leaf_arrangement": leaf_arrangement,
+                    "leaf_division_order": leaf_division_order,
+                    "leaflet_count": leaflet_count,
+                    "leaflet_length_m": leaflet_length,
+                    "leaflet_width_m": leaflet_width,
+                    "frond_stipe_fraction": frond_stipe_fraction,
+                    # Whole-blade width and ultimate-segment dimensions are
+                    # different hierarchical scales in a divided frond.
+                    "frond_blade_width_m": (
+                        leaf_length * (0.56 + 0.24 * crown_openness)
+                        if leaf_structure == "frond_like" else 0.0
+                    ),
+                    "frond_arch": (
+                        0.16
+                        if leaf_structure in {"pinnately_compound", "frond_like"} and leaf_distribution == "terminal_cluster"
+                        else 0.08
+                        if leaf_structure == "frond_like" and behaviour == "fern_fronding"
+                        else 0.0
+                    ),
+                },
             ),
             PlantModule(
                 "flower",
                 "flower",
-                asset_ref=str(entity.get("plant_flower_module_ref") or "") or None,
+                asset_ref=flower_asset_ref,
                 length_m=0.16,
                 radius_m=0.018,
                 sockets=("base",),
                 attachment_point=_tuple2(flower_anchor.get("attachment_point")),
                 growth_axis=_tuple2(flower_anchor.get("growth_vector") or flower_anchor.get("growth_axis"), (0.0, -1.0)),
+                visual={"depicted_size_m": flower_depicted_size} if flower_depicted_size else {},
             ),
             PlantModule(
                 "fruit", "fruit",
-                asset_ref=str(entity.get("plant_fruit_module_ref") or "") or None,
+                asset_ref=fruit_asset_ref,
                 length_m=0.1, radius_m=0.025, sockets=("base",),
+                attachment_point=_tuple2(fruit_anchor.get("attachment_point")),
+                growth_axis=_tuple2(fruit_anchor.get("growth_vector") or fruit_anchor.get("growth_axis"), (0.0, -1.0)),
+                visual={"depicted_size_m": fruit_depicted_size} if fruit_depicted_size else {},
             ),
         ]
         return cls(

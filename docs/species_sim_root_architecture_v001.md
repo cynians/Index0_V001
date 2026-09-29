@@ -49,7 +49,15 @@ axes. Fibrous creates several similarly sized axes from the crown. Mixed
 retains a descending main axis with a wider lateral footprint. Adventitious
 creates roots at separate supporting-stem nodes. For the aquatic grammar,
 the support is a short horizontal rhizome proxy at the existing submerged crown;
-other forms use a compact stem-base support.
+other non-clonal forms use a compact stem-base support.
+
+When `root_architecture = adventitious` is combined with either
+`stoloniferous_clonal` or `rhizomatous_clonal`, the root graph is distributed:
+each established runner or rhizome contact owns a bounded local root cluster.
+The clonal shoot grammar only reports contact sockets; root topology remains in
+`root_growth.py`. This keeps the rule reusable without a species-ID conditional.
+Suckering plants and non-adventitious architectures retain their existing root
+models.
 
 `root_section` represents only a root segment and reuses the optional root
 asset. `root_support` is explicitly a **stem_section** module, drawn separately
@@ -69,12 +77,14 @@ erase previously drawn roots.
 
 ## Compact outcomes and detail budgets
 
-Snapshots expose `root_depth_m` (below the crown), `root_spread_m` (twice maximum
-horizontal distance from the crown), `root_length_m`, `root_segment_count`,
-`root_visible_segment_count`, `root_origin_z_m`, `root_depth_source`, and
-`root_model_status`. Adventitious graphs also report support-node count.
-Ecological outcomes carry depth, spread, length, source, and model status.
-These metrics do not yet alter resource uptake or mortality.
+Snapshots expose `root_depth_m` (below the soil origin), `root_spread_m` (twice
+maximum horizontal distance from the original crown), `root_length_m`,
+`root_segment_count`, `root_visible_segment_count`, `root_origin_z_m`,
+`root_depth_source`, and `root_model_status`. Distributed adventitious graphs
+also report `root_distribution = contact_nodes`, contact/support and cluster
+counts, local cluster diameter, and the whole root-system span. Those compact
+distribution metrics also reach the ecological summary. They do not yet alter
+resource uptake or mortality.
 
 Canonical geometry is bounded to fewer than 400 nodes for the current grammar.
 LOD filters branch orders with complete ancestry: 0 keeps primary axes, 1 adds
@@ -97,6 +107,10 @@ included in newly derived blueprint fingerprints.
 3. **Final refinement:** Increased support visibility, labelled sediment/crown,
    added a same-scale comparison, preserved root graphs in forest drawing, and
    checked older blueprint compatibility.
+4. **Clonal-contact refinement (2026-09-10):** Replaced the unrealistic single
+   crown-centred adventitious fan for clonal plants with one bounded cluster per
+   established stolon/rhizome contact. The helper is trait-driven, deterministic,
+   LOD-stable in its canonical metrics, and covered for both clonal behaviours.
 
 Mature seed 303, final runtime results:
 
@@ -111,8 +125,8 @@ The comparison is satisfactory for this architecture pass: three visibly
 different attachment strategies, consistent development, valid connected
 graphs, and explicit assumptions. Root turnover, real soil constraints,
 water/nutrient uptake, root hairs, species-specific depth/spread calibration,
-and true clonal-ramet rooting remain future work. The existing aboveground oak
-preview also needs its own separate fidelity pass.
+and substrate-dependent contact establishment remain future work. The existing
+aboveground oak preview also needs its own separate fidelity pass.
 
 ## Reproduction and verification
 
@@ -213,3 +227,6 @@ The app did not expose a targetable window on the live inspection attempt.
 These are actual-renderer previews, not proof of live mouse navigation. Real
 species-specific root diameters, root-age cohorts, soil interactions and turnover
 remain uncalibrated; the refinement improves legibility and tissue hierarchy.
+
+Neighbour occupancy can now steer clonal connectors without pretending that a
+soil model exists: [neighbour-root influence implementation](species_sim_neighbour_root_influence_v001.md).

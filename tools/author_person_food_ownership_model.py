@@ -340,6 +340,9 @@ def build_changes(datasets):
                 {"entity": "location_lumber_test_woodlot", "interest": 0.45, "familiarity": 0.25, "navigation_knowledge": "direction", "direction_hint": [-1, 0], "source": "told it lies west"},
             ],
         },
+        # The four compound buildings below are rebuilt from building
+        # blueprints by tools/author_building_blueprint_model.py; re-run it
+        # after this tool so walls and doorways come from blueprint geometry.
         {
             "id": "location_person_test_kitchen", "_dataset": "locations", "type": "location",
             "name": "Barracks Kitchen", "pretty_name": "Barracks Kitchen",

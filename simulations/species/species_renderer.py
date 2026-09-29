@@ -1,5 +1,7 @@
 """Minimal preview renderer for the standalone Species Sim."""
 
+import colorsys
+import functools
 import gzip
 import json
 import math
@@ -9,7 +11,12 @@ from pathlib import Path
 import pygame
 
 from world.texture_sets import TextureSet
-from simulations.species.species_simulation import SCREEN_DEPTH_PROJECTION
+from simulations.species.species_simulation import (
+    SCREEN_DEPTH_PROJECTION,
+    normalise_climbing_supports,
+    normalise_neighbour_root_zones,
+)
+from simulations.species.solid_structures import SolidStructureField, normalise_solid_structures
 
 # asset_ref/texture_set_ref values are authored relative to the repo root.
 # Resolving them against Path.cwd() breaks silently (empty surface, falls
@@ -71,6 +78,74 @@ class TopDownDiagnosticCamera:
 
     def world_to_screen_3d(self, position):
         return self.world_to_screen(position[:2])
+
+
+class SurfaceElevationCamera:
+    """Orthographic elevation of an x/y-oriented 2D surface and model z."""
+
+    def __init__(self, width, height, bounds, surface_rotation_deg=0.0):
+        min_x, max_x, min_y, max_y, min_z, max_z = (float(value) for value in bounds)
+        angle = math.radians(float(surface_rotation_deg))
+        self.tangent_x = math.cos(angle)
+        self.tangent_y = math.sin(angle)
+        projected_x = [
+            x * self.tangent_x + y * self.tangent_y
+            for x in (min_x, max_x)
+            for y in (min_y, max_y)
+        ]
+        self.min_u = min(projected_x)
+        self.max_u = max(projected_x)
+        self.min_z = min_z
+        self.max_z = max_z
+        self.scale = min(
+            (width - 48) / max(0.1, self.max_u - self.min_u),
+            (height - 48) / max(0.1, self.max_z - self.min_z),
+        )
+        self.offset_x = width * 0.5 - (self.min_u + self.max_u) * 0.5 * self.scale
+        self.bottom = height - 24 + self.min_z * self.scale
+        self.surface_rotation_deg = float(surface_rotation_deg)
+
+    def world_to_screen_3d(self, position):
+        x, y, z = (float(position[0]), float(position[1]), float(position[2]))
+        u = x * self.tangent_x + y * self.tangent_y
+        return (
+            round(self.offset_x + u * self.scale),
+            round(self.bottom - z * self.scale),
+        )
+
+    def world_to_screen(self, position):
+        return self.world_to_screen_3d((float(position[0]), 0.0, float(position[1])))
+
+
+class IsometricDiagnosticCamera:
+    """Two-to-one isometric projection over a true 3D model-space bound."""
+
+    def __init__(self, width, height, bounds):
+        min_x, max_x, min_y, max_y, min_z, max_z = (float(value) for value in bounds)
+        projected = [
+            (x - y, (x + y) * 0.5 - z)
+            for x in (min_x, max_x)
+            for y in (min_y, max_y)
+            for z in (min_z, max_z)
+        ]
+        min_sx, max_sx = min(p[0] for p in projected), max(p[0] for p in projected)
+        min_sy, max_sy = min(p[1] for p in projected), max(p[1] for p in projected)
+        self.scale = min(
+            (width - 48) / max(0.1, max_sx - min_sx),
+            (height - 48) / max(0.1, max_sy - min_sy),
+        )
+        self.offset_x = width * 0.5 - (min_sx + max_sx) * 0.5 * self.scale
+        self.offset_y = height * 0.5 - (min_sy + max_sy) * 0.5 * self.scale
+
+    def world_to_screen_3d(self, position):
+        x, y, z = (float(position[0]), float(position[1]), float(position[2]))
+        return (
+            round(self.offset_x + (x - y) * self.scale),
+            round(self.offset_y + ((x + y) * 0.5 - z) * self.scale),
+        )
+
+    def world_to_screen(self, position):
+        return self.world_to_screen_3d((float(position[0]), 0.0, float(position[1])))
 
 
 class OffsetDiagnosticCamera:
@@ -153,6 +228,42 @@ def top_down_diagnostic_bounds(sim, snapshot=None):
                     spread += max(0.0, float(cluster.get("length", 0.0) or 0.0)) * 0.5
                 points.extend(((x - spread, y - spread), (x + spread, y + spread)))
 
+    zones = snapshot.stats.get("neighbour_root_zones")
+    if zones is None:
+        zones = normalise_neighbour_root_zones(snapshot.stats.get("environment"))
+    for zone in zones or []:
+        center = zone.get("center_m") or []
+        if len(center) < 2:
+            continue
+        radius = max(0.0, float(zone.get("radius_m", 0.0) or 0.0))
+        points.extend((
+            (float(center[0]) - radius, float(center[1]) - radius),
+            (float(center[0]) + radius, float(center[1]) + radius),
+        ))
+
+    supports = snapshot.stats.get("climbing_supports")
+    if supports is None:
+        supports = normalise_climbing_supports(snapshot.stats.get("environment"))
+    for support in supports or []:
+        center = support.get("center_m") or []
+        if len(center) < 2:
+            continue
+        radius = max(
+            float(support.get("radius_m", 0.0) or 0.0),
+            float(support.get("crown_radius_m", 0.0) or 0.0),
+        )
+        points.extend((
+            (float(center[0]) - radius, float(center[1]) - radius),
+            (float(center[0]) + radius, float(center[1]) + radius),
+        ))
+
+    structures = snapshot.stats.get("solid_structures")
+    if structures is None:
+        structures = normalise_solid_structures(snapshot.stats.get("environment"))
+    for structure in structures or []:
+        min_x, max_x, min_y, max_y, _min_z, _max_z = SolidStructureField.bounds_m(structure)
+        points.extend(((min_x, min_y), (max_x, max_y)))
+
     organ_margin = max(0.04, leaf_radius * 2.0)
     if not points:
         return (-organ_margin, organ_margin, -organ_margin, organ_margin)
@@ -171,6 +282,28 @@ def root_diagnostic_bounds(snapshot):
     xs = [p[2] + p[3] * SCREEN_DEPTH_PROJECTION for p in roots]
     zs = [p[4] for p in roots]
     return min(xs) - 0.05, max(xs) + 0.05, min(zs) - 0.04, max(zs) + 0.06
+
+
+def frond_primary_pinna_rows(primary_pinna_count, arrangement):
+    """Return bounded display rows while preserving alternate/opposite rhythm."""
+
+    count = max(0, int(primary_pinna_count or 0))
+    arrangement = str(arrangement or "").lower()
+    if arrangement in {"alternate", "distichous"}:
+        sampled_count = min(24, count)
+        return [
+            ((index + 0.35) / (sampled_count + 0.2), (1.0,) if index % 2 == 0 else (-1.0,))
+            for index in range(sampled_count)
+        ]
+
+    sampled_rows = min(12, math.ceil(count / 2.0))
+    rows = []
+    for index in range(sampled_rows):
+        sides = (-1.0, 1.0)
+        if count % 2 and index == sampled_rows - 1 and sampled_rows == math.ceil(count / 2.0):
+            sides = (1.0,)
+        rows.append(((index + 0.35) / (sampled_rows + 0.2), sides))
+    return rows
 
 
 def branch_diagnostic_selection(sim, snapshot=None):
@@ -210,6 +343,13 @@ def _camera_state_key(camera):
     """
     if isinstance(camera, OffsetDiagnosticCamera):
         return ("offset", round(camera.offset_x, 4), round(camera.local_scale, 4), _camera_state_key(camera.camera))
+    if isinstance(camera, SurfaceElevationCamera):
+        return (
+            "surface_elevation",
+            round(camera.surface_rotation_deg, 4), round(camera.min_u, 4),
+            round(camera.max_u, 4), round(camera.min_z, 4),
+            round(camera.max_z, 4), round(camera.scale, 4),
+        )
     if isinstance(camera, TopDownDiagnosticCamera):
         return (
             "top_down",
@@ -276,13 +416,218 @@ class SpeciesRenderer:
             return camera.world_to_screen_3d(placement[2:5])
         return self._screen(camera, placement[2] + placement[3] * SCREEN_DEPTH_PROJECTION, placement[4])
 
+    @staticmethod
+    def _draw_neighbour_root_zones(screen, camera, snapshot):
+        """Draw contextual root occupancy in the top-down diagnostic only."""
+
+        zones = snapshot.stats.get("neighbour_root_zones")
+        if zones is None:
+            zones = normalise_neighbour_root_zones(snapshot.stats.get("environment"))
+        if not zones:
+            return
+        overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        for zone in zones:
+            center_m = zone.get("center_m") or []
+            if len(center_m) < 2:
+                continue
+            center = camera.world_to_screen(center_m)
+            radius_px = max(2, round(float(zone.get("radius_m", 0.0) or 0.0) * camera.scale))
+            influence = max(0.0, min(1.0, float(zone.get("influence", 1.0) or 0.0)))
+            pygame.draw.circle(overlay, (139, 75, 55, round(28 + 30 * influence)), center, radius_px)
+            pygame.draw.circle(overlay, (206, 128, 86, round(125 + 75 * influence)), center, radius_px, 2)
+
+            # A compact radial glyph reads as neighbouring roots while the
+            # circle honestly communicates that only their influence zone is
+            # known, not their exact topology.
+            phase = sum(ord(char) for char in str(zone.get("id") or "root")) % 360
+            for spoke in range(8):
+                angle = math.radians(phase + spoke * 45.0)
+                elbow_radius = radius_px * (0.30 + 0.035 * (spoke % 3))
+                tip_radius = radius_px * (0.68 + 0.045 * ((spoke * 5) % 4))
+                elbow = (round(center[0] + math.cos(angle) * elbow_radius),
+                         round(center[1] - math.sin(angle) * elbow_radius))
+                tip_angle = angle + math.radians(-9.0 if spoke % 2 else 11.0)
+                tip = (round(center[0] + math.cos(tip_angle) * tip_radius),
+                       round(center[1] - math.sin(tip_angle) * tip_radius))
+                pygame.draw.lines(overlay, (214, 151, 105, 155), False, (center, elbow, tip), 1)
+        screen.blit(overlay, (0, 0))
+
+    def _draw_climbing_supports(self, screen, camera, snapshot):
+        """Draw muted scene geometry behind a support-dependent vine."""
+
+        supports = snapshot.stats.get("climbing_supports")
+        if supports is None:
+            supports = normalise_climbing_supports(snapshot.stats.get("environment"))
+        if not supports:
+            return
+        overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        top_down = isinstance(camera, TopDownDiagnosticCamera)
+        scale = max(1.0, float(getattr(camera, "scale", 48.0)))
+        for support in supports:
+            center = support.get("center_m") or []
+            if len(center) < 2:
+                continue
+            x, y = float(center[0]), float(center[1])
+            radius = max(0.01, float(support.get("radius_m", 0.05) or 0.05))
+            height = max(0.05, float(support.get("height_m", 1.0) or 1.0))
+            crown_radius = max(radius, float(support.get("crown_radius_m", radius) or radius))
+            is_rod = str(support.get("kind") or "") == "rod"
+            palette = support.get("palette") if isinstance(support.get("palette"), dict) else {}
+            rod_fill = tuple(palette.get("fill", (100, 111, 116)))
+            rod_highlight = tuple(palette.get("highlight", (190, 205, 208)))
+            if top_down:
+                point = camera.world_to_screen_3d((x, y, 0.0))
+                if not is_rod:
+                    pygame.draw.circle(overlay, (45, 80, 48, 46), point, max(2, round(crown_radius * scale)))
+                pygame.draw.circle(overlay, (*rod_fill, 230) if is_rod else (101, 78, 55, 210), point, max(2, round(radius * scale)))
+                pygame.draw.circle(overlay, (*rod_highlight, 235) if is_rod else (156, 132, 91, 220), point, max(2, round(radius * scale)), 1)
+                continue
+
+            axis_points = support.get("axis_points_m") or []
+            world_axis = (
+                [tuple(float(value) for value in point[:3]) for point in axis_points if len(point) >= 3]
+                if len(axis_points) >= 2 else [
+                    (x, y, float(support.get("base_z_m", 0.0) or 0.0)),
+                    (x, y, float(support.get("top_z_m", height) or height)),
+                ]
+            )
+            projected_axis = [
+                camera.world_to_screen_3d(point)
+                if hasattr(camera, "world_to_screen_3d")
+                else self._screen(camera, point[0] + point[1] * SCREEN_DEPTH_PROJECTION, point[2])
+                for point in world_axis
+            ]
+            width = max(3, min(38, round(radius * scale * 2.0)))
+            pygame.draw.lines(overlay, (*rod_fill, 235) if is_rod else (92, 69, 49, 220), False, projected_axis, width)
+            pygame.draw.lines(overlay, (*rod_highlight, 220) if is_rod else (151, 122, 79, 185), False, projected_axis, max(1, width // 4))
+            if str(support.get("kind") or "") == "tree" and crown_radius > radius:
+                crown_axis_point = world_axis[max(0, round((len(world_axis) - 1) * 0.82))]
+                crown_center = camera.world_to_screen_3d(crown_axis_point) if hasattr(camera, "world_to_screen_3d") else self._screen(camera, crown_axis_point[0] + crown_axis_point[1] * SCREEN_DEPTH_PROJECTION, crown_axis_point[2])
+                crown_width = max(8, round(crown_radius * scale * 1.6))
+                crown_height = max(8, round(crown_radius * scale * 1.15))
+                pygame.draw.ellipse(
+                    overlay,
+                    (48, 83, 49, 72),
+                    (crown_center[0] - crown_width, crown_center[1] - crown_height,
+                     crown_width * 2, crown_height * 2),
+                )
+                pygame.draw.ellipse(
+                    overlay,
+                    (91, 126, 72, 135),
+                    (crown_center[0] - crown_width, crown_center[1] - crown_height,
+                     crown_width * 2, crown_height * 2),
+                    2,
+                )
+        screen.blit(overlay, (0, 0))
+
+    def _draw_solid_structures(self, screen, camera, snapshot):
+        """Project occupied logical mask cells from 3D into the active 2D view."""
+
+        structures = snapshot.stats.get("solid_structures")
+        if structures is None:
+            structures = normalise_solid_structures(snapshot.stats.get("environment"))
+        if not structures:
+            return
+        overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        for structure in structures:
+            rows = structure.get("mask_rows") or []
+            if not rows:
+                continue
+            pixel = float(structure["pixel_size_m"])
+            depth = float(structure["extrusion_depth_m"])
+            width = int(structure["mask_width_px"])
+            height = int(structure["mask_height_px"])
+            fill = tuple(structure.get("palette", {}).get("fill", (108, 101, 91)))
+            edge = tuple(structure.get("palette", {}).get("edge", (184, 174, 153)))
+            back = tuple(max(0, int(channel * 0.62)) for channel in fill)
+            for row_index in range(height - 1, -1, -1):
+                row = rows[row_index]
+                bottom = (height - 1 - row_index) * pixel
+                top = bottom + pixel
+                for column in range(width):
+                    if row[column] != "#":
+                        continue
+                    left = (column - width * 0.5) * pixel
+                    right = left + pixel
+                    front_world = [
+                        SolidStructureField._local_to_world(structure, point)
+                        for point in (
+                            (left, -depth * 0.5, bottom),
+                            (right, -depth * 0.5, bottom),
+                            (right, -depth * 0.5, top),
+                            (left, -depth * 0.5, top),
+                        )
+                    ]
+                    back_world = [
+                        SolidStructureField._local_to_world(structure, point)
+                        for point in (
+                            (left, depth * 0.5, bottom),
+                            (right, depth * 0.5, bottom),
+                            (right, depth * 0.5, top),
+                            (left, depth * 0.5, top),
+                        )
+                    ]
+                    project = (
+                        camera.world_to_screen_3d
+                        if hasattr(camera, "world_to_screen_3d")
+                        else lambda point: self._screen(
+                            camera,
+                            point[0] + point[1] * SCREEN_DEPTH_PROJECTION,
+                            point[2],
+                        )
+                    )
+                    front_points = [project(point) for point in front_world]
+                    back_points = [project(point) for point in back_world]
+                    pygame.draw.polygon(overlay, (*back, 220), back_points)
+                    pygame.draw.polygon(
+                        overlay,
+                        (*tuple(max(0, int(channel * 0.78)) for channel in fill), 225),
+                        (front_points[1], back_points[1], back_points[2], front_points[2]),
+                    )
+                    pygame.draw.polygon(overlay, (*fill, 235), front_points)
+                    pygame.draw.lines(overlay, (*edge, 225), True, front_points, 1)
+        screen.blit(overlay, (0, 0))
+
     def _path_screen(self, camera, point):
         if hasattr(camera, "world_to_screen_3d"):
             return camera.world_to_screen_3d(point)
         return self._screen(camera, float(point[0]) + float(point[1]) * SCREEN_DEPTH_PROJECTION, float(point[2]))
 
-    def _color(self, kind):
-        return {
+    #: kinds whose colour is worth varying per species. Roots/renewal organs
+    #: stay untinted -- they're mostly hidden underground and not part of
+    #: what a viewer compares between species in a landscape.
+    _TINTABLE_KINDS = frozenset({"stem_section", "branch_section", "leaf", "flower", "fruit"})
+
+    #: needle/scale foliage (conifers) reads as a darker, cooler green in
+    #: real photographs than the bright grass-green default tuned for
+    #: broadleaf simple leaves -- trait-driven (leaf_structure), not a
+    #: species-ID branch, so every needle/scale-leaved species benefits.
+    _NEEDLE_LEAF_BASE = (52, 98, 78)
+    #: A gymnosperm cone is small, dry and brown/green/purple -- nothing
+    #: like an angiosperm flower's bright reproductive-signal colour. Used
+    #: for both "flower" (a young cone) and "fruit" (a mature seed cone)
+    #: placements on a plant_reproductive_structure="cone" species -- see
+    #: Plant_Design_Process.md's reproductive-structure fix.
+    _CONE_BASE = (109, 96, 61)
+    _MATURE_CONE_BASE = (94, 68, 42)
+    #: A grass/sedge spike (e.g. ryegrass) is a narrow, petal-less cluster
+    #: of small spikelets -- a straw/olive tone, nothing like an
+    #: angiosperm flower's bright reproductive-signal colour, and visually
+    #: distinct from a woody cone's browner tone too.
+    _SPIKE_BASE = (156, 149, 79)
+    #: A loose branched sedge/grass panicle uses a dry olive family. Broadleaf
+    #: forb panicles retain living green axes and clustered greenish flowers,
+    #: so they use a separate trait-driven fallback rather than the grass tone.
+    _PANICLE_BASE = (132, 128, 70)
+    _FORB_PANICLE_BASE = (116, 154, 82)
+    #: A generic capitulum fallback uses pale ray florets around a warm disc.
+    #: Authored pixel assets can override its exact species colour and ray
+    #: count, but the shared fallback must read as a flower head rather than
+    #: the five-petal icon used for an ordinary flower.
+    _CAPITULUM_RAY_BASE = (238, 238, 226)
+
+    def _color(self, kind, sim=None):
+        base = {
             "root": (151, 103, 68),
             "root_section": (173, 139, 97),
             "root_support": (173, 169, 95),
@@ -294,6 +639,61 @@ class SpeciesRenderer:
             "flower": (210, 125, 170),
             "fruit": (208, 143, 61),
         }.get(kind, (150, 150, 150))
+        growth = getattr(getattr(sim, "blueprint", None), "growth", None) if sim is not None else None
+        growth = growth if isinstance(growth, dict) else None
+        if kind == "leaf" and growth is not None:
+            if growth.get("leaf_structure") in {"needle_like", "scale_like"}:
+                base = self._NEEDLE_LEAF_BASE
+        elif kind == "flower" and growth is not None and growth.get("reproductive_structure") == "cone":
+            base = self._CONE_BASE
+        elif kind == "fruit" and growth is not None and growth.get("reproductive_structure") == "cone":
+            base = self._MATURE_CONE_BASE
+        elif kind == "flower" and growth is not None and growth.get("reproductive_structure") == "spike":
+            base = self._SPIKE_BASE if growth.get("growth_form") == "graminoid" else (104, 125, 67)
+        elif kind == "flower" and growth is not None and growth.get("reproductive_structure") == "panicle":
+            base = (
+                self._PANICLE_BASE
+                if growth.get("growth_form") == "graminoid"
+                else self._FORB_PANICLE_BASE
+            )
+        elif kind == "flower" and growth is not None and growth.get("reproductive_structure") == "capitulum":
+            base = self._CAPITULUM_RAY_BASE
+        species_id = getattr(sim, "species_id", None) if sim is not None else None
+        if not species_id or kind not in self._TINTABLE_KINDS:
+            return base
+        return self._species_tint(base, f"{species_id}:{kind}")
+
+    @staticmethod
+    @functools.lru_cache(maxsize=4096)
+    def _species_tint(base_rgb, seed_text):
+        """Deterministic per-species colour variation.
+
+        Without this, every species that has no authored leaf/branch/flower
+        pixel asset renders with the exact same fixed RGB -- a landscape of
+        many unauthored species is visually indistinguishable beyond height
+        and silhouette. This is a rendering-time-only jitter (never
+        persisted, never treated as a biological claim, same spirit as an
+        asset's "provisional visual calibration" label): a small deterministic
+        hue/saturation/lightness offset seeded by the species id and organ
+        kind, bounded so foliage still reads as foliage rather than drifting
+        into an unrelated colour family.
+
+        Memoized: this is a pure function of (base_rgb, seed_text) -- every
+        leaf/stem/flower/fruit placement of one species+kind produces the
+        exact same tint, so recomputing the RNG-seeded HLS math from scratch
+        per placement (as this did before) is pure waste. Species that fall
+        back to this path for every leaf (no authored pixel asset) were
+        measured spending over 40% of total render time here -- caching it
+        turns thousands of redundant recomputations into a handful.
+        """
+        rng = random.Random(sum(ord(char) for char in seed_text))
+        r, g, b = (channel / 255.0 for channel in base_rgb)
+        h, l, s = colorsys.rgb_to_hls(r, g, b)
+        h = (h + rng.uniform(-0.05, 0.05)) % 1.0
+        s = max(0.15, min(1.0, s * rng.uniform(0.82, 1.12)))
+        l = max(0.12, min(0.88, l * rng.uniform(0.88, 1.12)))
+        r2, g2, b2 = colorsys.hls_to_rgb(h, l, s)
+        return (round(r2 * 255), round(g2 * 255), round(b2 * 255))
 
     def _draw_renewal_module(self, screen, sim, camera, kind, point, scale):
         """Draw an explicit below-ground renewal body or bud.
@@ -312,7 +712,7 @@ class SpeciesRenderer:
         if kind == "renewal_bud":
             pygame.draw.polygon(
                 screen,
-                self._color(kind),
+                self._color(kind, sim),
                 ((x, y - half_height), (x + half_width, y),
                  (x, y + half_height), (x - half_width, y)),
             )
@@ -327,7 +727,7 @@ class SpeciesRenderer:
             str(item).lower().replace("-", "_").replace(" ", "_")
             for item in sim.blueprint.growth.get("belowground_storage", [])
         }
-        color = self._color(kind)
+        color = self._color(kind, sim)
         if "corm" in storage and not isinstance(camera, TopDownDiagnosticCamera):
             # Codonorhiza's authored corm is broadly obconic in profile with a
             # flat base.  Keep the shape recognisable at diagnostic zooms.
@@ -388,10 +788,10 @@ class SpeciesRenderer:
         label = font.render(str(reference.get("label") or "Human 1.75 m"), True, figure_color)
         screen.blit(label, (base_x - label.get_width() // 2, max(2, top_y - label.get_height() - 3)))
 
-    def _fallback_leaf_endpoint(self, camera, sim, snapshot, index, point, rotation, scale):
+    def _fallback_leaf_endpoint(self, camera, sim, snapshot, index, point, rotation, scale, rotation_only=False):
         orientations = getattr(snapshot, "placement_orientations", {}) or {}
         orientation = orientations.get(str(index))
-        if isinstance(orientation, dict):
+        if isinstance(orientation, dict) and not rotation_only:
             forward = orientation.get("forward") or []
             if len(forward) >= 3:
                 module = sim.blueprint.module("leaf") if hasattr(sim.blueprint, "module") else None
@@ -406,13 +806,15 @@ class SpeciesRenderer:
                 projected = self._placement_screen(camera, ["leaf_extent", -1, target[0], target[1], target[2], rotation, scale, 0])
                 if projected is not None:
                     return projected
-        length = max(3.0, 18.0 * scale)
+        module = sim.blueprint.module("leaf") if hasattr(sim.blueprint, "module") else None
+        length_m = float(getattr(module, "length_m", 0.1) or 0.1) if module is not None else 0.1
+        length = max(2.0, length_m * self._projection_pixels_per_meter(camera) * max(0.55, float(scale)) * 1.35)
         return (
             point[0] + math.cos(math.radians(rotation)) * length,
             point[1] - math.sin(math.radians(rotation)) * length,
         )
 
-    def _draw_fallback_leaf(self, screen, sim, camera, snapshot, index, point, rotation, scale, color=None):
+    def _draw_fallback_leaf(self, screen, sim, camera, snapshot, index, point, rotation, scale, color=None, rotation_only=False):
         """Draw a readable fallback for authored leaf structures.
 
         A compound leaf is still one reusable leaf module.  The fallback only
@@ -420,14 +822,34 @@ class SpeciesRenderer:
         asset has been authored yet; it does not create extra simulation
         placements or ecological entities.
         """
-        color = color or self._color("leaf")
-        end = self._fallback_leaf_endpoint(camera, sim, snapshot, index, point, rotation, scale)
+        color = color or self._color("leaf", sim)
+        if rotation_only:
+            end = self._fallback_leaf_endpoint(camera, sim, snapshot, index, point, rotation, scale, True)
+        else:
+            end = self._fallback_leaf_endpoint(camera, sim, snapshot, index, point, rotation, scale)
         structure = "simple"
         module = sim.blueprint.module("leaf") if hasattr(sim.blueprint, "module") else None
         if module is not None:
             structure = str((getattr(module, "visual", {}) or {}).get("leaf_structure") or "simple").lower()
         width = max(1, int(3 * max(0.45, float(scale))))
-        if structure not in {"pinnately_compound", "palmately_compound"}:
+        if structure == "needle_like":
+            radius_m = float(getattr(module, "radius_m", 0.001) or 0.001) if module is not None else 0.001
+            needle_width = max(
+                1,
+                round(2.0 * radius_m * self._projection_pixels_per_meter(camera) * max(0.45, float(scale))),
+            )
+            dx, dy = float(end[0]) - float(point[0]), float(end[1]) - float(point[1])
+            length = math.hypot(dx, dy)
+            # A small gravity bend gives flexible needles a readable, reusable
+            # silhouette without changing their simulated endpoint or area.
+            midpoint = (
+                round(float(point[0]) + dx * 0.52),
+                round(float(point[1]) + dy * 0.52 + min(5.0, length * 0.10)),
+            )
+            pygame.draw.lines(screen, color, False, (point, midpoint, end), needle_width)
+            return
+
+        if structure not in {"pinnately_compound", "palmately_compound", "frond_like"}:
             dx, dy = float(end[0]) - float(point[0]), float(end[1]) - float(point[1])
             length = max(1.0, math.hypot(dx, dy))
             ux, uy = dx / length, dy / length
@@ -453,21 +875,190 @@ class SpeciesRenderer:
             pygame.draw.line(screen, vein_color, point, end, max(1, width // 2))
             return
 
-        pygame.draw.line(screen, color, point, end, width)
-
         dx, dy = end[0] - point[0], end[1] - point[1]
         length = max(1.0, math.hypot(dx, dy))
         ux, uy = dx / length, dy / length
         px, py = -uy, ux
-        leaflet_count = 5 if structure == "pinnately_compound" else 4
+        visual = (getattr(module, "visual", {}) or {}) if module is not None else {}
+        authored_leaflets = max(0, int(visual.get("leaflet_count", 0) or 0))
+        division_order = max(1, min(4, int(visual.get("leaf_division_order", 1) or 1)))
+        if structure == "frond_like" and authored_leaflets and division_order >= 2:
+            arch = max(0.0, min(0.35, float(visual.get("frond_arch", 0.08) or 0.08)))
+            stipe_fraction = max(0.18, min(0.68, float(visual.get("frond_stipe_fraction", 0.36) or 0.36)))
+            control = (
+                float(point[0]) + dx * 0.46,
+                float(point[1]) + dy * 0.46 - length * arch,
+            )
+
+            def frond_curve(t):
+                inverse = 1.0 - t
+                return (
+                    inverse * inverse * float(point[0]) + 2.0 * inverse * t * control[0] + t * t * float(end[0]),
+                    inverse * inverse * float(point[1]) + 2.0 * inverse * t * control[1] + t * t * float(end[1]),
+                )
+
+            rachis = [frond_curve(step / 18.0) for step in range(19)]
+            vein_color = tuple(max(0, int(channel * 0.72)) for channel in color)
+            pygame.draw.lines(screen, vein_color, False, rachis, max(1, width))
+            primary_rows = frond_primary_pinna_rows(
+                authored_leaflets, visual.get("leaf_arrangement"),
+            )
+            leaflet_length_m = max(0.001, float(visual.get("leaflet_length_m", 0.1) or 0.1))
+            frond_blade_width = visual.get("frond_blade_width_m")
+            if frond_blade_width is None:
+                # Frozen pre-development blueprints retain their historical
+                # scale conflation for an honest before/after comparison.
+                primary_max = min(
+                    length * 0.43,
+                    leaflet_length_m * self._projection_pixels_per_meter(camera) * max(0.55, float(scale)) * 1.5,
+                )
+            else:
+                primary_max = min(
+                    length * 0.46,
+                    max(0.0, float(frond_blade_width))
+                    * self._projection_pixels_per_meter(camera)
+                    * max(0.55, float(scale)) * 0.5,
+                )
+            render_order = min(division_order, max(1, int(getattr(snapshot, "lod", 2)) + 1))
+            if length < 140.0:
+                render_order = min(render_order, 2)
+            for _row_index, (blade_progress, primary_sides) in enumerate(primary_rows):
+                t = stipe_fraction + (1.0 - stipe_fraction) * blade_progress
+                base_x, base_y = frond_curve(t)
+                tx = 2.0 * (1.0 - t) * (control[0] - float(point[0])) + 2.0 * t * (float(end[0]) - control[0])
+                ty = 2.0 * (1.0 - t) * (control[1] - float(point[1])) + 2.0 * t * (float(end[1]) - control[1])
+                tangent_length = max(0.001, math.hypot(tx, ty))
+                tangent_x, tangent_y = tx / tangent_length, ty / tangent_length
+                normal_x, normal_y = -tangent_y, tangent_x
+                primary_taper = max(0.10, (1.0 - blade_progress) ** 0.62)
+                primary_extent = max(3.0, primary_max * primary_taper)
+                for side in primary_sides:
+                    tip_x = base_x + normal_x * side * primary_extent + tangent_x * primary_extent * 0.07
+                    tip_y = base_y + normal_y * side * primary_extent + tangent_y * primary_extent * 0.07
+                    pygame.draw.line(
+                        screen,
+                        vein_color,
+                        (round(base_x), round(base_y)),
+                        (round(tip_x), round(tip_y)),
+                        max(1, width // 2),
+                    )
+                    if render_order < 2 or primary_extent < 7.0:
+                        continue
+                    primary_dx, primary_dy = tip_x - base_x, tip_y - base_y
+                    primary_length = max(0.001, math.hypot(primary_dx, primary_dy))
+                    primary_ux, primary_uy = primary_dx / primary_length, primary_dy / primary_length
+                    secondary_nx, secondary_ny = -primary_uy, primary_ux
+                    secondary_pairs = 5 if render_order == 2 else 6
+                    for secondary_index in range(secondary_pairs):
+                        s = 0.18 + 0.68 * (secondary_index + 0.5) / secondary_pairs
+                        secondary_base = (
+                            base_x + primary_dx * s,
+                            base_y + primary_dy * s,
+                        )
+                        secondary_taper = 0.35 + 0.65 * math.sin(math.pi * s) ** 0.5
+                        secondary_extent = max(1.5, primary_length * 0.14 * secondary_taper)
+                        for secondary_side in (-1.0, 1.0):
+                            secondary_tip = (
+                                secondary_base[0] + secondary_nx * secondary_side * secondary_extent + primary_ux * secondary_extent * 0.12,
+                                secondary_base[1] + secondary_ny * secondary_side * secondary_extent + primary_uy * secondary_extent * 0.12,
+                            )
+                            pygame.draw.line(
+                                screen,
+                                color,
+                                (round(secondary_base[0]), round(secondary_base[1])),
+                                (round(secondary_tip[0]), round(secondary_tip[1])),
+                                1,
+                            )
+                            if render_order < 3 or secondary_extent < 3.0:
+                                continue
+                            secondary_dx = secondary_tip[0] - secondary_base[0]
+                            secondary_dy = secondary_tip[1] - secondary_base[1]
+                            secondary_length = max(0.001, math.hypot(secondary_dx, secondary_dy))
+                            secondary_ux = secondary_dx / secondary_length
+                            secondary_uy = secondary_dy / secondary_length
+                            tertiary_nx, tertiary_ny = -secondary_uy, secondary_ux
+                            for tertiary_fraction in (0.45, 0.70):
+                                tertiary_base = (
+                                    secondary_base[0] + secondary_dx * tertiary_fraction,
+                                    secondary_base[1] + secondary_dy * tertiary_fraction,
+                                )
+                                tertiary_extent = max(1.0, secondary_length * 0.24 * (1.0 - tertiary_fraction * 0.32))
+                                for tertiary_side in (-1.0, 1.0):
+                                    tertiary_tip = (
+                                        tertiary_base[0] + tertiary_nx * tertiary_side * tertiary_extent + secondary_ux * tertiary_extent * 0.12,
+                                        tertiary_base[1] + tertiary_ny * tertiary_side * tertiary_extent + secondary_uy * tertiary_extent * 0.12,
+                                    )
+                                    pygame.draw.line(
+                                        screen,
+                                        color,
+                                        (round(tertiary_base[0]), round(tertiary_base[1])),
+                                        (round(tertiary_tip[0]), round(tertiary_tip[1])),
+                                        1,
+                                    )
+            return
+        if structure in {"pinnately_compound", "frond_like"} and authored_leaflets:
+            arch = max(0.0, min(0.35, float(visual.get("frond_arch", 0.0) or 0.0)))
+            control = (
+                float(point[0]) + dx * 0.43,
+                float(point[1]) + dy * 0.43 - length * arch,
+            )
+
+            def curve(t):
+                inverse = 1.0 - t
+                return (
+                    inverse * inverse * float(point[0]) + 2.0 * inverse * t * control[0] + t * t * float(end[0]),
+                    inverse * inverse * float(point[1]) + 2.0 * inverse * t * control[1] + t * t * float(end[1]),
+                )
+
+            rachis = [curve(step / 16.0) for step in range(17)]
+            pygame.draw.lines(screen, color, False, rachis, width)
+            pair_count = max(1, math.ceil(authored_leaflets / 2.0))
+            # The ecological count stays authored in the snapshot.  The
+            # renderer samples it to keep a many-crowned stand legible and
+            # bounded while retaining a recognisable compound-leaf rhythm.
+            sampled_pairs = min(24, pair_count)
+            leaflet_length_m = max(0.001, float(visual.get("leaflet_length_m", 0.1) or 0.1))
+            leaflet_width_m = max(0.0002, float(visual.get("leaflet_width_m", 0.01) or 0.01))
+            leaflet_pixels = min(
+                length * 0.22,
+                leaflet_length_m * self._projection_pixels_per_meter(camera) * max(0.55, float(scale)),
+            )
+            leaflet_width = max(
+                1,
+                round(leaflet_width_m * self._projection_pixels_per_meter(camera) * max(0.55, float(scale))),
+            )
+            for pair_index in range(sampled_pairs):
+                t = 0.17 + 0.80 * (pair_index + 0.5) / sampled_pairs
+                base_x, base_y = curve(t)
+                tx = 2.0 * (1.0 - t) * (control[0] - float(point[0])) + 2.0 * t * (float(end[0]) - control[0])
+                ty = 2.0 * (1.0 - t) * (control[1] - float(point[1])) + 2.0 * t * (float(end[1]) - control[1])
+                tangent_length = max(0.001, math.hypot(tx, ty))
+                tangent_x, tangent_y = tx / tangent_length, ty / tangent_length
+                normal_x, normal_y = -tangent_y, tangent_x
+                normalised_t = max(0.0, min(1.0, (t - 0.15) / 0.85))
+                taper = 0.24 + 0.76 * math.sin(math.pi * normalised_t) ** 0.45
+                extent = max(2.0, leaflet_pixels * taper)
+                # A deterministic forward sweep breaks the rigid fishbone
+                # look without inventing extra organs or randomising frames.
+                sweep = 0.08 + 0.035 * math.sin(index * 1.73 + pair_index * 0.61)
+                for side in (-1.0, 1.0):
+                    tip = (
+                        round(base_x + normal_x * side * extent + tangent_x * extent * sweep),
+                        round(base_y + normal_y * side * extent + tangent_y * extent * sweep + extent * 0.035),
+                    )
+                    pygame.draw.line(screen, color, (round(base_x), round(base_y)), tip, leaflet_width)
+            return
+
+        pygame.draw.line(screen, color, point, end, width)
+        leaflet_count = 5 if structure in {"pinnately_compound", "frond_like"} else 4
         for leaflet_index in range(leaflet_count):
             fraction = 0.22 + 0.13 * leaflet_index
             base_x = point[0] + dx * fraction
             base_y = point[1] + dy * fraction
             side = -1.0 if leaflet_index % 2 else 1.0
-            leaflet_length = max(2.5, length * (0.24 - 0.018 * leaflet_index))
-            tip_x = base_x + px * side * leaflet_length + ux * leaflet_length * 0.18
-            tip_y = base_y + py * side * leaflet_length + uy * leaflet_length * 0.18
+            legacy_leaflet_length = max(2.5, length * (0.24 - 0.018 * leaflet_index))
+            tip_x = base_x + px * side * legacy_leaflet_length + ux * legacy_leaflet_length * 0.18
+            tip_y = base_y + py * side * legacy_leaflet_length + uy * legacy_leaflet_length * 0.18
             pygame.draw.line(screen, color, (round(base_x), round(base_y)), (round(tip_x), round(tip_y)), width)
 
     def _module_asset(self, sim, kind):
@@ -610,7 +1201,257 @@ class SpeciesRenderer:
             return False
         return float(rotation) % 360.0 > 180.0
 
-    def _draw_module_asset(self, screen, sim, camera, kind, point, rotation, scale):
+    @staticmethod
+    def _module_depicted_size_m(module):
+        """Return visual sprite size without changing structural length."""
+
+        visual = getattr(module, "visual", {}) or {} if module is not None else {}
+        try:
+            value = float(visual.get("depicted_size_m"))
+        except (TypeError, ValueError):
+            return None
+        return value if math.isfinite(value) and value > 0.0 else None
+
+    def _rosette_leaf_width_scale(self, camera, placement, point):
+        """Compress a basal leaf when its blade plane projects edge-on.
+
+        The reusable asset remains a face view.  Its width axis is tangential
+        to the crown, so projecting that tangent supplies a camera-dependent
+        profile without requiring a second hand-painted side-view sprite.
+        """
+
+        base_camera = getattr(camera, "camera", camera)
+        if isinstance(base_camera, TopDownDiagnosticCamera):
+            return 1.0
+        if not isinstance(base_camera, DiagnosticCamera):
+            return 1.0
+        angle = math.radians(float(placement[5]))
+        # DiagnosticCamera is an intentionally readable oblique elevation,
+        # not a perspective camera: its y contribution is exaggerated rather
+        # than foreshortened.  Use the blade's tangential x component to add
+        # the missing edge-on cue explicitly in this view.
+        return 0.28 + 0.72 * abs(math.sin(angle))
+
+    @staticmethod
+    def _sample_reproductive_overlays(overlays, cell_size=14, threshold=64):
+        """Keep dense reproductive overlays legible without deleting organs.
+
+        Sampling is renderer-only and deterministic in screen space. Sparse
+        flowering plants pass through unchanged; a dense tree keeps at most
+        one visible accent per cell while every canonical placement remains in
+        the snapshot and ecological metrics. Mature fruit/seed cones win a
+        contested cell over young flowers/pollen cones.
+        """
+
+        overlays = list(overlays)
+        if len(overlays) <= int(threshold):
+            return overlays
+        cell_size = max(2, int(cell_size))
+        ranked = sorted(
+            enumerate(overlays),
+            key=lambda item: (0 if item[1][0] == "fruit" else 1, item[0]),
+        )
+        occupied = set()
+        selected_indices = []
+        for index, overlay in ranked:
+            point = overlay[1]
+            cell = (round(float(point[0]) / cell_size), round(float(point[1]) / cell_size))
+            if cell in occupied:
+                continue
+            occupied.add(cell)
+            selected_indices.append(index)
+        return [overlays[index] for index in sorted(selected_indices)]
+
+    def _draw_reproductive_fallback(self, screen, sim, camera, kind, point, rotation, scale, color):
+        """Draw a small organ-like fallback instead of an unlabelled circle."""
+
+        module = sim.blueprint.module(kind) if hasattr(sim.blueprint, "module") else None
+        depicted_size_m = self._module_depicted_size_m(module)
+        structure = str(sim.blueprint.growth.get("reproductive_structure") or "other_unknown")
+        if depicted_size_m is None:
+            if structure == "cone":
+                depicted_size_m = 0.055 if kind == "flower" else 0.09
+            elif structure == "spike":
+                # A grass spike is a genuinely elongated organ (often
+                # 10-30cm), not a small point-like flower -- fall back to a
+                # generic length rather than the tiny per-flower default
+                # below so it still reads as a spike, not a dot.
+                depicted_size_m = 0.12
+            elif structure == "panicle":
+                depicted_size_m = 0.22
+            elif kind == "fruit":
+                depicted_size_m = 0.08
+            else:
+                depicted_size_m = max(0.04, float(getattr(module, "length_m", 0.1) or 0.1))
+        pixels_per_meter = self._projection_pixels_per_meter(camera)
+        minimum_height = (
+            4 if structure == "cone" and kind == "flower"
+            else 7 if structure == "capitulum" and kind == "flower"
+            else 6 if structure in {"cone", "spike", "panicle"}
+            else 3
+        )
+        maximum_height = 90 if structure == "panicle" else 36
+        height = max(
+            minimum_height,
+            min(maximum_height, round(depicted_size_m * pixels_per_meter * max(0.55, float(scale)))),
+        )
+
+        if structure == "cone":
+            width = max(3, round(height * 0.58))
+            canvas = pygame.Surface((width + 6, height + 6), pygame.SRCALPHA)
+            cx = canvas.get_width() // 2
+            top, bottom = 2, canvas.get_height() - 3
+            half = max(1, width // 2)
+            dark = tuple(max(0, round(channel * 0.62)) for channel in color)
+            light = tuple(min(255, round(channel * 1.18)) for channel in color)
+            outline = ((cx, top), (cx + half, top + max(2, height // 3)), (cx + half - 1, bottom - 2),
+                       (cx, bottom), (cx - half + 1, bottom - 2), (cx - half, top + max(2, height // 3)))
+            pygame.draw.polygon(canvas, color, outline)
+            pygame.draw.lines(canvas, dark, True, outline, 1)
+            for row in range(top + 2, bottom - 1, max(2, height // 4)):
+                span = max(1, round(half * min(1.0, (row - top + 2) / max(2, height * 0.45))))
+                pygame.draw.line(canvas, light, (cx - span, row), (cx + span, row), 1)
+        elif structure == "spike":
+            graminoid_spike = sim.blueprint.growth.get("growth_form") == "graminoid"
+            width = (
+                max(3, round(height * 0.26))
+                if graminoid_spike
+                else max(5, round(height * 0.20))
+            )
+            canvas = pygame.Surface((width + 6, height + 6), pygame.SRCALPHA)
+            cx = canvas.get_width() // 2
+            top, bottom = 2, canvas.get_height() - 3
+            dark = tuple(max(0, round(channel * 0.7)) for channel in color)
+            pygame.draw.line(canvas, dark, (cx, top), (cx, bottom), 1)
+            if graminoid_spike:
+                # Grass spikes retain their two-ranked spikelet silhouette.
+                spikelet_count = max(3, (bottom - top) // 3)
+                spikelet_half = max(1, width // 2)
+                for index in range(spikelet_count):
+                    fraction = index / max(1, spikelet_count - 1)
+                    row = round(top + fraction * (bottom - top))
+                    side = 1 if index % 2 == 0 else -1
+                    pygame.draw.line(canvas, color, (cx, row), (cx + side * spikelet_half, row - 1), 1)
+            else:
+                # Forb spikes such as Plantago are dense cylinders of tiny
+                # sessile flowers, not the ladder-like grass arrangement.
+                light = tuple(min(255, round(channel * 1.10)) for channel in color)
+                half = max(2, width // 2)
+                outline = (
+                    (cx, top),
+                    (cx + half - 1, top + 2),
+                    (cx + half, bottom - 2),
+                    (cx, bottom),
+                    (cx - half, bottom - 2),
+                    (cx - half + 1, top + 2),
+                )
+                pygame.draw.polygon(canvas, color, outline)
+                pygame.draw.lines(canvas, dark, True, outline, 1)
+                for row in range(top + 2, bottom - 1, 3):
+                    offset = 1 if (row // 3) % 2 else -1
+                    pygame.draw.circle(canvas, light, (cx + offset, row), 1)
+        elif structure == "panicle":
+            # A loose compound inflorescence: one rachis, successively
+            # shorter spreading branches, secondary forks, and small terminal
+            # spikelets. The deliberately unequal alternating tiers avoid the
+            # ladder-like symmetry of a spike while remaining deterministic.
+            # This is shared by every species that authors the panicle category.
+            graminoid_panicle = sim.blueprint.growth.get("growth_form") == "graminoid"
+            width = max(11, round(height * (1.65 if graminoid_panicle else 0.95)))
+            canvas = pygame.Surface((width + 8, height + 8), pygame.SRCALPHA)
+            cx = canvas.get_width() // 2
+            top, bottom = 3, canvas.get_height() - 3
+            dark = tuple(max(0, round(channel * (0.68 if graminoid_panicle else 0.82))) for channel in color)
+            light = tuple(min(255, round(channel * 1.16)) for channel in color)
+            rachis_top = top + max(2, height // 9)
+            pygame.draw.line(canvas, dark, (cx, bottom), (cx, rachis_top), 1)
+            tiers = (
+                (0.18, -1, 0.96, 0.01),
+                (0.28, 1, 0.82, -0.04),
+                (0.39, -1, 0.74, 0.07),
+                (0.50, 1, 0.68, 0.01),
+                (0.61, -1, 0.53, -0.03),
+                (0.71, 1, 0.46, 0.06),
+                (0.80, -1, 0.31, 0.00),
+            )
+            half_reach = width * 0.45
+            for fraction, side, reach_factor, droop_factor in tiers:
+                row = round(bottom - fraction * (bottom - rachis_top))
+                sides = (side,) if graminoid_panicle else (-1, 1)
+                for branch_side in sides:
+                    side_factor = 1.0 if branch_side == side else 0.78
+                    reach = max(3, round(half_reach * reach_factor * side_factor))
+                    tip = (
+                        cx + branch_side * reach,
+                        row + round(height * droop_factor) - max(1, reach // 8),
+                    )
+                    pygame.draw.line(canvas, dark, (cx, row), tip, 1)
+                    split_x = round(cx + branch_side * reach * 0.56)
+                    split_y = round(row + (tip[1] - row) * 0.56)
+                    for fork_sign in (-1, 1):
+                        fork_tip = (
+                            split_x + branch_side * max(2, reach // 3),
+                            split_y + fork_sign * max(1, reach // 7),
+                        )
+                        pygame.draw.line(canvas, dark, (split_x, split_y), fork_tip, 1)
+                        pygame.draw.circle(canvas, light if fork_sign > 0 else color, fork_tip, 1)
+                    pygame.draw.circle(canvas, color, tip, 1)
+                    if not graminoid_panicle:
+                        # Dense broadleaf-forb panicles read as many tiny
+                        # greenish flowers along living secondary axes, not a
+                        # bare brown skeleton with dots only at their tips.
+                        for sample in (0.42, 0.68, 0.88):
+                            cluster = (
+                                round(cx + (tip[0] - cx) * sample),
+                                round(row + (tip[1] - row) * sample),
+                            )
+                            pygame.draw.circle(canvas, light if sample > 0.6 else color, cluster, 1)
+            for offset in (-2, 0, 2):
+                pygame.draw.line(canvas, dark, (cx, rachis_top + 3), (cx + offset, rachis_top), 1)
+                pygame.draw.circle(canvas, light, (cx + offset, rachis_top), 1)
+        elif structure == "capitulum" and kind == "flower":
+            diameter = max(9, round(height * 1.35))
+            canvas = pygame.Surface((diameter + 8, diameter + 8), pygame.SRCALPHA)
+            cx, cy = canvas.get_width() // 2, canvas.get_height() // 2
+            ray_length = max(3, round(diameter * 0.36))
+            ray_width = max(1, round(diameter * 0.09))
+            orbit = max(2, round(diameter * 0.22))
+            for ray in range(16):
+                angle = math.radians(ray * 22.5)
+                center = (
+                    round(cx + math.cos(angle) * (orbit + ray_length * 0.36)),
+                    round(cy + math.sin(angle) * (orbit + ray_length * 0.36)),
+                )
+                petal = pygame.Surface((ray_length + 2, ray_width + 2), pygame.SRCALPHA)
+                pygame.draw.ellipse(petal, color, pygame.Rect(1, 1, ray_length, ray_width))
+                rotated = pygame.transform.rotate(petal, -math.degrees(angle))
+                canvas.blit(rotated, rotated.get_rect(center=center))
+            pygame.draw.circle(canvas, (225, 177, 48), (cx, cy), max(2, round(diameter * 0.19)))
+            pygame.draw.circle(canvas, (155, 112, 31), (cx, cy), max(2, round(diameter * 0.19)), 1)
+        elif kind == "flower":
+            diameter = max(5, height)
+            canvas = pygame.Surface((diameter + 6, diameter + 6), pygame.SRCALPHA)
+            cx, cy = canvas.get_width() // 2, canvas.get_height() // 2
+            petal_radius = max(1, diameter // 4)
+            orbit = max(1, diameter // 4)
+            for petal in range(5):
+                angle = math.radians(petal * 72.0 - 90.0)
+                center = (round(cx + math.cos(angle) * orbit), round(cy + math.sin(angle) * orbit))
+                pygame.draw.circle(canvas, color, center, petal_radius)
+            pygame.draw.circle(canvas, (225, 190, 76), (cx, cy), max(1, diameter // 7))
+        else:
+            width = max(4, round(height * 0.72))
+            canvas = pygame.Surface((width + 6, height + 6), pygame.SRCALPHA)
+            rect = pygame.Rect(3, 3, width, height)
+            dark = tuple(max(0, round(channel * 0.62)) for channel in color)
+            pygame.draw.ellipse(canvas, color, rect)
+            pygame.draw.ellipse(canvas, dark, rect, 1)
+            pygame.draw.line(canvas, dark, (canvas.get_width() // 2, 3), (canvas.get_width() // 2, 1), 1)
+
+        sprite = pygame.transform.rotate(canvas, float(rotation))
+        screen.blit(sprite, sprite.get_rect(center=(round(point[0]), round(point[1]))))
+
+    def _draw_module_asset(self, screen, sim, camera, kind, point, rotation, scale, width_scale=1.0):
         surface = self._module_asset(sim, kind)
         if surface is None:
             return False
@@ -639,14 +1480,25 @@ class SpeciesRenderer:
             pixels_per_meter = abs(camera.world_to_screen((1.0, 0.0))[0] - camera.world_to_screen((0.0, 0.0))[0])
         except (TypeError, IndexError):
             pixels_per_meter = 64.0
-        target_height = max(10, int(max(0.04, float(getattr(module, "length_m", 0.1))) * pixels_per_meter * max(0.55, float(scale))))
+        depicted_size_m = self._module_depicted_size_m(module)
+        if kind in {"flower", "fruit"} and depicted_size_m is not None:
+            # Pixel Studio's metric size is the real authored organ/sprite
+            # extent.  Do not route this through module.length_m: that value
+            # remains the structural default used by older grammars and
+            # ecological calculations. At whole-tree scale a tiny organ may
+            # legitimately occupy one pixel; the independently fitted detail
+            # camera is what makes it larger, not a global 10 px floor.
+            target_height = max(1, round(depicted_size_m * pixels_per_meter * max(0.55, float(scale))))
+        else:
+            target_height = max(10, int(max(0.04, float(getattr(module, "length_m", 0.1))) * pixels_per_meter * max(0.55, float(scale))))
         if kind == "leaf":
             target_height = max(14, int(target_height * 1.45))
         if kind == "leaf" and sim.blueprint.growth.get("shoot_distribution_grammar"):
             target_height = max(2, round(float(module.length_m) * pixels_per_meter * float(scale)))
         target_height = min(180, target_height)
         aspect = surface.get_width() / max(1, surface.get_height())
-        target_width = max(4, int(target_height * aspect))
+        width_scale = max(0.2, min(1.5, float(width_scale)))
+        target_width = max(1 if kind in {"flower", "fruit"} else 4, int(target_height * aspect * width_scale))
         if kind == "leaf" and sim.blueprint.growth.get("shoot_distribution_grammar"):
             target_width = max(1, round(target_height * aspect))
         mirror = self._mirror_leaf_for_rotation(kind, rotation)
@@ -701,7 +1553,7 @@ class SpeciesRenderer:
             screen.blit(sprite, sprite.get_rect(center=(round(center[0]), round(center[1]))))
         return True
 
-    def _draw_individual(self, screen, sim, camera=None, clear=True, show_height_reference=False, roots_only=False, visible_indices=None, skeleton=False, snapshot=None, cache=True, draw_ground_line=True, foliage_sample_cap=None):
+    def _draw_individual(self, screen, sim, camera=None, clear=True, show_height_reference=False, roots_only=False, visible_indices=None, skeleton=False, snapshot=None, cache=True, draw_ground_line=True, foliage_sample_cap=None, draw_environment=True):
         """Draw one plant, reusing a cached frame when nothing has changed.
 
         A tree's snapshot is only regenerated a few times a second (growth is
@@ -729,8 +1581,9 @@ class SpeciesRenderer:
                 # own identity fields (e.g. two forest-experiment trees with
                 # the same species/seed but different shading environments).
                 id(sim), snapshot.blueprint_fingerprint, snapshot.seed, snapshot.age_days, snapshot.lod,
+                json.dumps(snapshot.stats.get("environment") or {}, sort_keys=True, default=str),
                 tuple(sorted(visible_indices)) if visible_indices is not None else None,
-                bool(skeleton), bool(roots_only), bool(show_height_reference), bool(clear), bool(draw_ground_line),
+                bool(skeleton), bool(roots_only), bool(show_height_reference), bool(clear), bool(draw_ground_line), bool(draw_environment),
                 foliage_sample_cap,
                 screen.get_size(), _camera_state_key(camera),
                 self._visual_asset_revision(sim),
@@ -743,6 +1596,7 @@ class SpeciesRenderer:
             screen, sim, camera=camera, clear=clear, show_height_reference=show_height_reference,
             roots_only=roots_only, visible_indices=visible_indices, skeleton=skeleton, snapshot=snapshot,
             draw_ground_line=draw_ground_line, foliage_sample_cap=foliage_sample_cap,
+            draw_environment=draw_environment,
         )
         if cache:
             frame = screen.copy()
@@ -752,19 +1606,25 @@ class SpeciesRenderer:
                 stale_key = self._individual_draw_cache_order.pop(0)
                 self._individual_draw_cache.pop(stale_key, None)
 
-    def _draw_individual_uncached(self, screen, sim, camera=None, clear=True, show_height_reference=False, roots_only=False, visible_indices=None, skeleton=False, snapshot=None, draw_ground_line=True, foliage_sample_cap=None):
+    def _draw_individual_uncached(self, screen, sim, camera=None, clear=True, show_height_reference=False, roots_only=False, visible_indices=None, skeleton=False, snapshot=None, draw_ground_line=True, foliage_sample_cap=None, draw_environment=True):
         camera = camera or self.app_view.camera
         if clear:
             screen.fill((18, 23, 20))
         snapshot = snapshot or sim.render_snapshot
-        if draw_ground_line:
+        top_down_view = isinstance(camera, TopDownDiagnosticCamera)
+        if top_down_view and not roots_only:
+            self._draw_neighbour_root_zones(screen, camera, snapshot)
+        if not roots_only and draw_environment:
+            self._draw_solid_structures(screen, camera, snapshot)
+            self._draw_climbing_supports(screen, camera, snapshot)
+        if draw_ground_line and not top_down_view:
             ground = self._screen(camera, snapshot.bounds_m[0] - 1.0, 0.0)
             ground_right_x = max(snapshot.bounds_m[1] + 1.0, float(getattr(sim, "height_reference_x", snapshot.bounds_m[1] + 1.0)) + 0.35)
             ground_right = self._screen(camera, ground_right_x, 0.0)
             if ground and ground_right:
                 line_color = (62, 112, 126) if sim.blueprint.growth.get("shape") == "aquatic" else (82, 72, 55)
                 pygame.draw.line(screen, line_color, ground, ground_right, 2)
-        if clear and snapshot.stats.get("root_segment_count", 0):
+        if clear and not top_down_view and snapshot.stats.get("root_segment_count", 0):
             soil_z = snapshot.stats.get("root_origin_z_m", 0.0)
             soil_point = self._screen(camera, 0.0, soil_z)
             if soil_point:
@@ -779,6 +1639,19 @@ class SpeciesRenderer:
         texture_sequences = {}
         texture_slots = {}
         renewal_overlays = []
+        reproductive_overlays = []
+        # A basal/tufted graminoid's leaf blades (real tussock grasses like
+        # ryegrass) are grown with a real 3D tip position and an actual
+        # curved path (SpeciesSimulation._grow_graminoid_culm), the same as
+        # a stem or branch -- not one anchored fixed-aspect sprite per leaf.
+        # Draw them the same connected-line way stem/branch/root fall back
+        # to when no asset applies (never the stretched pixel-asset path: a
+        # tapered leaf sprite repeated per curve segment would look worse,
+        # not better, per §6a's stretch rule) -- a single-point sprite
+        # stamped per blade has no way to read as a tuft, only a starburst.
+        connected_graminoid_leaves = (
+            sim.blueprint.growth.get("growth_form") == "graminoid"
+        )
         for index, placement in enumerate(snapshot.placements):
             kind, parent, x, y, z, rotation, scale, level = placement
             if visible_indices is not None and index not in visible_indices:
@@ -793,18 +1666,38 @@ class SpeciesRenderer:
             if kind in {"renewal_organ", "renewal_bud"}:
                 renewal_overlays.append((kind, point, scale))
                 continue
-            color = self._color(kind)
+            color = self._color(kind, sim)
             if sim.blueprint.growth.get("shape") in {"tree", "shrub", "subshrub"}:
                 if kind in {"stem_section", "branch_section", "root"}:
-                    color = (126, 91, 62)
-                elif kind == "flower":
-                    color = (190, 151, 64)
+                    color = self._species_tint((126, 91, 62), f"{sim.species_id}:{kind}")
+                # Flower/cone colour already comes from _color(). Keeping a
+                # second tree/shrub-only override here used to turn every
+                # unasseted angiosperm flower gold, while also risking a
+                # future cone-colour mismatch between the two paths.
             elif sim.blueprint.growth.get("shape") == "aquatic":
                 if kind in {"stem_section", "branch_section", "root"}:
-                    color = (53, 117, 126)
+                    color = self._species_tint((53, 117, 126), f"{sim.species_id}:{kind}")
             elif sim.blueprint.growth.get("shape") == "succulent":
                 if kind in {"stem_section", "branch_section", "root"}:
-                    color = (117, 137, 73)
+                    color = self._species_tint((117, 137, 73), f"{sim.species_id}:{kind}")
+            if (
+                kind == "branch_section"
+                and float(z) < 0.0
+                and "rhizome" in {
+                    str(item).lower().replace("-", "_").replace(" ", "_")
+                    for item in (sim.blueprint.growth.get("belowground_storage") or [])
+                }
+            ):
+                color = (126, 91, 62)
+            if kind in {"flower", "fruit"}:
+                # Deferred and drawn after the foliage loop below, on the
+                # same principle as renewal_overlays -- flower/fruit share
+                # a shoot's terminal socket with its own foliage, and the
+                # (now properly-sized, post-shoot-unit-fix) foliage sprite
+                # drawn at the same point would otherwise paint over a
+                # small reproductive-structure marker drawn first.
+                reproductive_overlays.append((kind, point, rotation, scale, color))
+                continue
             parent_point = None
             if int(parent) >= 0 and int(parent) < len(snapshot.placements):
                 parent_point = self._placement_screen(camera, snapshot.placements[int(parent)])
@@ -852,8 +1745,45 @@ class SpeciesRenderer:
                 )
                 if not structural_asset and not textured:
                     pygame.draw.lines(screen, color, False, path_points, line_width)
+            elif (
+                kind == "leaf"
+                and connected_graminoid_leaves
+                and parent_point
+                and bool(getattr(snapshot, "placement_paths", {}).get(str(index), []))
+            ):
+                path = getattr(snapshot, "placement_paths", {}).get(str(index), [])
+                path_points = [parent_point]
+                path_points.extend(self._path_screen(camera, path_point) for path_point in path)
+                if not path:
+                    path_points.append(point)
+                line_width = max(1, min(5, round(2.2 * float(scale))))
+                pygame.draw.lines(screen, color, False, path_points, line_width)
             elif kind == "leaf":
-                if not self._draw_module_asset(screen, sim, camera, "leaf", point, rotation, scale):
+                asset_rotation = rotation
+                asset_width_scale = 1.0
+                if sim.blueprint.growth.get("leaf_attachment_pattern") == "basal_rosette":
+                    asset_width_scale = self._rosette_leaf_width_scale(camera, placement, point)
+                    orientation = (getattr(snapshot, "placement_orientations", {}) or {}).get(str(index)) or {}
+                    forward = orientation.get("forward") or []
+                    if len(forward) >= 3:
+                        origin = placement[2:5]
+                        target = [
+                            float(origin[0]) + float(forward[0]),
+                            float(origin[1]) + float(forward[1]),
+                            float(origin[2]) + float(forward[2]),
+                        ]
+                        projected = self._placement_screen(
+                            camera,
+                            ["leaf_extent", -1, target[0], target[1], target[2], rotation, scale, 0],
+                        )
+                        if projected is not None:
+                            dx, dy = float(projected[0]) - float(point[0]), float(projected[1]) - float(point[1])
+                            if abs(dx) + abs(dy) > 1e-6:
+                                asset_rotation = math.degrees(math.atan2(dx, -dy))
+                if not self._draw_module_asset(
+                    screen, sim, camera, "leaf", point, asset_rotation, scale,
+                    width_scale=asset_width_scale,
+                ):
                     self._draw_fallback_leaf(screen, sim, camera, snapshot, index, point, rotation, scale, color=color)
             elif kind == "root":
                 if snapshot.stats.get("root_segment_count", 0):
@@ -874,6 +1804,17 @@ class SpeciesRenderer:
         clusters = getattr(snapshot, "leaf_clusters", None)
         if not roots_only and not skeleton and clusters and snapshot.lod >= 1:
             dense_canopy = len(clusters) > 200
+            # A conifer's true placement unit is one needle -- but a mature
+            # tree carries thousands to millions of them, so sampling many
+            # individual needle sprites per shoot (the else-branch below)
+            # doesn't scale and still reads as a sparse scatter rather than
+            # foliage. For needle/scale foliage, the smallest *visual* unit
+            # instead becomes the needle-clad shoot itself: one sprite (a
+            # small foliated twig, not a lone needle -- see
+            # Plant_Design_Process.md §6g) stretched/rotated to that one
+            # shoot's own length/angle, the same "one placement, one draw"
+            # principle stem/branch segments already use.
+            needle_foliage = str(sim.blueprint.growth.get("leaf_structure") or "") in {"needle_like", "scale_like"}
             for cluster in clusters:
                 if cluster.get("explicit_samples"):
                     continue
@@ -889,6 +1830,50 @@ class SpeciesRenderer:
                 host_angle = float(host[5]) if host is not None and len(host) > 5 else 0.0
                 host_scale = float(host[6]) if host is not None and len(host) > 6 else 1.0
                 density = max(0.0, min(1.0, float(cluster.get("visual_density", 0.6) or 0.6)))
+                if needle_foliage and cluster.get("shoot_type"):
+                    leaf_module = sim.blueprint.module("leaf")
+                    module_length = max(0.01, float(getattr(leaf_module, "length_m", 0.1) or 0.1))
+                    shoot_length = float(cluster.get("length", module_length) or module_length)
+                    shoot_rotation = math.degrees(float(cluster.get("angle", 0.0) or 0.0))
+                    sample_point = self._path_screen(camera, (x, y, z))
+                    if sample_point is not None:
+                        # One sprite now stands in for a whole needle-clad
+                        # shoot (previously 18-36 individual-needle blits
+                        # per cluster -- see the else-branch below), so it
+                        # has to be sized to read on its own rather than
+                        # through repetition. _draw_module_asset derives
+                        # on-screen size from the *needle*-scale
+                        # module.length_m (still correct for the
+                        # structural formulas that also read it, see
+                        # tools/author_sequoia_sempervirens_leaf_asset.py),
+                        # which collapses to 1-2px at whole-tree/forest
+                        # zoom even stretched by shoot_length/module_length
+                        # -- so pick `scale` to hit a target on-screen size
+                        # directly instead of trusting that ratio alone.
+                        try:
+                            pixels_per_meter = abs(
+                                camera.world_to_screen((1.0, 0.0))[0] - camera.world_to_screen((0.0, 0.0))[0]
+                            )
+                        except (TypeError, IndexError):
+                            pixels_per_meter = 64.0
+                        target_px = max(9.0, min(26.0, 14.0 * (shoot_length / 0.09) ** 0.5))
+                        shoot_scale = max(0.3, target_px / max(1e-6, module_length * max(1e-6, pixels_per_meter)))
+                        if not self._draw_module_asset(screen, sim, camera, "leaf", sample_point, shoot_rotation, shoot_scale):
+                            # _draw_fallback_leaf's needle-line shape sizes
+                            # its *length* from the single-needle
+                            # module.length_m too (same collapse-at-zoom
+                            # issue as above), while its width has its own
+                            # floor -- at whole-tree zoom the line collapses
+                            # to a blob instead of a needle. A small filled
+                            # marker sized directly to target_px reads
+                            # correctly as one shoot-sized clump without
+                            # depending on that per-needle formula.
+                            pygame.draw.circle(
+                                screen, self._color("leaf", sim),
+                                (round(sample_point[0]), round(sample_point[1])),
+                                max(2, round(target_px * 0.32)),
+                            )
+                    continue
                 sample_draws = 2 if dense_canopy else max(1, min(4, int(round(density * 4.0))))
                 # Dense-canopy blobs are drawn larger so a handful of blits
                 # per cluster still reads as full foliage rather than a
@@ -896,7 +1881,17 @@ class SpeciesRenderer:
                 blob_scale = max(0.42, min(1.35, host_scale * (0.9 if dense_canopy else 0.64)))
                 shoot = cluster.get("shoot_type")
                 if shoot:
-                    sample_draws = min(estimated, 18 + round(density * 18))
+                    fascicle_size = max(0, int(cluster.get("fascicle_size", 0) or 0))
+                    if fascicle_size:
+                        # Density selects how many real bundle sockets to
+                        # sample, never how many needles belong to a bundle.
+                        fascicle_draws = min(
+                            int(cluster.get("fascicle_count", 1) or 1),
+                            max(1, round(2 + 4 * density)),
+                        )
+                        sample_draws = min(estimated, fascicle_size * fascicle_draws)
+                    else:
+                        sample_draws = min(estimated, 18 + round(density * 18))
                     leaf_module = sim.blueprint.module("leaf")
                     leaf_length = leaf_module.length_m if leaf_module else .1
                     blob_scale = .85
@@ -904,6 +1899,7 @@ class SpeciesRenderer:
                     sample_draws = min(sample_draws, max(0, int(foliage_sample_cap)))
                 for sample_index in range(sample_draws):
                     sample_angle = host_angle + sample_index * 137.5 + 34.0
+                    sample_rotation = sample_angle + (180.0 if sample_index % 2 else 0.0)
                     radius = 0.018 + 0.010 * (sample_index % 2)
                     radians = math.radians(sample_angle)
                     sample_x = x + math.cos(radians) * radius
@@ -911,23 +1907,44 @@ class SpeciesRenderer:
                     sample_z = z + (0.012 if sample_index % 2 else -0.006)
                     if shoot:
                         # Distribute along the shoot and around its leaf-bearing volume.
-                        along = (sample_index / max(1, sample_draws-1) - .5) * float(cluster.get("length", .2))
                         azimuth = float(cluster.get("angle", 0.))
-                        spread = leaf_length * (0.7 + .7 * density) * math.sqrt((sample_index % 7 + 1) / 7)
-                        sample_x = x + math.cos(azimuth)*along + math.cos(radians)*spread
-                        sample_y = y + math.sin(azimuth)*along + math.sin(radians)*spread
-                        sample_z = z + math.sin(radians*1.7)*spread
+                        fascicle_size = max(0, int(cluster.get("fascicle_size", 0) or 0))
+                        if fascicle_size:
+                            fascicle_index = sample_index // fascicle_size
+                            needle_index = sample_index % fascicle_size
+                            fascicle_draws = max(1, math.ceil(sample_draws / fascicle_size))
+                            along = (fascicle_index / max(1, fascicle_draws - 1) - .5) * float(cluster.get("length", .2))
+                            sample_x = x + math.cos(azimuth) * along
+                            sample_y = y + math.sin(azimuth) * along
+                            sample_z = z + (fascicle_index % 2) * leaf_length * .08
+                            centre_rotation = math.degrees(azimuth) - 18.0
+                            sample_rotation = centre_rotation + (needle_index - (fascicle_size - 1) * .5) * 11.0
+                        else:
+                            along = (sample_index / max(1, sample_draws-1) - .5) * float(cluster.get("length", .2))
+                            spread = leaf_length * (0.7 + .7 * density) * math.sqrt((sample_index % 7 + 1) / 7)
+                            sample_x = x + math.cos(azimuth)*along + math.cos(radians)*spread
+                            sample_y = y + math.sin(azimuth)*along + math.sin(radians)*spread
+                            sample_z = z + math.sin(radians*1.7)*spread
                     sample_point = self._path_screen(camera, (sample_x, sample_y, sample_z))
                     if sample_point is None:
                         continue
-                    sample_rotation = sample_angle + (180.0 if sample_index % 2 else 0.0)
                     sample_scale = blob_scale if dense_canopy or shoot else max(0.42, min(0.82, host_scale * 0.64))
                     if not self._draw_module_asset(screen, sim, camera, "leaf", sample_point, sample_rotation, sample_scale):
                         self._draw_fallback_leaf(
                             screen, sim, camera, snapshot, host_index if host_index >= 0 else 0,
                             sample_point, sample_rotation, sample_scale,
-                            color=self._color("leaf"),
+                            color=self._color("leaf", sim),
+                            rotation_only=True,
                         )
+
+        # Flower/fruit draw last (on top of foliage) -- see the deferral
+        # comment above; otherwise a shoot's own foliage sprite, drawn at
+        # the same point, paints over its small reproductive-structure
+        # marker.
+        if not roots_only and not skeleton:
+            for kind, point, rotation, scale, color in self._sample_reproductive_overlays(reproductive_overlays):
+                if not self._draw_module_asset(screen, sim, camera, kind, point, rotation, scale):
+                    self._draw_reproductive_fallback(screen, sim, camera, kind, point, rotation, scale, color)
 
         if show_height_reference:
             self._draw_height_reference(screen, sim, camera)
@@ -1134,7 +2151,14 @@ class SpeciesRenderer:
             self._species_editor_reference_cache.pop(next(iter(self._species_editor_reference_cache)))
         return fitted
 
-    def _draw_editor_plant_panel(self, panel, preview, camera, state=None, top_down=False, foliage_cap=4):
+    # foliage_cap=10: this is the Species Editor's single-tree panel, not the
+    # forest/biosphere render path (which passes its own stricter cap of 3 in
+    # biosphere_renderer.py regardless of this default). 10 was chosen by
+    # timing the densest authored trees (Oak/Red Maple, ~900 leaf clusters
+    # each): ~400ms per uncached redraw, against a ~200ms floor at cap=4 that
+    # visibly under-filled a dense crown. The panel only redraws on
+    # interaction release, not every frame, so this cost is paid rarely.
+    def _draw_editor_plant_panel(self, panel, preview, camera, state=None, top_down=False, foliage_cap=10):
         panel.fill((18, 23, 20))
         if state and state.get("reference_overlay") and not top_down:
             reference = self._editor_reference_surface(

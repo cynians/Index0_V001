@@ -40,6 +40,37 @@ from simulations.world_gen.worldgen_diagnostics import derive_causal_feature_dia
 from world.world_model import WorldModel
 
 
+class RunLocalOntologySink:
+    """Stands in for the persistent ontology store during a headless run.
+
+    Entities persist into the run's own loader (in memory) exactly as in the
+    game, but never reach the live ontology database: headless runs, tests
+    and demos used to leave their planets, geologic units and cover patches
+    in ``.cache/ontology``.
+    """
+
+    def persist_entity(self, entity, previous_entity_id=None):
+        return True
+
+    def persist_entities(self, entities, previous_entity_ids=None):
+        return True
+
+    def persist_entity_fields(self, entity, field_names):
+        return True
+
+    def apply_changes(self, entities=None, remove_entity_ids=None):
+        return True
+
+    def remove_entity(self, entity_id):
+        return True
+
+    def export_rdfxml(self, *args, **kwargs):
+        return None
+
+    def reimport_rdfxml(self, *args, **kwargs):
+        return None
+
+
 @dataclass
 class HeadlessWorldGenConfig:
     name: str = "Headless Player Default"
@@ -768,6 +799,9 @@ class HeadlessWorldGenRunner:
     def _new_runtime(self, config):
         self._prepare_output(config)
         world = WorldModel()
+        # Everything the run persists stays in this process (see
+        # RunLocalOntologySink); the live ontology is read, never written.
+        world.loader._persistent_store = RunLocalOntologySink()
         sim = WorldGenSimulation(
             world_model=world,
             parent_system_id=self.system_id,
@@ -815,13 +849,12 @@ class HeadlessWorldGenRunner:
                 rng=randomizer_rng,
             )
             if config.earthlike_constraints:
-                # Preserve randomized body size, composition, spin, and map
-                # seed while keeping this diagnostic fixture in the intended
-                # temperate, water-bearing Earth-like family.
-                sim.seed_input_buffers["water_fraction"] = sim._format_seed_input(
-                    round(randomizer_rng.uniform(0.35, 0.65), 4)
-                )
-                sim.seed_input_buffers["volatile_inventory"] = "earthlike"
+                # Preserve randomized body size, rock composition, spin, and
+                # map seed while keeping this diagnostic fixture in the
+                # intended temperate, water-bearing Earth-like family: the
+                # volatile elements are set so the budget yields oceans and
+                # ~1 bar of N2.
+                sim.set_volatile_targets(round(randomizer_rng.uniform(0.35, 0.65), 4), "earthlike")
             if config.force_plate_tectonics:
                 # Keep every generic randomized physical input, but constrain
                 # this benchmark to the plate-tectonic branch so runs remain
@@ -841,16 +874,16 @@ class HeadlessWorldGenRunner:
             "tectonics_mode": str(config.tectonics_mode),
             "map_seed": str(config.map_seed),
         })
-        major_elements = template.get("major_elements") or []
+        major_elements = sim._fill_template_volatile_elements(template, [
+            {
+                "symbol": symbol,
+                "name": element_name(symbol),
+                "abundance_percent": float(abundance),
+            }
+            for symbol, abundance in template.get("major_elements") or []
+        ])
         sim.crust_composition = {
-            "major_elements": [
-                {
-                    "symbol": symbol,
-                    "name": element_name(symbol),
-                    "abundance_percent": float(abundance),
-                }
-                for symbol, abundance in major_elements
-            ],
+            "major_elements": major_elements,
             "trace_reserve_percent": TRACE_RESERVE_PERCENT,
             "trace_elements": [
                 {

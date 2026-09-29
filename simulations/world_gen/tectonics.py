@@ -19,6 +19,10 @@ def _clamp(value, low, high):
     return max(low, min(high, float(value)))
 
 
+from simulations.world_gen.sphere_noise import sphere_fbm_table, sphere_signed_table  # noqa: E402
+from simulations.world_gen.seafloor_spreading import build_spreading_model, seafloor_age_myr  # noqa: E402
+
+
 def _wrapped_delta(a, b):
     delta = float(a) - float(b)
     if delta > 0.5:
@@ -109,22 +113,22 @@ def _plate_centers(count, map_seed=""):
 
 
 def _continent_seed_signal(nx, ny, map_seed=""):
-    longitude = nx * math.tau
-    latitude = (ny - 0.5) * math.pi
-    phase_a = seed_range(map_seed, "continent_phase_a", 0.0, math.tau)
-    phase_b = seed_range(map_seed, "continent_phase_b", 0.0, math.tau)
-    phase_c = seed_range(map_seed, "continent_phase_c", 0.0, math.tau)
-    return (
-        0.52 * math.sin(longitude * seed_range(map_seed, "continent_freq_a", 1.1, 1.9) + latitude * 0.8 + phase_a)
-        + 0.34 * math.cos(longitude * seed_range(map_seed, "continent_freq_b", 2.0, 3.2) - latitude * 1.15 + phase_b)
-        + 0.22 * math.sin(longitude * seed_range(map_seed, "continent_freq_c", 3.2, 5.1) + math.sin(latitude + phase_c))
-    )
+    """Terrane seed field, seamless on the sphere (was three tilted map-space sinusoids)."""
+    return sphere_signed_table(map_seed, "continent_seed", nx, ny, features=1.4, octaves=3) * 0.8
 
 
 def _plate_distance(nx, ny, plate):
-    """Distance in a seeded, anisotropic plate metric with lobed margins."""
-    dx = _wrapped_delta(nx, float(plate.get("center_x", 0.0) or 0.0))
-    dy = float(ny) - float(plate.get("center_y", 0.5) or 0.5)
+    """Distance in a seeded, anisotropic plate metric with lobed, irregular margins.
+
+    Offsets are measured on the sphere (longitude shrinks by cos(latitude)),
+    and seamless noise roughens each plate's margin: a nearest-centre
+    partition in flat map coordinates drew straight-edged polygons --
+    triangular continents -- and stretched plates toward the poles.
+    """
+    center_y = float(plate.get("center_y", 0.5) or 0.5)
+    mean_latitude = (0.5 - 0.5 * (float(ny) + center_y)) * math.pi
+    dx = _wrapped_delta(nx, float(plate.get("center_x", 0.0) or 0.0)) * 2.0 * max(0.05, math.cos(mean_latitude))
+    dy = float(ny) - center_y
     shape = plate.get("boundary_shape") if isinstance(plate.get("boundary_shape"), dict) else {}
     orientation = float(shape.get("orientation_rad", 0.0) or 0.0)
     axis_ratio = _clamp(shape.get("axis_ratio", 1.0), 0.72, 1.38)
@@ -144,7 +148,14 @@ def _plate_distance(nx, ny, plate):
         angle * int(shape.get("lobe_b_frequency", 5) or 5)
         + float(shape.get("lobe_b_phase", 0.0) or 0.0)
     )
-    return math.hypot(rx, ry) / max(0.68, lobe_scale)
+    margin = 1.0 + PLATE_MARGIN_ROUGHNESS * sphere_signed_table(
+        str(plate.get("id") or ""), "plate_margin", nx, ny, features=2.6, octaves=3,
+    )
+    return math.hypot(rx, ry) / max(0.68, lobe_scale) * margin
+
+
+# Relative roughness of plate margins (seamless noise on the sphere).
+PLATE_MARGIN_ROUGHNESS = 0.22
 
 
 def _nearest_plate_index(nx, ny, plates):
@@ -451,9 +462,8 @@ def _decorate_boundary_segments(boundary_segments, plates, map_seed):
         midpoint_y = (float(segment.get("y1", 0.5) or 0.5) + float(segment.get("y2", 0.5) or 0.5)) * 0.5
         activity_phase = seed_range(map_seed, f"boundary:{pair_key}:activity_phase", 0.0, math.tau)
         activity_frequency = seed_range(map_seed, f"boundary:{pair_key}:activity_frequency", 2.4, 5.8)
-        activity_wave = 0.5 + 0.5 * math.sin(
-            math.tau * activity_frequency * (midpoint_x + midpoint_y * 0.57)
-            + activity_phase
+        activity_wave = sphere_fbm_table(
+            map_seed, f"boundary:{pair_key}:activity", midpoint_x, midpoint_y, features=1.5, octaves=2,
         )
         segment["activity_scale"] = round(0.42 + activity_wave * 0.78, 3)
         segment["influence_width"] = round(
@@ -464,7 +474,55 @@ def _decorate_boundary_segments(boundary_segments, plates, map_seed):
     return boundary_segments
 
 
-def _topology_and_lithosphere(owner_rows, plates, boundary_segments, map_seed):
+# Width of the continent-ocean transition in the plate distance metric
+# (unit = half a circumference, so ~300 km).  Passive margins thin
+# continental crust over ~100-300 km; blending the plates' crust across the
+# true, smooth boundary keeps coastlines from stepping at each coarse
+# lithosphere sample (the 97 x 49 grid drew ~400 km stair-steps).
+CONTINENTAL_MARGIN_WIDTH = 0.015
+
+
+def _mixed_plate_continental_fraction(plate, nx, ny, map_seed):
+    """Coherent terranes of a mixed plate (continental fraction at a point)."""
+    province = (
+        0.52
+        + 0.36 * sphere_signed_table(f"{map_seed}:{plate['id']}", "terrane", nx, ny, features=1.8, octaves=3)
+        + 0.10 * _continent_seed_signal(nx, ny, f"{map_seed}:{plate['id']}:terrane")
+    )
+    fraction = _clamp((province - 0.48) / 0.30, 0.0, 1.0)
+    return fraction * fraction * (3.0 - 2.0 * fraction)
+
+
+def _plate_continental_fraction(plate, nx, ny, map_seed):
+    plate_type = plate.get("plate_type", "mixed")
+    if plate_type == "continental":
+        return 1.0
+    if plate_type == "oceanic":
+        return 0.0
+    return _mixed_plate_continental_fraction(plate, nx, ny, map_seed)
+
+
+def _blended_continental_fraction(plates, nx, ny, map_seed):
+    """Continental fraction blended across nearby plate boundaries.
+
+    Each plate's crust is weighted by exp(-(d - d_min) / width) in the plate
+    metric, so the fraction crosses 0.5 on the actual boundary at sub-sample
+    precision and changes over a margin's width instead of in one step.
+    """
+    distances = [_plate_distance(nx, ny, plate) for plate in plates]
+    nearest = min(distances)
+    total = weighted = 0.0
+    for plate, distance in zip(plates, distances):
+        excess = (distance - nearest) / CONTINENTAL_MARGIN_WIDTH
+        if excess > 8.0:
+            continue
+        weight = math.exp(-excess)
+        total += weight
+        weighted += weight * _plate_continental_fraction(plate, nx, ny, map_seed)
+    return weighted / total if total > 0.0 else 0.0
+
+
+def _topology_and_lithosphere(owner_rows, plates, boundary_segments, map_seed, spreading_model=None):
     height = len(owner_rows)
     width = len(owner_rows[0]) if height else 0
     neighbours = {plate["id"]: set() for plate in plates}
@@ -534,36 +592,30 @@ def _topology_and_lithosphere(owner_rows, plates, boundary_segments, map_seed):
         for x, owner in enumerate(owner_row):
             plate = plates[owner]
             plate_type = plate.get("plate_type", "mixed")
+            nx = x / max(1, width - 1)
+            ny = y / max(1, height - 1)
             if plate_type == "continental":
                 crust_type = "continental"
-                continental_fraction = 1.0
                 age = seed_range(map_seed, f"craton_age:{plate['id']}", 650.0, 3200.0)
             elif plate_type == "oceanic":
                 crust_type = "oceanic"
-                continental_fraction = 0.0
-                age = min(220.0, distance_rows[y][x] * seed_range(map_seed, "ocean_age_cell_myr", 2.4, 4.2))
+                spreading_age = seafloor_age_myr(spreading_model, nx, ny)
+                age = (
+                    spreading_age if spreading_age is not None
+                    else min(220.0, distance_rows[y][x] * seed_range(map_seed, "ocean_age_cell_myr", 2.4, 4.2))
+                )
             else:
                 # Mixed plates carry coherent terranes.  A former block-hash
                 # implementation made every 6x6 sample province a visible
                 # rectangle in elevation, climate, and material maps.
-                nx = x / max(1, width - 1)
-                ny = y / max(1, height - 1)
-                phase_a = seed_range(map_seed, f"mixed_crust:{plate['id']}:phase_a", 0.0, math.tau)
-                phase_b = seed_range(map_seed, f"mixed_crust:{plate['id']}:phase_b", 0.0, math.tau)
-                province = (
-                    0.52
-                    + 0.27 * math.sin(math.tau * (nx * 2.3 + ny * 1.1) + phase_a)
-                    + 0.18 * math.cos(math.tau * (nx * 4.7 - ny * 2.4) + phase_b)
-                    + 0.10 * _continent_seed_signal(nx, ny, f"{map_seed}:{plate['id']}:terrane")
-                )
-                continental_fraction = _clamp((province - 0.48) / 0.30, 0.0, 1.0)
-                continental_fraction = continental_fraction * continental_fraction * (3.0 - 2.0 * continental_fraction)
-                crust_type = "continental_fragment" if continental_fraction >= 0.5 else "oceanic"
+                own_fraction = _mixed_plate_continental_fraction(plate, nx, ny, map_seed)
+                crust_type = "continental_fragment" if own_fraction >= 0.5 else "oceanic"
                 age = (
                     seed_range(map_seed, f"fragment_age:{plate['id']}", 350.0, 1800.0)
                     if crust_type == "continental_fragment"
                     else min(220.0, distance_rows[y][x] * 3.2)
                 )
+            continental_fraction = _blended_continental_fraction(plates, nx, ny, map_seed)
             crust_row.append(crust_type)
             continental_fraction_row.append(round(continental_fraction, 4))
             age_row.append(round(age, 1))
@@ -1008,7 +1060,19 @@ def advance_tectonics_model(tectonic_model, terrain, million_years=125.0):
             "height": boundary_h,
             "geometry_model": "continuous_plate_distance_contour_v1",
         }
-        advanced.update(_topology_and_lithosphere(owner_rows, plates, advanced["boundary_segments"], map_seed))
+        spreading_canvas = terrain.get("map_canvas") if isinstance(terrain.get("map_canvas"), dict) else {}
+        tectonics_seed = terrain.get("tectonics") if isinstance(terrain.get("tectonics"), dict) else {}
+        advanced["seafloor_spreading_model"] = build_spreading_model(
+            plates,
+            advanced["boundary_segments"],
+            map_seed,
+            max(1.0, float(spreading_canvas.get("circumference_m", 40_075_000.0) or 40_075_000.0)),
+            internal_heat_w_m2=tectonics_seed.get("internal_heat_w_m2"),
+        )
+        advanced.update(_topology_and_lithosphere(
+            owner_rows, plates, advanced["boundary_segments"], map_seed,
+            spreading_model=advanced["seafloor_spreading_model"],
+        ))
     boundaries = _summarize_boundaries(advanced.get("boundary_segments") or [])
     advanced["boundaries"] = boundaries
     canvas = terrain.get("map_canvas") if isinstance(terrain.get("map_canvas"), dict) else {}
@@ -1054,6 +1118,11 @@ def mature_tectonics_model(tectonic_model, terrain, cycles=4, million_years_per_
     return matured
 
 
+# Simple-to-complex crater transition diameter at 1 g (Earth ~3 km); it
+# scales as 1/g (Moon 0.165 g -> 18 km).
+CRATER_TRANSITION_KM_AT_1G = 3.0
+
+
 def derive_crater_model(terrain, seed=None, physics=None, planet_id=""):
     terrain = terrain if isinstance(terrain, dict) else {}
     seed = seed if isinstance(seed, dict) else {}
@@ -1085,24 +1154,35 @@ def derive_crater_model(terrain, seed=None, physics=None, planet_id=""):
     )
     count = max(12, min(2200, int(round(expected_count))))
     craters = []
-    golden = 0.61803398875
     for index in range(count):
-        nx = (seed_range(map_seed, "crater_x_offset", 0.0, 1.0) + index * golden) % 1.0
-        nx = (nx + seed_range(map_seed, f"crater_{index}_jitter_x", -0.025, 0.025)) % 1.0
-        sphere_z = 1.0 - 2.0 * ((index + 0.5) / count)
-        sphere_z = _clamp(sphere_z + seed_range(map_seed, f"crater_{index}_jitter_z", -0.025, 0.025), -0.995, 0.995)
+        # Impacts are random in space: independent, uniform positions on the
+        # sphere (uniform longitude and sin(latitude)).  A golden-angle
+        # (Fibonacci) lattice spaced them almost evenly, and its spiral
+        # rows showed as diagonal curves across the map.
+        nx = seed_range(map_seed, f"crater_{index}_longitude", 0.0, 1.0)
+        sphere_z = seed_range(map_seed, f"crater_{index}_sin_latitude", -0.995, 0.995)
         latitude = math.asin(sphere_z)
         ny = _clamp(0.5 - latitude / math.pi, 0.01, 0.99)
         quantile = _clamp(seed_range(map_seed, f"crater_{index}_size", 0.0001, 0.9999), 0.0001, 0.9999)
         diameter = min(max_km, min_km * ((1.0 - quantile) ** (-1.0 / population_slope)))
-        small_crater_survival = 1.0 - resurfacing * math.exp(-diameter / 38.0)
-        if seed_range(map_seed, f"crater_{index}_survival", 0.0, 1.0) > small_crater_survival:
-            continue
-        simple_to_complex_km = max(8.0, 18.0 * (max(0.02, float(physics.get("surface_gravity_g", 1.0) or 1.0)) / 0.16) ** -0.22)
-        depth_ratio = 0.105 if diameter <= simple_to_complex_km else 0.075 * (diameter / simple_to_complex_km) ** -0.22
+        # Resurfacing no longer deletes craters at random: lava floods the
+        # lowlands, so which craters survive is decided against the terrain
+        # (heightmap.condition_crater_model_to_surface).
+        # The simple-to-complex transition scales inversely with gravity
+        # (Moon ~18 km, Mars ~8 km, Earth ~3 km; Pike 1980).  Fresh simple
+        # bowls are ~0.2 D deep with rims ~0.036 D; complex craters deepen
+        # only as D^0.3 beyond it (lunar d = 1.04 D^0.30 km, Pike 1977), with
+        # rims about a third of their depth.
+        simple_to_complex_km = CRATER_TRANSITION_KM_AT_1G / max(0.02, float(physics.get("surface_gravity_g", 1.0) or 1.0))
+        if diameter <= simple_to_complex_km:
+            depth_km = 0.2 * diameter
+            rim_km = 0.036 * diameter
+        else:
+            depth_km = 0.14 * simple_to_complex_km * (diameter / simple_to_complex_km) ** 0.3
+            rim_km = 0.35 * depth_km
         thermal_relaxation = resurfacing * _clamp((diameter - 25.0) / 180.0, 0.0, 0.78)
-        depth_m = min(7200.0, diameter * 1000.0 * depth_ratio) * (1.0 - thermal_relaxation)
-        rim_height_m = min(1800.0, diameter * 1000.0 * 0.025) * (1.0 - thermal_relaxation * 0.65)
+        depth_m = min(7200.0, depth_km * 1000.0) * (1.0 - thermal_relaxation)
+        rim_height_m = min(2400.0, rim_km * 1000.0) * (1.0 - thermal_relaxation * 0.65)
         craters.append({
             "id": f"crater_{index + 1:02d}",
             "x": round(nx, 4),

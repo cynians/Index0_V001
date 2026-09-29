@@ -19,6 +19,10 @@ class PhylogenySimulation:
     NODE_H = 34.0
     X_GAP = 92.0
     Y_GAP = 18.0
+    BASE_MIN_ZOOM = 0.18
+    # Smallest viewport the whole tree must still fit into at minimum zoom.
+    FIT_VIEWPORT_W = 640.0
+    FIT_VIEWPORT_H = 360.0
 
     def __init__(self, world_model=None, focus_clade_id=None):
         class _DummySystem:
@@ -129,6 +133,14 @@ class PhylogenySimulation:
             max_x = max(rect["x"] + rect["width"] for rect in self.node_rects.values()) + 120.0
             max_y = max(rect["y"] + rect["height"] for rect in self.node_rects.values()) + 120.0
             self.bounds = {"min_x": min_x, "max_x": max_x, "min_y": min_y, "max_y": max_y}
+        self.min_zoom = self._whole_tree_min_zoom()
+
+    def _whole_tree_min_zoom(self):
+        """Let the camera zoom out far enough to show every clade at once."""
+        world_w = max(1.0, self.bounds["max_x"] - self.bounds["min_x"])
+        world_h = max(1.0, self.bounds["max_y"] - self.bounds["min_y"])
+        fit_zoom = min(self.FIT_VIEWPORT_W / world_w, self.FIT_VIEWPORT_H / world_h)
+        return min(self.BASE_MIN_ZOOM, fit_zoom)
 
     def get_render_payload(self):
         return {

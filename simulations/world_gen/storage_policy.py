@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import tempfile
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -83,7 +83,19 @@ class WorldGenStoragePolicy:
 
     def temporary_run_directory(self, prefix="run"):
         self.diagnostic_cache_root.mkdir(parents=True, exist_ok=True)
-        return Path(tempfile.mkdtemp(prefix=f"{safe_slug(prefix)}-", dir=self.diagnostic_cache_root))
+        # tempfile.mkdtemp applies mode 0700.  On managed Windows workspaces that
+        # can make the directory itself unreadable to the sandbox immediately
+        # after creation.  An exclusive normal mkdir remains collision-safe and
+        # inherits the workspace ACL instead.
+        stem = safe_slug(prefix)
+        for _ in range(16):
+            candidate = self.diagnostic_cache_root / f"{stem}-{uuid.uuid4().hex[:8]}"
+            try:
+                candidate.mkdir()
+                return candidate
+            except FileExistsError:
+                continue
+        raise RuntimeError("Could not allocate a unique world-generation workspace")
 
     def validate_generated_target(self, path):
         target = _resolved(path)

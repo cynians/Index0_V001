@@ -60,10 +60,11 @@ class AtmosphereRedoxTests(unittest.TestCase):
         )
 
     def test_carbon_rich_crust_drives_reduced_outgassing(self):
+        # Oxygen for one but not two per carbon: carbon monoxide, not CO2.
         atmosphere = derive_atmosphere_model(
             _seed([
-                ("C", 32.0), ("O", 13.0), ("Fe", 13.0),
-                ("Mg", 18.0), ("Si", 7.0), ("S", 2.0),
+                ("O", 44.0), ("Si", 27.0), ("Fe", 6.0),
+                ("Mg", 4.0), ("C", 8.0),
             ]),
             _physics(),
             stellar_luminosity_solar=1.0,
@@ -74,9 +75,26 @@ class AtmosphereRedoxTests(unittest.TestCase):
             for row in atmosphere["composition"]
         }
 
-        self.assertEqual("strongly_reduced", atmosphere["outgassing_redox_state"])
+        self.assertEqual("reducing", atmosphere["outgassing_redox_state"])
         self.assertGreater(gases.get("CO", 0.0), gases.get("CO2", 0.0))
         self.assertGreater(gases.get("CO", 0.0), 0.40)
+
+    def test_oxygen_starved_carbon_world_keeps_its_carbon_as_graphite(self):
+        atmosphere = derive_atmosphere_model(
+            _seed([
+                ("C", 32.0), ("O", 13.0), ("Fe", 13.0),
+                ("Mg", 18.0), ("Si", 7.0), ("S", 2.0),
+            ]),
+            _physics(),
+            stellar_luminosity_solar=1.0,
+            semi_major_axis_au=1.0,
+        )
+        gases = {row["molecule"]: row["fraction"] for row in atmosphere["composition"]}
+        budget = atmosphere["volatile_budget"]
+
+        self.assertEqual("reducing", atmosphere["outgassing_redox_state"])
+        self.assertLess(gases.get("CO2", 0.0) + gases.get("CO", 0.0), 0.01)
+        self.assertGreater(budget["speciation"]["oxygen_to_volatile_demand"], -10.0)
 
     def test_oxygen_rich_crust_keeps_oxidized_co2_outgassing(self):
         atmosphere = derive_atmosphere_model(

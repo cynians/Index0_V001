@@ -6,14 +6,17 @@ from simulations.space.space_simulation import SpaceSimulation
 from simulations.map.map_simulation import MapSimulation
 from simulations.biosphere.biosphere_simulation import BiosphereSimulation
 from simulations.vehicle.vehicle_design_simulation import VehicleDesignSimulation
+from simulations.vehicle.vehicle_registry_simulation import VehicleRegistrySimulation
 from simulations.person.person_simulation import PersonSimulation
 from simulations.person.site_simulation import SiteSimulation
 from simulations.pop.pop_simulation import PopSimulation
 from simulations.world_gen.world_gen_sim import WorldGenSimulation
 from simulations.building.building_sim import BuildingSimulation
+from simulations.building.blueprint_designer_simulation import BlueprintDesignerSimulation
 from simulations.phylogeny.phylogeny_simulation import PhylogenySimulation
 from simulations.formation.formation_simulation import FormationSimulation
 from simulations.species.species_simulation import SpeciesSimulation
+from simulations.clothing.clothing_simulation import ClothingSimulation
 from world.temporal import DEFAULT_SIMULATION_YEAR
 
 try:
@@ -267,6 +270,9 @@ class NavigationController:
                 roster_species.extend(value)
         context["bootstrap_lifeless"] = not bool(roster_species)
         context["initial_extent_m"] = float(location.get("biosphere_initial_extent_m") or 10.0)
+        if (location.get("heightmap_model") or {}).get("sample_grid"):
+            # A lifeless biological overlay must not replace its imported physical map.
+            context["bootstrap_lifeless"] = False
         context["founding_point_source"] = location.get("biosphere_founding_point_source")
         context["founding_point_local_m"] = location.get("biosphere_founding_point_local_m")
 
@@ -287,11 +293,12 @@ class NavigationController:
         self.app.camera_controller.setup_for_sim(new_bioregion_sim)
         return True
 
-    def launch_vehicle_tab(self, vehicle_entity_id="veh_test_rig_01"):
+    def launch_vehicle_tab(self, vehicle_entity_id="veh_test_rig_01", initial_mode="design"):
         """
         Open or focus a repository-backed vehicle simulation tab.
         """
-        tab_key = ("vehicle", vehicle_entity_id)
+        tab_kind = "vehicle_sim" if initial_mode == "operational" else "vehicle_designer"
+        tab_key = (tab_kind, vehicle_entity_id)
 
         if self.focus_existing_tab_by_key(tab_key):
             self.app.knowledge_layer_active = False
@@ -308,9 +315,13 @@ class NavigationController:
             world_model=self.app.world_model,
             vehicle_entity_id=vehicle_entity_id,
         )
+        new_vehicle_sim.set_view_mode(initial_mode)
         new_tab = Tab(
             SimulationInstance(new_vehicle_sim),
-            name=(f"Station Design: {vehicle_name}" if is_station else f"Vehicle Design: {vehicle_name}"),
+            name=(
+                f"Station Design: {vehicle_name}" if is_station
+                else (f"Vehicle Sim: {vehicle_name}" if initial_mode == "operational" else f"Vehicle Designer: {vehicle_name}")
+            ),
             tab_key=tab_key
         )
 
@@ -319,20 +330,51 @@ class NavigationController:
         self.app.knowledge_layer_active = False
         self.app.camera_controller.setup_for_sim(new_vehicle_sim)
 
+    def launch_vehicle_registry_tab(self, vehicle_entity_id):
+        """
+        Open or focus the Vehicle Registry tab for a vehicle design entity --
+        the individually-constructed-units screen, distinct from the design
+        workspace and the operational sim.
+        """
+        tab_key = ("vehicle_registry", vehicle_entity_id)
+
+        if self.focus_existing_tab_by_key(tab_key):
+            self.app.knowledge_layer_active = False
+            return
+
+        vehicle_entity = self.app.world_model.get_entity(vehicle_entity_id)
+        vehicle_name = vehicle_entity.get("name", vehicle_entity_id) if vehicle_entity else vehicle_entity_id
+
+        new_registry_sim = VehicleRegistrySimulation(
+            world_model=self.app.world_model,
+            vehicle_entity_id=vehicle_entity_id,
+        )
+        new_tab = Tab(
+            SimulationInstance(new_registry_sim),
+            name=f"Vehicle Registry: {vehicle_name}",
+            tab_key=tab_key,
+        )
+
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+        self.app.camera_controller.setup_for_sim(new_registry_sim)
+
     def launch_vehicle_test_tab(self):
         """
         Open or focus the prototype vehicle simulation tab.
         """
         self.launch_vehicle_tab("veh_test_rig_01")
 
-    def launch_person_tab(self, person_entity_id):
+    def launch_person_tab(self, person_entity_id, initial_view="simulation"):
         """
         Open or focus a repository-backed person dossier simulation tab.
         """
         if not person_entity_id:
             return
 
-        tab_key = ("person", person_entity_id)
+        tab_kind = "person_editor" if initial_view == "editor" else "person"
+        tab_key = (tab_kind, person_entity_id)
 
         if self.focus_existing_tab_by_key(tab_key):
             self.app.knowledge_layer_active = False
@@ -350,10 +392,11 @@ class NavigationController:
             world_model=self.app.world_model,
             person_entity_id=person_entity_id,
             year=year,
+            initial_view=initial_view,
         )
         new_tab = Tab(
             SimulationInstance(new_person_sim),
-            name=f"Person: {person_name}",
+            name=(f"Person Editor: {person_name}" if initial_view == "editor" else f"Person: {person_name}"),
             tab_key=tab_key
         )
 
@@ -361,6 +404,29 @@ class NavigationController:
         self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
         self.app.knowledge_layer_active = False
         self.app.camera_controller.setup_for_sim(new_person_sim)
+
+    def launch_clothing_editor_tab(self, clothing_entity_id):
+        """Open or focus the pixel-based editor for an ordinary clothing item."""
+        if not clothing_entity_id:
+            return False
+        tab_key = ("clothing_editor", clothing_entity_id)
+        if self.focus_existing_tab_by_key(tab_key):
+            self.app.knowledge_layer_active = False
+            return True
+        entity = self.app.world_model.get_entity(clothing_entity_id)
+        if not entity:
+            return False
+        new_sim = ClothingSimulation(self.app.world_model, clothing_entity_id)
+        new_tab = Tab(
+            SimulationInstance(new_sim),
+            name=f"Clothing Editor: {entity.get('pretty_name') or entity.get('name') or clothing_entity_id}",
+            tab_key=tab_key,
+        )
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+        self.app.camera_controller.setup_for_sim(new_sim)
+        return True
 
     def launch_pop_tab(self, pop_entity_id):
         """
@@ -659,6 +725,49 @@ class NavigationController:
         self.app.camera_controller.setup_for_sim(new_building_sim)
         return True
 
+    def launch_blueprint_designer_tab(self, entity_id):
+        """Open or focus the Blueprint Designer for a building blueprint.
+
+        A placed building opens the exact blueprint version it was built from.
+        """
+        if not entity_id:
+            return False
+        entity = self.app.world_model.get_entity(entity_id)
+        if not entity:
+            return False
+        if entity.get("building_blueprint") and entity.get("_dataset") != "building_blueprints":
+            entity_id = entity.get("building_blueprint")
+            entity = self.app.world_model.get_entity(entity_id)
+            if not entity:
+                return False
+        if entity.get("_dataset") != "building_blueprints" and entity.get("type") != "building_blueprint":
+            return False
+        tab_key = ("blueprint_designer", entity_id)
+        if self.focus_existing_tab_by_key(tab_key):
+            self.app.knowledge_layer_active = False
+            return True
+        new_sim = BlueprintDesignerSimulation(self.app.world_model, entity_id)
+        new_tab = Tab(
+            SimulationInstance(new_sim),
+            name=f"Blueprint: {entity.get('pretty_name') or entity.get('name') or entity_id}",
+            tab_key=tab_key,
+        )
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+        self.app.camera_controller.setup_for_sim(new_sim)
+        return True
+
+    def launch_blueprint_placement(self, blueprint_id, parent_id):
+        """Open the parent site's map with a blueprint attached to the cursor."""
+        if not blueprint_id or not parent_id:
+            return False
+        if self.open_region_map_tab(parent_id) is False:
+            return False
+        map_sim = self.app.get_active_simulation()
+        begin = getattr(map_sim, "begin_blueprint_placement", None)
+        return bool(callable(begin) and begin(blueprint_id))
+
     def open_region_map_tab(self, entity_id):
         """
         Open a new map simulation tab rooted at the selected entity,
@@ -716,7 +825,7 @@ class NavigationController:
             return False
 
         mode = launch_mode or self.launch_resolver.default_mode_for_entity(
-            entity, getattr(self.app.world_model, "plant_catalogue", None))
+            entity, getattr(self.app.world_model, "plant_catalogue", None), self.app.world_model)
         if not mode:
             return False
 
@@ -764,17 +873,43 @@ class NavigationController:
                 return False
             return self.launch_building_tab(entity_id)
 
-        if mode == "vehicle":
+        if mode in {"vehicle", "vehicle_designer"}:
             self.launch_vehicle_tab(entity_id)
+            return True
+
+        if mode == "vehicle_sim":
+            self.launch_vehicle_tab(entity_id, initial_mode="operational")
+            return True
+
+        if mode == "vehicle_registry":
+            self.launch_vehicle_registry_tab(entity_id)
             return True
 
         if mode == "person":
             self.launch_person_tab(entity_id)
             return True
 
+        if mode == "person_editor":
+            self.launch_person_tab(entity_id, initial_view="editor")
+            return True
+
+        if mode == "clothing_editor":
+            return self.launch_clothing_editor_tab(entity_id)
+
+        if mode == "blueprint_designer":
+            return self.launch_blueprint_designer_tab(entity_id)
+
         if mode == "pop":
             self.launch_pop_tab(entity_id)
             return True
+
+        if mode == "pixel_editor":
+            # The pixel editor is a modal overlay on the knowledge browser
+            # itself, not a separate tab -- unlike every other branch here,
+            # it must not touch knowledge_layer_active.
+            knowledge_ui = getattr(self.app.ui_manager, "knowledge_ui", None)
+            open_editor = getattr(knowledge_ui, "_open_pixel_art_editor", None)
+            return bool(open_editor(entity_id)) if callable(open_editor) else False
 
         if mode == "formation":
             return self.launch_formation_tab(entity_id)
@@ -1034,7 +1169,7 @@ class NavigationController:
 
             return "system_sol"
 
-        if render_mode == "vehicle":
+        if render_mode in {"vehicle", "vehicle_registry"}:
             return getattr(active_sim, "vehicle_entity_id", None) or self.app.repository_scope_entity_id
 
         if render_mode == "person":
@@ -1205,6 +1340,13 @@ class NavigationController:
                 getattr(active_sim, "toggle_atmosphere_visibility", lambda: False)()
             )
 
+        if action_id == "map_enter_aircraft_cockpit" and active_sim is not None:
+            vehicle_entity_id = action.get("entity_id") or getattr(active_sim, "selected_entity_id", None)
+            return bool(getattr(active_sim, "enter_aircraft_cockpit", lambda *_args: False)(vehicle_entity_id))
+
+        if action_id == "map_exit_aircraft_cockpit" and active_sim is not None:
+            return bool(getattr(active_sim, "exit_aircraft_cockpit", lambda: False)())
+
         if action_id == "toggle_map_height_contours" and active_sim is not None:
             return bool(
                 getattr(active_sim, "toggle_height_contours_visibility", lambda: False)()
@@ -1307,6 +1449,9 @@ class NavigationController:
         if action_id == "knowledge_launch_mode":
             return self.launch_entity_mode(action.get("entity_id"), action.get("launch_mode"))
 
+        if action_id == "blueprint_place_on_parent":
+            return self.launch_blueprint_placement(action.get("blueprint_id"), action.get("parent_id"))
+
         if action_id == "knowledge_place_location_on_parent":
             return self.open_location_parent_placement_tab(action.get("entity_id"))
 
@@ -1360,8 +1505,104 @@ class NavigationController:
         if action_id == "person_mode_direct" and active_sim is not None:
             return bool(getattr(active_sim, "set_control_mode", lambda _mode: False)("direct"))
 
+        if action_id == "person_view_editor" and active_sim is not None:
+            return bool(getattr(active_sim, "set_person_view", lambda _view: False)("editor"))
+
         if action_id == "vehicle_mode_design" and active_sim is not None:
             return bool(getattr(active_sim, "set_view_mode", lambda mode: False)("design"))
+
+        if action_id == "vehicle_design_step_specifications" and active_sim is not None:
+            return bool(getattr(active_sim, "set_design_step", lambda step: False)("specifications"))
+
+        if action_id == "vehicle_specification_finish" and active_sim is not None:
+            return bool(getattr(active_sim, "finish_specifications", lambda: False)())
+
+        if action_id == "vehicle_specification_add_characteristic" and active_sim is not None:
+            return bool(getattr(active_sim, "add_specification_row", lambda _kind: False)("characteristic"))
+
+        if action_id == "vehicle_specification_add_requirement" and active_sim is not None:
+            return bool(getattr(active_sim, "add_specification_row", lambda _kind: False)("requirement"))
+
+        if action_id == "vehicle_specification_remove" and active_sim is not None:
+            return bool(getattr(active_sim, "remove_selected_specification_row", lambda: False)())
+
+        if action_id.startswith("vehicle_specification_page_") and active_sim is not None:
+            suffix = action_id.removeprefix("vehicle_specification_page_")
+            row_kind, _, direction = suffix.partition("_")
+            if row_kind in {"characteristic", "requirement"} and direction in {"back", "forward"}:
+                delta = -1 if direction == "back" else 1
+                return bool(getattr(active_sim, "page_specification_rows", lambda *_args: False)(row_kind, delta))
+
+        if action_id == "vehicle_design_step_hull" and active_sim is not None:
+            return bool(getattr(active_sim, "set_design_step", lambda step: False)("hull"))
+
+        if action_id == "vehicle_design_step_components" and active_sim is not None:
+            return bool(getattr(active_sim, "set_design_step", lambda step: False)("components"))
+
+        if action_id == "vehicle_systems_view_layout" and active_sim is not None:
+            return bool(getattr(active_sim, "set_systems_view_mode", lambda mode: False)("layout"))
+
+        if action_id == "vehicle_systems_view_diagram" and active_sim is not None:
+            return bool(getattr(active_sim, "set_systems_view_mode", lambda mode: False)("diagram"))
+
+        if action_id == "vehicle_design_step_details" and active_sim is not None:
+            return bool(getattr(active_sim, "enter_paint_screen", lambda step: False)("details"))
+
+        if action_id == "vehicle_design_step_liveries" and active_sim is not None:
+            return bool(getattr(active_sim, "enter_paint_screen", lambda step: False)("liveries"))
+
+        if action_id == "vehicle_paint_finish" and active_sim is not None:
+            return bool(getattr(active_sim, "finish_paint_screen", lambda: False)())
+
+        if action_id.startswith("vehicle_paint_view_") and active_sim is not None:
+            return bool(getattr(active_sim, "select_paint_view", lambda _view: False)(action_id.removeprefix("vehicle_paint_view_")))
+
+        if action_id.startswith("vehicle_pixel_tool_") and active_sim is not None:
+            return bool(getattr(active_sim, "set_pixel_tool", lambda _tool: False)(action_id.removeprefix("vehicle_pixel_tool_")))
+
+        if action_id == "vehicle_pixel_brush_down" and active_sim is not None:
+            return bool(getattr(active_sim, "adjust_pixel_brush", lambda _delta: False)(-1))
+
+        if action_id == "vehicle_pixel_brush_up" and active_sim is not None:
+            return bool(getattr(active_sim, "adjust_pixel_brush", lambda _delta: False)(1))
+
+        if action_id == "vehicle_paint_components_toggle" and active_sim is not None:
+            return bool(getattr(active_sim, "toggle_paint_components", lambda: False)())
+
+        pixel_palette = {
+            "vehicle_pixel_color_0": "#d7dde8",
+            "vehicle_pixel_color_1": "#4f657f",
+            "vehicle_pixel_color_2": "#1d2733",
+            "vehicle_pixel_color_3": "#b86b4b",
+            "vehicle_pixel_color_4": "#d3aa55",
+            "vehicle_pixel_color_5": "#4a9b8e",
+        }
+        if action_id in pixel_palette and active_sim is not None:
+            return bool(getattr(active_sim, "set_pixel_color", lambda _color: False)(pixel_palette[action_id]))
+
+        if action_id == "vehicle_livery_copy" and active_sim is not None:
+            return bool(getattr(active_sim, "copy_active_livery", lambda: False)())
+
+        if action_id == "vehicle_livery_paste" and active_sim is not None:
+            return bool(getattr(active_sim, "paste_livery", lambda: False)())
+
+        if action_id == "vehicle_hull_draw" and active_sim is not None:
+            return bool(getattr(active_sim, "set_hull_tool", lambda tool: False)("draw"))
+
+        if action_id == "vehicle_hull_erase" and active_sim is not None:
+            return bool(getattr(active_sim, "set_hull_tool", lambda tool: False)("erase"))
+
+        if action_id == "vehicle_hull_clear" and active_sim is not None:
+            return bool(getattr(active_sim, "clear_hull", lambda: False)())
+
+        if action_id == "vehicle_hull_focus_toggle" and active_sim is not None:
+            return bool(getattr(active_sim, "toggle_hull_focus_mode", lambda: False)())
+
+        if action_id.startswith("vehicle_dimension_") and active_sim is not None:
+            parts = action_id.split("_")
+            if len(parts) == 4 and parts[2] in {"x", "y", "z"} and parts[3] in {"down", "up"}:
+                delta = -0.5 if parts[3] == "down" else 0.5
+                return bool(getattr(active_sim, "adjust_vehicle_dimension", lambda *_args: False)(parts[2], delta))
 
         if action_id == "vehicle_mode_interior" and active_sim is not None:
             return bool(getattr(active_sim, "set_view_mode", lambda mode: False)("interior"))
@@ -1488,33 +1729,47 @@ class NavigationController:
             return True
 
         if action_id == "regenerate_current_region" and active_sim is not None:
-            loading = getattr(self.app, "_draw_startup_loading_screen", None)
-            if callable(loading):
-                loading(0.22, "Regenerating this region from parent boundary conditions")
-            region = getattr(active_sim, "regenerate_current_region", lambda: None)()
+            def redraw_regional_progress(_progress, _message):
+                if pygame.get_init():
+                    pygame.event.pump()
+                render_frame = getattr(self.app, "_render_frame", None)
+                if callable(render_frame):
+                    render_frame()
+
+            regenerate = getattr(active_sim, "regenerate_current_region", lambda: None)
+            if callable(getattr(active_sim, "get_regional_loading_state", None)):
+                region = regenerate(progress_callback=redraw_regional_progress)
+            else:
+                region = regenerate()
             if not isinstance(region, dict) or not region.get("id"):
                 return False
-            if callable(loading):
-                loading(0.84, "Feeding refreshed detail into the parent map")
             self._refresh_generated_map_views()
             return True
 
         if action_id == "regenerate_visible_region" and active_sim is not None:
-            loading = getattr(self.app, "_draw_startup_loading_screen", None)
-            if callable(loading):
-                loading(0.28, "Refining regional terrain and drainage")
-            region = getattr(active_sim, "regenerate_visible_region", lambda *_args, **_kwargs: None)(
+            def redraw_regional_progress(_progress, _message):
+                if pygame.get_init():
+                    pygame.event.pump()
+                render_frame = getattr(self.app, "_render_frame", None)
+                if callable(render_frame):
+                    render_frame()
+
+            regenerate = getattr(active_sim, "regenerate_visible_region", lambda *_args, **_kwargs: None)
+            kwargs = {
+                "viewport_rect": getattr(self.app.ui_manager, "get_map_content_viewport_rect", lambda *_args: None)(
+                    self.app.width, self.app.height,
+                ),
+            }
+            if callable(getattr(active_sim, "get_regional_loading_state", None)):
+                kwargs["progress_callback"] = redraw_regional_progress
+            region = regenerate(
                 self.app.camera,
                 self.app.width,
                 self.app.height,
-                viewport_rect=getattr(self.app.ui_manager, "get_map_content_viewport_rect", lambda *_args: None)(
-                    self.app.width, self.app.height,
-                ),
+                **kwargs,
             )
             if not isinstance(region, dict) or not region.get("id"):
                 return False
-            if callable(loading):
-                loading(0.86, "Persisting hierarchical map detail")
             self._refresh_generated_map_views()
             return bool(self.open_region_map_tab(region.get("id")))
 

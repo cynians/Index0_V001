@@ -11,6 +11,7 @@ from simulations.person.person_assets import (
     character_creation_prompt_lines,
     placeable_asset_catalog,
 )
+from simulations.person.person_genetics import appearance_from_person
 from world.item_categories import resolve_category_labels
 from world.ownership_resolver import OwnershipResolver
 from world.year_utils import parse_year
@@ -195,12 +196,18 @@ class PersonSimulation:
         },
     )
 
-    def __init__(self, world_model=None, person_entity_id=None, year=2400):
+    VIEW_SIMULATION = "simulation"
+    VIEW_EDITOR = "editor"
+
+    def __init__(self, world_model=None, person_entity_id=None, year=2400, initial_view="simulation"):
         self.world_model = world_model
         self.person_entity_id = person_entity_id
         self.render_mode = "person"
         self.world_units_to_meters = 1.0
         self.year = int(year) if year is not None else 2400
+        self.person_view = self.VIEW_EDITOR if initial_view == self.VIEW_EDITOR else self.VIEW_SIMULATION
+        self.person_editor = None
+        self._person_editor_hitboxes = []
 
         self.sim_clock = Clock(base_dt=1.0)
         self.system = PersonRuntimeSystem(self)
@@ -339,6 +346,44 @@ class PersonSimulation:
                 segments.append(((start[0], cursor), (start[0], high)))
         return segments
 
+    def _append_blueprint_structure(self, structure_id, entity):
+        """Walls, rooms, and doorways of a building placed from a blueprint.
+
+        Interior walls block movement too; only walkable openings (doors,
+        doorways, loading doors) leave gaps.  Returns False when the
+        blueprint cannot be resolved so the bounds fallback still applies.
+        """
+        from simulations.building import blueprint_model as blueprint_geometry
+        from simulations.building.blueprint_placement import placed_blueprint_geometry
+
+        geometry = placed_blueprint_geometry(self.world_model, entity)
+        if geometry is None:
+            return False
+        derived = geometry["derived"]
+        position = geometry["position"]
+        rotation = geometry["rotation_deg"]
+        footprint = blueprint_geometry.placed_footprint(derived, position, rotation)
+        if not footprint:
+            return False
+        xs = [point[0] for point in footprint[0]]
+        ys = [point[1] for point in footprint[0]]
+        openings = blueprint_geometry.placed_openings(derived, position, rotation)
+        self.site_structures.append({
+            "entity_id": structure_id,
+            "label": entity.get("pretty_name") or entity.get("name") or structure_id,
+            "structure_class": entity.get("building_class") or entity.get("site_class") or "building",
+            "bounds": {"min_x": min(xs), "max_x": max(xs), "min_y": min(ys), "max_y": max(ys)},
+            "footprint": footprint[0],
+            "rooms": blueprint_geometry.placed_rooms(geometry["blueprint"], position, rotation),
+            "openings": openings,
+            "color": entity.get("map_color"),
+            "building_blueprint": entity.get("building_blueprint"),
+        })
+        self.wall_segments.extend(blueprint_geometry.placed_wall_segments(derived, position, rotation))
+        for opening in openings:
+            self.openings.append({**opening, "structure_id": structure_id})
+        return True
+
     def _structure_walls(self, bounds, openings):
         side_specs = {
             "north": ((bounds["min_x"], bounds["min_y"]), (bounds["max_x"], bounds["min_y"]), True),
@@ -396,6 +441,8 @@ class PersonSimulation:
         )
         for structure_id in structure_ids:
             entity = self.get_person(structure_id) or {}
+            if entity.get("building_blueprint") and self._append_blueprint_structure(structure_id, entity):
+                continue
             bounds = self._bbox(entity.get("bounds"))
             if not bounds:
                 continue
@@ -423,6 +470,8 @@ class PersonSimulation:
                 "entity_id": person_id,
                 "label": resident.get("pretty_name") or resident.get("name") or person_id,
                 "sex": resident.get("sex"),
+                "appearance": appearance_from_person(resident),
+                "clothing": self._equipped_clothing_entity(resident),
                 "position": resident_position,
                 "controlled": person_id == self.person_entity_id,
             })
@@ -481,10 +530,14 @@ class PersonSimulation:
     )
 
     def consumes_global_keydown(self):
-        return self.in_void
+        return self.person_view == self.VIEW_EDITOR or self.in_void
 
     def handle_event(self, event):
         if event.type != pygame.KEYDOWN:
+            return
+        if self.person_view == self.VIEW_EDITOR:
+            if event.key == pygame.K_ESCAPE:
+                self.set_person_view(self.VIEW_SIMULATION)
             return
         if event.key == pygame.K_ESCAPE:
             if self.placement_mode:
@@ -496,7 +549,78 @@ class PersonSimulation:
                 self.select_asset_for_placement(self.asset_palette[index]["id"])
 
     def update(self, dt):
+        if self.person_view == self.VIEW_EDITOR:
+            return
         self.sim_manager.update(dt)
+
+    def set_person_view(self, view):
+        if view not in {self.VIEW_SIMULATION, self.VIEW_EDITOR}:
+            return False
+        self.person_view = view
+        if view == self.VIEW_EDITOR:
+            self._ensure_person_editor()
+        return True
+
+    def is_person_editor_active(self):
+        return self.person_view == self.VIEW_EDITOR
+
+    def _ensure_person_editor(self):
+        if self.person_editor is None:
+            from simulations.person.person_editor import new_person_editor_state
+            self.person_editor = new_person_editor_state(self.get_person())
+        return self.person_editor
+
+    def set_person_editor_hitboxes(self, hitboxes):
+        self._person_editor_hitboxes = list(hitboxes or [])
+
+    def select_editor_skin_tone(self, tone_id):
+        from simulations.person.person_editor import select_skin_tone
+        return select_skin_tone(self._ensure_person_editor(), tone_id, self.person_entity_id)
+
+    def adjust_editor_body_trait(self, trait_id, delta):
+        from simulations.person.person_editor import adjust_body_trait
+        return adjust_body_trait(self._ensure_person_editor(), trait_id, delta, self.person_entity_id)
+
+    def select_editor_clothing(self, clothing_id):
+        from simulations.person.person_editor import select_clothing
+        return select_clothing(self._ensure_person_editor(), clothing_id)
+
+    def get_person_editor_clothing(self):
+        clothing_id = self._ensure_person_editor().get("working_clothing_id")
+        return self.get_person(clothing_id) if clothing_id else None
+
+    def _equipped_clothing_entity(self, person):
+        equipped = (person or {}).get("equipped_clothing") or []
+        if isinstance(equipped, str):
+            equipped = [equipped]
+        clothing_id = next((item_id for item_id in equipped if isinstance(item_id, str)), None)
+        return self.get_person(clothing_id) if clothing_id else None
+
+    def save_person_editor(self):
+        state = self._ensure_person_editor()
+        person = self.get_person()
+        if not isinstance(person, dict):
+            state["status"] = "This person is unavailable in the repository."
+            return False
+        person["genetic_dna"] = state["working_dna"]
+        clothing_id = state.get("working_clothing_id")
+        person["equipped_clothing"] = [clothing_id] if clothing_id else []
+        loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
+        if loader is not None and not loader.persist_entity_fields(person, ("genetic_dna", "equipped_clothing")):
+            state["status"] = "Could not save appearance to the ontology."
+            return False
+        if self.world_model is not None and hasattr(self.world_model, "mark_repository_changed"):
+            self.world_model.mark_repository_changed()
+        state["original_dna"] = state["working_dna"]
+        state["original_clothing_id"] = clothing_id
+        state["dirty"] = False
+        state["status"] = "Saved DNA and clothing to the live person record."
+        return True
+
+    def revert_person_editor(self):
+        from simulations.person.person_editor import revert_person_editor
+        revert_person_editor(self._ensure_person_editor(), self.person_entity_id)
+        return True
 
     def _update_runtime(self, dt):
         try:
@@ -1853,6 +1977,10 @@ class PersonSimulation:
         if isinstance(self.active_task, dict):
             destination = self.active_task.get("target")
         return {
+            "person_view": self.person_view,
+            "person_name": self.get_person_name(),
+            "appearance": appearance_from_person(self.get_person()),
+            "clothing": self._equipped_clothing_entity(self.get_person()),
             "bounds": dict(self.bounds),
             "site_id": self.site_entity_id,
             "in_void": self.in_void,
@@ -1897,6 +2025,8 @@ class PersonSimulation:
         return closest
 
     def handle_pointer_motion(self, event, camera, screen_pos):
+        if self.person_view == self.VIEW_EDITOR:
+            return
         world_x, world_y = camera.screen_to_world(screen_pos)
         point = self._point_at_world_position(world_x, world_y)
         self.hover_point_id = point.get("id") if point else None
@@ -1904,6 +2034,26 @@ class PersonSimulation:
     def handle_pointer_event(self, event, camera, screen_pos):
         if event.type != pygame.MOUSEBUTTONDOWN:
             return
+        if self.person_view == self.VIEW_EDITOR:
+            if event.button != 1:
+                return
+            for hitbox in reversed(self._person_editor_hitboxes):
+                if not hitbox["rect"].collidepoint(screen_pos):
+                    continue
+                kind = hitbox.get("kind")
+                if kind == "skin_tone":
+                    self.select_editor_skin_tone(hitbox.get("tone_id"))
+                elif kind == "body_trait":
+                    self.adjust_editor_body_trait(hitbox.get("trait_id"), hitbox.get("delta", 0.0))
+                elif kind == "clothing":
+                    self.select_editor_clothing(hitbox.get("clothing_id"))
+                elif kind == "save":
+                    self.save_person_editor()
+                elif kind == "revert":
+                    self.revert_person_editor()
+                elif kind == "simulation":
+                    self.set_person_view(self.VIEW_SIMULATION)
+                return
         if self.placement_mode:
             if event.button == 1:
                 world_x, world_y = camera.screen_to_world(screen_pos)

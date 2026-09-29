@@ -1,4 +1,5 @@
 import unittest
+from collections import defaultdict
 from unittest.mock import patch
 
 import pygame
@@ -1065,6 +1066,168 @@ class TimelineTickTests(unittest.TestCase):
         self.assertEqual("__ui_consumed__", result)
         self.assertEqual([12], horizontal_calls)
         self.assertEqual([28], vertical_calls)
+
+    def test_wasd_keydown_is_only_consumed_when_timeline_has_focus(self):
+        timeline = TimelineUI()
+
+        unfocused_action = timeline.handle_keydown(
+            type("Event", (), {"key": pygame.K_d, "mod": 0, "unicode": "d"})()
+        )
+        self.assertIsNone(unfocused_action)
+
+        timeline.set_keyboard_focus(True)
+        focused_action = timeline.handle_keydown(
+            type("Event", (), {"key": pygame.K_d, "mod": 0, "unicode": "d"})()
+        )
+        self.assertIsNotNone(focused_action)
+
+    def test_wasd_and_arrow_keys_pan_continuously_while_held(self):
+        timeline = TimelineUI()
+        timeline.set_rect(pygame.Rect(0, 0, 420, 180))
+        timeline.set_items(
+            [
+                {
+                    "entity_id": f"entry_{index}",
+                    "label": f"Entry {index}",
+                    "dataset": "ideas",
+                    "start_year": 0,
+                    "end_year": 1000,
+                }
+                for index in range(12)
+            ]
+        )
+        timeline.rebuild_layout()
+
+        no_keys = defaultdict(bool)
+
+        # Not focused: held keys never move the view.
+        changed = timeline.update_continuous_navigation(pressed_keys=no_keys, mods=0, now_ms=1000)
+        self.assertFalse(changed)
+
+        timeline.set_keyboard_focus(True)
+        # The first tick after gaining focus only primes the clock.
+        primed = timeline.update_continuous_navigation(pressed_keys=no_keys, mods=0, now_ms=1000)
+        self.assertFalse(primed)
+
+        start_min, start_max = timeline.view_min_year, timeline.view_max_year
+        right_keys = defaultdict(bool, {pygame.K_d: True})
+        changed = timeline.update_continuous_navigation(pressed_keys=right_keys, mods=0, now_ms=1500)
+        self.assertTrue(changed)
+        self.assertGreater(timeline.view_min_year, start_min)
+        self.assertGreater(timeline.view_max_year, start_max)
+
+        # Holding the key down keeps advancing the view further (smooth, not
+        # a single fixed-size jump per press).
+        mid_min, mid_max = timeline.view_min_year, timeline.view_max_year
+        changed = timeline.update_continuous_navigation(pressed_keys=right_keys, mods=0, now_ms=2500)
+        self.assertTrue(changed)
+        self.assertGreater(timeline.view_min_year, mid_min)
+        self.assertGreater(timeline.view_max_year, mid_max)
+
+        timeline.pan_vertical_by_pixels(300)
+        scrolled = timeline.vertical_scroll_px
+        up_keys = defaultdict(bool, {pygame.K_w: True})
+        changed = timeline.update_continuous_navigation(pressed_keys=up_keys, mods=0, now_ms=3000)
+        self.assertTrue(changed)
+        self.assertLess(timeline.vertical_scroll_px, scrolled)
+
+        # A modifier key held alongside should suppress panning entirely.
+        held = timeline.view_min_year
+        changed = timeline.update_continuous_navigation(
+            pressed_keys=right_keys, mods=pygame.KMOD_CTRL, now_ms=3500
+        )
+        self.assertFalse(changed)
+        self.assertEqual(held, timeline.view_min_year)
+
+    def test_clicking_timeline_grants_focus_and_clicking_elsewhere_releases_it(self):
+        ui = KnowledgeBrowserUI()
+        ui.layout = {
+            "timeline_rect": pygame.Rect(0, 0, 400, 200),
+            "timeline_splitter_rect": pygame.Rect(0, 200, 400, 4),
+            "left_rect": pygame.Rect(0, 210, 200, 300),
+            "right_rect": pygame.Rect(200, 210, 200, 300),
+        }
+        ui.cards = []
+
+        ui.handle_event(type("Event", (), {"type": pygame.MOUSEBUTTONDOWN, "button": 1, "pos": (50, 50)})())
+        self.assertTrue(ui.timeline_ui.has_keyboard_focus())
+
+        ui.handle_event(type("Event", (), {"type": pygame.MOUSEBUTTONUP, "button": 1, "pos": (50, 50)})())
+        ui.handle_event(type("Event", (), {"type": pygame.MOUSEBUTTONDOWN, "button": 1, "pos": (250, 250)})())
+        self.assertFalse(ui.timeline_ui.has_keyboard_focus())
+
+    def test_timeline_bar_click_opens_on_release_but_dragging_cancels_it(self):
+        ui = KnowledgeBrowserUI()
+        timeline_rect = pygame.Rect(0, 0, 500, 200)
+        ui.layout = {
+            "timeline_rect": timeline_rect,
+            "timeline_splitter_rect": pygame.Rect(0, 200, 500, 4),
+            "left_rect": pygame.Rect(0, 210, 200, 300),
+            "right_rect": pygame.Rect(200, 210, 200, 300),
+        }
+        ui.cards = []
+        ui.timeline_ui.set_rect(timeline_rect)
+        ui.timeline_ui.view_min_year = 1900
+        ui.timeline_ui.view_max_year = 2000
+        ui.timeline_ui._view_range_initialized = True
+        ui.timeline_ui.set_items(
+            [
+                {
+                    "entity_id": "event_alpha",
+                    "label": "Alpha Event",
+                    "dataset": "events",
+                    "start_year": 1940,
+                    "end_year": 1940,
+                },
+                {
+                    "entity_id": "event_far_past",
+                    "label": "Far Past",
+                    "dataset": "events",
+                    "start_year": 1500,
+                    "end_year": 1500,
+                },
+                {
+                    "entity_id": "event_far_future",
+                    "label": "Far Future",
+                    "dataset": "events",
+                    "start_year": 2400,
+                    "end_year": 2400,
+                },
+            ]
+        )
+        ui.timeline_ui.view_min_year = 1900
+        ui.timeline_ui.view_max_year = 2000
+        ui.timeline_ui._view_range_initialized = True
+        ui.timeline_ui.rebuild_layout()
+        item = next(
+            item for item in ui.timeline_ui.layout_items if item.get("entity_id") == "event_alpha"
+        )
+        click_pos = ui.timeline_ui._timeline_item_hit_rect(item).center
+
+        opened = []
+        ui._apply_timeline_action = lambda action: opened.append(action)
+
+        def send(event_type, pos, button=1):
+            return ui.handle_event(type("Event", (), {"type": event_type, "button": button, "pos": pos})())
+
+        # Press and release in place: treated as a click, opens the entity.
+        send(pygame.MOUSEBUTTONDOWN, click_pos)
+        self.assertEqual([], opened)
+        send(pygame.MOUSEBUTTONUP, click_pos)
+        self.assertEqual(1, len(opened))
+        self.assertEqual("open_timeline_entity", opened[0]["kind"])
+        self.assertEqual("event_alpha", opened[0]["entity_id"])
+
+        # Press on the same bar but drag past the threshold before releasing:
+        # that's a pan, so it must not also open the card.
+        opened.clear()
+        start_min_year = ui.timeline_ui.view_min_year
+        send(pygame.MOUSEBUTTONDOWN, click_pos)
+        dragged_pos = (click_pos[0] + 40, click_pos[1])
+        ui.handle_event(type("Event", (), {"type": pygame.MOUSEMOTION, "pos": dragged_pos})())
+        send(pygame.MOUSEBUTTONUP, dragged_pos)
+        self.assertEqual([], opened)
+        self.assertNotEqual(start_min_year, ui.timeline_ui.view_min_year)
 
     def test_scrolled_timeline_draws_inside_fixed_vertical_viewport(self):
         pygame.font.init()

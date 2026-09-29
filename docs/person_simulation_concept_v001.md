@@ -1,5 +1,8 @@
 # Person Simulation — Concept & Decoupling Roadmap
 
+The first DNA-backed outward-appearance editor slice is documented in
+[Person genetic DNA v001](person_genetic_dna_v001.md).
+
 Status: living document. Cycles append a dated log entry at the bottom rather
 than rewriting earlier sections; earlier sections are revised only when a
 decision they describe is actually superseded.

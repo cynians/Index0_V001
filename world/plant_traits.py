@@ -21,10 +21,21 @@ PLANT_TRAIT_SCHEMA_FIELDS = {
     "longevity_class": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "leaf_phenology": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "leaf_size_class": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "leaf_length": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
     "leaf_structure": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "leaf_division_order": {"type": "number", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "leaflet_count": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "leaflet_length": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "leaflet_width": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
     "leaf_arrangement": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # Integer count of leaves sharing one fascicle/short-shoot socket.  This
+    # stays separate from cluster density: the former is botanical identity,
+    # while the latter is a continuous canopy-fullness calibration.
+    "leaf_fascicle_size": {"type": "number", "section": PLANT_TRAIT_SECTION, "optional": True},
     "leaf_attachment_pattern": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "leaf_clustering": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "leaf_cluster_size": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "frond_stipe_fraction": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
     # These fields separate the architectural strategy from its continuous
     # expression.  Normalised values are intentionally 0..1 so a species can
     # sit anywhere between two named extremes without inventing new labels.
@@ -34,10 +45,56 @@ PLANT_TRAIT_SCHEMA_FIELDS = {
     # are assembled; growth_form and growth_behaviour remain the coarse
     # body-plan/grammar selectors.
     "plant_axis_continuity": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # How aggressively lower/shaded branches die and drop off as the tree
+    # grows, producing a clear trunk below the live crown (the standard
+    # forestry "self-pruning" / clear-bole concept) -- separate from
+    # axis_continuity, which is about the *shape* of the axis, not where
+    # the crown begins along it.
+    "plant_self_pruning": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # The overall silhouette outline the mature canopy fills -- a separate
+    # concept from crown_openness (density within that outline),
+    # axis_continuity (the trunk's own shape) and self_pruning (where the
+    # outline begins vertically). Standard silvicultural crown-form
+    # typology (conical/pyramidal, ovoid/rounded, umbrella/flat-topped,
+    # spreading, irregular).
+    "plant_crown_shape": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # How narrow/columnar the mature canopy reads versus how fully it fills
+    # crown_shape's outline -- a continuous refinement of crown_shape, not a
+    # replacement for it: crown_shape picks the qualitative pattern
+    # (conical/umbrella/spreading/irregular/ovoid), crown_taper continuously
+    # narrows whichever pattern was picked. 0 = the shared default width for
+    # that crown_shape (unauthored species render identically to before this
+    # field existed); 1 = a tall, narrow column. Exists so a species-specific
+    # silhouette (e.g. a self-pruning conifer's slender crown) comes from one
+    # authored number instead of a bespoke per-species code branch.
+    "plant_crown_taper": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # How stout the trunk reads relative to the shared default for the same
+    # height -- nothing represented trunk girth-to-height ratio at all
+    # before this (every tree used the same fixed height-fraction radius
+    # regardless of species). 0 = the existing shared default (unauthored
+    # species render identically to before this field existed); 1 = a
+    # strongly pachycaul, baobab-style stout trunk. Same "one continuous
+    # authored number instead of a bespoke per-species code branch"
+    # convention as plant_crown_taper.
+    "plant_trunk_girth": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_branching_rhythm": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_branching_timing": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_lateral_axis_orientation": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_flowering_position": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # What kind of reproductive structure the species actually bears --
+    # separate from flowering_position (where it sits) and reproductive_mode
+    # (sexual/vegetative/etc). Every tree previously rendered its
+    # reproductive placements as a generic pink "flower", including
+    # conifers, which don't have flowers at all -- gymnosperms bear cones
+    # (strobili): usually small, dry, brown/green/purple, nothing like an
+    # angiosperm flower. Unauthored species keep the original flower
+    # rendering unchanged. A third value, "spike", was added once a real
+    # case needed it (a grass's narrow, petal-less inflorescence -- see
+    # Perennial Ryegrass, species_sim_lolium_perenne_v001.md): still not
+    # every real reproductive-structure term (catkin, strobilus, ...) --
+    # add more only once a species actually needs one that
+    # "flower"/"cone"/"spike" misrepresents.
+    "plant_reproductive_structure": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_apical_control": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_leaf_spacing_bias": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_branch_droop": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
@@ -86,6 +143,8 @@ PLANT_ARCHITECTURE_RANGE_FIELDS = frozenset({
     "plant_branch_droop",
     "plant_branch_angle_gradient",
     "plant_crown_openness",
+    "plant_crown_taper",
+    "plant_trunk_girth",
     "plant_leaf_depth_gradient",
     "plant_fine_twig_density",
     "plant_leaf_cluster_density",
@@ -253,6 +312,21 @@ PLANT_TRAIT_CHOICES = {
         ("mixed", "Mixed"),
         ("other_unknown", "Other / unknown"),
     ),
+    "plant_self_pruning": _choices(
+        ("strong", "Strong"),
+        ("moderate", "Moderate"),
+        ("light", "Light"),
+        ("none", "None"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "plant_crown_shape": _choices(
+        ("conical", "Conical / pyramidal"),
+        ("ovoid", "Ovoid / rounded"),
+        ("umbrella", "Umbrella / flat-topped"),
+        ("spreading", "Spreading"),
+        ("irregular", "Irregular"),
+        ("other_unknown", "Other / unknown"),
+    ),
     "plant_branching_rhythm": _choices(
         ("rhythmic", "Rhythmic"),
         ("continuous", "Continuous"),
@@ -276,6 +350,14 @@ PLANT_TRAIT_CHOICES = {
         ("lateral", "Lateral"),
         ("terminal", "Terminal"),
         ("mixed", "Mixed"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "plant_reproductive_structure": _choices(
+        ("flower", "Flower"),
+        ("capitulum", "Capitulum / flower head"),
+        ("cone", "Cone"),
+        ("spike", "Spike"),
+        ("panicle", "Panicle"),
         ("other_unknown", "Other / unknown"),
     ),
     "photosynthesis_pathway": _choices(
@@ -399,20 +481,33 @@ PLANT_TRAIT_BEHAVIOR_PATHS = {
     "longevity_class": ("Growth", "Longevity Class"),
     "leaf_phenology": ("Leaf / Shoot Function", "Leaf Phenology"),
     "leaf_size_class": ("Leaf / Shoot Function", "Leaf Size Class"),
+    "leaf_length": ("Leaf / Shoot Function", "Leaf Length"),
     "leaf_structure": ("Leaf / Shoot Function", "Leaf Structure"),
+    "leaf_division_order": ("Leaf / Shoot Function", "Leaf Division Order"),
+    "leaflet_count": ("Leaf / Shoot Function", "Leaflet Count"),
+    "leaflet_length": ("Leaf / Shoot Function", "Leaflet Length"),
+    "leaflet_width": ("Leaf / Shoot Function", "Leaflet Width"),
     "leaf_arrangement": ("Leaf / Shoot Architecture", "Leaf Arrangement"),
+    "leaf_fascicle_size": ("Leaf / Shoot Architecture", "Leaves per Fascicle"),
     "leaf_attachment_pattern": ("Leaf / Shoot Architecture", "Leaf Attachment"),
     "leaf_clustering": ("Leaf / Shoot Architecture", "Leaf Clustering"),
+    "leaf_cluster_size": ("Leaf / Shoot Architecture", "Leaves per Cluster"),
+    "frond_stipe_fraction": ("Leaf / Shoot Architecture", "Frond Stipe Fraction"),
     "plant_shoot_dimorphism": ("Leaf / Shoot Architecture", "Shoot Dimorphism"),
     "plant_leaf_distribution": ("Leaf / Shoot Architecture", "Leaf Distribution"),
     "plant_leaf_spacing_bias": ("Leaf / Shoot Architecture", "Leaf Spacing Bias"),
     "plant_leaf_depth_gradient": ("Leaf / Shoot Architecture", "Leaf Depth Gradient"),
     "plant_leaf_cluster_density": ("Leaf / Shoot Architecture", "Leaf Cluster Density"),
     "plant_axis_continuity": ("Branch Architecture", "Axis Continuity"),
+    "plant_self_pruning": ("Branch Architecture", "Self-Pruning"),
+    "plant_crown_shape": ("Branch Architecture", "Crown Shape"),
+    "plant_crown_taper": ("Branch Architecture", "Crown Taper"),
+    "plant_trunk_girth": ("Branch Architecture", "Trunk Girth"),
     "plant_branching_rhythm": ("Branch Architecture", "Branching Rhythm"),
     "plant_branching_timing": ("Branch Architecture", "Branching Timing"),
     "plant_lateral_axis_orientation": ("Branch Architecture", "Lateral Axis Orientation"),
     "plant_flowering_position": ("Branch Architecture", "Flowering Position"),
+    "plant_reproductive_structure": ("Reproduction", "Reproductive Structure"),
     "plant_apical_control": ("Branch Architecture", "Apical Control"),
     "plant_branch_droop": ("Branch Architecture", "Branch Droop"),
     "plant_branch_angle_gradient": ("Branch Architecture", "Branch Angle Gradient"),

@@ -17,6 +17,32 @@ def _surface_temperature_k(atmosphere):
     return max(0.0, float(atmosphere.get("estimated_surface_temperature_k", 0.0) or 0.0))
 
 
+# Time-integrated heat loss (W m^-2 Gyr) that floods ~63 % of a lid's
+# surface with lava: Moon (~0.015 W m^-2 today) -> ~25 % maria-like plains,
+# Mars (~0.02) -> ~35 %, a Venus-like 0.07 -> ~75 %.
+RESURFACING_HEAT_SCALE_W_GYR = 0.5
+# Heat flow e-folding time over a body's history (radiogenic decay and
+# secular cooling): the mean over 4.5 Gyr is ~2.3x today's.
+HEAT_FLOW_DECAY_GYR = 3.0
+
+
+def integrated_volcanic_resurfacing(internal_heat_w_m2, seed=None):
+    """Fraction of the surface re-paved by lava over the surface's age.
+
+    Volcanism is how a lid sheds much of its heat, and the heat flow was
+    higher in the past, so the flooded area grows with the time-integrated
+    heat loss rather than with today's activity alone.
+    """
+    seed = seed if isinstance(seed, dict) else {}
+    age_gyr = max(0.0, float(seed.get("surface_age_myr", float(seed.get("system_age_gyr", 4.5) or 4.5) * 1000.0) or 0.0) / 1000.0)
+    if age_gyr <= 0.0 or internal_heat_w_m2 <= 0.0:
+        return 0.0
+    ratio = age_gyr / HEAT_FLOW_DECAY_GYR
+    mean_boost = (math.exp(ratio) - 1.0) / ratio
+    integrated = internal_heat_w_m2 * mean_boost * age_gyr
+    return _clamp(1.0 - math.exp(-integrated / RESURFACING_HEAT_SCALE_W_GYR), 0.0, 0.97)
+
+
 def _heat_pipe_support_model(seed, internal_heat_w_m2, tidal_heating_w_m2):
     intrinsic_heat = max(0.0, float(internal_heat_w_m2) - float(tidal_heating_w_m2))
     surface_age_myr = max(0.0, float(seed.get("surface_age_myr", 4500.0) or 4500.0))
@@ -122,7 +148,10 @@ def derive_interior_regime_model(seed, physics, atmosphere, crust_type="unknown"
     crust_fraction = max(0.0, float(physics.get("crust_radius_fraction", 0.0) or 0.0))
     crust_thickness_km = max(0.0, float(physics.get("crust_thickness_km", seed.get("crust_thickness_km", 0.0)) or 0.0))
     gravity_g = max(0.0, float(physics.get("surface_gravity_g", 0.0) or 0.0))
-    water_fraction = _clamp(seed.get("water_fraction", 0.0), 0.0, 1.0)
+    budget = budget_from(atmosphere, seed)
+    water_fraction = _clamp(
+        ((budget or {}).get("derived_seed") or {}).get("water_fraction", seed.get("water_fraction", 0.0)), 0.0, 1.0,
+    )
     icy_satellite = infer_world_class(seed, physics) == "icy_satellite"
 
     mantle_present = mantle_fraction >= 0.03
@@ -161,17 +190,14 @@ def derive_interior_regime_model(seed, physics, atmosphere, crust_type="unknown"
         / (1.0e-6 * max(1.0e17, viscosity_pa_s))
     )
 
-    liquid_water_possible = (not icy_satellite) and (
-        water_fraction > 0.03
-        and pressure_bar >= 0.006
-        and 250.0 <= surface_temp_k <= 395.0
-    )
-    surface_fluid = str(seed.get("surface_fluid") or "water").strip().lower()
-    alternate_fluid_possible = (
-        ("methane" in surface_fluid and pressure_bar >= 0.08 and 70.0 <= surface_temp_k <= 135.0)
-        or (surface_fluid == "brine" and pressure_bar >= 0.01 and 235.0 <= surface_temp_k <= 390.0)
-        or ("magma" in surface_fluid and surface_temp_k >= 1050.0)
-    )
+    # The volatile budget solved which species is liquid at the surface and
+    # how much; worlds without one (gas/ice giants) have no surface liquid.
+    budget = budget_from(atmosphere, seed)
+    derived = (budget or {}).get("derived_seed") or {}
+    surface_fluid = str(derived.get("surface_fluid") or seed.get("surface_fluid") or "water").strip().lower()
+    liquid_depth_m = max(0.0, float(derived.get("surface_liquid_depth_m", 0.0) or 0.0))
+    liquid_water_possible = (not icy_satellite) and surface_fluid == "water" and liquid_depth_m > 0.0
+    alternate_fluid_possible = surface_fluid != "water" and liquid_depth_m > 0.0
     hydrologic_cycle = (
         "active"
         if (
@@ -211,6 +237,11 @@ def derive_interior_regime_model(seed, physics, atmosphere, crust_type="unknown"
             "moderate": 0.04,
             "high": 0.14,
         }.get(volcanic_activity, 0.0)
+        if mantle_present:
+            volcanic_resurfacing_floor = max(
+                volcanic_resurfacing_floor,
+                integrated_volcanic_resurfacing(internal_heat_w_m2, seed),
+            )
         resurfacing_fraction = max(
             resurfacing_fraction,
             volcanic_resurfacing_floor,
@@ -258,6 +289,15 @@ def derive_interior_regime_model(seed, physics, atmosphere, crust_type="unknown"
     if aeolian_activity in {"moderate", "strong"}:
         resurfacing_score += 1
     if volcanic_activity in {"moderate", "high"}:
+        resurfacing_score += 1
+    gases = {
+        str(row.get("molecule")): float(row.get("fraction", 0.0) or 0.0)
+        for row in atmosphere.get("composition") or []
+        if isinstance(row, dict)
+    }
+    if gases.get("CH4", 0.0) >= 0.01 and pressure_bar >= 0.1:
+        # Photochemical haze settles as a continuous sediment blanket
+        # (Titan: hundreds of metres), burying and softening craters.
         resurfacing_score += 1
 
     if resurfacing_score >= 5:
@@ -361,3 +401,4 @@ def derive_interior_regime_model(seed, physics, atmosphere, crust_type="unknown"
         ],
     }
 from simulations.world_gen.world_classification import infer_world_class
+from simulations.world_gen.volatile_budget import budget_from

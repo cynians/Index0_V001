@@ -39,6 +39,7 @@ class KnowledgeCanvasController:
         "canvas_relation_add_rect",
         "type_label_rect",
         "edit_toggle_rect",
+        "lock_toggle_rect",
         "idea_button_rect",
         "relation_tree_rect",
         "time_anchor_rect",
@@ -333,7 +334,17 @@ class KnowledgeCanvasController:
         self.canvas_content_width = max(0, max_right + 24)
         self.canvas_content_height = max(0, max_bottom + 24)
         with performance_debug.measure("layout.timeline_rebuild"):
-            if self.timeline_ui.set_open_canvas_entity_ids(card.get("entity_id") for card in self.cards):
+            open_ids_changed = self.timeline_ui.set_open_canvas_entity_ids(
+                card.get("entity_id") for card in self.cards
+            )
+            focus_ids_changed = False
+            if hasattr(self, "_current_timeline_focus_ids") and hasattr(
+                self.timeline_ui, "set_timeline_focus_entity_ids"
+            ):
+                focus_ids_changed = self.timeline_ui.set_timeline_focus_entity_ids(
+                    self._current_timeline_focus_ids()
+                )
+            if open_ids_changed or focus_ids_changed:
                 self.timeline_ui.rebuild_layout()
         with performance_debug.measure("layout.relation_controls"):
             self._layout_canvas_relation_controls()
@@ -358,6 +369,7 @@ class KnowledgeCanvasController:
         card["header_drag_rect"] = rect
         card["close_rect"] = None
         card["template_button_rect"] = None
+        card["timeline_focus_rect"] = None
         card["resize_handle_rect"] = pygame.Rect(rect.right - 12, rect.bottom - 12, 10, 10)
         self._clear_card_canvas_hitboxes(card)
 
@@ -377,6 +389,7 @@ class KnowledgeCanvasController:
         card["header_drag_rect"] = rect
         card["close_rect"] = close_rect
         card["template_button_rect"] = None
+        card["timeline_focus_rect"] = None
         card["resize_handle_rect"] = pygame.Rect(rect.right - 12, rect.bottom - 12, 10, 10)
         self._clear_card_canvas_hitboxes(card)
         card["canvas_relation_add_rect"] = None
@@ -593,6 +606,12 @@ class KnowledgeCanvasController:
         if self.canvas_relation_link_source_id == closing_entity_id:
             self.canvas_relation_link_source_id = None
             self.canvas_relation_status = ""
+
+        if closing_entity_id and closing_entity_id in getattr(self, "timeline_focus_entity_ids", []):
+            self.timeline_focus_entity_ids = [
+                entity_id for entity_id in self.timeline_focus_entity_ids
+                if entity_id != closing_entity_id
+            ]
 
         self._clear_timeline_edit_target()
         self._close_wiki_link_picker(closing_card)
@@ -1293,6 +1312,30 @@ class KnowledgeCanvasController:
         self._relayout_cards()
         return True
 
+    def _begin_actor_focus_browser_pick(self):
+        self.relation_link_target = {
+            "mode": "timeline_actor_focus",
+            "field_key": "Actor",
+            "target": "factions,institutions,producers",
+        }
+        self.relation_link_status = "Choose a faction, institution, or producer in the repository browser"
+        self.browser_filter_dataset = "all"
+        self.browser_filter_incomplete_only = False
+        self.browser_collapsed = False
+        self.browser_search_active = True
+        self.browser_search_query = ""
+        self.browser_scroll = 0
+        if getattr(self, "timeline_ui", None) is not None:
+            self.timeline_ui.actor_focus_active = False
+            self.timeline_ui.actor_focus_matches = []
+            self.timeline_ui.actor_focus_suggestion_hitboxes = []
+        self.browser_items = self._build_browser_items(self.world_model)
+        self.show_template_picker = False
+        self._build_template_picker_hitboxes()
+        self._rebuild_browser_hitboxes()
+        self._relayout_cards()
+        return True
+
     def _handle_relation_card_link_target_click(self, mouse_pos):
         if self.relation_link_target is None:
             return None
@@ -1346,6 +1389,21 @@ class KnowledgeCanvasController:
             changed = self.timeline_ui.set_location_focus(entity_id)
             label = self._entity_display_label(entity, fallback=entity_id)
             self.relation_link_status = f"Location focus: {label}"
+            self._finish_relation_browser_link()
+            if changed:
+                self._refresh_timeline_items()
+            return True
+
+        if self.relation_link_target.get("mode") == "timeline_actor_focus":
+            if getattr(self, "timeline_ui", None) is None:
+                self.relation_link_status = "The timeline is not available"
+                return False
+            if not self.timeline_ui._is_actor_entity(entity):
+                self.relation_link_status = "Pick a faction, institution, or producer"
+                return False
+            changed = self.timeline_ui.set_actor_focus(entity_id)
+            label = self._entity_display_label(entity, fallback=entity_id)
+            self.relation_link_status = f"Actor focus: {label}"
             self._finish_relation_browser_link()
             if changed:
                 self._refresh_timeline_items()
@@ -1557,6 +1615,16 @@ class KnowledgeCanvasController:
                 self._relayout_cards()
                 return "__ui_consumed__"
 
+            timeline_focus_rect = card.get("timeline_focus_rect")
+            if (
+                timeline_focus_rect is not None
+                and timeline_focus_rect.collidepoint(mouse_pos)
+                and not card.get("is_edit_mode", False)
+            ):
+                card_obj = self._bring_card_to_front(index)
+                self._toggle_timeline_focus(card_obj)
+                return "__ui_consumed__"
+
             for template, type_rect in card.get("type_picker_hitboxes", []):
                 if type_rect.collidepoint(mouse_pos) and card.get("is_edit_mode", False):
                     card_obj = self._bring_card_to_front(index)
@@ -1617,6 +1685,13 @@ class KnowledgeCanvasController:
                     return "__ui_consumed__"
 
                 self._delete_card_entry(card_obj)
+                return "__ui_consumed__"
+
+            lock_toggle_rect = card.get("lock_toggle_rect")
+            if lock_toggle_rect is not None and lock_toggle_rect.collidepoint(mouse_pos):
+                card_obj = self._bring_card_to_front(index)
+                card_obj["relation_lock_active"] = not card_obj.get("relation_lock_active", False)
+                self._relayout_cards()
                 return "__ui_consumed__"
 
             edit_toggle_rect = card.get("edit_toggle_rect")
@@ -2155,6 +2230,24 @@ class KnowledgeCanvasController:
                         self._refresh_timeline_items()
                     self._layout_all_cards()
                     return "__ui_consumed__"
+
+            period_add_button_rect = card.get("period_add_button_rect")
+            if (
+                card_view is not None
+                and period_add_button_rect is not None
+                and card.get("is_edit_mode", False)
+                and period_add_button_rect.collidepoint(mouse_pos)
+            ):
+                card_obj = self._bring_card_to_front(index)
+                if card_obj["card_view"].add_period_from_draft(card_obj):
+                    if card_obj.get("is_draft_entity", False):
+                        self._save_card_draft(card_obj)
+                    else:
+                        self._persist_card_entity(card_obj)
+                    self._sync_card_years_from_entity(card_obj)
+                    self._refresh_timeline_items()
+                self._layout_all_cards()
+                return "__ui_consumed__"
 
             launch_rect = card.get("launch_rect")
             if launch_rect is not None and launch_rect.collidepoint(mouse_pos):

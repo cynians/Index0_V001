@@ -6,6 +6,7 @@ import hashlib
 
 from simulations.world_gen.surface_geomorphology import (
     derive_surface_material_partition_fields,
+    wrapped_gradient,
 )
 
 try:
@@ -331,10 +332,11 @@ def derive_surface_exposure_fields(
             default=1,
         ),
     )
-    dzdy, dzdx = np.gradient(
+    dzdy, dzdx = wrapped_gradient(
         elevation,
         spacing_y * max(1.0, source_h / target_h),
         spacing_x * max(1.0, source_w / target_w),
+        wrap_x=wrap_x,
     )
     slope = np.clip(
         np.sqrt(dzdx * dzdx + dzdy * dzdy) * 38.0,
@@ -395,9 +397,24 @@ def derive_surface_exposure_fields(
                 precipitation, 2, wrap_x=wrap_x
             )
         wetness = np.clip(np.log1p(precipitation) / np.log(3001.0), 0.0, 1.0)
+        aridity = np.clip(1.0 - wetness * 1.45, 0.0, 1.0)
+        evaporation_rows = _rows(water_cycle, "climate_grid", "annual_potential_evaporation_rows_mm")
+        potential = (
+            np.maximum(0.0, _resample(evaporation_rows, target_h, target_w)) if evaporation_rows else None
+        )
+        if potential is not None and float(np.max(potential)) >= 1.0:
+            if planetary_footprint:
+                potential = _neighbourhood_mean(potential, 2, wrap_x=wrap_x)
+            # Aridity index P / PET (UNEP: < 0.05 hyper-arid, < 0.2 arid,
+            # < 0.5 semi-arid, > 0.65 humid): water supply against demand,
+            # not rainfall alone -- 180 mm/yr is a desert, however it
+            # looks on a log scale.
+            aridity_index = precipitation / np.maximum(potential, 1.0)
+            wetness = (1.0 - np.exp(-aridity_index)).astype(np.float32)
+            aridity = (1.0 / (1.0 + (aridity_index / 0.3) ** 2)).astype(np.float32)
     else:
         wetness = np.zeros((target_h, target_w), dtype=np.float32)
-    aridity = np.clip(1.0 - wetness * 1.45, 0.0, 1.0)
+        aridity = np.ones((target_h, target_w), dtype=np.float32)
 
     partition = derive_surface_material_partition_fields(
         heightmap,

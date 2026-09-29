@@ -3,9 +3,11 @@ import gzip
 import io
 import json
 import os
+import tempfile
 
 import pygame
 
+from companion.server import get_server
 from world.texture_sets import TextureSet, cell_key, parse_cell_key
 
 
@@ -141,6 +143,129 @@ class PixelArtEditorUI:
             self.begin_canvas()
         return True
 
+    def open_embedded(self, *, title, views, active_view=None, masks=None,
+                      on_save=None, on_close=None, finish_on_save=True,
+                      context_label="vehicle"):
+        """Open Pixel Studio over another editor without creating an Illustration.
+
+        ``views`` uses the same document shape as the regular editor, which lets
+        vehicle paint screens inherit the real layer/tool/undo implementation.
+        ``masks`` is deliberately kept outside the layers: it is a hard editing
+        boundary that reference layers cannot accidentally weaken or erase.
+        """
+        if not isinstance(views, dict) or not views:
+            return False
+        prepared_views = {}
+        for view_id, source in views.items():
+            if not isinstance(source, dict):
+                continue
+            width = max(1, int(source.get("width") or 1))
+            height = max(1, int(source.get("height") or 1))
+            layers = self._snapshot_layers(source.get("layers") or [])
+            if not layers:
+                layers = [{
+                    "name": "Layer 1", "visible": True, "opacity": 1.0,
+                    "reference_only": False, "locked": False,
+                    "pixels": self._blank_pixels(width, height),
+                }]
+            prepared_views[str(view_id)] = {
+                "name": str(source.get("name") or str(view_id).title()),
+                "width": width,
+                "height": height,
+                "layers": layers,
+                "active_layer": max(0, min(int(source.get("active_layer") or 0), len(layers) - 1)),
+                "undo_stack": [],
+                "redo_stack": [],
+                "revision": 0,
+                "composite_cache": None,
+                "zoom": float(source.get("zoom", 1.0)),
+                "pan": list(source.get("pan") or [0.0, 0.0]),
+            }
+        if not prepared_views:
+            return False
+        view_order = [str(view_id) for view_id in views if str(view_id) in prepared_views]
+        chosen_view = str(active_view) if str(active_view) in prepared_views else view_order[0]
+        color = (215, 221, 232)
+        self.state = {
+            "stage": "canvas",
+            "illustration_id": f"embedded:{title}",
+            "illustration": {"id": f"embedded:{title}", "name": str(title)},
+            "parent_entity": None,
+            "metric_size_buffer": "",
+            "metric_size_cursor": 0,
+            "setup_mode": "vehicle_orthographic",
+            "dimension_buffers": {},
+            "dimension_cursors": {},
+            "active_dimension": "length",
+            "views": prepared_views,
+            "view_order": view_order,
+            # Use a non-view sentinel until switch_view has loaded the first
+            # document. Otherwise its pre-switch sync would overwrite that
+            # view with the still-empty compatibility fields below.
+            "active_view": "__pending__",
+            "view_masks": dict(masks or {}),
+            "embedded": True,
+            "embedded_on_save": on_save,
+            "embedded_on_close": on_close,
+            "embedded_finish_on_save": bool(finish_on_save),
+            "embedded_context": str(context_label or "artwork"),
+            "embedded_saved": False,
+            "status": f"Paint is clipped to the {context_label} silhouette",
+            "color": color,
+            "hsv": colorsys.rgb_to_hsv(*(channel / 255.0 for channel in color)),
+            "pixels": [],
+            "layers": [],
+            "active_layer": 0,
+            "canvas_width": 0,
+            "canvas_height": 0,
+            "tool": "brush",
+            "shape_filled": False,
+            "shape_start": None,
+            "shape_end": None,
+            "brush_size": 1,
+            "pressure_size": True,
+            "pressure": 1.0,
+            "zoom": 1.0,
+            "pan": [0.0, 0.0],
+            "panning": False,
+            "pan_anchor": None,
+            "show_grid": True,
+            "mirror_x": False,
+            "onion_skin": False,
+            "undo_stack": [],
+            "redo_stack": [],
+            "stroke_before": None,
+            "stroke_changed": False,
+            "dirty": False,
+            "revision": 0,
+            "composite_cache": None,
+            "last_paint_cell": None,
+            "active_slider": None,
+            "tool_hitboxes": {},
+            "brush_size_hitboxes": {},
+            "clear_rect": None,
+            "reference_surface": None,
+            "reference_rect": None,
+            "anchor_mode": None,
+            "attachment_point_px": None,
+            "growth_axis_px": None,
+            "setup_mode_hitboxes": {},
+            "dimension_hitboxes": {},
+            "view_hitboxes": {},
+            "texture_grid": {"columns": 3, "rows": 3},
+            "texture_base_layers": None,
+            "texture_variants": {},
+            "texture_active_cell": None,
+            "texture_seed": 17,
+            "texture_cell_hitboxes": {},
+            "texture_action_hitboxes": {},
+            "mask_surface_cache": {},
+        }
+        self.painting = False
+        self.switch_view(chosen_view)
+        self.state["status"] = f"Paint is clipped to the {context_label} silhouette"
+        return True
+
     def _illustration_has_saved_art(self, illustration):
         """True when a saved pixel document or rendered image exists on disk."""
         if not isinstance(illustration, dict):
@@ -158,8 +283,13 @@ class PixelArtEditorUI:
         return False
 
     def close(self):
+        editor = self.state
+        callback = editor.get("embedded_on_close") if isinstance(editor, dict) and editor.get("embedded") else None
+        saved = bool(editor.get("embedded_saved")) if isinstance(editor, dict) else False
         self.state = None
         self.painting = False
+        if callable(callback):
+            callback(saved)
         return True
 
     def request_close(self):
@@ -219,6 +349,20 @@ class PixelArtEditorUI:
             "zoom": float(editor.get("zoom", 1.0)),
             "pan": list(editor.get("pan") or [0.0, 0.0]),
         })
+
+    def _active_mask(self):
+        editor = self.state
+        if not isinstance(editor, dict) or not editor.get("embedded"):
+            return None
+        masks = editor.get("view_masks") or {}
+        mask = masks.get(editor.get("active_view"))
+        return mask if isinstance(mask, list) else None
+
+    def _cell_allowed(self, x, y):
+        mask = self._active_mask()
+        if mask is None:
+            return True
+        return 0 <= y < len(mask) and isinstance(mask[y], list) and 0 <= x < len(mask[y]) and bool(mask[y][x])
 
     def switch_view(self, view_id):
         editor = self.state
@@ -1043,10 +1187,12 @@ class PixelArtEditorUI:
         color = tuple(editor.get("color", (236, 240, 246)))
         changed = False
         for x, y in cells:
-            if 0 <= x < width and 0 <= y < height and y < len(pixels) and x < len(pixels[y]):
+            if 0 <= x < width and 0 <= y < height and y < len(pixels) and x < len(pixels[y]) and self._cell_allowed(x, y):
                 pixels[y][x] = color
                 if editor.get("mirror_x"):
-                    pixels[y][width - 1 - x] = color
+                    mirror_x = width - 1 - x
+                    if self._cell_allowed(mirror_x, y):
+                        pixels[y][mirror_x] = color
                 changed = True
         if changed:
             self._mark_dirty()
@@ -1076,6 +1222,9 @@ class PixelArtEditorUI:
                 self.set_color_rgb(color)
                 editor["status"] = f"Picked #{color[0]:02x}{color[1]:02x}{color[2]:02x}"
             return True
+        if not self._cell_allowed(pixel_x, pixel_y):
+            editor["status"] = "Outside vehicle silhouette"
+            return True
         paint_color = None if tool == "eraser" else tuple(editor.get("color", (236, 240, 246)))
         if tool == "fill":
             target = pixels[pixel_y][pixel_x]
@@ -1087,7 +1236,7 @@ class PixelArtEditorUI:
             seen = set()
             while pending:
                 x, y = pending.pop()
-                if (x, y) in seen or not (0 <= x < width and 0 <= y < height) or pixels[y][x] != target:
+                if (x, y) in seen or not (0 <= x < width and 0 <= y < height) or not self._cell_allowed(x, y) or pixels[y][x] != target:
                     continue
                 seen.add((x, y))
                 pixels[y][x] = paint_color
@@ -1109,11 +1258,11 @@ class PixelArtEditorUI:
                 if not isinstance(row, list):
                     continue
                 for x in range(start_x, start_x + brush_size):
-                    if 0 <= x < width and x < len(row):
+                    if 0 <= x < width and x < len(row) and self._cell_allowed(x, y):
                         row[x] = paint_color
                         if editor.get("mirror_x"):
                             mirror_x = width - 1 - x
-                            if 0 <= mirror_x < len(row):
+                            if 0 <= mirror_x < len(row) and self._cell_allowed(mirror_x, y):
                                 row[mirror_x] = paint_color
 
         cells = [(pixel_x, pixel_y)]
@@ -1241,6 +1390,21 @@ class PixelArtEditorUI:
             if isinstance(editor, dict):
                 editor["status"] = "Create the canvas before saving"
             return False
+        if editor.get("embedded"):
+            self.finish_stroke()
+            self._sync_active_view()
+            callback = editor.get("embedded_on_save")
+            context_label = str(editor.get("embedded_context") or "artwork")
+            if callable(callback) and callback(editor.get("views") or {}, editor.get("view_masks") or {}) is False:
+                editor["status"] = f"Could not apply the drawing to the {context_label}"
+                return False
+            editor["dirty"] = False
+            editor["confirm_close"] = False
+            editor["embedded_saved"] = True
+            editor["status"] = f"{context_label.title()} artwork applied"
+            if editor.get("embedded_finish_on_save", True):
+                return self.close()
+            return True
         illustration_id = str(editor.get("illustration_id") or "").strip()
         illustration = self.host.world_model.get_entity(illustration_id) if self.host.world_model is not None else None
         if not isinstance(illustration, dict):
@@ -1344,10 +1508,93 @@ class PixelArtEditorUI:
         if callable(assign_asset) and not assign_asset(illustration):
             editor["status"] = "PNG saved, but the plant module link could not be updated"
             return False
+        assign_texture = getattr(self.host, "assign_texture_set_to_parent", None)
+        if mode == "texture" and callable(assign_texture) and not assign_texture(illustration):
+            editor["status"] = "Texture saved, but the parent material link could not be updated"
+            return False
         editor["dirty"] = False
         editor["confirm_close"] = False
         editor["status"] = "Saved front, side, and top views" if mode == "orthographic" else f"Saved {primary_path}"
         return True
+
+    def send_to_companion(self):
+        """Push the active layer to the companion web app running on another device.
+
+        Prototype scope: plain single-view illustrations only (setup_mode == "single").
+        """
+        editor = self.state
+        if not isinstance(editor, dict) or editor.get("stage") != "canvas":
+            return False
+        if editor.get("setup_mode") != "single":
+            editor["status"] = "Companion editing only supports simple illustrations for now"
+            return False
+        self.finish_stroke()
+        layer = self._active_layer()
+        width, height = int(editor.get("canvas_width") or 0), int(editor.get("canvas_height") or 0)
+        if layer is None or width <= 0 or height <= 0:
+            editor["status"] = "No canvas to send"
+            return False
+        surface = self._render_layers_surface(width, height, [layer], include_reference=False)
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as handle:
+                temp_path = handle.name
+            try:
+                pygame.image.save(surface, temp_path)
+                with open(temp_path, "rb") as file_obj:
+                    png_bytes = file_obj.read()
+            finally:
+                os.remove(temp_path)
+        except (pygame.error, OSError) as exc:
+            editor["status"] = f"Could not export canvas: {exc}"
+            return False
+        try:
+            server = get_server()
+        except RuntimeError as exc:
+            editor["status"] = str(exc)
+            return False
+        illustration = editor.get("illustration") or {}
+        label = str(illustration.get("name") or illustration.get("pretty_name") or editor.get("illustration_id") or "artwork")
+        editor["companion_token"] = server.publish_canvas(width, height, png_bytes, label)
+        editor["companion_url"] = server.lan_url()
+        editor["status"] = f"Sent to companion — open {editor['companion_url']} on your other device"
+        return True
+
+    def _poll_companion(self):
+        editor = self.state
+        if not isinstance(editor, dict):
+            return
+        token = editor.get("companion_token")
+        if not token:
+            return
+        try:
+            server = get_server()
+        except RuntimeError:
+            return
+        result = server.take_result(token)
+        if result is None:
+            return
+        editor["companion_token"] = None
+        width, height = int(editor.get("canvas_width") or 0), int(editor.get("canvas_height") or 0)
+        try:
+            received = pygame.image.load(io.BytesIO(result["png_bytes"])).convert_alpha()
+        except pygame.error as exc:
+            editor["status"] = f"Could not read companion drawing: {exc}"
+            return
+        if received.get_width() != width or received.get_height() != height:
+            received = pygame.transform.smoothscale(received, (width, height))
+        pixels = self._blank_pixels(width, height)
+        for y in range(height):
+            for x in range(width):
+                r, g, b, a = received.get_at((x, y))
+                if a >= 128:
+                    pixels[y][x] = (r, g, b)
+        self._push_undo()
+        layer = self._active_layer()
+        if layer is not None:
+            layer["pixels"] = pixels
+            editor["pixels"] = pixels
+        self._mark_dirty()
+        editor["status"] = "Received drawing from companion"
 
     def handle_keydown(self, event):
         editor = self.state
@@ -1385,6 +1632,13 @@ class PixelArtEditorUI:
                 return True
             if editor.get("setup_mode") == "orthographic" and event.key in (pygame.K_1, pygame.K_2, pygame.K_3):
                 return self.switch_view({pygame.K_1: "front", pygame.K_2: "side", pygame.K_3: "top"}[event.key])
+            if editor.get("setup_mode") == "vehicle_orthographic":
+                number_keys = (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5, pygame.K_6)
+                if event.key in number_keys:
+                    order = editor.get("view_order") or list((editor.get("views") or {}).keys())
+                    index = number_keys.index(event.key)
+                    if index < len(order):
+                        return self.switch_view(order[index])
             if event.key == pygame.K_0:
                 editor["zoom"] = 1.0
                 editor["pan"] = [0.0, 0.0]
@@ -1497,6 +1751,7 @@ class PixelArtEditorUI:
                     "toggle_mirror": lambda: editor.__setitem__("mirror_x", not editor.get("mirror_x", False)) or True,
                     "toggle_shape_fill": lambda: editor.__setitem__("shape_filled", not editor.get("shape_filled", False)) or True,
                     "anchor_mode": self.cycle_anchor_mode,
+                    "send_to_companion": self.send_to_companion,
                 }
                 return actions.get(action, lambda: False)()
             for index, rect in (editor.get("layer_hitboxes") or {}).items():
@@ -1828,11 +2083,32 @@ class PixelArtEditorUI:
                         color = composite.get_at((x, y))
                         if color.a:
                             pygame.draw.rect(screen, color, (canvas_rect.x + round(x * scale), canvas_rect.y + round(y * scale), max(1, round(scale)), max(1, round(scale))))
+        mask = self._active_mask()
+        if mask is not None:
+            cache = editor.setdefault("mask_surface_cache", {})
+            view_id = editor.get("active_view")
+            mask_surface = cache.get(view_id)
+            if mask_surface is None or mask_surface.get_size() != (width, height):
+                mask_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+                mask_surface.fill((7, 11, 17, 215))
+                for y in range(min(height, len(mask))):
+                    row = mask[y] if isinstance(mask[y], list) else []
+                    for x in range(min(width, len(row))):
+                        if not row[x]:
+                            continue
+                        edge = any(
+                            not (0 <= nx < width and 0 <= ny < height and ny < len(mask)
+                                 and isinstance(mask[ny], list) and nx < len(mask[ny]) and mask[ny][nx])
+                            for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1))
+                        )
+                        mask_surface.set_at((x, y), (91, 201, 230, 205) if edge else (25, 81, 102, 20))
+                cache[view_id] = mask_surface
+            screen.blit(pygame.transform.scale(mask_surface, (target_w, target_h)), canvas_rect)
         shape_start, shape_end = editor.get("shape_start"), editor.get("shape_end")
         if shape_start is not None and shape_end is not None:
             preview_color = tuple(editor.get("color", (236, 240, 246)))
             for x, y in self._shape_cells(editor.get("tool"), shape_start, shape_end, bool(editor.get("shape_filled"))):
-                if 0 <= x < width and 0 <= y < height:
+                if 0 <= x < width and 0 <= y < height and self._cell_allowed(x, y):
                     pygame.draw.rect(
                         screen,
                         preview_color,
@@ -1918,6 +2194,8 @@ class PixelArtEditorUI:
         editor = self.state
         if not isinstance(editor, dict):
             return
+        if editor.get("stage") == "canvas":
+            self._poll_companion()
         screen_rect = screen.get_rect()
         screen.fill((14, 17, 23))
         editor["rect"] = screen_rect
@@ -1947,7 +2225,8 @@ class PixelArtEditorUI:
 
         illustration = editor.get("illustration") or {}
         name = illustration.get("name") or illustration.get("pretty_name") or editor.get("illustration_id")
-        title_width = 210 if editor.get("setup_mode") == "orthographic" else max(120, top.width - 620)
+        multi_view = editor.get("setup_mode") in {"orthographic", "vehicle_orthographic"}
+        title_width = 190 if multi_view else max(120, top.width - 620)
         title = self._ellipsize_text(str(name), font, title_width)
         screen.blit(font.render("PIXEL STUDIO", True, (112, 199, 229)), (18, 9))
         screen.blit(font.render(title, True, (231, 237, 245)), (18, 29))
@@ -1959,6 +2238,17 @@ class PixelArtEditorUI:
                 view_rect = pygame.Rect(view_x + index * 92, 12, 86, 30)
                 self._button(screen, font, view_rect, label, active=editor.get("active_view") == view_id)
                 editor["action_hitboxes"][f"view:{view_id}"] = view_rect
+        elif editor.get("setup_mode") == "vehicle_orthographic":
+            view_x = 220
+            labels = {"left": "Left", "right": "Right", "front": "Front", "rear": "Rear", "top": "Top", "bottom": "Down"}
+            controls_x = max(260, top.width - 554)
+            tab_width = max(34, min(62, (controls_x - view_x - 24) // max(1, len(editor.get("view_order") or []))))
+            for index, view_id in enumerate(editor.get("view_order") or []):
+                view_rect = pygame.Rect(view_x + index * (tab_width + 4), 12, tab_width, 30)
+                label = labels.get(view_id, str(view_id).title())
+                shown = f"{index + 1} {label}" if tab_width >= 52 else f"{index + 1}{label[:1]}"
+                self._button(screen, font, view_rect, shown, active=editor.get("active_view") == view_id)
+                editor["action_hitboxes"][f"view:{view_id}"] = view_rect
 
         button_y = 12
         x = max(260, top.width - 554)
@@ -1968,9 +2258,10 @@ class PixelArtEditorUI:
             ("toggle_grid", "Grid", 54, True),
             ("toggle_mirror", "Mirror", 64, True),
             ("anchor_mode", {"attachment": "Set base", "axis": "Set vector"}.get(editor.get("anchor_mode"), "Guide"), 70, True),
+            ("send_to_companion", "Companion" if not editor.get("companion_token") else "Sent…", 92, editor.get("setup_mode") == "single"),
         ):
             rect = pygame.Rect(x, button_y, w, 30)
-            active = (action == "toggle_grid" and editor.get("show_grid")) or (action == "toggle_mirror" and editor.get("mirror_x")) or (action == "anchor_mode" and editor.get("anchor_mode"))
+            active = (action == "toggle_grid" and editor.get("show_grid")) or (action == "toggle_mirror" and editor.get("mirror_x")) or (action == "anchor_mode" and editor.get("anchor_mode")) or (action == "send_to_companion" and editor.get("companion_token"))
             self._button(screen, font, rect, label, active=active, enabled=enabled)
             if enabled:
                 editor["action_hitboxes"][action] = rect
@@ -1978,7 +2269,8 @@ class PixelArtEditorUI:
         cancel = pygame.Rect(top.right - 166, button_y, 68, 30)
         save = pygame.Rect(top.right - 90, button_y, 72, 30)
         self._button(screen, font, cancel, "Close")
-        self._button(screen, font, save, "Save", active=True)
+        finish_label = bool(editor.get("embedded") and editor.get("embedded_finish_on_save", True))
+        self._button(screen, font, save, "Finish" if finish_label else "Save", active=True)
         editor["cancel_rect"] = cancel
         editor["close_rect"] = cancel
         editor["primary_rect"] = save
@@ -2017,7 +2309,7 @@ class PixelArtEditorUI:
         width, height = int(editor.get("canvas_width") or 0), int(editor.get("canvas_height") or 0)
         status = str(editor.get("status") or "Ready")
         screen.blit(font.render(status, True, (172, 187, 207)), (12, bottom.y + 7))
-        view_label = f"{str(editor.get('active_view')).title()}   |   " if editor.get("setup_mode") == "orthographic" else ""
+        view_label = f"{str(editor.get('active_view')).title()}   |   " if multi_view else ""
         mode_label = "   |   TEXTURE SET" if self._texture_mode() else ""
         info = f"{view_label}{width} x {height} px{mode_label}   |   {float(editor.get('zoom', 1.0)) * 100:.0f}%   |   [ / ] size   Ctrl+Z undo   Ctrl+S save"
         info_surface = font.render(info, True, (134, 149, 169))

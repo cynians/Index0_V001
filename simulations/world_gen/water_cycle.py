@@ -9,22 +9,33 @@ microdrainage without silently replacing parent topology.
 import heapq
 import logging
 import math
+import sys
 from collections import deque
+from functools import lru_cache
 
 try:
     import numpy as np
 except ImportError:  # pragma: no cover - requirements include numpy.
     np = None
 
-from simulations.world_gen.map_seed import resolved_map_seed, seed_range
+from simulations.world_gen.map_seed import resolved_map_seed, seed_range as _uncached_seed_range
+from simulations.world_gen.exact_rounding import round_rows
 from simulations.world_gen.ocean_circulation import derive_ocean_circulation
+from simulations.world_gen.sphere_noise import sphere_fbm_table, sphere_signed_table
+from simulations.world_gen.volatile_budget import (
+    EARTH_LATITUDE_CONTRAST_K,
+    LATITUDE_MEAN_ABS,
+    liquid_freezing_point_k,
+    meridional_contrast_factor,
+)
 from simulations.world_gen.drainage import (
     derive_drainage_network,
+    derive_surface_hydrology_grids,
     inherit_parent_drainage,
 )
 
 
-WATER_CYCLE_MODEL_VERSION = "monthly-normals-koppen-geiger-v20-parent-seeded-regional-moisture"
+WATER_CYCLE_MODEL_VERSION = "monthly-normals-koppen-geiger-v21-hierarchical-surface-hydrology"
 PARENT_CLIMATE_EDGE_BLEND_MARGIN = 0.025
 
 # Only a fraction of condensed moisture truly leaves the advecting air mass
@@ -117,6 +128,12 @@ KOPPEN_CLASSES = {
     "Ocean": {"label": "Ocean", "color": [50, 92, 132]},
 }
 
+
+
+@lru_cache(maxsize=16384)
+def seed_range(seed_text, salt, low, high):
+    """Seeded constants are immutable per run; hashing them per cell dominated solves."""
+    return _uncached_seed_range(seed_text, salt, low, high)
 
 def shade_koppen_rgb(base_rgb, class_code, elevation, min_elevation, max_elevation):
     """Return the canonical visual shade for one Köppen climate cell.
@@ -261,6 +278,59 @@ def _sample_inherited_rows(
     return sum(value * weight for value, weight in numeric) / total_weight if total_weight > 1e-12 else None
 
 
+# Whole-lattice parent sampling and terrain/upwind context; switchable for
+# parity checks against the per-cell reference path.
+VECTORISED_PARENT_SAMPLING = True
+VECTORISED_TERRAIN_CONTEXT = True
+
+
+def _inherited_rows_grid(rows, u_values, v_values, source_bounds, width):
+    """Array form of ``_sample_inherited_rows`` over a whole child lattice.
+
+    Returns ``values[len(v_values), len(u_values)]`` with NaN where the
+    scalar sampler would return None.  Corner products are accumulated in
+    the scalar path's order; results match to ~1e-13 (Python's float
+    ``sum`` is compensated, NumPy adds are not).
+    """
+    source_bounds = source_bounds if isinstance(source_bounds, dict) else {}
+    u0 = float(source_bounds.get("min_u", 0.0) or 0.0)
+    u1 = float(source_bounds.get("max_u", 1.0) or 1.0)
+    v0 = float(source_bounds.get("min_v", 0.0) or 0.0)
+    v1 = float(source_bounds.get("max_v", 1.0) or 1.0)
+    height = len(rows)
+
+    def numeric(value):
+        try:
+            return float(value) if value is not None else math.nan
+        except (TypeError, ValueError):
+            return math.nan
+
+    values = np.asarray([[numeric(value) for value in row[:width]] for row in rows], dtype=np.float64)
+    local_u = np.clip((np.asarray(u_values, dtype=np.float64) - u0) / max(1e-12, u1 - u0), 0.0, 1.0)
+    local_v = np.clip((np.asarray(v_values, dtype=np.float64) - v0) / max(1e-12, v1 - v0), 0.0, 1.0)
+    px = local_u * max(1, width - 1)
+    py = local_v * max(1, height - 1)
+    x0 = np.floor(px).astype(np.int64)
+    y0 = np.floor(py).astype(np.int64)
+    x1 = np.minimum(width - 1, x0 + 1)
+    y1 = np.minimum(height - 1, y0 + 1)
+    tx = (px - x0)[None, :]
+    ty = (py - y0)[:, None]
+    corners = (
+        (values[np.ix_(y0, x0)], (1.0 - tx) * (1.0 - ty)),
+        (values[np.ix_(y0, x1)], tx * (1.0 - ty)),
+        (values[np.ix_(y1, x0)], (1.0 - tx) * ty),
+        (values[np.ix_(y1, x1)], tx * ty),
+    )
+    total_weight = np.zeros((len(local_v), len(local_u)))
+    weighted = np.zeros((len(local_v), len(local_u)))
+    for value, weight in corners:
+        valid = ~np.isnan(value)
+        total_weight = total_weight + np.where(valid, weight, 0.0)
+        weighted = weighted + np.where(valid, np.nan_to_num(value) * weight, 0.0)
+    return np.where(total_weight > 1e-12, weighted / np.where(total_weight > 1e-12, total_weight, 1.0), np.nan)
+
+
 def _sample_inherited_category(rows, global_u, global_v, source_bounds=None):
     if (
         not isinstance(rows, list)
@@ -324,6 +394,33 @@ def _inherit_parent_ocean_circulation(local_model, parent_model, source_bounds, 
         ("upwelling_rows", 0.72),
         ("surface_salinity_rows_psu", 0.85),
     ]
+
+    def width_of(rows):
+        return min((len(row) for row in rows if isinstance(row, list)), default=0) if isinstance(rows, list) else 0
+
+    # Parent grid widths are fixed for the whole pass; rescanning them for
+    # every sampled cell dominated this function.
+    vector_width = width_of(parent_u)
+    field_widths = {field: width_of(parent_model.get(field)) for field, _inheritance in field_pairs}
+    grids = {}
+    if VECTORISED_PARENT_SAMPLING and np is not None:
+        lattice_u = [u0 + (u1 - u0) * x / max(1, width - 1) for x in range(width)]
+        lattice_v = [v0 + (v1 - v0) * y / max(1, height - 1) for y in range(height)]
+        if vector_width > 0:
+            grids["u"] = _inherited_rows_grid(parent_u, lattice_u, lattice_v, parent_source_bounds, vector_width)
+            grids["v"] = _inherited_rows_grid(parent_v, lattice_u, lattice_v, parent_source_bounds, vector_width)
+        for field, _inheritance in field_pairs:
+            parent_rows = parent_model.get(field)
+            if isinstance(parent_rows, list) and field_widths.get(field) and all(isinstance(row, list) for row in parent_rows):
+                grids[field] = _inherited_rows_grid(parent_rows, lattice_u, lattice_v, parent_source_bounds, field_widths[field])
+
+    def inherited_value(key, rows, global_u, global_v, x, y, width_hint):
+        grid = grids.get(key)
+        if grid is not None:
+            value = grid[y, x]
+            return None if value != value else float(value)
+        return _sample_inherited_rows(rows, global_u, global_v, parent_source_bounds, width_hint=width_hint)
+
     for y in range(height):
         global_v = v0 + (v1 - v0) * y / max(1, height - 1)
         for x in range(width):
@@ -331,8 +428,8 @@ def _inherit_parent_ocean_circulation(local_model, parent_model, source_bounds, 
             if not isinstance(local_vector, (list, tuple)) or len(local_vector) < 2:
                 continue
             global_u = u0 + (u1 - u0) * x / max(1, width - 1)
-            inherited_u = _sample_inherited_rows(parent_u, global_u, global_v, parent_source_bounds)
-            inherited_v = _sample_inherited_rows(parent_v, global_u, global_v, parent_source_bounds)
+            inherited_u = inherited_value("u", parent_u, global_u, global_v, x, y, vector_width)
+            inherited_v = inherited_value("v", parent_v, global_u, global_v, x, y, vector_width)
             if inherited_u is not None and inherited_v is not None:
                 local_vectors[y][x] = [
                     round(inherited_u * 0.82 + float(local_vector[0]) * 0.18, 3),
@@ -343,7 +440,7 @@ def _inherit_parent_ocean_circulation(local_model, parent_model, source_bounds, 
                 parent_rows = parent_model.get(field)
                 if not isinstance(local_rows, list) or not isinstance(parent_rows, list):
                     continue
-                inherited = _sample_inherited_rows(parent_rows, global_u, global_v, parent_source_bounds)
+                inherited = inherited_value(field, parent_rows, global_u, global_v, x, y, field_widths.get(field))
                 if inherited is None or y >= len(local_rows) or x >= len(local_rows[y]) or local_rows[y][x] is None:
                     continue
                 local_rows[y][x] = round(inherited * inheritance + float(local_rows[y][x]) * (1.0 - inheritance), 3)
@@ -540,15 +637,12 @@ def _sample_bilinear_rows(rows, u, v, *, wrap_x=True):
 
 
 def _wave_noise(map_seed, key, nx, ny):
-    freq_a = seed_range(map_seed, f"{key}:freq_a", 1.1, 4.2)
-    freq_b = seed_range(map_seed, f"{key}:freq_b", 2.0, 7.8)
-    phase_a = seed_range(map_seed, f"{key}:phase_a", 0.0, math.tau)
-    phase_b = seed_range(map_seed, f"{key}:phase_b", 0.0, math.tau)
-    signal = (
-        math.sin(nx * math.tau * freq_a + ny * 3.1 + phase_a)
-        + math.cos((nx * 0.6 + ny) * math.tau * freq_b + phase_b)
-    ) * 0.5
-    return _clamp((signal + 1.0) * 0.5)
+    """Broad circulation anomaly in [0, 1], seamless on the sphere.
+
+    (Formerly two map-space sinusoids, which drew tilted sine-curve stripes
+    and broke at the date line.)
+    """
+    return sphere_fbm_table(map_seed, key, nx, ny, features=1.6, octaves=2)
 
 
 def _nearest_ocean_distance(ocean_mask, x, y):
@@ -624,15 +718,8 @@ def _shore_distance_rows(ocean_mask):
 
 
 def _climate_texture(map_seed, key, nx, ny):
-    phase_a = seed_range(map_seed, f"{key}:phase_a", 0.0, math.tau)
-    phase_b = seed_range(map_seed, f"{key}:phase_b", 0.0, math.tau)
-    phase_c = seed_range(map_seed, f"{key}:phase_c", 0.0, math.tau)
-    value = (
-        math.sin((nx * 11.0 + ny * 3.2) * math.tau + phase_a) * 0.46
-        + math.cos((nx * 5.4 - ny * 8.1) * math.tau + phase_b) * 0.34
-        + math.sin((nx + ny * 0.55) * math.tau * 17.0 + phase_c) * 0.20
-    )
-    return max(-1.0, min(1.0, value))
+    """Smaller-scale climate anomaly in [-1, 1], seamless on the sphere."""
+    return sphere_signed_table(map_seed, key, nx, ny, features=5.0, octaves=3)
 
 
 def _elevation_value(rows, x, y):
@@ -699,6 +786,21 @@ def _terrain_metrics(rows, ocean_mask, x, y, span):
     }
 
 
+def _circulation_calm_factor(trade, westerly, polar, trade_to_westerly, westerly_to_polar, wind_x, wind_y):
+    """Share of the band winds' strength left where they cancel (0..1).
+
+    Between the trades and the westerlies (the subtropical high) and at the
+    polar front the band winds oppose each other, so the air is calm and
+    variable.  Rescaling the blended vector to unit length made the wind
+    swing 180 degrees across ~1 degree of latitude there, and moisture
+    transport -- humidity, evaporation, aridity -- switched along a
+    knife-edge line.  Latitude-only, evaluated with ``math``.
+    """
+    reference = math.hypot(*trade) + (math.hypot(*westerly) - math.hypot(*trade)) * trade_to_westerly
+    reference += (math.hypot(*polar) - reference) * westerly_to_polar
+    return min(1.0, math.hypot(wind_x, wind_y) / max(1e-9, reference))
+
+
 def _prevailing_wind_vector(ny, map_seed, nx=0.5):
     latitude = (0.5 - float(ny)) * 2.0
     abs_lat = abs(latitude)
@@ -725,6 +827,10 @@ def _prevailing_wind_vector(ny, map_seed, nx=0.5):
     wind_y = trade_y + (westerly_y - trade_y) * trade_to_westerly
     wind_x += (polar_x - wind_x) * westerly_to_polar
     wind_y += (polar_y - wind_y) * westerly_to_polar
+    calm = _circulation_calm_factor(
+        (trade_x, trade_y), (westerly_x, westerly_y), (polar_x, polar_y),
+        trade_to_westerly, westerly_to_polar, wind_x, wind_y,
+    )
     # Planetary circulation cells are zonally organized but not perfectly
     # straight.  A low-frequency, seed-stable meander gives storm tracks and
     # moisture advection a coherent longitude component without turning the
@@ -737,7 +843,55 @@ def _prevailing_wind_vector(ny, map_seed, nx=0.5):
     wind_y += meander * 0.24 * (0.35 + 0.65 * midlatitude_weight)
     wind_y += seasonal_tilt
     length = math.hypot(wind_x, wind_y) or 1.0
-    return wind_x / length, wind_y / length
+    return wind_x / length * calm, wind_y / length * calm
+
+
+def _prevailing_wind_grid(v_values, u_values, map_seed):
+    """``_prevailing_wind_vector`` for every (v, u) lattice point.
+
+    Latitude-only terms are evaluated per row with ``math`` (NumPy's ``tanh``
+    differs in the last bit), the meander per cell as an array, and the
+    normalising ``hypot`` per cell with ``math`` for the same reason.
+    Returns ``(wind_x, wind_y)`` arrays of shape ``(len(v), len(u))``.
+    """
+    seasonal_tilt = seed_range(map_seed, "wind:seasonal_tilt", -0.16, 0.16)
+    row_x, row_y, row_midlatitude, row_calm = [], [], [], []
+    for ny in v_values:
+        latitude = (0.5 - float(ny)) * 2.0
+        abs_lat = abs(latitude)
+        meridional_sign = math.tanh(latitude / EQUATOR_WIND_SMOOTHING_WIDTH)
+        trade_x, trade_y = -0.82, -0.24 * meridional_sign
+        westerly_x, westerly_y = 0.92, 0.12 * meridional_sign
+        polar_x, polar_y = -0.66, 0.18 * meridional_sign
+        trade_to_westerly = _smoothstep(
+            0.28 - WIND_BAND_TRANSITION_WIDTH, 0.28 + WIND_BAND_TRANSITION_WIDTH, abs_lat
+        )
+        westerly_to_polar = _smoothstep(
+            0.68 - WIND_BAND_TRANSITION_WIDTH, 0.68 + WIND_BAND_TRANSITION_WIDTH, abs_lat
+        )
+        wind_x = trade_x + (westerly_x - trade_x) * trade_to_westerly
+        wind_y = trade_y + (westerly_y - trade_y) * trade_to_westerly
+        wind_x += (polar_x - wind_x) * westerly_to_polar
+        wind_y += (polar_y - wind_y) * westerly_to_polar
+        row_calm.append(_circulation_calm_factor(
+            (trade_x, trade_y), (westerly_x, westerly_y), (polar_x, polar_y),
+            trade_to_westerly, westerly_to_polar, wind_x, wind_y,
+        ))
+        row_x.append(wind_x)
+        row_y.append(wind_y)
+        row_midlatitude.append(math.exp(-(((abs_lat - 0.56) / 0.28) ** 2)))
+    u_grid = np.asarray(u_values, dtype=np.float64)[None, :]
+    v_grid = np.asarray(v_values, dtype=np.float64)[:, None]
+    meander = _wave_noise_grid(map_seed, "wind_circulation_meander", u_grid, v_grid) - 0.5
+    midlatitude_weight = np.asarray(row_midlatitude)[:, None]
+    wind_x = np.asarray(row_x)[:, None] + meander * 0.11 * midlatitude_weight
+    wind_y = np.asarray(row_y)[:, None] + meander * 0.24 * (0.35 + 0.65 * midlatitude_weight)
+    wind_y = wind_y + seasonal_tilt
+    length = np.asarray(
+        [math.hypot(x, y) or 1.0 for x, y in zip(wind_x.ravel().tolist(), wind_y.ravel().tolist())]
+    ).reshape(wind_x.shape)
+    calm = np.asarray(row_calm)[:, None]
+    return wind_x / length * calm, wind_y / length * calm
 
 
 def _annual_reference_evaporation_mm(
@@ -976,6 +1130,19 @@ def _derive_koppen_display_grid(
     so the map instead interpolates the continuous state and applies the
     Koppen thresholds at the finer display samples.
     """
+    if np is not None:
+        return _derive_koppen_display_grid_array(
+            temperature_rows,
+            seasonality_rows,
+            precipitation_rows,
+            shore_distance_rows,
+            condensation_rows,
+            elevation_rows,
+            sea_level=sea_level,
+            map_seed=map_seed,
+            source_uv_bounds=source_uv_bounds,
+            wrap_x=wrap_x,
+        )
     source_height = len(temperature_rows)
     source_width = len(temperature_rows[0]) if source_height else 0
     if source_width < 2 or source_height < 2:
@@ -1043,6 +1210,389 @@ def _derive_koppen_display_grid(
         display_rows.append(class_row)
         display_elevation_rows.append(elevation_row)
     return display_rows, display_elevation_rows
+
+
+def _bilinear_rows_array(rows, local_u, local_v, *, wrap_x=True):
+    """Array form of ``_sample_bilinear_rows`` over broadcast UV arrays."""
+    width = min(len(row) for row in rows)
+    values = np.asarray([row[:width] for row in rows], dtype=np.float64)
+    height = values.shape[0]
+    duplicate_seam = bool(
+        wrap_x
+        and width > 2
+        and np.all(np.abs(values[:, 0] - values[:, width - 1]) < 1e-6)
+    )
+    unique_width = width - 1 if duplicate_seam else width
+    px = (np.mod(local_u, 1.0) if wrap_x else np.clip(local_u, 0.0, 1.0)) * max(1, unique_width)
+    py = np.clip(local_v, 0.0, 1.0) * max(1, height - 1)
+    floor_x = np.floor(px)
+    floor_y = np.floor(py)
+    x0 = floor_x.astype(np.int64) % unique_width
+    x1 = (x0 + 1) % unique_width if wrap_x else np.minimum(unique_width - 1, x0 + 1)
+    y0 = np.clip(floor_y.astype(np.int64), 0, height - 1)
+    y1 = np.minimum(height - 1, y0 + 1)
+    tx = px - floor_x
+    ty = py - floor_y
+    top = values[y0, x0] * (1.0 - tx) + values[y0, x1] * tx
+    bottom = values[y1, x0] * (1.0 - tx) + values[y1, x1] * tx
+    return top * (1.0 - ty) + bottom * ty
+
+
+# Array forms of the per-cell climate helpers.  On the reference platform
+# NumPy's exp/sin/cos/pow agree bit for bit with ``math``; the helpers below
+# also mirror operation order, CPython's float ``sum`` and ``**`` so the array
+# passes reproduce the per-cell solve instead of merely approximating it.
+VECTORISED_CLIMATE_PASSES = True
+_COMPENSATED_BUILTIN_SUM = sys.version_info >= (3, 12)
+_NORTHERN_SUMMER_MONTHS, _NORTHERN_WINTER_MONTHS = _season_half_months(True)
+_SOUTHERN_SUMMER_MONTHS, _SOUTHERN_WINTER_MONTHS = _season_half_months(False)
+
+
+def _py_pow(base, exponent):
+    """Elementwise ``base ** exponent`` with C ``pow`` semantics.
+
+    NumPy squares directly for a scalar exponent of 2, which differs from
+    Python's float ``**`` in the last bit; an array exponent takes the
+    generic ``pow`` loop.
+    """
+    base = np.asarray(base, dtype=np.float64)
+    return np.power(base, np.full(base.shape, float(exponent)))
+
+
+def _python_float_sum(values):
+    """``sum()`` over the last axis, reproducing CPython's float algorithm.
+
+    Python >= 3.12 adds floats with Neumaier compensation (the first item is
+    taken exactly, since ``0 + x == x``); older versions add sequentially.
+    """
+    values = np.asarray(values, dtype=np.float64)
+    total = values[..., 0].copy()
+    if not _COMPENSATED_BUILTIN_SUM:
+        for index in range(1, values.shape[-1]):
+            total = total + values[..., index]
+        return total
+    compensation = np.zeros(total.shape)
+    for index in range(1, values.shape[-1]):
+        item = values[..., index]
+        step = total + item
+        compensation += np.where(
+            np.abs(total) >= np.abs(item),
+            (total - step) + item,
+            (item - step) + total,
+        )
+        total = step
+    return np.where((compensation != 0.0) & np.isfinite(compensation), total + compensation, total)
+
+
+def _wave_noise_grid(map_seed, key, nx, ny):
+    """Array form of ``_wave_noise``."""
+    return sphere_fbm_table(map_seed, key, nx, ny, features=1.6, octaves=2)
+
+
+def _climate_texture_grid(map_seed, key, nx, ny):
+    """Array form of ``_climate_texture``."""
+    return sphere_signed_table(map_seed, key, nx, ny, features=5.0, octaves=3)
+
+
+def _edge_locked_parent_weight_grid(base_weight, local_x, local_y):
+    """Array form of ``_edge_locked_parent_weight`` (broadcast x/y)."""
+    edge_distance = np.minimum(
+        np.minimum(local_x, 1.0 - local_x),
+        np.minimum(local_y, 1.0 - local_y),
+    )
+    transition = np.clip(edge_distance / PARENT_CLIMATE_EDGE_BLEND_MARGIN, 0.0, 1.0)
+    transition = transition * transition * (3.0 - 2.0 * transition)
+    edge_lock = 1.0 - transition
+    return float(base_weight) + (1.0 - float(base_weight)) * edge_lock
+
+
+def _budyko_evapotranspiration_grid(precipitation_mm, potential_evaporation_mm, omega=2.6):
+    """Array form of ``_budyko_evapotranspiration_mm``."""
+    precipitation = np.maximum(0.0, precipitation_mm)
+    potential = np.maximum(0.0, potential_evaporation_mm)
+    active = (precipitation > 1e-9) & (potential > 1e-9)
+    aridity = np.where(active, potential, 1.0) / np.where(active, precipitation, 1.0)
+    evaporation_ratio = 1.0 + aridity - _py_pow(1.0 + _py_pow(aridity, omega), 1.0 / float(omega))
+    result = np.minimum(np.minimum(precipitation, potential), precipitation * np.clip(evaporation_ratio, 0.0, 1.0))
+    return np.where(active, result, 0.0)
+
+
+def _month_order(northern, months_north, months_south):
+    return np.where(northern[..., None], np.asarray(months_north), np.asarray(months_south))
+
+
+def _monthly_climate_normals_arrays(
+    mean_temperature_k,
+    temperature_range_k,
+    annual_precipitation_mm,
+    latitude_signed,
+    continentality,
+    shore_influence,
+    condensation_efficiency,
+    circulation_texture,
+):
+    """Array form of ``_monthly_climate_normals`` with the month axis last.
+
+    Returns ``(monthly_temperature_c, monthly_precipitation_mm, northern)``.
+    """
+    northern = latitude_signed >= 0.0
+    months = np.arange(12)
+    # Per-hemisphere angles computed with the scalar path's operation order.
+    angle = {
+        peak: np.asarray([math.tau * (month - peak) / 12.0 for month in months])
+        for peak in (0, 6)
+    }
+    double_angle = {
+        peak: np.asarray([math.tau * 2.0 * (month - peak) / 12.0 for month in months])
+        for peak in (0, 6)
+    }
+    month_cos = {peak: np.asarray([math.cos(value) for value in angle[peak]]) for peak in (0, 6)}
+    north = northern[..., None]
+    mean_c = mean_temperature_k - 273.15
+    amplitude = np.maximum(0.0, temperature_range_k) * 0.5
+    monthly_temperature = mean_c[..., None] + amplitude[..., None] * np.where(north, month_cos[6], month_cos[0])
+
+    annual = np.maximum(0.0, annual_precipitation_mm)
+    latitude_fraction = np.clip(np.abs(latitude_signed) / 90.0, 0.0, 1.0)
+    continentality = np.clip(continentality, 0.0, 1.0)
+    shore_influence = np.clip(shore_influence, 0.0, 1.0)
+    condensation = np.clip(condensation_efficiency, 0.0, 1.0)
+    warmest = monthly_temperature.max(axis=-1)
+    tropical_convection = (
+        np.maximum(0.0, 1.0 - latitude_fraction / 0.38)
+        * np.clip((warmest - 12.0) / 18.0, 0.0, 1.0)
+        * (0.48 + 0.42 * condensation)
+    )
+    continental_convection = (
+        continentality
+        * np.clip((warmest - 8.0) / 24.0, 0.0, 1.0)
+        * (0.18 + 0.38 * condensation)
+    )
+    winter_storms = (
+        np.maximum(0.0, 1.0 - np.abs(latitude_fraction - 0.52) / 0.34)
+        * shore_influence
+        * (0.28 + 0.38 * condensation)
+    )
+    summer_bias = np.clip(tropical_convection + continental_convection - winter_storms, -0.78, 0.88)
+    seasonal_strength = np.clip(
+        0.10
+        + np.abs(summer_bias) * 0.82
+        + continentality * 0.16
+        + np.abs(circulation_texture - 0.5) * 0.16,
+        0.08,
+        0.92,
+    )
+    phase_shift = (circulation_texture - 0.5) * 0.9
+    warm_phase = np.cos(np.where(north, angle[6], angle[0]) + phase_shift[..., None])
+    signed_phase = np.where(summer_bias[..., None] >= 0.0, warm_phase, -warm_phase)
+    shoulder_variation = np.cos(np.where(north, double_angle[6], double_angle[0]) + (phase_shift * 0.5)[..., None])
+    weights = np.maximum(
+        0.025,
+        np.exp(seasonal_strength[..., None] * 1.55 * signed_phase)
+        * (1.0 + shoulder_variation * 0.10 * condensation[..., None]),
+    )
+    weight_total = np.maximum(1e-9, _python_float_sum(weights))
+    monthly_precipitation = np.where(
+        (annual > 1e-9)[..., None],
+        annual[..., None] * weights / weight_total[..., None],
+        0.0,
+    )
+    return monthly_temperature, monthly_precipitation, northern
+
+
+def _koppen_classes_arrays(monthly_temperature_c, monthly_precipitation_mm, northern, ocean):
+    """Array form of ``_koppen_geiger_class``.
+
+    Also returns the summer precipitation sum, which callers reuse for the
+    summer fraction.
+    """
+    precipitation = np.maximum(0.0, monthly_precipitation_mm)
+    summer_order = _month_order(northern, _NORTHERN_SUMMER_MONTHS, _SOUTHERN_SUMMER_MONTHS)
+    winter_order = _month_order(northern, _NORTHERN_WINTER_MONTHS, _SOUTHERN_WINTER_MONTHS)
+    summer_values = np.take_along_axis(precipitation, summer_order, axis=-1)
+    winter_values = np.take_along_axis(precipitation, winter_order, axis=-1)
+    mean_c = _python_float_sum(monthly_temperature_c) / 12.0
+    warmest = monthly_temperature_c.max(axis=-1)
+    coldest = monthly_temperature_c.min(axis=-1)
+    annual_precipitation = _python_float_sum(precipitation)
+    summer_precipitation = _python_float_sum(summer_values)
+    summer_fraction = summer_precipitation / np.maximum(1e-9, annual_precipitation)
+    aridity_offset = np.where(summer_fraction >= 0.70, 280.0, np.where(summer_fraction <= 0.30, 0.0, 140.0))
+    aridity_threshold = np.maximum(0.0, 20.0 * mean_c + aridity_offset)
+    arid = annual_precipitation < aridity_threshold
+    desert = annual_precipitation < aridity_threshold * 0.5
+    arid_class = np.char.add(np.where(desert, "BW", "BS"), np.where(mean_c >= 18.0, "h", "k"))
+
+    driest_month = precipitation.min(axis=-1)
+    driest_index = precipitation.argmin(axis=-1)
+    driest_in_summer = (summer_order == driest_index[..., None]).any(axis=-1)
+    tropical_class = np.where(
+        driest_month >= 60.0,
+        "Af",
+        np.where(
+            driest_month >= np.maximum(0.0, 100.0 - annual_precipitation / 25.0),
+            "Am",
+            np.where(driest_in_summer, "As", "Aw"),
+        ),
+    )
+    months_above_10c = (monthly_temperature_c > 10.0).sum(axis=-1)
+    thermal_suffix = np.where(
+        (warmest >= 22.0) & (months_above_10c >= 4),
+        "a",
+        np.where(months_above_10c >= 4, "b", np.where(coldest <= -38.0, "d", "c")),
+    )
+    driest_summer = summer_values.min(axis=-1)
+    wettest_summer = summer_values.max(axis=-1)
+    driest_winter = winter_values.min(axis=-1)
+    wettest_winter = winter_values.max(axis=-1)
+    strongly_summer_dry = (driest_summer < 40.0) & (driest_summer < wettest_winter / 3.0)
+    strongly_winter_dry = driest_winter < wettest_summer / 10.0
+    moisture_suffix = np.where(strongly_summer_dry, "s", np.where(strongly_winter_dry, "w", "f"))
+    major = np.where(coldest > 0.0, "C", "D")
+    temperate = np.char.add(np.char.add(major, moisture_suffix), thermal_suffix)
+    classes = np.select(
+        [ocean, arid, warmest < 0.0, warmest < 10.0, coldest >= 18.0],
+        ["Ocean", arid_class, "EF", "ET", tropical_class],
+        default=temperate,
+    )
+    return classes, summer_precipitation
+
+
+def _dict_rows(arrays):
+    """Per-cell dicts (rows of ``{key: value}``) from a dict of equal-shape arrays."""
+    keys = list(arrays)
+    columns = [arrays[key].tolist() for key in keys]
+    return [
+        [dict(zip(keys, values)) for values in zip(*row_values)]
+        for row_values in zip(*columns)
+    ]
+
+
+def _round_rows(values, digits):
+    """Python ``round`` per cell (NumPy's rounding differs at decimal ties)."""
+    return round_rows(values, digits)
+
+
+def _optional_rows_array(rows, height, width, none_value=float("nan")):
+    """Float grid from rows that may hold ``None`` (mapped to ``none_value``)."""
+    return np.asarray(
+        [
+            [none_value if value is None else float(value) for value in row[:width]]
+            for row in rows[:height]
+        ],
+        dtype=np.float64,
+    )
+
+
+def _write_back(rows, values, mask):
+    """Assign ``values`` into a list-of-rows grid where ``mask`` is set."""
+    for y, x in zip(*np.nonzero(mask)):
+        rows[y][x] = float(values[y, x])
+
+
+def _terrain_metrics_arrays(rows, ocean_mask, span):
+    """``_terrain_metrics`` for every cell as arrays."""
+    span = max(1.0, float(span or 1.0))
+    height = len(rows)
+    width = len(rows[0]) if height else 0
+    values = np.asarray([[float(value or 0.0) for value in row[:width]] for row in rows], dtype=np.float64)
+    ocean = np.asarray([[bool(value) for value in row[:width]] for row in ocean_mask], dtype=bool) if ocean_mask else None
+    row_index = np.arange(height)
+    column_index = np.arange(width)
+
+    def neighbour(dx, dy):
+        sy = np.clip(row_index + dy, 0, height - 1)
+        sx = (column_index + dx) % width
+        sampled = values[np.ix_(sy, sx)]
+        if ocean is not None:
+            # A land/sea boundary is not relief; mirror the centre across it.
+            sampled = np.where(ocean[np.ix_(sy, sx)] != ocean, values, sampled)
+        return sampled
+
+    left = neighbour(-1, 0)
+    right = neighbour(1, 0)
+    up = neighbour(0, -1)
+    down = neighbour(0, 1)
+    gradient_x = (right - left) / (2.0 * span)
+    gradient_y = (down - up) / (2.0 * span)
+    roughness = (
+        np.abs(left - values) + np.abs(right - values) + np.abs(up - values) + np.abs(down - values)
+    ) / (4 * span)
+    return {
+        "gradient_x": gradient_x,
+        "gradient_y": gradient_y,
+        "slope": np.minimum(1.0, np.hypot(gradient_x, gradient_y) * 5.0),
+        "roughness": np.minimum(1.0, roughness * 6.0),
+    }
+
+
+def _derive_koppen_display_grid_array(
+    temperature_rows,
+    seasonality_rows,
+    precipitation_rows,
+    shore_distance_rows,
+    condensation_rows,
+    elevation_rows,
+    *,
+    sea_level,
+    map_seed,
+    source_uv_bounds,
+    wrap_x,
+):
+    """NumPy form of ``_derive_koppen_display_grid`` with identical thresholds."""
+    source_height = len(temperature_rows)
+    source_width = len(temperature_rows[0]) if source_height else 0
+    if source_width < 2 or source_height < 2:
+        return [], []
+
+    display_width = min(513, (source_width - 1) * 2 + 1)
+    display_height = min(257, (source_height - 1) * 2 + 1)
+    source_u0 = float(source_uv_bounds.get("min_u", 0.0) or 0.0)
+    source_u1 = float(source_uv_bounds.get("max_u", 1.0) or 1.0)
+    source_v0 = float(source_uv_bounds.get("min_v", 0.0) or 0.0)
+    source_v1 = float(source_uv_bounds.get("max_v", 1.0) or 1.0)
+    local_u = (np.arange(display_width, dtype=np.float64) / max(1, display_width - 1))[None, :]
+    local_v = (np.arange(display_height, dtype=np.float64) / max(1, display_height - 1))[:, None]
+    global_u = source_u0 + (source_u1 - source_u0) * local_u
+    global_v = source_v0 + (source_v1 - source_v0) * local_v
+    shape = (display_height, display_width)
+
+    def sample(rows):
+        return np.broadcast_to(_bilinear_rows_array(rows, local_u, local_v, wrap_x=wrap_x), shape)
+
+    temperature = sample(temperature_rows)
+    seasonality = sample(seasonality_rows)
+    precipitation = sample(precipitation_rows)
+    continentality = np.clip(sample(shore_distance_rows), 0.0, 1.0)
+    condensation = np.clip(sample(condensation_rows), 0.0, 1.0)
+    elevation = sample(elevation_rows)
+    texture = np.broadcast_to(
+        _wave_noise_grid(map_seed, "precipitation_seasonality", global_u, global_v), shape
+    )
+    latitude_signed = np.broadcast_to((0.5 - global_v) * 180.0, shape)
+    monthly_temperature, monthly_precipitation, northern = _monthly_climate_normals_arrays(
+        temperature,
+        seasonality,
+        precipitation,
+        latitude_signed,
+        continentality,
+        np.clip(1.0 - continentality, 0.0, 1.0),
+        condensation,
+        texture,
+    )
+    ocean = (
+        np.zeros(shape, dtype=bool)
+        if sea_level is None
+        else elevation < float(sea_level)
+    )
+    classes, _summer_precipitation = _koppen_classes_arrays(
+        monthly_temperature, monthly_precipitation, northern, ocean,
+    )
+    display_elevation_rows = [
+        [round(value, 1) for value in row]
+        for row in elevation.tolist()
+    ]
+    return classes.tolist(), display_elevation_rows
 
 
 def _solve_coupled_annual_climate_arrays(
@@ -1820,6 +2370,8 @@ def _nearest_ocean_temperature_rows(ocean_mask, sst_rows):
     # Voronoi-like polygons and vertical seams where two coasts are equally
     # near. Diffuse the maritime reference temperature over land while
     # keeping actual sea-surface temperatures fixed.
+    if np is not None and VECTORISED_CLIMATE_PASSES and height and width:
+        return _smooth_maritime_reference(result, ocean_mask, iterations=18)
     for _iteration in range(18):
         smoothed = [row[:] for row in result]
         for y in range(height):
@@ -1838,6 +2390,56 @@ def _nearest_ocean_temperature_rows(ocean_mask, sst_rows):
                     smoothed[y][x] = result[y][x] * 0.42 + sum(neighbours) / len(neighbours) * 0.58
         result = smoothed
     return result
+
+
+def _smooth_maritime_reference(result, ocean_mask, *, iterations):
+    """Array form of the Jacobi smoothing in ``_nearest_ocean_temperature_rows``.
+
+    Land cells average themselves (0.42) with their present 4-neighbours
+    (x wraps, y clamps); neighbour sums follow CPython's float ``sum`` over
+    the same left/right/up/down order.  ``None`` cells stay ``None``.
+    """
+    height, width = len(ocean_mask), len(ocean_mask[0])
+    values = np.asarray(
+        [[np.nan if value is None else float(value) for value in row[:width]] for row in result],
+        dtype=np.float64,
+    )
+    ocean = np.asarray([row[:width] for row in ocean_mask], dtype=bool)
+    columns = np.arange(width)
+    rows = np.arange(height)
+    west, east = (columns - 1) % width, (columns + 1) % width
+    north, south = np.maximum(0, rows - 1), np.minimum(height - 1, rows + 1)
+    for _iteration in range(iterations):
+        total = np.zeros(values.shape)
+        compensation = np.zeros(values.shape)
+        count = np.zeros(values.shape)
+        for neighbour in (values[:, west], values[:, east], values[north, :], values[south, :]):
+            present = np.isfinite(neighbour)
+            item = np.where(present, neighbour, 0.0)
+            first = present & (count == 0)
+            later = present & (count > 0)
+            step = total + item
+            if _COMPENSATED_BUILTIN_SUM:
+                compensation = np.where(
+                    later,
+                    compensation + np.where(np.abs(total) >= np.abs(item), (total - step) + item, (item - step) + total),
+                    compensation,
+                )
+            total = np.where(first, item, np.where(later, step, total))
+            count = count + present
+        neighbour_sum = np.where(
+            (compensation != 0.0) & np.isfinite(compensation), total + compensation, total,
+        )
+        update = ~ocean & np.isfinite(values) & (count > 0)
+        values = np.where(
+            update,
+            values * 0.42 + neighbour_sum / np.maximum(count, 1.0) * 0.58,
+            values,
+        )
+    return [
+        [None if value != value else value for value in row]
+        for row in values.tolist()
+    ]
 
 
 def _nearest_ocean_upwelling_rows(ocean_mask, upwelling_rows):
@@ -1967,6 +2569,94 @@ def _upwind_relief_context(rows, ocean_mask, x, y, wind_x, wind_y, span, steps=2
         "barrier_shadow": _clamp((maximum_barrier - current) / max(1.0, span * 0.32)) * recovery,
         "land_fetch": _clamp(land_steps / max(1.0, steps)),
     }
+
+
+def _terrain_metrics_grid(rows, ocean_mask, span):
+    """``_terrain_metrics`` for every cell: list of rows of per-cell dicts."""
+    metrics = _terrain_metrics_arrays(rows, ocean_mask, span)
+    return [
+        [
+            {"gradient_x": gx, "gradient_y": gy, "slope": sl, "roughness": ro}
+            for gx, gy, sl, ro in zip(gx_row, gy_row, slope_row, rough_row)
+        ]
+        for gx_row, gy_row, slope_row, rough_row in zip(
+            metrics["gradient_x"].tolist(),
+            metrics["gradient_y"].tolist(),
+            metrics["slope"].tolist(),
+            metrics["roughness"].tolist(),
+        )
+    ]
+
+
+def _upwind_relief_context_arrays(rows, ocean_mask, wind_x, wind_y, span, steps=24):
+    """``_upwind_relief_context`` for every cell as one masked ray march.
+
+    Same walk as the scalar version: step upwind, stop at the map edge or the
+    first ocean cell (nearest cell), and bilinearly sample elevation.
+    """
+    height = len(rows)
+    width = len(rows[0]) if height else 0
+    values = np.asarray([[float(value or 0.0) for value in row[:width]] for row in rows], dtype=np.float64)
+    ocean = np.asarray([[bool(value) for value in row[:width]] for row in ocean_mask], dtype=bool)
+    wind_x = np.asarray(wind_x, dtype=np.float64)
+    wind_y = np.asarray(wind_y, dtype=np.float64)
+    py, px = np.meshgrid(np.arange(height, dtype=np.float64), np.arange(width, dtype=np.float64), indexing="ij")
+    current = values.copy()
+    previous = values.copy()
+    cumulative_ascent = np.zeros_like(values)
+    maximum_barrier = values.copy()
+    steps_since_peak = np.zeros(values.shape, dtype=np.int64)
+    land_steps = np.zeros(values.shape, dtype=np.int64)
+    active = np.ones(values.shape, dtype=bool)
+    for step in range(1, steps + 1):
+        px = np.where(active, np.mod(px - wind_x, width), px)
+        py = np.where(active, py - wind_y, py)
+        iy = np.rint(py).astype(np.int64)
+        active &= (iy >= 0) & (iy < height)
+        ix = np.rint(px).astype(np.int64) % width
+        safe_iy = np.clip(iy, 0, height - 1)
+        active &= ~ocean[safe_iy, ix]
+        if not active.any():
+            break
+        floor_x = np.floor(px)
+        floor_y = np.floor(py)
+        x0 = floor_x.astype(np.int64) % width
+        x1 = (x0 + 1) % width
+        y0 = np.clip(floor_y.astype(np.int64), 0, height - 1)
+        y1 = np.clip(y0 + 1, 0, height - 1)
+        fx = px - floor_x
+        fy = py - floor_y
+        top = values[y0, x0] * (1.0 - fx) + values[y0, x1] * fx
+        bottom = values[y1, x0] * (1.0 - fx) + values[y1, x1] * fx
+        elevation = top * (1.0 - fy) + bottom * fy
+        cumulative_ascent = np.where(active, cumulative_ascent + np.maximum(0.0, previous - elevation), cumulative_ascent)
+        higher = active & (elevation > maximum_barrier)
+        maximum_barrier = np.where(higher, elevation, maximum_barrier)
+        steps_since_peak = np.where(higher, step, steps_since_peak)
+        previous = np.where(active, elevation, previous)
+        land_steps = land_steps + active
+    recovery_table = np.asarray([math.exp(-step / RAIN_SHADOW_RECOVERY_LENGTH_CELLS) for step in range(steps + 1)])
+    recovery = recovery_table[steps_since_peak]
+    windward = np.clip(cumulative_ascent / max(1.0, span * 0.42), 0.0, 1.0)
+    shadow = np.clip((maximum_barrier - current) / max(1.0, span * 0.32), 0.0, 1.0) * recovery
+    fetch = np.clip(land_steps / max(1.0, steps), 0.0, 1.0)
+    return {"windward_uplift": windward, "barrier_shadow": shadow, "land_fetch": fetch}
+
+
+def _upwind_relief_context_grid(rows, ocean_mask, wind_x, wind_y, span, steps=24):
+    """``_upwind_relief_context`` for every cell: list of rows of per-cell dicts."""
+    context = _upwind_relief_context_arrays(rows, ocean_mask, wind_x, wind_y, span, steps=steps)
+    return [
+        [
+            {"windward_uplift": wu, "barrier_shadow": bs, "land_fetch": lf}
+            for wu, bs, lf in zip(wu_row, bs_row, lf_row)
+        ]
+        for wu_row, bs_row, lf_row in zip(
+            context["windward_uplift"].tolist(),
+            context["barrier_shadow"].tolist(),
+            context["land_fetch"].tolist(),
+        )
+    ]
 
 
 def _flow_accumulation(rows, ocean_mask, runoff_rows):
@@ -2347,6 +3037,28 @@ def _trace_river(rows, ocean_mask, source, sea_level):
     }
 
 
+def _anchor_area_weighted_mean(rows, target_k):
+    """Shift an equirectangular planetary field so its cos(latitude)-weighted mean is ``target_k``."""
+    if not rows or not rows[0] or target_k is None:
+        return rows
+    height = len(rows)
+    total = 0.0
+    weight_sum = 0.0
+    for y, row in enumerate(rows):
+        weight = math.cos((0.5 - (y + 0.5) / height) * math.pi)
+        for value in row:
+            if value is None:
+                continue
+            value = float(value)
+            if math.isfinite(value):
+                total += value * weight
+                weight_sum += weight
+    if weight_sum <= 0.0:
+        return rows
+    offset = float(target_k) - total / weight_sum
+    return [[None if value is None else round(float(value) + offset, 2) for value in row] for row in rows]
+
+
 def derive_water_cycle_model(
     terrain,
     heightmap,
@@ -2406,6 +3118,14 @@ def derive_water_cycle_model(
     surface_ice_rows = ((heightmap.get("surface_masks") or {}).get("ice_rows") or [])
     shore_distances = _shore_distance_rows(ocean_mask)
     rotation_hours = float((seed or {}).get("rotation_hours", (seed or {}).get("rotation_period_hours", 24.0)) or 24.0)
+    liquid_freezing_k = liquid_freezing_point_k(
+        hydrology.get("surface_fluid") or (seed or {}).get("surface_fluid") or "water"
+    )
+    ocean_contrast_factor = meridional_contrast_factor(
+        pressure_bar,
+        float(((seed or {}).get("derived_planet_physics") or {}).get("surface_gravity_g", 1.0) or 1.0),
+        surface_temp_k,
+    )
     ocean_circulation = derive_ocean_circulation(
         ocean_mask,
         mean_surface_temperature_k=surface_temp_k,
@@ -2413,6 +3133,8 @@ def derive_water_cycle_model(
         wrap_x=bool(heightmap.get("wrap_x", True)),
         source_uv_bounds=heightmap.get("source_uv_bounds"),
         inherit_major_gyres=isinstance(parent_climate_model, dict),
+        liquid_freezing_k=liquid_freezing_k,
+        contrast_factor=ocean_contrast_factor,
     ) if liquid_water and any(any(row) for row in ocean_mask) else {"status": "inactive"}
     if isinstance(parent_climate_model, dict) and ocean_circulation.get("status") == "ocean_circulation_seeded":
         ocean_circulation = _inherit_parent_ocean_circulation(
@@ -2432,6 +3154,12 @@ def derive_water_cycle_model(
     synchronous_rotation = bool((seed or {}).get("synchronous_rotation")) or climate_mode == "tidally_locked"
     substellar_longitude_deg = float((seed or {}).get("substellar_longitude_deg", 0.0) or 0.0)
     heat_transport = _clamp(math.log1p(pressure_bar) / math.log(11.0), 0.08, 0.92)
+    # Equator-to-pole contrast scaled by how long the atmosphere holds heat
+    # (Earth 48 K, Titan ~2 K, Mars ~75 K); the profile is centred so its
+    # area-weighted mean is the global surface temperature.
+    gravity_g = float(((seed or {}).get("derived_planet_physics") or {}).get("surface_gravity_g", 1.0) or 1.0)
+    contrast_factor = meridional_contrast_factor(pressure_bar, gravity_g, surface_temp_k)
+    latitude_contrast_k = EARTH_LATITUDE_CONTRAST_K * contrast_factor
     # Eccentric orbits have a changing stellar flux.  Ocean coverage and a
     # denser atmosphere store/transport heat and therefore damp the local
     # temperature swing; a dry, thin-atmosphere world retains much more of it.
@@ -2466,17 +3194,54 @@ def derive_water_cycle_model(
     )
     parent_source_uv = parent_climate_grid.get("source_uv_bounds") if isinstance(parent_climate_grid, dict) else {}
     inherited_width_cache = {}
+    inherited_grid_cache = {}
+    lattice_lookup = {}
 
     def sample_parent_rows(parent_rows, global_u, global_v):
-        """Sample parent climate rows without rescanning their shape per cell."""
+        """Sample parent climate rows without rescanning their shape per cell.
+
+        Every caller samples the solver lattice itself; each parent field is
+        therefore resampled once for the whole lattice and then read back.
+        """
         if not isinstance(parent_rows, list) or not parent_rows:
             return None
         cache_key = id(parent_rows)
-        width_hint = inherited_width_cache.get(cache_key)
-        if width_hint is None:
+        cached = inherited_width_cache.get(cache_key)
+        # The cache holds the list itself, so its id cannot be recycled by a
+        # different (temporary) list while the entry exists.
+        if cached is None or cached[0] is not parent_rows:
             valid_rows = [row for row in parent_rows if isinstance(row, list)]
-            width_hint = min((len(row) for row in valid_rows), default=0)
-            inherited_width_cache[cache_key] = width_hint
+            cached = (
+                parent_rows,
+                min((len(row) for row in valid_rows), default=0),
+                len(valid_rows) == len(parent_rows),
+            )
+            inherited_width_cache[cache_key] = cached
+            inherited_grid_cache.pop(cache_key, None)
+        _rows_ref, width_hint, all_rows_valid = cached
+        if VECTORISED_PARENT_SAMPLING and np is not None and width_hint > 0 and all_rows_valid:
+            if not lattice_lookup:
+                u_values = [source_u0 + (source_u1 - source_u0) * (x / max(1, width - 1)) for x in range(width)]
+                v_values = [source_v0 + (source_v1 - source_v0) * (y / max(1, height - 1)) for y in range(height)]
+                lattice_lookup["u"] = {value: index for index, value in enumerate(u_values)}
+                lattice_lookup["v"] = {value: index for index, value in enumerate(v_values)}
+                lattice_lookup["u_values"] = u_values
+                lattice_lookup["v_values"] = v_values
+            column = lattice_lookup["u"].get(global_u)
+            row_index = lattice_lookup["v"].get(global_v)
+            if column is not None and row_index is not None:
+                grid = inherited_grid_cache.get(cache_key)
+                if grid is None:
+                    grid = _inherited_rows_grid(
+                        parent_rows,
+                        lattice_lookup["u_values"],
+                        lattice_lookup["v_values"],
+                        parent_source_uv,
+                        width_hint,
+                    )
+                    inherited_grid_cache[cache_key] = grid
+                value = grid[row_index, column]
+                return None if value != value else float(value)
         return _sample_inherited_rows(
             parent_rows,
             global_u,
@@ -2485,10 +3250,226 @@ def derive_water_cycle_model(
             width_hint=width_hint,
         )
 
+    def sample_parent_grid(parent_rows):
+        """``sample_parent_rows`` over the whole solver lattice; NaN = no value."""
+        if not isinstance(parent_rows, list) or not parent_rows:
+            return None
+        u_values = [source_u0 + (source_u1 - source_u0) * (x / max(1, width - 1)) for x in range(width)]
+        v_values = [source_v0 + (source_v1 - source_v0) * (y / max(1, height - 1)) for y in range(height)]
+        sample_parent_rows(parent_rows, u_values[0], v_values[0])
+        cached = inherited_width_cache.get(id(parent_rows))
+        grid = inherited_grid_cache.get(id(parent_rows))
+        if grid is not None and cached is not None and cached[0] is parent_rows:
+            return grid
+        values = np.full((height, width), np.nan)
+        for y, global_v in enumerate(v_values):
+            for x, global_u in enumerate(u_values):
+                value = sample_parent_rows(parent_rows, global_u, global_v)
+                if value is not None:
+                    values[y, x] = value
+        return values
+
     detail_level = int(heightmap.get("map_detail_level", 0) or 0)
     inheritance_weights = _climate_inheritance_weights(detail_level)
 
-    for y, row in enumerate(rows):
+    # Terrain metrics and upwind relief are pure functions of the solver
+    # lattice, its ocean mask and the prevailing wind; resolve them for the
+    # whole grid once instead of once per cell (and per pass).
+    precomputed_winds = None
+    precomputed_terrain = None
+    precomputed_relief = None
+    terrain_arrays = None
+    relief_arrays = None
+    if VECTORISED_TERRAIN_CONTEXT and np is not None and height and width:
+        lattice_wind_x, lattice_wind_y = _prevailing_wind_grid(
+            [source_v0 + (source_v1 - source_v0) * (y / max(1, height - 1)) for y in range(height)],
+            [source_u0 + (source_u1 - source_u0) * (x / max(1, width - 1)) for x in range(width)],
+            map_seed,
+        )
+        precomputed_winds = [
+            list(zip(x_row, y_row))
+            for x_row, y_row in zip(lattice_wind_x.tolist(), lattice_wind_y.tolist())
+        ]
+        terrain_arrays = _terrain_metrics_arrays(rows, ocean_mask, span)
+        relief_arrays = _upwind_relief_context_arrays(
+            rows,
+            ocean_mask,
+            [[wind[0] for wind in wind_row] for wind_row in precomputed_winds],
+            [[wind[1] for wind in wind_row] for wind_row in precomputed_winds],
+            span,
+        )
+
+    # Both per-cell passes have array forms with the same operation order;
+    # when they apply, the loops below run over no rows.
+    climate_array_passes = bool(
+        VECTORISED_CLIMATE_PASSES
+        and terrain_arrays is not None
+        and all(len(row) == width for row in rows)
+        and len(shore_distances) == height
+        and all(len(row) >= width for row in shore_distances)
+    )
+    if terrain_arrays is not None and not climate_array_passes:
+        precomputed_terrain = _dict_rows(terrain_arrays)
+        precomputed_relief = _dict_rows(relief_arrays)
+    if climate_array_passes:
+        lattice_local_u = (np.arange(width, dtype=np.float64) / max(1, width - 1))[None, :]
+        lattice_local_v = (np.arange(height, dtype=np.float64) / max(1, height - 1))[:, None]
+        lattice_u = source_u0 + (source_u1 - source_u0) * lattice_local_u
+        lattice_v = source_v0 + (source_v1 - source_v0) * lattice_local_v
+        latitude_abs_grid = np.abs((0.5 - lattice_v) * 180.0) / 90.0
+        elevation_grid = np.asarray(elevations, dtype=np.float64).reshape(height, width)
+        ocean_grid = np.asarray(ocean_mask, dtype=bool)
+        land_grid = ~ocean_grid
+        shore_distance_grid = np.asarray([row[:width] for row in shore_distances], dtype=np.float64)
+        shore_grid = np.clip(1.0 - shore_distance_grid, 0.0, 1.0)
+        elevation_norm = np.clip((elevation_grid - min_elevation) / span, 0.0, 1.0)
+        ice_grid = np.zeros((height, width), dtype=bool)
+        for y, ice_row in enumerate(surface_ice_rows[:height]):
+            if isinstance(ice_row, list):
+                cells = [bool(value) for value in ice_row[:width]]
+                ice_grid[y, :len(cells)] = cells
+        wind_x_grid = np.asarray([[wind[0] for wind in wind_row] for wind_row in precomputed_winds], dtype=np.float64)
+        wind_y_grid = np.asarray([[wind[1] for wind in wind_row] for wind_row in precomputed_winds], dtype=np.float64)
+        roughness = terrain_arrays["roughness"]
+        wind_gradient = terrain_arrays["gradient_x"] * wind_x_grid + terrain_arrays["gradient_y"] * wind_y_grid
+        windward = np.maximum(0.0, wind_gradient) * 7.0 + relief_arrays["windward_uplift"] * 0.46
+        leeward = np.maximum(0.0, -wind_gradient) * 8.5
+        circulation_texture = _wave_noise_grid(map_seed, "climate_circulation", lattice_u, lattice_v)
+        texture = _climate_texture_grid(map_seed, "climate_texture", lattice_u, lattice_v)
+        climate_band_latitude_abs = np.clip(
+            latitude_abs_grid + (circulation_texture - 0.5) * 0.10 + texture * 0.025, 0.0, 1.0,
+        )
+        rain_shadow = (
+            np.maximum(0.0, elevation_norm - 0.50) * 0.34
+            + leeward
+            + relief_arrays["barrier_shadow"] * (0.52 + relief_arrays["land_fetch"] * 0.34)
+        )
+        wind_speed = np.clip(
+            2.0 + latitude_abs_grid * 3.1 + roughness * 1.5 + (24.0 / max(4.0, rotation_hours)) * 0.7,
+            0.4,
+            16.0,
+        )
+        convective_lift = np.exp(-_py_pow(climate_band_latitude_abs / 0.19, 2))
+        storm_lift = np.exp(-_py_pow((climate_band_latitude_abs - 0.58) / 0.20, 2))
+        maritime_land_convergence = np.where(
+            ocean_grid, 0.0, _py_pow(shore_grid, 1.35) * (0.026 + roughness * 0.060),
+        )
+        cloud_forest_band = np.exp(
+            -_py_pow((elevation_norm - CLOUD_FOREST_ELEVATION_NORM) / CLOUD_FOREST_BAND_WIDTH, 2)
+        )
+        orographic_cloud_bonus = np.where(
+            ocean_grid, 0.0, cloud_forest_band * np.clip(windward, 0.0, 1.0) * CLOUD_FOREST_BONUS_STRENGTH,
+        )
+        condensation = np.clip(
+            0.010
+            + convective_lift * 0.17
+            + storm_lift * 0.10
+            + windward * 0.16
+            + orographic_cloud_bonus
+            + maritime_land_convergence
+            - rain_shadow * 0.070
+            + circulation_texture * 0.012,
+            0.006,
+            0.46,
+        )
+        shore_moisture_reach = _py_pow(shore_grid, 1.2)
+        upwelling = _optional_rows_array(nearest_ocean_upwelling, height, width, none_value=0.0)
+        suppression = np.clip(upwelling * 0.85, 0.0, 1.0)
+        condensation = np.where(
+            land_grid & (upwelling > 0.0),
+            np.maximum(0.006, condensation * (1.0 - suppression * shore_moisture_reach)),
+            condensation,
+        )
+        row_mean_sst = np.asarray(
+            [
+                np.nan if y >= len(row_mean_ocean_temperature_k) or row_mean_ocean_temperature_k[y] is None
+                else float(row_mean_ocean_temperature_k[y])
+                for y in range(height)
+            ],
+            dtype=np.float64,
+        )[:, None]
+        nearest_sst = _optional_rows_array(nearest_ocean_temperatures, height, width)
+        warm_anomaly = np.clip((nearest_sst - row_mean_sst) / WARM_CURRENT_ANOMALY_SCALE_K, 0.0, 1.0)
+        condensation = np.where(
+            land_grid & np.isfinite(row_mean_sst) & np.isfinite(nearest_sst) & (warm_anomaly > 0.0),
+            np.minimum(0.46, condensation * (1.0 + warm_anomaly * shore_moisture_reach * WARM_CURRENT_MOISTURE_BONUS)),
+            condensation,
+        )
+        temperature = (
+            surface_temp_k
+            + latitude_contrast_k * (LATITUDE_MEAN_ABS - latitude_abs_grid)
+            - np.maximum(0.0, elevation_grid) * 0.0062
+        )
+        temperature = np.where(ice_grid & land_grid, temperature - 6.0, temperature)
+        if synchronous_rotation:
+            longitude_deg = lattice_u * 360.0 - 180.0
+            longitude_delta = (
+                np.mod(longitude_deg - substellar_longitude_deg + 180.0, 360.0) - 180.0
+            ) * (math.pi / 180.0)
+            illumination = np.maximum(0.0, np.cos(longitude_delta)) * np.maximum(0.0, np.cos((lattice_v - 0.5) * math.pi))
+            day_night_contrast = 72.0 * (1.0 - heat_transport) + 12.0
+            temperature = temperature + (illumination - 0.28) * day_night_contrast
+        # Weather anomalies scale with the equator-to-pole contrast that
+        # drives them (a few kelvin on Earth, a fraction of one on Titan).
+        temperature = temperature + (
+            texture * 2.6
+            + (circulation_texture - 0.5) * 7.0
+            - roughness * 3.5
+        ) * contrast_factor
+        sst_grid = _optional_rows_array(sst_rows, height, width)
+        temperature = np.where(
+            ocean_grid & np.isfinite(sst_grid),
+            sst_grid,
+            np.where(
+                np.isfinite(nearest_sst),
+                temperature + (nearest_sst - temperature) * (shore_grid * 0.58),
+                temperature,
+            ),
+        )
+        continentality = 1.0 - shore_grid
+        seasonality = (4.0 + latitude_abs_grid * (axial_tilt_deg / 23.44) * (10.0 + continentality * 18.0)) * contrast_factor
+        seasonality = seasonality + orbital_temperature_amplitude_k * (0.48 + continentality * 0.52)
+        if isinstance(parent_climate_grid, dict):
+            inherited_temperature = sample_parent_grid(parent_climate_grid.get("temperature_rows_k"))
+            inherited_elevation = sample_parent_grid(parent_climate_grid.get("elevation_rows"))
+            if inherited_temperature is not None:
+                inherited_local_temperature = inherited_temperature
+                if inherited_elevation is not None:
+                    inherited_local_temperature = np.where(
+                        np.isfinite(inherited_elevation),
+                        inherited_temperature - (elevation_grid - inherited_elevation) * 0.0062,
+                        inherited_temperature,
+                    )
+                parent_weight = _edge_locked_parent_weight_grid(inheritance_weights["temperature"], lattice_local_u, lattice_local_v)
+                temperature = np.where(
+                    np.isfinite(inherited_temperature),
+                    inherited_local_temperature * parent_weight + temperature * (1.0 - parent_weight),
+                    temperature,
+                )
+            inherited_seasonality = sample_parent_grid(parent_climate_grid.get("temperature_seasonality_rows_k"))
+            if inherited_seasonality is not None:
+                parent_weight = _edge_locked_parent_weight_grid(inheritance_weights["seasonality"], lattice_local_u, lattice_local_v)
+                seasonality = np.where(
+                    np.isfinite(inherited_seasonality),
+                    inherited_seasonality * parent_weight + seasonality * (1.0 - parent_weight),
+                    seasonality,
+                )
+        wind_vector_rows = [
+            [[round(wx, 4), round(wy, 4), round(ws, 3)] for wx, wy, ws in zip(wx_row, wy_row, ws_row)]
+            for wx_row, wy_row, ws_row in zip(wind_x_grid.tolist(), wind_y_grid.tolist(), wind_speed.tolist())
+        ]
+        condensation_rows = _round_rows(condensation, 5)
+        permanent_ice_rows = ice_grid.tolist()
+        temperature_rows = _round_rows(temperature, 1)
+        seasonality_rows = _round_rows(seasonality, 1)
+        seasonal_min_temperature_rows = _round_rows(temperature - seasonality * 0.5, 1)
+        seasonal_max_temperature_rows = _round_rows(temperature + seasonality * 0.5, 1)
+        (
+            precipitation_rows, runoff_rows, evapotranspiration_rows, potential_evaporation_rows,
+            infiltration_rows, groundwater_recharge_rows, snowmelt_runoff_rows, snow_fraction_rows,
+        ) = ([[0.0] * width for _y in range(height)] for _field in range(8))
+
+    for y, row in enumerate([] if climate_array_passes else rows):
         local_ny = y / max(1, height - 1)
         ny = source_v0 + (source_v1 - source_v0) * local_ny
         latitude_signed, latitude_abs = _global_latitude_metrics(ny)
@@ -2525,12 +3506,17 @@ def derive_water_cycle_model(
                 else _nearest_ocean_distance(ocean_mask, x, y)
             )
             shore = _clamp(shore)
-            terrain = _terrain_metrics(rows, ocean_mask, x, y, span)
-            wind_x, wind_y = _prevailing_wind_vector(ny, map_seed, nx=nx)
+            if precomputed_terrain is not None:
+                terrain = precomputed_terrain[y][x]
+                wind_x, wind_y = precomputed_winds[y][x]
+                relief_context = precomputed_relief[y][x]
+            else:
+                terrain = _terrain_metrics(rows, ocean_mask, x, y, span)
+                wind_x, wind_y = _prevailing_wind_vector(ny, map_seed, nx=nx)
+                relief_context = _upwind_relief_context(
+                    rows, ocean_mask, x, y, wind_x, wind_y, span,
+                )
             wind_gradient = terrain["gradient_x"] * wind_x + terrain["gradient_y"] * wind_y
-            relief_context = _upwind_relief_context(
-                rows, ocean_mask, x, y, wind_x, wind_y, span,
-            )
             windward = max(0.0, wind_gradient) * 7.0 + relief_context["windward_uplift"] * 0.46
             leeward = max(0.0, -wind_gradient) * 8.5
             circulation_texture = _wave_noise(map_seed, "climate_circulation", nx, ny)
@@ -2641,7 +3627,11 @@ def derive_water_cycle_model(
             ])
             condensation_row.append(round(condensation_efficiency, 5))
             permanent_ice_row.append(permanent_ice)
-            temperature = surface_temp_k + 12.0 - latitude_abs * 48.0 - max(0.0, elevation) * 0.0062
+            temperature = (
+                surface_temp_k
+                + latitude_contrast_k * (LATITUDE_MEAN_ABS - latitude_abs)
+                - max(0.0, elevation) * 0.0062
+            )
             if permanent_ice and not is_ocean:
                 # Ice-albedo feedback: snow/ice reflects far more shortwave
                 # than bare ground or open water, reinforcing local cold
@@ -2659,14 +3649,14 @@ def derive_water_cycle_model(
                 texture * 2.6
                 + (circulation_texture - 0.5) * 7.0
                 - terrain["roughness"] * 3.5
-            )
+            ) * contrast_factor
             if is_ocean and sst_rows[y][x] is not None:
                 temperature = float(sst_rows[y][x])
             elif nearest_ocean_temperatures[y][x] is not None:
                 maritime = shore * 0.58
                 temperature += (float(nearest_ocean_temperatures[y][x]) - temperature) * maritime
             continentality = 1.0 - shore
-            seasonality = 4.0 + latitude_abs * (axial_tilt_deg / 23.44) * (10.0 + continentality * 18.0)
+            seasonality = (4.0 + latitude_abs * (axial_tilt_deg / 23.44) * (10.0 + continentality * 18.0)) * contrast_factor
             seasonality += orbital_temperature_amplitude_k * (0.48 + continentality * 0.52)
             inherited_temperature = sample_parent_rows(
                 parent_climate_grid.get("temperature_rows_k"), nx, ny,
@@ -2839,6 +3829,10 @@ def derive_water_cycle_model(
         # single-column stripes and rectangular solver cells while retaining
         # broad circulation, coastal gradients and orographic rain shadows.
         temperature_rows = _relax_continuous_planetary_field(temperature_rows, 0.14)
+        # The planet's area-weighted mean is the global energy balance's
+        # surface temperature (the volatile budget); the grid only
+        # redistributes it.
+        temperature_rows = _anchor_area_weighted_mean(temperature_rows, surface_temp_k)
         precipitation_rows = _barrier_aware_relax_field(
             precipitation_rows,
             rows,
@@ -2871,7 +3865,115 @@ def derive_water_cycle_model(
     summer_precipitation_fraction_rows = []
     koppen_counts = {code: 0 for code in KOPPEN_CLASSES}
 
-    for y, elevation_row in enumerate(rows):
+    if climate_array_passes:
+        mean_temperature = np.asarray(temperature_rows, dtype=np.float64)
+        seasonality = np.asarray(seasonality_rows, dtype=np.float64)
+        # Pass two does not clamp the shore term (the distances already are).
+        shore_influence = 1.0 - shore_distance_grid
+        continentality = 1.0 - shore_influence
+        if isinstance(parent_climate_grid, dict):
+            inherited_temperature = sample_parent_grid(parent_climate_grid.get("temperature_rows_k"))
+            inherited_elevation = sample_parent_grid(parent_climate_grid.get("elevation_rows"))
+            if inherited_temperature is not None:
+                inherited_local_temperature = inherited_temperature
+                if inherited_elevation is not None:
+                    inherited_local_temperature = np.where(
+                        np.isfinite(inherited_elevation),
+                        inherited_temperature - (elevation_grid - inherited_elevation) * 0.0062,
+                        inherited_temperature,
+                    )
+                parent_weight = _edge_locked_parent_weight_grid(inheritance_weights["temperature"], lattice_local_u, lattice_local_v)
+                inherited_cells = np.isfinite(inherited_temperature)
+                mean_temperature = np.where(
+                    inherited_cells,
+                    inherited_local_temperature * parent_weight + mean_temperature * (1.0 - parent_weight),
+                    mean_temperature,
+                )
+                _write_back(temperature_rows, mean_temperature, inherited_cells)
+        precipitation = np.maximum(0.0, np.asarray(precipitation_rows, dtype=np.float64))
+        potential_evaporation = np.maximum(0.0, np.asarray(potential_evaporation_rows, dtype=np.float64))
+        actual_evapotranspiration = np.where(
+            ocean_grid,
+            0.0,
+            np.maximum(0.0, np.minimum(precipitation, np.asarray(solver_evapotranspiration_rows, dtype=np.float64))),
+        )
+        seasonality_texture = _wave_noise_grid(map_seed, "precipitation_seasonality", lattice_u, lattice_v)
+        if isinstance(parent_climate_grid, dict):
+            parent_weight = _edge_locked_parent_weight_grid(inheritance_weights["precipitation"], lattice_local_u, lattice_local_v)
+            inherited_precipitation = sample_parent_grid(parent_climate_grid.get("annual_precipitation_rows_mm"))
+            if inherited_precipitation is not None:
+                inherited_cells = np.isfinite(inherited_precipitation) & (parent_weight > 0.0)
+                precipitation = np.where(
+                    inherited_cells,
+                    inherited_precipitation * parent_weight + precipitation * (1.0 - parent_weight),
+                    precipitation,
+                )
+                _write_back(precipitation_rows, precipitation, inherited_cells)
+                actual_evapotranspiration = np.where(
+                    inherited_cells,
+                    np.where(ocean_grid, 0.0, _budyko_evapotranspiration_grid(precipitation, potential_evaporation)),
+                    actual_evapotranspiration,
+                )
+        monthly_temperature, monthly_precipitation, northern = _monthly_climate_normals_arrays(
+            mean_temperature,
+            seasonality,
+            precipitation,
+            np.broadcast_to((0.5 - lattice_v) * 180.0, (height, width)),
+            continentality,
+            shore_influence,
+            np.asarray(condensation_rows, dtype=np.float64),
+            seasonality_texture,
+        )
+        koppen_grid, summer_precipitation = _koppen_classes_arrays(
+            monthly_temperature, monthly_precipitation, northern, ocean_grid,
+        )
+        summer_fraction = summer_precipitation / np.maximum(1e-9, _python_float_sum(monthly_precipitation))
+        seasonal_min = monthly_temperature.min(axis=-1) + 273.15
+        seasonal_max = monthly_temperature.max(axis=-1) + 273.15
+        snow_fraction = np.where(
+            ocean_grid, 0.0, np.clip((273.15 - seasonal_min) / np.maximum(2.0, seasonality), 0.0, 1.0),
+        )
+        snowfall_storage = precipitation * snow_fraction * 0.78
+        melt_fraction = np.clip((seasonal_max - 268.15) / 18.0, 0.0, 1.0)
+        snowmelt_release = snowfall_storage * melt_fraction
+        liquid_input = np.maximum(0.0, precipitation - snowfall_storage + snowmelt_release)
+        frozen_ground = np.clip((273.15 - seasonal_min) / 24.0, 0.0, 1.0) * snow_fraction
+        wetness = np.clip(precipitation / np.maximum(1.0, precipitation + potential_evaporation), 0.0, 1.0)
+        infiltration_fraction = np.clip(
+            0.48
+            - terrain_arrays["slope"] * 0.24
+            - frozen_ground * 0.26
+            + np.where(wetness < 0.3, 0.08, 0.0),
+            0.10,
+            0.66,
+        )
+        actual_evapotranspiration = np.where(
+            ocean_grid, 0.0, np.minimum(actual_evapotranspiration, liquid_input * 0.94),
+        )
+        available_water = np.where(ocean_grid, 0.0, np.maximum(0.0, liquid_input - actual_evapotranspiration))
+        infiltration = available_water * infiltration_fraction
+        quickflow = available_water - infiltration
+        baseflow_fraction = np.clip(0.10 + wetness * 0.24 - frozen_ground * 0.08, 0.05, 0.34)
+        baseflow = infiltration * baseflow_fraction
+        groundwater_recharge = np.maximum(0.0, infiltration - baseflow)
+        runoff = quickflow + baseflow
+        koppen_rows = koppen_grid.tolist()
+        runoff_rows = _round_rows(runoff, 1)
+        evapotranspiration_rows = _round_rows(actual_evapotranspiration, 1)
+        infiltration_rows = _round_rows(infiltration, 1)
+        groundwater_recharge_rows = _round_rows(groundwater_recharge, 1)
+        snowmelt_runoff_rows = _round_rows(snowmelt_release, 1)
+        snow_fraction_rows = _round_rows(snow_fraction, 3)
+        seasonal_min_temperature_rows = _round_rows(seasonal_min, 1)
+        seasonal_max_temperature_rows = _round_rows(seasonal_max, 1)
+        driest_month_precipitation_rows = _round_rows(monthly_precipitation.min(axis=-1), 1)
+        wettest_month_precipitation_rows = _round_rows(monthly_precipitation.max(axis=-1), 1)
+        summer_precipitation_fraction_rows = _round_rows(summer_fraction, 3)
+        codes, counts = np.unique(koppen_grid, return_counts=True)
+        for code, count in zip(codes.tolist(), counts.tolist()):
+            koppen_counts[code] = koppen_counts.get(code, 0) + count
+
+    for y, elevation_row in enumerate([] if climate_array_passes else rows):
         local_ny = y / max(1, height - 1)
         ny = source_v0 + (source_v1 - source_v0) * local_ny
         latitude_signed, latitude_abs = _global_latitude_metrics(ny)
@@ -2891,7 +3993,11 @@ def derive_water_cycle_model(
             local_nx = x / max(1, width - 1)
             nx = source_u0 + (source_u1 - source_u0) * local_nx
             is_ocean = ocean_mask[y][x]
-            terrain_metrics = _terrain_metrics(rows, ocean_mask, x, y, span)
+            terrain_metrics = (
+                precomputed_terrain[y][x]
+                if precomputed_terrain is not None
+                else _terrain_metrics(rows, ocean_mask, x, y, span)
+            )
             shore = 1.0 - (
                 shore_distances[y][x]
                 if shore_distances
@@ -3311,6 +4417,18 @@ def derive_water_cycle_model(
         / max(1, len(retained_lakes)),
         3,
     )
+    runoff_grid, surface_water_grid = derive_surface_hydrology_grids(
+        rows,
+        ocean_mask,
+        drainage_network,
+        sea_level_m=sea_level,
+        region_width_m=region_width_m or circumference_m,
+        region_height_m=region_height_m or circumference_m * 0.5,
+        runoff_rows=runoff_rows,
+        precipitation_rows=precipitation_rows,
+        potential_evaporation_rows=potential_evaporation_rows,
+        groundwater_recharge_rows=groundwater_recharge_rows,
+    )
     climate_field_diagnostics = _climate_field_diagnostics(
         rows,
         ocean_mask,
@@ -3460,6 +4578,8 @@ def derive_water_cycle_model(
         },
         "ocean_circulation_model": ocean_circulation,
         "drainage_network_model": drainage_network,
+        "runoff_grid": runoff_grid,
+        "surface_water_grid": surface_water_grid,
         "drainage_basins": drainage_network.get("drainage_basins") or [],
         "lakes": drainage_network.get("lakes") or [],
         "lake_count": int(drainage_network.get("lake_count", 0) or 0),

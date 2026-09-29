@@ -23,6 +23,10 @@ except ImportError:  # pragma: no cover
 
 
 SURFACE_GEOMORPHOLOGY_MODEL_VERSION = "surface-geomorphology-v2"
+# From LOD3 down, landform strength is normalised against at least the
+# relief of this slope across one cell (0.03 is about 1.7 degrees).
+REGIONAL_LANDFORM_REFERENCE_SLOPE = 0.03
+REGIONAL_LANDFORM_MIN_LEVEL = 3
 
 
 def _clamp(value, low=0.0, high=1.0):
@@ -108,9 +112,30 @@ def _smooth(values, passes, *, wrap_x=False):
     return result
 
 
-def _positive(values, percentile=96.0):
+def wrapped_gradient(values, spacing_y, spacing_x, *, wrap_x=False):
+    """``np.gradient`` that treats longitude as periodic when ``wrap_x``.
+
+    One-sided differences at the two map edges gave the date line two
+    different slopes -- and so a shading seam.  A lattice that stores the
+    date line twice (first column repeated as last) is differenced across
+    the seam.
+    """
+    values = np.asarray(values, dtype=np.float32)
+    dzdy, dzdx = np.gradient(values, spacing_y, spacing_x)
+    if wrap_x and values.ndim == 2 and values.shape[1] >= 3:
+        if np.allclose(values[:, 0], values[:, -1]):
+            edge = (values[:, 1] - values[:, -2]) / (2.0 * spacing_x)
+            dzdx[:, 0] = edge
+            dzdx[:, -1] = edge
+        else:
+            dzdx[:, 0] = (values[:, 1] - values[:, -1]) / (2.0 * spacing_x)
+            dzdx[:, -1] = (values[:, 0] - values[:, -2]) / (2.0 * spacing_x)
+    return dzdy, dzdx
+
+
+def _positive(values, percentile=96.0, *, floor=0.0):
     values = np.maximum(0.0, np.asarray(values, dtype=np.float32))
-    scale = float(np.percentile(values, percentile))
+    scale = max(float(np.percentile(values, percentile)), float(floor))
     return np.clip(values / max(1e-6, scale), 0.0, 1.0)
 
 
@@ -163,10 +188,11 @@ def derive_surface_geomorphology_fields(
     # Differentiating the bilinear render lattice creates a slope discontinuity
     # at every source-cell edge; true color and hillshade then turn those
     # harmless interpolation boundaries into dark rectangular scratches.
-    source_dzdy, source_dzdx = np.gradient(
+    source_dzdy, source_dzdx = wrapped_gradient(
         source_form_elevation,
         spacing_y,
         spacing_x,
+        wrap_x=wrap_x,
     )
     dzdx = _resample(source_dzdx, target_h, target_w)
     dzdy = _resample(source_dzdy, target_h, target_w)
@@ -182,12 +208,25 @@ def derive_surface_geomorphology_fields(
     source_broad_mean = _smooth(source_form_elevation, 8, wrap_x=wrap_x)
     source_local_tpi = source_form_elevation - source_local_mean
     source_broad_tpi = source_local_mean - source_broad_mean
-    source_ridge = _positive(source_local_tpi * 0.72 + source_broad_tpi * 0.28)
-    source_valley = _positive(-source_local_tpi * 0.78 - source_broad_tpi * 0.22)
-    source_ruggedness = _positive(np.abs(source_form_elevation - source_local_mean))
+    # Landform strength is relative to the tile's own relief.  On a flat
+    # regional tile that promoted decimetre generator bumps to full-strength
+    # ridges, hollows and rugged bedrock, which True Color drew as a stipple.
+    # From LOD3 down, normalise against at least a gentle slope across one
+    # cell; tiles with real relief exceed the floor and are unchanged.
+    landform_floor_m = (
+        max(spacing_x, spacing_y) * REGIONAL_LANDFORM_REFERENCE_SLOPE
+        if detail_level >= REGIONAL_LANDFORM_MIN_LEVEL
+        else 0.0
+    )
+    source_ridge = _positive(source_local_tpi * 0.72 + source_broad_tpi * 0.28, floor=landform_floor_m)
+    # Valleys keep a lower floor: incised drainage is deeper than the noise
+    # hollows around it, and the network should stay legible.
+    source_valley = _positive(-source_local_tpi * 0.78 - source_broad_tpi * 0.22, floor=landform_floor_m * 0.25)
+    source_ruggedness = _positive(np.abs(source_form_elevation - source_local_mean), floor=landform_floor_m)
     source_laplacian = source_form_elevation - _smooth(source_form_elevation, 1, wrap_x=wrap_x)
-    source_convexity = _positive(source_laplacian)
-    source_concavity = _positive(-source_laplacian)
+    # The one-pass Laplacian is about 40% of the two-pass TPI for the same form.
+    source_convexity = _positive(source_laplacian, floor=landform_floor_m * 0.4)
+    source_concavity = _positive(-source_laplacian, floor=landform_floor_m * 0.4)
     ridge = _resample(source_ridge, target_h, target_w)
     valley = _resample(source_valley, target_h, target_w)
     ruggedness = _resample(source_ruggedness, target_h, target_w)

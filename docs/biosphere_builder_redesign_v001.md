@@ -80,7 +80,7 @@ The initial clock is seasonal. Later, processes use separate stable cadences:
 
 A newly drawn biosphere polygon with no species roster or distribution is treated as a selection envelope, not an already living biome. BioSim derives one reproducible pseudo-random point inside that polygon and opens a local 10×10 m founding patch around it. The source-map point is retained in launch context so later worldgen adapters can sample the correct terrain.
 
-The initial species menu contains only Biomasser 13B. Living biomass and occupied area grow from the placed introduction. At 6 kg of living biomass the pioneer palette unlocks; this is an explicit gameplay threshold, not a biological constant.
+The initial species menu contains only Biomasser 13B. Living biomass and occupied area grow from the placed introduction. Later growth forms unlock when a local soil cell reaches their explicit organic-matter succession tier; N and P then contribute to local suitability and SpeciesSim vitality rather than acting as another global unlock counter. All thresholds are gameplay values, not biological constants.
 
 The numerical domain begins at 10×10 m. When a population footprint reaches an edge, the solver grows the continuous domain around it without moving populations or representatives. Expansion stops at the selected polygon envelope's projected extent (with a 1 km prototype safety cap). This separates the initially living footprint from the much larger area the player selected.
 
@@ -117,7 +117,7 @@ The implemented slice is accepted when:
 - aggregated vitality, fecundity and mortality affect the next population season;
 - representatives age across seasons and the selected sprite opens that exact live simulation;
 - a lifeless polygon launch begins with a reproducible point inside the polygon, a 10×10 m domain, zero accumulated biomass and only Biomasser available;
-- pioneer plants unlock at the visible biomass threshold; and
+- each terrestrial succession tier unlocks from locally accumulated soil organic matter; and
 - edge colonisation enlarges the numerical domain without moving representatives or losing population state;
 - isometric screen/world transforms round-trip free coordinates; and
 - the reference test forest includes every plant whose authored module asset resolves on disk.
@@ -140,3 +140,16 @@ The production-renderer comparison is `artifacts/biosphere_isometric_asset_fores
 5. Add functional guilds and ecological networks: producers, decomposers, pollinators, herbivores and predators.
 6. Add scenario branches and before/after comparison without mutating ontology facts.
 7. Persist plans as dedicated scenario entities only after the transient design workflow is stable.
+# Canopy-light recruitment follow-up
+
+See [canopy-light recruitment](biosphere_canopy_recruitment_v001.md) for the implemented shade-trait connection and paired renderer comparison.
+
+See [highest-LOD world-gen target](highest_lod_example_map.md) for the authored
+survey map and implemented imported terrain/environment adapter.
+
+See [organic-soil succession MWP](biosphere_soil_succession_mwp_v001.md) for
+the worldgen/biology soil split, staged establishment gates and renderer comparison.
+
+See [soil nutrients × SpeciesSim MWP](biosphere_soil_nutrients_species_coupling_v001.md)
+for explicit N/P pools, ontology trait handling, root/mycorrhiza/fixation coupling
+and the six-panel nutrient comparison.

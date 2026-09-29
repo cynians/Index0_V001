@@ -231,6 +231,32 @@ class OntologyRepositoryTests(unittest.TestCase):
             }
             self.assertEqual(["loc_parent"], reloaded["loc_child"]["parents"])
 
+    def test_name_matching_an_entity_id_does_not_turn_names_into_relations(self):
+        # A location named after its own id used to promote `name` to an
+        # OWL relation, after which every other entity's name was stored as
+        # an unresolved ref and reloaded as ["Name"].
+        ontology = OntologyRepository({
+            "locations": [
+                {"id": "example_map", "type": "location", "name": "example_map"},
+                {"id": "body_luna", "type": "location", "name": "Luna", "pretty_name": "Luna"},
+            ],
+        })
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            ontology_path = temp_path / "ontology" / "index0.owl"
+            database_path = temp_path / "store.sqlite3"
+            ontology.save_owl(ontology_path)
+
+            store = PersistentOntologyStore(ontology_path, database_path=database_path)
+            store.persist_entity({"id": "example_map", "type": "location", "_dataset": "locations", "name": "example_map"})
+            store.persist_entity({"id": "body_luna", "type": "location", "_dataset": "locations", "name": "Luna", "pretty_name": "Luna"})
+
+            restarted = PersistentOntologyStore(ontology_path, database_path=database_path)
+            reloaded = {entity["id"]: entity for entity in restarted.load_datasets()["locations"]}
+            self.assertEqual("example_map", reloaded["example_map"]["name"])
+            self.assertEqual("Luna", reloaded["body_luna"]["name"])
+            self.assertEqual("Luna", reloaded["body_luna"]["pretty_name"])
+
     def test_palette_persistence_uses_small_restart_safe_override_journal(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             ontology_path = Path(temp_dir) / "ontology" / "index0.owl"

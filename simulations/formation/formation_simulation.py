@@ -24,14 +24,17 @@ The prototype provides aggregate, formation, and personnel display scales;
 clickable tree navigation with a ``To parent`` action; drag reordering; typed
 point-in-time viewing defaulting to year 2400; sparse formation snapshots only
 when a blueprint state changes; faction-owned blueprint creation; creation from
-blueprints; and a blueprint editor for personnel and equipment. Assigned
+blueprints; and a visual structure editor for naming, grouping, folding,
+reordering, attaching existing formations, and changing structural command
+parents at any scale. Faction
+ownership is edited separately and survives command-parent moves. Assigned
 vehicles are shown only when linked to a formation and expose side-image and
 grouped crew-role data when available. Legacy wiki formation outlines remain a
 temporary projection for older cards, while authored parent/child edges are
 authoritative. Faction selection is searchable and scrollable so the same
 interaction can scale to large faction catalogs.
 
-The next layers—full organization editing, faction-aware equipment filtering,
+The next layers—faction-aware equipment filtering,
 knowledge-gated faction discovery, detailed personnel mannequins, and richer
 deviation/history semantics—remain intentionally staged work.
 """
@@ -96,6 +99,38 @@ class FormationSimulation:
         self.drag_press_node_id = None
         self.drag_press_pos = None
         self.dragging_node_id = None
+
+        # Squad-designer ("design") workspace state. Everything here is runtime
+        # layout/selection scratch -- only the org structure it produces
+        # (roster_slots, child formations, parent_formation, doctrine) is durable.
+        self.workspace_mode = "inspect"  # "inspect" | "design"
+        self.design_container_id = None  # None -> the tab root formation
+        self.canvas_selection = set()    # "slot:<container>:<slot_id>" / "group:<fid>"
+        self.marquee_origin = None
+        self.marquee_rect = None
+        self.canvas_press_key = None
+        self.canvas_press_pos = None
+        self.canvas_drag_group_id = None
+        self._design_slot_counter = 0
+        self._last_canvas_click = (None, 0.0)
+        self.design_collapsed = set()
+        self.design_scroll = 0
+        self.design_edit = None  # (formation id, field, optional slot id)
+        self.design_edit_buffer = ""
+        self.design_catalog = None  # (formation id, vehicle|equipment)
+        self.design_catalog_query = ""
+        self.design_hover_key = None
+        self.design_structure_menu_id = None
+        self.design_target_picker = None  # (action, source formation id or None)
+        self.design_target_query = ""
+        self.design_group_naming = False
+        self.design_group_name = ""
+        self.design_notice = ""
+        self.design_owner_picker_id = None
+        self.design_owner_query = ""
+        self.design_attach_target_id = None
+        self.design_attach_query = ""
+        self.design_content_height = 0
 
         self.structure = self._build_structure()
         self.selected_node_id = self.structure["id"]
@@ -260,15 +295,13 @@ class FormationSimulation:
             return child_ids
         if not child_ids and not isinstance(state, dict):
             child_ids = self._relation_ids(entity.get("offspring"))
-        if child_ids:
-            return child_ids
-
-        # Some older records only carry the child-side parent relation.
-        for candidate in self._formation_entities():
-            if entity_id in self._relation_ids(candidate.get("parents")):
-                child_id = candidate.get("id")
-                if child_id and child_id not in child_ids:
-                    child_ids.append(child_id)
+        if not child_ids:
+            # Some older records only carry the child-side parent relation.
+            for candidate in self._formation_entities():
+                if entity_id in self._relation_ids(candidate.get("parents")):
+                    child_id = candidate.get("id")
+                    if child_id and child_id not in child_ids:
+                        child_ids.append(child_id)
         indexed_ids = {child_id: index for index, child_id in enumerate(child_ids)}
 
         def sort_key(child_id):
@@ -338,6 +371,8 @@ class FormationSimulation:
             "year_range": entity_year_range(entity),
             "is_available": self._entity_available_at_view_year(entity),
             "formation_kind": entity.get("formation_kind") or "realization",
+            "doctrine": str(state.get("doctrine", entity.get("doctrine")) or "").strip() or None,
+            "roster_slots": self._normalized_roster_slots({"roster_slots": state.get("roster_slots", entity.get("roster_slots"))}),
             "faction_id": (
                 self._relation_ids(entity.get("faction"))[0]
                 if self._relation_ids(entity.get("faction")) else None
@@ -544,7 +579,13 @@ class FormationSimulation:
 
     def consumes_global_keydown(self):
         return (
-            self.creation_active
+            self.design_edit is not None
+            or self.design_catalog is not None
+            or self.design_target_picker is not None
+            or self.design_owner_picker_id is not None
+            or self.design_attach_target_id is not None
+            or self.design_group_naming
+            or self.creation_active
             or self.year_editing
             or self.personnel_editing
             or (self.faction_selection_active and self.faction_search_active)
@@ -553,6 +594,73 @@ class FormationSimulation:
     def handle_event(self, event):
         if event.type != pygame.KEYDOWN:
             return False
+
+        if self.design_group_naming:
+            if event.key == pygame.K_ESCAPE:
+                self.design_group_naming = False
+                self.design_group_name = ""
+            elif event.key == pygame.K_RETURN:
+                label = " ".join(self.design_group_name.split())
+                if label and self.group_selection(label):
+                    self.design_group_naming = False
+                    self.design_group_name = ""
+            elif event.key == pygame.K_BACKSPACE:
+                self.design_group_name = self.design_group_name[:-1]
+            elif event.unicode and event.unicode.isprintable() and len(self.design_group_name) < 80:
+                self.design_group_name += event.unicode
+            return True
+
+        if self.design_target_picker is not None:
+            if event.key == pygame.K_ESCAPE:
+                self.design_target_picker = None
+                self.design_target_query = ""
+            elif event.key == pygame.K_BACKSPACE:
+                self.design_target_query = self.design_target_query[:-1]
+            elif event.unicode and event.unicode.isprintable() and len(self.design_target_query) < 80:
+                self.design_target_query += event.unicode
+            return True
+
+        if self.design_owner_picker_id is not None:
+            if event.key == pygame.K_ESCAPE:
+                self.design_owner_picker_id = None
+                self.design_owner_query = ""
+            elif event.key == pygame.K_BACKSPACE:
+                self.design_owner_query = self.design_owner_query[:-1]
+            elif event.unicode and event.unicode.isprintable() and len(self.design_owner_query) < 80:
+                self.design_owner_query += event.unicode
+            return True
+
+        if self.design_attach_target_id is not None:
+            if event.key == pygame.K_ESCAPE:
+                self.design_attach_target_id = None
+                self.design_attach_query = ""
+            elif event.key == pygame.K_BACKSPACE:
+                self.design_attach_query = self.design_attach_query[:-1]
+            elif event.unicode and event.unicode.isprintable() and len(self.design_attach_query) < 80:
+                self.design_attach_query += event.unicode
+            return True
+
+        if self.design_edit is not None:
+            if event.key == pygame.K_ESCAPE:
+                self.design_edit = None
+                self.design_edit_buffer = ""
+            elif event.key == pygame.K_RETURN:
+                self.commit_design_edit()
+            elif event.key == pygame.K_BACKSPACE:
+                self.design_edit_buffer = self.design_edit_buffer[:-1]
+            elif event.unicode and event.unicode.isprintable() and len(self.design_edit_buffer) < 160:
+                self.design_edit_buffer += event.unicode
+            return True
+
+        if self.design_catalog is not None:
+            if event.key == pygame.K_ESCAPE:
+                self.design_catalog = None
+                self.design_catalog_query = ""
+            elif event.key == pygame.K_BACKSPACE:
+                self.design_catalog_query = self.design_catalog_query[:-1]
+            elif event.unicode and event.unicode.isprintable() and len(self.design_catalog_query) < 80:
+                self.design_catalog_query += event.unicode
+            return True
 
         if self.year_editing:
             if event.key == pygame.K_ESCAPE:
@@ -690,6 +798,7 @@ class FormationSimulation:
             "display_scale": self.display_scale,
             "year": self.year,
             "hover_node_id": self.hover_node_id,
+            "workspace_mode": self.workspace_mode,
             "creation_active": self.creation_active,
             "creation_menu_active": self.creation_menu_active,
             "blueprint_selection_active": self.blueprint_selection_active,
@@ -922,10 +1031,22 @@ class FormationSimulation:
                 candidate_id = candidate.get("id")
                 if candidate_id and candidate_id not in organization:
                     organization.append(candidate_id)
+        original_positions = {child_id: index for index, child_id in enumerate(organization)}
+
+        def order_key(child_id):
+            child = self.world_model.get_entity(child_id) if self.world_model else None
+            try:
+                return (0, int(child.get("formation_order")), original_positions[child_id])
+            except (AttributeError, TypeError, ValueError):
+                return (1, original_positions[child_id], original_positions[child_id])
+
+        organization.sort(key=order_key)
         return {
             "personnel": entity.get("personnel"),
             "blueprint_items": self._relation_ids(entity.get("blueprint_items")),
             "organization": organization,
+            "roster_slots": self._normalized_roster_slots(entity),
+            "doctrine": str(entity.get("doctrine") or ""),
         }
 
     def _blueprint_state_at_view_year(self, entity):
@@ -998,6 +1119,8 @@ class FormationSimulation:
         target_parent = self._find_parent(target_id)
         if parent is None or parent is not target_parent:
             return False
+        parent_entity = self.world_model.get_entity(parent.get("entity_id")) if self.world_model and parent.get("entity_id") else None
+        before = self._blueprint_view_state(parent_entity) if isinstance(parent_entity, dict) and parent_entity.get("formation_kind") == "blueprint" else None
         siblings = parent.get("children", [])
         dragged = next((node for node in siblings if node.get("id") == node_id), None)
         if dragged is None or dragged.get("is_unlinked"):
@@ -1029,6 +1152,8 @@ class FormationSimulation:
                     child_entity = self.world_model.get_entity(child_entity_id)
                     if isinstance(child_entity, dict):
                         child_entity["formation_order"] = index
+        if before is not None:
+            self._record_blueprint_change(parent_entity_id, before)
         return True
 
     def _new_formation_id(self, label):
@@ -1111,6 +1236,8 @@ class FormationSimulation:
                     "faction": self.creation_faction_id,
                     "personnel": state.get("personnel", blueprint.get("personnel") if isinstance(blueprint, dict) else None),
                     "equipment_items": item_ids,
+                    "roster_slots": list(state.get("roster_slots", self._normalized_roster_slots(blueprint))) if isinstance(blueprint, dict) else [],
+                    "doctrine": str(state.get("doctrine", blueprint.get("doctrine") or "")) if isinstance(blueprint, dict) else "",
                     "start_year": self.year,
                 }
             else:
@@ -1201,6 +1328,8 @@ class FormationSimulation:
                 "blueprint": child_blueprint_id,
                 "personnel": child_state.get("personnel"),
                 "equipment_items": self._relation_ids(child_state.get("blueprint_items")),
+                "roster_slots": list(child_state.get("roster_slots", self._normalized_roster_slots(child_blueprint))),
+                "doctrine": str(child_state.get("doctrine", child_blueprint.get("doctrine") or "")),
                 "start_year": self.year,
             }
             if loader.persist_entity(child):
@@ -1213,12 +1342,1079 @@ class FormationSimulation:
         self.pending_navigation_action = None
         return action
 
+    # ------------------------------------------------------------------
+    # Squad designer ("design" workspace)
+    # ------------------------------------------------------------------
+
+    DOCTRINE_VOCAB = ("", "assault", "defensive", "recon", "garrison", "mobile", "logistics")
+
+    @staticmethod
+    def _normalized_roster_slots(entity):
+        raw = entity.get("roster_slots") if isinstance(entity, dict) else None
+        slots = []
+        for index, slot in enumerate(raw if isinstance(raw, (list, tuple)) else []):
+            if not isinstance(slot, dict):
+                continue
+            slot_id = str(slot.get("id") or "").strip() or f"slot_{index}"
+            kind = "vehicle" if str(slot.get("kind") or "").strip().lower() == "vehicle" else "personnel"
+            try:
+                count = max(0, int(slot.get("count", 1)))
+            except (TypeError, ValueError):
+                count = 1
+            slots.append({
+                "id": slot_id,
+                "kind": kind,
+                "role": str(slot.get("role") or ("Vehicle" if kind == "vehicle" else "Rifleman")).strip(),
+                "rank": str(slot.get("rank") or "").strip(),
+                "count": count,
+                "is_command": bool(slot.get("is_command")),
+                **({"vehicle_id": str(slot["vehicle_id"])} if slot.get("vehicle_id") else {}),
+                **({"crew_roles": list(slot["crew_roles"])} if isinstance(slot.get("crew_roles"), list) else {}),
+            })
+        return slots
+
+    def _is_formation_entity_id(self, entity_id):
+        entity = self.world_model.get_entity(entity_id) if self.world_model else None
+        return isinstance(entity, dict) and (
+            entity.get("_dataset") == "formations" or entity.get("type") == "formation"
+        )
+
+    def get_design_container_id(self):
+        container = self.design_container_id or self.structure.get("id")
+        if self._find_node(container) is None:
+            self.design_container_id = None
+            container = self.structure.get("id")
+        return container
+
+    def _design_container_node(self):
+        return self._find_node(self.get_design_container_id()) or self.structure
+
+    def set_workspace_mode(self, mode):
+        mode = "design" if str(mode) == "design" else "inspect"
+        if mode == self.workspace_mode:
+            return False
+        self.workspace_mode = mode
+        self.clear_canvas_selection()
+        self._reset_marquee()
+        return True
+
+    def set_design_container(self, formation_id):
+        node = self._find_node(formation_id)
+        if node is None or not node.get("entity_id"):
+            return False
+        self.design_container_id = formation_id
+        self.selected_node_id = formation_id
+        self.clear_canvas_selection()
+        return True
+
+    def design_container_to_parent(self):
+        container_id = self.get_design_container_id()
+        if container_id == self.structure.get("id"):
+            return False
+        parent = self._find_parent(container_id)
+        if parent is None or parent.get("id") == self.structure.get("id"):
+            self.design_container_id = None
+        else:
+            self.design_container_id = parent.get("id")
+        self.selected_node_id = self.get_design_container_id()
+        self.clear_canvas_selection()
+        return True
+
+    def clear_canvas_selection(self):
+        self.canvas_selection = set()
+
+    def _reset_marquee(self):
+        self.marquee_origin = None
+        self.marquee_rect = None
+        self.canvas_press_key = None
+        self.canvas_press_pos = None
+        self.canvas_drag_group_id = None
+
+    def _selected_slot_ids(self):
+        prefix = f"slot:{self.get_design_container_id()}:"
+        return {key[len(prefix):] for key in self.canvas_selection if key.startswith(prefix)}
+
+    def _selected_group_ids(self):
+        return {key[len("group:"):] for key in self.canvas_selection if key.startswith("group:")}
+
+    def get_design_action_target_id(self):
+        groups = [group_id for group_id in self._selected_group_ids() if self._find_node(group_id) is not None]
+        return groups[0] if len(groups) == 1 else self.get_design_container_id()
+
+    def toggle_canvas_selection(self, key, additive=True):
+        if not additive:
+            self.canvas_selection = {key}
+            return
+        if key in self.canvas_selection:
+            self.canvas_selection.discard(key)
+        else:
+            self.canvas_selection.add(key)
+
+    def marquee_select(self, rect, additive=False):
+        if not additive:
+            self.canvas_selection = set()
+        for key, hit in self.hitboxes.items():
+            if (key.startswith("slot:") or key.startswith("group:")) and rect.colliderect(hit):
+                self.canvas_selection.add(key)
+
+    @staticmethod
+    def _rect_from_points(start, end):
+        x0, x1 = sorted((int(start[0]), int(end[0])))
+        y0, y1 = sorted((int(start[1]), int(end[1])))
+        return pygame.Rect(x0, y0, max(0, x1 - x0), max(0, y1 - y0))
+
+    def _persist_roster_slots(self, container_id, slots):
+        entity = self.world_model.get_entity(container_id) if self.world_model else None
+        before = self._blueprint_view_state(entity) if isinstance(entity, dict) and entity.get("formation_kind") == "blueprint" else None
+        changed = self._save_entity_fields(container_id, {"roster_slots": [dict(slot) for slot in slots]})
+        if changed and before is not None:
+            self._record_blueprint_change(container_id, before)
+        return changed
+
+    def _next_slot_id(self):
+        existing = {
+            slot.get("id")
+            for entity in self._formation_entities()
+            for slot in self._normalized_roster_slots(entity)
+        }
+        while True:
+            self._design_slot_counter += 1
+            candidate = f"slot_new_{self._design_slot_counter}"
+            if candidate not in existing:
+                return candidate
+
+    def add_roster_slot(self, kind="personnel", role=None, rank=None, count=1, container_id=None,
+                        vehicle_id=None, crew_roles=None):
+        container_id = container_id or self.get_design_container_id()
+        entity = self.world_model.get_entity(container_id) if self.world_model else None
+        if not isinstance(entity, dict):
+            return None
+        kind = "vehicle" if str(kind) == "vehicle" else "personnel"
+        slots = list(self._normalized_roster_slots(entity))
+        slots.append({
+            "id": self._next_slot_id(),
+            "kind": kind,
+            "role": str(role or ("Transport" if kind == "vehicle" else "Rifleman")),
+            "rank": str(rank if rank is not None else ("" if kind == "vehicle" else "Marine")),
+            "count": max(1, int(count or 1)),
+            "is_command": False,
+        })
+        if kind == "vehicle":
+            if vehicle_id:
+                slots[-1]["vehicle_id"] = vehicle_id
+            if crew_roles is not None:
+                slots[-1]["crew_roles"] = list(crew_roles)
+        if self._persist_roster_slots(container_id, slots):
+            self.structure = self._build_structure()
+            return slots[-1]["id"]
+        return None
+
+    def start_design_edit(self, formation_id, field, slot_id=None):
+        entity = self.world_model.get_entity(formation_id) if self.world_model else None
+        if not isinstance(entity, dict):
+            return False
+        value = (entity.get("doctrine") or "") if field == "doctrine" else (
+            entity.get("pretty_name") or entity.get("name") or "" if field == "name" else ""
+        )
+        if slot_id:
+            slot = next((s for s in self._normalized_roster_slots(entity) if s["id"] == slot_id), None)
+            if slot is None:
+                return False
+            if field == "crew_roles":
+                value = ", ".join(f"{r.get('role', 'Crew')}:{r.get('count', 1)}" for r in slot.get("crew_roles", []))
+            else:
+                value = str(slot.get(field, ""))
+        self.design_edit = (formation_id, field, slot_id)
+        self.design_edit_buffer = str(value)
+        self.design_catalog = None
+        return True
+
+    @staticmethod
+    def _parse_crew_roles(value):
+        roles = []
+        for part in str(value).split(","):
+            part = part.strip()
+            if not part:
+                continue
+            label, separator, count = part.rpartition(":")
+            if not separator or not label.strip():
+                return None
+            try:
+                number = int(count.strip())
+            except ValueError:
+                return None
+            if number < 0:
+                return None
+            roles.append({"role": label.strip(), "count": number})
+        return roles
+
+    def commit_design_edit(self):
+        if self.design_edit is None:
+            return False
+        formation_id, field, slot_id = self.design_edit
+        entity = self.world_model.get_entity(formation_id) if self.world_model else None
+        value = self.design_edit_buffer.strip()
+        if not isinstance(entity, dict):
+            return False
+        if slot_id:
+            slots = self._normalized_roster_slots(entity)
+            slot = next((s for s in slots if s["id"] == slot_id), None)
+            if slot is None:
+                return False
+            if field == "count":
+                try:
+                    value = max(1, int(value))
+                except ValueError:
+                    return False
+            elif field == "crew_roles":
+                value = self._parse_crew_roles(value)
+                if value is None:
+                    return False
+            elif field == "role" and not value:
+                return False
+            slot[field] = value
+            changed = self._persist_roster_slots(formation_id, slots)
+        elif field == "doctrine":
+            before = self._blueprint_view_state(entity) if entity.get("formation_kind") == "blueprint" else None
+            changed = self._save_entity_fields(formation_id, {"doctrine": value})
+            if changed and before is not None:
+                self._record_blueprint_change(formation_id, before)
+        elif field == "name":
+            value = " ".join(value.split())
+            if not value:
+                return False
+            changed = self._save_entity_fields(formation_id, {"name": value, "pretty_name": value})
+        else:
+            return False
+        self.design_edit = None
+        self.design_edit_buffer = ""
+        if changed:
+            self.structure = self._build_structure()
+        return True
+
+    def open_design_catalog(self, formation_id, kind):
+        if not self._is_formation_entity_id(formation_id) or kind not in ("vehicle", "equipment"):
+            return False
+        self.design_catalog = (formation_id, kind)
+        self.design_catalog_query = ""
+        self.design_edit = None
+        return True
+
+    def design_catalog_options(self):
+        if self.design_catalog is None:
+            return []
+        _formation_id, kind = self.design_catalog
+        source = self._vehicle_entities() if kind == "vehicle" else self._item_entities()
+        query = self.design_catalog_query.casefold().strip()
+        result = []
+        for entity in source:
+            if not isinstance(entity, dict) or not entity.get("id") or not entity_available_at(entity, self.year):
+                continue
+            label = self._display_label(entity.get("pretty_name") or entity.get("name") or entity["id"])
+            if query and query not in label.casefold():
+                continue
+            result.append({"id": entity["id"], "label": label})
+        return sorted(result, key=lambda option: option["label"].casefold())
+
+    def choose_design_catalog_item(self, item_id):
+        if self.design_catalog is None or item_id not in {option["id"] for option in self.design_catalog_options()}:
+            return False
+        formation_id, kind = self.design_catalog
+        if kind == "vehicle":
+            vehicle = self._vehicle_node(item_id)
+            changed = self.add_roster_slot("vehicle", role=vehicle["label"], container_id=formation_id,
+                                           vehicle_id=item_id) is not None
+        else:
+            formation = self.world_model.get_entity(formation_id)
+            before = self._blueprint_view_state(formation) if formation.get("formation_kind") == "blueprint" else None
+            field = "blueprint_items" if formation.get("formation_kind") == "blueprint" else "equipment_items"
+            ids = self._relation_ids(formation.get(field))
+            if item_id in ids:
+                ids.remove(item_id)
+            else:
+                ids.append(item_id)
+            changed = self._save_entity_fields(formation_id, {field: ids})
+            if changed:
+                if before is not None:
+                    self._record_blueprint_change(formation_id, before)
+                self.structure = self._build_structure()
+        self.design_catalog = None
+        self.design_catalog_query = ""
+        return changed
+
+    def design_vehicle_crew(self, slot):
+        if slot.get("crew_roles") is not None:
+            return slot["crew_roles"]
+        vehicle_id = slot.get("vehicle_id")
+        vehicle = self._vehicle_node(vehicle_id) if vehicle_id else None
+        return vehicle.get("crew_roles", []) if vehicle else []
+
+    def design_direct_totals(self, node):
+        slots = node.get("roster_slots") or []
+        personnel = sum(s["count"] for s in slots if s["kind"] == "personnel")
+        vehicles = sum(s["count"] for s in slots if s["kind"] == "vehicle")
+        crew = sum(s["count"] * sum(r.get("count", 0) for r in self.design_vehicle_crew(s))
+                   for s in slots if s["kind"] == "vehicle")
+        return personnel, vehicles, crew
+
+    def design_crew_coverage(self, node):
+        slots = node.get("roster_slots") or []
+        assigned = {}
+        required = {}
+        labels = {}
+        for slot in slots:
+            if slot["kind"] == "personnel":
+                key = self._normalized_label(slot["role"])
+                assigned[key] = assigned.get(key, 0) + slot["count"]
+            elif slot["kind"] == "vehicle":
+                for role in self.design_vehicle_crew(slot):
+                    key = self._normalized_label(role.get("role"))
+                    labels[key] = role.get("role") or "Crew"
+                    required[key] = required.get(key, 0) + slot["count"] * int(role.get("count", 0))
+        return [
+            {"role": labels[key], "required": count,
+             "assigned": min(count, assigned.get(key, 0)),
+             "missing": max(0, count - assigned.get(key, 0))}
+            for key, count in required.items()
+        ]
+
+    def design_parent_support(self, formation_id, local_node=None):
+        markers = ("maintenance", "logistics", "support", "supply", "repair", "medical")
+        local = local_node if isinstance(local_node, dict) else self._find_node(formation_id) or {}
+        local_roles = [s["role"].casefold() for s in local.get("roster_slots", []) if s["kind"] == "personnel"]
+        entity = self.world_model.get_entity(formation_id) if self.world_model else None
+        parent_ids = self._relation_ids(entity.get("parents")) if isinstance(entity, dict) else []
+        visited = {formation_id}
+        while parent_ids:
+            parent_id = next((candidate for candidate in parent_ids if candidate not in visited and self._is_formation_entity_id(candidate)), None)
+            if parent_id is None:
+                break
+            visited.add(parent_id)
+            parent = self.world_model.get_entity(parent_id)
+            state = latest_formation_snapshot(parent, self.year) if isinstance(parent, dict) else None
+            slots = self._normalized_roster_slots({"roster_slots":
+                                                  state.get("roster_slots", parent.get("roster_slots"))
+                                                  if isinstance(state, dict) else parent.get("roster_slots")})
+            inherited = []
+            for slot in slots:
+                role = slot.get("role", "")
+                if slot.get("kind") != "personnel":
+                    continue
+                role_markers = [marker for marker in markers if marker in role.casefold()]
+                if role_markers and not any(marker in own for marker in role_markers for own in local_roles):
+                    inherited.append(role)
+            if inherited:
+                label = parent.get("pretty_name") or parent.get("name") or parent_id
+                return self._display_label(label), inherited
+            parent_ids = self._relation_ids(parent.get("parents"))
+        return None
+
+    def remove_selected_slots(self):
+        selected = self._selected_slots_by_formation()
+        if not selected:
+            return False
+        changed = False
+        for formation_id, slot_ids in selected.items():
+            entity = self.world_model.get_entity(formation_id) if self.world_model else None
+            if not isinstance(entity, dict):
+                continue
+            slots = self._normalized_roster_slots(entity)
+            kept = [slot for slot in slots if slot["id"] not in slot_ids]
+            if len(kept) != len(slots):
+                changed = self._persist_roster_slots(formation_id, kept) or changed
+        if changed:
+            self.clear_canvas_selection()
+            self.structure = self._build_structure()
+        return changed
+
+    def _selected_slots_by_formation(self):
+        selected = {}
+        for key in self.canvas_selection:
+            if not key.startswith("slot:"):
+                continue
+            parts = key.split(":", 2)
+            if len(parts) == 3:
+                selected.setdefault(parts[1], set()).add(parts[2])
+        return selected
+
+    def _auto_group_label(self, container_id):
+        container = self._find_node(container_id) or {}
+        return f"Group {len(container.get('children') or []) + 1}"
+
+    def group_selection(self, label=None):
+        selected_slots = self._selected_slots_by_formation()
+        group_ids = self._selected_group_ids()
+        sources = set(selected_slots)
+        sources.update(
+            parent.get("id") for group_id in group_ids
+            for parent in [self._find_parent(group_id)] if parent is not None
+        )
+        if len(sources) > 1:
+            self.design_notice = "Select elements with one command parent, then group them."
+            return None
+        container_id = next(iter(sources), self.get_design_container_id())
+        container = self.world_model.get_entity(container_id) if self.world_model else None
+        if not isinstance(container, dict):
+            return None
+        faction = self._relation_ids(container.get("faction"))
+        if not faction or faction[0] not in {option["id"] for option in self._faction_options()}:
+            self.design_notice = "This command parent needs a faction owner before it can create a formation."
+            return None
+        slot_ids = selected_slots.get(container_id, set())
+        if not slot_ids and not group_ids:
+            return None
+        loader = getattr(self.world_model, "loader", None)
+        if loader is None or not hasattr(loader, "persist_entity"):
+            return None
+
+        label = " ".join(str(label or "").split()).strip() or self._auto_group_label(container_id)
+        new_id = self._new_formation_id(label)
+        container_slots = list(self._normalized_roster_slots(container))
+        parent_before = self._blueprint_view_state(container) if container.get("formation_kind") == "blueprint" else None
+        moved = [dict(slot) for slot in container_slots if slot["id"] in slot_ids]
+        kept = [slot for slot in container_slots if slot["id"] not in slot_ids]
+
+        child = {
+            "id": new_id,
+            "_dataset": "formations",
+            "type": "formation",
+            "name": label,
+            "pretty_name": label,
+            "entry_status": "draft",
+            "formation_kind": container.get("formation_kind") or "realization",
+            "parents": [container_id],
+            "start_year": self.year,
+        }
+        child["faction"] = faction[0]
+        if moved:
+            child["roster_slots"] = moved
+
+        if not loader.persist_entity(child):
+            return None
+        if hasattr(self.world_model, "mark_repository_changed"):
+            self.world_model.mark_repository_changed()
+        if moved:
+            self._persist_roster_slots(container_id, kept)
+        for index, group_id in enumerate(sorted(group_ids)):
+            if group_id != new_id and self._is_formation_entity_id(group_id):
+                self._reparent_formation(group_id, new_id, index)
+        if parent_before is not None:
+            self._record_blueprint_change(container_id, parent_before)
+
+        self.clear_canvas_selection()
+        self.structure = self._build_structure()
+        if self._find_node(new_id) is not None:
+            self.canvas_selection = {f"group:{new_id}"}
+        self.design_notice = ""
+        return new_id
+
+    def _reparent_formation(self, node_id, new_parent_id, order=0):
+        entity = self.world_model.get_entity(node_id) if self.world_model else None
+        if not isinstance(entity, dict):
+            return False
+        old_parent_ids = [parent_id for parent_id in self._relation_ids(entity.get("parents"))
+                          if self._is_formation_entity_id(parent_id)]
+        before = {}
+        for parent_id in set(old_parent_ids + [new_parent_id]):
+            parent = self.world_model.get_entity(parent_id)
+            if isinstance(parent, dict) and parent.get("formation_kind") == "blueprint":
+                before[parent_id] = self._blueprint_view_state(parent)
+        parents = [
+            parent_id
+            for parent_id in self._relation_ids(entity.get("parents"))
+            if not self._is_formation_entity_id(parent_id)
+        ]
+        parents.insert(0, new_parent_id)
+        changed = self._save_entity_fields(
+            node_id, {"parents": parents, "formation_order": int(order)}
+        )
+        if changed:
+            for parent_id, state in before.items():
+                self._record_blueprint_change(parent_id, state)
+        return changed
+
+    def nest_group(self, node_id, new_parent_id):
+        """Drag-drop a group box onto another to build the command hierarchy."""
+        if not node_id or not new_parent_id or node_id == new_parent_id:
+            return False
+        node = self._find_node(node_id)
+        target = self._find_node(new_parent_id)
+        if node is None or target is None:
+            return False
+        if node.get("id") == self.structure.get("id") or node.get("is_unlinked"):
+            return False
+        if not node.get("entity_id") or not target.get("entity_id"):
+            return False
+        if any(descendant.get("id") == new_parent_id for descendant in self._walk(node)):
+            return False  # would create a cycle
+        current_parent = self._find_parent(node_id)
+        if current_parent is not None and current_parent.get("id") == new_parent_id:
+            return False  # already nested there
+        order = len(target.get("children") or [])
+        if self._reparent_formation(node["entity_id"], target["entity_id"], order):
+            self.clear_canvas_selection()
+            self.structure = self._build_structure()
+            return True
+        return False
+
+    def begin_structure_child(self, parent_id):
+        """Create a subordinate from the map, inheriting its faction owner."""
+        parent = self.world_model.get_entity(parent_id) if self.world_model else None
+        if not isinstance(parent, dict) or self._find_node(parent_id) is None:
+            return False
+        self.design_structure_menu_id = None
+        faction = self._relation_ids(parent.get("faction"))
+        available = {option["id"] for option in self._faction_options()}
+        if faction and faction[0] in available:
+            if not self.begin_creation(parent_id, mode="formation"):
+                return False
+            self.creation_faction_id = faction[0]
+            return True
+        if not self.open_creation_menu(parent_id):
+            return False
+        return self.choose_creation_mode("new_formation")
+
+    def begin_group_naming(self):
+        if not self.canvas_selection:
+            return False
+        self.design_group_naming = True
+        self.design_group_name = ""
+        self.design_structure_menu_id = None
+        self.design_notice = ""
+        return True
+
+    def open_structure_menu(self, formation_id):
+        if self._find_node(formation_id) is None:
+            return False
+        self.design_structure_menu_id = (
+            None if self.design_structure_menu_id == formation_id else formation_id
+        )
+        self.design_notice = ""
+        return True
+
+    def fold_descendants(self, formation_id, collapsed=True):
+        node = self._find_node(formation_id)
+        if node is None:
+            return False
+        descendants = {child["id"] for child in self._walk(node) if child["id"] != formation_id}
+        if collapsed:
+            self.design_collapsed.update(descendants)
+            self.design_scroll = 0
+        else:
+            self.design_collapsed.difference_update(descendants)
+        self.design_structure_menu_id = None
+        return bool(descendants)
+
+    def shift_group_order(self, formation_id, direction):
+        parent = self._find_parent(formation_id)
+        if parent is None:
+            return False
+        siblings = parent.get("children") or []
+        index = next((i for i, child in enumerate(siblings) if child.get("id") == formation_id), None)
+        target = index + int(direction) if index is not None else -1
+        if target < 0 or target >= len(siblings):
+            return False
+        changed = self._reorder_node(formation_id, siblings[target]["id"])
+        if changed:
+            self.structure = self._build_structure()
+        self.design_structure_menu_id = None
+        return changed
+
+    def promote_group(self, formation_id):
+        parent = self._find_parent(formation_id)
+        grandparent = self._find_parent(parent["id"]) if parent else None
+        if grandparent is None:
+            return False
+        changed = self.nest_group(formation_id, grandparent["id"])
+        self.design_structure_menu_id = None
+        return changed
+
+    def open_target_picker(self, action, source_id=None):
+        if action not in ("move_group", "move_selection"):
+            return False
+        if action == "move_group" and (source_id is None or self._find_node(source_id) is None):
+            return False
+        if action == "move_selection" and not self.canvas_selection:
+            return False
+        self.design_target_picker = (action, source_id)
+        self.design_target_query = ""
+        self.design_structure_menu_id = None
+        return True
+
+    def open_design_owner_picker(self, formation_id):
+        if not self._is_formation_entity_id(formation_id):
+            return False
+        self.design_owner_picker_id = formation_id
+        self.design_owner_query = ""
+        self.design_structure_menu_id = None
+        return True
+
+    def design_owner_options(self):
+        query = self._normalized_label(self.design_owner_query)
+        return [
+            {"id": faction["id"], "label": self._display_label(
+                faction.get("pretty_name") or faction.get("name") or faction["id"])}
+            for faction in self._faction_options()
+            if not query or query in self._normalized_label(
+                " ".join(str(faction.get(field) or "") for field in ("pretty_name", "name", "id")))
+        ]
+
+    def choose_design_owner(self, faction_id):
+        formation_id = self.design_owner_picker_id
+        if formation_id is None or faction_id not in {option["id"] for option in self.design_owner_options()}:
+            return False
+        changed = self._save_entity_fields(formation_id, {"faction": faction_id})
+        self.design_owner_picker_id = None
+        self.design_owner_query = ""
+        if changed:
+            self.structure = self._build_structure()
+            self.design_notice = "Faction owner changed. Subordinates keep their own owners."
+        return changed
+
+    def _structural_ancestor_ids(self, formation_id):
+        visited = set()
+        pending = [formation_id]
+        while pending:
+            entity_id = pending.pop()
+            if entity_id in visited:
+                continue
+            visited.add(entity_id)
+            entity = self.world_model.get_entity(entity_id) if self.world_model else None
+            if isinstance(entity, dict):
+                pending.extend(parent_id for parent_id in self._relation_ids(entity.get("parents"))
+                               if self._is_formation_entity_id(parent_id))
+        return visited
+
+    def open_design_attach_picker(self, target_id):
+        if self._find_node(target_id) is None or not self._is_formation_entity_id(target_id):
+            return False
+        self.design_attach_target_id = target_id
+        self.design_attach_query = ""
+        self.design_structure_menu_id = None
+        return True
+
+    def design_attach_options(self):
+        target_id = self.design_attach_target_id
+        if target_id is None:
+            return []
+        forbidden = self._structural_ancestor_ids(target_id)
+        query = self._normalized_label(self.design_attach_query)
+        options = []
+        for entity in self._formation_entities():
+            if not isinstance(entity, dict) or not entity.get("id") or entity["id"] in forbidden:
+                continue
+            if not entity_available_at(entity, self.year):
+                continue
+            label = self._display_label(entity.get("pretty_name") or entity.get("name") or entity["id"])
+            owner = self._faction_label(entity.get("faction")) or "Unassigned"
+            if query and query not in self._normalized_label(label + " " + owner + " " + entity["id"]):
+                continue
+            current_parent = next((parent_id for parent_id in self._relation_ids(entity.get("parents"))
+                                   if self._is_formation_entity_id(parent_id)), None)
+            if current_parent == target_id:
+                continue
+            options.append({"id": entity["id"], "label": label, "owner": owner,
+                            "current_parent": current_parent})
+        return sorted(options, key=lambda option: option["label"].casefold())
+
+    def choose_design_attach(self, formation_id):
+        target_id = self.design_attach_target_id
+        if target_id is None or formation_id not in {option["id"] for option in self.design_attach_options()}:
+            return False
+        self.design_attach_target_id = None
+        self.design_attach_query = ""
+        target = self._find_node(target_id)
+        changed = self._reparent_formation(formation_id, target_id,
+                                           order=len(target.get("children") or []) if target else 0)
+        if changed:
+            self.structure = self._build_structure()
+            self.design_notice = "Existing formation attached. Its faction owner stays the same."
+        return changed
+
+    def design_target_options(self):
+        if self.design_target_picker is None:
+            return []
+        action, source_id = self.design_target_picker
+        selected_groups = {source_id} if action == "move_group" else self._selected_group_ids()
+        blocked = set()
+        for group_id in selected_groups:
+            node = self._find_node(group_id)
+            if node is not None:
+                blocked.update(descendant["id"] for descendant in self._walk(node))
+        query = self._normalized_label(self.design_target_query)
+        options = []
+        stack = [(self.structure, 0, ())]
+        while stack:
+            node, depth, ancestry = stack.pop()
+            node_id = node.get("id")
+            for child in reversed(node.get("children") or []):
+                stack.append((child, depth + 1, ancestry + (node.get("label") or node_id,)))
+            if not node.get("entity_id") or node_id in blocked:
+                continue
+            path = " / ".join(ancestry)
+            if query and query not in self._normalized_label((node.get("label") or "") + " " + path):
+                continue
+            options.append({"id": node_id, "label": node.get("label") or node_id,
+                            "depth": depth, "path": path})
+        return options
+
+    def move_selection_to(self, target_id):
+        target = self._find_node(target_id)
+        if target is None or not target.get("entity_id"):
+            return False
+        groups = self._selected_group_ids()
+        slots_by_source = self._selected_slots_by_formation()
+        if not groups and not slots_by_source:
+            return False
+        for group_id in groups:
+            node = self._find_node(group_id)
+            if node is None or group_id == self.structure["id"] or any(
+                descendant["id"] == target_id for descendant in self._walk(node)
+            ):
+                self.design_notice = "That command parent would create a cycle."
+                return False
+            descendants = {descendant["id"] for descendant in self._walk(node)}
+            if (descendants - {group_id}) & groups or descendants & set(slots_by_source):
+                self.design_notice = "Select the formation or its contents, then place it."
+                return False
+        changed = False
+        for source_id, slot_ids in slots_by_source.items():
+            if source_id == target_id:
+                continue
+            source = self.world_model.get_entity(source_id)
+            destination = self.world_model.get_entity(target_id)
+            if not isinstance(source, dict) or not isinstance(destination, dict):
+                continue
+            source_slots = self._normalized_roster_slots(source)
+            destination_slots = self._normalized_roster_slots(destination)
+            used_ids = {slot["id"] for slot in destination_slots}
+            moved = []
+            kept = []
+            for slot in source_slots:
+                if slot["id"] in slot_ids:
+                    copy = dict(slot)
+                    if copy["id"] in used_ids:
+                        copy["id"] = self._next_slot_id()
+                    used_ids.add(copy["id"])
+                    moved.append(copy)
+                else:
+                    kept.append(slot)
+            if moved and self._persist_roster_slots(target_id, destination_slots + moved):
+                if self._persist_roster_slots(source_id, kept):
+                    changed = True
+                else:
+                    self._persist_roster_slots(target_id, destination_slots)
+        for group_id in sorted(groups):
+            if self._find_parent(group_id) is not None and self._find_parent(group_id)["id"] != target_id:
+                changed = self.nest_group(group_id, target_id) or changed
+        if changed:
+            self.clear_canvas_selection()
+            self.structure = self._build_structure()
+            self.design_notice = "Moved under the selected command parent."
+        return changed
+
+    def choose_design_target(self, target_id):
+        if self.design_target_picker is None or target_id not in {option["id"] for option in self.design_target_options()}:
+            return False
+        action, source_id = self.design_target_picker
+        self.design_target_picker = None
+        self.design_target_query = ""
+        if action == "move_selection":
+            return self.move_selection_to(target_id)
+        changed = self.nest_group(source_id, target_id)
+        if changed:
+            self.design_notice = "Command parent changed; faction owner stays the same."
+        return changed
+
+    def cycle_group_doctrine(self, formation_id=None, direction=1):
+        if formation_id is None:
+            formation_id = next(iter(sorted(self._selected_group_ids())), None) or self.get_design_container_id()
+        entity = self.world_model.get_entity(formation_id) if self.world_model else None
+        if not isinstance(entity, dict):
+            return False
+        current = str(entity.get("doctrine") or "").strip().lower()
+        vocab = list(self.DOCTRINE_VOCAB)
+        try:
+            index = vocab.index(current)
+        except ValueError:
+            index = 0
+        nxt = vocab[(index + int(direction)) % len(vocab)]
+        if self._save_entity_fields(formation_id, {"doctrine": nxt}):
+            self.structure = self._build_structure()
+            return True
+        return False
+
+    def get_design_model(self):
+        container = self._design_container_node()
+        return {
+            "workspace_mode": self.workspace_mode,
+            "container_id": container.get("id"),
+            "container_label": container.get("label"),
+            "action_target_id": self.get_design_action_target_id(),
+            "container_doctrine": container.get("doctrine"),
+            "at_root": container.get("id") == self.structure.get("id"),
+            "selection": set(self.canvas_selection),
+            "selected_slot_ids": self._selected_slot_ids(),
+            "selected_group_ids": self._selected_group_ids(),
+            "marquee_rect": self.marquee_rect,
+            "slots": container.get("roster_slots") or [],
+            "tree": container,
+            "collapsed": set(self.design_collapsed),
+            "scroll": self.design_scroll,
+            "edit": self.design_edit,
+            "edit_buffer": self.design_edit_buffer,
+            "catalog": self.design_catalog,
+            "catalog_query": self.design_catalog_query,
+            "hover": self.design_hover_key,
+            "structure_menu": self.design_structure_menu_id,
+            "target_picker": self.design_target_picker,
+            "target_query": self.design_target_query,
+            "group_naming": self.design_group_naming,
+            "group_name": self.design_group_name,
+            "notice": self.design_notice,
+            "owner_picker": self.design_owner_picker_id,
+            "owner_query": self.design_owner_query,
+            "attach_target": self.design_attach_target_id,
+            "attach_query": self.design_attach_query,
+            "groups": [
+                {
+                    "id": child.get("id"),
+                    "entity_id": child.get("entity_id"),
+                    "label": child.get("label"),
+                    "doctrine": child.get("doctrine"),
+                    "roster_slots": child.get("roster_slots") or [],
+                    "child_count": len(child.get("children") or []),
+                    "personnel": child.get("personnel"),
+                }
+                for child in container.get("children", [])
+            ],
+            "doctrine_vocab": list(self.DOCTRINE_VOCAB),
+        }
+
+    def _handle_design_pointer(self, event, screen_pos):
+        """Design-workspace pointer handling. Returns True/False when it takes
+        the event, or None to let the normal tree/parent handling continue."""
+        import time as _time
+
+        shift = bool(pygame.key.get_mods() & pygame.KMOD_SHIFT)
+        if self.creation_active or self.faction_selection_active or self.blueprint_selection_active or self.creation_menu_active:
+            return None
+
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if self.design_attach_target_id is not None:
+                for key, rect in reversed(list(self.hitboxes.items())):
+                    if rect.collidepoint(screen_pos):
+                        if key == "design:attach:close":
+                            self.design_attach_target_id = None
+                            self.design_attach_query = ""
+                            return True
+                        if key.startswith("design:attach:item:"):
+                            return self.choose_design_attach(key[len("design:attach:item:"):])
+                return True
+            if self.design_owner_picker_id is not None:
+                for key, rect in reversed(list(self.hitboxes.items())):
+                    if rect.collidepoint(screen_pos):
+                        if key == "design:owner:close":
+                            self.design_owner_picker_id = None
+                            self.design_owner_query = ""
+                            return True
+                        if key.startswith("design:owner:item:"):
+                            return self.choose_design_owner(key[len("design:owner:item:"):])
+                return True
+            if self.design_group_naming:
+                for key, rect in reversed(list(self.hitboxes.items())):
+                    if rect.collidepoint(screen_pos):
+                        if key == "design:group:cancel":
+                            self.design_group_naming = False
+                            self.design_group_name = ""
+                            return True
+                        if key == "design:group:create":
+                            label = " ".join(self.design_group_name.split())
+                            if label and self.group_selection(label):
+                                self.design_group_naming = False
+                                self.design_group_name = ""
+                            return True
+                return True
+            if self.design_target_picker is not None:
+                for key, rect in reversed(list(self.hitboxes.items())):
+                    if rect.collidepoint(screen_pos):
+                        if key == "design:target:close":
+                            self.design_target_picker = None
+                            self.design_target_query = ""
+                            return True
+                        if key.startswith("design:target:item:"):
+                            return self.choose_design_target(key[len("design:target:item:"):])
+                return True
+            for key, rect in reversed(list(self.hitboxes.items())):
+                if key == "design:canvas" or not rect.collidepoint(screen_pos):
+                    continue
+                if key == "workspace:inspect":
+                    return self.set_workspace_mode("inspect")
+                if key == "workspace:design":
+                    return True
+                if key == "design:add_personnel":
+                    target_id = self.get_design_action_target_id()
+                    slot_id = self.add_roster_slot("personnel", role="New role", container_id=target_id)
+                    return bool(slot_id and self.start_design_edit(target_id, "role", slot_id))
+                if key == "design:add_vehicle":
+                    return self.open_design_catalog(self.get_design_action_target_id(), "vehicle")
+                if key == "design:group":
+                    return self.begin_group_naming()
+                if key == "design:add_child":
+                    return self.begin_structure_child(self.get_design_action_target_id())
+                if key.startswith("design:structure:button:"):
+                    return self.open_structure_menu(key[len("design:structure:button:"):])
+                if key.startswith("design:structure:action:"):
+                    action, formation_id = key[len("design:structure:action:"):].split(":", 1)
+                    self.design_structure_menu_id = None
+                    if action == "rename":
+                        return self.start_design_edit(formation_id, "name")
+                    if action == "owner":
+                        return self.open_design_owner_picker(formation_id)
+                    if action == "attach":
+                        return self.open_design_attach_picker(formation_id)
+                    if action == "child":
+                        return self.begin_structure_child(formation_id)
+                    if action == "move":
+                        return self.open_target_picker("move_group", formation_id)
+                    if action == "choose":
+                        return self.open_target_picker("move_selection")
+                    if action == "place":
+                        return self.move_selection_to(formation_id)
+                    if action == "promote":
+                        return self.promote_group(formation_id)
+                    if action in ("up", "down"):
+                        return self.shift_group_order(formation_id, -1 if action == "up" else 1)
+                    if action in ("fold", "open"):
+                        return self.fold_descendants(formation_id, action == "fold")
+                    return False
+                if key.startswith("design:place_here:"):
+                    return self.move_selection_to(key[len("design:place_here:"):])
+                if key == "design:doctrine":
+                    return self.start_design_edit(self.get_design_container_id(), "doctrine")
+                if key == "design:to_parent":
+                    return self.design_container_to_parent()
+                if key == "design:delete_slots":
+                    return self.remove_selected_slots()
+                if key == "design:catalog:close":
+                    self.design_catalog = None
+                    return True
+                if key == "design:catalog:custom":
+                    formation_id, _kind = self.design_catalog
+                    slot_id = self.add_roster_slot("vehicle", role="New vehicle", container_id=formation_id)
+                    self.design_catalog = None
+                    return bool(slot_id and self.start_design_edit(formation_id, "role", slot_id))
+                if key.startswith("design:catalog:item:"):
+                    return self.choose_design_catalog_item(key[len("design:catalog:item:"):])
+                if key.startswith("design:collapse:"):
+                    formation_id = key[len("design:collapse:"):]
+                    if formation_id in self.design_collapsed:
+                        self.design_collapsed.remove(formation_id)
+                    else:
+                        self.design_collapsed.add(formation_id)
+                    return True
+                if key.startswith("design:edit:"):
+                    _, _, formation_id, field, slot_id = key.split(":", 4)
+                    return self.start_design_edit(formation_id, field, None if slot_id == "_" else slot_id)
+                if key.startswith("design:add:role:"):
+                    formation_id = key[len("design:add:role:"):]
+                    slot_id = self.add_roster_slot("personnel", role="New role", container_id=formation_id)
+                    return bool(slot_id and self.start_design_edit(formation_id, "role", slot_id))
+                if key.startswith("design:add:vehicle:"):
+                    return self.open_design_catalog(key[len("design:add:vehicle:"):], "vehicle")
+                if key.startswith("design:add:equipment:"):
+                    return self.open_design_catalog(key[len("design:add:equipment:"):], "equipment")
+                if key.startswith("design:add:child:"):
+                    return self.begin_structure_child(key[len("design:add:child:"):])
+                if key.startswith("design:remove:"):
+                    _, _, formation_id, slot_id = key.split(":", 3)
+                    entity = self.world_model.get_entity(formation_id)
+                    slots = [s for s in self._normalized_roster_slots(entity) if s["id"] != slot_id]
+                    changed = self._persist_roster_slots(formation_id, slots)
+                    if changed:
+                        self.structure = self._build_structure()
+                    return changed
+                if key.startswith("slot:") or key.startswith("group:"):
+                    if shift:
+                        self.toggle_canvas_selection(key, additive=True)
+                    else:
+                        now = _time.monotonic()
+                        prev_key, prev_time = self._last_canvas_click
+                        if (
+                            key.startswith("group:")
+                            and prev_key == key
+                            and (now - prev_time) < 0.4
+                        ):
+                            self._last_canvas_click = (None, 0.0)
+                            return self.set_design_container(key[len("group:"):])
+                        self._last_canvas_click = (key, now)
+                        if key not in self.canvas_selection:
+                            self.toggle_canvas_selection(key, additive=False)
+                    self.canvas_press_key = key
+                    self.canvas_press_pos = screen_pos
+                    return True
+
+            canvas = self.hitboxes.get("design:canvas")
+            if canvas is not None and canvas.collidepoint(screen_pos):
+                if self.design_structure_menu_id is not None:
+                    self.design_structure_menu_id = None
+                    return True
+                if not shift:
+                    self.clear_canvas_selection()
+                self.marquee_origin = tuple(screen_pos)
+                self.marquee_rect = pygame.Rect(int(screen_pos[0]), int(screen_pos[1]), 0, 0)
+                self.canvas_press_key = None
+                return True
+            return None
+
+        if event.type == pygame.MOUSEBUTTONUP:
+            if self.marquee_origin is not None:
+                rect = self.marquee_rect or pygame.Rect(0, 0, 0, 0)
+                self.marquee_select(rect, additive=shift)
+                self._reset_marquee()
+                return True
+            if self.canvas_drag_group_id is not None:
+                dragged = self.canvas_drag_group_id
+                target = None
+                for key, rect in self.hitboxes.items():
+                    if key.startswith("group:") and rect.collidepoint(screen_pos):
+                        target = key[len("group:"):]
+                        break
+                self._reset_marquee()
+                if target and target != dragged:
+                    self.nest_group(dragged, target)
+                return True
+            self.canvas_press_key = None
+            self.canvas_press_pos = None
+            return None
+
+        return None
+
     def handle_pointer_motion(self, event, camera, screen_pos):
+        if self.workspace_mode == "design":
+            self.design_hover_key = next(
+                (key for key, rect in reversed(list(self.hitboxes.items()))
+                 if (key.startswith("slot:") or key.startswith("group:")) and rect.collidepoint(screen_pos)),
+                None,
+            )
         self.hover_node_id = None
         for key, rect in self.hitboxes.items():
             if key.startswith("tree:") and rect.collidepoint(screen_pos):
                 self.hover_node_id = key[5:]
                 break
+
+        if self.workspace_mode == "design" and getattr(event, "buttons", (False,))[0]:
+            if self.marquee_origin is not None:
+                self.marquee_rect = self._rect_from_points(self.marquee_origin, screen_pos)
+                return False
+            if self.canvas_press_key and self.canvas_press_key.startswith("group:"):
+                px, py = self.canvas_press_pos or screen_pos
+                if self.canvas_drag_group_id is None and (
+                    abs(screen_pos[0] - px) + abs(screen_pos[1] - py) >= 8
+                ):
+                    self.canvas_drag_group_id = self.canvas_press_key[len("group:"):]
+            return False
+
         if self.drag_press_node_id and getattr(event, "buttons", (False,))[0]:
             start_x, start_y = self.drag_press_pos or screen_pos
             if self.dragging_node_id is None and (
@@ -1231,6 +2427,12 @@ class FormationSimulation:
 
     def handle_pointer_event(self, event, camera, screen_pos):
         if event.type not in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP) or event.button != 1:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button in (4, 5) and self.workspace_mode == "design":
+                canvas = self.hitboxes.get("design:canvas")
+                if canvas and canvas.collidepoint(screen_pos):
+                    maximum = max(0, self.design_content_height - canvas.height)
+                    self.design_scroll = max(0, min(maximum, self.design_scroll + (-60 if event.button == 4 else 60)))
+                    return True
             if (
                 event.type == pygame.MOUSEBUTTONDOWN
                 and event.button in (4, 5)
@@ -1243,6 +2445,11 @@ class FormationSimulation:
                 self.faction_picker_offset = max(0, min(maximum, self.faction_picker_offset + delta))
                 return True
             return False
+
+        if self.workspace_mode == "design":
+            handled = self._handle_design_pointer(event, screen_pos)
+            if handled is not None:
+                return handled
 
         if event.type == pygame.MOUSEBUTTONUP:
             if self.dragging_node_id:

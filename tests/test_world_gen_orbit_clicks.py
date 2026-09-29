@@ -13,8 +13,10 @@ from app.input_router import InputRouter
 from engine.camera import Camera
 from engine.input_controller import InputController
 from simulations.space.system import CelestialSystem
-from simulations.world_gen.crust import MAJOR_CRUST_TARGET_PERCENT, estimate_crust_density_kg_m3
+from simulations.world_gen.crust import MAJOR_CRUST_TARGET_PERCENT, estimate_crust_density_kg_m3, set_major_element_abundance
 from simulations.world_gen.heightmap import (
+    CANONICAL_LOD0_SAMPLE_HEIGHT,
+    CANONICAL_LOD0_SAMPLE_WIDTH,
     contour_levels_for_heightmap,
     derive_heightmap_model,
     display_contour_interval_m,
@@ -26,7 +28,7 @@ from simulations.world_gen.material_heatmaps import (
     import_png_to_raster_bundle,
     load_raster_bundle_surface,
 )
-from simulations.world_gen.natural_materials import NATURAL_MATERIAL_CATALOG_VERSION, natural_material_entries
+from simulations.world_gen.natural_materials import NATURAL_MATERIAL_CATALOG_VERSION, configure_material_catalog, natural_material_entries
 from simulations.world_gen.terrain_seed import (
     PLANETARY_CANVAS_HEIGHT_PX,
     PLANETARY_CANVAS_WIDTH_PX,
@@ -36,6 +38,14 @@ from simulations.world_gen.tectonics import derive_crater_model
 from simulations.world_gen.water_cycle import derive_water_cycle_model
 from simulations.world_gen.world_gen_renderer import WorldGenRenderer
 from simulations.world_gen.world_gen_sim import WorldGenSimulation
+from world.persistent_ontology_store import PersistentOntologyStore
+
+
+def setUpModule():
+    rows = PersistentOntologyStore(
+        Path(__file__).resolve().parents[1] / "ontology" / "index0.owl"
+    ).load_datasets().get("materials") or []
+    configure_material_catalog(rows)
 
 
 class FakeLoader:
@@ -290,6 +300,25 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         loading = sim.get_worldgen_loading_state()
         self.assertTrue(loading["active"])
         self.assertEqual("Generating test geology", loading["label"])
+        self.assertAlmostEqual(0.01, loading["progress"])
+
+        sim._report_worldgen_progress(0.42, "Publishing test relief")
+        sim._publish_worldgen_preview(heightmap_model={"sample_grid": {"rows": [[0, 1], [1, 0]]}})
+        loading = sim.get_worldgen_loading_state()
+        self.assertAlmostEqual(0.42, loading["progress"])
+        self.assertEqual("Publishing test relief", loading["detail"])
+        self.assertIn("relief", loading["preview_modes"])
+        self.assertEqual(0.42, loading["phases"][-1]["progress"])
+        self.assertLess(loading["preview_reveal_fraction"], 1.0)
+
+        # Once assembled, a single unchanged map stays complete instead of
+        # resetting its tile reveal every six seconds.
+        with sim._worldgen_progress_lock:
+            sim._worldgen_preview_published_at["heightmap_model"] = time.monotonic() - 12.0
+        sim._worldgen_job_started_at = time.monotonic() - 30.0
+        loading = sim.get_worldgen_loading_state()
+        self.assertEqual("relief", loading["preview_mode"])
+        self.assertEqual(1.0, loading["preview_reveal_fraction"])
 
         release_job.set()
         for _index in range(30):
@@ -299,6 +328,80 @@ class WorldGenOrbitClickTests(unittest.TestCase):
             time.sleep(0.01)
 
         self.assertFalse(sim.get_worldgen_loading_state()["active"])
+
+    def test_worldgen_loading_screen_renders_chunked_map_without_progress_bar(self):
+        pygame.init()
+        renderer = WorldGenRenderer(SimpleNamespace())
+        screen = pygame.Surface((1280, 720))
+        rows = [
+            [float((x - 8) * 180 + (y - 4) * 70) for x in range(17)]
+            for y in range(9)
+        ]
+        heightmap = {
+            "sample_grid": {"width": 17, "height": 9, "rows": rows},
+            "min_elevation_m": -1720.0,
+            "max_elevation_m": 1720.0,
+            "sea_level_m": 0.0,
+            "surface_masks": {"ice_rows": [[y in {0, 8} for _x in range(17)] for y in range(9)]},
+        }
+        renderer._draw_worldgen_loading_screen(screen, {
+            "progress": 0.58,
+            "elapsed_seconds": 48.0,
+            "label": "Generating terrain and heightmap",
+            "detail": "Publishing global relief chunks",
+            "phases": [{"progress": 0.58, "detail": "Publishing global relief chunks"}],
+            "preview_planet": {"heightmap_model": heightmap},
+            "preview_modes": ["relief"],
+            "preview_mode": "relief",
+            "preview_reveal_fraction": 0.55,
+        })
+
+        pixels = pygame.surfarray.array3d(screen).reshape(-1, 3)
+        sampled_colors = {tuple(color) for color in pixels[::500]}
+        self.assertGreater(len(sampled_colors), 12)
+
+    def test_heightmap_reports_internal_progress_and_partial_relief(self):
+        events = []
+        terrain = {
+            "map_seed": "progress-test",
+            "map_canvas": {"width_px": 512, "height_px": 256, "circumference_m": 40_000_000.0},
+            "heightfield": {
+                "min_elevation_m": -3000.0,
+                "max_elevation_m": 4000.0,
+                "scientific_sample_dimensions": {"width": 9, "height": 5},
+            },
+            "hydrology": {"target_ocean_fraction": 0.3},
+            "tectonics": {"enabled": False},
+            "cratering": {"density": 0.0},
+        }
+
+        model = derive_heightmap_model(
+            terrain,
+            seed={"map_seed": "progress-test"},
+            progress_callback=lambda fraction, detail, preview: events.append((fraction, detail, preview)),
+        )
+
+        self.assertEqual("heightmap_seeded", model["status"])
+        self.assertGreater(len(events), 8)
+        self.assertEqual(1.0, events[-1][0])
+        self.assertTrue(any(isinstance(preview, dict) for _fraction, _detail, preview in events))
+        self.assertTrue(any("row" in detail.lower() for _fraction, detail, _preview in events))
+
+    def test_loading_screen_can_render_impact_snapshot(self):
+        pygame.init()
+        renderer = WorldGenRenderer(SimpleNamespace())
+        surface = pygame.Surface((640, 320))
+        crater_model = {
+            "radius_m": 6_371_000.0,
+            "craters": [
+                {"x": 0.25, "y": 0.45, "diameter_km": 900.0, "morphology": "complex_or_basin"},
+                {"x": 0.72, "y": 0.62, "diameter_km": 180.0, "morphology": "simple"},
+            ],
+        }
+
+        self.assertTrue(renderer._draw_loading_impacts(surface, crater_model))
+        colors = {tuple(color) for color in pygame.surfarray.array3d(surface).reshape(-1, 3)}
+        self.assertGreater(len(colors), 3)
 
     def test_first_orbit_click_sets_circular_candidate(self):
         sim = self._sim()
@@ -747,6 +850,36 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         self.assertEqual("seed_defined", planet["environment_summary"]["status"])
         self.assertEqual("atmosphere", sim.editor_stage)
 
+    def test_crust_screen_materials_follow_the_edited_element_distribution(self):
+        sim = self._sim()
+        planet = {
+            "id": "planet_blue",
+            "name": "Blue",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "tags": ["world_gen_candidate"],
+        }
+        sim.world_model.loader.entities["planet_blue"] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+        sim.selected_world_gen_planet_id = "planet_blue"
+        sim.editor_stage = "crust"
+        planet["natural_material_model"] = sim._derive_natural_material_model(sim._current_seed_values())
+
+        # Unchanged composition: the generated roster is shown as stored.
+        self.assertIs(planet["natural_material_model"], sim.get_preview_payload()["natural_material_model"])
+
+        # Remove potassium: potassic rocks leave the roster shown on the crust screen.
+        sim.crust_composition = set_major_element_abundance(sim.crust_composition, "K", 0.0)
+        edited = sim.get_preview_payload()["natural_material_model"]
+        stored_ids = {item["material_id"] for item in planet["natural_material_model"]["likely_materials"]}
+        edited_ids = {item["material_id"] for item in edited["likely_materials"]}
+        self.assertIn("mat_granite", stored_ids)
+        self.assertNotIn("mat_granite", edited_ids)
+        # The live roster is memoised while the composition is unchanged.
+        self.assertIs(edited, sim.get_preview_payload()["natural_material_model"])
+
     def test_atmosphere_model_is_saved_after_crust_step(self):
         sim = self._sim()
         planet = {
@@ -1144,6 +1277,12 @@ class WorldGenOrbitClickTests(unittest.TestCase):
     def test_airless_template_large_body_stays_on_solid_surface_route(self):
         sim = self._sim()
         sim.active_planet_template = "cratered_airless"
+        # Airless because its elements carry no volatiles (listed at zero).
+        volatiles = [("H", 0.0), ("C", 0.0), ("N", 0.0), ("Ar", 0.0), ("Ne", 0.0), ("He", 0.0)]
+        sim.crust_composition = {"major_elements": [
+            {"symbol": symbol, "abundance_percent": value}
+            for symbol, value in sim.PLANET_TEMPLATES["cratered_airless"]["major_elements"] + volatiles
+        ]}
         sim.seed_input_buffers.update({
             "radius_earth": "3.2",
             "core_radius_fraction": "0.2",
@@ -1171,7 +1310,7 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         self.assertTrue(sim._save_atmosphere_model())
 
         self.assertTrue(planet["atmosphere_model"]["has_solid_surface"])
-        self.assertEqual("exosphere", planet["atmosphere_model"]["atmosphere_class"])
+        self.assertLess(planet["atmosphere_model"]["surface_pressure_bar"], 0.01)
         self.assertNotEqual("gas_giant_envelope_modeled", planet.get("map_status"))
         self.assertNotEqual("gas_giant_bands", planet.get("surface_render_mode"))
         self.assertNotIn("gas_giant", set(planet.get("tags") or []))
@@ -1447,6 +1586,11 @@ class WorldGenOrbitClickTests(unittest.TestCase):
 
     def test_dry_rocky_atmosphere_is_not_earthlike_by_default(self):
         sim = self._sim()
+        # Dry because its elements hold no oceans' worth of hydrogen.
+        sim.crust_composition = {"major_elements": [
+            {"symbol": symbol, "abundance_percent": value}
+            for symbol, value in sim.PLANET_TEMPLATES["desiccated_former_ocean"]["major_elements"]
+        ]}
         sim.seed_input_buffers.update({
             "radius_earth": "0.7",
             "core_radius_fraction": "0.42",
@@ -1519,6 +1663,10 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         atmosphere = {
             "surface_pressure_bar": 1.0,
             "estimated_surface_temperature_k": 288.0,
+            "volatile_budget": {"derived_seed": {
+                "water_fraction": 0.7, "surface_fluid": "water",
+                "surface_liquid_depth_m": 2600.0, "frozen_ocean_depth_m": 0.0,
+            }},
         }
 
         regime = derive_interior_regime_model(seed, physics, atmosphere, crust_type="silicate")
@@ -1579,6 +1727,10 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         atmosphere = {
             "surface_pressure_bar": 1.0,
             "estimated_surface_temperature_k": 288.0,
+            "volatile_budget": {"derived_seed": {
+                "water_fraction": 0.7, "surface_fluid": "water",
+                "surface_liquid_depth_m": 2600.0, "frozen_ocean_depth_m": 0.0,
+            }},
         }
         regime = derive_interior_regime_model(seed, physics, atmosphere, crust_type="silicate")
 
@@ -1667,14 +1819,14 @@ class WorldGenOrbitClickTests(unittest.TestCase):
         self.assertEqual("longitude_wrap_latitude_clamp", heightmap["storage"]["edge_policy"])
         self.assertEqual(32, heightmap["storage"]["chunk_cols"])
         self.assertEqual(16, heightmap["storage"]["chunk_rows"])
-        self.assertEqual(385, heightmap["sample_grid"]["width"])
-        self.assertEqual(193, heightmap["sample_grid"]["height"])
+        self.assertEqual(CANONICAL_LOD0_SAMPLE_WIDTH, heightmap["sample_grid"]["width"])
+        self.assertEqual(CANONICAL_LOD0_SAMPLE_HEIGHT, heightmap["sample_grid"]["height"])
         self.assertTrue(heightmap["sample_grid"]["wrap_x"])
-        self.assertEqual(193, len(heightmap["sample_grid"]["rows"]))
-        self.assertEqual(385, len(heightmap["sample_grid"]["rows"][0]))
+        self.assertEqual(CANONICAL_LOD0_SAMPLE_HEIGHT, len(heightmap["sample_grid"]["rows"]))
+        self.assertEqual(CANONICAL_LOD0_SAMPLE_WIDTH, len(heightmap["sample_grid"]["rows"][0]))
         self.assertEqual("full_planet", heightmap["coverage"])
         self.assertAlmostEqual(4885.7, heightmap["equator_resolution_m_per_px"], delta=1.0)
-        self.assertEqual("physiographic-heightmap-v7-deformation-state", heightmap["geology_model"]["model_version"])
+        self.assertEqual("physiographic-heightmap-v9-global-scaffold", heightmap["geology_model"]["model_version"])
         self.assertIn("continental_shelves", heightmap["geology_model"]["passive_margin_features"])
         for row in heightmap["sample_grid"]["rows"]:
             self.assertEqual(row[0], row[-1])
@@ -1753,19 +1905,20 @@ class WorldGenOrbitClickTests(unittest.TestCase):
 
             self.assertEqual("generated", model["status"])
             self.assertEqual(
-                "topography_resolved_surface_materials",
+                "substrate_composition_under_process_cover",
                 model["distribution_mode"],
             )
-            self.assertEqual(
-                ["bedrock", "surface_cover"],
-                model["distribution_roles"],
+            self.assertLessEqual(
+                {layer["distribution_role"] for layer in model["layers"]},
+                {"bedrock", "surface_cover"},
             )
             self.assertEqual("index0_raster_bundle", model["storage_format"])
             self.assertEqual("rgba8888_bundle", model["image_format"])
-            self.assertEqual("deterministic_generated_truth", model["truth_model"])
+            self.assertEqual("areal_lithotectonic_composition", model["truth_model"])
+            self.assertEqual("areal_surface_fraction", model["fraction_semantics"])
             self.assertEqual("inferred", model["default_confidence_state"])
             self.assertGreaterEqual(len(model["layers"]), 1)
-            self.assertEqual("dominant_material_color", model["composite_layer"]["render_mode"])
+            self.assertEqual("categorical_geological_map", model["composite_layer"]["render_mode"])
             self.assertTrue((storage_root / model["bundle_path"]).exists())
             self.assertEqual(model["bundle_path"], regenerated["bundle_path"])
             self.assertEqual(1, len(list((storage_root / "assets" / "maps" / "material_heatmaps").glob("*.i0r"))))

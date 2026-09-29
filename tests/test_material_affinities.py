@@ -1,3 +1,4 @@
+import math
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,11 +8,9 @@ from simulations.world_gen.material_affinities import (
     material_affinity_score,
     material_distribution_role,
 )
-from simulations.world_gen.material_heatmaps import (
-    _crater_material_fields,
-    _select_material_layers,
-    generate_material_heatmap_model,
-)
+from simulations.world_gen.lithotectonic_settings import resolve_setting_recipes
+from simulations.world_gen.material_heatmaps import generate_material_heatmap_model
+from simulations.world_gen.material_lod import regional_crater_ejecta
 from simulations.world_gen.material_formation import formation_contract
 from simulations.world_gen.natural_materials import (
     configure_material_catalog,
@@ -132,7 +131,7 @@ class MaterialAffinityTests(unittest.TestCase):
         )
 
     def test_regional_craters_use_metre_scale_local_footprints(self):
-        fields = _crater_material_fields(
+        field = regional_crater_ejecta(
             {
                 "region_width_m": 100_000.0,
                 "region_height_m": 50_000.0,
@@ -142,15 +141,10 @@ class MaterialAffinityTests(unittest.TestCase):
                     "diameter_m": 4_000.0,
                 }],
             },
-            64,
-            32,
+            (32, 64),
         )
 
-        affected = sum(
-            value > 0.0
-            for row in fields["breccia"]
-            for value in row
-        )
+        affected = int((field > 0.0).sum())
         self.assertGreater(affected, 0)
         self.assertLess(affected, 64 * 32 // 3)
 
@@ -201,12 +195,13 @@ class MaterialAffinityTests(unittest.TestCase):
 
         self.assertGreater(floodplain, mountain * 2.0)
 
-    def test_layer_selection_keeps_bedrock_when_regolith_candidates_dominate(self):
+    def test_substrate_recipes_keep_bedrock_when_regolith_candidates_dominate(self):
         candidates = [
             {
                 "material_id": f"mat_regolith_{index}",
                 "name": f"Regolith {index}",
                 "material_subclass": "regolith",
+                "spatial_representation": "surface_cover",
                 "confidence": 0.98 - index * 0.01,
             }
             for index in range(5)
@@ -226,12 +221,14 @@ class MaterialAffinityTests(unittest.TestCase):
             },
         ])
 
-        selected = _select_material_layers({"likely_materials": candidates}, max_layers=5)
+        recipes, _provenance = resolve_setting_recipes({"likely_materials": candidates})
 
-        self.assertEqual(2, sum(item["material_subclass"] == "regolith" for item in selected))
-        self.assertEqual(2, sum(item["material_subclass"] == "rock" for item in selected))
+        used = {material_id for recipe in recipes.values() for material_id, _share in recipe}
+        self.assertEqual({"mat_basalt", "mat_granite"}, used)
+        self.assertEqual("mat_basalt", recipes["oceanic_ridge"][0][0])
+        self.assertIn("mat_granite", dict(recipes["exposed_shield"]))
 
-    def test_ores_and_minor_minerals_are_deferred_from_planetary_heatmap(self):
+    def test_ores_and_minor_minerals_are_deferred_from_planetary_substrate(self):
         model = derive_natural_material_model(
             {
                 "major_elements": [
@@ -271,34 +268,21 @@ class MaterialAffinityTests(unittest.TestCase):
             2,
         )
         self.assertGreaterEqual(
-            MATERIAL_AFFINITY_PROFILES["mat_gabbro"]["minimum_map_detail_level"],
-            1,
-        )
-        self.assertGreaterEqual(
             MATERIAL_AFFINITY_PROFILES["mat_obsidian"][
                 "minimum_map_detail_level"
             ],
             2,
         )
-        self.assertGreaterEqual(
-            MATERIAL_AFFINITY_PROFILES["mat_scoria"][
-                "minimum_map_detail_level"
-            ],
-            1,
-        )
-        selected_ids = {
-            item["material_id"]
-            for item in _select_material_layers(model, max_layers=5)
-        }
-        self.assertTrue(selected_ids)
-        self.assertTrue(
-            any(
-                candidates[material_id]["material_subclass"] == "rock"
-                for material_id in selected_ids
+        recipes, _provenance = resolve_setting_recipes(model)
+        used = {material_id for recipe in recipes.values() for material_id, _share in recipe}
+        self.assertIn("mat_basalt", used)
+        for material_id in used:
+            self.assertNotIn(
+                candidates[material_id]["spatial_representation"],
+                {"bounded_deposit", "constituent_abundance"},
+                material_id,
             )
-        )
-        self.assertNotIn("mat_chalcopyrite", selected_ids)
-        self.assertNotIn("mat_gabbro", selected_ids)
+        self.assertNotIn("mat_chalcopyrite", used)
 
     def test_wet_oxidizing_surface_suppresses_exposed_native_sulfur(self):
         dry = material_affinity_score(
@@ -528,7 +512,7 @@ class MaterialAffinityTests(unittest.TestCase):
             or inherited_edge["center"]["x"] > 1.0
         )
 
-    def test_cold_earthlike_heightmap_does_not_paint_bauxite_continents(self):
+    def test_bauxite_is_a_regional_deposit_body_never_planetary_cover(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             candidates = [
                 {
@@ -546,145 +530,99 @@ class MaterialAffinityTests(unittest.TestCase):
                     ("mat_granite", "Granite", "rock", 0.80, [174, 162, 146]),
                 ]
             ]
+            rows = [
+                [-300.0, 600.0, 900.0, 700.0, -300.0],
+                [-200.0, 500.0, 1200.0, 800.0, -200.0],
+                [-250.0, 450.0, 1000.0, 650.0, -250.0],
+                [-400.0, 300.0, 700.0, 500.0, -400.0],
+            ]
             heightmap = {
-                "planet_id": "cold_affinity_test",
-                "map_seed": "cold-affinity-test",
+                "planet_id": "bauxite_scale_test",
+                "map_seed": "bauxite-scale-test",
                 "projection": "equirectangular",
                 "min_elevation_m": -1000.0,
                 "max_elevation_m": 1800.0,
                 "sea_level_m": 0.0,
-                "sample_grid": {
-                    "width": 4,
-                    "height": 3,
-                    "rows": [
-                        [-300.0, 600.0, 900.0, -300.0],
-                        [-200.0, 500.0, 1200.0, -200.0],
-                        [-400.0, 300.0, 700.0, -400.0],
-                    ],
-                },
+                "sample_grid": {"width": 5, "height": 4, "rows": rows},
             }
-
-            model = generate_material_heatmap_model(
-                planet={"id": "cold_affinity_test"},
-                natural_material_model={
-                    "planet_tags": ["active_hydrology", "weathered_surface", "basaltic_surface"],
-                    "likely_materials": candidates,
-                },
-                terrain={
-                    "map_seed": "cold-affinity-test",
-                    "hydrology": {"cycle": "active", "target_ocean_fraction": 0.5},
-                },
+            natural_model = {
+                "planet_tags": ["active_hydrology", "weathered_surface", "basaltic_surface"],
+                "likely_materials": candidates,
+            }
+            cold = generate_material_heatmap_model(
+                planet={"id": "bauxite_scale_test"},
+                natural_material_model=natural_model,
+                terrain={"map_seed": "bauxite-scale-test"},
                 heightmap=heightmap,
-                atmosphere={"estimated_surface_temperature_k": 273.8},
+                atmosphere={"estimated_surface_temperature_k": 273.8, "surface_pressure_bar": 1.0},
                 output_root=Path(temp_dir) / "heatmaps",
                 storage_root=Path(temp_dir),
-                image_size=(32, 16),
             )
-            layers = {layer["material_id"]: layer for layer in model["layers"]}
-
-            self.assertNotIn("mat_bauxite", layers)
-            self.assertNotIn("mat_laterite", layers)
-            self.assertGreater(layers["mat_basalt"]["coverage_fraction"], 0.0)
-
-            warm_rows = [[302.0] * 4 for _row in range(3)]
-            wet_rows = [[2400.0] * 4 for _row in range(3)]
-            runoff_rows = [[900.0] * 4 for _row in range(3)]
-            weathering_rows = [[0.82] * 4 for _row in range(3)]
-            old_surface_rows = [[0.92] * 4 for _row in range(3)]
-            warm_model = generate_material_heatmap_model(
-                planet={
-                    "id": "warm_affinity_test",
-                    "surface_evolution_model": {
-                        "process_grid": {
-                            "chemical_weathering_rows": weathering_rows,
-                            "relative_surface_age_rows": old_surface_rows,
-                        },
-                    },
-                },
-                natural_material_model={
-                    "planet_tags": ["active_hydrology", "weathered_surface", "basaltic_surface"],
-                    "likely_materials": candidates,
-                },
-                terrain={
-                    "map_seed": "warm-affinity-test",
-                    "hydrology": {"cycle": "active", "target_ocean_fraction": 0.5},
-                },
-                heightmap={**heightmap, "planet_id": "warm_affinity_test", "map_seed": "warm-affinity-test"},
-            atmosphere={
-                "estimated_surface_temperature_k": 302.0,
-                "surface_pressure_bar": 1.0,
-            },
-                water_cycle={
-                    "climate_grid": {
-                        "temperature_rows_k": warm_rows,
-                        "annual_precipitation_rows_mm": wet_rows,
-                        "annual_runoff_rows_mm": runoff_rows,
-                    },
-                },
-                output_root=Path(temp_dir) / "heatmaps",
-                storage_root=Path(temp_dir),
-                image_size=(32, 16),
-            )
-            warm_layers = {layer["material_id"]: layer for layer in warm_model["layers"]}
-
-            self.assertNotIn("mat_bauxite", warm_layers)
-            self.assertEqual(
-                "surface_cover_over_bedrock",
-                warm_model["composite_layer"]["render_contract"],
-            )
-            self.assertEqual(
+            cold_layers = {layer["material_id"]: layer for layer in cold["layers"]}
+            self.assertNotIn("mat_bauxite", cold_layers)
+            self.assertNotIn("mat_laterite", cold_layers)
+            self.assertGreater(cold_layers["mat_basalt"]["mean_fraction"], 0.0)
+            self.assertLessEqual(
+                {layer["distribution_role"] for layer in cold["layers"]},
                 {"bedrock", "surface_cover"},
-                set(warm_model["distribution_roles"]),
             )
 
-            regional_warm_model = generate_material_heatmap_model(
-                planet={
-                    "id": "regional_warm_affinity_test",
-                    "surface_evolution_model": {
-                        "process_grid": {
-                            "chemical_weathering_rows": weathering_rows,
-                            "relative_surface_age_rows": old_surface_rows,
-                        },
-                    },
-                },
-                natural_material_model={
-                    "planet_tags": ["active_hydrology", "weathered_surface", "basaltic_surface"],
-                    "likely_materials": candidates,
-                },
-                terrain={
-                    "map_seed": "regional-warm-affinity-test",
-                    "hydrology": {"cycle": "active", "target_ocean_fraction": 0.5},
-                },
+            warm_rows = [[302.0] * 5 for _row in range(4)]
+            wet_rows = [[2400.0] * 5 for _row in range(4)]
+            weathering_rows = [[0.82] * 5 for _row in range(4)]
+            warm_planet = {
+                "id": "bauxite_warm_test",
+                "surface_evolution_model": {"process_grid": {"chemical_weathering_rows": weathering_rows}},
+            }
+            warm_climate = {"climate_grid": {
+                "temperature_rows_k": warm_rows,
+                "annual_precipitation_rows_mm": wet_rows,
+            }}
+            warm = generate_material_heatmap_model(
+                planet=warm_planet,
+                natural_material_model=natural_model,
+                terrain={"map_seed": "bauxite-warm-test"},
+                heightmap={**heightmap, "planet_id": "bauxite_warm_test"},
+                atmosphere={"estimated_surface_temperature_k": 302.0, "surface_pressure_bar": 1.0},
+                water_cycle=warm_climate,
+                output_root=Path(temp_dir) / "heatmaps",
+                storage_root=Path(temp_dir),
+            )
+            self.assertNotIn("mat_bauxite", {layer["material_id"] for layer in warm["layers"]})
+
+            regional = generate_material_heatmap_model(
+                planet={**warm_planet, "id": "bauxite_regional_test"},
+                natural_material_model=natural_model,
+                terrain={"map_seed": "bauxite-regional-test"},
                 heightmap={
                     **heightmap,
-                    "planet_id": "regional_warm_affinity_test",
-                    "map_seed": "regional-warm-affinity-test",
+                    "planet_id": "bauxite_regional_test",
                     "map_detail_level": 2,
+                    "wrap_x": False,
+                    "source_uv_bounds": {"min_u": 0.50, "max_u": 0.5025, "min_v": 0.50, "max_v": 0.5025},
                 },
-                atmosphere={
-                    "estimated_surface_temperature_k": 302.0,
-                    "surface_pressure_bar": 1.0,
-                },
-                water_cycle={
-                    "climate_grid": {
-                        "temperature_rows_k": warm_rows,
-                        "annual_precipitation_rows_mm": wet_rows,
-                        "annual_runoff_rows_mm": runoff_rows,
-                    },
-                },
+                atmosphere={"estimated_surface_temperature_k": 302.0, "surface_pressure_bar": 1.0},
+                water_cycle=warm_climate,
                 output_root=Path(temp_dir) / "regional_heatmaps",
                 storage_root=Path(temp_dir),
-                image_size=(32, 16),
+                occurrences=[{
+                    "material_id": "mat_bauxite",
+                    "center_global_uv": {"u": 0.50125, "v": 0.50125},
+                    "estimated_radius_m": 40_000.0,
+                    "deposit_body": {"geometry": {
+                        "bounding_radius_m": 40_000.0,
+                        "orientation_deg": 0.0,
+                        "geometry_fill_fraction": 0.6,
+                        "footprint_vertices": [
+                            [math.cos(index * math.tau / 12.0), math.sin(index * math.tau / 12.0)]
+                            for index in range(12)
+                        ],
+                    }},
+                }],
             )
-            regional_layers = {
-                layer["material_id"]: layer
-                for layer in regional_warm_model["layers"]
-            }
+            regional_layers = {layer["material_id"]: layer for layer in regional["layers"]}
             self.assertIn("mat_bauxite", regional_layers)
-            self.assertEqual(
-                "sparse_deposit",
-                regional_layers["mat_bauxite"]["distribution_role"],
-            )
+            self.assertEqual("sparse_deposit", regional_layers["mat_bauxite"]["distribution_role"])
 
 
 if __name__ == "__main__":

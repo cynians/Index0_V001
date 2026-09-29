@@ -119,6 +119,8 @@ class PhylogenyRenderer:
             pygame.draw.rect(screen, (15, 18, 22), background)
 
         nodes = payload.get("nodes", {})
+        # Thin edges once the whole tree is in view so branches don't merge.
+        edge_width = 2 if float(camera.zoom) >= 0.12 else 1
         for parent_id, child_id in payload.get("edges", []):
             parent = nodes.get(parent_id)
             child = nodes.get(child_id)
@@ -129,15 +131,20 @@ class PhylogenyRenderer:
             if parent_mid is None or child_mid is None:
                 continue
             elbow_x = (parent_mid[0] + child_mid[0]) // 2
-            pygame.draw.line(screen, (104, 122, 150), parent_mid, (elbow_x, parent_mid[1]), 2)
-            pygame.draw.line(screen, (104, 122, 150), (elbow_x, parent_mid[1]), (elbow_x, child_mid[1]), 2)
-            pygame.draw.line(screen, (104, 122, 150), (elbow_x, child_mid[1]), child_mid, 2)
+            pygame.draw.line(screen, (104, 122, 150), parent_mid, (elbow_x, parent_mid[1]), edge_width)
+            pygame.draw.line(screen, (104, 122, 150), (elbow_x, parent_mid[1]), (elbow_x, child_mid[1]), edge_width)
+            pygame.draw.line(screen, (104, 122, 150), (elbow_x, child_mid[1]), child_mid, edge_width)
 
         for clade_id, rect_data in nodes.items():
             node_rect = self._world_rect_to_screen(camera, rect_data)
-            if node_rect is None or node_rect.width < 3 or node_rect.height < 3:
+            if node_rect is None:
                 continue
             fill, border = self._node_colors(clade_id, rect_data, payload)
+            if node_rect.width < 3 or node_rect.height < 3:
+                # Zoomed out to the whole tree: keep each clade visible as a
+                # small marker instead of dropping it.
+                pygame.draw.rect(screen, fill, pygame.Rect(node_rect.x, node_rect.y, max(2, node_rect.width), max(2, node_rect.height)))
+                continue
             pygame.draw.rect(screen, fill, node_rect)
             band = self._node_band_color(rect_data)
             if band is not None:

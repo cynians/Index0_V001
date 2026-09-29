@@ -8,7 +8,12 @@ from __future__ import annotations
 
 import math
 import random
-from simulations.species.root_growth import root_profile, build_root_graph
+from simulations.species.root_growth import (
+    build_distributed_adventitious_roots,
+    build_root_graph,
+    root_profile,
+)
+from simulations.species.solid_structures import SolidStructureField
 from typing import Any
 
 from engine.clock import Clock
@@ -26,6 +31,322 @@ from simulations.species.plant_assets import (
 # One shared orthographic convention for the species renderer and all of its
 # diagnostic cameras. Positive depth projects consistently to screen-right.
 SCREEN_DEPTH_PROJECTION = 1.8
+
+
+def normalise_neighbour_root_zones(environment):
+    """Return bounded planar root-influence zones from runtime context.
+
+    These zones represent occupied neighbouring-root space at the clonal
+    connector depth.  They are deliberately not a soil model and are not
+    persisted as intrinsic species traits.
+    """
+
+    environment = environment if isinstance(environment, dict) else {}
+    values = environment.get("neighbour_root_zones")
+    if values is None:
+        values = environment.get("neighbor_root_zones")
+    if not isinstance(values, list):
+        return []
+    zones = []
+    for index, value in enumerate(values[:24]):
+        if not isinstance(value, dict):
+            continue
+        center = value.get("center_m") or value.get("position_m")
+        if not isinstance(center, (list, tuple)) or len(center) < 2:
+            continue
+        try:
+            x, y = float(center[0]), float(center[1])
+            radius = float(value.get("radius_m", 0.0) or 0.0)
+            influence = float(value.get("influence", 1.0))
+        except (TypeError, ValueError):
+            continue
+        if not all(math.isfinite(item) for item in (x, y, radius, influence)) or radius <= 0.0:
+            continue
+        zones.append({
+            "id": str(value.get("id") or f"neighbour_root_{index + 1}"),
+            "center_m": [round(max(-1000.0, min(1000.0, x)), 4),
+                         round(max(-1000.0, min(1000.0, y)), 4)],
+            "radius_m": round(max(0.02, min(25.0, radius)), 4),
+            "influence": round(max(0.0, min(1.0, influence)), 4),
+        })
+    return [zone for zone in zones if zone["influence"] > 0.0]
+
+
+def normalise_rod_structures(environment):
+    """Return bounded vertical rods supplied as transient scene geometry."""
+
+    environment = environment if isinstance(environment, dict) else {}
+    values = environment.get("rod_structures")
+    if not isinstance(values, list):
+        return []
+
+    def colour(value, fallback):
+        if not isinstance(value, (list, tuple)) or len(value) < 3:
+            return list(fallback)
+        try:
+            return [max(0, min(255, round(float(value[index])))) for index in range(3)]
+        except (TypeError, ValueError):
+            return list(fallback)
+
+    rods = []
+    for index, value in enumerate(values[:12]):
+        if not isinstance(value, dict):
+            continue
+        position = value.get("position_m") or value.get("base_position_m")
+        if not isinstance(position, (list, tuple)) or len(position) < 3:
+            continue
+        try:
+            x, y, z = (float(position[axis]) for axis in range(3))
+            radius = float(value.get("radius_m", 0.0) or 0.0)
+            height = float(value.get("height_m", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if not all(math.isfinite(item) for item in (x, y, z, radius, height)):
+            continue
+        if radius <= 0.0 or height <= 0.0:
+            continue
+        x, y, z = (max(-1000.0, min(1000.0, item)) for item in (x, y, z))
+        radius = max(0.005, min(5.0, radius))
+        height = max(0.05, min(150.0, height))
+        palette = value.get("palette") if isinstance(value.get("palette"), dict) else {}
+        rods.append({
+            "id": str(value.get("id") or f"rod_structure_{index + 1}"),
+            "kind": "rod",
+            "position_m": [round(x, 4), round(y, 4), round(z, 4)],
+            "center_m": [round(x, 4), round(y, 4)],
+            "radius_m": round(radius, 4),
+            "height_m": round(height, 4),
+            "base_z_m": round(z, 4),
+            "top_z_m": round(z + height, 4),
+            "axis_points_m": [
+                [round(x, 4), round(y, 4), round(z, 4)],
+                [round(x, 4), round(y, 4), round(z + height, 4)],
+            ],
+            "crown_radius_m": round(radius, 4),
+            "support_model": "cylindrical_rod_helix",
+            "palette": {
+                "fill": colour(palette.get("fill"), (100, 111, 116)),
+                "highlight": colour(palette.get("highlight"), (190, 205, 208)),
+            },
+        })
+    return rods
+
+
+def normalise_climbing_supports(environment):
+    """Return bounded vertical or sampled-axis supports from the local scene.
+
+    Supports are environmental interaction geometry, never intrinsic vine
+    traits. A neighbouring tree/scenery system can provide either a simple
+    trunk centre/radius/height or a sampled 3D trunk axis extracted from its
+    generated plant snapshot.
+    """
+
+    environment = environment if isinstance(environment, dict) else {}
+    values = environment.get("climbing_supports")
+    values = list(values) if isinstance(values, list) else []
+    values.extend(normalise_rod_structures(environment))
+    supports = []
+    for index, value in enumerate(values[:12]):
+        if not isinstance(value, dict):
+            continue
+        axis_points = []
+        raw_axis = value.get("axis_points_m")
+        if isinstance(raw_axis, list):
+            for point in raw_axis[:48]:
+                if not isinstance(point, (list, tuple)) or len(point) < 3:
+                    continue
+                try:
+                    sample = tuple(float(point[axis]) for axis in range(3))
+                except (TypeError, ValueError):
+                    continue
+                if not all(math.isfinite(item) for item in sample):
+                    continue
+                axis_points.append((
+                    max(-1000.0, min(1000.0, sample[0])),
+                    max(-1000.0, min(1000.0, sample[1])),
+                    max(-1000.0, min(1000.0, sample[2])),
+                ))
+        axis_points.sort(key=lambda point: point[2])
+        monotonic_axis = []
+        for point in axis_points:
+            if monotonic_axis and point[2] <= monotonic_axis[-1][2] + 1e-6:
+                continue
+            monotonic_axis.append(point)
+        axis_points = monotonic_axis if len(monotonic_axis) >= 2 else []
+
+        center = value.get("center_m") or value.get("position_m")
+        if (not isinstance(center, (list, tuple)) or len(center) < 2) and axis_points:
+            center = axis_points[0]
+        if not isinstance(center, (list, tuple)) or len(center) < 2:
+            continue
+        try:
+            x, y = float(center[0]), float(center[1])
+            radius = float(value.get("radius_m", value.get("trunk_radius_m", 0.0)) or 0.0)
+            default_height = axis_points[-1][2] - axis_points[0][2] if axis_points else 0.0
+            height = float(value.get("height_m", default_height) or default_height)
+            crown_radius = float(value.get("crown_radius_m", radius * 4.0) or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if not all(math.isfinite(item) for item in (x, y, radius, height, crown_radius)):
+            continue
+        if radius <= 0.0 or height <= 0.0:
+            continue
+        support = {
+            "id": str(value.get("id") or f"climbing_support_{index + 1}"),
+            "kind": str(value.get("kind") or "support").lower(),
+            "center_m": [
+                round(max(-1000.0, min(1000.0, x)), 4),
+                round(max(-1000.0, min(1000.0, y)), 4),
+            ],
+            "radius_m": round(max(0.01, min(5.0, radius)), 4),
+            "height_m": round(max(0.05, min(150.0, height)), 4),
+            "crown_radius_m": round(max(0.0, min(30.0, crown_radius)), 4),
+            "support_model": (
+                "cylindrical_rod_helix"
+                if str(value.get("kind") or "").lower() == "rod"
+                else "sampled_trunk_axis" if axis_points else "cylindrical_helix"
+            ),
+        }
+        if axis_points:
+            support["axis_points_m"] = [
+                [round(point[0], 4), round(point[1], 4), round(point[2], 4)]
+                for point in axis_points
+            ]
+            support["base_z_m"] = round(axis_points[0][2], 4)
+            support["top_z_m"] = round(axis_points[-1][2], 4)
+        if value.get("source_species_id") is not None:
+            support["source_species_id"] = str(value["source_species_id"])
+        if str(value.get("kind") or "").lower() == "rod":
+            support["position_m"] = list(value.get("position_m") or [x, y, axis_points[0][2] if axis_points else 0.0])
+            support["palette"] = dict(value.get("palette") or {})
+        supports.append(support)
+    return supports
+
+
+def climbing_support_axis_at_z(support, z):
+    """Interpolate the horizontal centre of a support at an absolute height."""
+
+    points = support.get("axis_points_m") or []
+    if len(points) < 2:
+        center = support.get("center_m") or (0.0, 0.0)
+        return float(center[0]), float(center[1])
+    height = float(z)
+    if height <= float(points[0][2]):
+        return float(points[0][0]), float(points[0][1])
+    if height >= float(points[-1][2]):
+        return float(points[-1][0]), float(points[-1][1])
+    for start, end in zip(points, points[1:]):
+        start_z, end_z = float(start[2]), float(end[2])
+        if start_z <= height <= end_z:
+            fraction = (height - start_z) / max(1e-9, end_z - start_z)
+            return (
+                float(start[0]) + (float(end[0]) - float(start[0])) * fraction,
+                float(start[1]) + (float(end[1]) - float(start[1])) * fraction,
+            )
+    return float(points[-1][0]), float(points[-1][1])
+
+
+def climbing_support_from_tree_snapshot(snapshot, support_id="generated_tree_trunk", position_m=(0.0, 0.0, 0.0)):
+    """Extract a bounded climbing axis from a generated tree's trunk chain."""
+
+    try:
+        offset = tuple(float(position_m[index]) for index in range(3))
+    except (TypeError, ValueError, IndexError):
+        offset = (0.0, 0.0, 0.0)
+    placements = list(getattr(snapshot, "placements", []) or [])
+    trunk_indices = [
+        index for index, placement in enumerate(placements)
+        if len(placement) >= 8 and placement[0] == "stem_section" and int(placement[7]) == 1
+    ]
+    if not trunk_indices:
+        return None
+    trunk_indices.sort(key=lambda index: float(placements[index][4]))
+    first = placements[trunk_indices[0]]
+    parent_index = int(first[1])
+    if 0 <= parent_index < len(placements):
+        parent = placements[parent_index]
+        points = [[float(parent[2]), float(parent[3]), float(parent[4])]]
+    else:
+        points = [[float(first[2]), float(first[3]), 0.0]]
+    for index in trunk_indices:
+        for point in (getattr(snapshot, "placement_paths", {}) or {}).get(str(index), []):
+            if len(point) >= 3 and float(point[2]) > points[-1][2] + 1e-6:
+                points.append([float(point[0]), float(point[1]), float(point[2])])
+        placement = placements[index]
+        endpoint = [float(placement[2]), float(placement[3]), float(placement[4])]
+        if endpoint[2] > points[-1][2] + 1e-6:
+            points.append(endpoint)
+    if len(points) < 2:
+        return None
+    shifted = [
+        [point[0] + offset[0], point[1] + offset[1], point[2] + offset[2]]
+        for point in points
+    ]
+    stem_module = (getattr(snapshot, "modules", {}) or {}).get("stem_section", {})
+    radius = max(0.01, float(stem_module.get("radius_m", 0.035) or 0.035))
+    bounds = list(getattr(snapshot, "bounds_m", []) or [0.0] * 6)
+    crown_radius = radius * 4.0
+    if len(bounds) >= 4:
+        crown_radius = max(radius, (max(float(bounds[1]) - float(bounds[0]), float(bounds[3]) - float(bounds[2]))) * 0.5)
+    return {
+        "id": str(support_id),
+        "kind": "tree",
+        "source_species_id": str(getattr(snapshot, "species_id", "unknown_species")),
+        "center_m": [round(shifted[0][0], 4), round(shifted[0][1], 4)],
+        "radius_m": round(radius, 4),
+        "height_m": round(shifted[-1][2] - shifted[0][2], 4),
+        "crown_radius_m": round(crown_radius, 4),
+        "axis_points_m": [[round(value, 4) for value in point] for point in shifted],
+    }
+
+
+def neighbour_root_segment_clearance(start, end, zone):
+    """Signed 2D clearance from a segment to one effective influence disc."""
+
+    sx, sy = float(start[0]), float(start[1])
+    ex, ey = float(end[0]), float(end[1])
+    cx, cy = zone["center_m"]
+    dx, dy = ex - sx, ey - sy
+    length_squared = dx * dx + dy * dy
+    if length_squared <= 1e-12:
+        nearest_x, nearest_y = sx, sy
+    else:
+        fraction = max(0.0, min(1.0, ((cx - sx) * dx + (cy - sy) * dy) / length_squared))
+        nearest_x, nearest_y = sx + dx * fraction, sy + dy * fraction
+    effective_radius = float(zone["radius_m"]) * float(zone["influence"])
+    return math.hypot(nearest_x - cx, nearest_y - cy) - effective_radius
+
+
+def steer_clonal_segment(previous, radius, desired_angle, zones):
+    """Choose the smallest bounded angular detour that clears root zones."""
+
+    def endpoint(angle):
+        radians = math.radians(angle)
+        return (math.cos(radians) * radius, math.sin(radians) * radius, float(previous[2]))
+
+    nominal = endpoint(desired_angle)
+    if not zones:
+        return desired_angle, nominal, 0.0
+
+    def clearance(candidate):
+        return min(neighbour_root_segment_clearance(previous, candidate, zone) for zone in zones)
+
+    nominal_clearance = clearance(nominal)
+    if nominal_clearance >= 0.0:
+        return desired_angle, nominal, 0.0
+
+    candidates = []
+    for offset in range(10, 81, 10):
+        for signed_offset in (-offset, offset):
+            angle = desired_angle + signed_offset
+            candidate = endpoint(angle)
+            candidates.append((signed_offset, angle, candidate, clearance(candidate)))
+    clear = [item for item in candidates if item[3] >= 0.0]
+    if clear:
+        chosen = min(clear, key=lambda item: (abs(item[0]), -item[3], item[0]))
+    else:
+        chosen = max(candidates, key=lambda item: (item[3], -abs(item[0]), -item[0]))
+    return chosen[1], chosen[2], float(chosen[0])
 
 
 class SpeciesSimulation:
@@ -559,6 +880,7 @@ class SpeciesSimulation:
             return {
                 "phase": "dead",
                 "reproductive_factor": 0.0,
+                "fruiting_factor": 0.0,
                 "senescence_factor": 1.0,
                 "active_factor": 0.0,
             }
@@ -574,6 +896,13 @@ class SpeciesSimulation:
         if phase == "reproductive":
             reproductive_factor = 1.0
             senescence_factor = 0.0
+            # Fruit/seed cones take time to develop after flowering starts
+            # -- a plant that has *just* reached reproductive age has
+            # flowers but nothing has set fruit yet, so this ramps from 0
+            # across the reproductive phase rather than snapping to 1.0
+            # alongside reproductive_factor.
+            phase_span = max(1.0, senescence_start - reproductive_start)
+            fruiting_factor = min(1.0, (age_days - reproductive_start) / phase_span)
         elif phase == "senescent":
             if age_limit is None:
                 decline_window = max(365.0, float(profile.get("cycle_days", 365.0)))
@@ -582,12 +911,18 @@ class SpeciesSimulation:
                 decline_window = max(1.0, float(age_limit) - senescence_start)
                 senescence_factor = min(1.0, (age_days - senescence_start) / decline_window)
             reproductive_factor = max(0.0, 1.0 - senescence_factor)
+            # Mature fruit/cones linger after flowering declines (a real
+            # aging conifer still carries old woody cones) rather than
+            # disappearing in lockstep with reproductive_factor.
+            fruiting_factor = max(0.0, 1.0 - senescence_factor * 0.4)
         else:
             reproductive_factor = 0.0
             senescence_factor = 0.0
+            fruiting_factor = 0.0
         return {
             "phase": phase,
             "reproductive_factor": round(reproductive_factor, 4),
+            "fruiting_factor": round(fruiting_factor, 4),
             "senescence_factor": round(senescence_factor, 4),
             "active_factor": round(max(0.0, 1.0 - senescence_factor * 0.55), 4),
         }
@@ -786,86 +1121,272 @@ class SpeciesSimulation:
             ))
         return points
 
-    def _grow_rosette(self, placements, maturity, lod):
+    def _grow_rosette(self, placements, maturity, lod, flowering_factor=0.0):
         root = self._growth_origin(placements)
         count = max(3, int(round(5 + maturity * 7)))
         if lod == 0:
             count = min(count, 3)
         for index in range(count):
-            angle = index * 360.0 / count + 137.5 * maturity
-            radius = 0.06 + 0.20 * maturity
+            rank = index / max(1, count - 1)
+            angle = index * 137.5 + 19.0 * maturity
+            # A rosette leaf is attached at the compact basal crown; its
+            # blade extends outward from that socket in the renderer.  The
+            # old radius (up to 0.26 m) treated each socket like a leaf tip,
+            # leaving an implausible empty ring in every basal rosette and
+            # lifting the attachment points far above the soil surface.
+            radius = (0.006 + 0.018 * maturity) * (0.55 + 0.45 * rank)
+            # A sparse rosette exposes individual leaf cohorts, so give the
+            # same authored module a visibly broader juvenile-to-mature size
+            # range instead of stamping twelve near-identical copies.
+            leaf_scale = (0.60 + 0.40 * maturity) * (0.52 + 0.56 * rank)
             self._add(
                 placements,
                 "leaf" if lod >= 1 else "stem_section",
                 root,
                 math.cos(math.radians(angle)) * radius,
                 math.sin(math.radians(angle)) * radius,
-                0.08 + 0.12 * maturity,
+                0.008 + 0.014 * maturity * (0.65 + 0.35 * rank),
                 angle,
-                0.65 + 0.35 * maturity,
+                leaf_scale,
                 1,
             )
+
+        growth = self.blueprint.growth
+        reproductive_mode = str(growth.get("reproductive_mode") or "other_unknown")
+        structure = str(growth.get("reproductive_structure") or "other_unknown")
+        flowering_position = str(growth.get("flowering_position") or "other_unknown")
+        can_flower = reproductive_mode in {"sexual", "both", "apomictic"}
+        terminal = flowering_position in {"terminal", "mixed"}
+        if lod >= 1 and flowering_factor > 0.0 and can_flower and terminal and structure != "other_unknown":
+            max_height = max(0.14, float(growth.get("max_height_m", 0.4) or 0.4))
+            scape_count = 1 + int(maturity >= 0.75) + int(flowering_factor >= 0.65)
+            for scape_index in range(scape_count):
+                scape_angle = 52.0 + scape_index * 137.5
+                scape_radius = 0.006 + scape_index * 0.004
+                scape_height = min(
+                    max_height,
+                    max(0.14, max_height * (0.58 + 0.27 * maturity) * (0.94 + 0.03 * scape_index)),
+                )
+                x = math.cos(math.radians(scape_angle)) * scape_radius
+                y = math.sin(math.radians(scape_angle)) * scape_radius
+                scape = self._add(
+                    placements,
+                    "stem_section",
+                    root,
+                    x,
+                    y,
+                    scape_height,
+                    scape_angle,
+                    0.55 + 0.25 * flowering_factor,
+                    1,
+                )
+                if lod >= 2:
+                    self._add(
+                        placements,
+                        "flower",
+                        scape,
+                        x,
+                        y,
+                        scape_height + 0.001,
+                        0.0,
+                        0.72 + 0.28 * flowering_factor,
+                        2,
+                    )
         return
 
-    def _grow_fern(self, placements, maturity, lod, attachment_points=None):
-        """Grow several arching fronds with leaflets distributed on each rachis."""
+    def _grow_fern(
+        self,
+        placements,
+        maturity,
+        lod,
+        rng,
+        attachment_points=None,
+        placement_paths=None,
+        leaf_clusters=None,
+        rooting_contacts=None,
+    ):
+        """Grow botanical fronds from a crown or concealed rhizome sockets.
+
+        A frond is one leaf placement. Its pinnae and pinnules are internal
+        morphology rendered from ``leaf_division_order``; they are not extra
+        plant leaves or stem nodes. Rhizomatous geophytes distribute those
+        solitary fronds along a bounded underground axis, while other ferns
+        retain a compact crown.
+        """
 
         growth = self.blueprint.growth
         max_height = max(0.18, float(growth.get("max_height_m", 1.25) or 1.25))
-        frond_count = max(3, int(round(4 + maturity * 5)))
-        if lod == 0:
-            frond_count = min(frond_count, 3)
-        segments = min(10, max(3, int(round(4 + maturity * 6))))
+        leaf_length = max(0.08, float(growth.get("leaf_length_m", max_height * 0.72) or max_height * 0.72))
+        division_order = max(1, min(4, int(growth.get("leaf_division_order", 1) or 1)))
+        primary_pinnae = max(2, min(200, int(growth.get("leaflet_count", 12) or 12)))
+        primary_pinna_arrangement = str(growth.get("leaf_arrangement") or "other_unknown")
+        storage = {
+            str(item).lower().replace("-", "_").replace(" ", "_")
+            for item in (growth.get("belowground_storage") or [])
+        }
+        spread_class = str(growth.get("clonal_spread") or "other_unknown")
+        rhizome_distributed = "rhizome" in storage and spread_class != "none"
+        mature_fronds = {
+            "none": 1,
+            "low": 3,
+            "moderate": 5,
+            "high": 8,
+            "other_unknown": 5,
+        }.get(spread_class, 5) if rhizome_distributed else 9
+        canonical_fronds = max(1, 1 + int(round((mature_fronds - 1) * maturity)))
+        visible_fronds = {
+            0: 0,
+            1: max(1, math.ceil(canonical_fronds * 0.5)),
+            2: canonical_fronds,
+        }[lod]
         root = self._growth_origin(placements)
-        for frond_index in range(frond_count):
-            angle = frond_index * 360.0 / frond_count + 17.0
-            radians = math.radians(angle)
-            parent = root
-            for segment in range(segments):
-                fraction = (segment + 1) / segments
-                radius = 0.05 + 0.32 * maturity * fraction
-                arch = math.sin(math.pi * fraction)
-                x = math.cos(radians) * radius
-                y = math.sin(radians) * radius
-                z = 0.06 + max_height * maturity * (0.28 + 0.62 * arch)
-                rachis = self._add(
+        rhizome_axis_length = 0.0
+        sockets = []
+
+        if rhizome_distributed:
+            reach_factor = {
+                "low": 0.52,
+                "moderate": 0.78,
+                "high": 1.0,
+                "other_unknown": 0.68,
+            }.get(spread_class, 0.68)
+            reach = min(2.4, max(0.35, max_height * 0.92)) * reach_factor * max(0.12, maturity)
+            arm_count = min(3, max(1, math.ceil(canonical_fronds / 3)))
+            arm_sizes = [canonical_fronds // arm_count for _ in range(arm_count)]
+            for index in range(canonical_fronds % arm_count):
+                arm_sizes[index] += 1
+            phase = rng.uniform(0.0, 360.0)
+            for arm_index, nodes_on_arm in enumerate(arm_sizes):
+                parent = root
+                previous = (0.0, 0.0, -0.075)
+                base_angle = phase + arm_index * 360.0 / arm_count
+                for node_index in range(nodes_on_arm):
+                    fraction = (node_index + 1) / max(1, nodes_on_arm)
+                    angle = base_angle + 8.0 * math.sin(node_index * 1.2 + arm_index)
+                    radius = reach * fraction
+                    x = math.cos(math.radians(angle)) * radius
+                    y = math.sin(math.radians(angle)) * radius
+                    endpoint = (x, y, -0.075)
+                    rhizome_axis_length += math.dist(previous, endpoint)
+                    rhizome = self._add(
+                        placements,
+                        "branch_section",
+                        parent,
+                        x,
+                        y,
+                        -0.075,
+                        angle,
+                        0.72 + 0.28 * maturity,
+                        1,
+                        placement_paths=placement_paths,
+                        path=self._curved_segment_path(
+                            previous,
+                            endpoint,
+                            bend=0.025 * reach_factor,
+                            direction=-1.0 if (node_index + arm_index) % 2 else 1.0,
+                        ),
+                    )
+                    root_tip_z = -0.105
+                    root_support = self._add(
+                        placements,
+                        "root_support",
+                        rhizome,
+                        x,
+                        y,
+                        root_tip_z,
+                        angle,
+                        0.16 + 0.08 * maturity,
+                        2,
+                    )
+                    if rooting_contacts is not None:
+                        rooting_contacts.append({
+                            "parent_index": root_support,
+                            "position": (x, y, root_tip_z),
+                        })
+                    sockets.append((rhizome, x, y, angle))
+                    parent = rhizome
+                    previous = endpoint
+        else:
+            sockets = [
+                (root, 0.0, 0.0, rng.uniform(0.0, 360.0) + index * 137.5)
+                for index in range(canonical_fronds)
+            ]
+
+        blade_fraction = max(0.15, 1.0 - float(growth.get("frond_stipe_fraction", 0.36) or 0.36))
+        blade_width = leaf_length * (0.56 + 0.24 * float(growth.get("crown_openness", 0.5) or 0.5))
+        area_per_frond = max(0.001, 0.5 * leaf_length * blade_fraction * blade_width * 0.72)
+        visible_socket_indices = set(range(visible_fronds))
+        for frond_index, (parent, x, y, angle) in enumerate(sockets):
+            leaf = None
+            if frond_index in visible_socket_indices:
+                azimuth = math.radians(angle + 17.0 * math.sin(frond_index * 1.71))
+                elevation = math.radians(58.0 + 14.0 * ((frond_index * 3) % 5) / 4.0)
+                forward = self._normalise_vector((
+                    math.cos(azimuth) * math.cos(elevation),
+                    math.sin(azimuth) * math.cos(elevation),
+                    math.sin(elevation),
+                ))
+                scale = (0.34 + 0.66 * maturity) * (0.90 + 0.10 * math.sin(frond_index * 2.03 + 0.7))
+                rotation = math.degrees(math.atan2(-(forward[0] + forward[1] * 1.8), forward[2]))
+                leaf = self._add(
                     placements,
-                    "stem_section",
+                    "leaf",
                     parent,
                     x,
                     y,
-                    z,
-                    angle,
-                    0.58 + 0.42 * maturity,
-                    1,
+                    0.025,
+                    rotation,
+                    scale,
+                    2,
                 )
-                if lod >= 1 and segment > 0:
-                    side = -1.0 if (segment + frond_index) % 2 == 0 else 1.0
-                    leaflet_angle = angle + side * (54.0 + 10.0 * fraction)
-                    leaflet_radius = 0.045 + 0.02 * maturity
-                    leaf_x = x + math.cos(math.radians(leaflet_angle)) * leaflet_radius
-                    leaf_y = y + math.sin(math.radians(leaflet_angle)) * leaflet_radius
-                    leaf_z = z + 0.012
-                    if attachment_points is not None:
-                        attachment_points.append({
-                            "stem_placement_index": rachis,
-                            "socket": "leaf",
-                            "position_m": [round(leaf_x, 4), round(leaf_y, 4), round(leaf_z, 4)],
-                            "side": "left" if side < 0 else "right",
-                            "rotation_deg": round(leaflet_angle % 360.0, 3),
-                        })
-                    self._add(
-                        placements,
-                        "leaf",
-                        rachis,
-                        leaf_x,
-                        leaf_y,
-                        leaf_z,
-                        leaflet_angle,
-                        0.48 + 0.42 * maturity,
-                        2,
-                    )
-                parent = rachis
+                self._placement_orientation_hints[str(leaf)] = self._orientation_frame(forward)
+                if attachment_points is not None:
+                    attachment_points.append({
+                        "stem_placement_index": parent,
+                        "leaf_placement_index": leaf,
+                        "socket": "frond",
+                        "position_m": [round(x, 4), round(y, 4), 0.025],
+                        "side": "solitary" if rhizome_distributed else "radial",
+                        "rotation_deg": round(rotation % 360.0, 3),
+                    })
+            if leaf_clusters is not None:
+                cluster_id = self._add_leaf_cluster(
+                    leaf_clusters,
+                    leaf if leaf is not None else parent,
+                    x,
+                    y,
+                    0.025,
+                    1,
+                    area_per_frond * maturity,
+                    1,
+                    visual_density=1.0,
+                )
+                leaf_clusters[-1].update({
+                    "explicit_samples": leaf is not None,
+                    "sample_placement_indices": [leaf] if leaf is not None else [],
+                    "organ_structure": "frond_like",
+                    "leaf_division_order": division_order,
+                    "primary_pinna_count": primary_pinnae,
+                    "primary_pinna_arrangement": primary_pinna_arrangement,
+                    "rhizome_distributed": rhizome_distributed,
+                })
+                if attachment_points is not None and leaf is not None:
+                    attachment_points[-1]["cluster_id"] = cluster_id
+
+        return {
+            "hierarchical_frond_grammar": True,
+            "rhizome_frond_distribution": "spaced_sockets" if rhizome_distributed else "compact_crown",
+            "clonal_spread_class": spread_class,
+            "canonical_frond_count": canonical_fronds,
+            "visible_frond_count": visible_fronds,
+            "frond_division_order": division_order,
+            "primary_pinnae_per_frond": primary_pinnae,
+            "primary_pinna_arrangement": primary_pinna_arrangement,
+            "estimated_primary_pinna_count": canonical_fronds * primary_pinnae,
+            "frond_area_per_leaf_m2": round(area_per_frond, 6),
+            "rhizome_axis_length_m": round(rhizome_axis_length, 4),
+            "rhizome_rooting_node_count": len(sockets) if rhizome_distributed else 0,
+        }
 
     def _grow_succulent(self, placements, maturity, lod, attachment_points=None):
         """Grow a compact, fleshy rosette with leaves rising from one base."""
@@ -1082,23 +1603,66 @@ class SpeciesSimulation:
                     2,
                 )
 
-    def _grow_sympodial(self, placements, maturity, lod, rng):
-        """Grow a determinate axis whose continuation shifts laterally."""
+    def _grow_sympodial(
+        self,
+        placements,
+        maturity,
+        lod,
+        rng,
+        flowering_factor=0.0,
+        fruiting_factor=0.0,
+        attachment_points=None,
+        placement_paths=None,
+    ):
+        """Grow bounded determinate units with lateral continuation.
+
+        A sympodial plant is not merely a bent monopodial stem: upper units
+        terminate while lateral axes continue growth. Terminal reproductive
+        modules therefore sit on the final main-axis unit and on bounded
+        lateral tips. The grammar is trait-driven and shared by every species
+        authored with ``determinate_sympodial``.
+        """
 
         growth = self.blueprint.growth
         max_height = max(0.1, float(growth.get("max_height_m", 1.0) or 1.0))
         internode = max(0.03, float(growth.get("internode_length_m", 0.2) or 0.2))
-        generations = min(14, max(1, int(round((max_height / internode) * maturity))))
+        herbaceous_along_stem = (
+            str(growth.get("plant_woodiness") or "") == "herbaceous"
+            and str(growth.get("leaf_attachment_pattern") or "") in {"along_stem", "mixed"}
+        )
+        # Herbaceous sympodial forbs normally carry more, shorter visible
+        # units than a woody axis using the same neutral runtime internode.
+        # This bounded coefficient is shared by the trait combination and
+        # avoids a species-specific density branch.
+        effective_internode = internode * (0.68 if herbaceous_along_stem else 1.0)
+        generations = min(18, max(1, int(round((max_height / effective_internode) * maturity))))
         leaves_per_node = 0 if lod == 0 else max(1, int(growth.get("leaves_per_node", 1) or 1))
         branch_angle = float(growth.get("branch_angle_deg", 28.0) or 28.0)
         phyllotaxis = float(growth.get("phyllotaxis_deg", 137.5) or 137.5)
+        flowering_position = str(growth.get("flowering_position") or "other_unknown")
+        reproductive_mode = str(growth.get("reproductive_mode") or "other_unknown")
+        terminal_flowers = flowering_position in {"terminal", "mixed"}
+        lateral_flowers = flowering_position in {"lateral", "mixed"}
 
         root = self._growth_origin(placements)
         parent, x, y = root, 0.0, 0.0
+        terminal_count = 0
+        lateral_axis_count = 0
+        flower_count = 0
+        fruit_count = 0
+        lateral_axis_cap = {0: 0, 1: 3, 2: 6}.get(lod, 6)
         for generation in range(generations):
             fraction = (generation + 1) / max(1, generations)
             z = min(max_height * maturity, internode * (generation + 1))
             continuation_angle = phyllotaxis * generation + (branch_angle if generation % 2 else -branch_angle)
+            parent_position = placements[parent][2:5] if parent >= 0 else (0.0, 0.0, 0.0)
+            stem_end = (x, y, z)
+            stem_path = self._curved_segment_path(
+                parent_position,
+                stem_end,
+                bend=0.006 + internode * 0.025,
+                direction=-1.0 if generation % 2 else 1.0,
+            )
             stem = self._add(
                 placements,
                 "stem_section",
@@ -1109,6 +1673,8 @@ class SpeciesSimulation:
                 continuation_angle,
                 0.65 + 0.35 * fraction,
                 1,
+                placement_paths=placement_paths,
+                path=stem_path,
             )
             for leaf_index in range(leaves_per_node):
                 angle = continuation_angle + (180.0 if leaf_index else 0.0)
@@ -1124,9 +1690,584 @@ class SpeciesSimulation:
                     0.55 + 0.45 * maturity,
                     2,
                 )
+                if attachment_points is not None:
+                    attachment_points.append({
+                        "stem_placement_index": stem,
+                        "leaf_placement_index": len(placements) - 1,
+                        "socket": "leaf",
+                        "position_m": [round(x, 4), round(y, 4), round(z, 4)],
+                    })
+
+            # Upper determinate units hand continuation to a lateral axis.
+            # A bounded set of two-segment side axes expresses the ascending
+            # upper inflorescence without exponential branching.
+            if (
+                lod >= 1
+                and generations >= 4
+                and generation >= generations // 2
+                and lateral_axis_count < lateral_axis_cap
+            ):
+                side = -1.0 if (generation // 2) % 2 else 1.0
+                lateral_angle = continuation_angle + side * (55.0 + branch_angle * 0.35)
+                lateral_length = min(max_height * 0.22, internode * (0.85 + 0.12 * generation))
+                lateral_rad = math.radians(lateral_angle)
+                branch_end = (
+                    x + math.cos(lateral_rad) * lateral_length,
+                    y + math.sin(lateral_rad) * lateral_length,
+                    min(max_height * maturity, z + internode * 1.05),
+                )
+                branch_path = self._curved_segment_path(
+                    stem_end,
+                    branch_end,
+                    bend=lateral_length * 0.08,
+                    direction=side,
+                )
+                branch = self._add(
+                    placements,
+                    "branch_section",
+                    stem,
+                    branch_end[0],
+                    branch_end[1],
+                    branch_end[2],
+                    lateral_angle,
+                    0.60 + 0.40 * maturity,
+                    2,
+                    placement_paths=placement_paths,
+                    path=branch_path,
+                )
+                distal_length = lateral_length * 0.72
+                tip_end = (
+                    branch_end[0] + math.cos(lateral_rad) * distal_length,
+                    branch_end[1] + math.sin(lateral_rad) * distal_length,
+                    min(max_height * maturity + internode * 0.55, branch_end[2] + internode * 0.48),
+                )
+                tip_path = self._curved_segment_path(
+                    branch_end,
+                    tip_end,
+                    bend=distal_length * 0.06,
+                    direction=-side,
+                )
+                branch_tip = self._add(
+                    placements,
+                    "branch_section",
+                    branch,
+                    tip_end[0],
+                    tip_end[1],
+                    tip_end[2],
+                    lateral_angle,
+                    0.58 + 0.42 * maturity,
+                    3,
+                    placement_paths=placement_paths,
+                    path=tip_path,
+                )
+                lateral_axis_count += 1
+                if lod >= 2:
+                    self._add(
+                        placements,
+                        "leaf",
+                        branch,
+                        branch_end[0],
+                        branch_end[1],
+                        branch_end[2],
+                        lateral_angle,
+                        0.55 + 0.45 * maturity,
+                        3,
+                    )
+                    self._add(
+                        placements,
+                        "leaf",
+                        branch_tip,
+                        tip_end[0],
+                        tip_end[1],
+                        tip_end[2],
+                        lateral_angle + phyllotaxis,
+                        0.52 + 0.43 * maturity,
+                        4,
+                    )
+                if lod >= 2 and terminal_flowers and flowering_factor > 0.0:
+                    self._add(
+                        placements,
+                        "flower",
+                        branch_tip,
+                        tip_end[0],
+                        tip_end[1],
+                        tip_end[2] + 0.012,
+                        lateral_angle,
+                        0.70 + 0.30 * flowering_factor,
+                        4,
+                    )
+                    terminal_count += 1
+                    flower_count += 1
+                if (
+                    lod >= 2
+                    and terminal_flowers
+                    and fruiting_factor >= 0.25
+                    and reproductive_mode not in {"vegetative", "other_unknown"}
+                ):
+                    self._add(
+                        placements,
+                        "fruit",
+                        branch_tip,
+                        tip_end[0],
+                        tip_end[1],
+                        tip_end[2] + 0.008,
+                        lateral_angle,
+                        0.55 + 0.35 * fruiting_factor,
+                        4,
+                    )
+                    fruit_count += 1
+
+            if lod >= 2 and lateral_flowers and flowering_factor > 0.0 and generation >= generations // 2:
+                lateral_angle = continuation_angle + 90.0
+                lateral_rad = math.radians(lateral_angle)
+                self._add(
+                    placements,
+                    "flower",
+                    stem,
+                    x + math.cos(lateral_rad) * 0.018,
+                    y + math.sin(lateral_rad) * 0.018,
+                    z,
+                    lateral_angle,
+                    0.65 + 0.30 * flowering_factor,
+                    2,
+                )
+                flower_count += 1
             x += math.cos(math.radians(continuation_angle)) * 0.045
             y += math.sin(math.radians(continuation_angle)) * 0.045
             parent = stem
+
+        if lod >= 2 and terminal_flowers and flowering_factor > 0.0 and parent >= 0:
+            tip = placements[parent][2:5]
+            self._add(
+                placements,
+                "flower",
+                parent,
+                tip[0],
+                tip[1],
+                tip[2] + 0.015,
+                0.0,
+                0.72 + 0.28 * flowering_factor,
+                2,
+            )
+            terminal_count += 1
+            flower_count += 1
+
+        return {
+            "sympodial_unit_count": generations,
+            "sympodial_lateral_axis_count": lateral_axis_count,
+            "sympodial_terminal_count": terminal_count,
+            "sympodial_flower_count": flower_count,
+            "sympodial_fruit_count": fruit_count,
+        }
+
+    def _grow_vine(
+        self,
+        placements,
+        maturity,
+        lod,
+        rng,
+        attachment_points=None,
+        placement_paths=None,
+    ):
+        """Grow a support-searching axis, then climb a contacted trunk.
+
+        The vine first spends its finite axis budget on a low, sinuous search
+        path.  A supplied vertical support changes the same connected axis to
+        a helix only after the contact distance has been reached.  Without a
+        reachable support the plant remains prostrate; no invisible support
+        or species-name special case is invented.
+        """
+
+        growth = self.blueprint.growth
+        axis_budget = max(0.0, float(growth.get("max_height_m", 2.2) or 2.2) * maturity)
+        internode = max(0.05, float(growth.get("internode_length_m", 0.28) or 0.28))
+        leaves_per_node = max(0, int(growth.get("leaves_per_node", 1) or 1))
+        if lod == 0:
+            leaves_per_node = 0
+        elif lod == 1:
+            leaves_per_node = min(1, leaves_per_node)
+
+        root = self._growth_origin(placements)
+        rods = normalise_rod_structures(self.environment)
+        supports = normalise_climbing_supports(self.environment)
+        solid_field = SolidStructureField.from_environment(self.environment)
+        max_axis = max(0.1, float(growth.get("max_height_m", 2.2) or 2.2))
+        candidates = []
+        for support in supports:
+            center_x, center_y = climbing_support_axis_at_z(support, 0.045)
+            center_distance = math.hypot(center_x, center_y)
+            contact_gap = max(0.0, center_distance - float(support["radius_m"]) - 0.03)
+            # The shallow search wiggle adds a small, explicit path cost.
+            route_length = contact_gap * 1.035
+            if route_length <= max_axis + 1e-9:
+                candidates.append((route_length, str(support["id"]), support, center_distance))
+        solid_contact = solid_field.nearest_ground_contact((0.0, 0.0, 0.045), max_axis)
+        if solid_contact is not None:
+            structure = solid_contact["structure"]
+            contact_distance = float(solid_contact["distance_m"])
+            candidates.append((
+                contact_distance * 1.035,
+                str(structure["id"]),
+                {
+                    "id": structure["id"],
+                    "kind": structure["kind"],
+                    "support_model": "pixel_solid_surface",
+                    "center_m": structure["position_m"][:2],
+                    "height_m": max(0.0, float(solid_contact["top_z_m"]) - float(structure["position_m"][2])),
+                    "contact_point_m": list(solid_contact["point_m"]),
+                    "top_z_m": float(solid_contact["top_z_m"]),
+                    "approach_direction": list(solid_contact["direction"]),
+                    "solid_structure": structure,
+                },
+                math.hypot(*structure["position_m"][:2]),
+            ))
+        selected = min(candidates, default=None, key=lambda item: (item[0], item[1]))
+
+        if selected is not None:
+            contact_route_length, _support_id, support, center_distance = selected
+            if support.get("support_model") == "pixel_solid_surface":
+                direction = tuple(float(value) for value in support["approach_direction"][:2])
+                target = tuple(float(value) for value in support["contact_point_m"][:2])
+            else:
+                center_x, center_y = climbing_support_axis_at_z(support, 0.045)
+                if center_distance > 1e-9:
+                    direction = (center_x / center_distance, center_y / center_distance)
+                else:
+                    direction = (1.0, 0.0)
+                contact_radius = float(support["radius_m"]) + 0.03
+                target = (
+                    center_x - direction[0] * contact_radius,
+                    center_y - direction[1] * contact_radius,
+                )
+            search_angle = math.atan2(direction[1], direction[0])
+        else:
+            support = None
+            contact_route_length = axis_budget
+            # With no reachable object the search direction remains
+            # deterministic but is not always the same screen-right ray.
+            search_angle = math.radians(rng.uniform(-12.0, 12.0))
+            target = (math.cos(search_angle) * axis_budget, math.sin(search_angle) * axis_budget)
+
+        ground_budget = min(axis_budget, contact_route_length)
+        ground_fraction = (
+            min(1.0, ground_budget / contact_route_length)
+            if contact_route_length > 1e-9 else 1.0
+        )
+        ground_segments = min(32, max(0, int(math.ceil(ground_budget / internode))))
+        parent = root
+        previous = (0.0, 0.0, 0.045)
+        ground_length = 0.0
+        actual_ground_segments = 0
+        last_ground = root
+        for index in range(ground_segments):
+            fraction = ground_fraction * (index + 1) / ground_segments
+            # Zero at origin/contact, widest mid-search.  The amplitude is
+            # deliberately small enough that total axis length stays bounded.
+            wave = 0.075 * math.sin(math.pi * fraction) * math.sin(math.tau * 1.5 * fraction)
+            perpendicular = (-math.sin(search_angle), math.cos(search_angle))
+            x = target[0] * fraction + perpendicular[0] * wave
+            y = target[1] * fraction + perpendicular[1] * wave
+            z = 0.045 + 0.012 * math.sin(math.pi * fraction)
+            point = (x, y, z)
+            segment_length = math.dist(previous, point)
+            remaining_ground = max(0.0, ground_budget - ground_length)
+            clipped = segment_length > remaining_ground + 1e-9
+            if clipped and segment_length > 1e-9:
+                interpolation = remaining_ground / segment_length
+                point = tuple(
+                    previous[axis] + (point[axis] - previous[axis]) * interpolation
+                    for axis in range(3)
+                )
+                x, y, z = point
+                segment_length = remaining_ground
+            if segment_length <= 1e-9:
+                break
+            ground_length += segment_length
+            stem = self._add(
+                placements,
+                "stem_section",
+                parent,
+                x,
+                y,
+                z,
+                math.degrees(search_angle),
+                0.58 + 0.32 * maturity,
+                1,
+                placement_paths=placement_paths,
+                path=self._curved_segment_path(
+                    previous,
+                    point,
+                    bend=0.014,
+                    direction=-1.0 if index % 2 else 1.0,
+                ),
+            )
+            for leaf_index in range(leaves_per_node):
+                leaf_angle = math.degrees(search_angle) + 90.0 + leaf_index * 360.0 / leaves_per_node
+                leaf = self._add(
+                    placements,
+                    "leaf",
+                    stem,
+                    x + math.cos(math.radians(leaf_angle)) * 0.035,
+                    y + math.sin(math.radians(leaf_angle)) * 0.035,
+                    z + 0.035,
+                    leaf_angle,
+                    0.55 + 0.40 * maturity,
+                    2,
+                )
+                if attachment_points is not None:
+                    attachment_points.append({
+                        "stem_placement_index": stem,
+                        "leaf_placement_index": leaf,
+                        "socket": "leaf",
+                        "position_m": [round(x, 4), round(y, 4), round(z, 4)],
+                        "side": "ground_search",
+                        "rotation_deg": round(leaf_angle % 360.0, 3),
+                    })
+            parent = stem
+            last_ground = stem
+            previous = point
+            actual_ground_segments += 1
+            if clipped:
+                break
+
+        contacted = bool(
+            support is not None
+            and axis_budget + 1e-9 >= contact_route_length
+        )
+        climbing_length = 0.0
+        climbing_height = 0.0
+        climb_segments = 0
+        turn_count = 0.0
+        support_height_limited = False
+        surface_pattern = "none"
+        surface_pattern_amplitude = 0.0
+        surface_pattern_wavelength = 0.0
+        surface_pattern_phase = 0.0
+        surface_tangent_origin = 0.0
+        surface_tangent_values = []
+        support_clearance = 0.0
+        helix_pitch_m = 0.0
+        if contacted and support is not None:
+            if attachment_points is not None:
+                attachment_points.append({
+                    "stem_placement_index": last_ground,
+                    "socket": "support_contact",
+                    "support_id": support["id"],
+                    "position_m": [round(previous[0], 4), round(previous[1], 4), round(previous[2], 4)],
+                    "side": "contact_transition",
+                })
+            available_climb = max(0.0, axis_budget - ground_length)
+            pixel_surface = support.get("support_model") == "pixel_solid_surface"
+            if pixel_surface:
+                support_clearance = 0.03
+                structure = support["solid_structure"]
+                pixel_size = float(structure["pixel_size_m"])
+                local_contact = SolidStructureField._world_to_local(structure, previous)
+                angle = math.radians(float(structure["rotation_deg"]))
+                world_dx, world_dy = support["approach_direction"][:2]
+                local_dx = math.cos(angle) * world_dx + math.sin(angle) * world_dy
+                local_dy = -math.sin(angle) * world_dx + math.cos(angle) * world_dy
+                surface_front_face = abs(local_dy) > abs(local_dx)
+                surface_tangent_origin = local_contact[0] if surface_front_face else local_contact[1]
+                if str(support.get("kind") or "") == "wall" and surface_front_face:
+                    surface_pattern = "bounded_lateral_meander"
+                    surface_pattern_amplitude = min(0.30, max(pixel_size * 1.15, internode * 0.72))
+                    surface_pattern_wavelength = max(1.05, internode * 5.2)
+                    surface_pattern_phase = math.tau * ((self.seed * 7) % 31) / 31.0
+                    maximum_slope = math.tau * surface_pattern_amplitude / surface_pattern_wavelength
+                    pattern_length_factor = math.sqrt(1.0 + maximum_slope * maximum_slope * 0.5)
+                else:
+                    surface_pattern = "mask_boundary_follow"
+                    pattern_length_factor = 1.0
+                possible_height = available_climb / pattern_length_factor
+                available_surface_height = max(0.0, float(support["top_z_m"]) - float(previous[2]))
+                climbing_height = min(available_surface_height, possible_height)
+                support_height_limited = possible_height > available_surface_height + 1e-9
+                climbing_length = 0.0
+                pitch = None
+                helix_radius = None
+                start_angle = search_angle
+                winding = 0.0
+            else:
+                helix_radius = float(support["radius_m"]) + 0.035
+                support_clearance = 0.035
+                pitch = max(0.55, min(1.2, helix_radius * 4.0))
+                helix_pitch_m = pitch
+                helix_factor = math.sqrt(1.0 + (math.tau * helix_radius / pitch) ** 2)
+                possible_height = available_climb / helix_factor
+                support_top_z = float(support.get("top_z_m", support["height_m"]))
+                available_support_height = max(0.0, support_top_z - float(previous[2]))
+                climbing_height = min(available_support_height, possible_height)
+                support_height_limited = possible_height > available_support_height + 1e-9
+                climbing_length = climbing_height * helix_factor
+                axis_x, axis_y = climbing_support_axis_at_z(support, previous[2])
+                start_angle = math.atan2(previous[1] - axis_y, previous[0] - axis_x)
+                winding = -1.0 if (self.seed % 2) else 1.0
+            segment_basis = climbing_height if pixel_surface else climbing_length
+            climb_segments = min(48, max(0, int(math.ceil(segment_basis / internode))))
+            climb_start_z = previous[2]
+            planned_climb_segments = climb_segments
+            actual_climb_segments = 0
+            for index in range(planned_climb_segments):
+                fraction = (index + 1) / planned_climb_segments
+                z = climb_start_z + climbing_height * fraction
+                if pixel_surface:
+                    radians = search_angle
+                    preferred_tangent = surface_tangent_origin
+                    if surface_pattern == "bounded_lateral_meander":
+                        height_above_contact = z - climb_start_z
+                        ramp = min(1.0, height_above_contact / max(0.18, surface_pattern_wavelength * 0.30))
+                        preferred_tangent += (
+                            surface_pattern_amplitude
+                            * ramp
+                            * math.sin(math.tau * height_above_contact / surface_pattern_wavelength + surface_pattern_phase)
+                        )
+                    surface_point = solid_field.surface_point_at_z(
+                        support["solid_structure"],
+                        support["approach_direction"],
+                        z,
+                        clearance=0.03,
+                        previous_point=previous,
+                        preferred_local_tangent_m=preferred_tangent,
+                    )
+                    x, y = surface_point[:2] if surface_point is not None else target
+                else:
+                    radians = start_angle + winding * math.tau * (climbing_height * fraction / pitch)
+                    axis_x, axis_y = climbing_support_axis_at_z(support, z)
+                    x = axis_x + math.cos(radians) * helix_radius
+                    y = axis_y + math.sin(radians) * helix_radius
+                point = (x, y, z)
+                if pixel_surface:
+                    segment_length = math.dist(previous, point)
+                    remaining_axis = max(0.0, available_climb - climbing_length)
+                    clipped_to_budget = segment_length > remaining_axis + 1e-9
+                    if clipped_to_budget and segment_length > 1e-9:
+                        interpolation = remaining_axis / segment_length
+                        point = tuple(
+                            previous[axis] + (point[axis] - previous[axis]) * interpolation
+                            for axis in range(3)
+                        )
+                        x, y, z = point
+                        segment_length = remaining_axis
+                    if segment_length <= 1e-9:
+                        break
+                    climbing_length += segment_length
+                    if surface_pattern == "bounded_lateral_meander":
+                        climb_path = [
+                            tuple(previous[axis] + (point[axis] - previous[axis]) * path_fraction for axis in range(3))
+                            for path_fraction in (0.38, 0.72, 1.0)
+                        ]
+                    elif math.hypot(x - previous[0], y - previous[1]) > 1e-6:
+                        climb_path = [(previous[0], previous[1], z), point]
+                    else:
+                        climb_path = self._curved_segment_path(previous, point, bend=0.004, direction=1.0)
+                    local_point = SolidStructureField._world_to_local(support["solid_structure"], point)
+                    surface_tangent_values.append(local_point[0] if surface_front_face else local_point[1])
+                else:
+                    clipped_to_budget = False
+                    climb_path = self._curved_segment_path(
+                        previous,
+                        point,
+                        bend=0.008,
+                        direction=winding,
+                    )
+                stem = self._add(
+                    placements,
+                    "stem_section",
+                    parent,
+                    x,
+                    y,
+                    z,
+                    math.degrees(radians + (winding * math.pi * 0.5 if not pixel_surface else 0.0)),
+                    0.58 + 0.32 * maturity,
+                    1,
+                    placement_paths=placement_paths,
+                    path=climb_path,
+                )
+                if attachment_points is not None:
+                    attachment_points.append({
+                        "stem_placement_index": stem,
+                        "socket": "support_contact",
+                        "support_id": support["id"],
+                        "position_m": [round(x, 4), round(y, 4), round(z, 4)],
+                        "side": "climbing_axis",
+                    })
+                for leaf_index in range(leaves_per_node):
+                    leaf_radians = (
+                        search_angle + math.pi
+                        if pixel_surface else radians
+                    )
+                    leaf_angle = math.degrees(leaf_radians) + leaf_index * 360.0 / leaves_per_node
+                    leaf = self._add(
+                        placements,
+                        "leaf",
+                        stem,
+                        x + math.cos(leaf_radians) * 0.045,
+                        y + math.sin(leaf_radians) * 0.045,
+                        z + 0.02,
+                        leaf_angle,
+                        0.55 + 0.40 * maturity,
+                        2,
+                    )
+                    if attachment_points is not None:
+                        attachment_points.append({
+                            "stem_placement_index": stem,
+                            "leaf_placement_index": leaf,
+                            "socket": "leaf",
+                            "position_m": [round(x, 4), round(y, 4), round(z, 4)],
+                            "side": "climbing_axis",
+                            "rotation_deg": round(leaf_angle % 360.0, 3),
+                        })
+                parent = stem
+                previous = point
+                actual_climb_segments += 1
+                if clipped_to_budget:
+                    break
+            climb_segments = actual_climb_segments
+            if pixel_surface:
+                climbing_height = max(0.0, previous[2] - climb_start_z)
+                support_height_limited = previous[2] >= float(support["top_z_m"]) - 1e-6
+            turn_count = 0.0 if pixel_surface else climbing_height / pitch
+
+        phase = "climbing" if climbing_height > 1e-6 else "ground_search"
+        if axis_budget <= 1e-9:
+            phase = "dormant"
+        return {
+            "vine_growth_grammar": "support_search_then_climb",
+            "vine_phase": phase,
+            "vine_axis_budget_m": round(axis_budget, 4),
+            "vine_axis_length_m": round(ground_length + climbing_length, 4),
+            "vine_ground_axis_length_m": round(ground_length, 4),
+            "vine_climbing_axis_length_m": round(climbing_length, 4),
+            "vine_climbing_height_m": round(climbing_height, 4),
+            "vine_support_search_radius_m": round(max_axis, 4),
+            "vine_support_count": len(supports) + len(solid_field.structures),
+            "vine_support_contact_count": 1 if contacted else 0,
+            "vine_selected_support_id": str(support["id"]) if support is not None else None,
+            "vine_selected_support_kind": str(support["kind"]) if support is not None else None,
+            "vine_selected_support_radius_m": round(float(support.get("radius_m", 0.0)), 4) if support is not None else 0.0,
+            "vine_support_clearance_m": round(support_clearance, 4),
+            "vine_helix_pitch_m": round(helix_pitch_m, 4),
+            "vine_support_height_limited": support_height_limited,
+            "vine_turn_count": round(turn_count, 4),
+            "vine_surface_pattern": surface_pattern,
+            "vine_surface_pattern_amplitude_m": round(surface_pattern_amplitude, 4),
+            "vine_surface_pattern_wavelength_m": round(surface_pattern_wavelength, 4),
+            "vine_surface_lateral_span_m": round(
+                max(surface_tangent_values) - min(surface_tangent_values)
+                if surface_tangent_values else 0.0,
+                4,
+            ),
+            "vine_attachment_mode": (
+                str(support.get("support_model") or "cylindrical_helix")
+                if support is not None else "none"
+            ),
+            "vine_ground_segment_count": actual_ground_segments,
+            "vine_climbing_segment_count": climb_segments,
+            "climbing_supports": supports,
+            "rod_structures": rods,
+            "solid_structures": solid_field.structures,
+        }
 
     def _grow_creeping(self, placements, maturity, lod, rng):
         """Grow a low horizontal axis with leaves at contact/internode nodes."""
@@ -1149,7 +2290,224 @@ class SpeciesSimulation:
             y += math.sin(math.radians(angle)) * 0.08
             parent = stem
 
-    def _grow_tussock(self, placements, maturity, lod, rng, flowering_factor=0.0, attachment_points=None):
+    def _grow_graminoid_culm(
+        self,
+        placements,
+        parent,
+        x,
+        y,
+        angle,
+        maturity,
+        lod,
+        height_factor=1.0,
+        flowering_factor=0.0,
+        attachment_points=None,
+        base_level=1,
+        placement_paths=None,
+    ):
+        """Grow one reusable node-bearing graminoid culm.
+
+        Herbaceous graminoids retain the original basal-leaf representation.
+        A woody graminoid uses the same culm axis but carries bounded branch
+        complements on upper nodes.  This is a body-plan rule, not a bamboo or
+        species lookup, and can therefore be mounted at a crown or at a clonal
+        ramet socket.
+        """
+
+        growth = self.blueprint.growth
+        max_height = max(0.1, float(growth.get("max_height_m", 1.0) or 1.0))
+        internode = max(0.03, float(growth.get("internode_length_m", 0.2) or 0.2))
+        generations = min(10, max(1, int(round((max_height / internode) * maturity))))
+        woody = str(growth.get("plant_woodiness") or "").lower() == "woody"
+        basal_leaves = str(growth.get("leaf_attachment_pattern") or "") == "basal"
+        branch_nodes = set()
+        if woody and generations >= 4:
+            branch_nodes = {
+                min(generations - 1, max(1, int(round(generations * fraction)) - 1))
+                for fraction in (0.58, 0.72, 0.86)
+            }
+
+        stem_parent = parent
+        culm_nodes = 0
+        branch_sections = 0
+        visible_leaves = 0
+        for generation in range(generations):
+            z = max_height * maturity * height_factor * (generation + 1) / generations
+            stem = self._add(
+                placements,
+                "stem_section",
+                stem_parent,
+                x,
+                y,
+                z,
+                0.0,
+                0.65 + 0.35 * maturity,
+                base_level,
+            )
+            culm_nodes += 1
+
+            if lod >= 1 and maturity > 0 and not woody and basal_leaves and generation == 0:
+                # A basal/tufted graminoid (real tussock grasses like
+                # ryegrass) carries its leaf blades from the crown, not
+                # spread one-per-node up the flowering culm. Two earlier
+                # attempts both looked wrong against reference photos: one
+                # short leaf per node up the culm read as rigid horizontal
+                # "rungs" on a ladder; clustering several fixed-aspect leaf
+                # *sprites* at the base instead (each just a point + a big
+                # render scale, no real geometric length) produced a rigid
+                # radial starburst, since a single-point "leaf" placement
+                # has no connected path for the renderer to draw -- it is
+                # only ever a flat sprite stamped at one point, unlike
+                # stem/branch/root, which are drawn as a connected,
+                # optionally curved line from parent to point (see
+                # SpeciesRenderer._draw_structural_asset_path / §6a). Each
+                # blade now gets a real 3D tip position and an actual
+                # curved path (the same helper trunks use for their own
+                # gentle bend), so the renderer can draw it as a genuine
+                # arching line the way it already draws a stem or branch --
+                # not a stretched pixel asset (a tapered leaf sprite
+                # repeated per curve segment would look worse, not better,
+                # per §6a's own stretch rule), just the connected-line
+                # fallback SpeciesRenderer._draw_individual already falls
+                # back to for stem/branch/root when no asset applies.
+                blade_reach = max_height * maturity * height_factor
+                for fan_index in range(3):
+                    fan_angle = angle + (fan_index - 1) * 26.0
+                    blade_length = blade_reach * (0.55 + 0.12 * fan_index)
+                    elevation = math.radians(70.0 - 6.0 * fan_index)
+                    horizontal = blade_length * math.cos(elevation)
+                    vertical = blade_length * math.sin(elevation)
+                    fan_rad = math.radians(fan_angle)
+                    tip_x = x + math.cos(fan_rad) * horizontal
+                    tip_y = y + math.sin(fan_rad) * horizontal
+                    tip_z = z + vertical
+                    blade_path = self._curved_segment_path(
+                        (x, y, z), (tip_x, tip_y, tip_z),
+                        bend=blade_length * 0.22, direction=1.0,
+                    )
+                    leaf = self._add(
+                        placements, "leaf", stem, tip_x, tip_y, tip_z, fan_angle,
+                        max(0.3, math.sqrt(maturity)), base_level + 1,
+                        placement_paths=placement_paths, path=blade_path,
+                    )
+                    visible_leaves += 1
+                    if attachment_points is not None:
+                        attachment_points.append({
+                            "stem_placement_index": stem,
+                            "leaf_placement_index": leaf,
+                            "socket": "leaf",
+                            "position_m": [round(x, 4), round(y, 4), round(z, 4)],
+                        })
+            elif lod >= 1 and maturity > 0 and not woody and not basal_leaves and generation < min(3, generations):
+                # Along-stem graminoids carry real blades, not point sprites.
+                # Use the blueprint's leaf-length interpretation and a
+                # bounded arching path so every species sharing this trait
+                # combination benefits without a species-specific branch.
+                leaf_angle = angle + generation * float(growth.get("phyllotaxis_deg", 137.5) or 137.5)
+                blade_length = min(
+                    max_height * 0.55,
+                    max(0.08, float(growth.get("leaf_length_m", 0.15) or 0.15) * 1.35),
+                ) * max(0.20, maturity) * height_factor
+                leaf_rad = math.radians(leaf_angle)
+                horizontal = blade_length * 0.78
+                tip_x = x + math.cos(leaf_rad) * horizontal
+                tip_y = y + math.sin(leaf_rad) * horizontal
+                tip_z = max(0.02, z - blade_length * 0.08)
+                perpendicular = (-math.sin(leaf_rad), math.cos(leaf_rad))
+                blade_path = []
+                for fraction, height_fraction in ((0.30, 0.22), (0.68, 0.18), (1.0, -0.08)):
+                    lateral = blade_length * 0.045 * math.sin(math.pi * fraction)
+                    blade_path.append((
+                        x + math.cos(leaf_rad) * horizontal * fraction + perpendicular[0] * lateral,
+                        y + math.sin(leaf_rad) * horizontal * fraction + perpendicular[1] * lateral,
+                        max(0.02, z + blade_length * height_fraction),
+                    ))
+                blade_path[-1] = (tip_x, tip_y, tip_z)
+                leaf = self._add(
+                    placements, "leaf", stem, tip_x, tip_y, tip_z, leaf_angle,
+                    max(0.025, math.sqrt(maturity)), base_level + 1,
+                    placement_paths=placement_paths, path=blade_path,
+                )
+                visible_leaves += 1
+                if attachment_points is not None:
+                    attachment_points.append({
+                        "stem_placement_index": stem,
+                        "leaf_placement_index": leaf,
+                        "socket": "leaf",
+                        "position_m": [round(x, 4), round(y, 4), round(z, 4)],
+                    })
+
+            # Woody grasses carry foliage on branch complements rather than
+            # painting a generic leaf directly on every tall culm segment.
+            if lod >= 1 and generation in branch_nodes:
+                complement_size = 3
+                branch_length = min(1.2, max(0.18, max_height * 0.06)) * maturity
+                for branch_index in range(complement_size):
+                    branch_angle = angle + (branch_index - 1) * 34.0
+                    branch_parent = stem
+                    for section in range(2):
+                        fraction = (section + 1) / 2.0
+                        bx = x + math.cos(math.radians(branch_angle)) * branch_length * fraction
+                        by = y + math.sin(math.radians(branch_angle)) * branch_length * fraction
+                        bz = z - branch_length * (0.05 + 0.10 * float(growth.get("branch_droop", 0.25) or 0.25)) * fraction
+                        branch = self._add(
+                            placements,
+                            "branch_section",
+                            branch_parent,
+                            bx,
+                            by,
+                            bz,
+                            branch_angle,
+                            0.58 + 0.28 * maturity,
+                            base_level + 1,
+                        )
+                        branch_sections += 1
+                        leaf_angle = branch_angle + (-38.0 if section == 0 else 42.0)
+                        leaf = self._add(
+                            placements,
+                            "leaf",
+                            branch,
+                            bx,
+                            by,
+                            bz,
+                            leaf_angle,
+                            0.68 + 0.32 * maturity,
+                            base_level + 2,
+                        )
+                        visible_leaves += 1
+                        if attachment_points is not None:
+                            attachment_points.append({
+                                "stem_placement_index": branch,
+                                "leaf_placement_index": leaf,
+                                "socket": "leaf",
+                                "position_m": [round(bx, 4), round(by, 4), round(bz, 4)],
+                                "side": "branch_complement",
+                                "rotation_deg": round(leaf_angle % 360.0, 3),
+                            })
+                        branch_parent = branch
+
+            if generation == generations - 1 and lod >= 1 and flowering_factor > 0.0:
+                self._add(
+                    placements, "flower", stem, x, y, z, 0.0,
+                    0.65 + 0.35 * flowering_factor, base_level + 2,
+                )
+            stem_parent = stem
+            if not woody:
+                drift = 0.0 if growth.get("clonal_spread") == "none" else 0.01 * {
+                    "low": 1.0, "moderate": 1.6, "high": 2.4,
+                }.get(growth.get("clonal_spread"), 1.0)
+                size_factor = max(0.025, math.sqrt(maturity))
+                x += math.cos(math.radians(angle)) * drift * size_factor
+                y += math.sin(math.radians(angle)) * drift * size_factor
+
+        return {
+            "culm_nodes": culm_nodes,
+            "branch_sections": branch_sections,
+            "visible_leaves": visible_leaves,
+            "branch_complements": len(branch_nodes),
+        }
+
+    def _grow_tussock(self, placements, maturity, lod, rng, flowering_factor=0.0, attachment_points=None, placement_paths=None):
         """Independent basal tillers; spread controls footprint, not shoot count.
 
         Radius/drift factors are bounded qualitative defaults, not measured rates.
@@ -1158,34 +2516,38 @@ class SpeciesSimulation:
         growth = self.blueprint.growth
         max_height = max(0.1, float(growth.get("max_height_m", 1.0) or 1.0))
         internode = max(0.03, float(growth.get("internode_length_m", 0.2) or 0.2))
-        generations = min(10, max(1, int(round((max_height / internode) * maturity))))
         shoot_count = max(3, int(round(4 + 5 * maturity)))
         spread = {"none": .12, "low": 1., "moderate": 1.6, "high": 2.4}.get(growth.get("clonal_spread"), 1.)
-        drift = 0. if growth.get("clonal_spread") == "none" else .01 * spread
         root = self._growth_origin(placements)
         size_factor = max(.025, math.sqrt(maturity))
         phase = rng.uniform(0., math.tau)
+        totals = {"culm_nodes": 0, "branch_sections": 0, "visible_leaves": 0, "branch_complements": 0}
         for shoot in range(shoot_count):
             angle = phase + shoot * math.tau / shoot_count + rng.uniform(-.12, .12)
             height_factor = rng.uniform(.74, 1.)
             x, y = math.cos(angle)*.04*spread*size_factor, math.sin(angle)*.04*spread*size_factor
-            parent = root
-            for generation in range(generations):
-                z = max_height * maturity * height_factor * (generation+1)/generations
-                stem = self._add(placements, "stem_section", parent, x, y, z, 0., .65+.35*maturity, 1)
-                # Keep upper flowering culms relatively bare; leaves emerge at nodes.
-                if lod >= 1 and maturity > 0 and generation < min(3, generations):
-                    leaf_angle = (300. if math.cos(angle) < 0 else 60.) + (generation%2)*12.
-                    leaf = self._add(placements, "leaf", stem, x, y, z, leaf_angle, size_factor, 2)
-                    if attachment_points is not None:
-                        attachment_points.append({"stem_placement_index": stem, "leaf_placement_index": leaf,
-                                                  "socket": "leaf", "position_m": [round(x,4), round(y,4), round(z,4)]})
-                if generation == generations-1 and lod >= 1 and flowering_factor > 0.:
-                    # The painted spike is an organ attached exactly at the culm tip.
-                    self._add(placements, "flower", stem, x, y, z, 0., .65+.35*flowering_factor, 3)
-                parent = stem
-                x += math.cos(angle)*drift*size_factor
-                y += math.sin(angle)*drift*size_factor
+            result = self._grow_graminoid_culm(
+                placements,
+                root,
+                x,
+                y,
+                math.degrees(angle),
+                maturity,
+                lod,
+                height_factor=height_factor,
+                flowering_factor=flowering_factor,
+                attachment_points=attachment_points,
+                base_level=1,
+                placement_paths=placement_paths,
+            )
+            for key in totals:
+                totals[key] += result[key]
+        return {
+            "graminoid_culm_grammar": True,
+            "graminoid_culm_count": shoot_count,
+            "graminoid_culm_node_count": totals["culm_nodes"],
+            "graminoid_branch_complement_count": totals["branch_complements"],
+        }
 
     def _grow_single_axis(self, placements, maturity, lod, flowering_factor=0.0, attachment_points=None):
         """Grow one upright culm with alternating leaves and one terminal flower."""
@@ -1237,7 +2599,137 @@ class SpeciesSimulation:
             parent = stem
             x += 0.006 * math.sin(index * 0.7)
 
-    def _grow_tree(self, placements, maturity, lod, flowering_factor=0.0, attachment_points=None, placement_paths=None, leaf_clusters=None, rng=None, detail=False):
+    def _prune_tree_solid_intersections(
+        self,
+        placements,
+        placement_paths,
+        attachment_points,
+        leaf_clusters,
+        solid_field,
+    ):
+        """Terminate tree axes that enter a solid and remove their descendants."""
+
+        if not solid_field.structures:
+            return {
+                "solid_structure_response": "not_supplied",
+                "solid_structure_collision_count": 0,
+                "solid_structure_pruned_placement_count": 0,
+                "solid_structure_avoided_ids": [],
+            }
+
+        removed = set()
+        collided_ids = []
+        collision_count = 0
+        structural_kinds = {"stem_section", "branch_section"}
+        organ_kinds = {"leaf", "flower", "fruit"}
+        for index, placement in enumerate(placements):
+            parent = int(placement[1])
+            if parent in removed:
+                removed.add(index)
+                continue
+            if placement[0] in structural_kinds and 0 <= parent < len(placements):
+                parent_point = tuple(float(value) for value in placements[parent][2:5])
+                endpoint = tuple(float(value) for value in placement[2:5])
+                path = [parent_point]
+                path.extend(tuple(float(value) for value in point[:3]) for point in placement_paths.get(str(index), []))
+                if not path or math.dist(path[-1], endpoint) > 1e-7:
+                    path.append(endpoint)
+                hit = solid_field.path_hit(path)
+                if hit is not None:
+                    removed.add(index)
+                    collision_count += 1
+                    collided_ids.append(str(hit["structure"]["id"]))
+            elif placement[0] in organ_kinds:
+                hit = solid_field.contains(placement[2:5])
+                if hit is not None:
+                    removed.add(index)
+                    collided_ids.append(str(hit["structure"]["id"]))
+
+        if not removed:
+            return {
+                "solid_structure_response": "collision_gated_growth",
+                "solid_structure_collision_count": 0,
+                "solid_structure_pruned_placement_count": 0,
+                "solid_structure_avoided_ids": [],
+            }
+
+        index_map = {}
+        kept = []
+        for old_index, placement in enumerate(placements):
+            if old_index in removed:
+                continue
+            new_placement = list(placement)
+            parent = int(new_placement[1])
+            new_placement[1] = index_map[parent] if parent >= 0 else -1
+            index_map[old_index] = len(kept)
+            kept.append(new_placement)
+        placements[:] = kept
+
+        remapped_paths = {}
+        for key, path in list(placement_paths.items()):
+            try:
+                old_index = int(key)
+            except (TypeError, ValueError):
+                continue
+            if old_index in index_map:
+                remapped_paths[str(index_map[old_index])] = path
+        placement_paths.clear()
+        placement_paths.update(remapped_paths)
+
+        remapped_hints = {}
+        for key, orientation in list((getattr(self, "_placement_orientation_hints", {}) or {}).items()):
+            try:
+                old_index = int(key)
+            except (TypeError, ValueError):
+                continue
+            if old_index in index_map:
+                remapped_hints[str(index_map[old_index])] = orientation
+        self._placement_orientation_hints = remapped_hints
+
+        retained_clusters = []
+        retained_cluster_ids = set()
+        for cluster in leaf_clusters:
+            old_host = int(cluster.get("host_placement_index", -1) or -1)
+            if old_host not in index_map:
+                continue
+            updated = dict(cluster)
+            updated["host_placement_index"] = index_map[old_host]
+            if "sample_placement_indices" in updated:
+                updated["sample_placement_indices"] = [
+                    index_map[index]
+                    for index in updated.get("sample_placement_indices", [])
+                    if index in index_map
+                ]
+            retained_clusters.append(updated)
+            retained_cluster_ids.add(str(updated.get("id")))
+        leaf_clusters[:] = retained_clusters
+
+        retained_attachments = []
+        for attachment in attachment_points:
+            updated = dict(attachment)
+            valid = True
+            for field_name in ("stem_placement_index", "leaf_placement_index"):
+                if field_name not in updated:
+                    continue
+                old_index = int(updated[field_name])
+                if old_index not in index_map:
+                    valid = False
+                    break
+                updated[field_name] = index_map[old_index]
+            if updated.get("cluster_id") is not None and str(updated["cluster_id"]) not in retained_cluster_ids:
+                valid = False
+            if valid:
+                retained_attachments.append(updated)
+        attachment_points[:] = retained_attachments
+
+        return {
+            "solid_structure_response": "collision_gated_growth",
+            "solid_structure_collision_count": collision_count,
+            "solid_structure_pruned_placement_count": len(removed),
+            "solid_structure_avoided_ids": sorted(set(collided_ids)),
+        }
+
+    def _grow_tree(self, placements, maturity, lod, flowering_factor=0.0, fruiting_factor=0.0, attachment_points=None, placement_paths=None, leaf_clusters=None, rng=None, detail=False):
         """Grow a restrained woody tree from the functional plant fields.
 
         The trunk is one dominant axis. Primary branches are inserted at
@@ -1250,7 +2742,7 @@ class SpeciesSimulation:
         growth = self.blueprint.growth
         if growth.get("shoot_distribution_grammar"):
             from simulations.species.tree_shoots import grow_tree_shoots
-            return grow_tree_shoots(self, placements, maturity, lod, leaf_clusters, attachment_points, placement_paths, flowering_factor, detail=detail)
+            return grow_tree_shoots(self, placements, maturity, lod, leaf_clusters, attachment_points, placement_paths, flowering_factor, fruiting_factor, detail=detail)
         rng = rng or random.Random(0)
         max_height = max(0.1, float(growth.get("max_height_m", 1.0) or 1.0))
         internode = max(0.03, float(growth.get("internode_length_m", 0.2) or 0.2))
@@ -1536,25 +3028,679 @@ class SpeciesSimulation:
                         )
 
 
-    def _grow_clonal(self, placements, maturity, lod, rng):
-        """Grow a parent plant plus repeated ramets connected by clone axes."""
+    def _grow_clonal(
+        self,
+        placements,
+        maturity,
+        lod,
+        rng,
+        attachment_points=None,
+        placement_paths=None,
+        rooting_contacts=None,
+        leaf_clusters=None,
+        root_index=None,
+        ramet_height_scale=1.0,
+        tree_clonal_mode=False,
+        flowering_factor=0.0,
+    ):
+        """Grow connected clone axes, rooted nodes and developed daughter shoots.
+
+        ``plant_growth_behaviour`` determines whether the connecting axis is a
+        surface stolon, a shallow rhizome, or a concealed suckering axis.
+        ``clonal_spread`` changes the number and reach of ramets without being
+        mistaken for a measured rate.  The coefficients are bounded qualitative
+        defaults shared by every species using these behaviours.
+        """
 
         growth = self.blueprint.growth
         behaviour = str(growth.get("growth_behaviour") or "")
-        ramet_count = max(2, int(round(2 + 5 * maturity)))
-        if lod == 0:
-            ramet_count = min(ramet_count, 2)
+        spread_class = str(growth.get("clonal_spread") or "other_unknown")
+        spread_profile = {
+            "none": (1, 0.35),
+            "low": (3, 0.65),
+            "moderate": (5, 1.0),
+            "high": (8, 1.45),
+            "other_unknown": (4, 0.82),
+        }.get(spread_class, (4, 0.82))
+        mature_ramets, reach_factor = spread_profile
+        ramet_count = max(1, 1 + int(round((mature_ramets - 1) * maturity)))
+        max_height = max(0.1, float(growth.get("max_height_m", 1.0) or 1.0))
+        internode = max(0.03, float(growth.get("internode_length_m", 0.2) or 0.2))
+        reach = min(2.4, max(0.18, max_height * 1.1)) * reach_factor * max(0.08, maturity)
+        connector_z = {
+            "rhizomatous_clonal": -0.06,
+            "stoloniferous_clonal": 0.025,
+            "suckering_clonal": -0.08,
+        }.get(behaviour, 0.025)
+        visible_connector_z = connector_z if behaviour != "suckering_clonal" else -0.04
+        root = self._growth_origin(placements) if root_index is None else int(root_index)
+        if ramet_count < 3:
+            arm_count = 1
+        else:
+            # A deterministic seed chooses two to four exploration axes.
+            # Equal three-spoke stars were a renderer convenience, not a
+            # biological claim; bounded imbalance keeps clone topology varied
+            # until substrate constraints can steer individual rhizomes.
+            arm_count = rng.randint(2, min(4, max(2, int(math.ceil(ramet_count / 2.0)))))
+        arm_sizes = [1 for _ in range(arm_count)]
+        for _index in range(max(0, ramet_count - arm_count)):
+            arm_sizes[rng.randrange(arm_count)] += 1
+
+        leaf_size = str(growth.get("leaf_size_class") or "").lower()
+        leaf_scale = {
+            "very_small": 0.08,
+            "small": 0.22,
+            "medium": 0.42,
+            "large": 0.62,
+            "very_large": 0.82,
+        }.get(leaf_size, 0.34)
+        leaves_per_node = max(1, int(growth.get("leaves_per_node", 1) or 1))
+        if lod == 1:
+            leaves_per_node = 1
+        lateral_orientation = str(growth.get("lateral_axis_orientation") or "")
+        add_lateral_branches = lateral_orientation in {"mixed", "plagiotropic", "pendent"}
+        leaf_distribution = str(growth.get("leaf_distribution") or "")
+        leaf_structure = str(growth.get("leaf_structure") or "")
+        terminal_frond_crowns = (
+            behaviour == "rhizomatous_clonal"
+            and leaf_distribution == "terminal_cluster"
+            and leaf_structure in {"pinnately_compound", "frond_like"}
+        )
+        clonal_graminoid = (
+            str(growth.get("growth_form") or "") == "graminoid"
+            and not terminal_frond_crowns
+        )
+        authored_crown_size = max(1, min(200, int(growth.get("leaf_cluster_size", 3) or 3)))
+        canonical_fronds_per_crown = max(1, round(1 + (authored_crown_size - 1) * maturity))
+        leaflet_count = max(0, int(growth.get("leaflet_count", 0) or 0))
+        leaflet_length = max(0.001, float(growth.get("leaflet_length_m", 0.1) or 0.1))
+        leaflet_width = max(0.0002, float(growth.get("leaflet_width_m", 0.01) or 0.01))
+        compound_leaf_area = max(0.0005, leaflet_count * leaflet_length * leaflet_width * 0.72)
+
+        rooting_nodes = 0
+        runner_axis_length = 0.0
+        max_radius = 0.0
+        neighbour_root_zones = normalise_neighbour_root_zones(self.environment)
+        neighbour_root_avoidance_count = 0
+        neighbour_root_total_turn_deg = 0.0
+        neighbour_root_min_clearance = None
+        ramet_index = 0
+        frond_crown_count = 0
+        canonical_frond_count = 0
+        visible_frond_count = 0
+        graminoid_culm_nodes = 0
+        graminoid_branch_complements = 0
+        phase = rng.uniform(0.0, 360.0)
+        arm_angles = [
+            phase
+            + arm_index * 360.0 / arm_count
+            + rng.uniform(-0.22, 0.22) * (360.0 / arm_count)
+            for arm_index in range(arm_count)
+        ]
+        arm_reach_factors = [rng.uniform(0.78, 1.04) for _ in range(arm_count)]
+        for arm_index, nodes_on_arm in enumerate(arm_sizes):
+            parent = root
+            previous = (0.0, 0.0, 0.0)
+            base_angle = arm_angles[arm_index]
+            heading_drift = rng.uniform(-8.0, 8.0)
+            avoidance_heading_bias = 0.0
+            for node_index in range(nodes_on_arm):
+                fraction = (node_index + 1) / max(1, nodes_on_arm)
+                heading_drift = max(-24.0, min(24.0, heading_drift + rng.uniform(-9.0, 9.0)))
+                avoidance_heading_bias *= 0.72
+                desired_angle = base_angle + heading_drift + avoidance_heading_bias
+                radius = reach * arm_reach_factors[arm_index] * fraction
+                angle, candidate_end, avoidance_turn = steer_clonal_segment(
+                    previous, radius, desired_angle, neighbour_root_zones,
+                )
+                x, y = candidate_end[0], candidate_end[1]
+                runner_end = (x, y, visible_connector_z)
+                if abs(avoidance_turn) > 1e-9:
+                    neighbour_root_avoidance_count += 1
+                    neighbour_root_total_turn_deg += abs(avoidance_turn)
+                    avoidance_heading_bias += avoidance_turn
+                runner_axis_length += math.dist(previous, runner_end)
+                max_radius = max(max_radius, math.hypot(x, y))
+                runner_path = self._curved_segment_path(
+                    previous,
+                    runner_end,
+                    bend=0.018 * reach_factor,
+                    direction=-1.0 if (node_index + arm_index) % 2 else 1.0,
+                )
+                if neighbour_root_zones:
+                    path_points = [previous, *runner_path]
+                    for path_start, path_end in zip(path_points, path_points[1:]):
+                        for zone in neighbour_root_zones:
+                            clearance = neighbour_root_segment_clearance(path_start, path_end, zone)
+                            neighbour_root_min_clearance = (
+                                clearance if neighbour_root_min_clearance is None
+                                else min(neighbour_root_min_clearance, clearance)
+                            )
+                runner = self._add(
+                    placements,
+                    "branch_section",
+                    parent,
+                    x,
+                    y,
+                    visible_connector_z,
+                    angle,
+                    (
+                        max(0.018, min(0.08, max_height * 0.0007))
+                        if tree_clonal_mode
+                        else 0.58 + 0.22 * maturity
+                    ),
+                    1,
+                    placement_paths=placement_paths,
+                    path=runner_path,
+                )
+
+                # A surface runner or rhizome establishes a local support at
+                # each contact.  Suckers already imply a concealed root/crown
+                # connection and therefore do not add a visible contact root.
+                if behaviour != "suckering_clonal":
+                    root_tip_z = min(-0.015, connector_z - 0.025)
+                    root_support = self._add(
+                        placements,
+                        "root_support",
+                        runner,
+                        x,
+                        y,
+                        root_tip_z,
+                        angle,
+                        0.16 + 0.08 * maturity,
+                        2,
+                    )
+                    if rooting_contacts is not None:
+                        rooting_contacts.append({
+                            "parent_index": root_support,
+                            "position": (x, y, root_tip_z),
+                        })
+                    rooting_nodes += 1
+
+                if terminal_frond_crowns:
+                    crown_z = 0.035
+                    crown = self._add(
+                        placements,
+                        "stem_section",
+                        runner,
+                        x,
+                        y,
+                        crown_z,
+                        angle,
+                        0.72 + 0.28 * maturity,
+                        2,
+                    )
+                    if lod == 0:
+                        visible_fronds = 0
+                    elif lod == 1:
+                        visible_fronds = max(2, math.ceil(canonical_fronds_per_crown * 0.5))
+                    else:
+                        visible_fronds = canonical_fronds_per_crown
+                    crown_leaves = []
+                    crown_phase = math.radians(angle + 21.0 * math.sin(ramet_index + 0.5))
+                    for frond_index in range(visible_fronds):
+                        fraction = frond_index / max(1, visible_fronds)
+                        azimuth = crown_phase + math.tau * fraction
+                        # Alternating elevation produces an open fountain while
+                        # keeping every leaf rooted in the compressed crown.
+                        elevation = math.radians(48.0 + 22.0 * ((frond_index * 5) % 7) / 6.0)
+                        forward = self._normalise_vector((
+                            math.cos(azimuth) * math.cos(elevation),
+                            math.sin(azimuth) * math.cos(elevation),
+                            math.sin(elevation),
+                        ))
+                        frond_scale = (0.68 + 0.32 * maturity) * (0.88 + 0.12 * math.sin(frond_index * 2.1 + 1.4))
+                        rotation = math.degrees(math.atan2(-(forward[0] + forward[1] * 1.8), forward[2]))
+                        leaf = self._add(
+                            placements,
+                            "leaf",
+                            crown,
+                            x,
+                            y,
+                            crown_z,
+                            rotation,
+                            frond_scale,
+                            3,
+                        )
+                        self._placement_orientation_hints[str(leaf)] = self._orientation_frame(forward)
+                        crown_leaves.append(leaf)
+                        if attachment_points is not None:
+                            attachment_points.append({
+                                "stem_placement_index": crown,
+                                "leaf_placement_index": leaf,
+                                "socket": "terminal_crown",
+                                "position_m": [round(x, 4), round(y, 4), crown_z],
+                                "side": "radial",
+                                "rotation_deg": round(rotation % 360.0, 3),
+                            })
+                    if leaf_clusters is not None:
+                        cluster_id = self._add_leaf_cluster(
+                            leaf_clusters,
+                            crown,
+                            x,
+                            y,
+                            crown_z,
+                            canonical_fronds_per_crown,
+                            canonical_fronds_per_crown * compound_leaf_area * maturity,
+                            1,
+                            visual_density=max(0.1, min(1.0, float(growth.get("leaf_cluster_density", 0.7) or 0.7))),
+                        )
+                        leaf_clusters[-1].update({
+                            "explicit_samples": bool(crown_leaves),
+                            "sample_placement_indices": crown_leaves,
+                            "leaf_distribution": "terminal_cluster",
+                            "organ_structure": leaf_structure,
+                            "leaflet_count_per_leaf": leaflet_count,
+                            "crown_leaf_count": canonical_fronds_per_crown,
+                        })
+                        for attachment in (attachment_points or []):
+                            if attachment.get("leaf_placement_index") in crown_leaves:
+                                attachment["cluster_id"] = cluster_id
+                    frond_crown_count += 1
+                    canonical_frond_count += canonical_fronds_per_crown
+                    visible_frond_count += len(crown_leaves)
+                    parent = runner
+                    previous = runner_end
+                    ramet_index += 1
+                    continue
+
+                height_factor = 1.0 if ramet_index == 0 else rng.uniform(0.72, 0.94)
+                if clonal_graminoid:
+                    culm_result = self._grow_graminoid_culm(
+                        placements,
+                        runner,
+                        x,
+                        y,
+                        angle,
+                        maturity,
+                        lod,
+                        height_factor=height_factor,
+                        flowering_factor=flowering_factor,
+                        attachment_points=attachment_points,
+                        base_level=2,
+                        placement_paths=placement_paths,
+                    )
+                    graminoid_culm_nodes += culm_result["culm_nodes"]
+                    graminoid_branch_complements += culm_result["branch_complements"]
+                    parent = runner
+                    previous = runner_end
+                    ramet_index += 1
+                    continue
+
+                ramet_height = max_height * maturity * height_factor * max(0.02, float(ramet_height_scale))
+                dense_shoot = str(growth.get("leaf_clustering") or "") == "dense_cluster"
+                segment_density = 1.8 if dense_shoot else 1.0
+                segment_count = max(
+                    1,
+                    min(9 if dense_shoot else 5, int(math.ceil((ramet_height / internode) * segment_density))),
+                )
+                if lod == 0:
+                    segment_count = 1
+                stem_parent = runner
+                stem_indices = []
+                for segment_index in range(segment_count):
+                    segment_fraction = (segment_index + 1) / segment_count
+                    z = max(0.035, ramet_height * segment_fraction)
+                    stem_scale = (
+                        max(0.02, ramet_height * 0.012) * (1.0 - 0.48 * segment_fraction)
+                        if tree_clonal_mode
+                        else 0.62 + 0.38 * segment_fraction
+                    )
+                    stem = self._add(
+                        placements,
+                        "stem_section",
+                        stem_parent,
+                        x,
+                        y,
+                        z,
+                        angle,
+                        stem_scale,
+                        2,
+                    )
+                    stem_indices.append(stem)
+                    if lod >= 1:
+                        for leaf_index in range(leaves_per_node):
+                            leaf_angle = angle + leaf_index * 360.0 / leaves_per_node + segment_index * 137.5
+                            leaf = self._add(
+                                placements,
+                                "leaf",
+                                stem,
+                                x,
+                                y,
+                                z,
+                                leaf_angle,
+                                leaf_scale * (0.72 + 0.28 * maturity),
+                                3,
+                            )
+                            if attachment_points is not None:
+                                attachment_points.append({
+                                    "stem_placement_index": stem,
+                                    "leaf_placement_index": leaf,
+                                    "socket": "leaf",
+                                    "position_m": [round(x, 4), round(y, 4), round(z, 4)],
+                                    "side": "clonal_ramet",
+                                    "rotation_deg": round(leaf_angle % 360.0, 3),
+                                })
+                    stem_parent = stem
+
+                # Species with an authored lateral-axis orientation can express
+                # a small reusable branch tier on each ramet.  This lets a
+                # clubmoss's dendroid shoots differ from an unbranched runner
+                # plant without naming the species in the growth code.
+                if lod >= 2 and add_lateral_branches and ramet_height > 0.08:
+                    branch_droop = max(0.0, min(1.0, float(growth.get("branch_droop", 0.35) or 0.35)))
+                    if tree_clonal_mode:
+                        tier_fractions = (0.38, 0.52, 0.66, 0.79, 0.90)
+                    else:
+                        tier_fractions = (0.48, 0.70, 0.86) if dense_shoot else (0.68,)
+                    for tier_index, tier_fraction in enumerate(tier_fractions):
+                        stem_slot = min(len(stem_indices) - 1, max(0, int(round(tier_fraction * len(stem_indices))) - 1))
+                        branch_parent = stem_indices[stem_slot]
+                        branch_origin_z = float(placements[branch_parent][4])
+                        for side in (-1.0, 1.0):
+                            branch_angle = angle + side * (68.0 + tier_index * 8.0)
+                            if tree_clonal_mode:
+                                branch_length = min(1.8, max(0.24, max_height * 0.025)) * maturity
+                            else:
+                                branch_length = min(0.18, max_height * 0.16) * maturity
+                            branch_length *= 1.0 - tier_index * 0.13
+                            branch_parent_index = branch_parent
+                            for branch_segment in range(2):
+                                branch_fraction = (branch_segment + 1) / 2.0
+                                bx = x + math.cos(math.radians(branch_angle)) * branch_length * branch_fraction
+                                by = y + math.sin(math.radians(branch_angle)) * branch_length * branch_fraction
+                                bz = branch_origin_z - branch_droop * branch_length * branch_fraction * 0.32
+                                branch = self._add(
+                                    placements,
+                                    "branch_section",
+                                    branch_parent_index,
+                                    bx,
+                                    by,
+                                    bz,
+                                    branch_angle,
+                                    (
+                                        max(0.006, stem_scale * (0.30 - 0.08 * branch_segment))
+                                        if tree_clonal_mode
+                                        else 0.58 + 0.25 * maturity
+                                    ),
+                                    3,
+                                )
+                                leaf_angle = branch_angle + side * (28.0 + branch_segment * 22.0)
+                                leaf = self._add(
+                                    placements,
+                                    "leaf",
+                                    branch,
+                                    bx,
+                                    by,
+                                    bz,
+                                    leaf_angle,
+                                    leaf_scale * (0.72 + 0.28 * maturity),
+                                    4,
+                                )
+                                if attachment_points is not None:
+                                    attachment_points.append({
+                                        "stem_placement_index": branch,
+                                        "leaf_placement_index": leaf,
+                                        "socket": "leaf",
+                                        "position_m": [round(bx, 4), round(by, 4), round(bz, 4)],
+                                        "side": "lateral",
+                                        "rotation_deg": round(leaf_angle % 360.0, 3),
+                                    })
+                                branch_parent_index = branch
+
+                parent = runner
+                previous = runner_end
+                ramet_index += 1
+
+        return {
+            "clonal_behaviour": behaviour,
+            "clonal_spread_class": spread_class,
+            "clonal_ramet_count": ramet_count,
+            "clonal_axis_count": arm_count,
+            "clonal_rooting_node_count": rooting_nodes,
+            "clonal_axis_length_m": round(runner_axis_length, 4),
+            "clonal_spread_radius_m": round(max_radius, 4),
+            "clonal_connector_depth_m": round(connector_z, 4),
+            "neighbour_root_model_status": (
+                "planar_influence_proxy" if neighbour_root_zones else "not_supplied"
+            ),
+            "neighbour_root_zones": neighbour_root_zones,
+            "neighbour_root_zone_count": len(neighbour_root_zones),
+            "neighbour_root_avoidance_count": neighbour_root_avoidance_count,
+            "neighbour_root_total_turn_deg": round(neighbour_root_total_turn_deg, 3),
+            "neighbour_root_min_clearance_m": (
+                round(neighbour_root_min_clearance, 4)
+                if neighbour_root_min_clearance is not None else None
+            ),
+            "terminal_frond_crown_grammar": bool(terminal_frond_crowns),
+            "frond_crown_count": frond_crown_count,
+            "fronds_per_crown": canonical_fronds_per_crown if terminal_frond_crowns else 0,
+            "estimated_frond_count": canonical_frond_count,
+            "visible_frond_count": visible_frond_count,
+            "leaflets_per_frond": leaflet_count if terminal_frond_crowns else 0,
+            "estimated_leaflet_count": canonical_frond_count * leaflet_count,
+            "compound_leaf_area_per_frond_m2": round(compound_leaf_area, 6) if terminal_frond_crowns else 0.0,
+            "graminoid_culm_grammar": bool(clonal_graminoid),
+            "graminoid_culm_count": ramet_count if clonal_graminoid else 0,
+            "graminoid_culm_node_count": graminoid_culm_nodes,
+            "graminoid_branch_complement_count": graminoid_branch_complements,
+            "composed_growth_grammars": (
+                ["graminoid_culms", behaviour] if clonal_graminoid else [behaviour]
+            ),
+            "tree_clonal_grammar": bool(tree_clonal_mode),
+            "tree_sucker_count": ramet_count if tree_clonal_mode else 0,
+            "tree_sucker_height_scale": round(float(ramet_height_scale), 4) if tree_clonal_mode else 0.0,
+        }
+
+    def _grow_iterative_forb(
+        self,
+        placements,
+        maturity,
+        lod,
+        rng,
+        flowering_factor=0.0,
+        attachment_points=None,
+        placement_paths=None,
+    ):
+        """Grow a bounded herbaceous main axis with sparse axillary shoots.
+
+        The generic branching grammar is intentionally permissive for broad
+        unresolved forms, but it recursively multiplied lateral buds and put
+        every resulting endpoint into the same horizontal generation.  An
+        authored iterative herbaceous forb instead keeps a dominant main
+        axis, a small bounded set of first-order axillary shoots, and lateral
+        reproductive modules at upper nodes when those fields are explicit.
+        """
+
+        growth = self.blueprint.growth
+        max_height = max(0.1, float(growth.get("max_height_m", 1.0) or 1.0))
+        internode = max(0.03, float(growth.get("internode_length_m", 0.2) or 0.2))
+        # Herbaceous forb axes carry more, shorter visible units than the
+        # neutral multi-form branching default. Preserve the authored mature
+        # height while resolving enough nodes for an alternate leaf sequence.
+        effective_internode = internode * 0.68
+        segments = min(14, max(1, int(round((max_height / effective_internode) * maturity))))
+        branch_probability = max(
+            0.0,
+            min(1.0, float(growth.get("branch_probability", 0.18) or 0.0)),
+        )
+        branch_angle = float(growth.get("branch_angle_deg", 28.0) or 28.0)
+        phyllotaxis = float(growth.get("phyllotaxis_deg", 137.5) or 137.5)
+        leaves_per_node = max(1, int(growth.get("leaves_per_node", 1) or 1))
+        leaf_distribution = str(growth.get("leaf_distribution") or "").lower()
+        attachment_pattern = str(growth.get("leaf_attachment_pattern") or "").lower()
+        upper_cluster = (
+            leaf_distribution == "terminal_cluster"
+            or attachment_pattern == "terminal_cluster"
+        )
+        leaf_start = min(segments - 1, int(math.floor(segments * (0.30 if upper_cluster else 0.0))))
+
+        # Branch probability controls a bounded count, not recursive
+        # exponential growth. Candidate nodes exclude the lowest node and the
+        # final apex so the main axis remains visually dominant.
+        branch_candidates = list(range(max(1, leaf_start), max(1, segments - 1)))
+        branch_target = min(
+            4,
+            len(branch_candidates),
+            max(0, int(round(branch_probability * len(branch_candidates) * 1.35))),
+        )
+        branch_nodes = set(rng.sample(branch_candidates, branch_target)) if branch_target else set()
+
+        reproductive_mode = str(growth.get("reproductive_mode") or "other_unknown")
+        flowering_position = str(growth.get("flowering_position") or "other_unknown")
+        reproductive_structure = str(growth.get("reproductive_structure") or "other_unknown")
+        can_flower = (
+            flowering_factor > 0.0
+            and reproductive_mode in {"sexual", "both", "apomictic"}
+            and reproductive_structure != "other_unknown"
+        )
+        upper_nodes = list(range(max(leaf_start, segments // 2), segments))
+        lateral_flower_nodes = set()
+        if can_flower and flowering_position in {"lateral", "mixed"} and upper_nodes:
+            flower_count = min(3, len(upper_nodes))
+            lateral_flower_nodes = set(upper_nodes[-flower_count:])
+
         root = self._growth_origin(placements)
-        for index in range(ramet_count):
-            angle = index * 360.0 / ramet_count
-            radius = 0.12 + 0.34 * maturity
-            x = math.cos(math.radians(angle)) * radius
-            y = math.sin(math.radians(angle)) * radius
-            connector_z = -0.05 if behaviour == "rhizomatous_clonal" else 0.08
-            connector = self._add(placements, "branch_section", root, x * 0.55, y * 0.55, connector_z, angle, 0.7, 1)
-            ramet = self._add(placements, "stem_section", connector, x, y, 0.16 + 0.25 * maturity, angle, 0.65 + 0.35 * maturity, 2)
-            if lod >= 1:
-                self._add(placements, "leaf", ramet, x, y, 0.24 + 0.2 * maturity, angle + 90.0, 0.55 + 0.45 * maturity, 3)
+        parent = root
+        x, y = 0.0, 0.0
+        main_nodes = []
+        for index in range(segments):
+            fraction = (index + 1) / max(1, segments)
+            z = min(max_height * maturity, effective_internode * (index + 1))
+            x += 0.004 * math.sin(index * 0.83)
+            y += 0.002 * math.sin(index * 0.47 + 0.6)
+            axis_angle = index * phyllotaxis
+            parent_position = placements[parent][2:5] if parent >= 0 else (0.0, 0.0, 0.0)
+            stem_end = (x, y, z)
+            stem = self._add(
+                placements,
+                "stem_section",
+                parent,
+                *stem_end,
+                axis_angle,
+                0.66 + 0.34 * fraction,
+                1,
+                placement_paths=placement_paths,
+                path=self._curved_segment_path(
+                    parent_position,
+                    stem_end,
+                    bend=0.004 + effective_internode * 0.018,
+                    direction=-1.0 if index % 2 else 1.0,
+                ),
+            )
+            main_nodes.append(stem)
+
+            if lod >= 1 and index >= leaf_start:
+                leaf_rank = (index - leaf_start) / max(1, segments - leaf_start - 1)
+                # Lower leaves are established, the middle cohort is largest,
+                # and the newest apical leaves remain smaller. This stretches
+                # one approved asset rather than inventing extra leaf objects.
+                cohort_factor = 0.80 + 0.20 * max(0.0, 1.0 - abs(leaf_rank - 0.55) * 1.65)
+                leaf_scale = (0.68 + 0.32 * maturity) * cohort_factor
+                for leaf_index in range(leaves_per_node):
+                    leaf_angle = axis_angle + leaf_index * 360.0 / leaves_per_node
+                    if attachment_points is not None:
+                        attachment_points.append({
+                            "stem_placement_index": stem,
+                            "socket": "leaf",
+                            "position_m": [round(x, 4), round(y, 4), round(z, 4)],
+                            "rotation_deg": round(leaf_angle, 3),
+                        })
+                    leaf_placement = self._add(
+                        placements,
+                        "leaf",
+                        stem,
+                        x,
+                        y,
+                        z,
+                        leaf_angle,
+                        leaf_scale,
+                        2,
+                    )
+                    if attachment_points is not None:
+                        attachment_points[-1]["leaf_placement_index"] = leaf_placement
+
+            if index in branch_nodes:
+                branch_rotation = axis_angle + (-branch_angle if index % 2 else branch_angle)
+                branch_radians = math.radians(branch_rotation)
+                branch_length = effective_internode * (0.82 + 0.28 * rng.random())
+                branch_end = (
+                    x + math.cos(branch_radians) * branch_length * 0.78,
+                    y + math.sin(branch_radians) * branch_length * 0.78,
+                    min(max_height * maturity + effective_internode * 0.18, z + branch_length * 0.42),
+                )
+                branch = self._add(
+                    placements,
+                    "branch_section",
+                    stem,
+                    *branch_end,
+                    branch_rotation,
+                    0.72 + 0.28 * maturity,
+                    2,
+                    placement_paths=placement_paths,
+                    path=self._curved_segment_path(
+                        stem_end,
+                        branch_end,
+                        bend=0.006,
+                        direction=-1.0 if index % 2 else 1.0,
+                    ),
+                )
+                if lod >= 1:
+                    branch_leaf_scale = (0.68 + 0.32 * maturity) * (0.78 + 0.08 * rng.random())
+                    branch_leaf = self._add(
+                        placements,
+                        "leaf",
+                        branch,
+                        *branch_end,
+                        branch_rotation,
+                        branch_leaf_scale,
+                        3,
+                    )
+                    if attachment_points is not None:
+                        attachment_points.append({
+                            "stem_placement_index": branch,
+                            "leaf_placement_index": branch_leaf,
+                            "socket": "leaf",
+                            "position_m": [round(value, 4) for value in branch_end],
+                            "rotation_deg": round(branch_rotation, 3),
+                        })
+
+            if lod >= 2 and index in lateral_flower_nodes:
+                flower_rotation = axis_angle + 32.0
+                flower_radians = math.radians(flower_rotation)
+                flower_offset = min(0.035, effective_internode * 0.16)
+                self._add(
+                    placements,
+                    "flower",
+                    stem,
+                    x + math.cos(flower_radians) * flower_offset,
+                    y + math.sin(flower_radians) * flower_offset,
+                    z + effective_internode * 0.04,
+                    flower_rotation,
+                    0.72 + 0.28 * flowering_factor,
+                    2,
+                )
+
+            parent = stem
+
+        if (
+            lod >= 2
+            and can_flower
+            and flowering_position in {"terminal", "mixed"}
+            and main_nodes
+        ):
+            apex = placements[main_nodes[-1]]
+            self._add(
+                placements,
+                "flower",
+                main_nodes[-1],
+                float(apex[2]),
+                float(apex[3]),
+                float(apex[4]) + effective_internode * 0.08,
+                0.0,
+                0.72 + 0.28 * flowering_factor,
+                2,
+            )
 
     def _grow_branching(self, placements, maturity, lod, rng, flowering_factor=1.0, placement_paths=None):
         growth = self.blueprint.growth
@@ -1708,6 +3854,21 @@ class SpeciesSimulation:
         leaf_clusters = []
         placement_paths = {}
         structural_axis_length_m = None
+        clonal_stats = {}
+        graminoid_stats = {}
+        vine_stats = {}
+        sympodial_stats = {}
+        rooting_contacts = []
+        solid_field = SolidStructureField.from_environment(self.environment)
+        rod_structures = normalise_rod_structures(self.environment)
+        solid_stats = {
+            "solid_structure_count": len(solid_field.structures),
+            "solid_structures": solid_field.structures,
+            "solid_structure_status": "available" if solid_field.structures else "not_supplied",
+            "rod_structure_count": len(rod_structures),
+            "rod_structures": rod_structures,
+            "rod_structure_status": "available" if rod_structures else "not_supplied",
+        }
         shape = str(self.blueprint.growth.get("shape") or "herb")
         behaviour = str(self.blueprint.growth.get("growth_behaviour") or "iterative_indeterminate")
         if shape == "aquatic":
@@ -1720,7 +3881,12 @@ class SpeciesSimulation:
                 placement_paths=placement_paths,
             )
         elif behaviour == "rosette_short_internode" or shape == "rosette":
-            self._grow_rosette(placements, maturity, lod)
+            self._grow_rosette(
+                placements,
+                maturity,
+                lod,
+                flowering_factor=life_state["reproductive_factor"],
+            )
         elif behaviour == "unbranched_single_axis":
             self._grow_single_axis(
                 placements,
@@ -1730,11 +3896,15 @@ class SpeciesSimulation:
                 attachment_points=attachment_points,
             )
         elif behaviour == "fern_fronding" or shape == "fern":
-            self._grow_fern(
+            clonal_stats = self._grow_fern(
                 placements,
                 maturity,
                 lod,
+                rng,
                 attachment_points=attachment_points,
+                placement_paths=placement_paths,
+                leaf_clusters=leaf_clusters,
+                rooting_contacts=rooting_contacts,
             )
         elif behaviour == "basal_succulent_rosette" or shape == "succulent":
             self._grow_succulent(
@@ -1756,6 +3926,7 @@ class SpeciesSimulation:
                 maturity,
                 lod,
                 flowering_factor=life_state["reproductive_factor"],
+                fruiting_factor=life_state["fruiting_factor"],
                 attachment_points=attachment_points,
                 placement_paths=placement_paths,
                 leaf_clusters=leaf_clusters,
@@ -1764,21 +3935,119 @@ class SpeciesSimulation:
             )
             if isinstance(growth_result, dict):
                 structural_axis_length_m = growth_result.get("structural_axis_length_m")
+            if behaviour in {"rhizomatous_clonal", "stoloniferous_clonal", "suckering_clonal"}:
+                clone_start = len(placements)
+                crown = next(
+                    (index for index, placement in enumerate(placements) if placement[0] == "root"),
+                    None,
+                )
+                clonal_stats = self._grow_clonal(
+                    placements,
+                    maturity,
+                    lod,
+                    random.Random(self.seed),
+                    attachment_points=attachment_points,
+                    placement_paths=placement_paths,
+                    rooting_contacts=rooting_contacts,
+                    leaf_clusters=leaf_clusters,
+                    root_index=crown,
+                    # A snapshot represents one established parent plus a
+                    # current cohort of juvenile clonal trees, not several
+                    # co-dominant 100 m trunks born on the same day.
+                    ramet_height_scale=0.16,
+                    tree_clonal_mode=True,
+                    flowering_factor=life_state["reproductive_factor"],
+                )
+                clonal_stats.update({
+                    "tree_individual_count": 1 + clonal_stats["tree_sucker_count"],
+                    "mature_tree_count": 1,
+                    "composed_growth_grammars": ["tree", behaviour],
+                })
+
+                # Tree cohorts already own calculative clusters. Add one-unit
+                # clusters only for the explicit juvenile leaves appended by
+                # the clonal grammar.
+                leaf_module = self.blueprint.module("leaf")
+                leaf_length = max(0.01, float(getattr(leaf_module, "length_m", 0.1) or 0.1))
+                leaf_radius = max(0.005, float(getattr(leaf_module, "radius_m", 0.01) or 0.01))
+                leaf_area = max(0.0005, leaf_length * leaf_radius * 1.8)
+                for leaf_index in range(clone_start, len(placements)):
+                    placement = placements[leaf_index]
+                    if placement[0] != "leaf":
+                        continue
+                    cluster_id = self._add_leaf_cluster(
+                        leaf_clusters,
+                        leaf_index,
+                        placement[2],
+                        placement[3],
+                        placement[4],
+                        1,
+                        leaf_area * float(placement[6]),
+                        max(0, int(placement[7]) - 2),
+                        visual_density=1.0,
+                    )
+                    for attachment in attachment_points:
+                        if attachment.get("leaf_placement_index") == leaf_index:
+                            attachment["cluster_id"] = cluster_id
+                            break
         elif behaviour == "determinate_sympodial":
-            self._grow_sympodial(placements, maturity, lod, rng)
+            sympodial_stats = self._grow_sympodial(
+                placements,
+                maturity,
+                lod,
+                rng,
+                flowering_factor=life_state["reproductive_factor"],
+                fruiting_factor=life_state["fruiting_factor"],
+                attachment_points=attachment_points,
+                placement_paths=placement_paths,
+            )
+        elif behaviour == "climbing_support_dependent" or shape == "climber":
+            vine_stats = self._grow_vine(
+                placements,
+                maturity,
+                lod,
+                rng,
+                attachment_points=attachment_points,
+                placement_paths=placement_paths,
+            )
         elif behaviour == "creeping_prostrate":
             self._grow_creeping(placements, maturity, lod, rng)
         elif behaviour == "tussock_tillering":
-            self._grow_tussock(
+            graminoid_stats = self._grow_tussock(
                 placements,
                 maturity,
                 lod,
                 rng,
                 flowering_factor=life_state["reproductive_factor"],
                 attachment_points=attachment_points,
+                placement_paths=placement_paths,
             )
         elif behaviour in {"rhizomatous_clonal", "stoloniferous_clonal", "suckering_clonal"}:
-            self._grow_clonal(placements, maturity, lod, rng)
+            clonal_stats = self._grow_clonal(
+                placements,
+                maturity,
+                lod,
+                rng,
+                attachment_points=attachment_points,
+                placement_paths=placement_paths,
+                rooting_contacts=rooting_contacts,
+                leaf_clusters=leaf_clusters,
+                flowering_factor=life_state["reproductive_factor"],
+            )
+        elif (
+            behaviour == "iterative_indeterminate"
+            and shape == "forb"
+            and str(self.blueprint.growth.get("plant_woodiness") or "") == "herbaceous"
+        ):
+            self._grow_iterative_forb(
+                placements,
+                maturity,
+                lod,
+                rng,
+                flowering_factor=life_state["reproductive_factor"],
+                attachment_points=attachment_points,
+                placement_paths=placement_paths,
+            )
         else:
             self._grow_branching(
                 placements,
@@ -1789,13 +4058,61 @@ class SpeciesSimulation:
                 placement_paths=placement_paths,
             )
 
+        if shape == "tree":
+            solid_stats.update(self._prune_tree_solid_intersections(
+                placements,
+                placement_paths,
+                attachment_points,
+                leaf_clusters,
+                solid_field,
+            ))
+        elif solid_field.structures and (behaviour == "climbing_support_dependent" or shape == "climber"):
+            solid_stats["solid_structure_response"] = "support_surface_climbing"
+        elif solid_field.structures:
+            solid_stats["solid_structure_response"] = "not_consumed_by_growth_form"
+
         profile = self.blueprint.growth.get("root_profile") or root_profile(self.blueprint.growth)
-        root_nodes, root_stats = build_root_graph(profile, maturity, self.seed)
+        use_distributed_roots = (
+            (
+                behaviour in {"rhizomatous_clonal", "stoloniferous_clonal"}
+                or (
+                    behaviour == "fern_fronding"
+                    and clonal_stats.get("rhizome_frond_distribution") == "spaced_sockets"
+                )
+            )
+            and profile.get("architecture") == "adventitious"
+            and bool(rooting_contacts)
+        )
+        if use_distributed_roots:
+            root_nodes, root_stats = build_distributed_adventitious_roots(
+                profile,
+                maturity,
+                self.seed,
+                rooting_contacts,
+            )
+        else:
+            root_nodes, root_stats = build_root_graph(profile, maturity, self.seed)
         crown = next((i for i, p in enumerate(placements) if p[0] == "root" and p[1] < 0), None)
         renewal_organ = next((i for i, p in enumerate(placements) if p[0] == "renewal_organ"), None)
         root_growth_origin = renewal_organ if renewal_organ is not None else crown
         root_indices = {}
-        if root_growth_origin is not None:
+        if use_distributed_roots:
+            for index, node in enumerate(root_nodes):
+                if node["order"] > lod:
+                    continue
+                contact = rooting_contacts[node["contact_index"]]
+                parent = contact["parent_index"] if node["parent"] < 0 else root_indices[node["parent"]]
+                point = [contact["position"][axis] + node["position"][axis] for axis in range(3)]
+                root_indices[index] = self._add(
+                    placements,
+                    node["kind"],
+                    parent,
+                    *point,
+                    0.0,
+                    node["thickness"],
+                    node["order"],
+                )
+        elif root_growth_origin is not None:
             origin = placements[root_growth_origin][2:5]
             for index, node in enumerate(root_nodes):
                 if node["order"] > lod:
@@ -1872,6 +4189,23 @@ class SpeciesSimulation:
                         float(placement[3]) + float(forward[1]) * extent,
                         float(placement[4]) + float(forward[2]) * extent,
                     ))
+        for support in vine_stats.get("climbing_supports", []):
+            center_x, center_y = support["center_m"]
+            radius = max(float(support["radius_m"]), float(support.get("crown_radius_m", 0.0) or 0.0))
+            base_z = float(support.get("base_z_m", 0.0) or 0.0)
+            top_z = float(support.get("top_z_m", base_z + float(support["height_m"])))
+            points.extend((
+                (center_x - radius, center_y - radius, base_z),
+                (center_x + radius, center_y + radius, top_z),
+            ))
+        if not vine_stats.get("climbing_supports"):
+            for rod in rod_structures:
+                x, y, z = rod["position_m"]
+                radius = float(rod["radius_m"])
+                points.extend(((x - radius, y - radius, z), (x + radius, y + radius, rod["top_z_m"])))
+        for structure in solid_field.structures:
+            min_x, max_x, min_y, max_y, min_z, max_z = solid_field.bounds_m(structure)
+            points.extend(((min_x, min_y, min_z), (max_x, max_y, max_z)))
         if not points:
             points = [(0.0, 0.0, 0.0)]
         bounds = [
@@ -1908,6 +4242,11 @@ class SpeciesSimulation:
             attachment_points=attachment_points,
             stats={
                 **root_stats,
+                **clonal_stats,
+                **graminoid_stats,
+                **vine_stats,
+                **sympodial_stats,
+                **solid_stats,
                 "environment": dict(self.environment),
                 "maturity": round(maturity, 4),
                 "life_history": self.life_history_profile.get("class", "perennial"),
@@ -1920,6 +4259,13 @@ class SpeciesSimulation:
                 "leaf_cluster_count": len(leaf_clusters),
                 "estimated_leaf_count": sum(item["estimated_leaf_count"] for item in leaf_clusters),
                 "leaf_area_m2": round(sum(item["leaf_area_m2"] for item in leaf_clusters), 6),
+                "leaf_fascicle_count": sum(int(item.get("fascicle_count", 0) or 0) for item in leaf_clusters),
+                "leaf_fascicle_size": int(self.blueprint.growth.get("fascicle_size", 0) or 0),
+                "estimated_fascicled_leaf_count": sum(
+                    int(item.get("estimated_leaf_count", 0) or 0)
+                    for item in leaf_clusters
+                    if item.get("leaf_arrangement") == "fascicled"
+                ),
                 "stem_count": sum(1 for item in placements if item[0] in {"stem_section", "branch_section"}),
                 "branch_count": sum(1 for item in placements if item[0] == "branch_section"),
                 "axis_continuity": self.blueprint.growth.get("axis_continuity", "other_unknown"),
@@ -2051,10 +4397,21 @@ class SpeciesSimulation:
         disturbance = clamp(environment.get("disturbance", 0.0))
         resprouting = self.blueprint.growth.get("resprouting", "other_unknown")
         disturbance_factor = {"absent": 1., "weak": .8, "moderate": .55, "strong": .3}.get(resprouting, 1.)
+        from simulations.species.plant_nutrition import resolve_plant_nutrient_response
+
+        nutrient = resolve_plant_nutrient_response(
+            self.blueprint.growth,
+            environment,
+            self.render_snapshot.stats,
+        )
+        from simulations.species.plant_reproduction import resolve_reproductive_assurance
+        reproduction = resolve_reproductive_assurance(self.blueprint.growth, environment)
         stress_values = [
             clamp(environment.get("temperature_stress", 0.0)),
             clamp(environment.get("water_stress", 0.0)),
             clamp(environment.get("light_stress", 0.0)),
+            clamp(nutrient["nitrogen_stress"]),
+            clamp(nutrient["phosphorus_stress"]),
             disturbance * disturbance_factor,
             clamp(environment.get("competition", 0.0)),
             clamp(environment.get("disease_pressure", 0.0)),
@@ -2087,7 +4444,12 @@ class SpeciesSimulation:
             "maturity": round(maturity, 4),
             "vitality": round(vitality, 4),
             "growth_rate": round(vitality * growth_bias, 4),
-            "fecundity": round(vitality * life_state["reproductive_factor"], 4),
+            "fecundity": round(
+                vitality
+                * life_state["reproductive_factor"]
+                * reproduction["reproductive_assurance"],
+                4,
+            ),
             "mortality_risk": round(1.0 if life_state["phase"] == "dead" else clamp(1.0 - vitality), 4),
             "resource_demand": round((leaf_count * 0.012) + (stem_structural_term * 0.02), 4),
             "leaf_area_proxy": round(leaf_area * vitality, 4),
@@ -2099,9 +4461,18 @@ class SpeciesSimulation:
             "root_length_m": self.render_snapshot.stats.get("root_length_m", 0.0),
             "root_depth_source": self.render_snapshot.stats.get("root_depth_source", "runtime_default"),
             "root_model_status": self.render_snapshot.stats.get("root_model_status", "unresolved"),
+            "root_distribution": self.render_snapshot.stats.get("root_distribution", "central_crown"),
+            "root_cluster_count": int(self.render_snapshot.stats.get("root_cluster_count", 0) or 0),
+            "root_cluster_spread_m": self.render_snapshot.stats.get("root_cluster_spread_m", 0.0),
+            "root_system_span_m": self.render_snapshot.stats.get(
+                "root_system_span_m",
+                self.render_snapshot.stats.get("root_spread_m", 0.0),
+            ),
             "disturbance_input": disturbance,
             "disturbance_penalty": round(disturbance * disturbance_factor, 4),
             "resprouting": resprouting,
+            **reproduction,
+            **nutrient,
             "disturbance_response_status": "qualitative_runtime_default",
             "stress_index": round(stress, 4),
             "life_history": life_state,

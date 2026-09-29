@@ -36,6 +36,7 @@ class UIManager:
 
     def __init__(self):
         self.buttons = []
+        self.vehicle_pixel_editor_ui = None
         self.scope_label = None
         self.breadcrumb_label = None
         self.vehicle_requirement_lines = []
@@ -119,6 +120,7 @@ class UIManager:
         self.map_history_selected_year = None
         self.map_history_selected_context_key = None
         self.map_ui_active = False
+        self.regional_loading_active = False
         self.map_context_lines = []
         self.map_status_lines = []
         self.map_empty_state_lines = []
@@ -178,6 +180,7 @@ class UIManager:
 
     def _reset_shared_state(self):
         self.buttons = []
+        self.vehicle_pixel_editor_ui = None
         self.scope_label = None
         self.breadcrumb_label = None
         self.vehicle_requirement_lines = []
@@ -213,6 +216,7 @@ class UIManager:
         self.map_history_timeline_visible = False
         self.map_history_timeline_rect = None
         self.map_ui_active = False
+        self.regional_loading_active = False
         self.map_context_lines = []
         self.map_status_lines = []
         self.map_empty_state_lines = []
@@ -1087,6 +1091,74 @@ class UIManager:
         self.simulation_panel_active_tab_id = active_sim.get_active_simulation_panel_tab_id()
         self._rebuild_simulation_panel_tab_hitboxes()
 
+        if getattr(active_sim, "design_step", "components") == "specifications":
+            specifications = payload.get("specifications", {})
+            self.simulation_bar_title = "Vehicle Specification"
+            self.simulation_panel_tabs = []
+            self.simulation_panel_active_tab_id = None
+            self.simulation_panel_tab_hitboxes = []
+            self.simulation_bar_hint_lines = [
+                "Click a field in the workspace and type",
+                "Unknown values may remain blank",
+                "Add only the characteristics and requirements you need",
+            ]
+            self.simulation_bar_panel_lines = [
+                "Ontology-backed design brief",
+                f"{len(specifications.get('characteristics', []))} characteristics  ·  {len(specifications.get('requirements', []))} requirements",
+                "Identity fields stay directly searchable; flexible rows retain sparse design data.",
+                "Continue to Hull when the brief is useful enough—not necessarily complete.",
+            ]
+            self.simulation_bar_catalog_entries = []
+            self.simulation_bar_catalog_hitboxes = []
+            self.simulation_bar_active_catalog_id = None
+            return
+
+        if getattr(active_sim, "design_step", "components") == "hull":
+            dims = active_sim.get_vehicle_dimensions_m()
+            self.simulation_bar_title = "Hull Studio"
+            self.simulation_panel_tabs = []
+            self.simulation_panel_active_tab_id = None
+            self.simulation_panel_tab_hitboxes = []
+            self.simulation_bar_hint_lines = [
+                "Six linked orthographic canvases",
+                "Left mouse draws · right mouse erases",
+                "Change length, width, and height at right",
+            ]
+            self.simulation_bar_panel_lines = [
+                "Define the vehicle envelope",
+                f"Length {dims['x']:g} m  ·  Width {dims['y']:g} m  ·  Height {dims['z']:g} m",
+                "Blank opposite views inherit a grey silhouette guide.",
+                "Choose 2 Components when the hull reads correctly from every direction.",
+            ]
+            self.simulation_bar_catalog_entries = []
+            self.simulation_bar_catalog_hitboxes = []
+            self.simulation_bar_active_catalog_id = None
+            return
+
+        if getattr(active_sim, "design_step", "components") in {"details", "liveries"}:
+            step = active_sim.design_step
+            selected_view = str(getattr(active_sim, "selected_hull_view_id", "right")).replace("_", " ").title()
+            livery_resolution = payload.get("livery_resolution", {}).get(getattr(active_sim, "selected_hull_view_id", "right"), (0, 0))
+            self.simulation_bar_title = "Structural Detail Studio" if step == "details" else "Livery Studio"
+            self.simulation_panel_tabs = []
+            self.simulation_panel_active_tab_id = None
+            self.simulation_panel_tab_hitboxes = []
+            self.simulation_bar_hint_lines = [
+                "Paint is hard-clipped to the authored hull",
+                "Right mouse erases",
+                "Opposite-side paint appears as a dimmed guide",
+            ]
+            self.simulation_bar_panel_lines = [
+                f"Editing {selected_view}",
+                f"tool: {getattr(active_sim, 'pixel_tool', 'draw')}  ·  brush: {getattr(active_sim, 'pixel_brush_radius', 0) + 1}px",
+                (f"micro-pixel raster: {livery_resolution[0]} × {livery_resolution[1]}" if step == "liveries" else "blueprint-aligned structural raster"),
+                "Components can be hidden without changing their placement.",
+            ]
+            self.simulation_bar_catalog_entries = []
+            self.simulation_bar_catalog_hitboxes = []
+            self.simulation_bar_active_catalog_id = None
+            return
+
         if self.simulation_panel_active_tab_id == "catalog":
             self.simulation_bar_hint_lines = [
                 "Drag the panel edge to resize",
@@ -1383,6 +1455,19 @@ class UIManager:
         if get_selection_payload is not None:
             self.simulation_selection_payload = get_selection_payload()
 
+        if render_mode == "vehicle_registry":
+            # A dedicated full-viewport screen like the Vehicle Designer's
+            # own design workspace -- it draws its own title/buttons, so the
+            # shared time/breadcrumb/scope chrome would just be redundant
+            # "debug-looking" text stacked on top of it.
+            self.time_lines = []
+            self.timeline_fraction = 0.0
+            self.mouse_world_label = None
+            self.scope_label = None
+            self.breadcrumb_label = None
+            self.vehicle_requirement_lines = []
+            return
+
         if render_mode == "vehicle":
             self.scope_label = (
                 f"Vehicle: {active_sim.get_vehicle_name()} | "
@@ -1394,30 +1479,162 @@ class UIManager:
                 UIButton("open_repository", "Open Repository",
                          pygame.Rect(button_x, button_y, button_width, button_height))
             )
-            self.buttons.append(
-                UIButton("vehicle_mode_design", "Vehicle Design",
-                         pygame.Rect(button_x, button_y + 40, button_width, button_height),
-                         enabled=active_sim.active_view_mode != "design")
-            )
-            self.buttons.append(
-                UIButton("vehicle_mode_interior", "Interior",
-                         pygame.Rect(button_x, button_y + 80, button_width, button_height),
-                         enabled=active_sim.active_view_mode != "interior")
-            )
-            self.buttons.append(
-                UIButton("vehicle_mode_operational", "Operational",
-                         pygame.Rect(button_x, button_y + 120, button_width, button_height),
-                         enabled=active_sim.active_view_mode != "operational")
-            )
+            self.buttons.append(UIButton(
+                "vehicle_mode_design", "Vehicle Designer",
+                pygame.Rect(button_x, button_y + 40, button_width, button_height),
+                enabled=active_sim.active_view_mode != "design",
+            ))
+            self.buttons.append(UIButton(
+                "vehicle_mode_operational", "Vehicle Sim",
+                pygame.Rect(button_x, button_y + 80, button_width, button_height),
+                enabled=active_sim.active_view_mode != "operational",
+            ))
+
+            if active_sim.active_view_mode == "design":
+                step = getattr(active_sim, "design_step", "hull")
+                dims = active_sim.get_vehicle_dimensions_m()
+                if step == "specifications":
+                    self.buttons.append(UIButton(
+                        "vehicle_specification_finish", "Continue to Hull",
+                        pygame.Rect(button_x, button_y + 130, button_width, button_height),
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_specification_add_characteristic", "+ Characteristic",
+                        pygame.Rect(button_x, button_y + 172, button_width, button_height),
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_specification_add_requirement", "+ Requirement",
+                        pygame.Rect(button_x, button_y + 212, button_width, button_height),
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_specification_remove", "Remove Selected Row",
+                        pygame.Rect(button_x, button_y + 252, button_width, button_height),
+                        enabled=getattr(active_sim, "specification_selected_row", None) is not None,
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_specification_page_characteristic_back", "Chars ‹",
+                        pygame.Rect(button_x, button_y + 294, 86, button_height),
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_specification_page_characteristic_forward", "Chars ›",
+                        pygame.Rect(button_x + 92, button_y + 294, 88, button_height),
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_specification_page_requirement_back", "Reqs ‹",
+                        pygame.Rect(button_x, button_y + 334, 86, button_height),
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_specification_page_requirement_forward", "Reqs ›",
+                        pygame.Rect(button_x + 92, button_y + 334, 88, button_height),
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_design_step_hull", "2  Hull",
+                        pygame.Rect(button_x, button_y + 382, 86, button_height),
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_design_step_components", "3  Components",
+                        pygame.Rect(button_x + 92, button_y + 382, 88, button_height),
+                    ))
+                elif step in {"details", "liveries"}:
+                    self.buttons.append(UIButton(
+                        "vehicle_paint_finish", "Finish · Back to Components",
+                        pygame.Rect(button_x, button_y + 130, button_width, button_height),
+                    ))
+                    view_ids = ("left", "right", "front", "rear", "top", "bottom")
+                    for index, view_id in enumerate(view_ids):
+                        column = index % 2
+                        row = index // 2
+                        self.buttons.append(UIButton(
+                            f"vehicle_paint_view_{view_id}", view_id.title(),
+                            pygame.Rect(button_x + column * 92, button_y + 172 + row * 36, 88, 30),
+                            enabled=getattr(active_sim, "selected_hull_view_id", "right") != view_id,
+                        ))
+                    self.buttons.append(UIButton(
+                        "vehicle_paint_components_toggle",
+                        f"Components: {'On' if getattr(active_sim, 'show_paint_components', True) else 'Off'}",
+                        pygame.Rect(button_x, button_y + 284, button_width, 30),
+                    ))
+                    for index, tool in enumerate(("draw", "erase", "pick")):
+                        self.buttons.append(UIButton(
+                            f"vehicle_pixel_tool_{tool}", tool.title(),
+                            pygame.Rect(button_x + index * 61, button_y + 322, 57, 30),
+                            enabled=getattr(active_sim, "pixel_tool", "draw") != tool,
+                        ))
+                    brush = int(getattr(active_sim, "pixel_brush_radius", 0)) + 1
+                    self.buttons.append(UIButton("vehicle_pixel_brush_down", "−", pygame.Rect(button_x, button_y + 360, 32, 30)))
+                    self.buttons.append(UIButton("vehicle_pixel_brush_up", f"Brush {brush}px  +", pygame.Rect(button_x + 38, button_y + 360, 142, 30)))
+                    palette_labels = ("Light", "Steel", "Dark", "Rust", "Gold", "Teal")
+                    for index, label in enumerate(palette_labels):
+                        column = index % 2
+                        row = index // 2
+                        self.buttons.append(UIButton(
+                            f"vehicle_pixel_color_{index}", label,
+                            pygame.Rect(button_x + column * 92, button_y + 398 + row * 34, 88, 28),
+                        ))
+                    if step == "liveries":
+                        self.buttons.append(UIButton("vehicle_livery_copy", "Copy Livery", pygame.Rect(button_x, button_y + 504, 86, 30)))
+                        self.buttons.append(UIButton("vehicle_livery_paste", "Paste Copy", pygame.Rect(button_x + 92, button_y + 504, 88, 30)))
+                else:
+                    self.buttons.append(UIButton(
+                        "vehicle_design_step_specifications", "1  Spec",
+                        pygame.Rect(button_x, button_y + 130, 86, button_height), enabled=step != "specifications",
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_design_step_hull", "2  Hull",
+                        pygame.Rect(button_x + 92, button_y + 130, 88, button_height), enabled=step != "hull",
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_design_step_components", "3  Components",
+                        pygame.Rect(button_x, button_y + 168, 86, button_height), enabled=step != "components",
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_design_step_details", "4  Details",
+                        pygame.Rect(button_x + 92, button_y + 168, 88, button_height),
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_design_step_liveries", "5  Liveries",
+                        pygame.Rect(button_x, button_y + 206, 180, button_height),
+                    ))
+                    dimension_labels = (("x", "Length"), ("y", "Width"), ("z", "Height"))
+                    for index, (axis, label) in enumerate(dimension_labels):
+                        y = button_y + 248 + index * 39
+                        self.buttons.append(UIButton(f"vehicle_dimension_{axis}_down", "−", pygame.Rect(button_x, y, 32, button_height)))
+                        self.buttons.append(UIButton(f"vehicle_dimension_{axis}_up", f"{label} {dims[axis]:g} m  +", pygame.Rect(button_x + 38, y, 142, button_height)))
+                    if step == "hull":
+                        self.buttons.append(UIButton("vehicle_hull_draw", "Draw", pygame.Rect(button_x, button_y + 372, 56, button_height), enabled=getattr(active_sim, "hull_tool", "draw") != "draw"))
+                        self.buttons.append(UIButton("vehicle_hull_erase", "Erase", pygame.Rect(button_x + 62, button_y + 372, 56, button_height), enabled=getattr(active_sim, "hull_tool", "draw") != "erase"))
+                        self.buttons.append(UIButton("vehicle_hull_clear", "Clear", pygame.Rect(button_x + 124, button_y + 372, 56, button_height)))
+                        selected_view = str(getattr(active_sim, "selected_hull_view_id", "right")).title()
+                        focus_label = "Exit Focus" if getattr(active_sim, "hull_focus_mode", False) else f"Enlarge {selected_view}"
+                        self.buttons.append(UIButton("vehicle_hull_focus_toggle", focus_label, pygame.Rect(button_x, button_y + 412, button_width, button_height)))
+                    elif step == "components":
+                        systems_view_mode = getattr(active_sim, "systems_view_mode", "layout")
+                        self.buttons.append(UIButton(
+                            "vehicle_systems_view_layout", "Layout",
+                            pygame.Rect(button_x, button_y + 372, 88, button_height),
+                            enabled=systems_view_mode != "layout",
+                        ))
+                        self.buttons.append(UIButton(
+                            "vehicle_systems_view_diagram", "Diagram",
+                            pygame.Rect(button_x + 92, button_y + 372, 88, button_height),
+                            enabled=systems_view_mode != "diagram",
+                        ))
 
             payload = active_sim.get_focused_render_payload()
 
             if active_sim.active_view_mode == "design":
-                requirement_status = payload.get("requirement_status", [])
-                self.vehicle_requirement_lines = [
-                    f"{'[OK]' if entry.get('is_satisfied') else '[ ]'} {entry.get('category', 'requirement')} ({entry.get('source_class', 'vehicle')})"
-                    for entry in requirement_status
-                ]
+                # The design workspace is a full-viewport editor that owns the
+                # top-left corner and surfaces the vehicle name, class and
+                # requirement status in its own panels / the simulation bar.
+                # Leaving the shared time panel, day timeline, scope/breadcrumb
+                # and requirement info panels enabled just stacks redundant
+                # "debug-looking" text on top of the workspace, so drop them.
+                self.time_lines = []
+                self.timeline_fraction = 0.0
+                self.mouse_world_label = None
+                self.scope_label = None
+                self.breadcrumb_label = None
+                self.vehicle_requirement_lines = []
                 self._rebuild_vehicle_design_panel(active_sim, payload, app_width, app_height)
                 return
 
@@ -1806,6 +2023,14 @@ class UIManager:
         if render_mode == "person":
             self.person_ui_active = True
             person_name = active_sim.get_person_name() if hasattr(active_sim, "get_person_name") else "Person"
+            if bool(getattr(active_sim, "is_person_editor_active", lambda: False)()):
+                self.scope_label = f"Person Editor: {person_name}"
+                self.breadcrumb_label = "Genetics / outward appearance"
+                self.buttons.append(
+                    UIButton("open_repository", "Open Repository",
+                             pygame.Rect(button_x, button_y, button_width, button_height))
+                )
+                return
             person_class = active_sim.get_person_class() if hasattr(active_sim, "get_person_class") else "person"
             self.scope_label = f"Person: {person_name}"
             self.breadcrumb_label = f"class: {person_class}"
@@ -1846,7 +2071,7 @@ class UIManager:
                 )
             )
             self.buttons.append(
-                UIButton("open_person_character_editor", "Character Editor",
+                UIButton("person_view_editor", "Person Editor",
                          pygame.Rect(button_x, button_y + 160, button_width, button_height))
             )
 
@@ -2106,6 +2331,20 @@ class UIManager:
             )
             return
 
+        regional_loading = getattr(
+            active_sim,
+            "get_regional_loading_state",
+            lambda: {"active": False},
+        )()
+        self.regional_loading_active = bool(regional_loading.get("active"))
+        if self.regional_loading_active:
+            return
+
+        vehicle_pixel_editor = getattr(active_sim, "pixel_art_editor_ui", None)
+        if bool(getattr(active_sim, "is_vehicle_pixel_editor_active", lambda: False)()):
+            self.vehicle_pixel_editor_ui = vehicle_pixel_editor
+            return
+
         self._rebuild_active_simulation_ui(active_sim, app_width, app_height, camera)
 
     def _rebuild_repository_return_confirm(self, app_width, app_height):
@@ -2278,6 +2517,7 @@ class UIManager:
         for card in self.floating_knowledge_ui.cards:
             card["edit_toggle_rect"] = None
             card["delete_rect"] = None
+            card["lock_toggle_rect"] = None
 
     def _open_floating_card(self, target, world_model, app_width, app_height):
         if world_model is None:
@@ -2376,8 +2616,17 @@ class UIManager:
         if self.simulation_bar_rect is None:
             return
 
-        pygame.draw.rect(screen, (22, 24, 30), self.simulation_bar_rect)
-        pygame.draw.rect(screen, (200, 200, 200), self.simulation_bar_rect, 1)
+        vehicle_titles = {"Vehicle Design", "Vehicle Specification", "Hull Studio", "Structural Detail Studio", "Livery Studio"}
+        vehicle_style = self.simulation_bar_title in vehicle_titles
+        pygame.draw.rect(screen, (16, 24, 33) if vehicle_style else (22, 24, 30), self.simulation_bar_rect, border_radius=7 if vehicle_style else 0)
+        pygame.draw.rect(screen, (61, 96, 116) if vehicle_style else (200, 200, 200), self.simulation_bar_rect, 1, border_radius=7 if vehicle_style else 0)
+        if vehicle_style:
+            pygame.draw.line(
+                screen, (91, 198, 222),
+                (self.simulation_bar_rect.x + 14, self.simulation_bar_rect.y + 1),
+                (self.simulation_bar_rect.x + min(210, self.simulation_bar_rect.width - 14), self.simulation_bar_rect.y + 1),
+                2,
+            )
 
         if self.simulation_bar_resize_hitbox is not None:
             line_y = self.simulation_bar_rect.y
@@ -2542,7 +2791,23 @@ class UIManager:
 
     def _draw_button(self, screen, font, button):
         is_map_layer_active = bool(getattr(button, "map_layer_active", False))
-        if getattr(button, "city_builder_primary", False) and button.enabled:
+        is_vehicle_control = str(getattr(button, "id", "")).startswith("vehicle_")
+        vehicle_active = (
+            is_vehicle_control
+            and not button.enabled
+            and (
+                str(button.id).startswith("vehicle_design_step_")
+                or button.id in {"vehicle_mode_design", "vehicle_mode_operational"}
+            )
+        )
+        if vehicle_active:
+            fill_color = (38, 88, 111)
+            border_color = (105, 211, 232)
+        elif is_vehicle_control and button.enabled:
+            hovered = button.rect.collidepoint(pygame.mouse.get_pos())
+            fill_color = (35, 48, 62) if not hovered else (44, 67, 83)
+            border_color = (77, 108, 129) if not hovered else (112, 194, 215)
+        elif getattr(button, "city_builder_primary", False) and button.enabled:
             fill_color = (46, 89, 58)
             border_color = (170, 214, 132)
         elif is_map_layer_active and button.enabled:
@@ -2551,10 +2816,11 @@ class UIManager:
         else:
             fill_color = (52, 56, 66) if button.enabled else (34, 36, 42)
             border_color = (210, 210, 210) if button.enabled else (100, 100, 100)
-        text_color = (245, 245, 245) if button.enabled else (140, 140, 140)
+        text_color = (235, 246, 250) if vehicle_active else ((245, 245, 245) if button.enabled else (140, 140, 140))
 
-        pygame.draw.rect(screen, fill_color, button.rect)
-        pygame.draw.rect(screen, border_color, button.rect, 2)
+        radius = 5 if is_vehicle_control else 0
+        pygame.draw.rect(screen, fill_color, button.rect, border_radius=radius)
+        pygame.draw.rect(screen, border_color, button.rect, 1 if is_vehicle_control else 2, border_radius=radius)
 
         clip = screen.get_clip()
         screen.set_clip(button.rect.clip(screen.get_rect()))
@@ -3173,12 +3439,13 @@ class UIManager:
         screen.blit(self._render_text(font, dashboard.get("title", "BIOSPHERE COMMAND"), (226, 236, 220)), (top.x + 14, top.y + 8))
         stat_x, stat_gap = top.x + 200, 8
         stat_w = max(112, (top.width - 340) // 4 - stat_gap)
-        representatives = dashboard.get("representatives") or {}
         stats = (
             ("Living biomass", f"{float(dashboard.get('biomass_kg', 0.0)):.1f} kg"),
             ("Colonised area", f"{float(dashboard.get('footprint_m2', 0.0)):.1f} m²"),
+            ("Soil organic matter", f"{float(dashboard.get('soil_organic_matter_kg_m2', 0.0)):.3f} kg/m²"),
+            ("Available nitrogen", f"{float(dashboard.get('available_nitrogen_g_m2', 0.0)):.3f} g/m²"),
+            ("Available phosphorus", f"{float(dashboard.get('available_phosphorus_g_m2', 0.0)):.3f} g/m²"),
             ("Populations", str(int(dashboard.get("species_count", 0)))),
-            ("Deep lives", f"{int(representatives.get('alive', 0))} active"),
         )
         for index, (label, value) in enumerate(stats):
             self._draw_biosphere_stat(
@@ -3188,7 +3455,8 @@ class UIManager:
         screen.blit(self._render_text(font, "BUILD ECOLOGY", (209, 226, 205)), (population.x + 12, population.y + 12))
         selected = dashboard.get("selected_species") or "None"
         screen.blit(self._render_text(font, f"Active placement: {selected}", (159, 180, 164)), (population.x + 12, population.y + 92))
-        unlock = "Pioneers available" if dashboard.get("pioneers_unlocked") else f"Pioneers at {dashboard.get('unlock_biomass_kg', 0):g} kg"
+        stage = str(dashboard.get("soil_stage") or "barren mineral substrate").title()
+        unlock = f"{stage} · succession tier {int(dashboard.get('supported_succession_tier', 0))}"
         screen.blit(self._render_text(font, unlock, (184, 171, 112)), (population.x + 12, population.y + 114))
         screen.blit(self._render_text(font, "POPULATION REPRESENTATIVES", (125, 153, 132)), (population.x + 12, population.y + 126))
 
@@ -4039,6 +4307,11 @@ class UIManager:
 
     def draw(self, screen, font):
         self.app_font = font
+        if self.regional_loading_active:
+            return
+        if self.vehicle_pixel_editor_ui is not None:
+            self.vehicle_pixel_editor_ui.draw(screen, font)
+            return
         self._draw_tab_strip(screen, font)
 
         if self.menu_active:
@@ -4342,6 +4615,44 @@ class UIManager:
 
         if self.menu_active:
             return self.knowledge_ui.handle_event(event)
+
+        editor = self.vehicle_pixel_editor_ui
+        if editor is not None:
+            state = editor.state
+            if event.type == pygame.KEYDOWN:
+                editor.handle_keydown(event)
+                return "__ui_consumed__"
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if isinstance(state, dict):
+                    state["pressure"] = max(0.05, min(1.0, float(getattr(event, "pressure", 1.0))))
+                editor.handle_click(event.pos)
+                return "__ui_consumed__"
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 2:
+                editor.begin_pan(event.pos)
+                return "__ui_consumed__"
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
+                editor.begin_temporary_eraser(event.pos)
+                return "__ui_consumed__"
+            if event.type == pygame.MOUSEBUTTONUP:
+                editor.finish_stroke()
+                return "__ui_consumed__"
+            if event.type == pygame.MOUSEMOTION:
+                editor.handle_motion(event.pos, getattr(event, "pressure", None))
+                return "__ui_consumed__"
+            if event.type == pygame.MOUSEWHEEL:
+                editor.handle_wheel(event.y, pygame.mouse.get_pos())
+                return "__ui_consumed__"
+            if event.type in (pygame.FINGERDOWN, pygame.FINGERMOTION, pygame.FINGERUP):
+                surface = pygame.display.get_surface()
+                if event.type == pygame.FINGERUP:
+                    editor.finish_stroke()
+                elif surface is not None:
+                    pos = (round(event.x * surface.get_width()), round(event.y * surface.get_height()))
+                    if event.type == pygame.FINGERDOWN:
+                        editor.handle_click(pos)
+                    else:
+                        editor.handle_motion(pos, getattr(event, "pressure", None))
+                return "__ui_consumed__"
 
         if self.biosphere_picker_open:
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:

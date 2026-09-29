@@ -128,6 +128,8 @@ class PersistentOntologyStore:
 
     SPECIAL_OBJECT_PROPERTIES = dict(OntologyRepository.SPECIAL_OBJECT_PROPERTIES)
     DERIVED_FIELDS = set(OntologyRepository.DERIVED_FIELDS)
+    NON_RELATION_FIELDS = set(OntologyRepository.NON_RELATION_FIELDS)
+    TYPE_PARENTS = dict(OntologyRepository.TYPE_PARENTS)
     _DATABASE_LOCKS = {}
     _DATABASE_LOCKS_GUARD = threading.Lock()
     LOCK_RETRY_ATTEMPTS = 5
@@ -137,6 +139,7 @@ class PersistentOntologyStore:
         "map_layers",
         "regional_material_occurrences",
     }
+    UNRESOLVED_REFS_SUFFIX = OntologyRepository.UNRESOLVED_REFS_SUFFIX
 
     def __init__(self, ontology_path, database_path=None):
         self.ontology_path = Path(ontology_path).resolve()
@@ -660,21 +663,7 @@ class PersistentOntologyStore:
                         self._set_metadata_membership(list_fields, field_name, isinstance(value, list))
                         self._set_metadata_membership(json_fields, field_name, self._field_uses_json(value))
 
-                        relation_property = self._relation_property(
-                            world,
-                            ontology,
-                            field_name,
-                            value,
-                        )
-                        if relation_property is not None:
-                            targets = []
-                            for target_id in self._relation_ids(value):
-                                target = world[
-                                    f"{ENTITY_IRI}{quote(target_id, safe='')}"
-                                ]
-                                if target is not None and target not in targets:
-                                    targets.append(target)
-                            relation_property[individual] = targets
+                        if self._write_relation_or_data_field(world, ontology, individual, field_name, value):
                             continue
 
                         property_name = self._owl_name(f"field_{field_name}")
@@ -865,6 +854,51 @@ class PersistentOntologyStore:
             self._ensure_initialized()
         return True
 
+    def _write_relation_or_data_field(self, world, ontology, individual, field_name, value):
+        """Write one field as an OWL relation, or fall back to a literal.
+
+        A relation target that doesn't (yet) exist as an individual -- an
+        undefined reference typed into predecessors/successors/related/...,
+        the relation-field equivalent of an unresolved "[[wiki link]]" --
+        is not silently dropped: it's kept in a companion literal property
+        alongside the resolved targets, so a "?" reference survives a full
+        store rebuild rather than only existing in the fast-path projection
+        cache. Returns True if the field was handled as a relation (caller
+        should not also write it as a plain data property).
+        """
+        relation_property = self._relation_property(world, ontology, field_name, value)
+        unresolved_property_name = self._owl_name(f"field_{field_name}{self.UNRESOLVED_REFS_SUFFIX}")
+
+        if relation_property is None:
+            # Not treated as a relation for this write -- clear any stale
+            # unresolved-refs marker left over from a previous edit where
+            # this field did have missing targets.
+            existing_unresolved_property = world[f"{BASE_IRI}{unresolved_property_name}"]
+            if existing_unresolved_property is not None:
+                existing_unresolved_property[individual] = []
+            return False
+
+        resolved_targets = []
+        unresolved_ids = []
+        seen_unresolved = set()
+        for target_id in self._relation_ids(value):
+            target = world[f"{ENTITY_IRI}{quote(target_id, safe='')}"]
+            if target is not None:
+                if target not in resolved_targets:
+                    resolved_targets.append(target)
+            elif target_id and target_id not in seen_unresolved:
+                unresolved_ids.append(target_id)
+                seen_unresolved.add(target_id)
+
+        relation_property[individual] = resolved_targets
+        if unresolved_ids:
+            self._ensure_data_property(world, ontology, unresolved_property_name)[individual] = unresolved_ids
+        else:
+            existing_unresolved_property = world[f"{BASE_IRI}{unresolved_property_name}"]
+            if existing_unresolved_property is not None:
+                existing_unresolved_property[individual] = []
+        return True
+
     def _replace_entity(self, world, entity, previous_entity_id=None):
         owlready2 = self._import_owlready2()
         ontology = world.get_ontology(BASE_IRI)
@@ -904,14 +938,7 @@ class PersistentOntologyStore:
             if self._field_uses_json(value):
                 json_fields.append(field_name)
 
-            relation_property = self._relation_property(world, ontology, field_name, value)
-            if relation_property is not None:
-                targets = []
-                for target_id in self._relation_ids(value):
-                    target = world[f"{ENTITY_IRI}{quote(target_id, safe='')}"]
-                    if target is not None and target not in targets:
-                        targets.append(target)
-                relation_property[individual] = targets
+            if self._write_relation_or_data_field(world, ontology, individual, field_name, value):
                 continue
 
             property_name = self._owl_name(f"field_{field_name}")
@@ -922,13 +949,8 @@ class PersistentOntologyStore:
         self._ensure_data_property(world, ontology, "jsonFieldName")[individual] = json_fields
 
     def _create_individual(self, world, ontology, entity):
-        owlready2 = self._import_owlready2()
         entity_type = str(entity.get("type") or "entity").strip() or "entity"
-        class_name = self._owl_name(f"{entity_type}_entry")
-        entity_class = world[f"{BASE_IRI}{class_name}"] or world[f"{BASE_IRI}Entry"]
-        if entity_class is None:
-            with ontology:
-                entity_class = types.new_class(class_name, (owlready2.Thing,))
+        entity_class = self._ensure_type_class(world, ontology, entity_type)
         # Older imports can leave Owlready's allocator below the highest
         # resource already present in the quadstore. Synchronize it before
         # creating a new individual so authoring does not reuse a storid.
@@ -939,6 +961,67 @@ class PersistentOntologyStore:
         individual = entity_class(self._owl_name(f"entry_{entity.get('id')}"))
         individual.iri = f"{ENTITY_IRI}{quote(str(entity.get('id')), safe='')}"
         return individual
+
+    def _ensure_type_class(self, world, ontology, entity_type, _seen=None):
+        """Return the `{entity_type}_entry` OWL class, creating it (and any
+        TYPE_PARENTS ancestor it needs) if this is the first individual of
+        that type in the quadstore.
+
+        Existing classes are never re-parented here -- that only happens
+        once, explicitly, via `reparent_type_classes`, so a freshly imported
+        store's class hierarchy matches TYPE_PARENTS without silently
+        rewriting a hierarchy an older checkpoint intentionally diverged
+        from.
+        """
+        owlready2 = self._import_owlready2()
+        class_name = self._owl_name(f"{entity_type}_entry")
+        entity_class = world[f"{BASE_IRI}{class_name}"]
+        if entity_class is not None:
+            return entity_class
+
+        parent_type = self.TYPE_PARENTS.get(entity_type)
+        parent_class = None
+        if parent_type and parent_type != entity_type:
+            seen = set(_seen or ())
+            if entity_type not in seen:
+                seen.add(entity_type)
+                parent_class = self._ensure_type_class(world, ontology, parent_type, _seen=seen)
+        if parent_class is None:
+            parent_class = world[f"{BASE_IRI}Entry"] or owlready2.Thing
+
+        with ontology:
+            return types.new_class(class_name, (parent_class,))
+
+    def reparent_type_classes(self, mapping=None):
+        """One-time fix-up: align existing `*_entry` classes with TYPE_PARENTS.
+
+        `_ensure_type_class` only sets the parent of a class it creates, so a
+        quadstore whose `city_entry` (etc.) was imported before a
+        TYPE_PARENTS entry existed keeps its old `Entry` parent until this is
+        called explicitly. Idempotent -- safe to call on every author-tool run.
+        """
+        mapping = dict(mapping if mapping is not None else self.TYPE_PARENTS)
+        if not mapping:
+            return False
+        with self._operation_lock:
+            world = self._open_world()
+            try:
+                ontology = world.get_ontology(BASE_IRI)
+                changed = False
+                for child_type, parent_type in mapping.items():
+                    child_class = world[f"{BASE_IRI}{self._owl_name(f'{child_type}_entry')}"]
+                    if child_class is None:
+                        continue
+                    parent_class = self._ensure_type_class(world, ontology, parent_type)
+                    if list(child_class.is_a) != [parent_class]:
+                        with ontology:
+                            child_class.is_a = [parent_class]
+                        changed = True
+                if changed:
+                    self._save_world(world)
+                return changed
+            finally:
+                world.close()
 
     def _ensure_data_property(self, world, ontology, property_name):
         owlready2 = self._import_owlready2()
@@ -956,6 +1039,8 @@ class PersistentOntologyStore:
         return prop
 
     def _relation_property(self, world, ontology, field_name, value):
+        if field_name in self.NON_RELATION_FIELDS:
+            return None
         owlready2 = self._import_owlready2()
         property_name = self.SPECIAL_OBJECT_PROPERTIES.get(
             field_name,

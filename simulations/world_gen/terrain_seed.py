@@ -1,5 +1,6 @@
 from simulations.world_gen.map_seed import resolved_map_seed, seed_range
 from simulations.world_gen.world_classification import infer_world_class
+from simulations.world_gen.volatile_budget import budget_from
 
 
 PLANETARY_CANVAS_WIDTH_PX = 8192
@@ -60,6 +61,10 @@ def _element_profile(seed):
     return profile
 
 
+# Global-equivalent water ice needed to form a frozen ocean in the basins.
+FROZEN_OCEAN_MIN_DEPTH_M = 100.0
+
+
 def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", system_id=""):
     seed = seed if isinstance(seed, dict) else {}
     physics = physics if isinstance(physics, dict) else {}
@@ -73,7 +78,9 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
     radius_m = max(1.0, float(physics.get("radius_m", radius_earth * 6_371_000.0) or 1.0))
     circumference_m = 2.0 * 3.141592653589793 * radius_m
     gravity_g = max(0.05, float(physics.get("surface_gravity_g", 1.0) or 1.0))
-    water_fraction = _clamp(seed.get("water_fraction", 0.0), 0.0, 1.0)
+    budget = budget_from(atmosphere, seed)
+    derived = (budget or {}).get("derived_seed") or {}
+    water_fraction = _clamp(derived.get("water_fraction", seed.get("water_fraction", 0.0)), 0.0, 1.0)
     planet_class = infer_world_class(seed, physics)
     icy_satellite = planet_class == "icy_satellite"
     pressure_bar = _surface_pressure_bar(atmosphere)
@@ -204,18 +211,22 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
     # (0.71) it yields approximately Earth's 2.7 km global-equivalent layer.
     inventory_variation = seed_range(map_seed, "water_inventory_variation", 0.94, 1.06)
     equivalent_global_water_depth_m = 9000.0 * (water_fraction ** 3.4) * inventory_variation
-    if liquid_water:
-        thermal_retention = _clamp(
-            1.0
-            - max(0.0, surface_temp_k - 305.0) / 120.0
-            - max(0.0, 245.0 - surface_temp_k) / 180.0,
-            0.04,
-            1.0,
-        )
-        pressure_retention = _clamp(pressure_bar / 0.08, 0.08, 1.0)
-        equivalent_global_water_depth_m *= thermal_retention * pressure_retention
-    elif not frozen_ocean:
+    # The volatile budget gives the depth of the surface liquid (whatever
+    # species it is) or of a frozen water ocean directly; its phase
+    # equilibrium already accounts for temperature, pressure and escape.
+    liquid_depth_m = max(0.0, float(derived.get("surface_liquid_depth_m", 0.0) or 0.0))
+    frozen_depth_m = max(0.0, float(derived.get("frozen_ocean_depth_m", 0.0) or 0.0))
+    if liquid_water and liquid_depth_m > 0.0:
+        equivalent_global_water_depth_m = liquid_depth_m * inventory_variation
+    elif frozen_depth_m >= FROZEN_OCEAN_MIN_DEPTH_M and not icy_satellite:
+        # A frozen ocean fills basins; a thin inventory (Mars) is polar ice
+        # placed by the climate's ice mask instead.
+        equivalent_global_water_depth_m = frozen_depth_m * inventory_variation
+        frozen_water = True
+        frozen_ocean = True
+    else:
         equivalent_global_water_depth_m = 0.0
+        frozen_ocean = False
     # Legacy authored targets remain an explicit compatibility override only.
     # Normal generation never writes this field and therefore always uses the
     # inventory-volume route.
@@ -248,7 +259,9 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
     crater_density *= 1.0 - erosion * 0.35
     crater_density *= 1.0 - _clamp(pressure_bar / 8.0, 0.0, 0.22)
     crater_density *= 1.0 - _clamp(internal_heat / 0.35, 0.0, 0.18)
-    crater_density *= 1.0 - resurfacing_fraction * 0.72
+    # Volcanic resurfacing is applied against the terrain (flooded lowlands
+    # lose their craters, heightmap.condition_crater_model_to_surface), not
+    # as a uniform thinning of the population.
     if "glacial" in erosion_processes:
         # Moving ice and repeated freeze/thaw burial strongly degrade the
         # visible impact population, especially the small-crater saturation
@@ -349,6 +362,7 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
             "boundary_style": "subduction_rift_transform" if mobile_plates else tectonics,
             "mountain_scale_m": round(max(0.0, max_elevation_m * 0.82), 1),
             "trench_scale_m": round(abs(min_elevation_m) * 0.74 if mobile_plates else 0.0, 1),
+            "internal_heat_w_m2": round(internal_heat, 5),
         },
         "cratering": {
             "enabled": crater_density > 0.02,
@@ -377,7 +391,7 @@ def derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="", s
             "coverage_mode": "derived_from_inventory_and_hypsometry",
             "target_ice_fraction": round(target_ice_fraction, 3),
             "drainage_enabled": hydrology in {"active", "limited"},
-            "surface_fluid": seed.get("surface_fluid", "water"),
+            "surface_fluid": derived.get("surface_fluid") or seed.get("surface_fluid", "water"),
         },
         "specialized_surface_processes": {
             "geologic_style": geologic_style,

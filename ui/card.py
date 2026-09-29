@@ -157,6 +157,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         "snapshot_year",
         "end_year",
         "temporal_periods",
+        "predecessors",
+        "successors",
         "parents",
         "related",
         "offspring",
@@ -229,6 +231,13 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         PERSON_CONVERSATION_DATE_FIELD,
         PERSON_CONVERSATION_MESSAGE_FIELD,
     )
+    # Draft-only inputs for the "add a period" row under Temporal -- not
+    # real entity fields; their values live on the card dict until
+    # add_period_from_draft() folds them into entity["temporal_periods"].
+    PERIOD_ADD_NAME_FIELD = "period_add_name"
+    PERIOD_ADD_START_FIELD = "period_add_start"
+    PERIOD_ADD_END_FIELD = "period_add_end"
+    PERIOD_ADD_DRAFT_FIELDS = (PERIOD_ADD_NAME_FIELD, PERIOD_ADD_START_FIELD, PERIOD_ADD_END_FIELD)
     PERSON_QUOTE_FIELD_LABELS = {
         PERSON_QUOTE_TEXT_FIELD: "Quote",
         PERSON_QUOTE_DATE_FIELD: "Date",
@@ -1172,7 +1181,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
     def _launch_mode_options(self):
         return self.LAUNCH_AFFORDANCE_RESOLVER.options_for_entity(
-            self.entity, getattr(self.world_model, "plant_catalogue", None))
+            self.entity, getattr(self.world_model, "plant_catalogue", None), self.world_model)
 
     def _toolbelt_tool_is_available(self, tool):
         requirement = tool.get("requires")
@@ -2203,6 +2212,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             return True
         if field_key == "temporal_periods":
             return True
+        if field_key in self.PERIOD_ADD_DRAFT_FIELDS:
+            return True
         if field_key in {"name", "common_name"}:
             return True
 
@@ -2430,7 +2441,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             "Identity": identity,
             "Classification": classification,
             "Dimensions / Scale": overview_dims,
-            "Temporal": temporal_values,
+            "Temporal": self._ordered_temporal_fields(temporal_values),
             "Relations": relation_values,
             "Class Relations": class_relation_values,
             "Biosphere Species Roster": biosphere_roster_values,
@@ -2446,6 +2457,82 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         }
         sections["Simulation / Space Sim"] = space_sim_values
         return sections
+
+    # Desired reading order for the Temporal section: a Start block (year +
+    # predecessors), the periods list, then an End block (year + successors),
+    # with anything else temporal (forgotten_year, snapshot_year, per-entry
+    # start/end commentary, ...) kept afterward in its original relative
+    # order so no existing per-dataset temporal field silently disappears.
+    TEMPORAL_FIELD_LEAD_ORDER = (
+        "start_year",
+        "predecessors",
+        "start_commentary",
+        "start_event",
+        "temporal_periods",
+        "end_year",
+        "successors",
+        "end_commentary",
+        "end_event",
+    )
+
+    def _ordered_temporal_fields(self, temporal_values):
+        by_key = dict(temporal_values)
+        ordered = []
+        seen = set()
+        for key in self.TEMPORAL_FIELD_LEAD_ORDER:
+            if key in by_key:
+                ordered.append((key, by_key[key]))
+                seen.add(key)
+        for key, value in temporal_values:
+            if key not in seen:
+                ordered.append((key, value))
+                seen.add(key)
+        return ordered
+
+    # Fields rendered as one combined visual row instead of stacked rows --
+    # see `_grouped_section_rows`/`_layout_combined_temporal_row` in
+    # layout_card. (primary_key, partner_key) pairs; primary must precede
+    # partner in TEMPORAL_FIELD_LEAD_ORDER above for the row to read left
+    # to right as "primary | partner".
+    COMBINED_TEMPORAL_ROW_PAIRS = (
+        ("start_year", "predecessors"),
+        ("end_year", "successors"),
+    )
+    COMBINED_TEMPORAL_ROW_LABELS = {
+        "start_year": "Start",
+        "end_year": "End",
+    }
+
+    def _grouped_section_rows(self, section_name, entries):
+        """Pair up fields that should render as one combined visual row.
+
+        Every section other than Temporal renders exactly one field per row,
+        unchanged from before -- this only affects the Start/Predecessors and
+        End/Successors pairs, and only when both fields of a pair are present.
+        Returns a list of (key, value, partner_key_or_None, partner_value).
+        """
+        if section_name != "Temporal":
+            return [(key, value, None, None) for key, value in entries]
+
+        by_value = dict(entries)
+        consumed = set()
+        grouped = []
+        for key, value in entries:
+            if key in consumed:
+                continue
+            partner_key = None
+            for primary, partner in self.COMBINED_TEMPORAL_ROW_PAIRS:
+                if primary == key and partner in by_value and partner not in consumed:
+                    partner_key = partner
+                    break
+            if partner_key is not None:
+                grouped.append((key, value, partner_key, by_value[partner_key]))
+                consumed.add(key)
+                consumed.add(partner_key)
+            else:
+                grouped.append((key, value, None, None))
+                consumed.add(key)
+        return grouped
 
     def _is_temporal_period_entry(self, value):
         return isinstance(value, dict) and (
@@ -2686,6 +2773,61 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             card["edit_cursor"] = len(card["edit_buffer"])
         card["last_edit_action"] = "commit"
         return "commit"
+
+    def _period_add_draft_value(self, card, field_key):
+        """Current value of one Name/Start/End draft input.
+
+        Prefers the live edit_buffer if that input is the one being typed
+        into right now, then a stashed draft left behind by switching to
+        another field, then whatever was last committed onto the card.
+        """
+        if card.get("active_edit_field") == field_key:
+            return str(card.get("edit_buffer", ""))
+        draft = (card.get("draft_edit_buffers") or {}).get(field_key)
+        if isinstance(draft, dict) and "text" in draft:
+            return str(draft.get("text", ""))
+        return str(card.get(field_key, ""))
+
+    def add_period_from_draft(self, card):
+        """Fold the Name / Start Year / End Year add-row into temporal_periods."""
+        name = self._period_add_draft_value(card, self.PERIOD_ADD_NAME_FIELD).strip()
+        start_text = self._period_add_draft_value(card, self.PERIOD_ADD_START_FIELD).strip()
+        end_text = self._period_add_draft_value(card, self.PERIOD_ADD_END_FIELD).strip()
+
+        start_year = self._coerce_period_year(start_text) if start_text else None
+        end_year = self._coerce_period_year(end_text) if end_text else None
+        if not name and start_year is None and end_year is None:
+            return False
+
+        entry = {"label": name or "Period"}
+        if start_year is None and end_year is not None:
+            start_year = end_year
+        if end_year is None and start_year is not None:
+            end_year = start_year
+        if start_year is not None:
+            entry["start_year"] = start_year
+        if end_year is not None:
+            entry["end_year"] = end_year
+
+        periods = self._temporal_period_entries()
+        periods.append(entry)
+        self.entity["temporal_periods"] = periods
+
+        draft_buffers = card.get("draft_edit_buffers")
+        for field_key in self.PERIOD_ADD_DRAFT_FIELDS:
+            card[field_key] = ""
+            if isinstance(draft_buffers, dict):
+                draft_buffers.pop(field_key, None)
+        if card.get("active_edit_field") in self.PERIOD_ADD_DRAFT_FIELDS:
+            card["active_edit_field"] = None
+            card["edit_buffer"] = ""
+            card["edit_cursor"] = 0
+        elif card.get("active_edit_field") == "temporal_periods":
+            card["edit_buffer"] = self._format_value(periods)
+            card["edit_cursor"] = len(card["edit_buffer"])
+
+        card["last_edit_action"] = "commit"
+        return True
 
     def _format_value(self, value):
         if value is None:
@@ -3057,8 +3199,12 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         if not card.get("is_edit_mode", False):
             return False
 
-        value = card if field_key == self.TIMELINE_SNAPSHOT_FIELD else self.entity.get(field_key)
-        if field_key != self.TIMELINE_SNAPSHOT_FIELD:
+        if field_key == self.TIMELINE_SNAPSHOT_FIELD:
+            value = card
+        elif field_key in self.PERIOD_ADD_DRAFT_FIELDS:
+            value = card.get(field_key, "")
+        else:
+            value = self.entity.get(field_key)
             value = self._species_field_resolution(field_key, value).get("value")
         schema_field_specs = self._get_schema_field_specs()
         if not self._is_field_editable(field_key, value, schema_field_specs):
@@ -3160,6 +3306,16 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             self._clear_edit_preferred_column(card)
             card["last_edit_action"] = "commit"
             card["last_committed_field"] = "timeline_snapshots"
+            return True
+
+        if field_key in self.PERIOD_ADD_DRAFT_FIELDS:
+            card[field_key] = card.get("edit_buffer", "")
+            card["active_edit_field"] = None
+            card["edit_buffer"] = ""
+            card["edit_original_value"] = None
+            card["edit_cursor"] = 0
+            self._clear_edit_preferred_column(card)
+            card["last_edit_action"] = None
             return True
 
         original_value = card.get("edit_original_value", self.entity.get(field_key))
@@ -3723,6 +3879,239 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             content_h = max(1, len(key_lines), len(wrapped_lines)) * self._table_line_height(font)
         row_h = content_h + self.TABLE_ROW_PAD_Y * 2
         return key_lines, wrapped_lines, row_h
+
+    COMBINED_TEMPORAL_YEAR_VALUE_W = 68
+    COMBINED_TEMPORAL_LABEL_MIN_W = 46
+    COMBINED_TEMPORAL_LABEL_PAD = 14
+
+    def _measure_label_column_width(self, font, labels, minimum=None):
+        """Widest of the given (already ':'-suffixed) labels, plus padding.
+
+        Sizing a label column from the label text itself -- rather than a
+        guessed constant -- is what keeps "Start:"/"predecessors:" etc. on
+        one line as the card's font or width changes instead of wrapping
+        into an unreadable stack of fragments.
+        """
+        minimum = self.COMBINED_TEMPORAL_LABEL_MIN_W if minimum is None else minimum
+        if font is None:
+            return minimum
+        widest = max((font.size(label)[0] for label in labels), default=0)
+        return max(minimum, widest + self.COMBINED_TEMPORAL_LABEL_PAD)
+
+    def _measure_combined_temporal_cell(self, font, key, value, label_w, value_w, label_override=None):
+        rendered_key = f"{label_override if label_override is not None else self._field_display_label(key)}:"
+        key_lines = self._wrap_text_lines(rendered_key, font, max(20, label_w - 12))
+        rendered_value = self._format_table_value(key, value)
+        wrapped_lines = self._wrap_text_lines(rendered_value, font, value_w)
+        content_h = max(1, len(key_lines), len(wrapped_lines)) * self._table_line_height(font)
+        row_h = content_h + self.TABLE_ROW_PAD_Y * 2
+        return key_lines, wrapped_lines, row_h
+
+    def _layout_combined_temporal_row(
+        self,
+        card,
+        field_rows,
+        content_editable_field_hitboxes,
+        schema_field_specs,
+        content_left,
+        text_width,
+        current_y,
+        year_key,
+        year_value,
+        relation_key,
+        relation_value,
+    ):
+        """Lay out Start/End's [year | predecessors/successors] as one row.
+
+        Every other section still renders one field per row via the plain
+        loop in layout_card; this is the only place that puts two field
+        keys' key/value rects side by side at the same y instead of
+        stacked. Both keys keep their normal identity (active_edit_field,
+        relation-picker wiring, click hit-testing) -- only their on-screen
+        position changes, so editing either field works exactly like any
+        other field of its type.
+        """
+        font = card["layout_font"]
+        is_edit_mode = bool(card.get("is_edit_mode", False))
+        active_field = card.get("active_edit_field")
+
+        year_label_w = self._measure_label_column_width(
+            font, [f"{label}:" for label in self.COMBINED_TEMPORAL_ROW_LABELS.values()]
+        )
+        year_value_w = self.COMBINED_TEMPORAL_YEAR_VALUE_W
+        relation_x = content_left + year_label_w + self.TABLE_COLUMN_GAP + year_value_w + self.TABLE_COLUMN_GAP * 2
+        relation_label_w = self._measure_label_column_width(font, ["predecessors:", "successors:"], minimum=70)
+        relation_value_x = relation_x + relation_label_w + self.TABLE_COLUMN_GAP
+        relation_value_w = max(60, content_left + text_width - relation_value_x)
+
+        measure_year_value = card.get("edit_buffer", "") if active_field == year_key else year_value
+        year_key_lines, year_wrapped_lines, year_row_h = self._measure_combined_temporal_cell(
+            font,
+            year_key,
+            measure_year_value,
+            year_label_w,
+            year_value_w,
+            label_override=self.COMBINED_TEMPORAL_ROW_LABELS.get(year_key),
+        )
+
+        measure_relation_value = card.get("edit_buffer", "") if active_field == relation_key else relation_value
+        relation_key_lines, relation_wrapped_lines, relation_row_h = self._measure_combined_temporal_cell(
+            font, relation_key, measure_relation_value, relation_label_w, relation_value_w,
+        )
+        relation_chips = []
+        if self.is_relation_edit_field(relation_key) and active_field != relation_key:
+            relation_chips, relation_content_h = self._layout_relation_chips(
+                relation_key,
+                relation_value,
+                font,
+                relation_value_x,
+                current_y,
+                relation_value_w,
+                edit_mode=is_edit_mode,
+            )
+            relation_row_h = max(relation_row_h, relation_content_h)
+
+        row_h = max(year_row_h, relation_row_h)
+
+        year_row_rect = pygame.Rect(
+            content_left, current_y, year_label_w + self.TABLE_COLUMN_GAP + year_value_w, row_h,
+        )
+        year_key_rect = pygame.Rect(content_left, current_y, year_label_w, row_h)
+        year_value_rect = pygame.Rect(
+            content_left + year_label_w + self.TABLE_COLUMN_GAP, current_y, year_value_w, row_h,
+        )
+        if is_edit_mode and self._is_field_editable(year_key, year_value, schema_field_specs):
+            content_editable_field_hitboxes.append((year_key, year_row_rect))
+        _, year_provenance, year_inference_ids = self._species_field_value(year_key, year_value)
+        field_rows.append(
+            {
+                "section": "Temporal",
+                "key": year_key,
+                "value": year_value,
+                "inferred": year_provenance == "inferred",
+                "inference_source_ids": year_inference_ids,
+                "row_rect": year_row_rect,
+                "key_rect": year_key_rect,
+                "value_rect": year_value_rect,
+                "key_lines": year_key_lines,
+                "wrapped_lines": year_wrapped_lines,
+                "relation_chips": [],
+            }
+        )
+
+        relation_row_rect = pygame.Rect(relation_x, current_y, content_left + text_width - relation_x, row_h)
+        relation_key_rect = pygame.Rect(relation_x, current_y, relation_label_w, row_h)
+        relation_value_rect = pygame.Rect(relation_value_x, current_y, relation_value_w, row_h)
+        if is_edit_mode and self._is_field_editable(relation_key, relation_value, schema_field_specs):
+            content_editable_field_hitboxes.append((relation_key, relation_row_rect))
+        _, relation_provenance, relation_inference_ids = self._species_field_value(relation_key, relation_value)
+        field_rows.append(
+            {
+                "section": "Temporal",
+                "key": relation_key,
+                "value": relation_value,
+                "inferred": relation_provenance == "inferred",
+                "inference_source_ids": relation_inference_ids,
+                "row_rect": relation_row_rect,
+                "key_rect": relation_key_rect,
+                "value_rect": relation_value_rect,
+                "key_lines": relation_key_lines,
+                "wrapped_lines": relation_wrapped_lines,
+                "relation_chips": relation_chips,
+            }
+        )
+
+        return row_h
+
+    PERIOD_ADD_BUTTON_LABEL = "+ Add"
+
+    def _layout_period_add_row(
+        self, card, field_rows, content_editable_field_hitboxes, content_left, text_width, current_y,
+    ):
+        """Lay out the Name / Start Year / End Year quick-add row under Periods.
+
+        Existing periods and the full pipe-text editor (opened by clicking
+        the Periods row itself) are untouched -- this is purely an additive,
+        friendlier way to append one new entry. Two rows -- Name on its own
+        line, Start/End/Add below -- each placed by walking left to right so
+        cells are adjacent by construction and can never overlap, however
+        narrow the card gets; only the Name value (row 1) and the gap before
+        the Add button (row 2) absorb any leftover width.
+        """
+        font = card["layout_font"]
+        active_field = card.get("active_edit_field")
+        gap = self.TABLE_COLUMN_GAP
+        right_edge = content_left + text_width
+
+        def cell_value(field_key):
+            if active_field == field_key:
+                return card.get("edit_buffer", "")
+            return self._period_add_draft_value(card, field_key)
+
+        def append_cell(field_key, label_x, label_w, value_w, y, row_h, key_lines, wrapped_lines, value):
+            value_x = label_x + label_w + gap
+            row_rect = pygame.Rect(label_x, y, value_x + value_w - label_x, row_h)
+            key_rect = pygame.Rect(label_x, y, label_w, row_h)
+            value_rect = pygame.Rect(value_x, y, value_w, row_h)
+            content_editable_field_hitboxes.append((field_key, row_rect))
+            field_rows.append(
+                {
+                    "section": "Temporal",
+                    "key": field_key,
+                    "value": value,
+                    "inferred": False,
+                    "inference_source_ids": [],
+                    "row_rect": row_rect,
+                    "key_rect": key_rect,
+                    "value_rect": value_rect,
+                    "key_lines": key_lines,
+                    "wrapped_lines": wrapped_lines,
+                    "relation_chips": [],
+                }
+            )
+            return row_rect.right
+
+        # Row 1: Name, spanning the full width.
+        name_label_w = self._measure_label_column_width(font, ["Name:"])
+        name_value_w = max(60, right_edge - (content_left + name_label_w + gap))
+        name_value = cell_value(self.PERIOD_ADD_NAME_FIELD)
+        name_key_lines, name_wrapped, name_row_h = self._measure_combined_temporal_cell(
+            font, self.PERIOD_ADD_NAME_FIELD, name_value, name_label_w, name_value_w, label_override="Name",
+        )
+        append_cell(
+            self.PERIOD_ADD_NAME_FIELD, content_left, name_label_w, name_value_w,
+            current_y, name_row_h, name_key_lines, name_wrapped, name_value,
+        )
+
+        # Row 2: Start, End, and the Add button, walked left to right.
+        row2_y = current_y + name_row_h + max(2, self.SECTION_GAP // 2)
+        start_label_w = self._measure_label_column_width(font, ["Start:"])
+        end_label_w = self._measure_label_column_width(font, ["End:"])
+        year_value_w = self.COMBINED_TEMPORAL_YEAR_VALUE_W
+        start_value = cell_value(self.PERIOD_ADD_START_FIELD)
+        end_value = cell_value(self.PERIOD_ADD_END_FIELD)
+        start_key_lines, start_wrapped, start_row_h = self._measure_combined_temporal_cell(
+            font, self.PERIOD_ADD_START_FIELD, start_value, start_label_w, year_value_w, label_override="Start",
+        )
+        end_key_lines, end_wrapped, end_row_h = self._measure_combined_temporal_cell(
+            font, self.PERIOD_ADD_END_FIELD, end_value, end_label_w, year_value_w, label_override="End",
+        )
+        row2_h = max(start_row_h, end_row_h)
+
+        next_x = append_cell(
+            self.PERIOD_ADD_START_FIELD, content_left, start_label_w, year_value_w,
+            row2_y, row2_h, start_key_lines, start_wrapped, start_value,
+        )
+        next_x = append_cell(
+            self.PERIOD_ADD_END_FIELD, next_x + gap, end_label_w, year_value_w,
+            row2_y, row2_h, end_key_lines, end_wrapped, end_value,
+        )
+
+        button_w = self._measure_label_column_width(font, [self.PERIOD_ADD_BUTTON_LABEL], minimum=50)
+        button_x = max(next_x + gap, right_edge - button_w)
+        card["period_add_button_rect"] = pygame.Rect(button_x, row2_y, button_w, row2_h)
+
+        return (row2_y + row2_h) - current_y
 
     def _field_display_label(self, field_key):
         labels = {
@@ -4676,6 +5065,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         idea_button_rect = pygame.Rect(rect.right - 72, rect.y + 12, 20, 20)
         template_button_rect = None
         relation_tree_rect = None
+        timeline_focus_rect = None
         time_anchor_rect = None
         delete_rect = None
         header_reserved_w = 120
@@ -4683,10 +5073,13 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             time_anchor_rect = pygame.Rect(rect.right - 96, rect.y + 12, 20, 20)
             delete_rect = pygame.Rect(rect.right - 120, rect.y + 12, 20, 20)
             template_button_rect = pygame.Rect(rect.right - 144, rect.y + 12, 20, 20)
-            header_reserved_w = 192
+            lock_toggle_rect = pygame.Rect(rect.right - 168, rect.y + 12, 20, 20)
+            header_reserved_w = 216
         else:
             relation_tree_rect = pygame.Rect(rect.right - 96, rect.y + 12, 20, 20)
-            header_reserved_w = 144
+            timeline_focus_rect = pygame.Rect(rect.right - 120, rect.y + 12, 20, 20)
+            lock_toggle_rect = pygame.Rect(rect.right - 144, rect.y + 12, 20, 20)
+            header_reserved_w = 192
 
         header_icon_ref = self._resolve_card_icon_reference()
         header_icon_rect = pygame.Rect(rect.x + 10, rect.y + 8, 34, 34) if header_icon_ref else None
@@ -4987,7 +5380,25 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 current_y += self.SECTION_HEADER_H + self.SECTION_GAP
 
                 if not self.collapsed_sections.get(section_name, False):
-                    for key, value in section_map.get(section_name, []):
+                    grouped_rows = self._grouped_section_rows(section_name, section_map.get(section_name, []))
+                    for key, value, partner_key, partner_value in grouped_rows:
+                        if partner_key is not None:
+                            row_h = self._layout_combined_temporal_row(
+                                card,
+                                field_rows,
+                                content_editable_field_hitboxes,
+                                schema_field_specs,
+                                content_left,
+                                text_width,
+                                current_y,
+                                key,
+                                value,
+                                partner_key,
+                                partner_value,
+                            )
+                            current_y = current_y + row_h + self.SECTION_GAP
+                            continue
+
                         measure_value = card.get("edit_buffer", "") if card.get("active_edit_field") == key else value
                         key_lines, wrapped_lines, row_h = self._measure_table_row(
                             card["layout_font"],
@@ -5034,6 +5445,17 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                         )
 
                         current_y = row_rect.bottom + self.SECTION_GAP
+
+                        if key == "temporal_periods" and card.get("is_edit_mode", False):
+                            row_h = self._layout_period_add_row(
+                                card,
+                                field_rows,
+                                content_editable_field_hitboxes,
+                                content_left,
+                                text_width,
+                                current_y,
+                            )
+                            current_y = current_y + row_h + self.SECTION_GAP
 
                     current_y += self.SECTION_GAP
 
@@ -5837,9 +6259,11 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         card["field_rows"] = field_rows
         card["resize_hitboxes"] = resize_hitboxes
         card["edit_toggle_rect"] = edit_toggle_rect
+        card["lock_toggle_rect"] = lock_toggle_rect
         card["idea_button_rect"] = idea_button_rect
         card["template_button_rect"] = template_button_rect
         card["relation_tree_rect"] = relation_tree_rect
+        card["timeline_focus_rect"] = timeline_focus_rect
         card["header_icon_ref"] = header_icon_ref
         card["header_icon_rect"] = header_icon_rect
         card["time_anchor_rect"] = time_anchor_rect
@@ -6148,9 +6572,11 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         screen.blit(subtitle_surface, (subtitle_x, subtitle_y))
 
         edit_toggle_rect = card.get("edit_toggle_rect")
+        lock_toggle_rect = card.get("lock_toggle_rect")
         idea_button_rect = card.get("idea_button_rect")
         template_button_rect = card.get("template_button_rect")
         relation_tree_rect = card.get("relation_tree_rect")
+        timeline_focus_rect = card.get("timeline_focus_rect")
         time_anchor_rect = card.get("time_anchor_rect")
         delete_rect = card.get("delete_rect")
         close_rect = card.get("close_rect")
@@ -6175,6 +6601,16 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             relation_text_rect = relation_text.get_rect(center=relation_tree_rect.center)
             screen.blit(relation_text, relation_text_rect)
 
+        if timeline_focus_rect is not None:
+            focus_active = bool(card.get("timeline_focus_active", False))
+            focus_fill = (150, 110, 46) if focus_active else (46, 50, 60)
+            focus_border = (244, 206, 140) if focus_active else (150, 150, 160)
+            focus_text_color = (255, 240, 214) if focus_active else (214, 214, 214)
+            pygame.draw.rect(screen, focus_fill, timeline_focus_rect)
+            pygame.draw.rect(screen, focus_border, timeline_focus_rect, 1)
+            focus_text = font.render("T", True, focus_text_color)
+            screen.blit(focus_text, focus_text.get_rect(center=timeline_focus_rect.center))
+
         if edit_toggle_rect is not None:
             edit_enabled = bool(card.get("is_edit_mode", False))
             edit_fill = (70, 96, 140) if edit_enabled else (46, 50, 60)
@@ -6186,6 +6622,16 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             edit_text = font.render("E", True, edit_text_color)
             edit_text_rect = edit_text.get_rect(center=edit_toggle_rect.center)
             screen.blit(edit_text, edit_text_rect)
+
+        if lock_toggle_rect is not None:
+            lock_active = bool(card.get("relation_lock_active", False))
+            lock_fill = (150, 110, 46) if lock_active else (46, 50, 60)
+            lock_border = (244, 206, 140) if lock_active else (140, 140, 150)
+            lock_text_color = (255, 240, 214) if lock_active else (210, 210, 210)
+            pygame.draw.rect(screen, lock_fill, lock_toggle_rect)
+            pygame.draw.rect(screen, lock_border, lock_toggle_rect, 1)
+            lock_text = font.render("L", True, lock_text_color)
+            screen.blit(lock_text, lock_text.get_rect(center=lock_toggle_rect.center))
 
         if time_anchor_rect is not None:
             anchor_active = bool(card.get("timeline_reanchor_active", False))
@@ -7094,7 +7540,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             if not expanded:
                 continue
 
-            for row_index, row in enumerate(rows_by_section.get(section_name, [])):
+            visual_row_index = -1
+            last_row_y = None
+            for row in rows_by_section.get(section_name, []):
                 key = row["key"]
                 value = row.get("value")
                 row_rect = row["row_rect"]
@@ -7103,7 +7551,14 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 is_relation_link_target = key == card.get("active_relation_link_field")
                 is_editable = key in editable_hitboxes
 
-                row_fill = (33, 36, 46) if row_index % 2 == 0 else (29, 32, 42)
+                # A combined row (e.g. Start year + Predecessors) is two
+                # field_rows entries sharing one y -- stripe them as a
+                # single visual row rather than by raw list position.
+                if last_row_y is None or row_rect.y != last_row_y:
+                    visual_row_index += 1
+                    last_row_y = row_rect.y
+
+                row_fill = (33, 36, 46) if visual_row_index % 2 == 0 else (29, 32, 42)
                 row_border = (78, 84, 100)
                 if is_editable:
                     row_fill = (42, 47, 58)
@@ -7118,6 +7573,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
                 pygame.draw.rect(screen, row_fill, row_rect)
                 pygame.draw.rect(screen, row_border, row_rect, 1)
+                if key == card.get("highlight_field_key") and not is_active_field:
+                    pygame.draw.rect(screen, self._attention_pulse_color(), row_rect.inflate(4, 4), 2)
                 pygame.draw.line(
                     screen,
                     (88, 94, 112),
@@ -7216,10 +7673,45 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 if is_active_field and card.get("choice_picker_open", False):
                     active_choice_anchor = row["value_rect"]
 
+            if section_name == "Temporal":
+                button_rect = card.get("period_add_button_rect")
+                if button_rect is not None and card.get("is_edit_mode", False):
+                    pygame.draw.rect(screen, (48, 68, 56), button_rect)
+                    pygame.draw.rect(screen, (110, 150, 122), button_rect, 1)
+                    button_text = font.render(self.PERIOD_ADD_BUTTON_LABEL, True, (206, 236, 214))
+                    screen.blit(button_text, button_text.get_rect(center=button_rect.center))
+
         if active_relation_anchor is not None:
             self._draw_relation_picker(screen, font, card, active_relation_anchor)
         if active_choice_anchor is not None:
             self._draw_controlled_choice_picker(screen, font, card, active_choice_anchor)
+
+    @staticmethod
+    def _attention_pulse_color():
+        pulse = 0.5 + 0.5 * abs(((pygame.time.get_ticks() % 900) / 900.0) * 2 - 1)
+        return (
+            int(210 + (255 - 210) * pulse),
+            int(168 + (214 - 168) * pulse),
+            int(60 + (90 - 60) * pulse),
+        )
+
+    def _draw_wiki_link_highlight(self, screen, card, general_rect, ref):
+        target = next(
+            (
+                hitbox
+                for hitbox in card.get("wiki_link_hitboxes", [])
+                if str(hitbox.get("ref", "")) == str(ref)
+            ),
+            None,
+        )
+        if target is None:
+            return
+
+        inner_rect = general_rect.inflate(-10, -10)
+        previous_clip = screen.get_clip()
+        screen.set_clip(inner_rect.clip(previous_clip))
+        pygame.draw.rect(screen, self._attention_pulse_color(), target["rect"].inflate(4, 4), 2)
+        screen.set_clip(previous_clip)
 
     def _draw_general_content(self, screen, font, card):
         self._draw_tag_bar(screen, font, card)
@@ -7243,6 +7735,10 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             scroll_y=card.get("scroll_y", 0),
             selection_range=self._edit_selection_range(card),
         )
+
+        highlight_ref = card.get("highlight_wiki_link_ref")
+        if highlight_ref and not is_editing:
+            self._draw_wiki_link_highlight(screen, card, general_rect, highlight_ref)
 
         snapshot_rect = card.get("timeline_snapshot_rect")
         if snapshot_rect is not None:

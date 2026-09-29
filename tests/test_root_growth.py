@@ -2,7 +2,11 @@ import copy
 import math
 import unittest
 
-from simulations.species.root_growth import root_profile, build_root_graph
+from simulations.species.root_growth import (
+    build_distributed_adventitious_roots,
+    build_root_graph,
+    root_profile,
+)
 from simulations.species.species_simulation import SpeciesSimulation
 from simulations.species.plant_assets import PlantGrowthSnapshot
 
@@ -88,6 +92,32 @@ class RootGrowthTests(unittest.TestCase):
         self.assertLess(crown_z, 0)
         self.assertTrue(all(p[4] < crown_z for p in roots))
         self.assertEqual("stem_section", sim.blueprint.module("root_support").kind)
+
+    def test_distributed_adventitious_roots_are_bounded_at_each_contact(self):
+        profile = root_profile({
+            "root_architecture": "adventitious",
+            "root_depth_class": "shallow",
+            "max_root_depth": {"max_m": 0.3},
+        })
+        contacts = [
+            {"parent_index": 10, "position": (-0.6, 0.0, -0.015)},
+            {"parent_index": 20, "position": (0.7, 0.2, -0.015)},
+        ]
+        graph, stats = build_distributed_adventitious_roots(profile, 1.0, 303, contacts)
+        self.assertEqual(
+            (graph, stats),
+            build_distributed_adventitious_roots(profile, 1.0, 303, contacts),
+        )
+        self.assertEqual(2, stats["root_cluster_count"])
+        self.assertEqual(2, stats["root_support_node_count"])
+        self.assertEqual("contact_nodes", stats["root_distribution"])
+        self.assertEqual(0.3, stats["root_depth_m"])
+        self.assertLess(stats["root_cluster_spread_m"], stats["root_system_span_m"])
+        self.assertTrue({node["contact_index"] for node in graph} == {0, 1})
+        for index, node in enumerate(graph):
+            self.assertLess(node["parent"], index)
+            self.assertGreaterEqual(node["parent"], -1)
+            self.assertLessEqual(node["position"][2], 0.0)
 
     def test_root_traits_do_not_change_shoot_geometry(self):
         first = self.make_sim("taproot")

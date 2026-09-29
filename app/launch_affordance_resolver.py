@@ -11,6 +11,7 @@ MAP_SURFACE_FIELDS = (
 )
 
 from simulations.species.plant_assets import is_plant_species_entity
+from simulations.clothing.clothing_design import is_clothing_item
 
 ORBITAL_LOCATION_CLASSES = {
     "star",
@@ -95,7 +96,7 @@ class LaunchAffordanceResolver:
     the future simulation matrix into a premature framework.
     """
 
-    def options_for_entity(self, entity, plant_catalogue=None):
+    def options_for_entity(self, entity, plant_catalogue=None, world_model=None):
         if not isinstance(entity, dict):
             return []
 
@@ -108,6 +109,20 @@ class LaunchAffordanceResolver:
         body_class = _body_class(entity)
         options = []
 
+        if str(entity.get("idea_class") or "").strip().lower() == "illustration":
+            return [_option(
+                "pixel_editor", "Pixel Editor",
+                "Open this illustration in the in-engine pixel art editor.",
+                100, entity_id,
+            )]
+
+        if dataset_name == "building_blueprints" or entity.get("type") == "building_blueprint":
+            return [_option(
+                "blueprint_designer", "Blueprint Designer",
+                "Draw the floorplan, then design surfaces and materials.",
+                110, entity_id,
+            )]
+
         if _is_location(entity):
             if _is_star_system(entity):
                 options.append(_option("space", "Space", "Open the star-system orbital view.", 100, entity_id))
@@ -115,6 +130,14 @@ class LaunchAffordanceResolver:
                 return options
 
             if location_class == "building":
+                if entity.get("building_blueprint"):
+                    # Rooms of a placed building come from its blueprint, so
+                    # the blueprint is the natural first view.
+                    options.append(_option(
+                        "blueprint_designer", "Blueprint",
+                        "Open the blueprint version this building was placed from.",
+                        105, entity_id,
+                    ))
                 options.append(_option("building", "Building", "Open the building/interior workspace.", 100, entity_id))
                 return options
 
@@ -172,10 +195,24 @@ class LaunchAffordanceResolver:
             return options
 
         if dataset_name == "vehicles":
-            return [_option("vehicle", "Design", "Open the vehicle design workspace.", 100, entity_id)]
+            return [
+                _option("vehicle_designer", "Vehicle Designer", "Define the hull and component layout.", 110, entity_id),
+                _option("vehicle_sim", "Vehicle Sim", "Operate this authored vehicle design.", 100, entity_id),
+                _option("vehicle_registry", "Vehicle Registry", "Track individually constructed units of this design.", 90, entity_id),
+            ]
+
+        if is_clothing_item(entity, world_model):
+            return [_option(
+                "clothing_editor", "Clothing Editor",
+                "Paint this garment over a DNA-proportioned human guide and preview derived sizes.",
+                110, entity_id,
+            )]
 
         if dataset_name == "people" or entity.get("type") == "person":
-            return [_option("person", "Person", "Open the person dossier simulation.", 100, entity_id)]
+            return [
+                _option("person_editor", "Person Editor", "Author DNA-backed appearance traits.", 110, entity_id),
+                _option("person", "Person Sim", "Open the embodied person simulation.", 100, entity_id),
+            ]
 
         if dataset_name == "pops" or entity.get("type") == "pop":
             return [_option("pop", "Pop", "Open the population composition view.", 100, entity_id)]
@@ -205,8 +242,8 @@ class LaunchAffordanceResolver:
 
         return []
 
-    def default_mode_for_entity(self, entity, plant_catalogue=None):
-        options = self.options_for_entity(entity, plant_catalogue)
+    def default_mode_for_entity(self, entity, plant_catalogue=None, world_model=None):
+        options = self.options_for_entity(entity, plant_catalogue, world_model)
         if not options:
             return None
 

@@ -115,6 +115,51 @@ def _add_coast(planet):
 
 
 class MapRegionContextTests(unittest.TestCase):
+    def test_regeneration_publishes_live_regional_loading_state(self):
+        earth = _planet()
+        region = {
+            "id": "refined_live_preview",
+            "refinement_parent_map_id": "earth",
+        }
+        world = _World([earth])
+        sim = MapSimulation(SimulationContext(2400, earth["id"], world))
+        observed = []
+
+        def generate(_world, _parent, _bounds, **kwargs):
+            progress = kwargs["progress_callback"]
+            progress(0.24, "Refining regional relief row 3 of 9", {
+                "heightmap_model": {
+                    "sample_grid": {
+                        "width": 9,
+                        "height": 9,
+                        "rows": [[100.0] * 9 for _index in range(9)],
+                    },
+                },
+            })
+            observed.append(sim.get_regional_loading_state())
+            return region
+
+        with (
+            patch.object(
+                sim,
+                "_visible_refinement_bounds",
+                return_value={"min_x": -20.0, "max_x": 20.0, "min_y": -10.0, "max_y": 10.0},
+            ),
+            patch(
+                "simulations.world_gen.regional_refinement.generate_refined_region",
+                side_effect=generate,
+            ),
+        ):
+            result = sim.regenerate_visible_region(SimpleNamespace(), 1280, 720)
+
+        self.assertIs(region, result)
+        self.assertTrue(observed[0]["active"])
+        self.assertEqual("INDEX 0 / LIVE REGIONAL ASSEMBLY", observed[0]["assembly_title"])
+        self.assertEqual("relief", observed[0]["preview_mode"])
+        self.assertAlmostEqual(0.24, observed[0]["progress"])
+        self.assertFalse(sim.get_regional_loading_state()["active"])
+        self.assertFalse(sim.suppress_global_overlays)
+
     def test_authored_region_map_can_generate_its_inherited_full_footprint(self):
         earth = _planet()
         region = {

@@ -11,6 +11,7 @@ import pygame
 
 from simulations.species.species_diagnostics import build_growth_gallery
 from simulations.species.species_renderer import SpeciesRenderer, diagnostic_cell_bounds
+from simulations.species.species_simulation import SCREEN_DEPTH_PROJECTION
 from simulations.species.plant_assets import PlantAssetStore
 from world.entity_loader import EntityLoader
 
@@ -31,6 +32,15 @@ class GalleryCamera:
     def world_to_screen(self, position):
         x, z = float(position[0]), float(position[1])
         return round(self.screen_center_x + (x - self.center_x) * self.scale), round(self.bottom - (z - self.min_z) * self.scale)
+
+    def world_to_screen_3d(self, position):
+        # Without this, SpeciesRenderer._screen() treats GalleryCamera as the
+        # generic screen-down-y app camera and negates height before calling
+        # world_to_screen, which pushes almost the entire plant below the
+        # visible frame for anything taller than a couple of metres. See
+        # DiagnosticCamera.world_to_screen_3d for the pattern this mirrors.
+        x, y, z = (float(position[0]), float(position[1]), float(position[2]))
+        return self.world_to_screen((x + y * SCREEN_DEPTH_PROJECTION, z))
 
 
 def _cell_bounds(snapshot):

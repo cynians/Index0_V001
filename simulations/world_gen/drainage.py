@@ -9,8 +9,12 @@ import heapq
 import math
 from collections import defaultdict, deque
 
+import numpy as np
 
-MODEL_VERSION = "watershed-drainage-v8"
+from simulations.world_gen.exact_rounding import round_rows
+
+
+MODEL_VERSION = "watershed-drainage-v9"
 
 
 def _clamp(value, low=0.0, high=1.0):
@@ -382,6 +386,143 @@ def _polyline_follows_trunk(candidate, trunk, tolerance=0.014):
     return close / max(1, len(samples)) >= 0.82
 
 
+def _nearest_point_on_polyline(point, polyline):
+    """Return the nearest point on a normalized polyline and its distance."""
+    px, py = float(point.get("x", 0.0)), float(point.get("y", 0.0))
+    best_distance, best_point = float("inf"), None
+    for first, second in zip(polyline, polyline[1:]):
+        ax, ay = float(first.get("x", 0.0)), float(first.get("y", 0.0))
+        bx, by = float(second.get("x", 0.0)), float(second.get("y", 0.0))
+        dx, dy = bx - ax, by - ay
+        length_squared = dx * dx + dy * dy
+        amount = 0.0 if length_squared <= 1e-15 else _clamp(
+            ((px - ax) * dx + (py - ay) * dy) / length_squared
+        )
+        candidate = {"x": ax + dx * amount, "y": ay + dy * amount}
+        distance = math.hypot(px - candidate["x"], py - candidate["y"])
+        if distance < best_distance:
+            best_distance, best_point = distance, candidate
+    return best_distance, best_point
+
+
+def _boundary_ports(points, tolerance=1e-6):
+    """Expose inherited reach entry/exit points for adjacent child tiles."""
+    ports = []
+    for role, point in (("inflow", points[0]), ("outflow", points[-1])):
+        sides = []
+        if float(point["x"]) <= tolerance:
+            sides.append("west")
+        if float(point["x"]) >= 1.0 - tolerance:
+            sides.append("east")
+        if float(point["y"]) <= tolerance:
+            sides.append("north")
+        if float(point["y"]) >= 1.0 - tolerance:
+            sides.append("south")
+        if sides:
+            ports.append({
+                "role": role,
+                "sides": sides,
+                "point": {"x": round(float(point["x"]), 6), "y": round(float(point["y"]), 6)},
+            })
+    return ports
+
+
+def _localize_parent_box(box, parent_bounds, child_bounds):
+    required = ("min_x", "max_x", "min_y", "max_y")
+    if not isinstance(box, dict) or not all(key in box for key in required):
+        return None
+    parent_u_span = max(1e-12, float(parent_bounds["max_u"]) - float(parent_bounds["min_u"]))
+    parent_v_span = max(1e-12, float(parent_bounds["max_v"]) - float(parent_bounds["min_v"]))
+    child_u_span = max(1e-12, float(child_bounds["max_u"]) - float(child_bounds["min_u"]))
+    child_v_span = max(1e-12, float(child_bounds["max_v"]) - float(child_bounds["min_v"]))
+    global_box = {
+        "min_x": float(parent_bounds["min_u"]) + float(box["min_x"]) * parent_u_span,
+        "max_x": float(parent_bounds["min_u"]) + float(box["max_x"]) * parent_u_span,
+        "min_y": float(parent_bounds["min_v"]) + float(box["min_y"]) * parent_v_span,
+        "max_y": float(parent_bounds["min_v"]) + float(box["max_y"]) * parent_v_span,
+    }
+    clipped = {
+        "min_x": max(global_box["min_x"], float(child_bounds["min_u"])),
+        "max_x": min(global_box["max_x"], float(child_bounds["max_u"])),
+        "min_y": max(global_box["min_y"], float(child_bounds["min_v"])),
+        "max_y": min(global_box["max_y"], float(child_bounds["max_v"])),
+    }
+    if clipped["min_x"] > clipped["max_x"] or clipped["min_y"] > clipped["max_y"]:
+        return None
+    return {
+        "min_x": round((clipped["min_x"] - float(child_bounds["min_u"])) / child_u_span, 6),
+        "max_x": round((clipped["max_x"] - float(child_bounds["min_u"])) / child_u_span, 6),
+        "min_y": round((clipped["min_y"] - float(child_bounds["min_v"])) / child_v_span, 6),
+        "max_y": round((clipped["max_y"] - float(child_bounds["min_v"])) / child_v_span, 6),
+    }
+
+
+def _boxes_overlap(first, second):
+    return not (
+        float(first["max_x"]) < float(second["min_x"])
+        or float(second["max_x"]) < float(first["min_x"])
+        or float(first["max_y"]) < float(second["min_y"])
+        or float(second["max_y"]) < float(first["min_y"])
+    )
+
+
+def _inherit_parent_lakes(parent_drainage, local_lakes, child_bounds, parent_bounds, parent_detail):
+    """Keep parent water-body identity while allowing the finer DEM to refine its shore."""
+    inherited = []
+    for lake in sorted(
+        (item for item in (parent_drainage.get("lakes") or []) if isinstance(item, dict)),
+        key=lambda item: float(item.get("area_fraction", 0.0) or 0.0),
+        reverse=True,
+    )[:32]:
+        local_bounds = _localize_parent_box(lake.get("bounds"), parent_bounds, child_bounds)
+        if local_bounds is None:
+            continue
+        origin_id = str(
+            lake.get("origin_lake_id")
+            or f"generated_lod_{parent_detail}:{lake.get('id', 'lake')}"
+        )
+        inherited.append({
+            **lake,
+            "id": f"parent_lake_{origin_id}",
+            "origin_lake_id": origin_id,
+            "parent_lake_id": lake.get("id"),
+            "bounds": local_bounds,
+            "center": {
+                "x": round((local_bounds["min_x"] + local_bounds["max_x"]) * 0.5, 6),
+                "y": round((local_bounds["min_y"] + local_bounds["max_y"]) * 0.5, 6),
+            },
+            "cells": [],
+            "inherited_from_parent": True,
+            "network_role": "inherited_parent_lake",
+            "shoreline_resolution": "parent_footprint_constraint",
+        })
+
+    unmatched = list(inherited)
+    resolved = []
+    for lake in (item for item in local_lakes if isinstance(item, dict)):
+        local_bounds = lake.get("bounds") or {}
+        match = next(
+            (candidate for candidate in unmatched if all(key in local_bounds for key in ("min_x", "max_x", "min_y", "max_y")) and _boxes_overlap(candidate["bounds"], local_bounds)),
+            None,
+        )
+        if match is None:
+            resolved.append(lake)
+            continue
+        unmatched.remove(match)
+        resolved.append({
+            **match,
+            **lake,
+            "id": match["id"],
+            "origin_lake_id": match["origin_lake_id"],
+            "parent_lake_id": match["parent_lake_id"],
+            "inherited_from_parent": True,
+            "network_role": "refined_parent_lake",
+            "shoreline_resolution": "child_dem_refined",
+            "parent_surface_elevation_m": match.get("surface_elevation_m"),
+        })
+    return [*unmatched, *resolved], len(inherited), len(inherited) - len(unmatched)
+
+
 def inherit_parent_drainage(parent_drainage, child_drainage, child_bounds, parent_bounds):
     """Project major parent reaches into a refined map as continuity anchors.
 
@@ -471,6 +612,8 @@ def inherit_parent_drainage(parent_drainage, child_drainage, child_bounds, paren
             "inherited_from_parent": True,
             "origin_river_id": origin_id,
             "parent_river_id": river.get("id"),
+            "boundary_ports": _boundary_ports(clipped_points),
+            "direction_contract": "source_to_mouth_inherited_from_parent",
             "mouth": (
                 river.get("mouth")
                 if river.get("mouth") in {"ocean", "lake"}
@@ -490,17 +633,254 @@ def inherit_parent_drainage(parent_drainage, child_drainage, child_bounds, paren
         if any(_polyline_follows_trunk(points, trunk) for trunk in inherited_paths):
             suppressed_local_duplicates += 1
             continue
+        if points and inherited:
+            endpoint = points[-1]
+            grid_span = max(
+                1,
+                min(
+                    int(child_drainage.get("grid_width", 0) or 0) - 1,
+                    int(child_drainage.get("grid_height", 0) or 0) - 1,
+                ),
+            )
+            snap_tolerance = max(0.004, min(0.025, 2.5 / grid_span))
+            nearest = min(
+                (
+                    (*_nearest_point_on_polyline(endpoint, trunk.get("points") or []), trunk)
+                    for trunk in inherited
+                    if len(trunk.get("points") or []) >= 2
+                ),
+                key=lambda item: item[0],
+                default=(float("inf"), None, None),
+            )
+            if nearest[1] is not None and nearest[0] <= snap_tolerance:
+                snapped = {
+                    "x": round(float(nearest[1]["x"]), 6),
+                    "y": round(float(nearest[1]["y"]), 6),
+                }
+                river = dict(river)
+                river["points"] = [*points[:-1], snapped]
+                if river.get("display_points"):
+                    river["display_points"] = [*river["display_points"][:-1], snapped]
+                river["joins_river_id"] = nearest[2]["id"]
+                river["mouth"] = "confluence"
+                river["cross_lod_connection"] = "snapped_to_inherited_trunk"
         local_rivers.append(river)
     child_drainage["rivers"] = [*inherited, *local_rivers]
     child_drainage["inherited_parent_trunk_count"] = len(inherited)
     child_drainage["suppressed_duplicate_local_reach_count"] = suppressed_local_duplicates
     child_drainage["river_segment_count"] = len(child_drainage["rivers"])
+    lakes, inherited_lake_count, refined_lake_count = _inherit_parent_lakes(
+        parent_drainage,
+        list(child_drainage.get("lakes") or []),
+        child_bounds,
+        parent_bounds,
+        parent_detail,
+    )
+    child_drainage["lakes"] = lakes
+    child_drainage["inherited_parent_lake_count"] = inherited_lake_count
+    child_drainage["refined_parent_lake_count"] = refined_lake_count
+    child_drainage["lake_count"] = len(lakes)
     child_drainage["cross_lod_continuity"] = (
-        "parent_trunks_projected_and_local_tributaries_resolved"
-        if inherited
+        "parent_water_network_projected_and_local_drainage_resolved"
+        if inherited or inherited_lake_count
         else "no_parent_trunk_intersected_refinement"
     )
     return child_drainage
+
+
+def derive_surface_hydrology_grids(
+    elevation_rows,
+    ocean_mask,
+    drainage_network,
+    *,
+    sea_level_m=None,
+    region_width_m=0.0,
+    region_height_m=0.0,
+    runoff_rows=None,
+    precipitation_rows=None,
+    potential_evaporation_rows=None,
+    groundwater_recharge_rows=None,
+):
+    """Materialize the drainage graph as physical fields for local consumers.
+
+    The graph remains canonical.  These bounded rasters are a scale-specific
+    cache used by Map, Biosphere, soils, and surface-process models.
+    """
+    height = len(elevation_rows or [])
+    width = min((len(row) for row in (elevation_rows or [])), default=0)
+    if width < 2 or height < 2:
+        return ({"status": "unavailable"}, {"status": "unavailable"})
+    drainage_network = drainage_network if isinstance(drainage_network, dict) else {}
+    channel = [[0.0 for _x in range(width)] for _y in range(height)]
+    water = [[bool(ocean_mask[y][x]) for x in range(width)] for y in range(height)]
+    depth = [[0.0 for _x in range(width)] for _y in range(height)]
+    surface = [[None for _x in range(width)] for _y in range(height)]
+    cell_width_m = float(region_width_m or 0.0) / max(1, width - 1)
+    cell_height_m = float(region_height_m or 0.0) / max(1, height - 1)
+    cell_spacing_m = max(1e-6, math.sqrt(max(1e-12, cell_width_m * cell_height_m)))
+
+    def paint_disc(cx, cy, radius, *, channel_value=1.0, water_value=False, water_depth=0.0):
+        radius = max(0, int(radius))
+        for py in range(max(0, cy - radius), min(height, cy + radius + 1)):
+            for px in range(max(0, cx - radius), min(width, cx + radius + 1)):
+                if (px - cx) ** 2 + (py - cy) ** 2 > radius ** 2:
+                    continue
+                channel[py][px] = max(channel[py][px], float(channel_value))
+                if water_value:
+                    water[py][px] = True
+                    depth[py][px] = max(depth[py][px], float(water_depth))
+                    surface[py][px] = float(elevation_rows[py][px]) + depth[py][px]
+
+    channels = [
+        *(drainage_network.get("rivers") or []),
+        *(drainage_network.get("ephemeral_channels") or []),
+    ]
+    for river in channels:
+        if not isinstance(river, dict):
+            continue
+        points = river.get("points") or river.get("display_points") or []
+        if len(points) < 2:
+            continue
+        discharge = max(0.0, float(river.get("estimated_discharge_m3_s", 0.0) or 0.0))
+        width_m = max(0.0, float(river.get("average_width_m", 0.0) or 0.0))
+        radius = max(0, min(8, int(round(width_m / max(1e-6, cell_spacing_m) * 0.5))))
+        regime = str(river.get("flow_regime") or "intermittent")
+        characteristic_depth = min(18.0, max(0.08, 0.24 * max(0.02, discharge) ** 0.38))
+        if regime == "intermittent":
+            characteristic_depth *= 0.55
+        active_water = regime in {"perennial", "intermittent"}
+        for first, second in zip(points, points[1:]):
+            x0, y0 = float(first["x"]) * (width - 1), float(first["y"]) * (height - 1)
+            x1, y1 = float(second["x"]) * (width - 1), float(second["y"]) * (height - 1)
+            steps = max(1, int(math.ceil(max(abs(x1 - x0), abs(y1 - y0)) * 1.5)))
+            for step in range(steps + 1):
+                amount = step / steps
+                paint_disc(
+                    round(x0 + (x1 - x0) * amount),
+                    round(y0 + (y1 - y0) * amount),
+                    radius,
+                    channel_value=1.0 if active_water else 0.65,
+                    water_value=active_water,
+                    water_depth=characteristic_depth,
+                )
+
+    for lake in drainage_network.get("lakes") or []:
+        if not isinstance(lake, dict):
+            continue
+        cells = lake.get("cells") or []
+        lake_surface = lake.get("surface_elevation_m")
+        if cells:
+            candidates = [
+                (max(0, min(width - 1, int(cell[0]))), max(0, min(height - 1, int(cell[1]))))
+                for cell in cells if isinstance(cell, (list, tuple)) and len(cell) >= 2
+            ]
+        else:
+            bounds = lake.get("bounds") or {}
+            if not all(key in bounds for key in ("min_x", "max_x", "min_y", "max_y")):
+                continue
+            x0, x1 = sorted((round(float(bounds["min_x"]) * (width - 1)), round(float(bounds["max_x"]) * (width - 1))))
+            y0, y1 = sorted((round(float(bounds["min_y"]) * (height - 1)), round(float(bounds["max_y"]) * (height - 1))))
+            candidates = [(x, y) for y in range(max(0, y0), min(height, y1 + 1)) for x in range(max(0, x0), min(width, x1 + 1))]
+        for x, y in candidates:
+            bed = float(elevation_rows[y][x])
+            if lake_surface is not None and bed > float(lake_surface) + max(0.5, cell_spacing_m * 0.02):
+                continue
+            water[y][x] = True
+            lake_depth = max(0.05, float(lake_surface) - bed) if lake_surface is not None else 0.05
+            depth[y][x] = max(depth[y][x], lake_depth)
+            surface[y][x] = bed + depth[y][x]
+
+    if sea_level_m is not None:
+        sea_level = float(sea_level_m)
+        for y in range(height):
+            for x in range(width):
+                if ocean_mask[y][x]:
+                    depth[y][x] = max(0.0, sea_level - float(elevation_rows[y][x]))
+                    surface[y][x] = sea_level
+
+    def sample(rows, x, y, default=0.0):
+        try:
+            return max(0.0, float(rows[y][x] or 0.0))
+        except (IndexError, TypeError, ValueError):
+            return float(default)
+
+    def sample_grid(rows, default=0.0):
+        """``sample`` for every cell; per-cell fallback only for ragged input."""
+        try:
+            values = np.asarray(
+                [[float(value or 0.0) for value in rows[y][:width]] for y in range(height)],
+                dtype=np.float64,
+            )
+        except (IndexError, TypeError, ValueError):
+            values = None
+        if values is None or values.shape != (height, width):
+            return np.asarray(
+                [[sample(rows, x, y, default) for x in range(width)] for y in range(height)],
+                dtype=np.float64,
+            )
+        # ``max(0.0, nan)`` is 0.0 in Python; ``fmax`` matches it.
+        return np.fmax(0.0, values)
+
+    runoff = sample_grid(runoff_rows)
+    precipitation = sample_grid(precipitation_rows)
+    evaporation = sample_grid(potential_evaporation_rows, 350.0)
+    recharge = sample_grid(groundwater_recharge_rows)
+    supply = runoff + recharge * 0.7 + precipitation * 0.08
+    climatic = supply / np.maximum(1.0, supply + evaporation)
+    channel_grid = np.asarray(channel, dtype=np.float64)
+    water_grid = np.asarray(water, dtype=bool)
+    occupied = water_grid | (channel_grid > 0.0)
+
+    def within(mask, radius):
+        """Any ``mask`` cell in the edge-clipped square window of ``radius``."""
+        grown = mask.copy()
+        for offset in range(1, radius + 1):
+            grown[offset:, :] |= mask[:-offset, :]
+            grown[:-offset, :] |= mask[offset:, :]
+        columns = grown.copy()
+        for offset in range(1, radius + 1):
+            columns[:, offset:] |= grown[:, :-offset]
+            columns[:, :-offset] |= grown[:, offset:]
+        return columns
+
+    near_water = np.where(
+        water_grid,
+        1.0,
+        np.where(
+            within(occupied, 1),
+            0.72,
+            np.where(within(occupied, 2), 0.48, np.where(within(occupied, 3), 0.28, 0.0)),
+        ),
+    )
+    wetness = round_rows(
+        np.clip(0.04 + climatic * 0.68 + channel_grid * 0.12 + near_water * 0.32, 0.0, 1.0),
+        4,
+    )
+
+    runoff_grid = {
+        "status": "drainage_graph_rasterized",
+        "model_version": "surface-hydrology-fields-v1",
+        "width": width,
+        "height": height,
+        "channel_presence_rows": channel,
+        "wetness_index_rows": wetness,
+        "flow_accumulation_rows": drainage_network.get("flow_accumulation_rows") or [],
+        "wetness_contract": "climate water balance plus graph-channel and open-water proximity; dimensionless qualitative index",
+    }
+    surface_water_grid = {
+        "status": "drainage_graph_rasterized",
+        "model_version": "surface-hydrology-fields-v1",
+        "width": width,
+        "height": height,
+        "water_presence_rows": water,
+        "water_depth_m_rows": depth,
+        "water_surface_elevation_m_rows": surface,
+        "presence_contract": "ocean, retained lakes, and characteristic perennial/intermittent channel water",
+        "depth_contract": "DEM bathymetry for ocean/lakes; qualitative hydraulic-geometry estimate for channels",
+        "seasonal_state": "unresolved; intermittent presence is characteristic rather than instantaneous",
+        "salinity": "unresolved",
+    }
+    return runoff_grid, surface_water_grid
 
 
 def _lake_components(
@@ -919,6 +1299,8 @@ def derive_drainage_network(
         "status": "drainage_network_seeded",
         "model_version": MODEL_VERSION,
         "detail_level": int(detail_level or 0),
+        "grid_width": width,
+        "grid_height": height,
         "filled_elevation_rows": [[round(value, 2) for value in row] for row in filled],
         "flow_accumulation_rows": [[round(value, 2) for value in row] for row in accumulation],
         "drainage_basin_rows": basin_rows,

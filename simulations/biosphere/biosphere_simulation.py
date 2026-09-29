@@ -12,7 +12,9 @@ from pathlib import Path
 
 from simulations.biosphere.ecology import BiosphereEcology, profile_from_entity
 from simulations.biosphere.representatives import RepresentativePopulationManager
+from simulations.biosphere.soil_succession import SoilOrganicMatterField
 from simulations.map.map_simulation import MapSimulation
+from simulations.map.worldgen_substrate import WorldgenSubstrate
 from simulations.species.species_simulation import SpeciesSimulation
 from world.simulation_context import SimulationContext
 
@@ -85,7 +87,6 @@ class BiosphereSimulation(MapSimulation):
     simulation_mode = "biosphere_builder"
     PLACEMENT_TOOL = "introduce_species"
     BIOMASSER_ID = "spec_biomasser_13b"
-    PIONEER_UNLOCK_BIOMASS_KG = 6.0
     BASE_SECONDS_PER_SEASON = 30.0
     TIME_SCALES = (0.0, 1.0, 4.0, 16.0)
 
@@ -144,7 +145,12 @@ class BiosphereSimulation(MapSimulation):
             float(self.biosphere_context.get("biosphere_height_m") or initial_extent),
         )
         self.maximum_extent_m = min(1000.0, requested_extent)
-        if world_model.get_entity(patch_id) is None or bootstrap_lifeless:
+        source_root = world_model.get_entity(patch_id) or {}
+        imported_surface = bool((source_root.get("heightmap_model") or {}).get("sample_grid"))
+        if imported_surface:
+            b = source_root["bounds"]
+            self.maximum_extent_m = max(b["max_x"]-b["min_x"], b["max_y"]-b["min_y"])
+        if not source_root or (bootstrap_lifeless and not imported_surface):
             width = float(self.biosphere_context.get("initial_extent_m") or self.biosphere_context.get("biosphere_width_m") or self.biosphere_context.get("map_size_m") or 10.0)
             height = float(self.biosphere_context.get("initial_extent_m") or self.biosphere_context.get("biosphere_height_m") or self.biosphere_context.get("map_size_m") or width)
             synthetic_root = {
@@ -173,6 +179,18 @@ class BiosphereSimulation(MapSimulation):
         self.species_profiles = self._load_species_profiles()
         self.selected_species_id = self._default_species_id()
         self.ecology = BiosphereEcology(self.bounds, self.species_profiles, columns=20, rows=20)
+        self.substrate = WorldgenSubstrate(self.get_root_entity(), self.bounds) if imported_surface else None
+        self.ecology.substrate = self.substrate
+        self.soil = SoilOrganicMatterField(
+            self.bounds,
+            columns=32,
+            rows=32,
+            initial_organic_matter_kg_m2=float(
+                self.biosphere_context.get("initial_soil_organic_matter_kg_m2", 0.0) or 0.0
+            ),
+        )
+        self.ecology.soil = self.soil
+        self.soil.initialize_from_abiotic(self.ecology)
         self.representatives = RepresentativePopulationManager(self.world_model)
         self.selected_representative_id = None
         self._representative_screen_hitboxes = []
@@ -184,6 +202,21 @@ class BiosphereSimulation(MapSimulation):
         self._picker_previous_time_scale = None
         self._isometric_projection_state = None
         self.test_forest_species_ids = []
+        overlay = self.world_model.get_entity(self.biosphere_id) or {}
+        self.inspection_population = bool(overlay.get("inspection_introductions"))
+        for item in overlay.get("inspection_introductions") or []:
+            sid = item["species_id"]
+            if sid not in self.ecology.profiles:
+                continue
+            self.ecology.introduce(sid, item["x"], item["y"], item["radius_m"], .82)
+            self.ecology.patches[-1].development_days = self.ecology.profiles[sid].maturity_days * item["development_fraction"]
+        if self.inspection_population:
+            self.representatives.sync_from_population(self.ecology)
+            for rep in self.representatives.items(alive_only=True):
+                patches = self.ecology.species_patches(rep.species_id)
+                fraction = max(p.development_days / self.ecology.profiles[rep.species_id].maturity_days for p in patches)
+                rep.age_days = rep.simulation.mature_age_days * fraction
+                rep.simulation.set_age(rep.age_days)
 
     def _load_species_profiles(self):
         species = list(self.world_model.get_dataset("species") or []) if hasattr(self.world_model, "get_dataset") else []
@@ -204,16 +237,21 @@ class BiosphereSimulation(MapSimulation):
         return next((species_id for species_id in preferred if species_id in ids), next(iter(ids), None))
 
     def pioneers_unlocked(self):
-        return self.ecology.summary()["living_biomass_kg"] >= self.PIONEER_UNLOCK_BIOMASS_KG
+        return self.soil.support_fraction(SoilOrganicMatterField.requirement_for_tier(1)) > 0.0
 
     def is_species_unlocked(self, species_id):
-        return species_id == self.BIOMASSER_ID or self.pioneers_unlocked()
+        profile = self.ecology.profiles.get(species_id)
+        if profile is None:
+            return False
+        if profile.growth_form == "aquatic":
+            # Aquatic succession is parallel to terrestrial soil formation and
+            # requires an imported hydrological substrate in this MWP.
+            return self.substrate is not None
+        return self.soil.support_fraction(profile.soil_organic_requirement_kg_m2) > 0.0
 
     def get_species_palette_items(self, limit=8):
         items = []
-        visible_profiles = self.species_profiles if self.pioneers_unlocked() else [
-            profile for profile in self.species_profiles if profile.species_id == self.BIOMASSER_ID
-        ]
+        visible_profiles = [profile for profile in self.species_profiles if self.is_species_unlocked(profile.species_id)]
         for profile in visible_profiles[:max(1, int(limit))]:
             items.append({
                 "id": profile.species_id,
@@ -262,11 +300,14 @@ class BiosphereSimulation(MapSimulation):
         return self.ecology.summary()
 
     def _expand_if_population_reaches_edge(self):
-        """Enlarge the active local domain as life colonises its boundary."""
+        """Enlarge a procedural domain, never the fixed extent of a measured import."""
+        if self.substrate is not None:
+            return False  # A measured import has a fixed, authoritative extent.
         if self.get_map_size() >= self.maximum_extent_m or self.ecology.edge_abundance() < 0.075:
             return False
         self.ecology.expand(margin_cells=4)
         self.bounds = dict(self.ecology.bounds)
+        self.soil.resize_bounds(self.bounds)
         root = self.get_root_entity()
         if isinstance(root, dict):
             root["bounds"] = {"type": "bbox", **self.bounds}
@@ -360,7 +401,10 @@ class BiosphereSimulation(MapSimulation):
                 "enabled": self.is_species_unlocked(profile.species_id),
                 "selected": profile.species_id == self.selected_species_id,
                 "focused": profile.species_id == self.species_picker_focus_id,
-                "unlock_label": "Available" if self.is_species_unlocked(profile.species_id) else f"Requires {self.PIONEER_UNLOCK_BIOMASS_KG:.0f} kg biomass",
+                "unlock_label": (
+                    "Available" if self.is_species_unlocked(profile.species_id)
+                    else f"Requires {profile.soil_organic_requirement_kg_m2:.3f} kg/m² local organic matter"
+                ),
                 "trait_lines": [
                     f"Growth form: {profile.growth_form.title()}",
                     f"Seasonal growth: {profile.growth_rate:.2f}",
@@ -368,7 +412,10 @@ class BiosphereSimulation(MapSimulation):
                     f"Carrying biomass: {profile.carrying_biomass_kg_m2:.1f} kg/m²",
                     f"Moisture niche: {moisture_low:.2f}–{moisture_high:.2f}",
                     f"Minimum light: {profile.light_minimum:.2f}",
+                    f"Light source: {profile.light_requirement_source}",
                     f"Succession role: {', '.join(str(role).replace('_', ' ') for role in roles[:2]) or 'unresolved'}",
+                    f"Succession tier: {profile.succession_tier} ({profile.succession_source})",
+                    f"Organic matter required: {profile.soil_organic_requirement_kg_m2:.3f} kg/m²",
                     f"Source: {profile.provenance}",
                 ],
             })
@@ -411,6 +458,7 @@ class BiosphereSimulation(MapSimulation):
 
     def get_biosphere_dashboard_model(self):
         summary = self.ecology.summary()
+        soil = summary.get("soil") or self.soil.summary()
         representatives = self.representatives.summary()
         selected = self.ecology.profiles.get(self.selected_species_id)
         return {
@@ -422,12 +470,18 @@ class BiosphereSimulation(MapSimulation):
             "domain_m": (self.bounds["max_x"] - self.bounds["min_x"], self.bounds["max_y"] - self.bounds["min_y"]),
             "selected_species": selected.label if selected else "None",
             "pioneers_unlocked": self.pioneers_unlocked(),
-            "unlock_biomass_kg": self.PIONEER_UNLOCK_BIOMASS_KG,
+            "soil_organic_matter_kg_m2": soil["mean_soil_organic_matter_kg_m2"],
+            "soil_organic_max_kg_m2": soil["max_soil_organic_matter_kg_m2"],
+            "soil_stage": soil["soil_stage"],
+            "supported_succession_tier": soil["supported_succession_tier"],
+            "available_nitrogen_g_m2": soil["mean_available_nitrogen_g_m2"],
+            "available_phosphorus_g_m2": soil["mean_available_phosphorus_g_m2"],
             "time": self.get_biosphere_time_state(),
         }
 
     def get_biosphere_builder_summary_lines(self):
         summary = self.ecology.summary()
+        soil = summary.get("soil") or self.soil.summary()
         representative_summary = self.representatives.summary()
         selected = self.ecology.profiles.get(self.selected_species_id)
         founding = self.biosphere_context.get("founding_point_source")
@@ -437,9 +491,12 @@ class BiosphereSimulation(MapSimulation):
             f"Selected: {selected.label if selected else 'none'}",
             f"Season {summary['season']} | introductions {summary['introductions']}",
             f"Living footprint {summary['living_footprint_m2']:.1f} m² | biomass {summary['living_biomass_kg']:.1f} kg",
+            f"Soil organic matter {soil['mean_soil_organic_matter_kg_m2']:.3f} kg/m² mean | {soil['max_soil_organic_matter_kg_m2']:.3f} max",
+            f"Plant-available N {soil['mean_available_nitrogen_g_m2']:.3f} g/m² | P {soil['mean_available_phosphorus_g_m2']:.3f} g/m²",
+            f"Succession: {soil['soil_stage']} | supports tier {soil['supported_succession_tier']}",
             f"Active domain {self.bounds['max_x'] - self.bounds['min_x']:.0f} × {self.bounds['max_y'] - self.bounds['min_y']:.0f} m",
             f"Deep representatives {representative_summary['alive']} alive / {representative_summary['total']} total",
-            "Pioneer plants unlocked" if self.pioneers_unlocked() else f"Pioneers unlock at {self.PIONEER_UNLOCK_BIOMASS_KG:.0f} kg biomass",
+            "Herbaceous pioneers available" if self.pioneers_unlocked() else "Organic soil is still below the pioneer threshold",
             f"Founding point on source map: {founding[0]:.3f}, {founding[1]:.3f}" if isinstance(founding, (list, tuple)) and len(founding) >= 2 else "Founding point: local patch centre",
         ]
 
@@ -549,6 +606,8 @@ class BiosphereSimulation(MapSimulation):
     def _screen_to_world(self, camera, screen_pos):
         state = self._isometric_projection_state
         if state:
+            if self.substrate is not None:
+                return self.substrate.ground_screen_to_world(state, screen_pos)
             scale = max(0.001, state["scale"])
             projected_x = (float(screen_pos[0]) - state["origin_x"]) / scale
             projected_y = (float(screen_pos[1]) - state["origin_y"]) / (scale * 0.5)
